@@ -1,0 +1,50 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-5#high",
+  "default_agent": "build",
+  "share": "auto",
+  "instructions": ["AGENTS.md"],
+  /* Migrated from the 1.x layout on 2026-08-20. Servers now live one level
+     down under `servers`, and `enabled` became `disabled`. */
+  "mcp": {
+    "servers": {
+      "playwright": {
+        "type": "local",
+        "command": ["npx", "-y", "@playwright/mcp@latest"],
+        "disabled": false,
+        "timeout": {
+          "catalog": 30000,
+          "execution": 60000
+        }
+      },
+      "sentry": {
+        "type": "remote",
+        "url": "https://mcp.sentry.dev/mcp",
+        "headers": {
+          "Authorization": "Bearer {env:SENTRY_MCP_TOKEN}"
+        },
+        "oauth": {
+          "client_id": "{env:SENTRY_CLIENT_ID}",
+          "callback_port": 19876
+        }
+      }
+    }
+  },
+  "agents": {
+    "reviewer": {
+      "description": "Reviews a diff for correctness bugs and missing tests",
+      "mode": "subagent",
+      "system": "You review diffs. Report only defects you can point at a line for.",
+      "disabled": false
+    }
+  },
+  "commands": {
+    "git/commit": {
+      "description": "Stage and commit the working tree with a conventional message",
+      "template": "Write a conventional-commits message for the staged diff."
+    }
+  },
+  "permissions": [
+    { "shell": { "git push": "ask" } }
+  ]
+}

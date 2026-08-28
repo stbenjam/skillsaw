@@ -1,0 +1,5 @@
+name: warehouse-agents
+version: 0.2.0
+description: Claude-only APM project that also ships a hand-written OpenCode setup
+targets:
+  - claude

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Pin the model so a teammate's default does not change review output.
+  "model": "anthropic/claude-sonnet-4-5",
+  "small_model": "anthropic/claude-haiku-4-5",
+  "autoupdate": false,
+  "instructions": ["AGENTS.md", "docs/conventions.md"],
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "environment": {
+        "PLAYWRIGHT_BROWSERS_PATH": "0"
+      },
+      "enabled": true,
+      "timeout": 30000,
+    },
+    "sentry": {
+      "type": "remote",
+      "url": "https://mcp.sentry.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer {env:SENTRY_MCP_TOKEN}"
+      }
+    }
+  },
+  "agent": {
+    "reviewer": {
+      "description": "Reviews a diff for correctness bugs and missing tests",
+      "mode": "subagent",
+      "prompt": "You review diffs. Report only defects you can point at a line for.",
+      "tools": {
+        "write": false,
+        "edit": false
+      },
+      "disable": false
+    }
+  },
+  "command": {
+    "changelog": {
+      "description": "Draft the changelog entry for the current branch",
+      "template": "Summarise the commits on this branch as a changelog entry.",
+      "agent": "reviewer"
+    }
+  },
+  "permission": {
+    "bash": {
+      "git push": "ask",
+      "*": "allow"
+    }
+  }
+}

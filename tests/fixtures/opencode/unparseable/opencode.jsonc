@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // The closing brace for `mcp` is missing, so OpenCode reads nothing here.
+  "model": "anthropic/claude-sonnet-4-5",
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"]
+  }
+}

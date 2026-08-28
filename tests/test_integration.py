@@ -2433,6 +2433,194 @@ class TestEditorTools:
 
 
 @pytest.mark.integration
+class TestOpenCode:
+    """OpenCode config, content and the ``.opencode`` / APM disambiguation."""
+
+    def test_a_v1_spelling_config_yields_no_errors_or_warnings(self, tmp_path):
+        """OpenCode 1.x keys are current, not legacy — 2.0 still loads them."""
+        repo = copy_fixture("opencode/native-v1", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+        assert by_rule(r).get("opencode-config-valid", []) == []
+
+    def test_a_v2_spelling_config_yields_no_errors_or_warnings(self, tmp_path):
+        """The same configuration after migrating must be just as clean."""
+        repo = copy_fixture("opencode/native-v2", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+        assert by_rule(r).get("opencode-config-valid", []) == []
+
+    def test_comments_and_trailing_commas_are_not_parse_errors(self, tmp_path):
+        """OpenCode reads .json through a JSONC parser, so skillsaw must too."""
+        repo = copy_fixture("opencode/native-v1", tmp_path)
+        source = (repo / "opencode.json").read_text()
+        assert "//" in source, "the fixture must carry a comment"
+        assert re.search(r",\s*[}\]]", source), "the fixture must carry a trailing comma"
+        # A strict JSON parser rejects the file outright, which is exactly
+        # the false "Invalid JSON" this test exists to rule out.
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(source)
+
+        messages = [v["message"] for v in by_rule(run_lint(repo)).get("opencode-config-valid", [])]
+        assert not any("Invalid JSON" in m for m in messages)
+
+    def test_an_unparseable_config_is_the_one_error(self, tmp_path):
+        repo = copy_fixture("opencode/unparseable", tmp_path)
+        r = run_lint(repo)
+
+        found = by_rule(r)["opencode-config-valid"]
+        assert [(v["file_path"], v["severity"]) for v in found] == [
+            ("opencode.jsonc", "error"),
+        ]
+        assert found[0]["message"].startswith("Invalid JSON:")
+
+    def test_shape_problems_are_reported_without_rejecting_either_vocabulary(self, tmp_path):
+        repo = copy_fixture("opencode/broken", tmp_path)
+        r = run_lint(repo)
+
+        messages = [v["message"] for v in by_rule(r)["opencode-config-valid"]]
+        # OpenCode names transports for where the server runs, not for the
+        # wire protocol, so the Claude-family spelling is the defect here.
+        assert (
+            "MCP server 'playwright' has invalid type 'stdio' — must be one of: local, remote"
+            in (messages)
+        )
+        assert any("'command' must be a non-empty array of strings" in m for m in messages)
+        assert any("MCP server 'typo' is missing 'type'" in m for m in messages)
+        assert any("'agents.planner.disabled' must be a boolean" in m for m in messages)
+        assert any("'command.changelog.template' must be a non-empty string" in m for m in messages)
+        assert any("names the TUI schema" in m for m in messages)
+        # Unknown top-level keys never rise above info: the schema moves
+        # faster than skillsaw releases.
+        unknown = [
+            v
+            for v in by_rule(r)["opencode-config-valid"]
+            if "Unrecognized top-level" in v["message"]
+        ]
+        assert [v["severity"] for v in unknown] == ["info"]
+        assert "'modle'" in unknown[0]["message"]
+
+    def test_both_spellings_of_one_setting_are_reported_not_the_older_one(self, tmp_path):
+        """Either vocabulary alone is valid; carrying both is the finding."""
+        repo = copy_fixture("opencode/broken", tmp_path)
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert any(
+            "declares both 'agent' and 'agents'" in m for m in messages
+        ), "the top-level rename table must drive this"
+        assert any("declares both 'prompt' and 'system'" in m for m in messages)
+        assert any(
+            "declares both 'enabled' and 'disabled'" in m and "sense inverted" in m
+            for m in messages
+        )
+        # No message may say a 1.x key is simply wrong.
+        assert not any("'agent' is deprecated" in m for m in messages)
+
+    def test_credentials_in_an_mcp_environment_map_are_errors(self, tmp_path):
+        """`environment`, not `env` — the shared MCP rule cannot read this map."""
+        repo = copy_fixture("opencode/broken", tmp_path)
+        found = by_rule(run_lint(repo))["opencode-config-valid"]
+
+        secrets = [v for v in found if "embeds" in v["message"]]
+        assert [v["severity"] for v in secrets] == ["error"]
+        assert "LINEAR_API_KEY" in secrets[0]["message"]
+        assert "lin_api_" not in secrets[0]["message"], "must not echo the credential"
+
+        userinfo = [v for v in found if "user information" in v["message"]]
+        assert [v["severity"] for v in userinfo] == ["error"]
+
+    def test_opencode_substitution_syntax_reads_as_a_placeholder(self, tmp_path):
+        """`{env:VAR}` is OpenCode's documented way to keep a token out of the file."""
+        repo = copy_fixture("opencode/native-v1", tmp_path)
+        assert "{env:SENTRY_MCP_TOKEN}" in (repo / "opencode.json").read_text()
+
+        messages = [v["message"] for v in violations(run_lint(repo))]
+        assert not any("embeds" in m for m in messages)
+
+    def test_mcp_valid_json_stands_aside_for_the_opencode_dialect(self, tmp_path):
+        """A correct OpenCode config must not be reported by the Claude-shape rule."""
+        for fixture in ("opencode/native-v1", "opencode/native-v2", "opencode/broken"):
+            repo = copy_fixture(fixture, tmp_path / fixture.replace("/", "_"))
+            assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == [], fixture
+
+    @pytest.mark.parametrize(
+        "fixture,config_file",
+        [
+            ("opencode/native-v1", "opencode.json"),
+            ("opencode/native-v2", ".opencode/opencode.jsonc"),
+        ],
+    )
+    def test_mcp_prohibited_reads_both_server_shapes(self, fixture, config_file, tmp_path):
+        """v1 maps servers under `mcp`; v2 nests them under `mcp.servers`."""
+        repo = copy_fixture(fixture, tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n"
+            "  mcp-prohibited:\n"
+            "    enabled: true\n"
+            "    allowlist:\n"
+            "      - playwright\n"
+        )
+
+        found = by_rule(run_lint(repo, config=repo / ".skillsaw.yaml"))["mcp-prohibited"]
+        assert [v["file_path"] for v in found] == [config_file]
+        # The allowlisted server is subtracted; the other one is reported.
+        assert "sentry" in found[0]["message"]
+        assert "playwright" not in found[0]["message"]
+
+    def test_opencode_content_reaches_the_content_rules(self, tmp_path):
+        """Commands, agents and skills under .opencode all land in an agent's context."""
+        repo = copy_fixture("opencode/native-v1", tmp_path)
+        r = run_lint(repo)
+        paths = {v["file_path"] for v in violations(r)}
+
+        assert ".opencode/agents/reviewer.md" in paths
+        tree = run_lint(repo, fmt=None)
+        assert tree["rc"] == 0
+
+    def test_a_native_opencode_repo_is_not_apm_build_output(self, tmp_path):
+        """No APM evidence means `.opencode/` is authored, whatever APM also uses it for."""
+        repo = copy_fixture("opencode/native-v1", tmp_path)
+        assert not (repo / ".apm").exists() and not (repo / "apm.yml").exists()
+
+        r = run_lint(repo)
+        paths = {v["file_path"] for v in violations(r)}
+        assert ".opencode/agents/reviewer.md" in paths
+
+    def test_apm_owns_the_compiled_opencode_directory(self, tmp_path):
+        """`apm.yml` lists `opencode`, so `.opencode/` duplicates the `.apm/` sources.
+
+        The content findings belong on the primitives the author edits, so
+        they are suppressed on the generated copy — but the copy stays in
+        the tree, because a generated file can still be hand-edited and the
+        security rules must read what ships.
+        """
+        repo = copy_fixture("opencode/apm-compiled", tmp_path)
+        source = (repo / ".opencode/command/conventions.md").read_text()
+        assert "should probably" in source, "the fixture must carry a content defect"
+
+        r = run_lint(repo)
+        assert not [
+            v for v in violations(r) if v["file_path"].startswith(".opencode/")
+        ], "APM-compiled OpenCode output must not report content findings"
+        # The skill under the compiled directory is not discovered either.
+        assert not any(v["rule_id"].startswith("agentskill-") for v in violations(r))
+
+    def test_apm_that_does_not_target_opencode_leaves_the_directory_authored(self, tmp_path):
+        """A source tree alone does not make `.opencode/` generated."""
+        repo = copy_fixture("opencode/apm-other-target", tmp_path)
+        assert "opencode" not in (repo / "apm.yml").read_text()
+
+        flagged = {v["file_path"] for v in by_rule(run_lint(repo)).get("content-weak-language", [])}
+        assert ".opencode/commands/audit.md" in flagged
+
+
+@pytest.mark.integration
 class TestDotClaude:
 
     def test_clean_dot_claude_passes(self, tmp_path):
@@ -3110,6 +3298,7 @@ BROKEN_FIXTURES = [
     "cursor-rules/broken-frontmatter",
     "cursor-rules/broken-hooks",
     "cursor-rules/prompt-hooks",
+    "opencode/broken",
 ]
 
 CLEAN_FIXTURES = [
@@ -3131,6 +3320,8 @@ CLEAN_FIXTURES = [
     "codex/clean",
     "cursor-rules/clean",
     "editor-tools/monorepo",
+    "opencode/native-v1",
+    "opencode/native-v2",
 ]
 
 OPT_IN_RULES = {

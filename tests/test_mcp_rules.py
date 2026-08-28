@@ -6,7 +6,7 @@ import pytest
 import json
 from pathlib import Path
 
-from skillsaw.blocks import McpBlock
+from skillsaw.blocks import McpBlock, OpenCodeMcpBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.formatters import format_report
 from skillsaw.rules.builtin.mcp import McpProhibitedRule, McpValidJsonRule
@@ -1238,3 +1238,65 @@ def test_timeout_wrong_type_rejected(temp_dir):
     violations = rule.check(RepositoryContext(plugin_dir))
     assert len(violations) == 1
     assert "'timeout' must be a number" in violations[0].message
+
+
+class TestOpenCodeMcpBlock:
+    """OpenCode maps its servers under `mcp`, flat in 1.x and nested in 2.0."""
+
+    @staticmethod
+    def _repo(temp_dir, config):
+        (temp_dir / "opencode.json").write_text(json.dumps(config))
+        return RepositoryContext(temp_dir)
+
+    def _block(self, temp_dir, config):
+        blocks = self._repo(temp_dir, config).lint_tree.find(OpenCodeMcpBlock)
+        assert len(blocks) == 1
+        return blocks[0]
+
+    def test_the_v1_flat_map_is_read(self, temp_dir):
+        block = self._block(
+            temp_dir,
+            {"mcp": {"playwright": {"type": "local", "command": ["npx", "mcp"]}}},
+        )
+        assert block.server_names == {"playwright"}
+
+    def test_the_v2_nested_map_is_read(self, temp_dir):
+        block = self._block(
+            temp_dir,
+            {"mcp": {"servers": {"playwright": {"type": "local", "command": ["npx"]}}}},
+        )
+        assert block.server_names == {"playwright"}
+
+    def test_a_v1_server_named_servers_is_not_mistaken_for_the_v2_wrapper(self, temp_dir):
+        """Nothing forbids the name, so only the value shape can tell them apart."""
+        block = self._block(
+            temp_dir,
+            {"mcp": {"servers": {"type": "local", "command": ["npx", "servers-mcp"]}}},
+        )
+        assert block.server_names == {"servers"}
+
+    def test_an_empty_v2_wrapper_declares_no_servers(self, temp_dir):
+        block = self._block(temp_dir, {"mcp": {"servers": {}}})
+        assert block.server_names == set()
+
+    def test_a_config_without_mcp_declares_no_servers(self, temp_dir):
+        block = self._block(temp_dir, {"model": "anthropic/claude-sonnet-4-5"})
+        assert block.server_names == set()
+        assert block.raw_data is not None, "the rest of the config still parses"
+
+    def test_the_claude_shape_rule_stands_aside(self, temp_dir):
+        """Its every check would misfire on a correctly written OpenCode config."""
+        context = self._repo(
+            temp_dir,
+            {"mcp": {"playwright": {"type": "local", "command": ["npx", "mcp"]}}},
+        )
+        assert McpValidJsonRule().check(context) == []
+
+    def test_the_policy_rule_reads_opencode_servers(self, temp_dir):
+        context = self._repo(
+            temp_dir,
+            {"mcp": {"servers": {"exfil": {"type": "remote", "url": "https://x.example/mcp"}}}},
+        )
+        violations = McpProhibitedRule({"allowlist": ["playwright"]}).check(context)
+        assert len(violations) == 1
+        assert "exfil" in violations[0].message
