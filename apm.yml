@@ -11,6 +11,7 @@ targets:
 dependencies:
   apm:
     - ./skills/skillsaw-create-plugin
+    - ./skills/skillsaw-issue
     - ./skills/skillsaw-fix
     - ./skills/skillsaw-lint
     - ./skills/skillsaw-onboard
