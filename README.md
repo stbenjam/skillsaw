@@ -79,6 +79,12 @@ The `description-routing` rule checks when-to-use phrasing and descriptions that
 only repeat a skill, agent, or command name. Both checks can be configured
 independently; see the [rule reference](https://skillsaw.org/rules/description-routing/).
 
+Every rule runs offline. The one exception, `content-broken-external-reference`,
+checks whether external `http(s)` links are still reachable and is therefore
+opt-in: nothing makes a network request unless you enable it, it reports only
+`404` and `410`, and it is meant for a scheduled job rather than a per-PR gate.
+See the [rule reference](https://skillsaw.org/rules/content-broken-external-reference/).
+
 skillsaw detects the repository type automatically and can lint multiple types
 in the same project. See [supported repository
 types](https://skillsaw.org/repo-types/) and the [complete rule

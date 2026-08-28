@@ -207,6 +207,15 @@ rules:
     # skip-builtins: false
     # regex-timeout: 2.0
 
+  # Detect external http(s) links whose server reports them gone (404/410)
+  content-broken-external-reference:
+    enabled: false
+    severity: warning
+    # timeout: 5.0
+    # total-budget: 30.0
+    # concurrency: 8
+    # ignore: []
+
   # Detect markdown links where the target file does not exist
   content-broken-internal-reference:
     enabled: auto

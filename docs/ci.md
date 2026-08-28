@@ -197,6 +197,37 @@ Both images are served from your repository via
 camo cache, which caches aggressively — a freshly regenerated badge or
 card can appear stale for a while after pushing.
 
+## Scheduled external link checking
+
+A skillsaw run is offline by default — no rule opens a network connection
+unless you turn one on. The only rule that does,
+[`content-broken-external-reference`](rules/content-broken-external-reference.md),
+requests every external `http(s)` link in your context files and reports
+the ones the server says are gone (`404` and `410` only — never a bot
+wall, a rate limit, or a timeout).
+
+Keep it out of your pull-request job, where a slow origin would block a
+merge, and give it a schedule of its own:
+
+```yaml
+name: link-check
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install skillsaw==0.20.0
+      - run: skillsaw lint . --rule content-broken-external-reference
+```
+
+Using `--rule` rather than `.skillsaw.yaml` keeps the rule out of every
+other run, including local ones.
+
 ## Other output formats
 
 skillsaw supports several machine-readable output formats — `--format`
