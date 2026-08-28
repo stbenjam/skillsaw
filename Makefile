@@ -40,13 +40,13 @@ format: $(VENV_EXTRAS_STAMP)
 lint: $(VENV_EXTRAS_STAMP)
 	$(VENV)/bin/black --check src/ tests/
 
-test: $(VENV_EXTRAS_STAMP)
-	$(VENV)/bin/pytest tests/ -q -n auto
+test: venv
+	. $(VENV)/bin/activate && pytest tests/ -q -n auto
 
 # Coverage instrumentation (including the subprocess patch for the CLI
 # integration tests) roughly doubles the runtime, so it runs only in CI.
-test-coverage: $(VENV_EXTRAS_STAMP)
-	$(VENV)/bin/pytest tests/ -q -n auto --cov=src/skillsaw --cov-report=xml --cov-report=term
+test-coverage: venv
+	. $(VENV)/bin/activate && pytest tests/ -q -n auto --cov=src/skillsaw --cov-report=xml --cov-report=term
 
 # Generate example config in a temp dir to avoid clobbering .skillsaw.yaml
 generate-example: $(VENV_EXTRAS_STAMP)
