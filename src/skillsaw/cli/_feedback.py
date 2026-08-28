@@ -30,11 +30,11 @@ _FEEDBACK_EMAIL = "stephen@bitbin.de"
 _GPG_KEY_URL = "https://github.com/stbenjam.gpg"
 _BUNDLE_SCHEMA_VERSION = 1
 _CREDENTIAL_ASSIGNMENT = re.compile(
-    r"(?im)^(\s*[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
+    r"(?im)^([ \t]*[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
     r"(?:api[_-]?key|token|secret|password|passphrase|credential)"
     r"[A-Za-z0-9_.-]*[\"']?\s*[:=]\s*)(.+)$"
 )
-_AUTHORIZATION_HEADER = re.compile(r"(?im)^(\s*(?:proxy-)?authorization\s*[:=]\s*)(.+)$")
+_AUTHORIZATION_HEADER = re.compile(r"(?im)^([ \t]*(?:proxy-)?authorization\s*[:=]\s*)(.+)$")
 _BEARER_TOKEN = re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/-]{12,}")
 _URL_USERINFO = re.compile(r"(?://)([^/\s:@]+(?::[^@/\s]+)?@)")
 _PEM_PRIVATE_KEY = re.compile(
@@ -42,10 +42,12 @@ _PEM_PRIVATE_KEY = re.compile(
     re.DOTALL,
 )
 _BLOCK_SCALAR_CREDENTIAL = re.compile(
-    r"(?im)^(\s*[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
-    r"(?:api[_-]?key|token|secret|password|passphrase|credential)[A-Za-z0-9_.-]*[\"']?"
-    r"\s*:\s*[>|][^\n]*\n)(?:^[ \t]+.*(?:\n|$))*"
+    r"^(?P<indent>[ \t]*)(?P<key>[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
+    r"(?:api[_-]?key|token|secret|password|passphrase|credential)[A-Za-z0-9_.-]*[\"']?)"
+    r"\s*:\s*[>|][^\n]*$",
+    re.IGNORECASE,
 )
+_TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
 
 
 def _redact_text(text: str) -> tuple[str, int]:
@@ -58,12 +60,32 @@ def _redact_text(text: str) -> tuple[str, int]:
         return "[REDACTED]"
 
     text, _count = _PEM_PRIVATE_KEY.subn(replace_with_marker, text)
-    text, count = _BLOCK_SCALAR_CREDENTIAL.subn(r"\1[REDACTED]\n", text)
-    redactions += count
+    lines = text.splitlines(keepends=True)
+    redacted_lines = []
+    block_redactions = 0
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        header = _BLOCK_SCALAR_CREDENTIAL.match(line.rstrip("\r\n"))
+        if header is None:
+            redacted_lines.append(line)
+            index += 1
+            continue
+        block_redactions += 1
+        redacted_lines.append(f"{header.group('indent')}{header.group('key')}: [REDACTED]\n")
+        key_indent = len(header.group("indent"))
+        index += 1
+        while index < len(lines):
+            candidate = lines[index]
+            if candidate.strip() and len(candidate) - len(candidate.lstrip(" \t")) <= key_indent:
+                break
+            index += 1
+    text = "".join(redacted_lines)
+    redactions += block_redactions
     for pattern, _description in STRUCTURED_SECRET_PATTERNS:
         text = pattern.sub(replace_with_marker, text)
     text, count = _CREDENTIAL_ASSIGNMENT.subn(r"\1[REDACTED]", text)
-    redactions += count
+    redactions += count - block_redactions
     text, count = _AUTHORIZATION_HEADER.subn(r"\1[REDACTED]", text)
     redactions += count
     text, count = _BEARER_TOKEN.subn(r"\1[REDACTED]", text)
@@ -71,6 +93,14 @@ def _redact_text(text: str) -> tuple[str, int]:
     text, count = _URL_USERINFO.subn("//[REDACTED]@", text)
     redactions += count
     return text, redactions
+
+
+def _safe_terminal_text(data: bytes) -> bytes:
+    """Redact and neutralize child diagnostics before writing to a terminal."""
+    text, _redactions = _redact_text(data.decode("utf-8", "replace"))
+    text = _TERMINAL_ESCAPE.sub("", text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "�", text)
+    return text.encode("utf-8", "replace")
 
 
 def _sha256(data: bytes) -> str:
@@ -197,7 +227,7 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
                         break
                     if chunk:
                         captured_stderr.extend(chunk)
-                        sys.stderr.buffer.write(chunk)
+                        sys.stderr.buffer.write(_safe_terminal_text(chunk))
                         sys.stderr.buffer.flush()
                     elif process.poll() is not None:
                         break

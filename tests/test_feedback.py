@@ -120,6 +120,22 @@ def test_feedback_redacts_private_keys_and_exact_credential_names():
     assert count >= 3
 
 
+def test_feedback_redacts_block_scalar_credentials_without_losing_siblings():
+    text, count = _feedback._redact_text(
+        "outer:\n"
+        "  password: |\n"
+        "    first secret\n"
+        "\n"
+        "    second secret\n"
+        "  host: localhost\n"
+    )
+
+    assert "first secret" not in text
+    assert "second secret" not in text
+    assert "host: localhost" in text
+    assert count == 1
+
+
 def test_feedback_rejects_source_files_outside_the_repository(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
