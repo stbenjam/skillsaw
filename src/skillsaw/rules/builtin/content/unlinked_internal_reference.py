@@ -92,10 +92,27 @@ class ContentUnlinkedInternalReferenceRule(Rule):
     ) -> List[Tuple[int, Optional[int], str, Optional[MarkdownCodeSpan]]]:
         """Collect (body_line, col_start, path_str, code_span) candidates in order."""
         results: List[Tuple[int, Optional[int], str, Optional[MarkdownCodeSpan]]] = []
+        # A line holds many segments and code spans, and the import gate
+        # depends only on the line, so it is answered once per line.
+        import_line: dict = {}
+
+        def is_import_line(body_line: int) -> bool:
+            cached = import_line.get(body_line)
+            if cached is None:
+                cached = bool(_IMPORT_LINE_RE.match(doc.line(body_line)))
+                import_line[body_line] = cached
+            return cached
+
         for seg in doc.text_segments():
             if seg.in_link:
                 continue
-            if _IMPORT_LINE_RE.match(doc.line(seg.body_line)):
+            # Both branches of _PATH_LIKE_RE require a slash, and a
+            # document is mostly prose segments that have none. The
+            # containment test is exact and costs a fraction of entering
+            # the regex engine once per segment.
+            if "/" not in seg.text:
+                continue
+            if is_import_line(seg.body_line):
                 continue
             for match in self._PATH_LIKE_RE.finditer(seg.text):
                 path_str = match.group(0)
@@ -113,7 +130,9 @@ class ContentUnlinkedInternalReferenceRule(Rule):
         for span in doc.code_spans():
             if span.in_link:
                 continue
-            if _IMPORT_LINE_RE.match(doc.line(span.body_line)):
+            if "/" not in span.content:  # same slash requirement as above
+                continue
+            if is_import_line(span.body_line):
                 continue
             if not self._code_span_is_exact_path(doc, span):
                 continue

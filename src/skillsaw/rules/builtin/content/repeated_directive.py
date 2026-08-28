@@ -334,8 +334,12 @@ class ContentRepeatedDirectiveRule(Rule):
         for line_num, line in enumerate(body.splitlines(), 1):
             # Gate on a copy with leading emphasis markers stripped so
             # '- **Always run make test.**' is recognized; the original
-            # line is kept for the message text and normalization.
-            gate = _LEAD_EMPHASIS_RE.sub(r"\1", line)
+            # line is kept for the message text and normalization.  The
+            # substitution runs once per line of the repository, so it is
+            # gated on the markers it strips actually being present — a
+            # C-speed containment test standing in for a regex that would
+            # otherwise be a no-op on most lines.
+            gate = _LEAD_EMPHASIS_RE.sub(r"\1", line) if ("*" in line or "_" in line) else line
             if not _IMPERATIVE_RE.match(gate):
                 continue
             if _ENUMERATION_RE.match(gate):

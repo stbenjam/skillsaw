@@ -235,6 +235,34 @@ class SecurityInvisibleUnicodeRule(Rule):
                 continue
         return allowed
 
+    @staticmethod
+    def _char_class_body(codepoints: List[int]) -> str:
+        """Render sorted *codepoints* as a character-class body, run-collapsed.
+
+        Consecutive codepoints become a range.  ``re`` compiles a class
+        containing an astral codepoint (the tag block runs to U+E007F) as a
+        linear list of items tested against every character of the subject,
+        so the ~100 tag characters spelled out one by one cost ~100
+        comparisons per character scanned — a tenfold slowdown over the two
+        range items they collapse into.  The matched set is identical.
+        """
+        parts: List[str] = []
+        index = 0
+        while index < len(codepoints):
+            end = index
+            while end + 1 < len(codepoints) and codepoints[end + 1] == codepoints[end] + 1:
+                end += 1
+            # A two-codepoint run is not worth a range: "a-b" is no shorter
+            # than "ab" and reads worse.
+            if end - index >= 2:
+                parts.append(
+                    re.escape(chr(codepoints[index])) + "-" + re.escape(chr(codepoints[end]))
+                )
+            else:
+                parts.extend(re.escape(chr(c)) for c in codepoints[index : end + 1])
+            index = end + 1
+        return "".join(parts)
+
     def _build_pattern(self) -> Optional[re.Pattern]:
         """Compile ONE character class covering every flaggable codepoint."""
         codepoints = set(_ALL_CODEPOINTS) - self._allowed_codepoints()
@@ -242,8 +270,7 @@ class SecurityInvisibleUnicodeRule(Rule):
             codepoints -= _BIDI_CODEPOINTS
         if not codepoints:
             return None
-        char_class = "".join(re.escape(chr(c)) for c in sorted(codepoints))
-        return re.compile(f"[{char_class}]")
+        return re.compile(f"[{self._char_class_body(sorted(codepoints))}]")
 
     def _hits_by_line(
         self, text: str, pattern: re.Pattern, *, skip_leading_bom: bool
@@ -253,7 +280,17 @@ class SecurityInvisibleUnicodeRule(Rule):
         One whole-text ``finditer`` pass is the gate — clean text costs a
         single scan and no per-line work.  Line offsets are computed only
         when there is at least one surviving hit.
+
+        Pure-ASCII text short-circuits before the scan: every flaggable
+        codepoint is U+00AD or above, and ``str.isascii`` reads a flag
+        CPython already carries on the object.  The scan itself is a
+        character class of ~120 mostly-astral codepoints, which the ``re``
+        engine checks one codepoint at a time — the most expensive part of
+        this rule on a repository of ordinary English documents, and
+        entirely wasted there.
         """
+        if text.isascii():
+            return {}
         hit_offsets = []
         flag_offsets: Optional[FrozenSet[int]] = None  # computed on first tag hit
         for match in pattern.finditer(text):
