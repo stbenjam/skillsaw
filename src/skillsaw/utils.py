@@ -316,10 +316,11 @@ def write_bytes_atomic(path: Path, content: bytes, *, root: Optional[Path] = Non
 
 
 #: Charged for an entry whose payload cannot be measured cheaply — a parsed
-#: YAML or JSON document. Deliberately generous: such a value is several
-#: times the size of the text it came from, and undercharging it would let
-#: the cache hold far more than its budget says.
-_UNMEASURED_ENTRY_BYTES = 16 * 1024
+#: YAML or JSON document. Such a value is a few times the size of the text
+#: it came from; undercharging would let the cache hold more than its
+#: budget says, and overcharging spends the budget on estimates instead of
+#: on the file contents that dominate it.
+_UNMEASURED_ENTRY_BYTES = 4 * 1024
 
 
 def _approximate_size(value: Any) -> int:
@@ -398,9 +399,14 @@ class FileCache:
             # Compute outside the lock to avoid holding it during I/O.
             result = func(*args, **kwargs)
             cost = _approximate_size(result)
+            if cost > self._budget:
+                # No amount of eviction makes room for this one, and
+                # keeping it would put the cache permanently over the
+                # bound it exists to hold. Hand it back uncached.
+                return result
             with self._lock:
                 if self._total_bytes + cost > self._budget:
-                    self._evict_oldest()
+                    self._evict(cost)
                 bucket = store.setdefault(resolved, {})
                 if sub_key not in bucket:
                     self._total_bytes += cost
@@ -422,21 +428,36 @@ class FileCache:
         wrapper.cache_clear = _clear  # type: ignore[attr-defined]
         return wrapper
 
-    def _evict_oldest(self):
-        """Free roughly half the budget, oldest first (called under lock)."""
-        target = self._budget // 2
+    def _evict(self, incoming: int = 0):
+        """Free room for *incoming*, oldest first (called under lock).
+
+        At least half the budget goes, so eviction is amortized rather
+        than run on every insertion once the cache is full, and never
+        less than the entry about to arrive needs — otherwise a large
+        value inserted into an almost-full cache leaves it over budget.
+
+        Stores are drained in step rather than in order. Draining the
+        first one first would always empty the file-text cache, which is
+        both the largest and the one worth keeping: the parsed documents
+        in the other stores are derived from it and cheaper to rebuild.
+        """
+        target = max(self._budget // 2, incoming)
         freed = 0
-        for store in self._stores:
-            paths_to_remove = []
-            for path, bucket in store.items():
+        iterators = [iter(list(store)) for store in self._stores]
+        exhausted = 0
+        while freed < target and exhausted < len(iterators):
+            exhausted = 0
+            for store, paths in zip(self._stores, iterators):
+                path = next(paths, None)
+                if path is None:
+                    exhausted += 1
+                    continue
+                bucket = store.pop(path, None)
+                if bucket is None:
+                    continue
                 freed += sum(_approximate_size(value) for value in bucket.values())
-                paths_to_remove.append(path)
                 if freed >= target:
                     break
-            for p in paths_to_remove:
-                del store[p]
-            if freed >= target:
-                break
         self._total_bytes -= freed
 
     def invalidate(self, file_path: Optional[Path] = None):

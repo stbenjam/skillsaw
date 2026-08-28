@@ -56,7 +56,15 @@ def has_parent_traversal(path: str) -> bool:
 # ``invalidate_read_caches()``, which clears this memo alongside the file
 # caches (see ``skillsaw.utils``).
 _RESOLVE_CACHE: Dict[Path, Optional[Path]] = {}
-_RESOLVE_CACHE_MAX = 20000
+
+#: An entry is two ``Path`` objects, a few hundred bytes; the cap is a
+#: backstop against unbounded growth in a long-lived process that never
+#: invalidates, not a working limit. It has to sit well above the number of
+#: distinct paths a real repository resolves — a large skill marketplace
+#: reaches ~20k — because every rule sweeps the same set, so a cap the
+#: repository can cross is a cliff rather than a limit: the memo is thrown
+#: away and rebuilt on every sweep.
+_RESOLVE_CACHE_MAX = 250_000
 
 
 def clear_resolve_cache() -> None:
@@ -92,7 +100,10 @@ def safe_resolve(path: Path) -> Optional[Path]:
     except (OSError, ValueError, RuntimeError):
         resolved = None
     if len(_RESOLVE_CACHE) >= _RESOLVE_CACHE_MAX:
-        _RESOLVE_CACHE.clear()
+        # Drop the oldest half rather than everything: dicts keep insertion
+        # order, so what survives is what was resolved most recently.
+        for stale in list(_RESOLVE_CACHE)[: _RESOLVE_CACHE_MAX // 2]:
+            del _RESOLVE_CACHE[stale]
     _RESOLVE_CACHE[path] = resolved
     return resolved
 

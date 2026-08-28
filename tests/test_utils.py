@@ -920,6 +920,96 @@ def test_safe_load_yaml_rejects_pathological_nesting():
         safe_load_yaml("[" * depth + "0" + "]" * depth)
 
 
+class TestFileCacheBudget:
+    """The cache must hold the bound it advertises, and hold the right things."""
+
+    def _cache(self, budget):
+        cache = skillsaw_utils.FileCache(budget=budget)
+        calls = {"n": 0}
+
+        @cache.cached
+        def reader(path, payload=""):
+            calls["n"] += 1
+            return payload
+
+        return cache, reader, calls
+
+    def test_a_value_larger_than_the_budget_is_not_cached(self, tmp_path):
+        """One eviction cannot make room for it, and keeping it would put
+        the cache permanently over its bound."""
+        cache, reader, calls = self._cache(1000)
+        target = tmp_path / "big.txt"
+
+        assert reader(target, "x" * 5000) == "x" * 5000
+        assert reader(target, "x" * 5000) == "x" * 5000
+
+        assert calls["n"] == 2, "an oversized value must not be served from the cache"
+        assert cache._total_bytes <= 1000
+
+    def test_the_budget_holds_after_a_large_insertion(self, tmp_path):
+        """Freeing a fixed half-budget is not enough when the arriving
+        entry is itself more than half."""
+        cache, reader, _ = self._cache(1000)
+        for i in range(6):
+            reader(tmp_path / f"small{i}.txt", "y" * 100)
+        reader(tmp_path / "large.txt", "z" * 600)
+
+        assert cache._total_bytes <= 1000
+
+    def test_eviction_does_not_drain_one_store_first(self, tmp_path):
+        """Stores are drained in step.
+
+        Emptying the first store first would always sacrifice the
+        file-text cache — the largest, and the one the parsed documents
+        in the other stores are derived from.
+        """
+        cache = skillsaw_utils.FileCache(budget=2000)
+
+        @cache.cached
+        def text_reader(path):
+            return "t" * 100
+
+        @cache.cached
+        def parsed_reader(path):
+            return "p" * 100
+
+        for i in range(12):
+            target = tmp_path / f"f{i}.txt"
+            text_reader(target)
+            parsed_reader(target)
+
+        text_store, parsed_store = cache._stores
+        assert text_store, "the text cache must not be the only one evicted"
+        assert parsed_store
+
+
+def test_frontmatter_rejects_a_document_nested_past_the_limit():
+    """The depth guard raises RecursionError; readers report it, not crash."""
+    from skillsaw.rules.builtin.rules_dir.valid import _parse_frontmatter
+    from skillsaw.utils import _MAX_YAML_DEPTH
+
+    depth = _MAX_YAML_DEPTH + 5
+    content = "---\nextra: " + "[" * depth + "0" + "]" * depth + "\n---\nbody\n"
+
+    data, error = _parse_frontmatter(content)
+
+    assert data is None
+    assert error is not None and "too deep" in error
+
+
+def test_writing_frontmatter_nested_past_the_limit_raises_value_error(tmp_path):
+    from skillsaw.blocks import SkillBlock
+    from skillsaw.utils import _MAX_YAML_DEPTH
+
+    target = tmp_path / "SKILL.md"
+    target.write_text("---\nname: x\n---\nbody\n", encoding="utf-8")
+    block = SkillBlock(path=target)
+    depth = _MAX_YAML_DEPTH + 5
+
+    with pytest.raises(ValueError, match="Invalid YAML"):
+        block.write_frontmatter_text("extra: " + "[" * depth + "0" + "]" * depth)
+
+
 def test_safe_load_yaml_accepts_anchor_cycles():
     """An alias cycle is a valid document, not unbounded nesting."""
     from skillsaw.utils import safe_load_yaml

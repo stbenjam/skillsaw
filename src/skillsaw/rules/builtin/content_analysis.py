@@ -221,7 +221,7 @@ except ImportError:  # Python 3.9/3.10
 
 @lru_cache(maxsize=512)
 def _required_literals(pattern_src: str, flags: int) -> Tuple[str, ...]:
-    """Every literal a match must contain, lowercased, longest first.
+    """Every literal a match must contain, case-folded, longest first.
 
     Walks the top-level concatenation of the regex parse tree collecting
     runs of consecutive LITERAL characters; zero-width anchors (``\\b``,
@@ -259,7 +259,7 @@ def _required_literals(pattern_src: str, flags: int) -> Tuple[str, ...]:
             current = []
     if current:
         runs.append("".join(current))
-    usable = [run.lower() for run in runs if len(run) >= 3 and run.isascii()]
+    usable = [case_fold(run) for run in runs if len(run) >= 3 and run.isascii()]
     usable.sort(key=len, reverse=True)  # most selective test first
     return tuple(usable)
 
@@ -287,6 +287,27 @@ _LITERALS_BY_PATTERN: Dict[re.Pattern, Tuple[str, ...]] = {}
 _MAX_CACHED_PATTERNS = 4096
 
 
+# ``str.lower`` is not the fold ``re.IGNORECASE`` uses. Checked across the
+# whole of Unicode, exactly one codepoint that ``re.IGNORECASE`` treats as
+# equal to an ASCII letter survives ``str.casefold`` unchanged: U+0131,
+# the dotless i, which matches "I". Normalizing it is what makes the gate
+# sound, and the containment test in front of the replacement costs one
+# scan and almost never fires.
+_DOTLESS_I = "\u0131"
+
+
+def case_fold(text: str) -> str:
+    """Fold *text* the way ``re.IGNORECASE`` compares.
+
+    ``str.lower`` leaves U+017F (long s) and U+212A (Kelvin sign) alone,
+    while the regex engine matches them against "s" and "k" — so a
+    lowercase substring gate built on it can reject a document the
+    pattern would have matched.
+    """
+    folded = text.casefold()
+    return folded.replace(_DOTLESS_I, "i") if _DOTLESS_I in folded else folded
+
+
 def _pattern_literals(pattern: re.Pattern) -> Tuple[str, ...]:
     """Literals every match of *pattern* must contain (see `_required_literals`)."""
     literals = _LITERALS_BY_PATTERN.get(pattern)
@@ -307,12 +328,15 @@ def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tupl
     can safely skip the rest — results are identical, but the common case
     (pattern absent from the file) is dramatically cheaper.
 
-    Two-stage filter: C-speed lowercase substring checks against every
-    literal the pattern requires eliminate most patterns without running
-    the regex engine at all; survivors (and patterns that require no
-    extractable literal) are confirmed with a real whole-text search.
+    Two-stage filter: C-speed substring checks against every literal the
+    pattern requires eliminate most patterns without running the regex
+    engine at all; survivors (and patterns that require no extractable
+    literal) are confirmed with a real whole-text search. Both sides are
+    folded with :func:`case_fold`, which matches how ``re.IGNORECASE``
+    compares — a plain ``lower()`` would reject documents the pattern
+    matches.
     """
-    lowered = content.lower()
+    folded = case_fold(content)
     active = []
     for t in patterns:
         pattern = t[0]
@@ -323,7 +347,7 @@ def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tupl
         # the substring tests it wraps.
         missing = False
         for literal in literals:
-            if literal not in lowered:
+            if literal not in folded:
                 missing = True
                 break
         if missing:
@@ -594,9 +618,13 @@ def literal_alternation(words: Sequence[str]) -> str:
         if not branches:
             return ""
         body = branches[0] if len(branches) == 1 else "(?:%s)" % "|".join(branches)
+        if "" not in node:
+            return body
         # A terminal here means a shorter word ends at this node, so
-        # everything past it is optional.
-        return body + "?" if "" in node else body
+        # everything past it is optional. The continuation has to be
+        # grouped first: a bare ``downloa d?`` would make only the final
+        # character optional, and would no longer match "do".
+        return "(?:%s)?" % body
 
     return render(root)
 

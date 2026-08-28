@@ -36,6 +36,10 @@ def _parse_frontmatter(content: str):
         data = safe_load_yaml(raw) if raw else None
     except (yaml.YAMLError, ValueError) as e:
         return None, f"Invalid YAML in frontmatter: {e}"
+    except RecursionError:
+        # The shared reader raises this for a document nested past what
+        # anything downstream can walk. Unparseable, like any other.
+        return None, "Invalid YAML in frontmatter: nesting too deep to parse"
 
     if data is None:
         return {}, None

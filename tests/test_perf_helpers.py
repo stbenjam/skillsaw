@@ -13,6 +13,8 @@ import pytest
 
 from skillsaw.rules.builtin.content_analysis import (
     _required_literal,
+    case_fold,
+    literal_alternation,
     patterns_matching_anywhere,
     FrontmatterField,
 )
@@ -64,6 +66,75 @@ class TestRequiredLiteral:
         assert compiled.search(text)
         assert literal is not None
         assert literal in text.lower()
+
+
+class TestCaseFoldedGate:
+    """The gate has to fold text the way ``re.IGNORECASE`` compares it.
+
+    ``str.lower`` leaves U+017F (long s) and U+212A (Kelvin sign) alone
+    while the regex engine matches them against "s" and "k", so a gate
+    built on it silently drops a document the pattern does match.
+    """
+
+    PATTERN = re.compile(r"\buse\s+tabs\b", re.IGNORECASE)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "use tabs",
+            "uſe tabs",  # U+017F LATIN SMALL LETTER LONG S
+            "USE TABS",
+        ],
+    )
+    def test_a_matching_document_survives_the_gate(self, text):
+        assert self.PATTERN.search(text), "precondition: the regex matches"
+        assert patterns_matching_anywhere(text, [(self.PATTERN, "x")]) == [(self.PATTERN, "x")]
+
+    def test_dotless_i_is_normalized(self):
+        """U+0131 is the one codepoint ``casefold`` alone does not close.
+
+        ``re.IGNORECASE`` matches it against "i" in both directions, but
+        ``"kılo".casefold()`` is still ``"kılo"``.
+        """
+        pattern = re.compile(r"\bkilo\b", re.IGNORECASE)
+        text = "one kılo of it"  # U+0131 LATIN SMALL LETTER DOTLESS I
+
+        assert pattern.search(text), "precondition: the regex matches"
+        assert case_fold("k\u0131lo") == "kilo"
+        assert patterns_matching_anywhere(text, [(pattern, "x")]) == [(pattern, "x")]
+
+    def test_a_document_without_the_literal_is_still_rejected(self):
+        assert patterns_matching_anywhere("nothing relevant here", [(self.PATTERN, "x")]) == []
+
+
+class TestLiteralAlternation:
+    def test_matches_every_word_it_was_given(self):
+        source = literal_alternation(("always", "never", "do not"))
+        pattern = re.compile("(?:%s)$" % source)
+
+        for word in ("always", "never", "do not"):
+            assert pattern.match(word), word
+        assert not pattern.match("sometimes")
+
+    def test_a_word_that_prefixes_another_still_matches(self):
+        """The shared-prefix factoring must not swallow the shorter word.
+
+        Grouping the continuation is what separates ``do(?:wnload)?`` from
+        ``download?``, which matches "download" but not "do".
+        """
+        pattern = re.compile("(?:%s)$" % literal_alternation(("do", "download")))
+
+        assert pattern.match("do")
+        assert pattern.match("download")
+        assert not pattern.match("dow")
+
+    def test_matches_the_same_language_as_a_flat_alternation(self):
+        words = ("set", "setting", "settings", "sets", "run", "runner")
+        factored = re.compile("(?:%s)$" % literal_alternation(words), re.IGNORECASE)
+        flat = re.compile("(?:%s)$" % "|".join(words), re.IGNORECASE)
+
+        for candidate in words + ("se", "setti", "runn", "", "RUN", "Settings"):
+            assert bool(factored.match(candidate)) == bool(flat.match(candidate)), candidate
 
 
 class TestPatternsMatchingAnywhere:

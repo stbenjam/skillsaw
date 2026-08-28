@@ -337,7 +337,10 @@ class AgentSkillUnreferencedFilesRule(Rule):
         # *strings*: resolution answers are already in hand here, and the
         # module-path arithmetic behind an ``import a.b.c`` is string
         # concatenation that ``pathlib`` would re-parse at every step.
-        resolved_str_of = {f: str(resolved_of[f]) for f in all_files}
+        # ``normcase`` keeps the comparison the one ``Path`` equality would
+        # have made — case-insensitive on Windows, where ``import MyModule``
+        # does reach ``mymodule.py``, and an identity function on POSIX.
+        resolved_str_of = {f: os.path.normcase(str(resolved_of[f])) for f in all_files}
         resolved_file_strs = set(resolved_str_of.values())
         rel_of = {f: resolved_of[f].relative_to(skill_resolved).as_posix() for f in all_files}
         # Needles that do not depend on which file is doing the mentioning,
@@ -459,7 +462,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
     def _link_targets(
         doc: MarkdownDoc, base_dir: Path, skill_resolved: Path
     ) -> Tuple[Set[str], Set[str]]:
-        """Resolve local link targets to (resolved file paths, skill-relative dirs)."""
+        """Resolve local link targets to (normcased file paths, skill-relative dirs)."""
         files: Set[str] = set()
         dirs: Set[str] = set()
         for link in doc.links():
@@ -490,7 +493,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             if safe_is_dir(resolved):
                 dirs.add(resolved.relative_to(skill_resolved).as_posix())
             elif safe_is_file(resolved):
-                files.add(str(resolved))
+                files.add(os.path.normcase(str(resolved)))
         return files, dirs
 
     # -- python imports -------------------------------------------------------
@@ -558,11 +561,11 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 base = source_dir
                 for _ in range(level - 1):
                     base = base.parent
-                bases = [str(base)]
+                bases = [os.path.normcase(str(base))]
             else:
-                bases = [str(skill_resolved)]
+                bases = [os.path.normcase(str(skill_resolved))]
                 if source_dir != skill_resolved:
-                    bases.append(str(source_dir))
+                    bases.append(os.path.normcase(str(source_dir)))
             for base in bases:
                 self._mark_module(base, parts, names, resolved_file_strs, targets)
         return targets
@@ -636,8 +639,11 @@ class AgentSkillUnreferencedFilesRule(Rule):
         import c`` marks ``a/b/c.py`` when it exists, else the ``a.b``
         module itself.  Package ``__init__.py`` files along the dotted
         path execute on import, so they are marked too.  Pure set
-        membership on native path strings — no filesystem access, and no
-        ``pathlib`` re-parse per dotted component.
+        membership on ``normcase``d native path strings — no filesystem
+        access, and no ``pathlib`` re-parse per dotted component. Every
+        string on both sides of the membership test comes through
+        ``normcase``, so the comparison is the case-insensitive one
+        ``Path`` equality makes on Windows.
         """
         init_suffix = os.sep + "__init__.py"
 

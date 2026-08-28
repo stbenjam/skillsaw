@@ -270,6 +270,11 @@ class FrontmatteredBlock(LintTarget):
             data = safe_load_yaml(new_fm_text)
         except (yaml.YAMLError, ValueError) as e:
             raise ValueError(f"Invalid YAML: {e}") from e
+        except RecursionError as e:
+            # The shared reader raises this for a document nested past what
+            # anything downstream can walk; the documented contract here is
+            # ValueError for anything unparseable.
+            raise ValueError(f"Invalid YAML: {e}") from e
         if not isinstance(data, dict):
             raise ValueError("Frontmatter must be a YAML mapping")
 
