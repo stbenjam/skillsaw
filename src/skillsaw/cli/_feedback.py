@@ -60,14 +60,17 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _archive_path(args, root: Path, created_at: datetime) -> Path | None:
+def _bundle_id(created_at: datetime) -> str:
+    return f"skillsaw-feedback-{created_at.strftime('%Y%m%dT%H%M%SZ')}-{secrets.token_hex(4)}"
+
+
+def _archive_path(args, root: Path, bundle_id: str) -> Path | None:
     if args.output is not None:
         output = args.output
         if output.suffix.lower() != ".zip":
             output = output.with_suffix(".zip")
         return safe_resolve(output)
-    stamp = created_at.strftime("%Y%m%dT%H%M%SZ")
-    return root / ".skillsaw-feedback" / f"feedback-{stamp}-{secrets.token_hex(4)}.zip"
+    return root / ".skillsaw-feedback" / f"{bundle_id}.zip"
 
 
 def _config_path(args, root: Path) -> Path | None:
@@ -180,7 +183,8 @@ def _run_feedback(args) -> None:
         sys.exit(1)
 
     created_at = datetime.now(timezone.utc)
-    output_path = _archive_path(args, root, created_at)
+    bundle_id = _bundle_id(created_at)
+    output_path = _archive_path(args, root, bundle_id)
     if output_path is None:
         print(f"Error: Bundle path could not be resolved: {args.output}", file=sys.stderr)
         sys.exit(1)
@@ -258,7 +262,7 @@ def _run_feedback(args) -> None:
         temporary_path = output_path.with_name(f".{output_path.name}.{secrets.token_hex(4)}.tmp")
         with zipfile.ZipFile(temporary_path, "x", compression=zipfile.ZIP_DEFLATED) as archive:
             for name, data in sorted(artifact_bytes.items()):
-                archive.writestr(name, data)
+                archive.writestr(f"{bundle_id}/{name}", data)
         temporary_path.replace(output_path)
     except (OSError, zipfile.BadZipFile) as error:
         print(f"Error: Could not write diagnostic bundle: {error}", file=sys.stderr)
@@ -268,6 +272,7 @@ def _run_feedback(args) -> None:
     issue_url = _issue_url(output_path.name, bundle_sha256, message)
     result = {
         "bundle": str(output_path),
+        "archive_directory": bundle_id,
         "sha256": bundle_sha256,
         "issue_url": issue_url,
         "email": {"to": _FEEDBACK_EMAIL, "gpg_key": _GPG_KEY_URL},
@@ -279,6 +284,7 @@ def _run_feedback(args) -> None:
     else:
         print("Feedback bundle created")
         print(f"  File:     {output_path}")
+        print(f"  Extracts: {bundle_id}/")
         print(f"  SHA-256:  {bundle_sha256}")
         print(f"  Redacted: {redactions} value(s)")
         print()

@@ -35,6 +35,8 @@ def test_feedback_creates_redacted_bundle_without_repository_files(tmp_path):
     payload = json.loads(result.stdout)
     assert Path(payload["bundle"]) == output.resolve()
     assert payload["sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()
+    archive_directory = payload["archive_directory"]
+    assert archive_directory.startswith("skillsaw-feedback-")
     assert "template=bug_report.yml" in payload["issue_url"]
     assert payload["email"] == {
         "to": "stephen@bitbin.de",
@@ -43,38 +45,45 @@ def test_feedback_creates_redacted_bundle_without_repository_files(tmp_path):
     assert payload["included_files"] == []
     with zipfile.ZipFile(output) as bundle:
         assert sorted(bundle.namelist()) == [
-            "environment.json",
-            "lint-report.json",
-            "lint-stderr.txt",
-            "manifest.json",
-            "skillsaw-config.yaml",
+            f"{archive_directory}/environment.json",
+            f"{archive_directory}/lint-report.json",
+            f"{archive_directory}/lint-stderr.txt",
+            f"{archive_directory}/manifest.json",
+            f"{archive_directory}/skillsaw-config.yaml",
         ]
-        assert "private.md" not in bundle.namelist()
+        assert all(name.startswith(f"{archive_directory}/") for name in bundle.namelist())
         assert (
             "sk-abcdefghijklmnopqrstuvwxyz123456"
-            not in bundle.read("skillsaw-config.yaml").decode()
+            not in bundle.read(f"{archive_directory}/skillsaw-config.yaml").decode()
         )
-        environment = json.loads(bundle.read("environment.json"))
+        environment = json.loads(bundle.read(f"{archive_directory}/environment.json"))
         assert environment["lint_extensions_enabled"] is False
         assert environment["config_included"] is True
-        manifest = json.loads(bundle.read("manifest.json"))
+        manifest = json.loads(bundle.read(f"{archive_directory}/manifest.json"))
         assert manifest["redactions"] >= 1
-        assert set(manifest["files"]) == set(bundle.namelist()) - {"manifest.json"}
+        assert set(manifest["files"]) == {
+            name.removeprefix(f"{archive_directory}/")
+            for name in bundle.namelist()
+            if not name.endswith("/manifest.json")
+        }
 
 
 def test_feedback_text_output_requires_review_before_sharing(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
-    output = tmp_path / "report.zip"
 
-    result = _run_feedback(repo, "--output", str(output))
+    result = _run_feedback(repo)
 
     assert result.returncode == 0, result.stderr
+    bundles = list((repo / ".skillsaw-feedback").glob("*.zip"))
+    assert len(bundles) == 1
+    assert bundles[0].name.startswith("skillsaw-feedback-")
     assert "Review before sharing" in result.stdout
     assert "best effort to redact" in result.stdout
     assert "not guaranteed to catch every secret" in result.stdout
     assert "stephen@bitbin.de" in result.stdout
     assert "https://github.com/stbenjam.gpg" in result.stdout
+    assert "Extracts: skillsaw-feedback-" in result.stdout
 
 
 def test_feedback_includes_only_requested_repository_files_and_redacts_them(tmp_path):
@@ -88,10 +97,11 @@ def test_feedback_includes_only_requested_repository_files_and_redacts_them(tmp_
 
     assert result.returncode == 0, result.stderr
     with zipfile.ZipFile(output) as bundle:
-        included = bundle.read("included/reproducer.md").decode()
+        archive_directory = bundle.namelist()[0].split("/", 1)[0]
+        included = bundle.read(f"{archive_directory}/included/reproducer.md").decode()
         assert "ghp_abcdefghijklmnopqrstuvwxyz1234567890" not in included
         assert "[REDACTED]" in included
-        environment = json.loads(bundle.read("environment.json"))
+        environment = json.loads(bundle.read(f"{archive_directory}/environment.json"))
         assert environment["included_files"] == ["reproducer.md"]
 
 
