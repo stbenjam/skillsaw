@@ -198,10 +198,7 @@ RULE_GROUPS = [
         ],
         "Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, "
         "GEMINI.md, QWEN.md) at the repository root. Checks encoding, non-emptiness, "
-        "and that `@import` references resolve to existing files. "
-        "`claude-md-agents-import` recommends the structure that removes the "
-        "CLAUDE.md/AGENTS.md duplication entirely — a CLAUDE.md whose whole body "
-        "is `@AGENTS.md`. Enabled automatically when one of those files is present.",
+        "and that `@import` references resolve to existing files. Enabled automatically when one of those files is present.",
     ),
     (
         "Context Budget",
