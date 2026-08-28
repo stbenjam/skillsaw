@@ -220,37 +220,58 @@ except ImportError:  # Python 3.9/3.10
 
 
 @lru_cache(maxsize=512)
-def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
-    """Longest literal that every match of the pattern must contain, lowercased.
+def _required_literals(pattern_src: str, flags: int) -> Tuple[str, ...]:
+    """Every literal a match must contain, lowercased, longest first.
 
     Walks the top-level concatenation of the regex parse tree collecting
-    consecutive LITERAL characters; zero-width anchors (``\\b``, ``^``…) are
-    transparent, anything else ends the run.  Returns ``None`` when no
-    usable literal exists (short, non-ASCII, or the pattern starts with a
-    branch) — callers must then fall back to a full regex scan, so this is
-    always correctness-preserving.
+    runs of consecutive LITERAL characters; zero-width anchors (``\\b``,
+    ``^``…) are transparent, and anything else ends the run and is skipped
+    — what is inside a branch, an optional group or a repeat may not
+    appear in a given match, so nothing there is required.
+
+    Each returned string is therefore a necessary condition on its own,
+    which is what lets a caller reject on the first one that is absent.
+    Testing all of them is strictly more selective than testing only the
+    longest: ``\\bnever\\s+commit\\b`` requires both "never" and
+    "commit", and a document containing only the first is rejected without
+    the regex engine ever running.
+
+    Runs shorter than three characters, and non-ASCII runs, are dropped:
+    the first match almost any text, and the second cannot be compared
+    through an ASCII lowercase fold.  Dropping them only weakens the
+    filter, so the result stays correctness-preserving — an empty tuple
+    means "no cheap test available, run the real scan".
     """
     try:
         tree = _sre_parser.parse(pattern_src, flags)
     except Exception:
-        return None
-    best: List[str] = []
+        return ()
+    runs: List[str] = []
     current: List[str] = []
     for op, arg in tree:
         if op is _sre_constants.LITERAL:
             current.append(chr(arg))
-        elif op is _sre_constants.AT:
+            continue
+        if op is _sre_constants.AT:
             continue  # zero-width assertion: adjacent literals stay contiguous
-        else:
-            if len(current) > len(best):
-                best = current
+        if current:
+            runs.append("".join(current))
             current = []
-    if len(current) > len(best):
-        best = current
-    literal = "".join(best)
-    if len(literal) < 3 or not literal.isascii():
-        return None
-    return literal.lower()
+    if current:
+        runs.append("".join(current))
+    usable = [run.lower() for run in runs if len(run) >= 3 and run.isascii()]
+    usable.sort(key=len, reverse=True)  # most selective test first
+    return tuple(usable)
+
+
+def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
+    """The longest literal every match of the pattern must contain.
+
+    ``None`` when the pattern offers none — callers must then fall back to
+    a full regex scan.  See :func:`_required_literals`.
+    """
+    literals = _required_literals(pattern_src, flags)
+    return literals[0] if literals else None
 
 
 def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tuple]:
@@ -262,17 +283,17 @@ def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tupl
     can safely skip the rest — results are identical, but the common case
     (pattern absent from the file) is dramatically cheaper.
 
-    Two-stage filter: a C-speed lowercase substring check on each pattern's
-    required literal eliminates most patterns without running the regex
-    engine at all; survivors (and patterns with no extractable literal) are
-    confirmed with a real whole-text search.
+    Two-stage filter: C-speed lowercase substring checks against every
+    literal the pattern requires eliminate most patterns without running
+    the regex engine at all; survivors (and patterns that require no
+    extractable literal) are confirmed with a real whole-text search.
     """
     lowered = content.lower()
     active = []
     for t in patterns:
         pattern = t[0]
-        literal = _required_literal(pattern.pattern, pattern.flags)
-        if literal is not None and literal not in lowered:
+        literals = _required_literals(pattern.pattern, pattern.flags)
+        if any(literal not in lowered for literal in literals):
             continue
         if pattern.search(content):
             active.append(t)
