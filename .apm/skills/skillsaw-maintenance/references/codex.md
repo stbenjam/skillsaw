@@ -31,7 +31,9 @@ hedge (see Sync notes).
   applied at `:522-527`). Check all three; each documents things the others omit.
 - Reference corpus: https://github.com/openai/plugins — the official catalog (roughly
   180 plugins across `marketplace.json` and `api_marketplace.json`; the count moves).
-  It is the de-facto conformance suite: skillsaw must stay silent on it.
+  A large sample of real usage, useful for spotting false positives — but not
+  authoritative, and not a document. See "Regression check" below before relaxing any
+  rule on its evidence.
 - Third-party schema (unofficial, one author's reading — useful for cross-checking,
   not authoritative): https://github.com/typeforged/codex-plugin-marketplace
 
@@ -133,5 +135,21 @@ upstream requires and why skillsaw does not enforce it.
 
 ## Regression check
 Clone https://github.com/openai/plugins and run skillsaw's `codex-*` rules against it.
-It must report zero violations; anything it reports is a false positive in our rules,
-not a bug in the catalog.
+Treat what it reports as a finding to investigate, not as a verdict: the catalog is a
+large sample of real usage, so a violation there is usually a false positive in our
+rules — but the written spec outranks it whenever the two disagree.
+
+**The catalog is not authoritative.** A deviation it commits is a deviation skillsaw
+should report; relaxing a rule to match observed practice turns the linter into a
+describer of what people do rather than an enforcer of the spec. Confirm the spec
+actually permits a pattern before loosening anything for it. PR #516 was NACKed for
+exactly this: it exempted `.codex-plugin/assets/` because four catalog plugins keep
+`interface` assets there, and the ruling was "openai/plugins is wrong — if the spec says
+it shouldn't do this, it shouldn't do this. In other plugins `assets/` is in the root."
+So `codex-plugin-structure` warning on those four is correct and settled; do not
+re-propose that exemption.
+
+The catalog does still settle questions the spec never answers — the plugin-root
+`agents/openai.yaml` form under "Deliberate non-checks" is supported on catalog evidence
+alone, because no document contradicts it. Observed practice fills silence; it does not
+override text.
