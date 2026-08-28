@@ -11,7 +11,11 @@ from __future__ import annotations
 import re
 from typing import Optional, Sequence
 
-from ...redaction import STRUCTURED_SECRET_PATTERNS
+from ...redaction import (
+    CREDENTIAL_FIELD_NAMES as _ENV_CREDENTIAL_NAMES,
+    CREDENTIAL_FIELD_SUFFIXES as _ENV_CREDENTIAL_SUFFIXES,
+    STRUCTURED_SECRET_PATTERNS,
+)
 
 # Case-insensitive substrings that mark a generic credential value as an
 # obvious placeholder (inspired by gitleaks/detect-secrets allowlists).
@@ -85,30 +89,6 @@ def structured_secret_description(value: str) -> Optional[str]:
             return description
     return None
 
-
-_ENV_CREDENTIAL_NAMES = frozenset(
-    {
-        "api_key",
-        "api_token",
-        "access_key",
-        "access_key_id",
-        "access_token",
-        "auth_token",
-        "bearer_token",
-        "client_secret",
-        "credential",
-        "credentials",
-        "password",
-        "passwd",
-        "passphrase",
-        "private_key",
-        "refresh_token",
-        "secret",
-        "secret_key",
-        "session_token",
-    }
-)
-_ENV_CREDENTIAL_SUFFIXES = tuple(f"_{name}" for name in _ENV_CREDENTIAL_NAMES)
 
 _HEADER_CREDENTIAL_NAMES = frozenset(
     {

@@ -162,6 +162,30 @@ def test_shared_redactor_handles_multiline_secrets_and_is_idempotent():
     assert repeated.count == 0
 
 
+def test_shared_redactor_handles_container_syntax_and_canonical_aliases():
+    source = (
+        '{"password":"swordfish","host":"localhost"}\n'
+        "- passwd: real-value\n"
+        "private_key: another-real-value\n"
+        "password:\n\n"
+        "host: still-here\n"
+    )
+
+    result = redact_text(source)
+
+    assert result.count == 3
+    assert '"password":"[REDACTED]"' in result.text
+    assert "- passwd: [REDACTED]" in result.text
+    assert "private_key: [REDACTED]" in result.text
+    assert "host: still-here" in result.text
+
+
+def test_shared_redactor_counts_structured_assignment_once():
+    result = redact_text("api_key: sk-abcdefghijklmnopqrstuvwxyz123456\n")
+
+    assert result.count == 1
+
+
 def test_feedback_rejects_source_files_outside_the_repository(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

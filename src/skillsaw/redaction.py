@@ -60,12 +60,41 @@ STRUCTURED_SECRET_PATTERNS: Tuple[Tuple[Pattern[str], str], ...] = tuple(
     )
 )
 
-_CREDENTIAL_ASSIGNMENT = re.compile(
-    r"(?im)^([ \t]*[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
-    r"(?:api[_-]?key|token|secret|password|passphrase|credential)"
-    r"[A-Za-z0-9_.-]*[\"']?\s*[:=]\s*)(.+)$"
+CREDENTIAL_FIELD_NAMES = frozenset(
+    {
+        "api_key",
+        "api_token",
+        "access_key",
+        "access_key_id",
+        "access_token",
+        "auth_token",
+        "bearer_token",
+        "client_secret",
+        "credential",
+        "credentials",
+        "password",
+        "passwd",
+        "passphrase",
+        "private_key",
+        "refresh_token",
+        "secret",
+        "secret_key",
+        "session_token",
+    }
 )
-_AUTHORIZATION_HEADER = re.compile(r"(?im)^([ \t]*(?:proxy-)?authorization\s*[:=]\s*)(.+)$")
+CREDENTIAL_FIELD_SUFFIXES = tuple(f"_{name}" for name in CREDENTIAL_FIELD_NAMES)
+_REDACTION_CREDENTIAL_FIELD_NAMES = CREDENTIAL_FIELD_NAMES | {"token"}
+_CREDENTIAL_NAME_FRAGMENT = "|".join(
+    re.escape(name).replace("_", "[_-]")
+    for name in sorted(_REDACTION_CREDENTIAL_FIELD_NAMES, key=len, reverse=True)
+)
+_CREDENTIAL_ASSIGNMENT = re.compile(
+    rf"(?im)(?P<prefix>(?:^[ \t]*|(?<=[{{,\[])[ \t]*|^[ \t]*-[ \t]+)"
+    rf"[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?(?:{_CREDENTIAL_NAME_FRAGMENT})"
+    r"[A-Za-z0-9_.-]*[\"']?[ \t]*[:=][ \t]*)(?P<value>"
+    r'\[REDACTED\]|"(?:\\.|[^"\\\r\n])*"|\'(?:\\.|[^\'\\\r\n])*\'|[^\s,}\]\r\n#]+)'
+)
+_AUTHORIZATION_HEADER = re.compile(r"(?im)^([ \t]*(?:proxy-)?authorization[ \t]*[:=][ \t]*)(.+)$")
 _BEARER_TOKEN = re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/-]{12,}")
 _URL_USERINFO = re.compile(r"(?://)([^/\s:@]+(?::[^@/\s]+)?@)")
 _PEM_PRIVATE_KEY = re.compile(
@@ -73,9 +102,9 @@ _PEM_PRIVATE_KEY = re.compile(
     re.DOTALL,
 )
 _BLOCK_SCALAR_CREDENTIAL = re.compile(
-    r"^(?P<indent>[ \t]*)(?P<key>[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
-    r"(?:api[_-]?key|token|secret|password|passphrase|credential)[A-Za-z0-9_.-]*[\"']?)"
-    r"\s*:\s*[>|][^\n]*$",
+    rf"^(?P<indent>[ \t]*)(?P<key>[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
+    rf"(?:{_CREDENTIAL_NAME_FRAGMENT})[A-Za-z0-9_.-]*[\"']?)"
+    r"[ \t]*:[ \t]*[>|][^\n]*$",
     re.IGNORECASE,
 )
 _REDACTED = "[REDACTED]"
@@ -109,10 +138,11 @@ def redact_text(text: str) -> RedactionResult:
 
     def redact_assignment(match: re.Match[str]) -> str:
         nonlocal redactions
-        if match.group(2).rstrip("\r") == _REDACTED:
+        value = match.group("value")
+        if _already_redacted(value):
             return match.group(0)
         redactions += 1
-        return f"{match.group(1)}{_REDACTED}"
+        return f"{match.group('prefix')}{_marker_for(value)}"
 
     def redact_bearer(match: re.Match[str]) -> str:
         nonlocal redactions
@@ -160,3 +190,15 @@ def _redact_block_scalars(text: str) -> tuple[str, int]:
                 break
             index += 1
     return "".join(redacted_lines), redactions
+
+
+def _already_redacted(value: str) -> bool:
+    return value.rstrip("\r") in {_REDACTED, f'"{_REDACTED}"', f"'{_REDACTED}'"}
+
+
+def _marker_for(value: str) -> str:
+    if value.startswith('"') and value.endswith('"'):
+        return f'"{_REDACTED}"'
+    if value.startswith("'") and value.endswith("'"):
+        return f"'{_REDACTED}'"
+    return _REDACTED
