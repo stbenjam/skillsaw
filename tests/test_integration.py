@@ -2532,8 +2532,10 @@ class TestOpenCode:
         assert "LINEAR_API_KEY" in secrets[0]["message"]
         assert "lin_api_" not in secrets[0]["message"], "must not echo the credential"
 
-        userinfo = [v for v in found if "user information" in v["message"]]
-        assert [v["severity"] for v in userinfo] == ["error"]
+        # A credential-bearing URL belongs to the ecosystem-neutral rule —
+        # `url` is spelled the same in every dialect — so this rule leaves
+        # it alone rather than reporting it twice.
+        assert not [v for v in found if "user information" in v["message"]]
 
     def test_opencode_substitution_syntax_reads_as_a_placeholder(self, tmp_path):
         """`{env:VAR}` is OpenCode's documented way to keep a token out of the file."""
@@ -2544,10 +2546,21 @@ class TestOpenCode:
         assert not any("embeds" in m for m in messages)
 
     def test_mcp_valid_json_stands_aside_for_the_opencode_dialect(self, tmp_path):
-        """A correct OpenCode config must not be reported by the Claude-shape rule."""
-        for fixture in ("opencode/native-v1", "opencode/native-v2", "opencode/broken"):
+        """A correct OpenCode config must not be reported by the Claude-shape rule.
+
+        Every *shape* check defers. The one dialect-neutral check does not,
+        which is why the broken fixture still draws its userinfo finding
+        from this rule.
+        """
+        for fixture in ("opencode/native-v1", "opencode/native-v2"):
             repo = copy_fixture(fixture, tmp_path / fixture.replace("/", "_"))
             assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == [], fixture
+
+        repo = copy_fixture("opencode/broken", tmp_path / "opencode_broken")
+        messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
+        assert messages == [
+            "MCP server 'grafana' 'url' must not contain user information"
+        ], "only the dialect-neutral check may survive the deferral"
 
     @pytest.mark.parametrize(
         "fixture,config_file",
@@ -2610,6 +2623,161 @@ class TestOpenCode:
         ], "APM-compiled OpenCode output must not report content findings"
         # The skill under the compiled directory is not discovered either.
         assert not any(v["rule_id"].startswith("agentskill-") for v in violations(r))
+
+    def test_a_non_scalar_transport_is_reported_rather_than_crashing(self, tmp_path):
+        """`MCP_SERVER_TYPES` is a mapping, so an unhashable value must not reach it.
+
+        A ``TypeError`` out of ``check()`` is caught per rule, but it
+        replaces every finding this rule made for the repository with one
+        crash violation — so a single typo'd ``type`` would silently stop
+        the credential scan in the rest of the file.
+        """
+        repo = copy_fixture("opencode/malformed-shapes", tmp_path)
+        found = by_rule(run_lint(repo))["opencode-config-valid"]
+
+        messages = [v["message"] for v in found]
+        assert any("has invalid type ['local']" in m for m in messages)
+        assert not any("Rule execution failed" in m or "TypeError" in m for m in messages)
+        # The credential scan in the same file still ran.
+        assert any("embeds GitHub personal access token" in m for m in messages)
+
+    def test_a_flat_server_beside_a_servers_wrapper_is_still_scanned(self, tmp_path):
+        """Reading one layout would let a config hide a server behind the other.
+
+        Server names are author-controlled, so a file can wrap one harmless
+        server in ``servers`` and leave a credential-bearing one flat beside
+        it. Both layouts load, so both are read.
+        """
+        repo = copy_fixture("opencode/malformed-shapes", tmp_path)
+        config = json.loads((repo / "opencode.json").read_text())
+        assert (
+            "playwright" in config["mcp"] and "servers" in config["mcp"]
+        ), "the fixture must carry a flat server beside the v2 wrapper"
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+        assert any(
+            "MCP server 'playwright' environment variable 'GITHUB_TOKEN' embeds" in m
+            for m in messages
+        ), "a credential under a flat sibling of 'servers' must still be reported"
+
+    def test_mcp_prohibited_sees_both_layouts_in_one_file(self, tmp_path):
+        repo = copy_fixture("opencode/malformed-shapes", tmp_path)
+        (repo / ".skillsaw.yaml").write_text("rules:\n  mcp-prohibited:\n    enabled: true\n")
+
+        found = by_rule(run_lint(repo, config=repo / ".skillsaw.yaml"))["mcp-prohibited"]
+        assert [v["file_path"] for v in found] == ["opencode.json"]
+
+    def test_malformed_shapes_are_warnings_not_errors(self, tmp_path):
+        """Only an unreadable file and a committed credential are errors."""
+        repo = copy_fixture("opencode/malformed-shapes", tmp_path)
+        found = by_rule(run_lint(repo))["opencode-config-valid"]
+
+        errors = [v["message"] for v in found if v["severity"] == "error"]
+        assert len(errors) == 3, errors
+        assert all("embeds" in m for m in errors), "only credentials are errors here"
+        assert {v["severity"] for v in found} == {"error", "warning"}
+
+    def test_a_bare_enabled_toggle_is_not_a_missing_transport(self, tmp_path):
+        """`{"enabled": false}` is the one v1 server form that carries no type."""
+        repo = copy_fixture("opencode/malformed-shapes", tmp_path)
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert not any("'toggled-off' is missing 'type'" in m for m in messages)
+
+    def test_a_documented_v2_timeout_and_codemode_are_accepted(self, tmp_path):
+        """Upstream declares `startup` and `codemode`; rejecting them is a false positive."""
+        repo = copy_fixture("opencode/native-v2", tmp_path)
+        config = (repo / ".opencode/opencode.jsonc").read_text()
+        assert '"startup"' in config and '"codemode"' in config
+
+        assert by_rule(run_lint(repo)).get("opencode-config-valid", []) == []
+
+    def test_a_claude_mcp_file_is_still_validated_beside_an_opencode_config(self, tmp_path):
+        """The deferral is keyed on the block type, not on the repository.
+
+        Widening it to "this repo has an opencode.json" would silently stop
+        validating every Claude-family MCP file in any repo that also ships
+        one.
+        """
+        repo = tmp_path / "mixed"
+        repo.mkdir()
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / "opencode.json").write_text(
+            json.dumps({"mcp": {"ok": {"type": "local", "command": ["npx", "mcp"]}}})
+        )
+        (repo / ".mcp.json").write_text(json.dumps({"mcpServers": {"broken": {"type": "sse"}}}))
+
+        found = by_rule(run_lint(repo))["mcp-valid-json"]
+        assert [v["file_path"] for v in found] == [".mcp.json"]
+        assert "must have a 'url' field" in found[0]["message"]
+
+    def test_a_credential_bearing_url_is_reported_without_the_opencode_rule(self, tmp_path):
+        """`url` means the same thing in every dialect, so that check never defers.
+
+        `opencode-config-valid` carries `since = "0.20.0"`, so a project
+        pinned to an older `version:` has it gated off. The ecosystem-neutral
+        rule keeps the credential check regardless.
+        """
+        repo = copy_fixture("opencode/broken", tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n  opencode-config-valid:\n    enabled: false\n"
+        )
+
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert by_rule(r).get("opencode-config-valid", []) == []
+        userinfo = [v for v in by_rule(r)["mcp-valid-json"] if "user information" in v["message"]]
+        assert [v["file_path"] for v in userinfo] == ["opencode.json"]
+
+    def test_extra_keys_accepts_a_key_at_both_levels(self, tmp_path):
+        """One option covers the two places a key can be unrecognized."""
+        from skillsaw.utils import strip_jsonc
+
+        repo = copy_fixture("opencode/native-v1", tmp_path)
+        config = json.loads(strip_jsonc((repo / "opencode.json").read_text()))
+        config["futureSetting"] = True
+        config["mcp"]["sentry"]["futureServerKey"] = True
+        (repo / "opencode.json").write_text(json.dumps(config))
+
+        before = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+        assert any("'futureSetting'" in m for m in before)
+        assert any("'futureServerKey'" in m for m in before)
+
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n"
+            "  opencode-config-valid:\n"
+            "    extra-keys:\n"
+            "      - futureSetting\n"
+            "      - futureServerKey\n"
+        )
+        after = by_rule(run_lint(repo, config=repo / ".skillsaw.yaml"))
+        assert after.get("opencode-config-valid", []) == []
+
+    def test_additional_placeholders_suppresses_a_generic_credential(self, tmp_path):
+        """The option gates the generic detector, never the structured one.
+
+        A value matching a known token format is reported whatever the
+        markers say, so an allowlist cannot be used to wave a real GitHub
+        token through.
+        """
+        repo = copy_fixture("opencode/malformed-shapes", tmp_path)
+        before = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+        assert any("'X-Api-Key' embeds" in m for m in before)
+
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n"
+            "  opencode-config-valid:\n"
+            "    additional-placeholders:\n"
+            "      - corpfixture\n"
+        )
+        after = [
+            v["message"]
+            for v in by_rule(run_lint(repo, config=repo / ".skillsaw.yaml"))[
+                "opencode-config-valid"
+            ]
+        ]
+        assert not any("'X-Api-Key' embeds" in m for m in after)
+        # A structured token is not suppressible by a marker.
+        assert any("'GITHUB_TOKEN' embeds GitHub personal access token" in m for m in after)
 
     def test_apm_that_does_not_target_opencode_leaves_the_directory_authored(self, tmp_path):
         """A source tree alone does not make `.opencode/` generated."""
@@ -3300,6 +3468,7 @@ BROKEN_FIXTURES = [
     "cursor-rules/prompt-hooks",
     "instructions/agents-import/duplicated-pair",
     "opencode/broken",
+    "opencode/malformed-shapes",
 ]
 
 CLEAN_FIXTURES = [

@@ -9,7 +9,7 @@ auto-discovered rule module.
 from __future__ import annotations
 
 import re
-from typing import Optional, Pattern, Sequence, Tuple
+from typing import Any, Optional, Pattern, Sequence, Tuple
 from urllib.parse import urlsplit
 
 # ``scheme://…@`` ahead of any path/query/fragment — the structural shape of
@@ -112,6 +112,23 @@ def _has_env_var_reference(value: str) -> bool:
         if end >= len(value) or not value[end].islower():
             return True
     return False
+
+
+def placeholder_markers(extra: Any) -> Tuple[str, ...]:
+    """:data:`DEFAULT_PLACEHOLDER_MARKERS` extended by a rule's own config.
+
+    Three rules take an ``additional-placeholders`` option and must agree on
+    what it accepts, or the same ``.skillsaw.yaml`` line suppresses a finding
+    in one rule and not another. Config values are not type-checked when the
+    file loads, so any non-sequence contributes nothing rather than raising
+    and costing the rule its findings; a sequence contributes its stringable
+    members, lowercased for the case-insensitive match callers do.
+    """
+    if isinstance(extra, str) or not isinstance(extra, (list, tuple, set, frozenset)):
+        return DEFAULT_PLACEHOLDER_MARKERS
+    return DEFAULT_PLACEHOLDER_MARKERS + tuple(
+        text.lower() for text in (str(marker) for marker in extra) if text
+    )
 
 
 def is_secret_placeholder(value: str, markers: Sequence[str] = DEFAULT_PLACEHOLDER_MARKERS) -> bool:

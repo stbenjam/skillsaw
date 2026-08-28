@@ -3,7 +3,7 @@ Rule: opencode-config-valid
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, List, Mapping, Set, Tuple
 
 from skillsaw.blocks import OpenCodeConfigBlock, OpenCodeMcpBlock
 from skillsaw.context import HAS_OPENCODE, RepositoryContext
@@ -11,9 +11,8 @@ from skillsaw.diagnostics import safe_display
 from skillsaw.formats import opencode as oc
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.secret_detection import (
-    DEFAULT_PLACEHOLDER_MARKERS,
     mapped_secret_description,
-    url_has_userinfo,
+    placeholder_markers,
 )
 
 #: The one v1 server form that carries no ``type``: a bare ``{"enabled":
@@ -34,8 +33,8 @@ class OpenCodeConfigValidRule(Rule):
             "type": "list",
             "default": [],
             "description": (
-                "Additional top-level config keys to accept, for keys newer "
-                "than this skillsaw release"
+                "Additional config keys to accept, at the top level or on an "
+                "MCP server entry, for keys newer than this skillsaw release"
             ),
         },
         "additional-placeholders": {
@@ -71,8 +70,9 @@ class OpenCodeConfigValidRule(Rule):
 
         for block in context.lint_tree.find(OpenCodeConfigBlock):
             if block.parse_error:
-                # The only error-severity finding: OpenCode cannot read the
-                # file at all, so nothing it configures is in effect.
+                # Error severity, and no further check is meaningful:
+                # OpenCode cannot read the file at all, so nothing it
+                # configures is in effect.
                 violations.append(
                     self.violation(
                         f"Invalid JSON: {block.parse_error}",
@@ -143,8 +143,13 @@ class OpenCodeConfigValidRule(Rule):
             )
         ]
 
-    def _known_top_level_keys(self) -> frozenset:
-        """Documented keys plus any the project declares.
+    def _accepted_keys(self, documented: frozenset) -> frozenset:
+        """*documented* plus any key the project declares under ``extra-keys``.
+
+        One reader for both key sets — the top level and an MCP server entry
+        — because both fail the same way when OpenCode ships a key faster
+        than skillsaw does, and a remedy that covered only one of them would
+        leave the other's message naming a setting that does not help.
 
         The declared type is not enforced when the config loads, so a value
         of the wrong shape simply contributes no extra keys rather than
@@ -152,8 +157,8 @@ class OpenCodeConfigValidRule(Rule):
         """
         extra = self.setting("extra-keys")
         if not isinstance(extra, (list, tuple, set, frozenset)):
-            return oc.TOP_LEVEL_KEYS
-        return oc.TOP_LEVEL_KEYS | {key for key in extra if isinstance(key, str)}
+            return documented
+        return documented | {key for key in extra if isinstance(key, str)}
 
     def _check_top_level_keys(self, data: Dict[str, Any], path: Path) -> List[RuleViolation]:
         """Report keys OpenCode does not read.
@@ -162,7 +167,7 @@ class OpenCodeConfigValidRule(Rule):
         key this release has not heard of is more likely new than wrong —
         so the message names ``extra-keys``, which gives a same-day remedy.
         """
-        unknown = oc.unknown_keys(data, self._known_top_level_keys())
+        unknown = oc.unknown_keys(data, self._accepted_keys(oc.TOP_LEVEL_KEYS))
         if not unknown:
             return []
         named = ", ".join(f"'{safe_display(key)}'" for key in unknown)
@@ -189,10 +194,12 @@ class OpenCodeConfigValidRule(Rule):
     ) -> List[RuleViolation]:
         """Both spellings of one setting, in one document.
 
-        OpenCode 2.0 normalizes the 1.x key into the 2.0 one, so a file that
-        declares both hands the same setting to the loader twice and the
-        winner depends on merge order. Either key alone is valid; carrying
-        both is the finding.
+        OpenCode normalizes the 1.x key into the 2.0 one, so a file that
+        declares both hands the same setting to the loader twice. Which copy
+        survives is not a coin flip — upstream's ``preferLegacy`` keeps the
+        1.x value and records a ``conflict`` diagnostic of its own — so the
+        message names the winner rather than calling it arbitrary. Either
+        key alone is valid; carrying both is the finding.
 
         Driven entirely by the alias tables in
         :mod:`skillsaw.formats.opencode`, so a rename added there is checked
@@ -205,9 +212,9 @@ class OpenCodeConfigValidRule(Rule):
             note = oc.INVERTED_SENSE_NOTE.get(v1_key, "")
             violations.append(
                 self.violation(
-                    f"{subject} declares both '{v1_key}' and '{v2_key}' — OpenCode 2.0 "
-                    f"reads '{v1_key}' as '{v2_key}'{note}, so one of them silently "
-                    "wins; keep one",
+                    f"{subject} declares both '{v1_key}' and '{v2_key}' — OpenCode "
+                    f"reads '{v1_key}' as '{v2_key}'{note} and keeps the 1.x value, "
+                    f"so '{v2_key}' here is inert; keep one",
                     file_path=path,
                     severity=Severity.WARNING,
                 )
@@ -339,12 +346,26 @@ class OpenCodeConfigValidRule(Rule):
                     severity=Severity.WARNING,
                 )
             ]
-        servers = block.server_map()
-        if servers is None:
-            return []
         violations: List[RuleViolation] = []
-        for name, server in servers.items():
+        entries = block.server_entries()
+        seen: Set[str] = set()
+        for name, server in entries:
             shown = safe_display(str(name))
+            if name in seen:
+                # The 1.x and 2.0 layouts both declare this server, so the
+                # file ships two objects under one name. Upstream keeps the
+                # 1.x one; the other is dead configuration an author almost
+                # certainly means to be live.
+                violations.append(
+                    self.violation(
+                        f"MCP server '{shown}' is declared under both 'mcp.servers' "
+                        "(2.0) and 'mcp' directly (1.x) — OpenCode keeps the 1.x "
+                        "entry, so the other one is inert; keep one",
+                        file_path=path,
+                        severity=Severity.WARNING,
+                    )
+                )
+            seen.add(name)
             if not isinstance(server, dict):
                 violations.append(
                     self.violation(
@@ -363,12 +384,14 @@ class OpenCodeConfigValidRule(Rule):
         """One server entry: transport, connection field, and the maps around it."""
         violations: List[RuleViolation] = []
 
-        unknown = oc.unknown_keys(server, oc.MCP_SERVER_KEYS)
+        unknown = oc.unknown_keys(server, self._accepted_keys(oc.MCP_SERVER_KEYS))
         if unknown:
             named = ", ".join(f"'{safe_display(key)}'" for key in unknown)
             violations.append(
                 self.violation(
-                    f"MCP server '{shown}' has unrecognized {named}",
+                    f"MCP server '{shown}' has unrecognized {named} — OpenCode "
+                    "loads no such setting. If it was added after this skillsaw "
+                    "release, list it under opencode-config-valid 'extra-keys'.",
                     file_path=path,
                     severity=Severity.INFO,
                 )
@@ -401,7 +424,8 @@ class OpenCodeConfigValidRule(Rule):
             violations.append(
                 self.violation(
                     f"MCP server '{shown}' 'timeout' must be a number of milliseconds "
-                    "(1.x) or an object with 'catalog' and 'execution' (2.0)",
+                    "(1.x) or an object of "
+                    f"{'/'.join(sorted(oc.MCP_TIMEOUT_KEYS))} (2.0)",
                     file_path=path,
                     severity=Severity.WARNING,
                 )
@@ -424,7 +448,14 @@ class OpenCodeConfigValidRule(Rule):
                 )
             return violations
 
-        if server_type not in oc.MCP_SERVER_TYPES:
+        # ``isinstance`` first, and not merely for tidiness:
+        # ``MCP_SERVER_TYPES`` is a mapping, so ``not in`` hashes the key, and
+        # a list- or dict-valued ``type`` from a hand-edited config would
+        # raise ``TypeError`` out of ``check()``. The per-rule guard would
+        # catch it, but the whole rule's findings for the repository are
+        # replaced by that one crash — so a single typo would silently stop
+        # the credential scan everywhere else in the file.
+        if not isinstance(server_type, str) or server_type not in oc.MCP_SERVER_TYPES:
             violations.append(
                 self.violation(
                     f"MCP server '{shown}' has invalid type "
@@ -472,13 +503,11 @@ class OpenCodeConfigValidRule(Rule):
                     severity=Severity.WARNING,
                 )
             )
-        elif url_has_userinfo(server["url"]):
-            violations.append(
-                self.violation(
-                    f"MCP server '{shown}' 'url' must not contain user information",
-                    file_path=path,
-                )
-            )
+        # A credential-bearing ``url`` is deliberately *not* checked here.
+        # ``url`` means the same thing in every dialect, so ``mcp-valid-json``
+        # keeps that one check even for the blocks it defers to this rule —
+        # and it is ungated by ``since``, so it still fires for a project
+        # pinned to a ``version:`` older than this rule.
         return violations
 
     def _check_mcp_maps(
@@ -509,10 +538,7 @@ class OpenCodeConfigValidRule(Rule):
 
     def _placeholder_markers(self) -> Tuple[str, ...]:
         """The placeholder allowlist, extended by this rule's configuration."""
-        extra = self.setting("additional-placeholders")
-        if not isinstance(extra, list):
-            return DEFAULT_PLACEHOLDER_MARKERS
-        return DEFAULT_PLACEHOLDER_MARKERS + tuple(str(m).lower() for m in extra if str(m))
+        return placeholder_markers(self.setting("additional-placeholders"))
 
     def _mapped_secret_violations(
         self,

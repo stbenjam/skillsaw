@@ -99,31 +99,36 @@ _EDITOR_GLOBS = (
     (".github", "prompts", "**/*.prompt.md", "CopilotPromptBlock"),
     (".github", "chatmodes", "**/*.chatmode.md", "CopilotAgentBlock"),
     (".clinerules", "workflows", "**/*.md", "ClineWorkflowBlock"),
-    # ``mode``/``modes`` are deliberately absent: OpenCode reads those flat
-    # (``{mode,modes}/*.md``), so a nested ``*.instructions.md`` there would
-    # stand aside for a loop that never claims it — the drop this table
-    # exists to prevent. The instruction sweep keeps it, which is right:
-    # OpenCode does not load it either.
+    # OpenCode 2.0 renamed each content directory to its plural and still
+    # loads the 1.x singular, so both are listed. ``mode``/``modes`` are
+    # deliberately absent — see ``_OPENCODE_FLAT_DIRS``.
     (".opencode", "commands", "**/*.md", "OpenCodeCommandBlock"),
     (".opencode", "command", "**/*.md", "OpenCodeCommandBlock"),
     (".opencode", "agents", "**/*.md", "OpenCodeAgentBlock"),
     (".opencode", "agent", "**/*.md", "OpenCodeAgentBlock"),
 )
 
-# OpenCode's markdown content directories, as (subdirectory, glob, block
-# class). OpenCode 2.0 renamed each one to its plural and still loads the
-# 1.x singular, so both are linted — a project mid-migration carries both.
-# The globs mirror the loader's own: agents and commands nest (a command at
-# ``commands/git/commit.md`` is named ``git/commit``), while modes — the
-# pre-``agent`` spelling of a primary agent — are read flat.
-_OPENCODE_CONTENT_DIRS = (
-    ("commands", "**/*.md", "OpenCodeCommandBlock"),
-    ("command", "**/*.md", "OpenCodeCommandBlock"),
-    ("agents", "**/*.md", "OpenCodeAgentBlock"),
-    ("agent", "**/*.md", "OpenCodeAgentBlock"),
-    ("modes", "*.md", "OpenCodeAgentBlock"),
-    ("mode", "*.md", "OpenCodeAgentBlock"),
+# The OpenCode directories the loader reads *flat*: ``{mode,modes}/*.md``,
+# the pre-``agent`` spelling of a primary agent. They are kept out of
+# ``_EDITOR_GLOBS`` on purpose. That table tells the repository-wide
+# ``*.instructions.md`` sweep where to stand aside, and its match is
+# lexical — it does not check depth — so listing a flat directory there
+# would make the sweep yield a *nested* ``modes/x/y.instructions.md`` to a
+# loop that only ever claims the top level, dropping the file from the tree
+# entirely. Standing aside is only safe where the owning glob is recursive.
+# Nothing is lost: OpenCode does not load a nested file there either, so the
+# sweep claiming it as ordinary instruction prose is the right answer.
+_OPENCODE_FLAT_DIRS = (
+    ("modes", "OpenCodeAgentBlock"),
+    ("mode", "OpenCodeAgentBlock"),
 )
+
+# Every OpenCode markdown directory the tree attaches, as (subdirectory,
+# glob, block-class name) — the recursive ones derived from _EDITOR_GLOBS so
+# the two tables cannot drift, plus the flat ones above.
+_OPENCODE_CONTENT_DIRS = tuple(
+    (sub, pattern, cls) for editor, sub, pattern, cls in _EDITOR_GLOBS if editor == ".opencode"
+) + tuple((sub, "*.md", cls) for sub, cls in _OPENCODE_FLAT_DIRS)
 
 #: OpenCode reads its project config under either extension, in either
 #: location. Both are attached when both exist: OpenCode loads one and

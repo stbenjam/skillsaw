@@ -134,6 +134,12 @@ _EDITOR_EVIDENCE = {
             ("mode", True),
             ("skills", True),
             ("skill", True),
+            # ``plugin(s)/`` holds JavaScript, which nothing attaches — but
+            # it is still evidence that this directory is OpenCode's, and
+            # ``opencode-config-valid`` reads the config file rather than
+            # this directory. A repository whose only marker is a plugin
+            # therefore turns the rule on and it finds the config, or finds
+            # nothing and reports nothing.
             ("plugins", True),
             ("plugin", True),
         ),

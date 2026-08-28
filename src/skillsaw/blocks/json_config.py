@@ -182,7 +182,8 @@ class JsonConfigBlock(LintTarget):
     #: would stop reporting a file its own host cannot read. A host that
     #: documents JSONC (OpenCode names both ``opencode.json`` and
     #: ``opencode.jsonc``) opts in, so a commented config is not reported
-    #: as a parse error.
+    #: as a parse error. Implies :attr:`strict_json`, which is why the
+    #: locations setting this leave that one at its default.
     jsonc: ClassVar[bool] = False
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
         default=None, init=False, repr=False
@@ -449,8 +450,24 @@ class McpBlock(JsonConfigBlock):
     #: established results to preserve, so they require it from the start.
     require_usable_connection: ClassVar[bool] = False
 
-    @property
-    def servers(self) -> List[McpServerConfig]:
+    def server_entries(self) -> List[Tuple[str, Any]]:
+        """Every declared server as ``(name, value)``, in document order.
+
+        A list of pairs rather than a mapping, because a host may declare
+        one server name twice: OpenCode loads two config layouts at once,
+        so a file mid-migration can name the same server in each. A mapping
+        would silently keep one of them, and keeping the copy that does
+        *not* carry the committed credential is how a scanner reports a
+        file clean. Every other host has one layout, where this is exactly
+        ``servers_dict.items()``.
+
+        Values are returned unfiltered so a validating caller can report a
+        server whose value is not an object at all; :attr:`servers` drops
+        those, since there is no configuration to model.
+
+        The seam a host with more than one layout overrides; see
+        :class:`OpenCodeMcpBlock`.
+        """
         data = self.raw_data
         if data is None:
             return []
@@ -462,9 +479,13 @@ class McpBlock(JsonConfigBlock):
             return []
         if not isinstance(servers_dict, dict):
             return []
+        return list(servers_dict.items())
+
+    @property
+    def servers(self) -> List[McpServerConfig]:
         return [
             McpServerConfig.from_dict(name, cfg)
-            for name, cfg in servers_dict.items()
+            for name, cfg in self.server_entries()
             if isinstance(cfg, dict)
         ]
 
@@ -539,7 +560,6 @@ class OpenCodeConfigBlock(JsonConfigBlock):
     """
 
     category: str = "opencode-config"
-    strict_json: ClassVar[bool] = True
     jsonc: ClassVar[bool] = True
 
     def tree_label(self) -> str:
@@ -570,49 +590,57 @@ class OpenCodeMcpBlock(McpBlock):
     # other setting into a server.
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
-    strict_json: ClassVar[bool] = True
     jsonc: ClassVar[bool] = True
 
     def tree_label(self) -> str:
         return f"{self.path.name} (OpenCode MCP)"
 
-    @property
-    def servers(self) -> List[McpServerConfig]:
-        """Every declared server, under either the v1 or the v2 spelling.
+    def server_entries(self) -> List[Tuple[str, Any]]:
+        """Every declared server, under the v1 *and* the v2 layout.
 
         OpenCode 1.x maps names directly under ``mcp``; 2.0 nests them one
-        level deeper under ``mcp.servers`` and still loads the 1.x form.
-        Both are read, because both run: a policy rule that saw only the
-        spelling of the day would go quiet the moment a project migrated.
-        """
-        servers_dict = self.server_map()
-        if servers_dict is None:
-            return []
-        return [
-            McpServerConfig.from_dict(name, cfg)
-            for name, cfg in servers_dict.items()
-            if isinstance(cfg, dict)
-        ]
+        level deeper under ``mcp.servers`` and still loads the 1.x form. A
+        file mid-migration therefore carries both, and **both run** — so
+        both are returned, nested first and then every flat sibling.
 
-    def server_map(self) -> Optional[Dict[str, Any]]:
-        """The raw name-to-config mapping, or ``None`` when there is none.
+        Returning one layout or the other is a security hole rather than an
+        approximation: server names are author-controlled, so a config that
+        wraps one harmless server in ``servers`` and leaves a
+        credential-bearing one flat beside it would hide the second from
+        ``mcp-prohibited`` and from the credential scan, while
+        ``mcp-valid-json`` has already stood aside.
 
-        Shared with ``opencode-config-valid`` so the shape check and the
-        policy rules cannot disagree about which spelling is in force.
+        A name declared in both layouts appears twice. That is deliberate:
+        they are two distinct objects that both ship, each can carry its own
+        defect, and a mapping would keep only one. Upstream resolves the
+        collision in favour of the 1.x value; skillsaw reports on both,
+        because a credential in the losing copy is still committed.
         """
         data = self.raw_data
         if data is None:
-            return None
+            return []
         section = data.get(self.servers_key)
         if not isinstance(section, dict):
-            return None
+            return []
         nested = section.get("servers")
         # A v1 server may legitimately be called "servers". Nothing forbids
         # the name, so the value decides: a v2 wrapper holds server objects,
         # a v1 server holds connection fields.
-        if isinstance(nested, dict) and not (_OPENCODE_SERVER_FIELDS & set(nested)):
-            return nested
-        return section
+        wrapper = isinstance(nested, dict) and not (_OPENCODE_SERVER_FIELDS & set(nested))
+        entries: List[Tuple[str, Any]] = list(nested.items()) if wrapper else []
+        for name, cfg in section.items():
+            if wrapper and name == "servers":
+                continue
+            # v2 carries a global ``timeout`` beside ``servers``. It is a
+            # setting, not a server, and upstream skips it by name for
+            # exactly this reason. A v1 server genuinely called ``timeout``
+            # carries connection fields, so it survives the test.
+            if name == "timeout" and not (
+                isinstance(cfg, dict) and (_OPENCODE_SERVER_FIELDS & set(cfg))
+            ):
+                continue
+            entries.append((name, cfg))
+        return entries
 
 
 @dataclass(eq=False)

@@ -11,6 +11,21 @@ Sources: https://opencode.ai/docs/config/ (v1),
 https://opencode.ai/v2/docs/config (v2) and
 https://opencode.ai/v2/docs/migrate-v1 (the rename table), read against the
 published JSON Schema at https://opencode.ai/config.json.
+
+**Re-check at each OpenCode 2.0 milestone** (last verified 2026-08-28
+against ``anomalyco/opencode@dev``). The two files that define the v2
+vocabulary, and which disagree with each other today, are:
+
+* ``packages/opencode/src/config/v2-compat.ts`` — the shim 1.x uses to read
+  a v2-shaped config. Holds the server structs, the rename table, and the
+  ``preferLegacy`` conflict rule.
+* ``packages/core/src/config/mcp.ts`` — the v2 core MCP schema.
+
+There is no published v2 JSON Schema; ``/v2/config.json`` 404s and the v2
+docs still advertise the v1 URL. Until 2.0 is GA, keep every v2-only *value*
+constraint here as permissive as the union of those two files: accepting a
+shape that later proves wrong costs nothing, while rejecting a correct one
+is a false positive in someone's CI.
 """
 
 from __future__ import annotations
@@ -27,16 +42,15 @@ SCHEMA_URL = "https://opencode.ai/config.json"
 #: to rather than a bare "unrecognized".
 TUI_SCHEMA_URL = "https://opencode.ai/tui.json"
 
-#: Top-level v1 key -> its v2 spelling. Only genuine renames appear here; a
-#: key spelled the same in both versions is in :data:`SHARED_TOP_LEVEL_KEYS`.
+#: Top-level v1 key -> its v2 spelling, for one-to-one *renames* only. A key
+#: spelled the same in both versions is in :data:`SHARED_TOP_LEVEL_KEYS`.
 #:
-#: ``mode`` and ``tools`` are *merges* rather than one-to-one renames —
-#: v1 ``mode`` entries become primary agents under ``agents``, and v1
-#: ``tools`` folds into the v2 ``permissions`` array — but the v1 key is
-#: still accepted, which is all this table is consulted for.
+#: Only renames belong here, because this table also drives the
+#: "declares both spellings" diagnostic: for a rename, the two keys are the
+#: same setting written twice and one of them is inert. That claim is false
+#: for a merge, so merges live in :data:`TOP_LEVEL_MERGED_INTO` instead.
 TOP_LEVEL_V1_TO_V2: Mapping[str, str] = {
     "agent": "agents",
-    "mode": "agents",
     "command": "commands",
     "permission": "permissions",
     "provider": "providers",
@@ -45,6 +59,19 @@ TOP_LEVEL_V1_TO_V2: Mapping[str, str] = {
     "attachment": "media",
     "reference": "references",
     "autoshare": "share",
+}
+
+#: v1 key -> the v2 key it folds *into*, rather than is renamed to. v1
+#: ``mode`` entries become primary agents under ``agents``, and v1 ``tools``
+#: folds into the v2 ``permissions`` array.
+#:
+#: Deliberately outside :data:`TOP_LEVEL_V1_TO_V2`: a config declaring both
+#: halves of a merge is doing something supported, not something ambiguous,
+#: so telling the author one of them is inert — and to delete a section that
+#: is loading correctly — would be wrong. Both keys are still accepted,
+#: which is what :data:`TOP_LEVEL_KEYS` unions them in for.
+TOP_LEVEL_MERGED_INTO: Mapping[str, str] = {
+    "mode": "agents",
     "tools": "permissions",
 }
 
@@ -89,38 +116,27 @@ SHARED_TOP_LEVEL_KEYS: Tuple[str, ...] = (
 #: rule that knew only one release's vocabulary would report a correct
 #: config as wrong the day the project upgraded, or the day it did not.
 TOP_LEVEL_KEYS = frozenset(
-    (*SHARED_TOP_LEVEL_KEYS, *TOP_LEVEL_V1_TO_V2, *TOP_LEVEL_V1_TO_V2.values())
+    (
+        *SHARED_TOP_LEVEL_KEYS,
+        *TOP_LEVEL_V1_TO_V2,
+        *TOP_LEVEL_V1_TO_V2.values(),
+        *TOP_LEVEL_MERGED_INTO,
+        *TOP_LEVEL_MERGED_INTO.values(),
+    )
 )
 
-#: Agent-entry key -> its v2 spelling, for entries under ``agent``/``agents``
-#: (in the config and in ``.opencode/agents/*.md`` frontmatter alike).
+#: Agent-entry key -> its v2 spelling, for entries under ``agent``/``agents``.
+#:
+#: There is deliberately no companion set of *known* agent keys: OpenCode
+#: folds an unrecognized agent field into the provider ``options``, so naming
+#: one is a supported way to pass a provider-specific setting and reporting
+#: it would be a false positive.
 AGENT_V1_TO_V2: Mapping[str, str] = {
     "prompt": "system",
     "disable": "disabled",
     "permission": "permissions",
     "maxSteps": "steps",
 }
-
-#: Agent-entry keys spelled the same in both versions.
-SHARED_AGENT_KEYS: Tuple[str, ...] = (
-    "description",
-    "model",
-    "variant",
-    "temperature",
-    "top_p",
-    "tools",
-    "mode",
-    "hidden",
-    "options",
-    "color",
-    "request",
-)
-
-#: Every agent-entry key either version accepts.
-AGENT_KEYS = frozenset((*SHARED_AGENT_KEYS, *AGENT_V1_TO_V2, *AGENT_V1_TO_V2.values()))
-
-#: Command-entry keys. Unchanged between versions.
-COMMAND_KEYS = frozenset({"template", "description", "agent", "model", "variant", "subtask"})
 
 #: MCP server key -> its v2 spelling. ``enabled`` is not a plain rename: v2
 #: spells it ``disabled`` with the sense inverted, so a server carrying both
@@ -153,8 +169,11 @@ MCP_SERVER_TYPES: Mapping[str, str] = {
 }
 
 #: Keys an MCP server entry may carry, in either version. ``timeout`` is a
-#: number in v1 and an object with ``catalog``/``execution`` in v2; both are
-#: accepted, so the key appears once.
+#: number in v1 and an object in v2; both are accepted, so the key appears
+#: once. ``cwd``/``environment`` are local-only and ``url``/``headers``/
+#: ``oauth`` remote-only upstream; they are pooled here because the
+#: per-transport split is enforced by :data:`MCP_SERVER_TYPES` and a
+#: cross-transport key is a wrong-place warning, not an unknown key.
 MCP_SERVER_KEYS = frozenset(
     {
         "type",
@@ -165,19 +184,33 @@ MCP_SERVER_KEYS = frozenset(
         "headers",
         "oauth",
         "timeout",
+        # v2 only: route this server's tools through Code Mode. Declared on
+        # both the local and the remote struct in ``v2-compat.ts``.
+        "codemode",
+        # Not a v2 field at all — v2 spells it ``disabled``. The compat shim
+        # reads it as a legacy v1 spelling and passes it through, so a config
+        # carrying it still works and skillsaw accepts it.
         "enabled",
         "disabled",
     }
 )
+
+#: Sub-keys a v2 ``timeout`` object may carry. Deliberately the *union* of
+#: two upstream declarations that disagree: ``v2-compat.ts`` declares
+#: ``{startup, catalog, execution}`` while ``packages/core/src/config/mcp.ts``
+#: declares ``{startup, request}``. Both ship today, and OpenCode's own v2 MCP
+#: documentation uses the first — so rejecting either set would report a
+#: correctly written config as wrong, which is the one thing this module
+#: exists to prevent.
+MCP_TIMEOUT_KEYS = frozenset({"startup", "catalog", "execution", "request"})
 
 
 def timeout_is_valid(value: Any) -> bool:
     """Whether an MCP ``timeout`` is one of the two shapes OpenCode reads.
 
     v1 takes a number of milliseconds. v2 takes an object splitting the
-    budget into ``catalog`` (listing the server's tools) and ``execution``
-    (running one). Both are accepted; a bool is neither, however
-    permissively you read it.
+    budget across :data:`MCP_TIMEOUT_KEYS`, also in milliseconds. Both are
+    accepted; a bool is neither.
     """
     if isinstance(value, bool):
         return False
@@ -185,7 +218,7 @@ def timeout_is_valid(value: Any) -> bool:
         return True
     if not isinstance(value, dict):
         return False
-    if not set(value) <= {"catalog", "execution"}:
+    if not set(value) <= MCP_TIMEOUT_KEYS:
         return False
     return all(
         isinstance(part, (int, float)) and not isinstance(part, bool) for part in value.values()

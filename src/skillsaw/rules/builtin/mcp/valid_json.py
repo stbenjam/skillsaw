@@ -13,8 +13,8 @@ from skillsaw.lint_target import PluginNode
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.secret_detection import (
-    DEFAULT_PLACEHOLDER_MARKERS,
     mapped_secret_description,
+    placeholder_markers,
     url_has_userinfo,
 )
 from skillsaw.rules.builtin.utils import read_json
@@ -123,13 +123,24 @@ class McpValidJsonRule(Rule):
             # runs (``local``/``remote``) rather than for the wire protocol,
             # a local ``command`` is an argv array, the environment map is
             # ``environment``, and v2 splits ``timeout`` into an object.
-            # Every check below would report a correctly written OpenCode
-            # config as invalid, so ``opencode-config-valid`` validates the
-            # shape instead. Same conditional deferral as above: it applies
-            # only when that rule can actually run, so a file is never left
-            # validated by nothing. Policy rules are unaffected — they read
-            # ``server_names``, which the block normalizes.
+            # Every *shape* check below would report a correctly written
+            # OpenCode config as invalid, so ``opencode-config-valid``
+            # validates the shape instead.
+            #
+            # The deferral is narrower than the one above, and deliberately
+            # does not claim the file is validated elsewhere: unlike the
+            # ``--type`` gate, nothing here can see whether
+            # ``opencode-config-valid`` is *enabled*. It carries
+            # ``since = "0.20.0"``, so a project whose ``.skillsaw.yaml``
+            # still pins an older ``version:`` — the ordinary state right
+            # after an upgrade — has it gated off while this rule defers.
+            # So the one check that is true in every dialect stays here,
+            # where no version gate can reach it: ``url`` is spelled ``url``
+            # whoever reads the file, and a URL carrying credentials is a
+            # committed secret in any of them. Policy rules are unaffected —
+            # they read ``server_names``, which the block normalizes.
             if isinstance(block, OpenCodeMcpBlock) and HAS_OPENCODE in context.detected_formats:
+                violations.extend(self._dialect_neutral_violations(block))
                 continue
             if block.parse_error:
                 violations.append(
@@ -229,6 +240,28 @@ class McpValidJsonRule(Rule):
             if plugin_json_path.exists():
                 violations.extend(self._validate_plugin_json_mcp(plugin_json_path))
 
+        return violations
+
+    def _dialect_neutral_violations(self, block: McpBlock) -> List[RuleViolation]:
+        """The checks that hold whatever dialect a deferred block is written in.
+
+        Only one so far. Every other check in this rule reads a field whose
+        name or type differs between hosts; ``url`` does not, and neither
+        does what it means for one to carry user information.
+        """
+        violations: List[RuleViolation] = []
+        for name, server in block.server_entries():
+            if not isinstance(server, dict):
+                continue
+            url = server.get("url")
+            if isinstance(url, str) and url_has_userinfo(url):
+                violations.append(
+                    self.violation(
+                        f"MCP server '{safe_display(str(name))}' 'url' must not "
+                        "contain user information",
+                        file_path=block.path,
+                    )
+                )
         return violations
 
     def _validate_plugin_json_mcp(self, plugin_json: Path) -> List[RuleViolation]:
@@ -483,10 +516,7 @@ class McpValidJsonRule(Rule):
 
     def _placeholder_markers(self) -> Tuple[str, ...]:
         """The placeholder allowlist, extended by this rule's configuration."""
-        extra = self.config.get("additional-placeholders", [])
-        if not isinstance(extra, list):
-            return DEFAULT_PLACEHOLDER_MARKERS
-        return DEFAULT_PLACEHOLDER_MARKERS + tuple(str(m).lower() for m in extra if str(m))
+        return placeholder_markers(self.config.get("additional-placeholders", []))
 
     def _mapped_secret_violations(
         self,

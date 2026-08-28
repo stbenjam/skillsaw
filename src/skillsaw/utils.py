@@ -657,6 +657,15 @@ def strip_jsonc(content: str) -> str:
     Strings are tracked, so ``{"url": "https://x"}`` keeps its ``//`` and
     ``{"a": "x,"}`` keeps its comma.
     """
+    # A file with neither a slash nor a comma has nothing to strip, and most
+    # ``opencode.json`` files in the wild are plain JSON. The scan below
+    # materializes one list slot per character and joins a second copy, so
+    # skipping it keeps an unbounded, attacker-sized config on the same
+    # memory footprint as an ordinary ``read_json`` (THREAT_MODEL T11 —
+    # whole-file size limits are still open). ``in`` on a str is a C-speed
+    # substring search, so the prefilter costs a single pass.
+    if "/" not in content and "," not in content:
+        return content
     out = list(content)
     length = len(content)
     index = 0

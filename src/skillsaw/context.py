@@ -465,10 +465,10 @@ class RepositoryContext(RepositoryProvenanceMixin):
     def agent_tool_dirs(self, name: str) -> List[Path]:
         """Return every non-excluded directory called *name* in the repository.
 
-        Cursor (``.cursor``), Copilot/VS Code (``.github``) and Cline
-        (``.clinerules``) all read their customizations from the nearest
-        enclosing directory, so a monorepo package may carry its own
-        alongside the repository root's.
+        Cursor (``.cursor``), Copilot/VS Code (``.github``), Cline
+        (``.clinerules``) and OpenCode (``.opencode``) all read their
+        customizations from the nearest enclosing directory, so a monorepo
+        package may carry its own alongside the repository root's.
         """
         return [
             path

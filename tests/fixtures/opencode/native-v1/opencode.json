@@ -45,7 +45,8 @@
   "permission": {
     "bash": {
       "git push": "ask",
-      "*": "allow"
+      "rm -rf *": "deny",
+      "*": "ask"
     }
   }
 }

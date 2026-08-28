@@ -249,19 +249,18 @@ validation wherever a tool's own metadata can fail silently — see
 skillsaw finds `.cursor/`, `.github/`, `.clinerules/` and `.opencode/`
 anywhere in the tree, so a monorepo package that carries its own set is
 linted alongside the root's. How much each tool actually reads from a nested
-directory varies,
-and not every case is settled: Cursor documents nested `AGENTS.md` and
-`.cursor/skills/`, but steers rules toward a single root `.cursor/rules/`
-scoped with `globs`, and reports on whether nested rule directories load
-disagree across versions. VS Code walks from the workspace folder up to the
-repository root. Cline and `.github/copilot-instructions.md` resolve one
-path relative to the workspace directory, so a nested copy is read only when
-that directory is the workspace. OpenCode walks from the working directory
-up to the git worktree root and merges every `.opencode/` it passes, so a
-nested one is read as well as the root's. skillsaw lints every nested tool directory
-either way — committed instructions are worth checking wherever a teammate
-might open them, and a rule that turns out not to load is worth knowing
-about too.
+directory varies, and not every case is settled: Cursor documents nested
+`AGENTS.md` and `.cursor/skills/`, but steers rules toward a single root
+`.cursor/rules/` scoped with `globs`, and reports on whether nested rule
+directories load disagree across versions. VS Code walks from the workspace
+folder up to the repository root. Cline and
+`.github/copilot-instructions.md` resolve one path relative to the workspace
+directory, so a nested copy is read only when that directory is the
+workspace. OpenCode walks from the working directory up to the git worktree
+root and merges every `.opencode/` it passes, so a nested one is read as
+well as the root's. skillsaw lints every nested tool directory either way —
+committed instructions are worth checking wherever a teammate might open
+them, and a rule that turns out not to load is worth knowing about too.
 
 Two things are the exception, and both are root-only today.
 
@@ -284,20 +283,48 @@ MCP configuration is read for its servers wherever it lives, so
 `inputs` array for prompted variables; skillsaw reads the former and ignores
 the latter.
 
-OpenCode is the one host whose *shape* is validated elsewhere. Its
-transports are named for where the server runs (`local`/`remote`) rather
-than for the wire protocol, a local `command` is an argv array rather than a
-string, and its environment map is spelled `environment` — so
-`mcp-valid-json` stands aside and
+Among the editor tools, OpenCode is the one whose *shape* is validated
+elsewhere — Agent Plugins already defers the same way, to its own
+`agent-plugin-mcp-valid`. OpenCode's transports are named for where the
+server runs (`local`/`remote`) rather than for the wire protocol, a local
+`command` is an argv array rather than a string, and its environment map is
+spelled `environment`, so every field check would misfire. `mcp-valid-json`
+stands aside and
 [`opencode-config-valid`](rules/opencode-config-valid.md) checks the shape,
-including the embedded-credential scan. The policy rules are unaffected:
-`mcp-prohibited` reads OpenCode servers in both the 1.x flat layout under
-`mcp` and the 2.0 nested one under `mcp.servers`.
+including the `environment`/`headers` credential scan.
+
+One check does not defer: a `url` carrying user information. `url` means the
+same thing in every dialect, so `mcp-valid-json` keeps it even for a
+deferred block — which also means it still fires for a project pinned to a
+`version:` older than `opencode-config-valid`.
+
+The policy rules are unaffected: `mcp-prohibited` reads OpenCode servers in
+the 1.x flat layout under `mcp` *and* the 2.0 nested one under
+`mcp.servers`, including a file that carries both at once. Reading only one
+layout would let a config hide a server behind the other.
 
 Files that are on-demand rather than always-on — Cursor commands, Copilot
 prompt files, Cline workflows, OpenCode commands — are budgeted by
 [`context-budget`](rules/context-budget.md) as commands, not as instruction
 files, because they enter the context window only when invoked.
+
+### Cursor hooks
+
+`.cursor/hooks.json` is a command-execution surface that ships in the
+repository, so its commands are scanned by
+[`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md) alongside Claude Code hooks
+and settings. Cursor's schema is flatter than Claude's — hooks hang directly
+off the event name rather than off a matcher group — so `hooks-json-valid`
+leaves the file alone and `cursor-hooks-valid` validates the shape instead.
+A `type: "prompt"` hook injects text rather than spawning a process, so the
+command scanners skip it — but Cursor puts that text into the agent's
+context every time the event fires, which makes it shipped instruction
+prose. Its `prompt` string is linted as content, so
+[`security-hidden-instructions`](rules/security-hidden-instructions.md) and
+the other injection scanners read it, and `hooks-prohibited` counts it as a
+hook. JSON carries no line numbers, so those findings name the file without
+a line.
 
 ### OpenCode and APM
 
@@ -324,18 +351,7 @@ is APM's, never OpenCode's:
 The root `opencode.json(c)` is never treated as build output: APM compiles
 into `.opencode/`, never over a root config.
 
-`.cursor/hooks.json` is a command-execution surface that ships in the
-repository, so its commands are scanned by
-[`hooks-dangerous`](rules/hooks-dangerous.md) and
-[`hooks-prohibited`](rules/hooks-prohibited.md) alongside Claude Code hooks
-and settings. Cursor's schema is flatter than Claude's — hooks hang directly
-off the event name rather than off a matcher group — so `hooks-json-valid`
-leaves the file alone and `cursor-hooks-valid` validates the shape instead.
-A `type: "prompt"` hook injects text rather than spawning a process, so the
-command scanners skip it — but Cursor puts that text into the agent's
-context every time the event fires, which makes it shipped instruction
-prose. Its `prompt` string is linted as content, so
-[`security-hidden-instructions`](rules/security-hidden-instructions.md) and
-the other injection scanners read it, and `hooks-prohibited` counts it as a
-hook. JSON carries no line numbers, so those findings name the file without
-a line.
+This determination is made at the repository root only — `apm_compiled_roots()`
+looks for `<root>/.opencode`, nothing deeper. A nested `packages/x/.opencode/`
+is always authored content and is always linted in full, whatever `apm.yml`
+lists.

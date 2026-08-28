@@ -28,8 +28,8 @@ from skillsaw.paths import (
 )
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.secret_detection import (
-    DEFAULT_PLACEHOLDER_MARKERS,
     mapped_secret_description,
+    placeholder_markers,
 )
 
 from ._helpers import (
@@ -364,10 +364,7 @@ class AgentPluginMcpValidRule(Rule):
 
     def _placeholder_markers(self) -> Tuple[str, ...]:
         """The placeholder allowlist, extended by this rule's configuration."""
-        extra = self.config.get("additional-placeholders", [])
-        if not isinstance(extra, list):
-            return DEFAULT_PLACEHOLDER_MARKERS
-        return DEFAULT_PLACEHOLDER_MARKERS + tuple(str(m).lower() for m in extra if str(m))
+        return placeholder_markers(self.config.get("additional-placeholders", []))
 
     def _remote_problem(self, url: str, headers: Dict[str, str]) -> Optional[str]:
         if any(ord(char) <= 32 or ord(char) == 127 for char in url):

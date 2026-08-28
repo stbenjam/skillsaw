@@ -12,9 +12,9 @@ from skillsaw.rules.builtin.content_analysis import (
     FrontmatterField,
 )
 from skillsaw.rules.builtin.secret_detection import (
-    DEFAULT_PLACEHOLDER_MARKERS,
     STRUCTURED_SECRET_PATTERNS,
     is_secret_placeholder,
+    placeholder_markers,
 )
 
 # Default minimum Shannon entropy (bits/char) a generic ``key = "value"``
@@ -128,10 +128,7 @@ class ContentEmbeddedSecretsRule(Rule):
             return _DEFAULT_ENTROPY_THRESHOLD
 
     def _placeholder_markers(self) -> Tuple[str, ...]:
-        extra = self.config.get("additional-placeholders", [])
-        if not isinstance(extra, list):
-            return DEFAULT_PLACEHOLDER_MARKERS
-        return DEFAULT_PLACEHOLDER_MARKERS + tuple(str(m).lower() for m in extra if str(m))
+        return placeholder_markers(self.config.get("additional-placeholders", []))
 
     @staticmethod
     def _is_placeholder(value: str, markers: Tuple[str, ...]) -> bool:

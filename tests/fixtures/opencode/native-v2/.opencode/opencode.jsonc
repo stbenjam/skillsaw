@@ -12,9 +12,11 @@
         "type": "local",
         "command": ["npx", "-y", "@playwright/mcp@latest"],
         "disabled": false,
+        "codemode": false,
         "timeout": {
+          "startup": 45000,
           "catalog": 30000,
-          "execution": 60000
+          "execution": 600000
         }
       },
       "sentry": {
