@@ -109,7 +109,11 @@ runs:
         if [ "$SKILLSAW_NO_CUSTOM_RULES" = "true" ]; then
           ARGS="$ARGS --no-custom-rules"
         fi
-        if [ "$SKILLSAW_NO_NETWORK_INPUT" = "true" ]; then
+        # Anything but the literal "false" keeps the network off. This
+        # input only takes capability away, so a typo — 'True', 'yes', 1
+        # — must resolve toward the restriction, the same direction the
+        # SKILLSAW_NO_NETWORK environment variable resolves one.
+        if [ "$SKILLSAW_NO_NETWORK_INPUT" != "false" ]; then
           ARGS="$ARGS --no-network"
         fi
 
