@@ -3,16 +3,6 @@
 
 # Testing
 
-## Local test environment
-
-Before running tests locally, activate the project's virtual environment so
-test helpers and any subprocesses resolve the project's installed commands:
-
-```sh
-source .venv/bin/activate
-make test
-```
-
 ## Integration Tests
 
 Integration tests live in `tests/test_integration.py` and verify end-to-end
