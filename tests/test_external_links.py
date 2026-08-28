@@ -39,6 +39,8 @@ from skillsaw.rules.builtin.content import ContentBrokenExternalReferenceRule
 from skillsaw.rules.builtin.content.broken_external_reference import (
     _BoundedRedirectHandler,
     _EmptyBody,
+    _MAX_IGNORE_PATTERN_LENGTH,
+    _MAX_URL_LENGTH,
 )
 
 from .cli_runner import run_cli
@@ -639,9 +641,32 @@ class TestOperatorNetworkGate:
         assert server.hits, "the fixture must be reachable for this to mean anything"
 
         server.reset()
-        run_cli(_rule_executing_argv("fix", repo) + ["--allow-private-hosts"])
+        result = run_cli(_rule_executing_argv("fix", repo) + ["--allow-private-hosts"])
+        assert result.returncode == 0, result.stderr
 
         assert server.hits == [], "fix requested a URL, on some pass"
+
+    def test_fix_with_only_a_network_rule_named_explains_itself(self, tmp_path, server):
+        """The advice has to be advice the reader can act on.
+
+        ``fix`` forces the gate on itself, so ``--rule <network rule>``
+        empties its rule set and trips the same "nothing would be
+        checked" guard ``lint`` has. On ``lint`` that guard says to drop
+        ``--no-network``, which is right. Here it would name a flag the
+        user never passed and cannot drop — ``fix`` set it — so the
+        message has to point at ``lint`` instead. ``skillsaw fix --rule
+        <id>`` is an invocation the shipped ``skillsaw-create-plugin``
+        skill teaches, and any plugin rule declaring ``requires_network``
+        reaches it too.
+        """
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        result = run_cli(["fix", "-c", str(repo / ".skillsaw.yaml"), str(repo), "--rule", RULE_ID])
+
+        assert server.hits == []
+        assert result.returncode == 1
+        assert "drop --no-network" not in result.stderr, "the user never passed it"
+        assert f"skillsaw lint --rule {RULE_ID}" in result.stderr
 
     def test_the_env_var_reaches_a_directly_constructed_linter(self, tmp_path, monkeypatch):
         """Not only the CLI: an embedder or a future subcommand too.
@@ -986,34 +1011,60 @@ class TestUntrustedConfig:
 class TestPrivateHostConfinement:
     """A repo must not aim the linter at its runner's internal network."""
 
-    @pytest.mark.parametrize(
-        "url",
-        [
-            "http://127.0.0.1/x",
-            "http://localhost/x",
-            "https://sub.localhost/x",
-            "http://[::1]/x",
-            "http://10.0.0.5/x",
-            "http://192.168.1.1/x",
-            "http://172.16.0.1/x",
-            # The cloud metadata endpoint, the concrete attack in review.
-            "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
-            # IPv4-mapped IPv6 must not launder a loopback address.
-            "http://[::ffff:127.0.0.1]/x",
-            "http://0.0.0.0/x",
-            "http://[fe80::1]/x",
-            "http://[::]/x",
-            "http://[fd00::1]/x",
-            # A trailing root dot and an uppercase name are the same host.
-            "http://127.0.0.1./x",
-            "http://LOCALHOST/x",
-            # urllib percent-decodes the host before it connects, so a
-            # confinement reading the string as authored sees a name
-            # where the transport sees a literal — or a reserved name.
-            "http://127%2E0%2E0%2E1/x",
-            "http://loc%61lhost/x",
-        ],
-    )
+    _REFUSED = [
+        "http://127.0.0.1/x",
+        "http://localhost/x",
+        "https://sub.localhost/x",
+        "http://[::1]/x",
+        "http://10.0.0.5/x",
+        "http://192.168.1.1/x",
+        "http://172.16.0.1/x",
+        # The cloud metadata endpoint — the canonical SSRF target (T18).
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        # IPv4-mapped IPv6 must not launder a loopback address.
+        "http://[::ffff:127.0.0.1]/x",
+        "http://0.0.0.0/x",
+        "http://[fe80::1]/x",
+        "http://[::]/x",
+        "http://[fd00::1]/x",
+        # A trailing root dot and an uppercase name are the same host.
+        "http://127.0.0.1./x",
+        "http://LOCALHOST/x",
+        # urllib percent-decodes the host before it connects, so a
+        # confinement reading the string as authored sees a name
+        # where the transport sees a literal — or a reserved name.
+        "http://127%2E0%2E0%2E1/x",
+        "http://loc%61lhost/x",
+        # RFC 6598 carrier-grade NAT. `ipaddress` excludes 100.64.0.0/10
+        # from `is_global` and from nothing else, so the six explicit
+        # predicates all say "public" — and this is Tailscale's range
+        # (100.100.100.100 is MagicDNS) plus several managed-Kubernetes
+        # pod CIDRs, which makes it the private space a runner is most
+        # likely to be able to reach.
+        "http://100.64.0.1/x",
+        "http://100.100.100.100/x",
+        # A `%` that survives canonicalization is decoded a *second*
+        # time by `Request._parse`, after which `http.client` reads a
+        # decoded `:` as a port. Double encoding gets there, and so does
+        # a single full-width `％` (U+FF05), which nameprep's NFKC step
+        # folds to `%`.
+        "http://169.254.169.254%253A80/latest/meta-data/",
+        "http://127.0.0.1％3a8080/admin",
+        "http://localhost％3A80/",
+        "http://10.0.0.5%2540example.com/x",
+        # `str.encode("idna")` passes pure-ASCII labels through verbatim,
+        # checking only their length, so a NUL rides along: `inet_aton`
+        # reads a name, `getaddrinfo` truncates at the NUL and resolves
+        # loopback.
+        "http://127.0.0.1%00.evil.com/x",
+        # Userinfo the same decode *creates*. urllib does not strip it —
+        # `Request('http://127.0.0.1@example.com/').host` is the whole
+        # string — so the classified host and the resolved one differ.
+        "http://user%40example.com/x",
+        "http://127.0.0.1%40example.com/x",
+    ]
+
+    @pytest.mark.parametrize("url", _REFUSED)
     def test_non_public_hosts_are_refused_by_default(self, url):
         rule = ContentBrokenExternalReferenceRule({"enabled": True})
 
@@ -1047,14 +1098,21 @@ class TestPrivateHostConfinement:
     ]
 
     @staticmethod
-    def _on_the_wire(url: str) -> Tuple[str, str]:
-        """``(host as authored, host as the transport will spell it)``.
+    def _on_the_wire(url: str) -> Tuple[str, str, str]:
+        """``(host as authored, host as emitted, host urllib connects to)``.
 
         Computed from the stdlib rather than from the rule, so it is an
-        independent statement of what urllib does.
+        independent statement of what urllib does — and it models
+        **both** decodes, not one. The rule percent-decodes before the
+        IDNA codec; ``urllib.request.Request._parse`` then percent-
+        decodes whatever netloc it is handed, and ``http.client`` splits
+        a decoded ``:`` off as a port. So the emitted host and the
+        connected-to host are the same string only when nothing survives
+        the first decode.
         """
         host = url.split("//", 1)[1].split("/", 1)[0]
-        return host, unquote(host).encode("idna").decode("ascii")
+        emitted = unquote(host).encode("idna").decode("ascii")
+        return host, emitted, http.client.HTTPConnection(unquote(emitted)).host
 
     @pytest.mark.parametrize("url,canonical", _ALTERNATE_SPELLINGS)
     def test_non_canonical_ipv4_literals_are_refused(self, url, canonical):
@@ -1062,19 +1120,74 @@ class TestPrivateHostConfinement:
 
         # Liveness for the parametrize itself: each spelling really is
         # the address it claims to be, and really does defeat `ipaddress`.
-        host, wire = self._on_the_wire(url)
+        host, _emitted, wire = self._on_the_wire(url)
         with pytest.raises(ValueError):
             ipaddress.ip_address(host)
         assert socket.inet_ntoa(socket.inet_aton(wire)) == canonical
 
         assert rule._admit(url) is None
 
-    @pytest.mark.parametrize("url,_canonical", _ALTERNATE_SPELLINGS)
-    def test_non_canonical_ipv4_redirect_hops_are_refused(self, url, _canonical):
-        """`_accepts_hop` shares `_admit`, so the hop path must agree."""
+    @pytest.mark.parametrize("url", _REFUSED + [spelling for spelling, _ in _ALTERNATE_SPELLINGS])
+    def test_refused_hosts_are_refused_as_redirect_hops_too(self, url):
+        """`_accepts_hop` shares `_admit`, so the hop path must agree.
+
+        Every entry, not only the numeric spellings: an origin picks the
+        `Location` header, so a hop is the *more* hostile of the two
+        paths into the confinement, not the less.
+        """
         rule = ContentBrokenExternalReferenceRule({"enabled": True})
 
         assert rule._accepts_hop(url) is False
+
+    # The percent-decode urllib performs on the netloc it is handed,
+    # which is the one the rule's own canonicalization cannot see.
+    # Each row names the host and port `http.client` would connect to
+    # if a `%` were allowed to survive into the requested URL.
+    _SURVIVING_PERCENT = [
+        ("http://169.254.169.254%253A80/latest/meta-data/", "169.254.169.254", 80),
+        ("http://127.0.0.1％3a8080/admin", "127.0.0.1", 8080),
+        ("http://localhost％3A80/", "localhost", 80),
+        ("http://10.0.0.5%2540example.com/x", "10.0.0.5@example.com", 80),
+    ]
+
+    @pytest.mark.parametrize("url,wire_host,wire_port", _SURVIVING_PERCENT)
+    def test_a_second_percent_decode_cannot_smuggle_a_private_host(self, url, wire_host, wire_port):
+        """A host the transport would decode again is refused, not classified.
+
+        Liveness first, from the stdlib: canonicalizing these once
+        leaves a `%` behind, and urllib's own decode then turns it into
+        a port separator or userinfo. Classifying the once-decoded
+        string would therefore be classifying a host nothing connects
+        to — so the refusal has to happen even under the operator's
+        opt-in, which is what this asserts.
+        """
+        authored = url.split("//", 1)[1].split("/", 1)[0]
+        once = unquote(authored).encode("idna").decode("ascii")
+        assert "%" in once, "premise: one decode does not settle this host"
+        connection = http.client.HTTPConnection(unquote(once))
+        assert (connection.host, connection.port) == (wire_host, wire_port)
+
+        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
+
+        assert rule._admit(url) is None
+
+    def test_a_control_character_cannot_hide_a_literal_behind_a_name(self):
+        """`getaddrinfo` truncates at a NUL; `inet_aton` refuses it.
+
+        So `127.0.0.1\\x00.evil.com` is a name to the confinement and
+        loopback to the resolver. Today `http.client` also refuses it,
+        but that is a downstream guard against a different problem —
+        the confinement has to reach the same verdict on its own.
+        """
+        url = "http://127.0.0.1%00.evil.com/x"
+        smuggled = unquote("127.0.0.1%00.evil.com").encode("idna").decode("ascii")
+        assert socket.getaddrinfo(smuggled, 80, flags=socket.AI_NUMERICHOST)[0][4][0] == "127.0.0.1"
+        with pytest.raises(ValueError):
+            socket.inet_aton(smuggled)
+
+        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
+
+        assert rule._admit(url) is None
 
     @pytest.mark.parametrize("url,_canonical", _ALTERNATE_SPELLINGS)
     def test_the_operator_can_still_reach_them(self, url, _canonical):
@@ -1083,15 +1196,20 @@ class TestPrivateHostConfinement:
         Without this, a normalization that simply rejected every
         numeric-looking host would pass the tests above while breaking
         the operator's opt-in. What comes back carries the host the
-        transport will spell, so the URL that is requested, matched
-        against ``ignore`` and reported is the one the confinement
-        classifies.
+        transport will spell, so the URL that is requested and the one
+        matched against ``ignore`` are the one the confinement
+        classifies. The *reported* URL is deliberately not in that list:
+        the message names the authored href, which is the string the
+        user has to find in the file.
         """
         rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
 
-        host, wire = self._on_the_wire(url)
+        host, emitted, wire = self._on_the_wire(url)
+        # Nothing survives the first decode for these spellings, so the
+        # host the rule emits is already the one urllib connects to.
+        assert emitted == wire
 
-        assert rule._admit(url) == url.replace(host, wire, 1)
+        assert rule._admit(url) == url.replace(host, emitted, 1)
 
     def test_ignore_sees_the_url_the_transport_will_request(self):
         """``ignore`` matches the URL the transport will request.
@@ -1108,6 +1226,39 @@ class TestPrivateHostConfinement:
 
         assert rule._admit("https://intranet%2Eexample%2Ecom/wiki") is None
         assert rule._admit("https://other.example.com/wiki") is not None
+
+    def test_both_operands_of_an_ignore_glob_are_length_bounded(self):
+        """`fnmatch` gets no unbounded input from either side (T13).
+
+        `_is_ignored` compiles a `.skillsaw.yaml` glob through
+        `fnmatch.translate` and matches it against a URL from the same
+        repository, so a pattern like `*a*a*…*b` against a long
+        non-matching subject backtracks catastrophically. Atomic groups
+        landed in `fnmatch.translate` only in 3.11 and skillsaw supports
+        3.9, and the SIGALRM budget the banned-references rule uses
+        cannot stand in here — this runs on worker threads, where
+        signals never fire. So both lengths are capped instead.
+        """
+        long_url = "https://example.com/" + "a" * _MAX_URL_LENGTH
+        assert len(long_url) > _MAX_URL_LENGTH
+        assert (
+            ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)._admit(
+                long_url
+            )
+            is None
+        )
+
+        # An over-long pattern is skipped rather than compiled, so the
+        # URL it would have matched is probed instead of ignored. Kept
+        # deliberately benign: the point is which branch runs, and a
+        # pathological pattern here would hang rather than fail.
+        pattern = "https://h/" + "x" * _MAX_IGNORE_PATTERN_LENGTH + "*"
+        assert len(pattern) > _MAX_IGNORE_PATTERN_LENGTH
+        rule = ContentBrokenExternalReferenceRule(
+            {"enabled": True, "ignore": [pattern]}, allow_private_hosts=True
+        )
+
+        assert rule._admit("https://h/" + "x" * _MAX_IGNORE_PATTERN_LENGTH + "y") is not None
 
     @pytest.mark.parametrize(
         "url",

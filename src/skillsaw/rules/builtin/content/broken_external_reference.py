@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from http.client import HTTPException
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING, Tuple, TypeVar
-from urllib.parse import unquote, urlsplit, urlunsplit
+from urllib.parse import unquote, urlparse, urlsplit, urlunsplit
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -93,8 +93,26 @@ _MAX_TIMEOUT = 30.0
 _MAX_TOTAL_BUDGET = 600.0
 _MAX_CONCURRENCY = 32
 
+# The two operands of `_is_ignored`, bounded for the same reason and in
+# the same style. It compiles a `.skillsaw.yaml` glob through
+# `fnmatch.translate` and matches it against a URL the repository also
+# wrote, so both sides of a catastrophically backtracking match are
+# attacker-chosen. `fnmatch.translate` gained atomic groups only in
+# 3.11 and skillsaw supports 3.9. The SIGALRM budget the banned-
+# references rule uses for T13 cannot stand in: `_is_ignored` is
+# reached from `_accepts_hop` on worker threads, where signals never
+# fire. So the lengths are capped instead — no URL and no ignore
+# pattern written on purpose comes near either bound.
+_MAX_URL_LENGTH = 2048
+_MAX_IGNORE_PATTERN_LENGTH = 256
+
 # Hostnames that are never public, whatever DNS says.
 _LOCAL_HOSTNAMES = frozenset({"localhost", "localhost.localdomain", "ip6-localhost"})
+
+# What `http.client._validate_host` refuses. Checked here as well, so
+# the confinement's own reasoning rejects a control character rather
+# than depending on a downstream guard to do it — see `_canonical_host`.
+_FORBIDDEN_HOST_CHARS = frozenset(chr(code) for code in range(0x21)) | {"\x7f"}
 
 # Exceptions a probe is allowed to swallow: every way the network can
 # fail to answer. Anything outside this set is a bug in the rule, and a
@@ -193,20 +211,29 @@ class _BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
 
     def http_error_302(self, req, fp, code, msg, headers):
         body = _EmptyBody(fp)
-        try:
-            return super().http_error_302(req, body, code, msg, headers)
-        except ValueError:
-            # The base parses the raw ``Location`` header itself before
-            # it calls ``redirect_request``, so ``_accepts_hop`` never
-            # sees a malformed one and ``urlparse("http://[::1/x")``
-            # raises straight out of the probe. The header is chosen by
-            # the remote party, so that would let any hostile or broken
-            # origin turn an opted-in run into a rule-execution-error.
-            # End the chain the way a refused hop does instead — an
-            # ``HTTPError``, which the caller reads as inconclusive —
-            # rather than widening _NETWORK_ERRORS to swallow every
-            # ValueError, including this rule's own bugs.
-            raise urllib.error.HTTPError(req.full_url, code, msg, headers, body)
+        # The base parses the raw ``Location`` header itself before it
+        # calls ``redirect_request``, so ``_accepts_hop`` never sees a
+        # malformed one and ``urlparse("http://[::1/x")`` would raise
+        # straight out of the probe. The header is chosen by the remote
+        # party, so that would let any hostile or broken origin turn an
+        # opted-in run into a rule-execution-error. Parse it here first
+        # and end the chain the way a refused hop does — an
+        # ``HTTPError``, which the caller reads as inconclusive.
+        #
+        # Only the parse is guarded. ``super()`` finishes by calling
+        # ``self.parent.open(...)``, which drives the whole remainder of
+        # the chain, so wrapping the delegation would convert a bug in
+        # this rule into "inconclusive" whenever it happened to be
+        # raised below a redirect — while the same bug on a
+        # non-redirecting URL surfaced as a rule-execution-error. Which
+        # of the two a reader gets is not the remote party's to choose.
+        location = headers.get("location") or headers.get("uri")
+        if location is not None:
+            try:
+                urlparse(location)
+            except ValueError:
+                raise urllib.error.HTTPError(req.full_url, code, msg, headers, body)
+        return super().http_error_302(req, body, code, msg, headers)
 
     # The base aliases these to *its* http_error_302, so overriding one
     # method is not enough — 301 and 307 would keep the uncapped read.
@@ -332,11 +359,33 @@ class ContentBrokenExternalReferenceRule(Rule):
         well as simple: ``getaddrinfo`` would raise the same
         ``UnicodeError``, which :data:`_NETWORK_ERRORS` already swallows,
         so such a host could not be fetched anyway.
+
+        Two spellings survive the encoding and are refused after it,
+        because both would make the classified string differ from the
+        requested one:
+
+        * A leftover ``%``. ``Request._parse`` percent-decodes the host
+          it is handed, so a ``%`` that survives *this* decode is
+          decoded a second time by urllib, and ``http.client`` then
+          splits a decoded ``:`` into a port. Double encoding gets there
+          (``%253A``), and so does a single full-width ``％`` (U+FF05),
+          which nameprep's NFKC step folds to ``%``. A DNS name or an IP
+          literal never legitimately carries one post-decode.
+        * A control character. ``str.encode("idna")`` takes a verbatim
+          fast path for pure-ASCII labels, checking only their length,
+          so ``127.0.0.1%00.evil.com`` arrives intact — a string
+          ``inet_aton`` reads as a name and ``getaddrinfo`` truncates at
+          the NUL into loopback.
         """
         try:
-            return unquote(host).encode("idna").decode("ascii")
+            canonical = unquote(host).encode("idna").decode("ascii")
         except (UnicodeError, ValueError):
             return None
+        if "%" in canonical:
+            return None
+        if any(char in _FORBIDDEN_HOST_CHARS for char in canonical):
+            return None
+        return canonical
 
     @classmethod
     def _canonical_netloc(cls, netloc: str) -> Optional[str]:
@@ -376,12 +425,21 @@ class ContentBrokenExternalReferenceRule(Rule):
             return None
         if not parts.netloc:
             return None
-        if "@" in parts.netloc:
-            return None
         netloc = cls._canonical_netloc(parts.netloc)
         if netloc is None:
             return None
-        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
+        # After canonicalization, not before: percent-decoding is what
+        # turns ``user%40example.com`` into userinfo, and urllib keeps
+        # the whole decoded string as the host it resolves rather than
+        # stripping the part in front of the ``@``.
+        if "@" in netloc:
+            return None
+        url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
+        if len(url) > _MAX_URL_LENGTH:
+            # See _MAX_URL_LENGTH: this is one half of the `ignore`
+            # glob's worst case, and the repository writes both halves.
+            return None
+        return url
 
     @staticmethod
     def _as_ip_literal(host: str) -> Optional[ipaddress._BaseAddress]:
@@ -419,17 +477,22 @@ class ContentBrokenExternalReferenceRule(Rule):
         through — the honest limits are documented on the rule page, and
         ``--no-network`` is the control that does not depend on parsing.
         """
-        host = netloc.rsplit("@", 1)[-1]
+        # Canonicalize the whole netloc *first*, then take it apart.
+        # Classifying the string the transport will resolve rather than
+        # the one the repository wrote is the point (see
+        # :meth:`_canonical_host`) — and doing it in this order is what
+        # makes a delimiter that canonicalization *introduces* get
+        # parsed as one, instead of being swallowed into the host and
+        # mistaken for a name.
+        canonical = cls._canonical_host(netloc.strip())
+        if canonical is None:
+            return False
+        host = canonical.rsplit("@", 1)[-1]
         if host.startswith("["):
             host = host.partition("]")[0][1:]
         elif ":" in host:
             host = host.rsplit(":", 1)[0]
-        # Classify the host the transport will resolve, not the string
-        # the repository wrote — see :meth:`_canonical_host`.
-        canonical = cls._canonical_host(host.strip())
-        if canonical is None:
-            return False
-        host = canonical.rstrip(".").lower()
+        host = host.rstrip(".").lower()
         if not host:
             return False
         if host in _LOCAL_HOSTNAMES or host.endswith(".localhost"):
@@ -441,8 +504,18 @@ class ContentBrokenExternalReferenceRule(Rule):
         mapped = getattr(address, "ipv4_mapped", None)
         if mapped is not None:
             address = mapped
+        # Two layers, because neither one is a superset of the other.
+        # ``is_global`` is False for RFC 6598 CGNAT space (100.64.0.0/10)
+        # and for nothing else in ``ipaddress`` — the range Tailscale
+        # uses, along with EKS/GKE secondary pod CIDRs and carrier-grade
+        # NAT, so it is the private range a runner is most likely to
+        # reach that is not 10/8, 172.16/12 or 192.168/16. The explicit
+        # predicates in turn catch what ``is_global`` calls global,
+        # notably multicast and NAT64. Layered this way, cross-version
+        # drift in ``is_global`` can only ever tighten the confinement.
         return not (
-            address.is_private
+            not address.is_global
+            or address.is_private
             or address.is_loopback
             or address.is_link_local
             or address.is_reserved
@@ -454,6 +527,11 @@ class ContentBrokenExternalReferenceRule(Rule):
     def _is_ignored(url: str, patterns: Sequence[str]) -> bool:
         for pattern in patterns:
             if not isinstance(pattern, str) or not pattern:
+                continue
+            if len(pattern) > _MAX_IGNORE_PATTERN_LENGTH:
+                # See _MAX_IGNORE_PATTERN_LENGTH: the other half of the
+                # glob's worst case. Skipping the pattern only widens
+                # what gets probed, and the confinement still applies.
                 continue
             if any(char in pattern for char in _GLOB_CHARS):
                 if fnmatch.fnmatchcase(url, pattern):

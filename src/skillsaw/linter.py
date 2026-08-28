@@ -196,6 +196,25 @@ class NetworkAccessWarning(UserWarning):
         )
 
 
+class EmptyNetworkRuleSetError(ValueError):
+    """Every rule ``--rule`` named needs the network, and the network is off.
+
+    A ``ValueError`` like the other construction-time refusals, so a
+    caller that only handles those keeps working. It is a distinct type
+    because the advice differs by caller: on ``lint`` the operator can
+    drop ``--no-network``, while ``fix`` forces the gate on itself and
+    has no flag to drop — see ``cli._fix``.
+    """
+
+    def __init__(self, rule_ids: List[str]):
+        self.rule_ids = rule_ids
+        super().__init__(
+            "--no-network (or SKILLSAW_NO_NETWORK) skipped every rule named "
+            f"by --rule: {', '.join(rule_ids)}. Nothing would be checked — "
+            "drop --no-network, or name a rule that does not need the network."
+        )
+
+
 class Linter:
     """
     Main linter that orchestrates rule checking
@@ -324,11 +343,7 @@ class Linter:
                 # the run would exit 0 having checked nothing. That is the
                 # quiet CI false pass REVIEW.md's T4/T12 bullet asks
                 # reviewers to flag — say so rather than looking healthy.
-                raise ValueError(
-                    "--no-network (or SKILLSAW_NO_NETWORK) skipped every rule named "
-                    f"by --rule: {', '.join(rule_ids)}. Nothing would be checked — "
-                    "drop --no-network, or name a rule that does not need the network."
-                )
+                raise EmptyNetworkRuleSetError(rule_ids)
             return
         # Reaching non-public hosts is an operator decision, never a
         # repo-config one, so it is pushed onto the rule rather than read

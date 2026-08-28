@@ -6,7 +6,7 @@ import difflib
 import sys
 
 from ..context import RepositoryContext
-from ..linter import Linter
+from ..linter import EmptyNetworkRuleSetError, Linter
 from ..rule import AutofixConfidence
 from ._config import load_config
 from ._helpers import (
@@ -75,6 +75,16 @@ def _run_fix(args):
                 no_network=True,
                 no_plugins=args.no_plugins,
             )
+        except EmptyNetworkRuleSetError as e:
+            # The gate's own advice is "drop --no-network", which is
+            # right on `lint` and impossible here: `fix` sets it above,
+            # and no flag the user passed or can pass turns it back off.
+            print(
+                f"Error: fix never runs network rules: {', '.join(e.rule_ids)}. "
+                f"Run skillsaw lint --rule {' --rule '.join(e.rule_ids)} to check them.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)

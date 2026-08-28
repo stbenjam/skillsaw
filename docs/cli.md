@@ -51,8 +51,8 @@ Automatically fix lint violations
 | `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
-| `--no-network` | Skip every rule that makes outbound network requests, whatever the linted repository's .skillsaw.yaml enables (env: SKILLSAW_NO_NETWORK=1) |  |
-| `--allow-private-hosts` | Let network rules probe loopback, private and link-local hosts. Off unless the operator asks: the linted repository cannot enable it (env: SKILLSAW_ALLOW_PRIVATE_HOSTS=1) |  |
+| `--no-network` | Skip every rule that makes outbound network requests, whatever the linted repository's .skillsaw.yaml enables (env: SKILLSAW_NO_NETWORK=1). Accepted on fix for argv compatibility only: fix never runs network rules, so this has no effect there |  |
+| `--allow-private-hosts` | Let network rules probe loopback, private and link-local hosts. Off unless the operator asks: the linted repository cannot enable it (env: SKILLSAW_ALLOW_PRIVATE_HOSTS=1). Accepted on fix for argv compatibility only: fix never runs network rules, so this has no effect there |  |
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |

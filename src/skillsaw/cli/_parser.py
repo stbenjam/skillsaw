@@ -40,7 +40,19 @@ _ALLOW_PRIVATE_HOSTS_HELP = (
 )
 
 
-def _add_network_flags(subparser) -> None:
+# ``fix`` accepts both flags so that one argv works across subcommands,
+# but it never goes on the network whatever they say — it forces the gate
+# on itself, because the autofix loop would re-probe every URL once per
+# pass and discard the results. So --no-network is redundant there and
+# --allow-private-hosts does nothing at all, and the help says so rather
+# than letting the reference page describe a control that is not one.
+_FIX_NETWORK_NOTE = (
+    ". Accepted on fix for argv compatibility only: fix never runs "
+    "network rules, so this has no effect there"
+)
+
+
+def _add_network_flags(subparser, note: str = "") -> None:
     """The operator's network controls, on every rule-executing subcommand.
 
     Shared rather than repeated per subparser, so a subcommand cannot be
@@ -50,13 +62,13 @@ def _add_network_flags(subparser) -> None:
         "--no-network",
         action="store_true",
         dest="no_network",
-        help=_NO_NETWORK_HELP,
+        help=_NO_NETWORK_HELP + note,
     )
     subparser.add_argument(
         "--allow-private-hosts",
         action="store_true",
         dest="allow_private_hosts",
-        help=_ALLOW_PRIVATE_HOSTS_HELP,
+        help=_ALLOW_PRIVATE_HOSTS_HELP + note,
     )
 
 
@@ -249,7 +261,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
     )
-    _add_network_flags(fix_parser)
+    _add_network_flags(fix_parser, note=_FIX_NETWORK_NOTE)
     fix_parser.add_argument(
         "--no-plugins",
         action="store_true",

@@ -99,8 +99,12 @@ anywhere in your context files:
   identifies the tool and its version.
 
 Destinations are confined to public hosts. A URL whose host is a loopback,
-private, link-local, reserved, multicast or IPv4-mapped address — or a
-`localhost` name — is refused. So are the other spellings of those
+private, link-local, reserved, multicast, unspecified or IPv4-mapped
+address — or a `localhost` name — is refused, as is any address
+`ipaddress` does not call global. That last one is not redundant: RFC 6598
+carrier-grade NAT (`100.64.0.0/10`) is excluded from `is_global` and from
+no other predicate, and it is the range Tailscale uses along with several
+managed-Kubernetes pod CIDRs. So are the other spellings of those
 addresses, because the host is classified the way the transport will spell
 it rather than the way the link is written, without performing a lookup:
 
@@ -114,10 +118,25 @@ it rather than the way the link is written, without performing a lookup:
   socket. A host the IDNA codec cannot encode is refused rather than
   guessed at.
 
-The requested URL carries that canonical host, so `ignore` and the
-reported URL match what actually goes on the wire. The check re-runs on
-every redirect hop, so an origin cannot redirect the linter onto your
-internal network.
+Two spellings are refused *after* that encoding, because both would make
+the classified host differ from the connected-to one. A host still
+carrying a `%` — `http://169.254.169.254%253A80/`, or the single
+full-width `％3A` that nameprep's NFKC step folds to `%` — is refused,
+because urllib percent-decodes a second time and `http.client` then reads
+a decoded `:` as a port. So is a host carrying a control character, which
+the IDNA codec's ASCII fast path passes through verbatim and
+`getaddrinfo` truncates at. For the same reason userinfo is rejected
+after canonicalization rather than before: decoding `user%40example.com`
+is what creates it.
+
+The requested URL carries that canonical host, so `ignore` matches what
+actually goes on the wire. The URL in the *report* is the href as
+authored — that is the string you have to find in the file — so it can
+differ from the wire, and does routinely: the fragment is dropped from
+the request but kept in the message, and the host is lowercased and
+punycoded on the wire but not in the message. The check re-runs on every
+redirect hop, so an origin cannot redirect the linter onto your internal
+network.
 
 Lifting that confinement is the operator's call, not the repository's:
 `skillsaw lint . --allow-private-hosts`, or
