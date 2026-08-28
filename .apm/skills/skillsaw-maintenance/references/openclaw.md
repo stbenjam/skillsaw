@@ -16,8 +16,9 @@ Human docs (lag behind the code — do not treat as authoritative):
 Authoritative source of truth — the `openclaw/openclaw` GitHub repo (the TypeScript types
 ARE the spec):
 - `src/skills/types.ts` — `SkillInstallSpec` (fields: `id`, `kind`, `label`, `bins`, `os`,
-  `formula`, `package`, `module`, `url`, `archive`, `extract`, `stripComponents`,
-  `targetDir`) and the `kind` union `"brew" | "node" | "go" | "uv" | "download"`; and
+  `formula`, `package`, `module`, `url`, `sha256`, `archive`, `extract`,
+  `stripComponents`, `targetDir`) and the `kind` union
+  `"brew" | "node" | "go" | "uv" | "download"`; and
   `OpenClawSkillMetadata` (`always`, `skillKey`, `primaryEnv`, `emoji`, `homepage`, `os`,
   `requires{bins,anyBins,env,config}`, `install`).
 - `src/skills/loading/frontmatter.ts` — per-kind **required fields**: brew→`formula`,
@@ -32,6 +33,8 @@ ARE the spec):
 - Allowed `os` values vs `VALID_OS_VALUES`.
 - Allowed `archive` types vs `VALID_ARCHIVE_TYPES`.
 - Per-kind required install fields (`frontmatter.ts`) vs what the rule requires.
+- The `sha256` pattern in `parseInstallSpec` (`frontmatter.ts`) vs `SHA256_DIGEST`, and
+  which kinds it is read for (`download` only today).
 - New metadata fields on `OpenClawSkillMetadata` / `SkillInstallSpec`.
 - `requires` keys (`bins`, `anyBins`, `env`, `config`).
 
@@ -46,6 +49,10 @@ ARE the spec):
   - `VALID_INSTALL_KINDS = {"brew", "node", "go", "uv", "download"}`
   - `VALID_OS_VALUES = {"darwin", "linux", "win32"}`
   - `VALID_ARCHIVE_TYPES = {"tar.gz", "tar.bz2", "zip"}`
+  - `SHA256_DIGEST` = 64 hex digits, transcribed from `parseInstallSpec`
+- `kind` and `archive` are trimmed and lowercased upstream before matching
+  (`normalizeOptionalLowercaseString`); the rule normalizes both the same way, so
+  do not tighten either comparison to be case-sensitive.
 - OpenClaw validates loosely and silently ignores unrecognized fields, so upstream
   additions won't surface as errors — you must read the types to catch them.
 - No upstream JSON Schema exists; skillsaw's rule is the only validator, so keep it
