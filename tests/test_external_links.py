@@ -64,42 +64,36 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
         if body and self.command != "HEAD":
             self.wfile.write(body)
 
+    # path -> (status, Location or None). Redirect targets are distinct
+    # from the plain routes so the de-duplication test can count requests
+    # to /missing without redirect traffic landing there.
+    ROUTES = {
+        "/ok": (200, None),
+        "/missing": (404, None),
+        "/gone": (410, None),
+        "/forbidden": (403, None),
+        "/rate-limited": (429, None),
+        "/server-error": (500, None),
+        "/redirect-ok": (302, "/relocated-ok"),
+        "/relocated-ok": (200, None),
+        "/redirect-missing": (302, "/relocated"),
+        "/relocated": (404, None),
+        "/redirect-loop": (302, "/redirect-loop"),
+        "/redirect-ftp": (302, "ftp://127.0.0.1/pub/file"),
+    }
+
     def _handle(self, method: str):
         path = self.path
         self.server.hits.append((method, path))
-        if path == "/ok":
-            self._respond(200, body=b"ok")
-        elif path == "/missing":
-            self._respond(404, body=b"not found")
-        elif path == "/gone":
-            self._respond(410, body=b"gone")
-        elif path == "/forbidden":
-            self._respond(403, body=b"forbidden")
-        elif path == "/rate-limited":
-            self._respond(429, body=b"slow down")
-        elif path == "/server-error":
-            self._respond(500, body=b"boom")
-        elif path == "/redirect-ok":
-            self._respond(302, location="/relocated-ok")
-        elif path == "/relocated-ok":
-            self._respond(200, body=b"ok")
-        elif path == "/redirect-missing":
-            # A distinct target, so the de-duplication test can count
-            # requests to /missing without redirect traffic landing there.
-            self._respond(302, location="/relocated")
-        elif path == "/relocated":
-            self._respond(404, body=b"not found")
-        elif path == "/redirect-loop":
-            self._respond(302, location="/redirect-loop")
-        elif path == "/redirect-ftp":
-            self._respond(302, location="ftp://127.0.0.1/pub/file")
+        if path in self.ROUTES:
+            status, location = self.ROUTES[path]
+            self._respond(status, location=location, body=b"body")
         elif path == "/head-405":
             # Rejects HEAD outright; the GET retry finds it is gone.
             self._respond(405 if method == "HEAD" else 404, body=b"")
         elif path.startswith("/slow"):
             # Never answers within any timeout the tests configure.
-            _stalled = threading.Event()
-            _stalled.wait(_SLOW_SECONDS)
+            threading.Event().wait(_SLOW_SECONDS)
             self._respond(200, body=b"eventually")
         else:
             self._respond(404, body=b"no route")
