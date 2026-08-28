@@ -2,6 +2,7 @@
 Text output formatter — human-readable terminal output with optional ANSI colors.
 """
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,12 @@ from . import get_counts, relative_path, should_show_info
 from skillsaw.paths import contained_resolve, safe_resolve
 
 _COLLAPSE_THRESHOLD = 3
+# Keep the token portion aligned with content.mcp_tool_name's candidate
+# grammar and first-``__`` server/tool split. The trailing ordinal is part of
+# that rule's stable fingerprint discriminator, not presentation text.
+_MCP_DISCRIMINATOR_RE = re.compile(
+    r"(?P<token>mcp__(?P<server>[A-Za-z0-9_-]+?)__(?P<tool>[A-Za-z0-9_-]+)):(?P<ordinal>\d+)"
+)
 
 
 @dataclass(frozen=True)
@@ -109,8 +116,73 @@ def _collapse_unreferenced_skill_files(
     return plan
 
 
+def _mcp_server_prefix(violation: RuleViolation) -> Optional[str]:
+    """Read a validated MCP server prefix from the stable discriminator."""
+    discriminator = violation.fingerprint_discriminator
+    if not discriminator:
+        return None
+    match = _MCP_DISCRIMINATOR_RE.fullmatch(discriminator)
+    if match is None:
+        return None
+    return f"mcp__{match.group('server')}__"
+
+
+def _collapse_mcp_tool_names(
+    indexed: Sequence[Tuple[int, RuleViolation]], context
+) -> _TextCollapsePlan:
+    """Collapse repeated fully-qualified names for one file and server."""
+    grouped = defaultdict(list)
+    for position, violation in indexed:
+        if violation.file_path is None:
+            continue
+        server_prefix = _mcp_server_prefix(violation)
+        if server_prefix is None:
+            continue
+        key = (
+            _absolute_path(violation.file_path, context.root_path),
+            server_prefix,
+            violation.severity,
+            violation.source,
+            violation.fixable,
+            violation.fix_confidence,
+        )
+        grouped[key].append((position, violation))
+
+    plan: _TextCollapsePlan = {}
+    for (_, server_prefix, *_), members in grouped.items():
+        if len(members) < _COLLAPSE_THRESHOLD:
+            continue
+        distinct_lines = list(
+            dict.fromkeys(
+                violation.file_line for _, violation in members if violation.file_line is not None
+            )
+        )
+        line_summary = ""
+        if distinct_lines:
+            displayed_lines = ", ".join(str(line) for line in distinct_lines[:3])
+            if len(distinct_lines) > 3:
+                displayed_lines += ", …"
+            line_summary = f" (lines {displayed_lines})"
+
+        first_position, first_violation = members[0]
+        plan[first_position] = _TextDiagnostic(
+            violation=first_violation,
+            message=(
+                f"{len(members)} fully-qualified MCP tool names use the "
+                f"'{server_prefix}' server prefix — use short names because "
+                f"the prefix depends on the reader's server name{line_summary}"
+            ),
+            file_path=first_violation.file_path,
+            file_line=first_violation.file_line,
+        )
+        for position, _ in members[1:]:
+            plan[position] = None
+    return plan
+
+
 _TEXT_COLLAPSE_STRATEGIES: Dict[str, _TextCollapseStrategy] = {
     "agentskill-unreferenced-files": _collapse_unreferenced_skill_files,
+    "content-mcp-tool-name": _collapse_mcp_tool_names,
 }
 
 

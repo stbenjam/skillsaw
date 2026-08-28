@@ -19,11 +19,14 @@ from skillsaw.formatters.json_fmt import format_json
 from skillsaw.formatters.sarif import format_sarif
 from skillsaw.formatters.html import format_html
 from skillsaw.formatters.code_climate import format_code_climate
+from skillsaw.formatters.text import _text_diagnostics
+from skillsaw.grade import compute_grade
 from skillsaw.rule import AutofixConfidence, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
 from skillsaw.linter import Linter
 from skillsaw.lint_target import LintTarget
+from skillsaw.rules.builtin.content.mcp_tool_name import ContentMcpToolNameRule
 
 # --- Helpers ---
 
@@ -380,6 +383,198 @@ def test_structured_reports_keep_collapsed_text_findings_individual(valid_plugin
     html = format_html(violations, context, [], "1.0.0")
     assert all(path.name in html for path in paths)
     assert html.count("<code>agentskill-unreferenced-files</code>") == 3
+
+
+def _mcp_tool_name_violation(
+    path: Path,
+    line: int,
+    token: str,
+    ordinal: int,
+    *,
+    message: str,
+    **overrides,
+) -> RuleViolation:
+    values = {
+        "rule_id": "content-mcp-tool-name",
+        "severity": Severity.WARNING,
+        "message": message,
+        "file_path": path,
+        "line": line,
+        "source": "builtin",
+        "fixable": True,
+        "fix_confidence": AutofixConfidence.SUGGEST,
+        "fingerprint_discriminator": f"{token}:{ordinal}",
+    }
+    values.update(overrides)
+    return RuleViolation(**values)
+
+
+def test_text_mcp_collapse_keeps_raw_totals_and_order(valid_plugin):
+    """Only terminal rows collapse; all occurrence-level state stays intact."""
+    context = RepositoryContext(valid_plugin)
+    first_path = context.root_path / "CLAUDE.md"
+    second_path = context.root_path / "AGENTS.md"
+    jira = [
+        _mcp_tool_name_violation(
+            first_path,
+            line,
+            f"mcp__jira__tool__{index}",
+            index,
+            message=f"jira original {index}",
+        )
+        for index, line in enumerate((3, 3, 5, 7, 9))
+    ]
+    github = [
+        _mcp_tool_name_violation(
+            first_path,
+            12 + index,
+            f"mcp__github__tool_{index}",
+            0,
+            message=f"github original {index}",
+        )
+        for index in range(2)
+    ]
+    other_file = [
+        _mcp_tool_name_violation(
+            second_path,
+            4 + index,
+            f"mcp__jira__other_{index}",
+            0,
+            message=f"other-file original {index}",
+        )
+        for index in range(2)
+    ]
+    malformed = [
+        _mcp_tool_name_violation(
+            first_path,
+            20,
+            "mcp__jira__ignored",
+            0,
+            message="missing discriminator",
+            fingerprint_discriminator=None,
+        ),
+        _mcp_tool_name_violation(
+            first_path,
+            21,
+            "mcp__jira__ignored",
+            0,
+            message="malformed discriminator",
+            fingerprint_discriminator="mcp__jira__:0",
+        ),
+    ]
+    violations = jira + github + other_file + malformed
+    before = [
+        (
+            id(v),
+            v.file_path,
+            v.line,
+            v.message,
+            v.fingerprint_discriminator,
+            v.severity,
+            v.source,
+            v.fixable,
+            v.fix_confidence,
+        )
+        for v in violations
+    ]
+    grade = compute_grade(violations, 10_000)
+
+    output = format_text(
+        violations,
+        context,
+        [ContentMcpToolNameRule()],
+        "1.0.0",
+        grade=grade,
+    )
+
+    assert (
+        "[CLAUDE.md:3]: 5 fully-qualified MCP tool names use the "
+        "'mcp__jira__' server prefix" in output
+    )
+    assert "use short names because the prefix depends on the reader's server name" in output
+    assert "(lines 3, 5, 7, …)" in output
+    assert "jira original" not in output
+    # Below-threshold, different-file, and invalid-discriminator findings stay individual.
+    assert all(f"github original {index}" in output for index in range(2))
+    assert all(f"other-file original {index}" in output for index in range(2))
+    assert "missing discriminator" in output
+    assert "malformed discriminator" in output
+    assert "Warnings: 11" in output
+    assert "[?] 11 violation(s) fixable with `skillsaw fix --suggest`" in output
+    assert f"Grade:    {grade.letter} ({grade.density:.2f} weighted violations" in output
+    assert "https://skillsaw.org/rules/content-mcp-tool-name/" in output
+    assert [
+        (
+            id(v),
+            v.file_path,
+            v.line,
+            v.message,
+            v.fingerprint_discriminator,
+            v.severity,
+            v.source,
+            v.fixable,
+            v.fix_confidence,
+        )
+        for v in violations
+    ] == before
+
+
+def test_text_mcp_collapse_threshold_and_metadata_isolation(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    path = context.root_path / "CLAUDE.md"
+
+    def base(index: int, **overrides) -> RuleViolation:
+        return _mcp_tool_name_violation(
+            path,
+            index + 1,
+            f"mcp__jira__tool_{index}",
+            0,
+            message=f"original {index}",
+            **overrides,
+        )
+
+    pair = [base(0), base(1)]
+    assert len(_text_diagnostics(pair, context)) == 2
+    assert len(_text_diagnostics(pair + [base(2)], context)) == 1
+
+    # Two otherwise identical findings plus one changed metadata field must
+    # never cross the collapse threshold together.
+    for changed in (
+        {"severity": Severity.ERROR},
+        {"source": "plugin"},
+        {"fixable": False, "fix_confidence": None},
+        {"fix_confidence": AutofixConfidence.SAFE},
+    ):
+        diagnostics = _text_diagnostics(pair + [base(2, **changed)], context)
+        assert [d.message for d in diagnostics] == ["original 0", "original 1", "original 2"]
+
+
+def test_structured_reports_keep_mcp_tool_findings_individual(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    path = context.root_path / "CLAUDE.md"
+    violations = [
+        _mcp_tool_name_violation(
+            path,
+            index + 3,
+            f"mcp__jira__tool_{index}",
+            0,
+            message=f"original {index}",
+        )
+        for index in range(3)
+    ]
+
+    json_report = json.loads(format_json(violations, context, [], "1.0.0"))
+    assert [v["message"] for v in json_report["violations"]] == [
+        "original 0",
+        "original 1",
+        "original 2",
+    ]
+    sarif = json.loads(format_sarif(violations, context, [], "1.0.0"))
+    assert len(sarif["runs"][0]["results"]) == 3
+    assert len(json.loads(format_code_climate(violations, context, [], "1.0.0"))) == 3
+    html = format_html(violations, context, [], "1.0.0")
+    assert all(f"original {index}" in html for index in range(3))
+    assert html.count("<code>content-mcp-tool-name</code>") == 3
 
 
 # --- JSON formatter ---

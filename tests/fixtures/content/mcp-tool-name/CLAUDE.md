@@ -14,6 +14,10 @@ someone has already picked up.
 Read the ticket body with `mcp__plugin_jira_atlassian__getJiraIssue` and quote
 the acceptance criteria in your plan before writing any code.
 
+<!-- skillsaw-assert content-mcp-tool-name -->
+Post progress with `mcp__plugin_jira_atlassian__addCommentToJiraIssue` when a
+review changes the agreed implementation plan.
+
 ## Reading files from GitHub
 
 <!-- skillsaw-assert content-mcp-tool-name -->
