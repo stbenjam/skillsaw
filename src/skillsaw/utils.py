@@ -315,6 +315,32 @@ def write_bytes_atomic(path: Path, content: bytes, *, root: Optional[Path] = Non
         raise
 
 
+#: Charged for an entry whose payload cannot be measured cheaply — a parsed
+#: YAML or JSON document. Deliberately generous: such a value is several
+#: times the size of the text it came from, and undercharging it would let
+#: the cache hold far more than its budget says.
+_UNMEASURED_ENTRY_BYTES = 16 * 1024
+
+
+def _approximate_size(value: Any) -> int:
+    """Roughly how much *value* keeps alive, for cache accounting.
+
+    Only the shapes the cached readers return are inspected: a body of
+    text, or a short tuple of ``(data, error[, line])``. Anything else is
+    charged the flat estimate rather than walked — the accounting runs on
+    every insertion, so it has to cost less than what it is protecting.
+    """
+    if isinstance(value, str):
+        return len(value)
+    if isinstance(value, (bytes, bytearray)):
+        return len(value)
+    if isinstance(value, tuple):
+        return sum(_approximate_size(item) for item in value) or 1
+    if value is None:
+        return 1
+    return _UNMEASURED_ENTRY_BYTES
+
+
 class FileCache:
     """Thread-safe cache that supports per-file invalidation.
 
@@ -323,15 +349,28 @@ class FileCache:
         resolved_path -> { sub_key -> value }
 
     ``invalidate(file_path)`` is O(1) -- it pops the entire inner dict
-    for that path.  A global ``maxsize`` caps the total number of entries
-    across all registered functions to prevent unbounded memory growth.
+    for that path.
+
+    The cache is bounded by the memory it holds, not by a count of
+    entries. A count cannot express the thing being protected: a repository
+    of ten thousand small skills and one of two thousand large ones cost
+    wildly different amounts at the same entry cap. Worse, a count small
+    enough to be safe for the second is a cliff for the first — every rule
+    sweeping the repository evicts what the previous rule cached, and the
+    linter re-reads and re-parses every file for every rule. ``budget``
+    is that bound, measured with :func:`_approximate_size`.
     """
 
-    def __init__(self, maxsize: int = 2048):
+    #: 64 MiB holds every file of a large marketplace (~10k documents)
+    #: while staying a small fraction of what the lint tree itself costs
+    #: for such a repository.
+    DEFAULT_BUDGET = 64 * 1024 * 1024
+
+    def __init__(self, budget: int = DEFAULT_BUDGET):
         self._lock = threading.Lock()
         self._stores: List[Dict[Path, Dict[tuple, Any]]] = []
-        self._maxsize = maxsize
-        self._total_entries = 0
+        self._budget = budget
+        self._total_bytes = 0
 
     def cached(self, func: Callable) -> Callable:
         """Decorator -- equivalent to ``@lru_cache`` but with per-key eviction."""
@@ -358,12 +397,13 @@ class FileCache:
                     return bucket[sub_key]
             # Compute outside the lock to avoid holding it during I/O.
             result = func(*args, **kwargs)
+            cost = _approximate_size(result)
             with self._lock:
-                if self._total_entries >= self._maxsize:
+                if self._total_bytes + cost > self._budget:
                     self._evict_oldest()
                 bucket = store.setdefault(resolved, {})
                 if sub_key not in bucket:
-                    self._total_entries += 1
+                    self._total_bytes += cost
                 bucket[sub_key] = result
             return result
 
@@ -371,29 +411,33 @@ class FileCache:
 
         def _clear():
             with self._lock:
-                n = sum(len(b) for b in store.values())
+                freed = sum(
+                    _approximate_size(value)
+                    for bucket in store.values()
+                    for value in bucket.values()
+                )
                 store.clear()
-                self._total_entries -= n
+                self._total_bytes -= freed
 
         wrapper.cache_clear = _clear  # type: ignore[attr-defined]
         return wrapper
 
     def _evict_oldest(self):
-        """Drop roughly half the entries across all stores (called under lock)."""
-        target = self._maxsize // 2
-        evicted = 0
+        """Free roughly half the budget, oldest first (called under lock)."""
+        target = self._budget // 2
+        freed = 0
         for store in self._stores:
             paths_to_remove = []
             for path, bucket in store.items():
-                evicted += len(bucket)
+                freed += sum(_approximate_size(value) for value in bucket.values())
                 paths_to_remove.append(path)
-                if evicted >= target:
+                if freed >= target:
                     break
             for p in paths_to_remove:
                 del store[p]
-            if evicted >= target:
+            if freed >= target:
                 break
-        self._total_entries -= evicted
+        self._total_bytes -= freed
 
     def invalidate(self, file_path: Optional[Path] = None):
         """Drop cache entries.
@@ -409,13 +453,15 @@ class FileCache:
             if file_path is None:
                 for store in self._stores:
                     store.clear()
-                self._total_entries = 0
+                self._total_bytes = 0
             else:
                 resolved = safe_resolve(file_path) or file_path
                 for store in self._stores:
                     bucket = store.pop(resolved, None)
                     if bucket is not None:
-                        self._total_entries -= len(bucket)
+                        self._total_bytes -= sum(
+                            _approximate_size(value) for value in bucket.values()
+                        )
 
 
 # Singleton cache used by all utility functions.

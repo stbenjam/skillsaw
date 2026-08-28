@@ -293,7 +293,16 @@ def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tupl
     for t in patterns:
         pattern = t[0]
         literals = _required_literals(pattern.pattern, pattern.flags)
-        if any(literal not in lowered for literal in literals):
+        # An explicit loop, not ``any(... for ...)``: this runs once per
+        # (pattern, document) pair — millions of times on a large
+        # marketplace — and the generator's per-item frame costs more than
+        # the substring tests it wraps.
+        missing = False
+        for literal in literals:
+            if literal not in lowered:
+                missing = True
+                break
+        if missing:
             continue
         if pattern.search(content):
             active.append(t)
@@ -411,6 +420,22 @@ class RedundancyDetector:
         (re.compile(r"\bindent\s+with\s+(\d+)\s+spaces?\b", re.IGNORECASE), "indent_size"),
         (re.compile(r"\bindent\s+with\s+tabs\b", re.IGNORECASE), "indent_style"),
     ]
+    _STYLE_PATTERNS = [
+        (
+            re.compile(
+                r"\b(semicolons?|trailing commas?|single quotes?|double quotes?)\b",
+                re.IGNORECASE,
+            ),
+        )
+    ]
+    _STRICT_TYPE_PATTERNS = [
+        (
+            re.compile(
+                r"\b(strict\s+type|enable\s+strict\s+mode|use\s+strict\s+typescript)\b",
+                re.IGNORECASE,
+            ),
+        )
+    ]
 
     def __init__(self):
         # Tooling-config presence per root — stat the filesystem once per
@@ -459,9 +484,26 @@ class RedundancyDetector:
             return []
         results: List[RedundancyMatch] = []
 
+        # Whole-body prefilter before any per-line scan: a pattern that
+        # matches some line matches the body, so the groups that miss here
+        # cannot produce a result and are dropped for every line at once.
+        indent_patterns = (
+            patterns_matching_anywhere(content, self._INDENT_PATTERNS) if has_editorconfig else []
+        )
+        style_pattern = None
+        if has_eslint or has_prettier:
+            matched = patterns_matching_anywhere(content, self._STYLE_PATTERNS)
+            style_pattern = matched[0][0] if matched else None
+        strict_type_pattern = None
+        if has_tsconfig:
+            matched = patterns_matching_anywhere(content, self._STRICT_TYPE_PATTERNS)
+            strict_type_pattern = matched[0][0] if matched else None
+        if not (indent_patterns or style_pattern or strict_type_pattern):
+            return []
+
         for line_num, line in enumerate(content.splitlines(), 1):
-            if has_editorconfig:
-                for pattern, config_key in self._INDENT_PATTERNS:
+            if indent_patterns:
+                for pattern, config_key in indent_patterns:
                     if pattern.search(line):
                         results.append(
                             RedundancyMatch(
@@ -472,12 +514,8 @@ class RedundancyDetector:
                             )
                         )
 
-            if has_eslint or has_prettier:
-                if re.search(
-                    r"\b(semicolons?|trailing commas?|single quotes?|double quotes?)\b",
-                    line,
-                    re.IGNORECASE,
-                ):
+            if style_pattern is not None:
+                if style_pattern.search(line):
                     config_file = (
                         ".eslintrc / .prettierrc"
                         if has_eslint and has_prettier
@@ -492,12 +530,8 @@ class RedundancyDetector:
                         )
                     )
 
-            if has_tsconfig:
-                if re.search(
-                    r"\b(strict\s+type|enable\s+strict\s+mode|use\s+strict\s+typescript)\b",
-                    line,
-                    re.IGNORECASE,
-                ):
+            if strict_type_pattern is not None:
+                if strict_type_pattern.search(line):
                     results.append(
                         RedundancyMatch(
                             line_num,
