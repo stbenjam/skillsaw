@@ -37,18 +37,24 @@ fi
 
 echo "Bumping version: $current_version -> $new_version"
 
-# Use python for portable in-place editing (works on both macOS and Linux)
-python3 -c "
+# Use python for portable in-place editing (works on both macOS and Linux).
+# Both python programs are quoted heredocs with values passed as argv, so
+# quotes, backticks, and $ in the source never reach the shell.
+python3 - "$PYPROJECT" "$INIT_PY" "$ACTION_YML" "$current_version" "$new_version" <<'PY'
 import re, sys
+
+pyproject, init_py, action_yml, current, new = sys.argv[1:6]
 for path, pattern, repl in [
-    ('$PYPROJECT', r'^version = \"$current_version\"', 'version = \"$new_version\"'),
-    ('$INIT_PY', r'^__version__ = \"$current_version\"', '__version__ = \"$new_version\"'),
-    ('$ACTION_YML', r\"default: '$current_version'\", \"default: '$new_version'\"),
+    (pyproject, r'^version = "' + re.escape(current) + '"', 'version = "' + new + '"'),
+    (init_py, r'^__version__ = "' + re.escape(current) + '"', '__version__ = "' + new + '"'),
+    (action_yml, r"default: '" + re.escape(current) + "'", "default: '" + new + "'"),
 ]:
-    text = open(path).read()
+    with open(path, encoding='utf-8') as f:
+        text = f.read()
     text = re.sub(pattern, repl, text, count=1, flags=re.MULTILINE)
-    open(path, 'w').write(text)
-"
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(text)
+PY
 
 echo "Updated:"
 echo "  $PYPROJECT"
@@ -59,11 +65,12 @@ echo "  $ACTION_YML"
 # and a missing file or absent pin is not an error.
 for doc in "${PINNED_DOCS[@]}"; do
     [[ -f "$doc" ]] || continue
-    python3 -c "
+    python3 - "$doc" "$current_version" "$new_version" <<'PY'
 import re, sys
 
 path, current, new = sys.argv[1:4]
-text = original = open(path).read()
+with open(path, encoding='utf-8') as f:
+    text = original = f.read()
 for pattern, repl in [
     (r'skillsaw==' + re.escape(current), 'skillsaw==' + new),
     (r'rev: v' + re.escape(current), 'rev: v' + new),
@@ -73,10 +80,14 @@ for pattern, repl in [
     # rewritten: it records the release that introduced an API, which
     # does not move.
     (r'skillsaw>=' + re.escape(current), 'skillsaw>=' + new),
+    # The action's documented version input default, which
+    # test_release_metadata pins to the project version.
+    (r'install \| `' + re.escape(current) + r'`', 'install | `' + new + '`'),
 ]:
     text = re.sub(pattern, repl, text)
 if text != original:
-    open(path, 'w').write(text)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(text)
     print('  ' + path)
-" "$doc" "$current_version" "$new_version"
+PY
 done

@@ -1,7 +1,7 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
-version: "0.19.0"
+version: "0.20.0"
 
 rules:
 
@@ -275,6 +275,12 @@ rules:
     # min-section-words: 40
     # ignore-generated: true
     # similarity-max-sections: 400
+
+  # Detect fully-qualified MCP tool names that should use the short tool name
+  content-mcp-tool-name:
+    enabled: auto
+    severity: warning
+    # allow: []
 
   # Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition
   content-missing-stop-condition:

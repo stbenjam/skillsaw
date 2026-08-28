@@ -231,6 +231,7 @@ RULE_GROUPS = [
             "content-missing-stop-condition",
             "content-inline-tool-examples",
             "content-progressive-disclosure",
+            "content-mcp-tool-name",
         ],
         "Rules that go beyond structural validation to analyze the *quality* of "
         "instruction files. Built on attention research "

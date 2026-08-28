@@ -3104,6 +3104,7 @@ BROKEN_FIXTURES = [
     "content/repeated-directive",
     "content/emphasis-density",
     "content/progressive-disclosure",
+    "content/mcp-tool-name",
     "security/malicious-skill",
     "codex/broken",
     "cursor-rules/broken-frontmatter",
@@ -4173,6 +4174,41 @@ class TestContentUnclosedFenceAutofix:
         weak = [v for v in violations(r2) if v["rule_id"] == "content-weak-language"]
         assert len(weak) == 3
         assert all(v["file_path"].endswith("SKILL.md") for v in weak)
+
+
+@pytest.mark.integration
+class TestContentMcpToolNameSuggestGate:
+    """content-mcp-tool-name ships its fix at SUGGEST: the strip is
+    mechanically exact but whether it is an adequate replacement is a
+    judgment call, so a plain `skillsaw fix` must leave the files alone."""
+
+    FIXTURE = "content/mcp-tool-name"
+
+    def test_plain_fix_applies_nothing(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_contents(repo)
+        _run_fix(repo)
+        assert _snapshot_contents(repo) == before
+
+    def test_suggest_fix_strips_and_converges(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_contents(repo)
+        _run_fix(repo, "--suggest")
+        after = _snapshot_contents(repo)
+        assert {p: t.count("\n") for p, t in after.items()} == {
+            p: t.count("\n") for p, t in before.items()
+        }
+
+        claude = (repo / "CLAUDE.md").read_text()
+        assert "run searchJiraIssuesUsingJql" in claude
+        assert "with `getJiraIssue`" in claude
+
+        r = run_lint(repo)
+        assert "content-mcp-tool-name" not in rule_ids(r)
+
+        first = _snapshot_contents(repo)
+        _run_fix(repo, "--suggest")
+        assert _snapshot_contents(repo) == first
 
 
 # ── SAFE Autofix Idempotency Suite ──────────────────────────────

@@ -163,7 +163,7 @@ skillsaw discovers plugins through the `skillsaw.plugins` entry point group:
 name = "skillsaw-acme-rules"
 version = "0.1.0"
 requires-python = ">=3.9"
-dependencies = ["skillsaw>=0.19.0"]
+dependencies = ["skillsaw>=0.20.0"]
 
 [project.entry-points."skillsaw.plugins"]
 acme = "skillsaw_acme_rules"

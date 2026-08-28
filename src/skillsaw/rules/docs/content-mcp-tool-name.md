@@ -1,0 +1,96 @@
+## Why
+
+MCP tools are exposed to an agent under a fully-qualified runtime
+identifier — `mcp__<server>__<tool>` — where the `<server>` half comes from
+how *that* user installed and named the MCP server in their own
+configuration. Writing the fully-qualified name in prose bakes one
+installation's naming into an instruction everyone reads: a reader whose
+server is registered under a different name has no tool by that identifier,
+so the instruction silently misdirects the agent.
+
+Shipping the server alongside the prose does not rescue the name: Claude
+Code namespaces a plugin-bundled server, exposing its tools as
+`mcp__plugin_<plugin-name>_<server-name>__<tool>`, so a bare
+`mcp__<server>__<tool>` written in a plugin's own content never resolves
+for that plugin's installers.
+
+Brevity is a secondary benefit. Fully-qualified names are long, low-signal
+strings that spend an agent's context window, usually without telling it
+anything the short name does not.
+
+The `mcp__<server>__<tool>` flattening is the convention of Claude Code and
+the Claude Agent SDK, and the same convention appears throughout OpenAI's
+Codex plugin content — it is a client convention, not part of the MCP
+specification. Because the convention spans ecosystems, this rule applies
+to every content file.
+
+## Examples
+
+**Bad:**
+
+```markdown
+Search for the ticket with `mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql`
+before opening a new one.
+```
+
+**Good:**
+
+```markdown
+Search for the ticket with `searchJiraIssuesUsingJql` before opening a new
+one.
+```
+
+## When not to flag
+
+Fenced and indented code blocks are never scanned. Configuration examples
+genuinely require the fully-qualified name — a `permissions` array in
+`settings.json`, an `.mcp.json` snippet, an `allowed-tools` list — so keep
+those inside a fenced block:
+
+````markdown
+```json
+{ "permissions": { "allow": ["mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql"] } }
+```
+````
+
+Frontmatter is out of scope for the same reason: a command's
+`allowed-tools:` and an agent's `tools:` list both take the fully-qualified
+identifier, and only body content is scanned.
+
+Names embedded in URLs and file paths are skipped when the guard can see
+the embedding: a name preceded by a path separator or a dot, a name inside
+a URL (scheme, query, or fragment), and a name followed by a filename
+extension are not flagged, and neither are names in link text or names
+split across a multi-line code span. Only the `mcp__<server>__` prefix is
+ever stripped, so a tool whose own name contains `__` keeps every segment
+of its name.
+
+For anything else that must keep its prefix, list the full identifier under
+the `allow` option:
+
+```yaml
+rules:
+  content-mcp-tool-name:
+    allow:
+      - mcp__internal__getDeployStatus
+```
+
+## How to fix
+
+In ordinary prose, drop the `mcp__<server>__` prefix and keep the short
+tool name. `skillsaw fix --suggest` applies that rewrite — it shortens the
+name in place, leaving the surrounding line and the file's line count
+unchanged. The fix is SUGGEST-tier rather than SAFE because the right
+replacement is a judgment call, which is yours to make in review:
+
+- When the short name is generic (`create`, `search`, `screenshot`), name
+  the server in prose instead — "the XcodeBuildMCP `screenshot` MCP tool" —
+  so the reader keeps the referent the prefix carried.
+- When the prose must communicate a runtime identifier — instructions for
+  an `allowed-tools` or `permissions` entry — the short name is not valid
+  there: write the placeholder form `mcp__<your-server>__<tool>`, or move
+  the concrete example into a fenced block.
+
+A violation in a body decoded out of a non-markdown host — a JSON hook
+prompt, a folded (`>`) YAML scalar — is reported without an automatic fix;
+apply the same rewrites by hand.
