@@ -7,13 +7,13 @@ import json
 import os
 import subprocess
 import sys
+import sysconfig
 import zipfile
 from pathlib import Path
 
 import pytest
 
 from skillsaw.cli import _feedback
-from skillsaw.redaction import redact_text
 
 
 def _run_feedback(path: Path, *args: str):
@@ -23,58 +23,6 @@ def _run_feedback(path: Path, *args: str):
         text=True,
         timeout=180,
     )
-
-
-def test_feedback_creates_redacted_bundle_without_repository_files(tmp_path):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "SKILL.md").write_text(
-        "---\nname: demo\ndescription: Demo skill\n---\n\nDo the work.\n"
-    )
-    (repo / ".skillsaw.yaml").write_text("api_key: sk-abcdefghijklmnopqrstuvwxyz123456\n")
-    (repo / "private.md").write_text("This file must not be included by default.\n")
-    output = tmp_path / "report.zip"
-
-    result = _run_feedback(
-        repo,
-        "--output",
-        str(output),
-        "--message",
-        "Lint failed in CI with GITHUB_TOKEN=ghp_" + "a" * 36,
-        "--json",
-    )
-
-    assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-    assert Path(payload["bundle"]) == output.resolve()
-    assert payload["sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()
-    archive_directory = payload["archive_directory"]
-    assert archive_directory.startswith("skillsaw-feedback-")
-    assert "template=bug_report.yml" in payload["issue_url"]
-    assert payload["email"] == {
-        "to": "stephen@bitbin.de",
-        "gpg_key": "https://github.com/stbenjam.gpg",
-    }
-    assert payload["included_files"] == []
-    with zipfile.ZipFile(output) as bundle:
-        assert sorted(bundle.namelist()) == [
-            f"{archive_directory}/environment.json",
-            f"{archive_directory}/lint-report.json",
-            f"{archive_directory}/lint-stderr.txt",
-            f"{archive_directory}/manifest.json",
-        ]
-        assert all(name.startswith(f"{archive_directory}/") for name in bundle.namelist())
-        environment = json.loads(bundle.read(f"{archive_directory}/environment.json"))
-        assert environment["lint_extensions_enabled"] is False
-        assert environment["config_included"] is False
-        assert "ghp_" not in environment["message"]
-        manifest = json.loads(bundle.read(f"{archive_directory}/manifest.json"))
-        assert manifest["redactions"] >= 1
-        assert set(manifest["files"]) == {
-            name.removeprefix(f"{archive_directory}/")
-            for name in bundle.namelist()
-            if not name.endswith("/manifest.json")
-        }
 
 
 def test_feedback_text_output_requires_review_before_sharing(tmp_path):
@@ -88,108 +36,10 @@ def test_feedback_text_output_requires_review_before_sharing(tmp_path):
     assert len(bundles) == 1
     assert bundles[0].name.startswith("skillsaw-feedback-")
     assert "Review before sharing" in result.stdout
-    assert "best effort to redact" in result.stdout
-    assert "not guaranteed to catch every secret" in result.stdout
+    assert "skillsaw's own output only" in result.stdout
     assert "stephen@bitbin.de" in result.stdout
     assert "https://github.com/stbenjam.gpg" in result.stdout
     assert "Extracts: skillsaw-feedback-" in result.stdout
-
-
-def test_feedback_includes_only_requested_repository_files_and_redacts_them(tmp_path):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    requested = repo / "reproducer.md"
-    requested.write_text("token: ghp_abcdefghijklmnopqrstuvwxyz1234567890\n")
-    output = tmp_path / "report.zip"
-
-    result = _run_feedback(repo, "--output", str(output), "--include", "reproducer.md", "--json")
-
-    assert result.returncode == 0, result.stderr
-    with zipfile.ZipFile(output) as bundle:
-        archive_directory = bundle.namelist()[0].split("/", 1)[0]
-        included = bundle.read(f"{archive_directory}/included/reproducer.md").decode()
-        assert "ghp_abcdefghijklmnopqrstuvwxyz1234567890" not in included
-        assert "[REDACTED]" in included
-        environment = json.loads(bundle.read(f"{archive_directory}/environment.json"))
-        assert environment["included_files"] == ["reproducer.md"]
-
-
-def test_feedback_redacts_private_keys_and_exact_credential_names():
-    text, count = _feedback._redact_text(
-        "password: not-a-known-token\n"
-        "secret=also-not-known\n"
-        "-----BEGIN PRIVATE KEY-----\nprivate material\n-----END PRIVATE KEY-----\n"
-    )
-
-    assert "not-a-known-token" not in text
-    assert "also-not-known" not in text
-    assert "private material" not in text
-    assert count >= 3
-
-
-def test_feedback_redacts_block_scalar_credentials_without_losing_siblings():
-    text, count = _feedback._redact_text(
-        "outer:\n"
-        "  password: |\n"
-        "    first secret\n"
-        "\n"
-        "    second secret\n"
-        "  host: localhost\n"
-    )
-
-    assert "first secret" not in text
-    assert "second secret" not in text
-    assert "host: localhost" in text
-    assert count == 1
-
-
-def test_shared_redactor_handles_multiline_secrets_and_is_idempotent():
-    source = (
-        "password: >\r\n"
-        "  first secret\r\n"
-        "\r\n"
-        "  second secret\r\n"
-        "host: localhost\r\n"
-        "-----BEGIN PRIVATE KEY-----\r\n"
-        "private material\r\n"
-        "-----END PRIVATE KEY-----\r\n"
-    )
-
-    result = redact_text(source)
-
-    assert result.count == 2
-    assert "first secret" not in result.text
-    assert "second secret" not in result.text
-    assert "private material" not in result.text
-    assert "password: [REDACTED]\r\n" in result.text
-    assert "host: localhost\r\n" in result.text
-    repeated = redact_text(result.text)
-    assert repeated.text == result.text
-    assert repeated.count == 0
-
-
-def test_shared_redactor_handles_container_syntax_and_canonical_aliases():
-    source = (
-        '{"password":"swordfish","host":"localhost"}\n'
-        "- passwd: real-value\n"
-        "private_key: another-real-value\n"
-        "password:\n\n"
-        "host: still-here\n"
-    )
-
-    result = redact_text(source)
-
-    assert result.count == 3
-    assert '"password":"[REDACTED]"' in result.text
-    assert "- passwd: [REDACTED]" in result.text
-    assert "private_key: [REDACTED]" in result.text
-    assert "host: still-here" in result.text
-
-
-def test_shared_redactor_counts_structured_assignment_once():
-    result = redact_text("api_key: sk-abcdefghijklmnopqrstuvwxyz123456\n")
-
-    assert result.count == 1
 
 
 def test_feedback_rejects_source_files_outside_the_repository(tmp_path):
@@ -282,7 +132,17 @@ def test_feedback_records_a_timed_out_diagnostic_lint(tmp_path, monkeypatch):
     result = _feedback._run_diagnostic_lint(tmp_path, None, with_extensions=False)
 
     assert result == {
-        "command": ["skillsaw", "lint", "--format", "json", "--verbose", "--no-baseline"],
+        "command": [
+            "skillsaw",
+            "lint",
+            "--format",
+            "json",
+            "--verbose",
+            "--no-baseline",
+            "--no-custom-rules",
+            "--no-plugins",
+            "<repository>",
+        ],
         "exit_code": None,
         "stdout": "report",
         "stderr": "progress",
@@ -290,94 +150,217 @@ def test_feedback_records_a_timed_out_diagnostic_lint(tmp_path, monkeypatch):
     }
 
 
-def test_shared_redactor_replaces_authorization_headers():
-    result = redact_text(
-        "Authorization: Bearer abc123def456ghi\r\n"
-        "Proxy-Authorization: Basic Zm9vOmJhcg==\n"
-        "Host: example.test\n"
+def test_feedback_records_the_command_it_actually_ran(tmp_path, monkeypatch):
+    """The bundle's record of its own lint must be reproducible by a maintainer."""
+    captured = {}
+
+    def capture(command, cwd):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        return "{}", "", 0
+
+    monkeypatch.setattr(_feedback, "_run_lint_process", capture)
+    config = tmp_path / ".skillsaw.yaml"
+    config.write_text("version: 0.20.0\n")
+
+    result = _feedback._run_diagnostic_lint(tmp_path, config, with_extensions=True)
+
+    assert captured["command"][1:3] == ["-m", "skillsaw"]
+    assert captured["command"][-1] == str(tmp_path)
+    assert "--no-custom-rules" not in captured["command"]
+    assert result["command"] == ["skillsaw", *captured["command"][3:-1], "<repository>"]
+    assert "--config" in result["command"]
+
+
+def test_feedback_does_not_import_skillsaw_from_the_target_repository(tmp_path):
+    """`python -m` puts cwd on sys.path, so the child must not run in the repo."""
+    repo = tmp_path / "repo"
+    (repo / "skillsaw").mkdir(parents=True)
+    marker = repo / "HIJACKED"
+    (repo / "skillsaw" / "__init__.py").write_text(
+        f"import pathlib\npathlib.Path({str(marker)!r}).write_text('hijacked')\n"
+    )
+    (repo / "skillsaw" / "__main__.py").write_text("raise SystemExit('hijacked')\n")
+    (repo / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: Demo skill\n---\n\nDo the work.\n"
+    )
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--output", str(output), "--json")
+
+    assert result.returncode == 0, result.stderr
+    assert not marker.exists(), "target repository was imported as the skillsaw package"
+    with zipfile.ZipFile(output) as bundle:
+        archive_directory = json.loads(result.stdout)["archive_directory"]
+        report = json.loads(bundle.read(f"{archive_directory}/lint-report.json"))
+        assert "violations" in report, "the diagnostic lint did not produce a real report"
+
+
+def test_feedback_rejects_a_missing_or_non_file_config(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    missing = _run_feedback(
+        repo, "--config", str(repo / "absent.yaml"), "--output", str(tmp_path / "a.zip")
+    )
+    assert missing.returncode == 1
+    assert "Config file not found" in missing.stderr
+
+    directory = repo / "conf.d"
+    directory.mkdir()
+    not_a_file = _run_feedback(
+        repo, "--config", str(directory), "--output", str(tmp_path / "b.zip")
+    )
+    assert not_a_file.returncode == 1
+    assert "Config file not found" in not_a_file.stderr
+
+
+def test_feedback_keeps_the_local_repository_path_out_of_the_bundle(tmp_path):
+    repo = tmp_path / "my-private-repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\n---\n\nNo description field.\n")
+    (repo / "private.md").write_text("Confidential prose that must not travel.\n")
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--output", str(output), "--json")
+
+    assert result.returncode == 0, result.stderr
+    raw = output.read_bytes()
+    assert str(repo).encode() not in raw
+    assert b"Confidential prose that must not travel" not in raw
+    archive_directory = json.loads(result.stdout)["archive_directory"]
+    with zipfile.ZipFile(output) as bundle:
+        report = bundle.read(f"{archive_directory}/lint-report.json").decode()
+    assert "<repository>" in report
+
+
+def test_replace_local_paths_leaves_a_filesystem_root_alone():
+    text = "/ and /x are not the repository"
+
+    assert _feedback._replace_local_paths(text, Path("/"), None) == text
+
+
+def test_replace_local_paths_scrubs_interpreter_and_home_paths(tmp_path):
+    traceback_text = (
+        f'  File "{sysconfig.get_paths()["purelib"]}/skillsaw/linter.py", line 1\n'
+        f'  File "{Path.home()}/work/repro.py", line 2\n'
     )
 
-    assert result.count == 2
-    assert "abc123def456ghi" not in result.text
-    assert "Zm9vOmJhcg==" not in result.text
-    assert "Authorization: [REDACTED]\r\n" in result.text
-    assert "Host: example.test\n" in result.text
-    assert redact_text(result.text).text == result.text
+    scrubbed = _feedback._replace_local_paths(traceback_text, tmp_path, None)
+
+    assert str(Path.home()) not in scrubbed
+    assert sysconfig.get_paths()["purelib"] not in scrubbed
+    assert "skillsaw/linter.py" in scrubbed
 
 
-def test_shared_redactor_redacts_sequence_block_scalars():
-    source = "items:\n  - password: |\n      first secret\n      second secret\n  - name: ok\n"
-
-    result = redact_text(source)
-
-    assert result.count == 1
-    assert "first secret" not in result.text
-    assert "second secret" not in result.text
-    assert "  - password: [REDACTED]\n" in result.text
-    assert "  - name: ok\n" in result.text
-    assert redact_text(result.text).text == result.text
-
-
-def test_shared_redactor_redacts_whole_multiword_plain_scalars():
-    result = redact_text("passphrase: correct horse battery staple\nhost: localhost\n")
-
-    assert result.count == 1
-    assert "horse" not in result.text
-    assert "passphrase: [REDACTED]\n" in result.text
-    assert "host: localhost\n" in result.text
-
-
-def test_shared_redactor_keeps_trailing_comments_beside_a_plain_scalar():
-    result = redact_text("password: hunter two # set in CI\n")
-
-    assert result.text == "password: [REDACTED] # set in CI\n"
-
-
-def test_shared_redactor_keeps_non_credential_token_settings():
-    source = "max_tokens: 4096\ntokenizer: cl100k_base\ngithub_token: real-value\n"
-
-    result = redact_text(source)
-
-    assert result.count == 1
-    assert "max_tokens: 4096" in result.text
-    assert "tokenizer: cl100k_base" in result.text
-    assert "github_token: [REDACTED]" in result.text
-
-
-def test_shared_redactor_redacts_private_keys_without_a_footer():
-    source = (
-        "log tail:\n"
-        "-----BEGIN RSA PRIVATE KEY-----\n"
-        "Proc-Type: 4,ENCRYPTED\n"
-        "\n"
-        "MIIEowIBAAKCAQEAxyz\n"
-        "AAAABBBBCCCCDDDD\n"
-        "\n"
-        "unrelated trailing prose\n"
+def test_feedback_bundles_only_skillsaw_output_by_default(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: Demo skill\n---\n\nDo the work.\n"
     )
+    (repo / ".skillsaw.yaml").write_text("api_key: sk-abcdefghijklmnopqrstuvwxyz123456\n")
+    (repo / "private.md").write_text("This file must not be included by default.\n")
+    output = tmp_path / "report.zip"
 
-    result = redact_text(source)
+    result = _run_feedback(repo, "--output", str(output), "--message", "Lint failed", "--json")
 
-    assert result.count == 1
-    assert "MIIEowIBAAKCAQEAxyz" not in result.text
-    assert "AAAABBBBCCCCDDDD" not in result.text
-    assert "unrelated trailing prose\n" in result.text
-    assert redact_text(result.text).text == result.text
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["included_files"] == []
+    archive_directory = payload["archive_directory"]
+    raw = output.read_bytes()
+    assert b"This file must not be included by default" not in raw
+    assert b"sk-abcdefghijklmnopqrstuvwxyz123456" not in raw
+    with zipfile.ZipFile(output) as bundle:
+        assert sorted(bundle.namelist()) == [
+            f"{archive_directory}/environment.json",
+            f"{archive_directory}/lint-report.json",
+            f"{archive_directory}/lint-stderr.txt",
+            f"{archive_directory}/manifest.json",
+        ]
 
 
-def test_shared_redactor_redacts_the_first_field_after_a_byte_order_mark():
-    result = redact_text("﻿password: hunter2\nhost: localhost\n")
+def test_feedback_copies_named_files_verbatim(tmp_path):
+    """--include is the reporter's call; skillsaw must not alter what they named."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    reproducer = repo / "reproducer.md"
+    body = "password: hunter2\napiKey: sk-abcdefghijklmnopqrstuvwxyz123456\n"
+    reproducer.write_text(body)
+    output = tmp_path / "report.zip"
 
-    assert result.count == 1
-    assert "hunter2" not in result.text
-    assert result.text.startswith("﻿password: [REDACTED]")
-    assert "host: localhost\n" in result.text
+    result = _run_feedback(repo, "--include", "reproducer.md", "--output", str(output), "--json")
+
+    assert result.returncode == 0, result.stderr
+    archive_directory = json.loads(result.stdout)["archive_directory"]
+    with zipfile.ZipFile(output) as bundle:
+        shipped = bundle.read(f"{archive_directory}/included/reproducer.md").decode()
+    assert shipped == body, "a file the reporter named must arrive unmodified"
 
 
-def test_shared_redactor_redacts_a_block_scalar_after_a_byte_order_mark():
-    result = redact_text("﻿password: |\n  first secret\nhost: localhost\n")
+def test_feedback_refuses_files_an_ignore_file_excludes(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".gitignore").write_text("# secrets\n.env\nbuild/\n")
+    (repo / ".env").write_text("AWS_SECRET_ACCESS_KEY=hunter2\n")
+    (repo / "build").mkdir()
+    (repo / "build" / "out.md").write_text("generated\n")
 
-    assert result.count == 1
-    assert "first secret" not in result.text
-    assert result.text.startswith("﻿password: [REDACTED]")
-    assert "host: localhost\n" in result.text
+    for target in (".env", "build/out.md"):
+        result = _run_feedback(
+            repo, "--include", target, "--output", str(tmp_path / f"{target[-5:]}.zip")
+        )
+        assert result.returncode == 1, target
+        assert "ignore file already excludes" in result.stderr, target
+
+
+def test_feedback_refuses_an_ignored_config(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".dockerignore").write_text(".skillsaw.yaml\n")
+    config = repo / ".skillsaw.yaml"
+    config.write_text("version: 0.20.0\n")
+
+    result = _run_feedback(repo, "--config", str(config), "--output", str(tmp_path / "r.zip"))
+
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+
+
+def test_feedback_allows_a_file_a_negation_re_includes_nothing_about(tmp_path):
+    """A '!' line must never turn the guardrail into a grant."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".gitignore").write_text("!keep.md\n")
+    (repo / "keep.md").write_text("shareable\n")
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--include", "keep.md", "--output", str(output), "--json")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["included_files"] == ["keep.md"]
+
+
+def test_feedback_names_the_reporter_files_it_bundled(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    (repo / "reproducer.md").write_text("steps\n")
+
+    result = _run_feedback(repo, "--include", "reproducer.md", "--output", str(tmp_path / "r.zip"))
+
+    assert result.returncode == 0, result.stderr
+    assert "does" in result.stdout and "not scan them for secrets" in result.stdout
+    assert "included/reproducer.md" in result.stdout
+
+
+def test_safe_terminal_text_strips_escapes_and_control_bytes():
+    mirrored = _feedback._safe_terminal_text(b"\x1b]0;pwned\x07\x1b[31mred\x1b[0m \x08 done")
+
+    assert b"\x1b" not in mirrored
+    assert b"\x07" not in mirrored
+    assert b"\x08" not in mirrored
+    assert b"red" in mirrored

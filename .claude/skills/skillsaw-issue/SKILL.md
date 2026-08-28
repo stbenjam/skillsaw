@@ -49,9 +49,10 @@ describes the observed behavior. The command creates a local ZIP; it does not
 submit anything. Do not add `--include` unless the user explicitly identifies
 the file to share.
 
-Review the ZIP before sharing it. Its redaction is best effort, so remove or
-replace anything sensitive. Keep the bundle local if the user does not also
-approve opening an issue.
+Review the ZIP before sharing it. skillsaw does not scan file contents for
+secrets: anything `--include` or `--config` names is copied in verbatim, so
+read those files yourself and remove or replace anything sensitive. Keep the
+bundle local if the user does not also approve opening an issue.
 
 ## Open an issue only when approved
 

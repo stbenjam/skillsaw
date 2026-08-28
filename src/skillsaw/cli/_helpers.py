@@ -19,7 +19,7 @@ class _RuleProgress:
     """Single-line per-rule progress on stderr for interactive runs.
 
     Inactive unless stderr is a terminal, so JSON/SARIF stdout, shell
-    pipelines, and CI logs are never polluted. Verbose text mode also disables
+    pipelines, and CI logs are never polluted.  Verbose mode also disables
     it — info-level log lines share stderr and would interleave.
     """
 
@@ -27,7 +27,7 @@ class _RuleProgress:
         self.enabled = (
             sys.stderr.isatty()
             and not getattr(args, "no_progress", False)
-            and (not getattr(args, "verbose", False) or getattr(args, "fmt", "text") != "text")
+            and not getattr(args, "verbose", False)
         )
 
     def __call__(self, index: int, total: int, rule_id: str) -> None:

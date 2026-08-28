@@ -9,13 +9,7 @@ auto-discovered rule module.
 from __future__ import annotations
 
 import re
-from typing import Optional, Sequence
-
-from ...redaction import (
-    CREDENTIAL_FIELD_NAMES as _ENV_CREDENTIAL_NAMES,
-    CREDENTIAL_FIELD_SUFFIXES as _ENV_CREDENTIAL_SUFFIXES,
-    STRUCTURED_SECRET_PATTERNS,
-)
+from typing import Optional, Pattern, Sequence, Tuple
 
 # Case-insensitive substrings that mark a generic credential value as an
 # obvious placeholder (inspired by gitleaks/detect-secrets allowlists).
@@ -82,6 +76,55 @@ def is_secret_placeholder(value: str, markers: Sequence[str] = DEFAULT_PLACEHOLD
     return any(marker.lower() in lowered for marker in markers)
 
 
+# High-confidence structured token formats. These are intentionally shared by
+# prose and structured-config rules; generic ``key = value`` detection remains
+# caller-specific because its acceptable false-positive tradeoff differs.
+STRUCTURED_SECRET_PATTERNS: Tuple[Tuple[Pattern[str], str], ...] = tuple(
+    (re.compile(pattern), description)
+    for pattern, description in (
+        # OpenAI / Anthropic
+        (r"\bsk-[a-zA-Z0-9]{20,}", "OpenAI/Anthropic API key"),
+        (r"\bsk-ant-[a-zA-Z0-9\-_]{20,}", "Anthropic API key"),
+        # GitHub
+        (r"\bghp_[a-zA-Z0-9]{36,}", "GitHub personal access token"),
+        (r"\bghs_[a-zA-Z0-9]{36,}", "GitHub server token"),
+        (r"\bgho_[a-zA-Z0-9]{36,}", "GitHub OAuth token"),
+        (r"\bghu_[a-zA-Z0-9]{36,}", "GitHub user token"),
+        (r"\bghr_[a-zA-Z0-9]{36,}", "GitHub refresh token"),
+        # GitLab
+        (r"\bglpat-[a-zA-Z0-9\-_]{20,}", "GitLab personal access token"),
+        # AWS
+        (r"\bAKIA[0-9A-Z]{16}", "AWS access key ID"),
+        (r"\bASIA[0-9A-Z]{16}", "AWS temporary access key ID"),
+        # Slack
+        (r"\bxoxb-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack bot token"),
+        (r"\bxoxp-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack user token"),
+        (r"\bxoxa-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack app token"),
+        (r"\bxoxr-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack refresh token"),
+        # Stripe
+        (r"\bsk_live_[a-zA-Z0-9]{24,}", "Stripe secret key"),
+        (r"\brk_live_[a-zA-Z0-9]{24,}", "Stripe restricted key"),
+        # Google
+        (r"\bAIza[0-9A-Za-z_\-]{35}", "Google API key"),
+        # Twilio
+        (r"\bSK[0-9a-fA-F]{32}", "Twilio API key"),
+        # SendGrid
+        (r"\bSG\.[a-zA-Z0-9_\-]{22}\.[a-zA-Z0-9_\-]{43}", "SendGrid API key"),
+        # npm
+        (r"\bnpm_[a-zA-Z0-9]{36}", "npm access token"),
+        # PyPI
+        (r"\bpypi-[a-zA-Z0-9]{16,}", "PyPI API token"),
+        # JWT (base64.base64.base64)
+        (
+            r"\beyJ[a-zA-Z0-9_\-]*\.eyJ[a-zA-Z0-9_\-]*\.[a-zA-Z0-9_\-]+",
+            "JSON Web Token",
+        ),
+        # Private keys
+        (r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", "Private key"),
+    )
+)
+
+
 def structured_secret_description(value: str) -> Optional[str]:
     """Describe the first high-confidence structured secret in *value*."""
     for pattern, description in STRUCTURED_SECRET_PATTERNS:
@@ -89,6 +132,30 @@ def structured_secret_description(value: str) -> Optional[str]:
             return description
     return None
 
+
+_ENV_CREDENTIAL_NAMES = frozenset(
+    {
+        "api_key",
+        "api_token",
+        "access_key",
+        "access_key_id",
+        "access_token",
+        "auth_token",
+        "bearer_token",
+        "client_secret",
+        "credential",
+        "credentials",
+        "password",
+        "passwd",
+        "passphrase",
+        "private_key",
+        "refresh_token",
+        "secret",
+        "secret_key",
+        "session_token",
+    }
+)
+_ENV_CREDENTIAL_SUFFIXES = tuple(f"_{name}" for name in _ENV_CREDENTIAL_NAMES)
 
 _HEADER_CREDENTIAL_NAMES = frozenset(
     {

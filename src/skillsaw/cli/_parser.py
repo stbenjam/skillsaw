@@ -245,10 +245,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     # --- feedback ---
     feedback_parser = subparsers.add_parser(
         "feedback",
-        help="Create a redacted diagnostic bundle for a bug report",
+        help="Create a local diagnostic bundle for a bug report",
         description=(
             "Create a local, reviewable diagnostic bundle for a skillsaw bug report. "
-            "It never uploads data or includes repository files unless --include or --config is used."
+            "It never uploads data, and includes no repository files unless --include or "
+            "--config names them. Named files are copied verbatim: skillsaw does not scan "
+            "them for secrets, so review the ZIP before sharing it. Files already excluded "
+            "by .gitignore (or .dockerignore, .npmignore, .helmignore, .gcloudignore) are refused."
         ),
     )
     feedback_parser.add_argument(
@@ -262,7 +265,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "-c",
         "--config",
         type=Path,
-        help="Path to .skillsaw.yaml config file to include after redaction (default: auto-discover only)",
+        help="Path to .skillsaw.yaml config file to copy into the bundle verbatim (default: auto-discover only; review it for secrets yourself)",
     )
     feedback_parser.add_argument(
         "-o",
@@ -281,7 +284,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="append",
         default=[],
         metavar="PATH",
-        help="Include a repository-relative UTF-8 text file after redaction (repeatable)",
+        help="Copy a repository-relative UTF-8 text file into the bundle verbatim (repeatable; review it for secrets yourself)",
     )
     feedback_parser.add_argument(
         "--with-extensions",

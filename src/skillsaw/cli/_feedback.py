@@ -1,4 +1,10 @@
-"""Create local, redacted diagnostic bundles for skillsaw bug reports."""
+"""Create local diagnostic bundles for skillsaw bug reports.
+
+The bundle carries skillsaw's own output. Repository files are included
+only when the reporter names them with ``--include`` or ``--config``, and
+reviewing those for secrets is the reporter's job: skillsaw does not scan
+file contents for credentials and does not claim the bundle is sanitized.
+Files an ignore file already excludes cannot be bundled at all."""
 
 from __future__ import annotations
 
@@ -12,6 +18,7 @@ import secrets
 import select
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import time
 import zipfile
@@ -21,8 +28,8 @@ from typing import Any
 from urllib.parse import urlencode
 
 from ..config import find_config
+from ..discovery.excludes import path_matches_patterns
 from ..paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
-from ..redaction import redact_text
 from ._config import _get_version
 
 _ISSUE_URL = "https://github.com/stbenjam/skillsaw/issues/new"
@@ -32,15 +39,13 @@ _BUNDLE_SCHEMA_VERSION = 1
 _TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
 
 
-def _redact_text(text: str) -> tuple[str, int]:
-    """Compatibility wrapper for the shared artifact redactor."""
-    result = redact_text(text)
-    return result.text, result.count
-
-
 def _safe_terminal_text(data: bytes) -> bytes:
-    """Redact and neutralize child diagnostics before writing to a terminal."""
-    text, _redactions = _redact_text(data.decode("utf-8", "replace"))
+    """Neutralize child diagnostics before writing them to a terminal.
+
+    Escape and control bytes only: a child that emits them could otherwise
+    retitle the window or drive the clipboard. This is not a secret scan.
+    """
+    text = data.decode("utf-8", "replace")
     text = _TERMINAL_ESCAPE.sub("", text)
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "�", text)
     return text.encode("utf-8", "replace")
@@ -69,7 +74,47 @@ def _config_path(args, root: Path) -> Path | None:
     return find_config(root)
 
 
-def _included_file(root: Path, raw_path: str) -> tuple[Path, Path]:
+# Ignore files that mean "keep this out of an artifact that leaves the machine".
+# The declaration already exists in the repository and the reporter maintains it,
+# so it is the cheap 80% answer to "don't bundle the credentials file" — no
+# scanning of file contents, and nothing for skillsaw to keep up to date.
+_IGNORE_FILES = (
+    ".gitignore",
+    ".dockerignore",
+    ".npmignore",
+    ".helmignore",
+    ".gcloudignore",
+)
+
+
+def _ignore_patterns(root: Path) -> list[str]:
+    """Patterns from the repository's ignore files, comments and negations dropped."""
+    patterns: list[str] = []
+    for name in _IGNORE_FILES:
+        ignore_file = root / name
+        if not safe_is_file(ignore_file):
+            continue
+        try:
+            lines = ignore_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            entry = line.strip()
+            # A negation re-includes a path; skipping it keeps this a guardrail
+            # that only ever refuses, never grants.
+            if not entry or entry.startswith(("#", "!")):
+                continue
+            entry = entry.rstrip("/")
+            if entry:
+                patterns.extend((entry, f"{entry}/*", f"**/{entry}", f"**/{entry}/*"))
+    return patterns
+
+
+def _is_ignored(resolved: Path, root: Path, patterns: list[str]) -> bool:
+    return path_matches_patterns(resolved, root, patterns)
+
+
+def _included_file(root: Path, raw_path: str, patterns: list[str]) -> tuple[Path, Path]:
     candidate = Path(raw_path)
     if not candidate.is_absolute():
         candidate = root / candidate
@@ -78,6 +123,11 @@ def _included_file(root: Path, raw_path: str) -> tuple[Path, Path]:
         raise ValueError(f"--include must name a file inside the repository: {raw_path}")
     if not safe_is_file(resolved):
         raise ValueError(f"--include must name a file: {raw_path}")
+    if _is_ignored(resolved, root, patterns):
+        raise ValueError(
+            f"--include refuses a file an ignore file already excludes: {raw_path}. "
+            "Copy it to a non-ignored path if you have reviewed it and still want to share it"
+        )
     relative = resolved.relative_to(root)
     return resolved, relative
 
@@ -99,11 +149,17 @@ def _run_diagnostic_lint(
         command.extend(["--config", str(config_path)])
     if not with_extensions:
         command.extend(["--no-custom-rules", "--no-plugins"])
-    command.append(".")
+    # Never run the child from the repository: ``-m`` puts the process's cwd on
+    # ``sys.path[0]``, so a repo carrying a top-level ``skillsaw/`` package would
+    # be imported in place of the installed one — arbitrary code execution from
+    # repo content, before ``--no-custom-rules``/``--no-plugins`` is even read.
+    # The target is passed as a path instead of ``.``.
+    command.append(str(root))
     try:
-        stdout, stderr, return_code = _run_lint_process(command, root)
+        with tempfile.TemporaryDirectory(prefix="skillsaw-feedback-") as neutral_cwd:
+            stdout, stderr, return_code = _run_lint_process(command, Path(neutral_cwd))
         return {
-            "command": ["skillsaw", "lint", "--format", "json", "--verbose", "--no-baseline"],
+            "command": ["skillsaw", *command[3:-1], "<repository>"],
             "exit_code": return_code,
             "stdout": stdout,
             "stderr": stderr,
@@ -117,7 +173,7 @@ def _run_diagnostic_lint(
         if isinstance(stderr, bytes):
             stderr = stderr.decode("utf-8", "replace")
         return {
-            "command": ["skillsaw", "lint", "--format", "json", "--verbose", "--no-baseline"],
+            "command": ["skillsaw", *command[3:-1], "<repository>"],
             "exit_code": None,
             "stdout": stdout,
             "stderr": stderr,
@@ -125,12 +181,19 @@ def _run_diagnostic_lint(
         }
 
 
+def _lint_child_environment() -> dict[str, str]:
+    """Child env that keeps any directory off the interpreter's import path."""
+    # Defense in depth beside the neutral cwd: honored on 3.11+, ignored below.
+    return {**os.environ, "PYTHONSAFEPATH": "1"}
+
+
 def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
-    """Run lint, mirroring its interactive progress line into this terminal."""
+    """Run lint, mirroring its interactive verbose output into this terminal."""
     if not sys.stderr.isatty() or os.name == "nt":
         completed = subprocess.run(
             command,
             cwd=root,
+            env=_lint_child_environment(),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -146,7 +209,13 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
     captured_stderr = bytearray()
     try:
         with tempfile.TemporaryFile(mode="w+b") as stdout_file:
-            process = subprocess.Popen(command, cwd=root, stdout=stdout_file, stderr=slave)
+            process = subprocess.Popen(
+                command,
+                cwd=root,
+                env=_lint_child_environment(),
+                stdout=stdout_file,
+                stderr=slave,
+            )
             os.close(slave)
             slave = -1
             deadline = time.monotonic() + 120
@@ -187,11 +256,21 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
 
 
 def _replace_local_paths(text: str, root: Path, config_path: Path | None) -> str:
-    """Keep machine-specific local paths out of text reports."""
-    if root != Path(root.anchor):
-        text = text.replace(str(root), "<repository>")
+    """Keep machine-specific local paths out of text reports.
+
+    The repository root is not enough: the highest-value content in a bundle is
+    a traceback, whose frames are interpreter and site-packages paths under the
+    operator's home directory, and no credential pattern matches those.
+    """
+    replacements = [(str(root), "<repository>")] if root != Path(root.anchor) else []
     if config_path is not None:
-        text = text.replace(str(config_path), "<config>")
+        replacements.append((str(config_path), "<config>"))
+    for path in (sysconfig.get_paths().get("purelib"), sys.prefix, str(Path.home())):
+        if path and path not in ("/", ""):
+            replacements.append((path, "<venv>" if path != str(Path.home()) else "<home>"))
+    # Longest first, so a prefix never shadows the more specific path inside it.
+    for needle, marker in sorted(replacements, key=lambda pair: len(pair[0]), reverse=True):
+        text = text.replace(needle, marker)
     return text
 
 
@@ -235,22 +314,26 @@ def _run_feedback(args) -> None:
         print(f"Error: Bundle already exists: {output_path}", file=sys.stderr)
         sys.exit(1)
 
+    ignore_patterns = _ignore_patterns(root)
     try:
-        selected_files = [_included_file(root, raw_path) for raw_path in args.include]
+        selected_files = [
+            _included_file(root, raw_path, ignore_patterns) for raw_path in args.include
+        ]
+        if config_path is not None and _is_ignored(config_path, root, ignore_patterns):
+            raise ValueError(
+                f"--config refuses a file an ignore file already excludes: {config_path}"
+            )
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
 
     lint = _run_diagnostic_lint(root, config_path, with_extensions=args.with_extensions)
     artifact_texts: dict[str, str] = {}
-    redactions = 0
     for name, raw_text in (
         ("lint-report.json", lint["stdout"]),
         ("lint-stderr.txt", lint["stderr"]),
     ):
-        cleaned = _replace_local_paths(raw_text, root, config_path)
-        artifact_texts[name], count = _redact_text(cleaned)
-        redactions += count
+        artifact_texts[name] = _replace_local_paths(raw_text, root, config_path)
 
     config_included = args.config is not None
     if config_included:
@@ -260,24 +343,20 @@ def _run_feedback(args) -> None:
         except OSError:
             print(f"Error: Could not read config file: {config_path}", file=sys.stderr)
             sys.exit(1)
-        artifact_texts["skillsaw-config.yaml"], count = _redact_text(raw_config)
-        redactions += count
+        artifact_texts["skillsaw-config.yaml"] = raw_config
 
     included_names = []
-    for _file_path, relative in selected_files:
+    for file_path, relative in selected_files:
         try:
-            file_path, relative = _included_file(root, str(relative))
             raw_content = file_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError, ValueError):
+        except (OSError, UnicodeDecodeError):
             print(f"Error: Could not read --include file: {relative}", file=sys.stderr)
             sys.exit(1)
         archive_name = f"included/{relative.as_posix()}"
-        artifact_texts[archive_name], count = _redact_text(raw_content)
-        redactions += count
+        artifact_texts[archive_name] = raw_content
         included_names.append(relative.as_posix())
 
-    message, count = _redact_text(args.message)
-    redactions += count
+    message = args.message
     environment = {
         "bundle_schema_version": _BUNDLE_SCHEMA_VERSION,
         "created_at": created_at.isoformat(),
@@ -296,7 +375,6 @@ def _run_feedback(args) -> None:
     artifact_bytes = {name: text.encode("utf-8") for name, text in artifact_texts.items()}
     manifest = {
         "bundle_schema_version": _BUNDLE_SCHEMA_VERSION,
-        "redactions": redactions,
         "files": {
             name: {"sha256": _sha256(data), "size_bytes": len(data)}
             for name, data in sorted(artifact_bytes.items())
@@ -333,7 +411,6 @@ def _run_feedback(args) -> None:
         "issue_url": issue_url,
         "email": {"to": _FEEDBACK_EMAIL, "gpg_key": _GPG_KEY_URL},
         "included_files": included_names,
-        "redactions": redactions,
     }
     if args.json:
         print(json.dumps(result, sort_keys=True))
@@ -342,12 +419,19 @@ def _run_feedback(args) -> None:
         print(f"  File:     {output_path}")
         print(f"  Extracts: {bundle_id}/")
         print(f"  SHA-256:  {bundle_sha256}")
-        print(f"  Redacted: {redactions} value(s)")
+        if included_names or config_included:
+            print(f"  Your files: {len(included_names) + int(config_included)}")
         print()
         print("Review before sharing")
-        print("  Open the ZIP and confirm you are comfortable sharing every file in it.")
-        print("  skillsaw makes a best effort to redact credential-shaped values, but")
-        print("  redaction is not guaranteed to catch every secret or sensitive detail.")
+        if included_names or config_included:
+            print("  This bundle contains files you named, copied verbatim. skillsaw does")
+            print("  not scan them for secrets. Open the ZIP and check them yourself:")
+            if config_included:
+                print("    skillsaw-config.yaml")
+            for name in included_names:
+                print(f"    included/{name}")
+        else:
+            print("  This bundle contains skillsaw's own output only — no repository files.")
         print()
         print("Share the reviewed bundle")
         print("  GitHub issue:")
