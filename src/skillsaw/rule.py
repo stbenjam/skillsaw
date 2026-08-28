@@ -144,6 +144,11 @@ class Rule(ABC):
     # One-sentence rationale rendered on the documentation site's
     # Deprecated page and each deprecated rule's own page.
     deprecated_reason: Optional[str] = None
+    # Builtin rule IDs that must accompany this rule when an operator names
+    # it explicitly with ``--rule``. This is for validation prerequisites
+    # whose diagnostics are deliberately owned by another rule; ordinary
+    # config-driven enablement remains independent.
+    target_dependencies: tuple[str, ...] = ()
     # Default activation when the user config doesn't mention the rule:
     # True (always on), False (opt-in), or "auto" (on when repo_types /
     # formats match the repository). ``LinterConfig.default()`` is generated

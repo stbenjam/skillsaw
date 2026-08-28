@@ -11,9 +11,9 @@ to them, so this rule skips them by default. Set `check-user-only-skills: true`
 to check their descriptions normally. Only the YAML boolean `true` opts a skill
 out; an absent field, `false`, strings, and numbers remain checked.
 
-Natural selection clauses count as trigger phrasing, including "Use this skill
-for ...", "Invoke this skill whenever ...", "This skill should be used before
-...", and "Use only when ...".
+Natural selection clauses count as trigger phrasing, including "Use for ...",
+"Use it when ...", "Use this skill for ...", "Invoke this skill whenever ...",
+"This skill should be used before ...", and "Use only when ...".
 
 The routing heuristics and user-only-skill behavior can be configured independently:
 
