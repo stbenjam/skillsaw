@@ -2,6 +2,8 @@
 
 **Disposition**: {{DISPOSITION}}
 
+**Round**: {{ROUND}}
+
 <!--
 DISPOSITION is one of:
   APPROVE
