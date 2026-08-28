@@ -12,10 +12,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same PR supersedes any in-flight run; pushes to main
-# always run to completion.
+# A newer push to the same PR supersedes any in-flight run. Pushes to main
+# get a per-commit group so every one runs to completion — a shared group
+# would let GitHub cancel the queued middle run of three rapid pushes.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
