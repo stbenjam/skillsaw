@@ -414,6 +414,130 @@ def test_install_download_with_url_passes(temp_dir):
     assert len(violations) == 0
 
 
+def test_install_download_sha256_valid_passes(temp_dir):
+    skill = temp_dir / "good-sha"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: good-sha\ndescription: Good sha\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://x.com/a\n"
+        "        sha256: " + ("a" * 64) + "\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 0
+
+
+def test_install_download_sha256_uppercase_passes(temp_dir):
+    """openclaw lowercases the digest before matching, so uppercase is valid."""
+    skill = temp_dir / "upper-sha"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: upper-sha\ndescription: Upper sha\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://x.com/a\n"
+        "        sha256: " + ("AB" * 32) + "\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 0
+
+
+def test_install_download_sha256_too_short_fails(temp_dir):
+    skill = temp_dir / "short-sha"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: short-sha\ndescription: Short sha\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://x.com/a\n"
+        "        sha256: abc123\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert any("sha256" in v.message and "64 hex digits" in v.message for v in violations)
+
+
+def test_install_download_sha256_non_hex_fails(temp_dir):
+    skill = temp_dir / "nonhex-sha"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: nonhex-sha\ndescription: Non-hex sha\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://x.com/a\n"
+        "        sha256: " + ("z" * 64) + "\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert any("sha256" in v.message and "64 hex digits" in v.message for v in violations)
+
+
+def test_install_download_sha256_non_string_fails(temp_dir):
+    skill = temp_dir / "num-sha"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: num-sha\ndescription: Numeric sha\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://x.com/a\n"
+        "        sha256: 12345\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert any("sha256" in v.message and "must be a string" in v.message for v in violations)
+
+
+def test_install_sha256_ignored_on_non_download_kind(temp_dir):
+    """openclaw reads sha256 only for download, so other kinds are not checked."""
+    skill = temp_dir / "brew-sha"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: brew-sha\ndescription: Brew sha\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: b\n        kind: brew\n        formula: ripgrep\n"
+        "        sha256: nonsense\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 0
+
+
+def test_install_sha256_reports_its_own_line(temp_dir):
+    skill = temp_dir / "sha-line"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: sha-line\ndescription: Sha line\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://x.com/a\n"
+        "        sha256: abc\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = [v for v in OpenclawMetadataRule().check(context) if "sha256" in v.message]
+    assert len(violations) == 1
+    assert violations[0].line == 10
+
+
+def test_install_uppercase_archive_passes(temp_dir):
+    """openclaw lowercases `archive` before matching, so `ZIP` is valid."""
+    skill = temp_dir / "upper-archive"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: upper-archive\ndescription: Upper archive\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://x.com/a\n"
+        "        archive: ZIP\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 0
+
+
 def test_install_invalid_archive_fails(temp_dir):
     skill = temp_dir / "bad-archive"
     skill.mkdir()

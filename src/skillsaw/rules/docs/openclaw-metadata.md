@@ -19,6 +19,7 @@ the authoritative field list.
 | `os`, `install[].os` | `darwin`, `linux`, `win32` |
 | `install[].archive` | `tar.gz`, `tar.bz2`, `zip` |
 | `requires` keys | `bins`, `anyBins`, `env`, `config` |
+| `install[].sha256` | 64 hex digits, `download` entries only |
 
 ## How to fix
 
@@ -28,6 +29,12 @@ field, or OpenClaw silently drops the installer: `brew`→`formula` (or
 `npm` isn't a kind (use `node`), `type` is an accepted alias for `kind`,
 and there's no `apt`/`dnf` kind (use `brew`, which also runs on Linux,
 or `download`).
+
+A `download` entry's optional `sha256` pins the artifact. OpenClaw
+requires exactly 64 hex digits and drops the entire install entry when
+the digest is malformed, so a typo removes the installer rather than
+skipping the checksum. `kind` and `archive` are matched
+case-insensitively, so `DOWNLOAD` and `ZIP` are accepted.
 
 This rule only fires when `metadata.openclaw` is present — removing the
 block suppresses it entirely.
