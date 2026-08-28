@@ -107,6 +107,13 @@ markers = [
 # env var or sitecustomize.py needed.
 patch = ["subprocess"]
 
+# The sys.monitoring backend (CPython 3.12+) traces far more cheaply than the
+# settrace core, and the suite spawns ~750 instrumented CLI subprocesses that
+# each pay the tracing cost from interpreter start. Line coverage is identical.
+# On an interpreter that can't use it, coverage warns and falls back to the
+# default core, so a contributor on 3.9-3.11 is unaffected.
+core = "sysmon"
+
 [tool.black]
 line-length = 100
 target-version = ['py39', 'py310', 'py311', 'py312', 'py313']

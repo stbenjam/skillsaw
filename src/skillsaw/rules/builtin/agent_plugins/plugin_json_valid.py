@@ -26,8 +26,8 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import (
     AGENT_PLUGIN_REPO_TYPES,
-    MANIFEST_FIELDS,
-    PLUGIN_VALIDATORS,
+    manifest_fields,
+    plugin_validators,
     schema_error_summary,
     stable_key,
     strict_json,
@@ -129,7 +129,8 @@ class AgentPluginJsonValidRule(Rule):
             ]
 
         violations: List[RuleViolation] = []
-        unknown = sorted(set(data) - MANIFEST_FIELDS)
+        fields = manifest_fields()
+        unknown = sorted(set(data) - fields)
         for field in unknown:
             violations.append(
                 self.violation(
@@ -143,7 +144,7 @@ class AgentPluginJsonValidRule(Rule):
         # The spec makes these two schema failures non-fatal. Validate a
         # sanitized view so they are reported once at warning severity while
         # all other schema failures remain fatal errors.
-        checked = {key: value for key, value in data.items() if key in MANIFEST_FIELDS}
+        checked = {key: value for key, value in data.items() if key in fields}
         declared_schema = checked.get("$schema")
         schema_version = supported_agent_plugin_schema_version(declared_schema, "plugin")
         if "$schema" in checked and schema_version is None:
@@ -180,7 +181,7 @@ class AgentPluginJsonValidRule(Rule):
             )
             checked.pop("extensions")
 
-        validator = PLUGIN_VALIDATORS[schema_version or SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]]
+        validator = plugin_validators()[schema_version or SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]]
         schema_errors = list(validator.iter_errors(checked))
         if schema_errors:
             violations.append(
