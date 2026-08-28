@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from http.client import HTTPException
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING, Tuple, TypeVar
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -192,7 +192,21 @@ class _BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
     def http_error_302(self, req, fp, code, msg, headers):
-        return super().http_error_302(req, _EmptyBody(fp), code, msg, headers)
+        body = _EmptyBody(fp)
+        try:
+            return super().http_error_302(req, body, code, msg, headers)
+        except ValueError:
+            # The base parses the raw ``Location`` header itself before
+            # it calls ``redirect_request``, so ``_accepts_hop`` never
+            # sees a malformed one and ``urlparse("http://[::1/x")``
+            # raises straight out of the probe. The header is chosen by
+            # the remote party, so that would let any hostile or broken
+            # origin turn an opted-in run into a rule-execution-error.
+            # End the chain the way a refused hop does instead — an
+            # ``HTTPError``, which the caller reads as inconclusive —
+            # rather than widening _NETWORK_ERRORS to swallow every
+            # ValueError, including this rule's own bugs.
+            raise urllib.error.HTTPError(req.full_url, code, msg, headers, body)
 
     # The base aliases these to *its* http_error_302, so overriding one
     # method is not enough — 301 and 307 would keep the uncapped read.
@@ -302,7 +316,50 @@ class ContentBrokenExternalReferenceRule(Rule):
         return any(part in _TEMPLATE_DIR_NAMES for part in path.parts)
 
     @staticmethod
-    def _request_url(href: str) -> Optional[str]:
+    def _canonical_host(host: str) -> Optional[str]:
+        """*host* spelled the way the transport will spell it, or None.
+
+        ``urllib.request.Request._parse`` percent-decodes the host, and
+        ``socket.getaddrinfo`` hands a ``str`` host to the IDNA codec,
+        whose nameprep step applies NFKC normalization and whose label
+        splitter treats U+3002, U+FF0E and U+FF61 as dots. Classifying
+        the string as authored therefore classifies a host that is never
+        the one connected to: ``169%2E254%2E169%2E254``,
+        ``169。254。169。254`` and ``１２７.0.0.1`` all reach a numeric
+        address, while a confinement reading them verbatim sees names.
+
+        A host the codec refuses is refused here too. That is safe as
+        well as simple: ``getaddrinfo`` would raise the same
+        ``UnicodeError``, which :data:`_NETWORK_ERRORS` already swallows,
+        so such a host could not be fetched anyway.
+        """
+        try:
+            return unquote(host).encode("idna").decode("ascii")
+        except (UnicodeError, ValueError):
+            return None
+
+    @classmethod
+    def _canonical_netloc(cls, netloc: str) -> Optional[str]:
+        """*netloc* with its host canonicalized — see :meth:`_canonical_host`.
+
+        The port and the IPv6 brackets are carried through untouched;
+        only the host is rewritten, so the URL that gets requested,
+        matched against ``ignore`` and reported is the one the
+        confinement classifies.
+        """
+        if netloc.startswith("["):
+            raw, closed, port = netloc[1:].partition("]")
+            if not closed:
+                return None
+            host = cls._canonical_host(raw)
+            return None if host is None else f"[{host}]{port}"
+        head, colon, tail = netloc.rpartition(":")
+        raw, port = (head, colon + tail) if colon else (tail, "")
+        host = cls._canonical_host(raw)
+        return None if host is None else f"{host}{port}"
+
+    @classmethod
+    def _request_url(cls, href: str) -> Optional[str]:
         """The URL to request for *href*, or None when it is out of scope.
 
         Only ``http``/``https`` are probed. A fragment is dropped — it is
@@ -321,7 +378,10 @@ class ContentBrokenExternalReferenceRule(Rule):
             return None
         if "@" in parts.netloc:
             return None
-        return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, ""))
+        netloc = cls._canonical_netloc(parts.netloc)
+        if netloc is None:
+            return None
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
 
     @staticmethod
     def _as_ip_literal(host: str) -> Optional[ipaddress._BaseAddress]:
@@ -364,7 +424,12 @@ class ContentBrokenExternalReferenceRule(Rule):
             host = host.partition("]")[0][1:]
         elif ":" in host:
             host = host.rsplit(":", 1)[0]
-        host = host.strip().rstrip(".").lower()
+        # Classify the host the transport will resolve, not the string
+        # the repository wrote — see :meth:`_canonical_host`.
+        canonical = cls._canonical_host(host.strip())
+        if canonical is None:
+            return False
+        host = canonical.rstrip(".").lower()
         if not host:
             return False
         if host in _LOCAL_HOSTNAMES or host.endswith(".localhost"):

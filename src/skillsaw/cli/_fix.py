@@ -14,8 +14,6 @@ from ._helpers import (
     _ansi_colors,
     _resolve_lint_paths,
     color_enabled,
-    allow_private_hosts_requested,
-    no_network_requested,
 )
 
 
@@ -63,8 +61,18 @@ def _run_fix(args):
                 rule_ids=rule_ids,
                 skip_rule_ids=skip_rule_ids,
                 no_custom_rules=args.no_custom_rules,
-                no_network=no_network_requested(args),
-                allow_private_hosts=allow_private_hosts_requested(args),
+                # ``fix`` never goes on the network, whatever the flags or
+                # the repository's config say. ``Linter.fix()`` calls
+                # ``check()`` on every loaded rule, fixable or not, and
+                # ``fix_and_apply()`` runs that up to ``max_passes`` times,
+                # so a rule declaring ``requires_network`` would re-probe
+                # the whole URL set once per pass — each pass opening a
+                # fresh budget window, and every result discarded, because
+                # ``fix`` displays fixes and a dead URL has no mechanical
+                # one. Same reasoning as the ``--no-network`` that
+                # ``feedback`` forces on its child; diagnose a network rule
+                # with ``skillsaw lint``.
+                no_network=True,
                 no_plugins=args.no_plugins,
             )
         except ValueError as e:
@@ -91,8 +99,7 @@ def _run_fix(args):
                 rule_ids=rule_ids,
                 skip_rule_ids=skip_rule_ids,
                 no_custom_rules=args.no_custom_rules,
-                no_network=no_network_requested(args),
-                allow_private_hosts=allow_private_hosts_requested(args),
+                no_network=True,  # as above: fix is offline, both Linters
                 no_plugins=args.no_plugins,
             )
             rename_applied, rename_suggested = linter.fix_and_apply(confidence)

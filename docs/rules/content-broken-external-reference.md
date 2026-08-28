@@ -59,7 +59,15 @@ drops every rule that declares `requires_network`, whatever the
 repository's config or a `--rule` flag asks for, so an air-gapped or
 enterprise CI job can assert "skillsaw made no network calls" from a flag
 rather than by auditing every linted repository's YAML. The shipped
-GitHub Action sets `no-network: 'true'` by default for the same reason.
+GitHub Action sets `no-network: 'true'` by default for the same reason,
+and treats anything but the literal `false` as a request to keep the
+network off.
+
+`fix` never runs a network rule at all, flag or no flag. A dead URL has
+no mechanical fix, and the autofix loop re-runs every rule's `check()`
+once per pass — so probing there would sweep the whole URL set several
+times over and discard every answer. Diagnose this rule with
+`skillsaw lint`.
 
 Naming only gated rules under `--no-network` — `skillsaw lint . --rule
 content-broken-external-reference --no-network` — is an error rather than
@@ -92,12 +100,24 @@ anywhere in your context files:
 
 Destinations are confined to public hosts. A URL whose host is a loopback,
 private, link-local, reserved, multicast or IPv4-mapped address — or a
-`localhost` name — is refused. So are the spellings of those addresses that
-a resolver accepts and `ipaddress` does not: `http://2852039166/`,
-`http://0x7f000001/`, `http://0177.0.0.1/` and `http://127.1/` are
-classified from the same normalization the resolver would apply, without
-performing a lookup. The check re-runs on every redirect hop, so an origin
-cannot redirect the linter onto your internal network.
+`localhost` name — is refused. So are the other spellings of those
+addresses, because the host is classified the way the transport will spell
+it rather than the way the link is written, without performing a lookup:
+
+- the forms a resolver accepts and `ipaddress` does not —
+  `http://2852039166/`, `http://0x7f000001/`, `http://0177.0.0.1/`,
+  `http://127.1/` — are normalized through `inet_aton`;
+- the forms urllib *decodes* before it connects — `http://169%2E254%2E169%2E254/`,
+  `http://loc%61lhost/`, and the full-width and ideographic-dot spellings
+  such as `http://169。254。169。254/` — are percent-decoded and IDNA-encoded
+  first, which is what `Request` and `getaddrinfo` do on the way to the
+  socket. A host the IDNA codec cannot encode is refused rather than
+  guessed at.
+
+The requested URL carries that canonical host, so `ignore` and the
+reported URL match what actually goes on the wire. The check re-runs on
+every redirect hop, so an origin cannot redirect the linter onto your
+internal network.
 
 Lifting that confinement is the operator's call, not the repository's:
 `skillsaw lint . --allow-private-hosts`, or

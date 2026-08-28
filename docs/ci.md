@@ -262,7 +262,10 @@ to belong to the operator:
 ```
 
 The `skillsaw` Action sets it by default (`no-network: 'true'`); pass
-`no-network: false` to opt a scheduled job back in.
+`no-network: false` — the literal string, since anything else keeps the
+network off — to opt a scheduled job back in. `fix` never runs a network
+rule whatever the flag says: a dead URL has no mechanical fix, and the
+autofix loop re-runs every rule's `check()` once per pass.
 
 Naming only network rules while the gate is on — `--rule
 content-broken-external-reference --no-network`, which is what an

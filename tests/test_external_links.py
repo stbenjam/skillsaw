@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Tuple
+from urllib.parse import unquote, urlparse
 
 import pytest
 
@@ -96,6 +97,9 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
         "/relocated": (404, None),
         "/redirect-loop": (302, "/redirect-loop"),
         "/redirect-ftp": (302, "ftp://127.0.0.1/pub/file"),
+        # An unclosed IPv6 literal: urllib parses this header itself,
+        # before the hop is ever offered to the admission gate.
+        "/redirect-malformed": (302, "http://[::1/x"),
     }
 
     def _handle(self, method: str):
@@ -572,16 +576,18 @@ class TestOperatorNetworkGate:
     other repo-config-activated capability.
     """
 
-    @pytest.mark.parametrize("subcommand", ["lint", "fix", "baseline", "badge"])
+    @pytest.mark.parametrize("subcommand", ["lint", "baseline", "badge"])
     def test_flag_gates_every_rule_executing_subcommand(self, subcommand, tmp_path, server):
-        """Behaviour, not `--help` text, on each of the four.
+        """Behaviour, not `--help` text, on each subcommand that can probe.
 
-        The gate is five hand-copied ``no_network=...`` keyword arguments
-        at the ``Linter(...)`` call sites. Deleting one leaves the flag
-        in ``--help``, leaves an argv-only test green, and silently makes
+        The gate is a hand-copied ``no_network=...`` keyword argument at
+        each ``Linter(...)`` call site. Deleting one leaves the flag in
+        ``--help``, leaves an argv-only test green, and silently makes
         the requests the operator refused. The liveness half — that the
         same argv *does* reach the server without the flag — is what
-        keeps the gated half from passing vacuously.
+        keeps the gated half from passing vacuously. ``fix`` is absent
+        because it never probes at all; see
+        :meth:`test_fix_never_probes_whatever_the_flags_say`.
         """
         repo = _materialize("content/external-links", tmp_path, server.port)
         argv = _rule_executing_argv(subcommand, repo)
@@ -594,7 +600,7 @@ class TestOperatorNetworkGate:
 
         assert server.hits == [], f"{subcommand} ignored --no-network"
 
-    @pytest.mark.parametrize("subcommand", ["lint", "fix", "baseline", "badge"])
+    @pytest.mark.parametrize("subcommand", ["lint", "baseline", "badge"])
     def test_env_var_gates_every_rule_executing_subcommand(
         self, subcommand, tmp_path, server, monkeypatch
     ):
@@ -610,6 +616,32 @@ class TestOperatorNetworkGate:
         run_cli(argv)
 
         assert server.hits == [], f"{subcommand} ignored SKILLSAW_NO_NETWORK"
+
+    def test_fix_never_probes_whatever_the_flags_say(self, tmp_path, server):
+        """``fix`` is offline unconditionally, not merely gateable.
+
+        ``Linter.fix()`` calls ``check()`` on every loaded rule, fixable
+        or not, and ``fix_and_apply()`` runs that up to ``max_passes``
+        times — with a second ``Linter`` after an ``agentskill-name``
+        rename — so a rule that probed here would sweep the whole URL set
+        once per pass, each pass opening a fresh ``total-budget`` window.
+        Every one of those results is discarded: ``fix`` displays fixes,
+        and a dead URL has no mechanical fix. So ``fix`` forces
+        ``no_network`` on rather than reading the flag, and the opt-in
+        that makes the loopback fixture reachable buys it nothing.
+        """
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        # Liveness: the same repo, config and opt-in do reach the server
+        # under `lint`, so the empty ledger below is the guarantee and
+        # not a fixture that quietly stopped resolving.
+        run_cli(_rule_executing_argv("lint", repo) + ["--allow-private-hosts"])
+        assert server.hits, "the fixture must be reachable for this to mean anything"
+
+        server.reset()
+        run_cli(_rule_executing_argv("fix", repo) + ["--allow-private-hosts"])
+
+        assert server.hits == [], "fix requested a URL, on some pass"
 
     def test_the_env_var_reaches_a_directly_constructed_linter(self, tmp_path, monkeypatch):
         """Not only the CLI: an embedder or a future subcommand too.
@@ -893,7 +925,7 @@ class TestUntrustedConfig:
             (-1, 30.0),  # negative must not read as "no cap"
             (float("nan"), 30.0),
             (float("inf"), 30.0),
-            (0, 30.0),  # the "disable the cap" escape hatch is gone
+            (0, 30.0),  # 0 is not "no cap" — it means the default
             (10_000, 600.0),
         ],
     )
@@ -934,9 +966,9 @@ class TestUntrustedConfig:
     def test_a_string_ignore_does_not_silence_every_url(self, tmp_path, server):
         """``ignore: "https://..."`` is the likeliest YAML mistake here.
 
-        Iterating the string yields single characters, and
-        ``url.startswith("h")`` then matched every http(s) URL — the rule
-        would report nothing while appearing to run.
+        Iterating the string would yield single characters, and
+        ``url.startswith("h")`` would then match every http(s) URL — the
+        rule would report nothing while appearing to run.
         """
         repo = _materialize("content/external-links", tmp_path, server.port)
 
@@ -975,6 +1007,11 @@ class TestPrivateHostConfinement:
             # A trailing root dot and an uppercase name are the same host.
             "http://127.0.0.1./x",
             "http://LOCALHOST/x",
+            # urllib percent-decodes the host before it connects, so a
+            # confinement reading the string as authored sees a name
+            # where the transport sees a literal — or a reserved name.
+            "http://127%2E0%2E0%2E1/x",
+            "http://loc%61lhost/x",
         ],
     )
     def test_non_public_hosts_are_refused_by_default(self, url):
@@ -982,10 +1019,16 @@ class TestPrivateHostConfinement:
 
         assert rule._admit(url) is None
 
-    # `ipaddress.ip_address` accepts only dotted-quad; `inet_aton`, which
-    # is what the resolver reaches, also takes bare integers, hex, octal
-    # and short-dotted forms. Classifying these as hostnames is how the
-    # metadata endpoint gets probed with the confinement switched on.
+    # Two ways a private address hides from a confinement that reads the
+    # URL as written. The parser reaches one: `ipaddress.ip_address`
+    # accepts only dotted-quad, while `inet_aton` — what the resolver
+    # uses — also takes bare integers, hex, octal and short-dotted forms.
+    # The transport reaches the other by *decoding*: `Request._parse`
+    # percent-decodes the host, and `getaddrinfo` runs it through the
+    # IDNA codec, whose nameprep applies NFKC and whose label splitter
+    # treats U+3002, U+FF0E and U+FF61 as dots. Classifying any of these
+    # as a hostname is how the metadata endpoint gets probed with the
+    # confinement switched on.
     _ALTERNATE_SPELLINGS = [
         ("http://2852039166/latest/meta-data/", "169.254.169.254"),
         ("http://2130706433/x", "127.0.0.1"),
@@ -994,7 +1037,24 @@ class TestPrivateHostConfinement:
         ("http://127.1/x", "127.0.0.1"),
         ("http://0x7f.0.0.1/x", "127.0.0.1"),
         ("http://0/x", "0.0.0.0"),
+        ("http://169%2E254%2E169%2E254/latest/meta-data/", "169.254.169.254"),
+        ("http://%31%32%37.0.0.1/x", "127.0.0.1"),
+        ("http://169。254。169。254/x", "169.254.169.254"),
+        ("http://169．254．169．254/x", "169.254.169.254"),
+        ("http://１２７.0.0.1/x", "127.0.0.1"),
+        ("http://０x７f.0.0.1/x", "127.0.0.1"),
+        ("http://①②⑦.0.0.1/x", "127.0.0.1"),
     ]
+
+    @staticmethod
+    def _on_the_wire(url: str) -> Tuple[str, str]:
+        """``(host as authored, host as the transport will spell it)``.
+
+        Computed from the stdlib rather than from the rule, so it is an
+        independent statement of what urllib does.
+        """
+        host = url.split("//", 1)[1].split("/", 1)[0]
+        return host, unquote(host).encode("idna").decode("ascii")
 
     @pytest.mark.parametrize("url,canonical", _ALTERNATE_SPELLINGS)
     def test_non_canonical_ipv4_literals_are_refused(self, url, canonical):
@@ -1002,10 +1062,10 @@ class TestPrivateHostConfinement:
 
         # Liveness for the parametrize itself: each spelling really is
         # the address it claims to be, and really does defeat `ipaddress`.
-        host = url.split("//", 1)[1].split("/", 1)[0]
+        host, wire = self._on_the_wire(url)
         with pytest.raises(ValueError):
             ipaddress.ip_address(host)
-        assert socket.inet_ntoa(socket.inet_aton(host)) == canonical
+        assert socket.inet_ntoa(socket.inet_aton(wire)) == canonical
 
         assert rule._admit(url) is None
 
@@ -1022,11 +1082,32 @@ class TestPrivateHostConfinement:
 
         Without this, a normalization that simply rejected every
         numeric-looking host would pass the tests above while breaking
-        the operator's opt-in.
+        the operator's opt-in. What comes back carries the host the
+        transport will spell, so the URL that is requested, matched
+        against ``ignore`` and reported is the one the confinement
+        classifies.
         """
         rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
 
-        assert rule._admit(url) == url
+        host, wire = self._on_the_wire(url)
+
+        assert rule._admit(url) == url.replace(host, wire, 1)
+
+    def test_ignore_sees_the_url_the_transport_will_request(self):
+        """``ignore`` matches the URL the transport will request.
+
+        An operator keeps skillsaw off an internal host by naming it in
+        ``ignore``. Matching the string as authored instead would let a
+        percent-encoded spelling of that host through, the same way such
+        a spelling would slip past the public-host confinement.
+        """
+        rule = ContentBrokenExternalReferenceRule(
+            {"enabled": True, "ignore": ["https://intranet.example.com/"]},
+            allow_private_hosts=True,
+        )
+
+        assert rule._admit("https://intranet%2Eexample%2Ecom/wiki") is None
+        assert rule._admit("https://other.example.com/wiki") is not None
 
     @pytest.mark.parametrize(
         "url",
@@ -1090,6 +1171,30 @@ class TestRedirectTargetsAreVetted:
         rule = ContentBrokenExternalReferenceRule({"enabled": True})
 
         assert rule._accepts_hop("https://user:token@example.com/x") is False
+
+    def test_a_malformed_location_header_is_inconclusive(self, server):
+        """A remote party must not be able to raise out of the probe.
+
+        The base ``http_error_302`` parses the raw ``Location`` header
+        before ``redirect_request`` runs, so the admission gate never
+        sees it and the ``ValueError`` lands in the caller. ``ValueError``
+        is deliberately outside ``_NETWORK_ERRORS`` — it means a bug in
+        this rule — so any hostile or broken origin could otherwise turn
+        an opted-in run into an unbaselinable ``rule-execution-error``.
+        """
+        # Premise: the header really does defeat the stdlib's parser.
+        with pytest.raises(ValueError):
+            urlparse("http://[::1/x")
+
+        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
+
+        status, checked = rule._probe(
+            f"http://127.0.0.1:{server.port}/redirect-malformed", 5.0, None
+        )
+
+        assert server.paths() == ["/redirect-malformed"]
+        assert checked is True
+        assert status not in (404, 410)
 
 
 class TestNoBodyIsEverRead:
