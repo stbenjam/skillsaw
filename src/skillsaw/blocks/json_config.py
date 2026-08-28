@@ -622,8 +622,10 @@ class OpenCodeMcpBlock(McpBlock):
     environment map is spelled ``environment``. ``mcp-valid-json`` therefore
     stands aside from the shape checks for this block and
     ``opencode-config-valid`` performs them instead; the policy rules and the
-    one dialect-neutral check (a ``url`` carrying user information) still
-    read this block where they read every other host's.
+    checks that do not depend on the dialect — a file that is not JSON, a
+    ``url`` carrying user information, and the credentials in the maps
+    declared by :attr:`credential_maps` below — still read this block where
+    they read every other host's.
     """
 
     servers_key: ClassVar[str] = "mcp"

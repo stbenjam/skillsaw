@@ -2573,9 +2573,9 @@ class TestOpenCode:
     @pytest.mark.parametrize(
         "config,expected",
         [
-            # Most pairs rename to a name the 1.x schema does not know, so
-            # the 1.x key makes OpenCode 2.0 read the whole document as 1.x
-            # and drop the 2.0 one.
+            # Most *top-level* pairs rename to a name the 1.x schema does not
+            # know, so the 1.x key makes OpenCode 2.0 read the whole document
+            # as 1.x and drop the 2.0 one.
             (
                 {"agent": {}, "agents": {}},
                 "the 'agent' value is the one that takes effect",
@@ -2594,6 +2594,34 @@ class TestOpenCode:
                 "declares both 'reference' and 'references' — they are the 1.x and "
                 "2.0 spellings of one setting, and only one of the two values is in "
                 "effect; keep one",
+            ),
+            # A *nested* pair names no winner either, and this one is why:
+            # under the 2.0 `agents` section `lowerAgent` promotes `system`
+            # and drops `prompt`, the opposite of the top level. Naming the
+            # 1.x key here would point the author at the live value.
+            (
+                {"agents": {"x": {"prompt": "Old.", "system": "New."}}},
+                "agents.x declares both 'prompt' and 'system' — they are the 1.x "
+                "and 2.0 spellings of one setting, and only one of the two values "
+                "is in effect; keep one",
+            ),
+            # The one nested pair that does name a winner, on its own
+            # evidence: `normalizeServer` re-reads the raw `enabled` last.
+            (
+                {
+                    "mcp": {
+                        "linear": {
+                            "type": "remote",
+                            "url": "https://mcp.linear.app/sse",
+                            "enabled": True,
+                            "disabled": False,
+                        }
+                    }
+                },
+                "MCP server 'linear' declares both 'enabled' and 'disabled' — they "
+                "are the 1.x and 2.0 spellings of one setting with the sense "
+                "inverted, and the 'enabled' value is the one that takes effect; "
+                "keep one",
             ),
         ],
     )
@@ -2615,15 +2643,22 @@ class TestOpenCode:
         same false positive Copilot agents are already exempt from — found
         against a real repository, where every primary agent drew it.
 
-        `{mode,modes}/*.md` is the same case reached by location: OpenCode
-        types every file there `primary` whatever the frontmatter says, so
-        those files carry no `mode` field to read.
+        `.opencode/{mode,modes}/*.md` is the same case reached by location:
+        OpenCode types every file there `primary` whatever the frontmatter
+        says, so those files carry no `mode` field to read. The exemption is
+        that location and no other — the agent globs are recursive, so a
+        subagent may legitimately live in a subdirectory that happens to be
+        named `modes`, and it stays on the hook.
         """
         repo = tmp_path / "modes"
         (repo / ".opencode" / "agent").mkdir(parents=True)
         (repo / ".opencode" / "modes").mkdir(parents=True)
+        (repo / ".opencode" / "agents" / "modes").mkdir(parents=True)
         (repo / ".opencode" / "modes" / "build.md").write_text(
             "---\ndescription: Builds and ships the release artifacts\n---\n\nShip it.\n"
+        )
+        (repo / ".opencode" / "agents" / "modes" / "reviewer.md").write_text(
+            "---\ndescription: Reads a diff and reports correctness defects\n---\n\nReview.\n"
         )
         (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
         (repo / ".opencode" / "agent" / "main.md").write_text(
@@ -2642,6 +2677,7 @@ class TestOpenCode:
         assert (".opencode/agent/oracle.md", "trigger") in flagged
         assert (".opencode/agent/main.md", "trigger") not in flagged
         assert (".opencode/modes/build.md", "trigger") not in flagged
+        assert (".opencode/agents/modes/reviewer.md", "trigger") in flagged
 
     def test_credentials_in_an_mcp_environment_map_are_errors(self, tmp_path):
         """`environment`, not `env` — the map name is the host's, the scan is not.

@@ -31,19 +31,26 @@ schedule.
 
 What it does report is a file that declares *both* spellings of one
 setting. The setting then arrives twice and one copy is ignored — and which
-copy that is depends on the pair.
+copy that is depends on *where* the pair sits, not on key order.
 
-It is not key order, and it is not the same answer for every key. For most
-pairs the 1.x key wins: its presence makes OpenCode 2.0 read the whole
-document as a 1.x config, and the 2.0 key is dropped as an unknown
-property. Two pairs are different — `autoshare`/`share` and
+The finding names the surviving value only where that is derivable. For most
+**top-level** pairs the 1.x key wins: its presence makes OpenCode 2.0 read
+the whole document as a 1.x config, and the 2.0 key is dropped as an unknown
+property. Two top-level pairs are different — `autoshare`/`share` and
 `reference`/`references` — because the 1.x schema declares both halves, so
 that reasoning does not apply and the coalescing is decided in per-key code
-rather than by the schema. For those the finding names no winner: it says
-only that one of the two values is in effect. Either key alone is valid, so
-keeping one and deleting the other is the fix whichever one survives —
-telling you to delete a key that is actually in effect would be worse than
-saying nothing.
+rather than by the schema. The other named winner is an MCP server's
+`enabled`/`disabled`, where OpenCode re-reads the 1.x `enabled` last and lets
+it override.
+
+Everywhere else — a pair inside an agent entry, or inside a server's `oauth`
+object — the finding names no winner: it says only that one of the two
+values is in effect. The top-level reasoning genuinely does not carry down
+there. Under the 2.0 `agents` section it is the *2.0* field that survives,
+the opposite of the top level, so naming the 1.x key would tell you to delete
+the live value. Either key alone is valid, so keeping one and deleting the
+other is the fix whichever one survives — and saying nothing is better than
+naming the wrong one.
 
 The MCP servers in this file also reach [`mcp-prohibited`](mcp-prohibited.md)
 and the rest of the ecosystem-neutral policy rules, in either the 1.x flat

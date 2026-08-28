@@ -22,7 +22,7 @@ Two independent, opposite-direction code paths define the vocabulary:
 * ``packages/core/src/v1/config/migrate.ts`` plus
   ``packages/core/src/config.ts`` — what **2.0** uses to migrate a v1 config
   *up*. Holds ``isV1()`` and the per-key coalescing that
-  :data:`WINNER_UNSTATED` marks as not settled by the schema.
+  :data:`TOP_LEVEL_WINNER_UNSTATED` marks as not settled by the schema.
 
 Their MCP timeout structs differ, which is why :data:`MCP_TIMEOUT_KEYS` is a
 union rather than either one.
@@ -143,6 +143,13 @@ TOP_LEVEL_KEYS = frozenset(
 
 #: Agent-entry key -> its v2 spelling, for entries under ``agent``/``agents``.
 #:
+#: A pair here is reported without naming a winner, because the winner is
+#: decided by *where* the entry sits and skillsaw cannot say which section a
+#: reader ends up in: under the v1 ``agent`` section the v1 spelling stands,
+#: while under the v2 ``agents`` section ``lowerAgent`` promotes the v2 field
+#: (``system`` into ``prompt``, ``disabled`` into ``disable``) and the v1 one
+#: is the excess property that drops.
+#:
 #: There is deliberately no companion set of *known* agent keys: OpenCode
 #: folds an unrecognized agent field into the provider ``options``, so naming
 #: one is a supported way to pass a provider-specific setting and reporting
@@ -157,11 +164,22 @@ AGENT_V1_TO_V2: Mapping[str, str] = {
 #: MCP server key -> its v2 spelling. ``enabled`` is not a plain rename: v2
 #: spells it ``disabled`` with the sense inverted, so a server carrying both
 #: says two different things at once rather than the same thing twice.
+#:
+#: The one nested table whose pair *does* name a winner, and it is named on
+#: its own evidence rather than the top level's: ``normalizeServer`` re-reads
+#: the raw ``enabled`` after computing ``disabled`` and lets it override, so
+#: the v1 key decides wherever the server sits.
 MCP_SERVER_V1_TO_V2: Mapping[str, str] = {
     "enabled": "disabled",
 }
 
 #: Renamed keys inside an MCP server's ``oauth`` object, which v2 snake-cases.
+#:
+#: Reported without naming a winner, and here the v1 key is the one that
+#: loses: ``lowerServer`` rebuilds ``oauth`` from the snake_case fields alone
+#: and discards the camelCase input. skillsaw still declines to name it —
+#: "keep one, delete the other" is the fix either way, and a wrong name costs
+#: the author the live value.
 MCP_OAUTH_V1_TO_V2: Mapping[str, str] = {
     "clientId": "client_id",
     "clientSecret": "client_secret",
@@ -175,20 +193,24 @@ INVERTED_SENSE_NOTE: Mapping[str, str] = {
     "enabled": " with the sense inverted",
 }
 
-#: v1 keys whose pair is reported *without* naming which value takes effect.
+#: **Top-level** v1 keys whose pair is reported *without* naming which value
+#: takes effect. Only the top level consults this set — the nested tables
+#: name no winner at all, so a key name is enough to identify an exception
+#: here and would not be anywhere else.
 #:
-#: For every other rename the answer is structural: the v1 schema does not
-#: know the v2 name, so the presence of the v1 key makes ``isV1()`` claim the
-#: whole document, the v2 key is dropped as an excess property, and the v1
-#: value stands. These two pairs are different — ``ConfigV1.Info`` declares
-#: both halves (each marked deprecated) — so that reasoning does not apply
-#: and the coalescing is decided in per-key code rather than by the schema.
+#: For every other *top-level* rename the answer is structural: the v1 schema
+#: does not know the v2 name, so the presence of the v1 key makes ``isV1()``
+#: claim the whole document, the v2 key is dropped as an excess property, and
+#: the v1 value stands. These two pairs are different — ``ConfigV1.Info``
+#: declares both halves (each marked deprecated) — so that reasoning does not
+#: apply and the coalescing is decided in per-key code rather than by the
+#: schema.
 #:
 #: skillsaw does not assert which half survives there. The finding says only
 #: that one of the two values is inert, which holds under every reading, and
 #: either key alone is valid — so "keep one, delete the other" is the fix
 #: whichever one it turns out to be.
-WINNER_UNSTATED: FrozenSet[str] = frozenset({"autoshare", "reference"})
+TOP_LEVEL_WINNER_UNSTATED: FrozenSet[str] = frozenset({"autoshare", "reference"})
 
 #: Transport values OpenCode accepts, mapped to the connection field each
 #: one requires. OpenCode names a transport for where the server runs rather
@@ -270,9 +292,11 @@ def both_spellings(data: Mapping[str, Any], aliases: Mapping[str, str]) -> Tuple
 
     No caller treats a lone v1 key as wrong — either spelling on its own is
     valid. Carrying both is the finding: one of the two is then ignored, and
-    which copy that is depends on the pair rather than on key order. For
-    most pairs the v1 key decides; for the pairs in :data:`WINNER_UNSTATED`
-    the diagnostic names no winner, because the fix is the same either way.
+    which copy that is depends on the table rather than on key order. Only
+    the callers that can derive the winner name it — the top level, minus
+    the pairs in :data:`TOP_LEVEL_WINNER_UNSTATED`, and the MCP server's
+    ``enabled``/``disabled``. Everywhere else the diagnostic names no
+    winner, because the fix is the same either way.
 
     Aliases that map several v1 keys onto one v2 key (``agent`` and ``mode``
     both become ``agents``) are handled by the plain membership test — each
