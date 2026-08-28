@@ -307,6 +307,7 @@ class _ContentMap:
     """
 
     def __init__(self, body_lines: List[str], map_start: int, content: str):
+        """Index where each line of *content* starts; columns come later."""
         self._body_lines = body_lines
         self._map_start = map_start
         self._content = content

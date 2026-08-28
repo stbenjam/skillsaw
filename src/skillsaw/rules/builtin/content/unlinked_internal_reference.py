@@ -97,6 +97,7 @@ class ContentUnlinkedInternalReferenceRule(Rule):
         import_line: dict = {}
 
         def is_import_line(body_line: int) -> bool:
+            """Whether this line is an import statement, answered once."""
             cached = import_line.get(body_line)
             if cached is None:
                 cached = bool(_IMPORT_LINE_RE.match(doc.line(body_line)))

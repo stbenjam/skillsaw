@@ -41,6 +41,11 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    """Resolve one of the public names on first access (PEP 562).
+
+    The import happens here rather than at module scope so that naming the
+    package does not pull in the linter; see ``_LAZY_EXPORTS``.
+    """
     module_name = _LAZY_EXPORTS.get(name)
     if module_name is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -52,4 +57,5 @@ def __getattr__(name: str):
 
 
 def __dir__():
+    """The public names, whether or not they have been resolved yet."""
     return sorted(__all__)
