@@ -1,0 +1,4 @@
+Every change to `services/ingest` ships with a table-driven test in the same package.
+
+Database migrations live in `migrations/` and are append-only — write a new
+migration rather than editing one that has already run in staging.

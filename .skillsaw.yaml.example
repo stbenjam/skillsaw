@@ -467,6 +467,12 @@ rules:
     enabled: auto
     severity: error
 
+  # Roo .roomodes custom modes must declare the fields Roo needs to load them
+  roo-modes-valid:
+    enabled: auto
+    severity: error
+    # require-when-to-use: false
+
   # Require an allowlist for dynamic context commands that execute shell code while loading agent context
   security-dynamic-context:
     enabled: auto

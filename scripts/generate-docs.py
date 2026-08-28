@@ -141,6 +141,18 @@ RULE_GROUPS = [
         "unrelated files does not activate them.",
     ),
     (
+        "Roo (legacy)",
+        ["roo-modes-valid"],
+        "Validates the files [Roo Code](https://github.com/RooCodeInc/Roo-Code) "
+        "left behind. The extension shut down in May 2026; repositories still "
+        "carry its configuration, and its successor "
+        "[Roomote](https://github.com/RooCodeInc/Roomote) reads `AGENTS.md` "
+        "instead. `.roorules`, `.roo/rules/**` and `.roo/rules-<mode>/**` are "
+        "linted as instruction prose by the content rules; `.roomodes` is "
+        "structured configuration and gets this rule. Auto-enabled when any of "
+        "those root files or directories is present.",
+    ),
+    (
         "Instruction Files",
         ["instruction-file-valid", "instruction-imports-valid"],
         "Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, "

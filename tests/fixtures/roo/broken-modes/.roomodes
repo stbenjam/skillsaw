@@ -1,0 +1,26 @@
+customModes:
+  - slug: docs-writer
+    name: Documentation Writer
+    roleDefinition: >-
+      You maintain the documentation for the ingest service.
+    groups:
+      - read
+      - reed
+      - - edit
+        - fileRegex: 42
+  - name: Reviewer
+    roleDefinition: You review pull requests.
+    groups: read
+  - slug: docs-writer
+    name: Duplicate Docs Writer
+    roleDefinition: You also maintain documentation.
+    groups:
+      - read
+  - slug: release manager
+    name: Release Manager
+    roleDefinition: You cut releases from the main branch.
+    whentouse: Use before tagging a release.
+    groups:
+      - read
+      - browser
+      - read

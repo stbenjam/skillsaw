@@ -2432,6 +2432,149 @@ class TestEditorTools:
         assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == []
 
 
+# ── Legacy Roo Code ─────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestRooLegacyFiles:
+    """`.roorules`, `.roo/rules*/` and `.roomodes` left behind by Roo Code."""
+
+    def test_roo_rules_prose_gets_the_content_rules(self, tmp_path):
+        """Both rules directories are prose an agent loads, so both are linted."""
+        repo = copy_fixture("roo/legacy", tmp_path)
+        found = {
+            (v["file_path"], v["line"])
+            for v in by_rule(run_lint(repo, "-v"))["content-weak-language"]
+        }
+
+        assert (".roo/rules/02-testing.md", 6) in found
+        assert (".roo/rules-architect/design-notes.md", 7) in found
+
+    def test_legacy_roorules_file_is_linted(self, tmp_path):
+        repo = tmp_path / "roorules-only"
+        repo.mkdir()
+        (repo / ".roorules").write_text(
+            "# Legacy rules\n\nYou should probably try to run the tests.\n"
+        )
+
+        found = by_rule(run_lint(repo, "-v"))["content-weak-language"]
+
+        assert [v["file_path"] for v in found] == [".roorules"] * len(found)
+        assert found
+
+    def test_valid_roomodes_reports_nothing(self, tmp_path):
+        repo = copy_fixture("roo/legacy", tmp_path)
+
+        assert by_rule(run_lint(repo, "-v")).get("roo-modes-valid", []) == []
+
+    def test_roomodes_defects_are_reported_with_lines(self, tmp_path):
+        repo = copy_fixture("roo/broken-modes", tmp_path)
+        found = {
+            (v["line"], v["severity"], v["message"])
+            for v in by_rule(run_lint(repo))["roo-modes-valid"]
+        }
+        messages = {(line, message) for line, _, message in found}
+
+        assert (11, "customModes[1] is missing required 'slug'") in messages
+        assert (13, "customModes[1].groups must be a list, got str") in messages
+        assert (
+            8,
+            "customModes[0].groups[1]: unknown tool group 'reed' — expected one of "
+            "read, edit, command, mcp, modes",
+        ) in messages
+        assert (10, "customModes[0].groups[2].fileRegex must be a string, got int") in messages
+        assert any(line == 14 and "duplicate slugs" in message for line, message in messages)
+        assert any(
+            line == 19 and "must use only letters, digits and hyphens" in message
+            for line, message in messages
+        )
+        # A misspelled optional key: the runtime ignores it and the published
+        # schema rejects the file, so nothing else would say the routing text
+        # is missing.
+        assert any(
+            line == 22 and "unknown key 'whentouse'" in message for line, message in messages
+        )
+        # `browser` was accepted and then stripped, so it is not "unknown" —
+        # it is a group the mode never actually gets.
+        assert any(line == 25 and "retired tool group" in message for line, message in messages)
+        assert any(line == 26 and "listed twice" in message for line, message in messages)
+        # Roo Code no longer runs, so a structural defect costs whoever
+        # migrates the file next — a warning, never a build failure.
+        assert {severity for _, severity, _ in found} == {"warning"}
+
+    def test_unparseable_roomodes_is_an_error_with_a_line(self, tmp_path):
+        repo = copy_fixture("roo/unparseable-modes", tmp_path)
+        r = run_lint(repo)
+        found = by_rule(r)["roo-modes-valid"]
+
+        assert r["rc"] == 1
+        assert len(found) == 1
+        assert found[0]["severity"] == "error"
+        assert found[0]["line"] == 4
+        assert "Roo loads no mode from this file" in found[0]["message"]
+
+    def test_when_to_use_is_only_required_when_configured(self, tmp_path):
+        repo = tmp_path / "whentouse"
+        repo.mkdir()
+        (repo / ".roomodes").write_text(
+            "customModes:\n"
+            "  - slug: reviewer\n"
+            "    name: Reviewer\n"
+            "    roleDefinition: You review pull requests for missing tests.\n"
+            "    groups:\n"
+            "      - read\n"
+        )
+
+        assert by_rule(run_lint(repo)).get("roo-modes-valid", []) == []
+
+        config = repo / ".skillsaw.yaml"
+        config.write_text("rules:\n  roo-modes-valid:\n    require-when-to-use: true\n")
+        found = by_rule(run_lint(repo, config=config))["roo-modes-valid"]
+
+        assert len(found) == 1
+        assert "whenToUse" in found[0]["message"]
+
+    def test_repo_without_roo_files_reports_nothing(self, tmp_path):
+        repo = tmp_path / "no-roo"
+        repo.mkdir()
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test` before pushing.\n")
+        # Roo read `.roomodes` from the workspace root, so a file with that
+        # name in a subdirectory is not Roo's and is not validated as one —
+        # even though this one would fail every check if it were.
+        (repo / "docs").mkdir()
+        (repo / "docs" / ".roomodes").write_text("customModes: nope\n")
+
+        r = run_lint(repo, "-v")
+
+        assert r["rc"] == 0
+        assert "roo-modes-valid" not in rule_ids(r)
+
+    def test_a_json_roomodes_still_parses(self, tmp_path):
+        """Roo's original `.roomodes` was JSON; YAML is a superset, so both read."""
+        repo = tmp_path / "jsonmodes"
+        repo.mkdir()
+        (repo / ".roomodes").write_text(
+            json.dumps(
+                {
+                    "customModes": [
+                        {
+                            "slug": "reviewer",
+                            "name": "Reviewer",
+                            "roleDefinition": "You review pull requests.",
+                            "groups": ["read", "bogus"],
+                        }
+                    ]
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["roo-modes-valid"]]
+
+        assert any("unknown tool group 'bogus'" in m for m in messages)
+
+
 @pytest.mark.integration
 class TestDotClaude:
 
@@ -3110,6 +3253,7 @@ BROKEN_FIXTURES = [
     "cursor-rules/broken-frontmatter",
     "cursor-rules/broken-hooks",
     "cursor-rules/prompt-hooks",
+    "roo/broken-modes",
 ]
 
 CLEAN_FIXTURES = [

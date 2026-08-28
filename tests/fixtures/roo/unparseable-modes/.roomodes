@@ -1,0 +1,6 @@
+customModes:
+  - slug: docs-writer
+    name: Documentation Writer
+   roleDefinition: You maintain documentation.
+    groups:
+      - read
