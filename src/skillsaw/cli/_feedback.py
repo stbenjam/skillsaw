@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -163,7 +164,13 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
             while True:
                 readable, _unused, _errors = select.select([master], [], [], 0.1)
                 if readable:
-                    chunk = os.read(master, 65536)
+                    try:
+                        chunk = os.read(master, 65536)
+                    except OSError as error:
+                        # Linux PTYs signal EOF with EIO after the child closes its slave.
+                        if error.errno != errno.EIO:
+                            raise
+                        break
                     if chunk:
                         captured_stderr.extend(chunk)
                         sys.stderr.buffer.write(chunk)

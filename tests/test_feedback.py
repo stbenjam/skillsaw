@@ -1,8 +1,10 @@
 """End-to-end coverage for the local feedback bundle command."""
 
 import hashlib
+import errno
 import io
 import json
+import pty
 import subprocess
 import sys
 import zipfile
@@ -146,6 +148,43 @@ def test_feedback_mirrors_interactive_lint_progress(tmp_path, monkeypatch):
     assert stdout == "lint report\n"
     assert "linting [1/1]" in stderr
     assert terminal.buffer.getvalue() == stderr.encode()
+
+
+def test_feedback_handles_linux_pty_eof(tmp_path, monkeypatch):
+    class InteractiveStderr:
+        def __init__(self):
+            self.buffer = io.BytesIO()
+
+        def isatty(self):
+            return True
+
+    monkeypatch.setattr(_feedback.sys, "stderr", InteractiveStderr())
+
+    master_fds = []
+    openpty = pty.openpty
+
+    def recording_openpty():
+        master, slave = openpty()
+        master_fds.append(master)
+        return master, slave
+
+    original_read = _feedback.os.read
+
+    def closed_pty(file_descriptor, size):
+        if file_descriptor in master_fds:
+            raise OSError(errno.EIO, "Input/output error")
+        return original_read(file_descriptor, size)
+
+    monkeypatch.setattr(pty, "openpty", recording_openpty)
+    monkeypatch.setattr(_feedback.os, "read", closed_pty)
+
+    stdout, stderr, return_code = _feedback._run_lint_process(
+        [sys.executable, "-c", "print('lint report')"], tmp_path
+    )
+
+    assert return_code == 0
+    assert stdout == "lint report\n"
+    assert stderr == ""
 
 
 def test_feedback_records_a_timed_out_diagnostic_lint(tmp_path, monkeypatch):
