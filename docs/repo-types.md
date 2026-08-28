@@ -242,6 +242,7 @@ wherever a tool's own metadata can fail silently — see
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
 | **Windsurf** | `.windsurfrules` |
+| **Roo (legacy)** | `.roorules`, `.roo/rules/**/*.md`, `.roo/rules/**/*.txt`, `.roo/rules-<mode>/**` (same patterns), `.roomodes` |
 
 skillsaw finds `.cursor/`, `.github/` and `.clinerules/` anywhere in the
 tree, so a monorepo package that carries its own set is linted alongside the
@@ -297,3 +298,44 @@ prose. Its `prompt` string is linted as content, so
 the other injection scanners read it, and `hooks-prohibited` counts it as a
 hook. JSON carries no line numbers, so those findings name the file without
 a line.
+
+### Roo, and what Roomote actually reads
+
+Roo Code, the VS Code extension, was archived on 2026-05-15, and
+`roocode.com` now redirects to `roomote.dev`. Its files did not go with it:
+repositories still carry `.roorules`, `.roo/rules/`, `.roomodes` and
+`.rooignore`, and they still describe who may edit what. skillsaw reads
+them, and unlike the tools above the paths are **root-anchored** — Roo
+resolved all of them from the workspace root, with no walk up from a nested
+package, so a nested copy is not linted.
+
+What Roo loaded, and what skillsaw does with it:
+
+| Roo Code path | skillsaw |
+| --- | --- |
+| `.roo/rules/**`, `.roo/rules-<mode>/**` | linted as instruction prose (`.md` and `.txt`) |
+| `.roorules` | linted as instruction prose |
+| `.roomodes` | validated by [`roo-modes-valid`](rules/roo-modes-valid.md) |
+| `.roorules-<mode>` | not linted |
+| `.rooignore` | not linted — gitignore syntax, nothing to validate |
+| `.roo/mcp.json`, `.roo/commands/`, `.roo/skills/` | not linted |
+
+Two details of Roo's loader are worth knowing, because skillsaw does not
+report on either. `.roorules` is a *fallback*: Roo read it only when
+`.roo/rules/` yielded no files at all, so a repository carrying both has a
+`.roorules` the agent never saw. And Roo's rules directories had no
+extension allowlist — it read every file it found there — so a rule file
+with some other suffix is loaded by Roo and skipped by skillsaw.
+
+**Roomote is a different product, and it needs nothing from this.** Its
+worker reads exactly two agentic locations from a repository it operates on
+— `.agents/skills/*/SKILL.md` and `.claude/skills/*/SKILL.md` — both of
+which skillsaw already discovers and lints as Agent Skills. Beyond that it
+reads toolchain pins (`.tool-versions`, `mise.toml` and friends), and its
+packaged prompts instruct the model to find `AGENTS.md` with `git ls-files`,
+preferring the nearest ancestor and preferring `AGENTS.md` over `CLAUDE.md`
+at equal scope — which is the file skillsaw already expects you to write. No
+Roo Code legacy file appears anywhere in Roomote's source; the `.roomote/`
+directory in a workspace is runtime state Roomote writes, not configuration
+it reads. So there is no Roomote format to support: keeping `AGENTS.md` and
+your skills clean is the whole of it.
