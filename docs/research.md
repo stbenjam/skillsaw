@@ -445,8 +445,8 @@ false positives in a linter train users to stop reading its output.
 
 **References:**
 
-- [W3C: Link Checking](https://www.w3.org/QA/Tools/) — Broken links are a
-  recognized web quality defect
+- [W3C Link Checker](https://validator.w3.org/checklink) — Broken links are
+  a recognized web quality defect with long-standing tooling
 - [RFC 9110 §15.5.5, §15.5.11](https://www.rfc-editor.org/rfc/rfc9110#name-404-not-found)
   — `404 Not Found` and `410 Gone` are the only status codes that assert the
   target resource does not exist; `403` and `429` describe the requester

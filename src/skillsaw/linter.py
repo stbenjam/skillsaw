@@ -163,8 +163,7 @@ class NetworkAccessWarning(UserWarning):
     def __init__(self, rule_ids: List[str]):
         self.rule_ids = rule_ids
         super().__init__(
-            f"Network access enabled for: {', '.join(rule_ids)} — "
-            "use --no-network to skip"
+            f"Network access enabled for: {', '.join(rule_ids)} — " "use --no-network to skip"
         )
 
 

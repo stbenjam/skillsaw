@@ -110,6 +110,7 @@ runs can update and remove only the comments they own:
 | `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict: true` is equivalent to `fail-on: warning`, and combining `strict` with a contradictory `fail-on` fails the run | `''` |
 | `verbose` | Include info-level violations | `false` |
 | `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
+| `no-network` | Skip rules that make outbound network requests, whatever the linted repository enables | `true` |
 | `plugins` | Trusted newline-separated pip requirements to install as rule plugins; values can select indexes or URLs | `''` |
 
 ### Outputs
@@ -214,17 +215,48 @@ on:
     - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   links:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: pipx install skillsaw==0.20.0
-      - run: skillsaw lint . --rule content-broken-external-reference
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - run: pipx install skillsaw
+      - run: skillsaw lint . --rule content-broken-external-reference --strict -v
 ```
 
+`--strict` is load-bearing. The rule reports at `warning`, and the default
+threshold is `fail-on: error` — without it the job stays green even when it
+finds dead links, and a scheduled job whose output nobody reads is only
+useful if it can go red. `-v` surfaces the info-level notice that says the
+network budget ran out before every link was checked.
+
 Using `--rule` rather than `.skillsaw.yaml` keeps the rule out of every
-other run, including local ones.
+other run, including local ones, and keeps your `skillsaw badge` grade
+independent of whether a third-party URL 404s today.
+
+A clean run is not proof every link resolved: bot walls, rate limits, 5xx
+responses, timeouts and DNS failures are all treated as inconclusive and
+reported nowhere.
+
+### Refusing network access outright
+
+`--no-network` (or `SKILLSAW_NO_NETWORK=1`) drops every rule that makes
+outbound requests, on `lint`, `fix`, `baseline`, and `badge` — regardless
+of what the linted repository's `.skillsaw.yaml` enables or what `--rule`
+asks for. The linted repository is untrusted content, so the guarantee has
+to belong to the operator:
+
+```yaml
+      - run: skillsaw lint . --no-network
+```
+
+The `skillsaw` Action sets it by default (`no-network: 'true'`); pass
+`no-network: false` to opt a scheduled job back in.
 
 ## Other output formats
 

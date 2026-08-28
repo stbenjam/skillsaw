@@ -3,7 +3,7 @@
 
 # content-broken-external-reference
 
-Detect external http(s) links whose server reports them gone (404/410)
+Detect external http(s) links whose server reports them gone (404/410; opt-in, makes network requests)
 
 | | |
 |---|---|
@@ -14,10 +14,11 @@ Detect external http(s) links whose server reports them gone (404/410)
 
 ## Why
 
-An agent asked to "read the upgrade notes at this URL" cannot tell a dead
-link from a live one. It follows the link, gets an error page or nothing at
-all, and continues on whatever it already believed — the context file
-promised grounding it silently failed to deliver. Human readers get a 404.
+A markdown link to a page that no longer exists is a dead reference. An
+agent told to read it cannot tell a dead link from a live one: it follows
+the link, gets an error page, and carries on with whatever it already
+believed instead of the grounding the file promised. A human reader gets
+a 404.
 
 Dead external links accumulate the same way dead internal ones do: a
 vendor reorganizes its documentation, a repository is renamed, a blog
@@ -31,8 +32,67 @@ off unless you turn it on (`default_enabled = false`, never `auto`). A
 lint run is hermetic by default: no repository type, no detected format,
 and no `enabled: auto` setting will start making requests on your behalf.
 
+Be aware that for a disabled-by-default rule, **any** setting under its
+config key activates it — a lone `ignore:` or `severity:` is enough. To
+tune it without turning it on, keep an explicit `enabled: false`.
+
 That also makes it a poor fit for a per-PR gate. Enable it in a scheduled
-job instead — see the CI recipe below.
+job instead — see the CI recipe below. Enabling it in `.skillsaw.yaml`
+rather than with `--rule` has a second, stickier consequence: violations
+are warnings, warnings are weighted into the letter grade, so your
+`skillsaw badge` output becomes a function of whether a third-party URL
+404s today.
+
+## The operator's gate
+
+The rule's `enabled` state is decided by the linted repository's
+`.skillsaw.yaml` — which skillsaw's [threat model](https://github.com/stbenjam/skillsaw/blob/main/THREAT_MODEL.md)
+treats as untrusted content. Whether skillsaw may touch the network at
+all is decided by the operator instead:
+
+```console
+$ skillsaw lint . --no-network     # also: SKILLSAW_NO_NETWORK=1
+```
+
+`--no-network` is available on `lint`, `fix`, `baseline`, and `badge`. It
+drops every rule that declares `requires_network`, whatever the
+repository's config or a `--rule` flag asks for, so an air-gapped or
+enterprise CI job can assert "skillsaw made no network calls" from a flag
+rather than by auditing every linted repository's YAML. The shipped
+GitHub Action sets `no-network: 'true'` by default for the same reason.
+
+When the network *does* engage, skillsaw says so on stderr:
+
+```console
+⚠ Network access enabled for: content-broken-external-reference (use --no-network to skip)
+```
+
+## What is sent, and to whom
+
+Enabling this rule discloses, to every third-party host referenced
+anywhere in your context files:
+
+- **your runner's IP address**, and that the repository is being linted —
+  on a schedule, repeatedly;
+- **the full path and query string** of each URL. Only the fragment is
+  dropped. A URL like `https://host/doc?access_token=…`, or a
+  pre-signed link, is transmitted intact. URLs carrying *userinfo*
+  (`https://user:token@host/…`) are skipped entirely — but that promise
+  does not extend to secrets in a query string;
+- **the user agent** `skillsaw/<version> (+https://skillsaw.org)`, which
+  identifies the tool and its version.
+
+Destinations are confined to public hosts. A URL whose host is a loopback,
+private, link-local, reserved, multicast or IPv4-mapped address — or a
+`localhost` name — is refused unless you set `allow-private-hosts: true`.
+The same check re-runs on every redirect hop, so an origin cannot redirect
+the linter onto your internal network. An internal *hostname* that resolves
+to a private address is not caught (that would need a resolver lookup, and
+would still lose to DNS rebinding); use `--no-network` or network egress
+control if that matters.
+
+`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` are honored, so a restricted-egress
+environment can route or block these requests the usual way.
 
 ## What counts as broken
 
@@ -48,15 +108,39 @@ Everything else is *not* a violation, deliberately:
 - `401`, `403`, `429` — bot walls and rate limits. A site that blocks the
   CI runner's user agent says nothing about whether the link works for a
   human.
-- `5xx` — the origin is having a bad day.
+- `5xx` — a transient origin failure.
 - Timeouts, DNS failures, refused connections, TLS errors — the network
   between the runner and the host, not the link.
 - Redirect chains longer than five hops, and redirects that leave
   `http`/`https`.
 - A `404`/`410` that a follow-up `GET` does not confirm (see below).
 
-A linter that fails your build because a documentation site rate-limited
-your runner is worse than no linter at all.
+
+## Invariants for a future network rule
+
+This is the only rule in skillsaw permitted to open a connection
+(`THREAT_MODEL.md` T18). Anything that follows it must keep all of these:
+
+- **`requires_network = True`** — the whole operator gate reads that one
+  attribute (`--no-network`, the Action's `no-network` default, and
+  `scripts/changed-rules.py`, which keeps `rule-impact.yml` from
+  force-running network rules against third-party repositories). Never
+  replace it with a rule-id list.
+- **`default_enabled = False`, never `auto`**, and the standard library
+  only — no new dependency for a request.
+- **Only definitive evidence is a violation.** Everything the network
+  can say about itself stays silent.
+- **Every input is hostile**: URLs come from repo content and options
+  from a repo-controlled `.skillsaw.yaml`. Confine destinations to
+  public hosts, re-run admission on every redirect hop, and clamp each
+  option with a named `_MAX_*` constant, as `_MAX_REGEX_TIMEOUT` does
+  for T13.
+- **Tests run against a local `http.server`**, never the internet, with
+  the markdown in fixtures. Keep the guard that a default run makes no
+  requests, and assert it on a recorded ledger rather than a raised
+  exception — `Linter.run` turns exceptions into violations. Add the
+  rule to `NETWORK_RULES` in `tests/test_integration.py` with the
+  companion test that it fires against the local server.
 
 ## Examples
 
@@ -136,9 +220,9 @@ rules:
       - https://*.staging.example.net/*        # glob
 ```
 
-Note that *any* setting for this rule — even just `ignore` or `timeout` —
-enables it, because it is disabled by default. To configure it without
-turning it on, keep an explicit `enabled: false`.
+*Any* setting for this rule — `ignore` or `timeout` alone, and even an
+unrecognized key — enables it, because it is disabled by default. To
+configure it without turning it on, keep an explicit `enabled: false`.
 
 ### CI recipe
 
@@ -175,10 +259,11 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `timeout` | Per-request timeout in seconds | `5.0` |
-| `total-budget` | Wall-clock seconds for all requests in a run; remaining URLs are left unchecked. 0 disables the cap | `30.0` |
-| `concurrency` | Maximum simultaneous requests | `8` |
+| `timeout` | Per-request timeout in seconds (clamped to 30) | `5.0` |
+| `total-budget` | Wall-clock seconds for all requests in a run; remaining URLs are left unchecked. 0 disables the cap (clamped to 600) | `30.0` |
+| `concurrency` | Maximum simultaneous requests (clamped to 32) | `8` |
 | `ignore` | URL patterns never requested — a glob (fnmatch) when it contains *, ? or [, otherwise a literal prefix | `[]` |
+| `allow-private-hosts` | Probe URLs whose host is a loopback, private, link-local or otherwise non-public IP literal. Off by default so a repo cannot aim the linter at its runner's internal network | `false` |
 
 ## Research Basis
 
@@ -203,8 +288,8 @@ false positives in a linter train users to stop reading its output.
 
 **References:**
 
-- [W3C: Link Checking](https://www.w3.org/QA/Tools/) — Broken links are a
-  recognized web quality defect
+- [W3C Link Checker](https://validator.w3.org/checklink) — Broken links are
+  a recognized web quality defect with long-standing tooling
 - [RFC 9110 §15.5.5, §15.5.11](https://www.rfc-editor.org/rfc/rfc9110#name-404-not-found)
   — `404 Not Found` and `410 Gone` are the only status codes that assert the
   target resource does not exist; `403` and `429` describe the requester

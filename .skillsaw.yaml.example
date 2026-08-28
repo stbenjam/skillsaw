@@ -214,7 +214,7 @@ rules:
     # skip-builtins: false
     # regex-timeout: 2.0
 
-  # Detect external http(s) links whose server reports them gone (404/410)
+  # Detect external http(s) links whose server reports them gone (404/410; opt-in, makes network requests)
   content-broken-external-reference:
     enabled: false
     severity: warning
@@ -222,6 +222,7 @@ rules:
     # total-budget: 30.0
     # concurrency: 8
     # ignore: []
+    # allow-private-hosts: false
 
   # Detect markdown links where the target file does not exist
   content-broken-internal-reference:

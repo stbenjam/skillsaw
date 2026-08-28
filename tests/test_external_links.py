@@ -461,9 +461,7 @@ class TestAgainstLocalServer:
 
     @pytest.mark.parametrize("route", ["/head-405", "/head-501"])
     def test_both_head_rejection_codes_fall_back_to_get(self, route, server):
-        rule = ContentBrokenExternalReferenceRule(
-            {"enabled": True, "allow-private-hosts": True}
-        )
+        rule = ContentBrokenExternalReferenceRule({"enabled": True, "allow-private-hosts": True})
 
         status, _checked = rule._probe(f"http://127.0.0.1:{server.port}{route}", 5.0, None)
 
@@ -471,9 +469,7 @@ class TestAgainstLocalServer:
         assert status == 404
 
     def test_a_chain_within_the_hop_cap_is_followed_to_its_404(self, server):
-        rule = ContentBrokenExternalReferenceRule(
-            {"enabled": True, "allow-private-hosts": True}
-        )
+        rule = ContentBrokenExternalReferenceRule({"enabled": True, "allow-private-hosts": True})
 
         status, _checked = rule._probe(f"http://127.0.0.1:{server.port}/hop/4", 5.0, None)
 
@@ -487,9 +483,7 @@ class TestAgainstLocalServer:
         cannot prove this — a self-redirect trips `max_repeats` (4),
         which the rule leaves untouched.
         """
-        rule = ContentBrokenExternalReferenceRule(
-            {"enabled": True, "allow-private-hosts": True}
-        )
+        rule = ContentBrokenExternalReferenceRule({"enabled": True, "allow-private-hosts": True})
 
         status, checked = rule._probe(f"http://127.0.0.1:{server.port}/hop/9", 5.0, None)
 
@@ -498,9 +492,7 @@ class TestAgainstLocalServer:
 
     def test_redirect_out_of_http_is_not_followed(self, server):
         """A 302 into ``ftp://`` ends the chain instead of changing protocol."""
-        rule = ContentBrokenExternalReferenceRule(
-            {"enabled": True, "allow-private-hosts": True}
-        )
+        rule = ContentBrokenExternalReferenceRule({"enabled": True, "allow-private-hosts": True})
 
         status, checked = rule._probe(f"http://127.0.0.1:{server.port}/redirect-ftp", 5.0, None)
 
@@ -577,21 +569,54 @@ class TestOperatorNetworkGate:
         assert server.hits, f"SKILLSAW_NO_NETWORK={value!r} must not gate"
 
     def test_engaging_the_network_is_announced(self, tmp_path, server):
+        """A real subprocess: the warnings registry is process-global.
+
+        ``warnings.warn`` fires once per (message, category, location)
+        per process under the default filters, so in-process runs would
+        make this assertion depend on whether some earlier test in the
+        same worker already triggered the notice. This is the
+        "something a shared interpreter cannot give it" case that
+        ``tests/cli_runner.py`` documents.
+        """
+        import subprocess
+        import sys
+
         repo = _materialize("content/external-links", tmp_path, server.port)
 
-        result = run_lint(repo, config=repo / ".skillsaw.yaml")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "lint",
+                "-c",
+                str(repo / ".skillsaw.yaml"),
+                str(repo),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
 
-        assert "Network access enabled for" in result["stderr"]
-        assert RULE_ID in result["stderr"]
-        assert "--no-network" in result["stderr"]
-        assert "UserWarning" not in result["stderr"]  # not the stock formatter
+        assert "Network access enabled for" in result.stderr
+        assert RULE_ID in result.stderr
+        assert "--no-network" in result.stderr
+        assert "UserWarning" not in result.stderr  # rendered, not the stock formatter
 
     def test_no_announcement_when_the_rule_is_not_running(self, tmp_path, server):
+        import subprocess
+        import sys
+
         repo = _materialize("content/external-links", tmp_path, server.port, keep_config=False)
 
-        result = run_lint(repo)
+        result = subprocess.run(
+            [sys.executable, "-m", "skillsaw", "lint", str(repo)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
 
-        assert "Network access enabled" not in result["stderr"]
+        assert "Network access enabled" not in result.stderr
 
     def test_gate_is_declarative_not_a_rule_id_list(self):
         """A future network rule inherits the gate by declaring the attribute."""
@@ -793,9 +818,7 @@ class TestRedirectTargetsAreVetted:
             }
         )
 
-        status, checked = rule._probe(
-            f"http://127.0.0.1:{server.port}/redirect-missing", 5.0, None
-        )
+        status, checked = rule._probe(f"http://127.0.0.1:{server.port}/redirect-missing", 5.0, None)
 
         assert server.paths() == ["/redirect-missing"]  # the hop was refused
         assert checked is True
@@ -1003,10 +1026,7 @@ class TestDefaultRunIsOffline:
         """
         repo = _materialize("content/external-links", tmp_path, server.port, keep_config=False)
         (repo / ".skillsaw.yaml").write_text(
-            'version: "99.0.0"\n'
-            "rules:\n"
-            f"  {RULE_ID}:\n"
-            "    allow-private-hosts: true\n",
+            'version: "99.0.0"\n' "rules:\n" f"  {RULE_ID}:\n" "    allow-private-hosts: true\n",
             encoding="utf-8",
         )
 

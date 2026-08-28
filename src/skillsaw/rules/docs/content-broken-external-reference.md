@@ -1,9 +1,10 @@
 ## Why
 
-An agent asked to "read the upgrade notes at this URL" cannot tell a dead
-link from a live one. It follows the link, gets an error page or nothing at
-all, and continues on whatever it already believed — the context file
-promised grounding it silently failed to deliver. Human readers get a 404.
+A markdown link to a page that no longer exists is a dead reference. An
+agent told to read it cannot tell a dead link from a live one: it follows
+the link, gets an error page, and carries on with whatever it already
+believed instead of the grounding the file promised. A human reader gets
+a 404.
 
 Dead external links accumulate the same way dead internal ones do: a
 vendor reorganizes its documentation, a repository is renamed, a blog
@@ -93,15 +94,39 @@ Everything else is *not* a violation, deliberately:
 - `401`, `403`, `429` — bot walls and rate limits. A site that blocks the
   CI runner's user agent says nothing about whether the link works for a
   human.
-- `5xx` — the origin is having a bad day.
+- `5xx` — a transient origin failure.
 - Timeouts, DNS failures, refused connections, TLS errors — the network
   between the runner and the host, not the link.
 - Redirect chains longer than five hops, and redirects that leave
   `http`/`https`.
 - A `404`/`410` that a follow-up `GET` does not confirm (see below).
 
-A linter that fails your build because a documentation site rate-limited
-your runner is worse than no linter at all.
+
+## Invariants for a future network rule
+
+This is the only rule in skillsaw permitted to open a connection
+(`THREAT_MODEL.md` T18). Anything that follows it must keep all of these:
+
+- **`requires_network = True`** — the whole operator gate reads that one
+  attribute (`--no-network`, the Action's `no-network` default, and
+  `scripts/changed-rules.py`, which keeps `rule-impact.yml` from
+  force-running network rules against third-party repositories). Never
+  replace it with a rule-id list.
+- **`default_enabled = False`, never `auto`**, and the standard library
+  only — no new dependency for a request.
+- **Only definitive evidence is a violation.** Everything the network
+  can say about itself stays silent.
+- **Every input is hostile**: URLs come from repo content and options
+  from a repo-controlled `.skillsaw.yaml`. Confine destinations to
+  public hosts, re-run admission on every redirect hop, and clamp each
+  option with a named `_MAX_*` constant, as `_MAX_REGEX_TIMEOUT` does
+  for T13.
+- **Tests run against a local `http.server`**, never the internet, with
+  the markdown in fixtures. Keep the guard that a default run makes no
+  requests, and assert it on a recorded ledger rather than a raised
+  exception — `Linter.run` turns exceptions into violations. Add the
+  rule to `NETWORK_RULES` in `tests/test_integration.py` with the
+  companion test that it fires against the local server.
 
 ## Examples
 
@@ -181,9 +206,9 @@ rules:
       - https://*.staging.example.net/*        # glob
 ```
 
-Note that *any* setting for this rule — even just `ignore` or `timeout` —
-enables it, because it is disabled by default. To configure it without
-turning it on, keep an explicit `enabled: false`.
+*Any* setting for this rule — `ignore` or `timeout` alone, and even an
+unrecognized key — enables it, because it is disabled by default. To
+configure it without turning it on, keep an explicit `enabled: false`.
 
 ### CI recipe
 

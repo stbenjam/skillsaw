@@ -94,6 +94,18 @@ from the markdown-it-py AST — read it via `block.markdown` (a
   Never force-enable a new rule that could break existing users.
 - **Use the lint tree for discovery** — call `context.lint_tree.find(NodeType)`.
 
+### Network-touching rules
+
+`content-broken-external-reference` is the only rule allowed to open a
+connection (THREAT_MODEL T18). A second one needs a security review and
+must declare `requires_network = True` — that attribute is the whole
+gate (`--no-network`, the Action, `changed-rules.py`), so never add a
+rule-id list. Read
+[the rule's module docstring](../../src/skillsaw/rules/builtin/content/broken_external_reference.py)
+and its [invariants](../../src/skillsaw/rules/docs/content-broken-external-reference.md)
+before writing one: opt-in only, definitive evidence only, hostile
+input throughout, and tests against a local `http.server`.
+
 ### Line numbers and the parse tree
 
 - **Always report line numbers** on every violation traceable to a specific line, except whole-file violations.
