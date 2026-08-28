@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import os
-from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
@@ -29,10 +29,10 @@ VENDOR_DIR_NAMES = frozenset(
 )
 
 # Editor-owned directories whose contents ship in a repository. Cursor,
-# Copilot/VS Code and Cline all read these from the nearest enclosing
-# folder as well as the repository root, so a monorepo package can carry
-# its own set — hence a walk rather than a root-anchored lookup.
-AGENT_TOOL_DIR_NAMES = frozenset({".cursor", ".clinerules", ".github", ".vscode"})
+# Copilot/VS Code, Cline and OpenCode all read these from the nearest
+# enclosing folder as well as the repository root, so a monorepo package
+# can carry its own set — hence a walk rather than a root-anchored lookup.
+AGENT_TOOL_DIR_NAMES = frozenset({".cursor", ".clinerules", ".github", ".vscode", ".opencode"})
 
 
 @dataclass
@@ -115,6 +115,36 @@ _EDITOR_EVIDENCE = {
             ("skills", True),
         ),
     ),
+    # OpenCode 2.0 renamed every content directory to its plural, and still
+    # loads the v1 singular. Both spellings are evidence: a repository
+    # written for either version is an OpenCode repository, and a rule that
+    # fired on only one of them would go quiet the day a project migrated.
+    # ``opencode.json`` and ``opencode.jsonc`` inside ``.opencode/`` are
+    # listed here; the root
+    # copy is a separate marker check in ``instruction_formats``.
+    "HAS_OPENCODE": (
+        ".opencode",
+        (
+            ("opencode.json", False),
+            ("opencode.jsonc", False),
+            ("agents", True),
+            ("agent", True),
+            ("commands", True),
+            ("command", True),
+            ("modes", True),
+            ("mode", True),
+            ("skills", True),
+            ("skill", True),
+            # ``plugin(s)/`` holds JavaScript, which nothing attaches — but
+            # it is still evidence that this directory is OpenCode's, and
+            # ``opencode-config-valid`` reads the config file rather than
+            # this directory. A repository whose only marker is a plugin
+            # therefore turns the rule on and it finds the config, or finds
+            # nothing and reports nothing.
+            ("plugins", True),
+            ("plugin", True),
+        ),
+    ),
 }
 
 
@@ -187,6 +217,14 @@ def instruction_formats(
             or any(path.name.endswith(".instructions.md") for path in files),
         ),
         ("HAS_CLINE", cline_marker()),
+        (
+            "HAS_OPENCODE",
+            editor_marker("HAS_OPENCODE")
+            # OpenCode reads the project config from the repository root as
+            # well as from ``.opencode/``, and a repository that configures
+            # only a model and an MCP server has no ``.opencode/`` at all.
+            or marker("opencode.json") or marker("opencode.jsonc"),
+        ),
         ("HAS_GEMINI", marker("GEMINI.md")),
         ("HAS_QWEN", marker("QWEN.md")),
         ("HAS_AGENTS_MD", marker("AGENTS.md")),
@@ -196,6 +234,19 @@ def instruction_formats(
     )
     found.update(label for label, present in checks if present)
     return found
+
+
+def walk_files(root: Path) -> Iterator[Path]:
+    """Yield every file under *root*, pruning :data:`WALK_SKIP_DIRS`."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
+        for name in filenames:
+            yield Path(dirpath) / name
+
+
+def should_skip_dir(item: Path) -> bool:
+    """Whether *item* is not a directory worth recursing into."""
+    return not item.is_dir() or item.name.startswith(".") or item.name in WALK_SKIP_DIRS
 
 
 def has_apm(root: Path) -> bool:

@@ -8,7 +8,9 @@ import pytest
 
 from skillsaw.rules.builtin.secret_detection import (
     DEFAULT_PLACEHOLDER_MARKERS,
+    is_secret_placeholder,
     mapped_secret_description,
+    placeholder_markers,
 )
 
 # Opaque, high-variety, and matching no structured token format.
@@ -98,3 +100,57 @@ class TestMappedSecretDescription:
 
         assert description is not None
         assert OPAQUE not in description
+
+
+class TestOpenCodeSubstitutionSyntax:
+    """`{env:VAR}` and `{file:./path}` are how OpenCode keeps a token out of a config."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "{env:MY_API_KEY}",
+            "Bearer {env:SENTRY_MCP_TOKEN}",
+            "{file:./secrets/token}",
+            "{file:~/.config/token}",
+        ],
+    )
+    def test_substitution_syntax_reads_as_a_placeholder(self, value):
+        assert is_secret_placeholder(value)
+
+    def test_a_structured_token_is_reported_even_beside_the_syntax(self):
+        """The widening must not become a way to smuggle a real token past the scan.
+
+        `mapped_secret_description` runs the structured detector first, so a
+        recognisable token format is reported whatever else the value holds.
+        """
+        described = mapped_secret_description(
+            "GITHUB_TOKEN",
+            "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 {env:UNUSED}",  # notsecret
+            header=False,
+            markers=DEFAULT_PLACEHOLDER_MARKERS,
+        )
+        assert described == "GitHub personal access token"
+
+    def test_a_generic_credential_is_still_reported_without_the_syntax(self):
+        described = mapped_secret_description(
+            "API_KEY",
+            "9f8e7d6c5b4a39281706fedcba9876543210",  # notsecret
+            header=False,
+            markers=DEFAULT_PLACEHOLDER_MARKERS,
+        )
+        assert described is not None
+
+
+class TestPlaceholderMarkers:
+    """One reader, so the same config line means the same thing in every rule."""
+
+    @pytest.mark.parametrize("extra", [["corp"], ("corp",), {"corp"}, frozenset({"corp"})])
+    def test_every_sequence_shape_contributes(self, extra):
+        assert "corp" in placeholder_markers(extra)
+
+    @pytest.mark.parametrize("extra", [None, 42, "corp", {"corp": True}])
+    def test_a_non_sequence_contributes_nothing(self, extra):
+        assert placeholder_markers(extra) == DEFAULT_PLACEHOLDER_MARKERS
+
+    def test_markers_are_lowercased_for_the_case_insensitive_match(self):
+        assert "corpfixture" in placeholder_markers(["CorpFixture"])

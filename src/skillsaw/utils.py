@@ -640,6 +640,121 @@ def read_json_strict(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return None, _TOO_DEEP
 
 
+def strip_jsonc(content: str) -> str:
+    """Blank out JSONC comments and trailing commas, preserving every offset.
+
+    ``.jsonc`` — and, for the hosts that accept it, a plain ``.json`` — adds
+    ``//`` and ``/* */`` comments and a comma before a closing brace or
+    bracket. ``json.loads`` rejects all three, so a config written the way
+    its own host documents would otherwise be reported as unparseable.
+
+    Removed characters are replaced with spaces rather than deleted, and
+    newlines inside a block comment are kept. ``json.loads`` reports a parse
+    error by line, column and character position, so a stripper that shifted
+    the text would point the author at the wrong place in a file that really
+    is broken.
+
+    Strings are tracked, so ``{"url": "https://x"}`` keeps its ``//`` and
+    ``{"a": "x,"}`` keeps its comma.
+    The transform is a no-op on any valid JSON document: every branch that
+    blanks a character needs a ``/`` or a ``,`` in a position plain JSON
+    does not allow. :func:`read_jsonc` relies on that to keep this scan off
+    the common path entirely.
+    """
+    out = list(content)
+    length = len(content)
+    index = 0
+    in_string = False
+    # Index of the most recent comma, and of the last character that was
+    # neither whitespace nor blanked. A comma is trailing exactly when the
+    # two are the same at the moment a closer arrives.
+    last_comma = -1
+    last_significant = -1
+    while index < length:
+        char = content[index]
+        if in_string:
+            if char == "\\":
+                index += 2
+                continue
+            if char == '"':
+                in_string = False
+                last_significant = index
+            index += 1
+            continue
+        if char == '"':
+            in_string = True
+            last_significant = index
+            index += 1
+            continue
+        if char == "/" and index + 1 < length:
+            following = content[index + 1]
+            if following == "/":
+                while index < length and content[index] != "\n":
+                    out[index] = " "
+                    index += 1
+                continue
+            if following == "*":
+                end = content.find("*/", index + 2)
+                # An unterminated block comment runs to end of file, which is
+                # what every JSONC reader does with one.
+                end = length if end == -1 else end + 2
+                for position in range(index, end):
+                    if out[position] != "\n":
+                        out[position] = " "
+                index = end
+                continue
+        if char in "}]":
+            if last_comma != -1 and last_significant == last_comma:
+                out[last_comma] = " "
+            last_comma = -1
+            last_significant = index
+        elif char == ",":
+            last_comma = index
+            last_significant = index
+        elif not char.isspace():
+            last_significant = index
+        index += 1
+    return "".join(out)
+
+
+@_file_cache.cached
+def read_jsonc(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
+    """Read a JSON file that may carry comments and trailing commas.
+
+    Always strict about the non-finite tokens, for the reason
+    :func:`read_json_strict` gives: the locations that opt into JSONC are new
+    surfaces with no shipped results a tightened parser would change.
+
+    Parsed as-is first, and stripped only if that fails. Most files at these
+    locations are plain JSON, and :func:`strip_jsonc` materializes one list
+    slot per character plus a joined copy — roughly 8x the file resident,
+    against 2x for an ordinary read. Parsing first keeps an unbounded,
+    attacker-sized config off that path (THREAT_MODEL T11 — whole-file size
+    limits are still open) and costs nothing in results, since the strip is
+    a no-op on every document the first parse would have accepted. The
+    reported error still comes from the stripped parse, so its line, column
+    and position stay the ones this function's offset preservation exists
+    for.
+    """
+    content = read_text(file_path)
+    if content is None:
+        return None, f"Failed to read {file_path.name}"
+    try:
+        return json.loads(content, parse_constant=_reject_non_finite), None
+    except RecursionError:
+        return None, _TOO_DEEP
+    except ValueError:
+        pass  # May be JSONC. Fall through to the stripped parse.
+    try:
+        return json.loads(strip_jsonc(content), parse_constant=_reject_non_finite), None
+    except ValueError as e:
+        # Same rationale as read_json: bare ValueError, not just the
+        # JSONDecodeError subclass.
+        return None, str(e)
+    except RecursionError:
+        return None, _TOO_DEEP
+
+
 @_file_cache.cached
 def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     """Cached YAML file read. Returns (data, error)."""

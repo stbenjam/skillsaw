@@ -11,10 +11,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
+from types import MappingProxyType
+from typing import Any, ClassVar, Dict, List, Mapping, Optional, Set, Tuple
 
+from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
-from skillsaw.utils import read_text, read_json, read_json_strict
+from skillsaw.utils import read_text, read_json, read_json_strict, read_jsonc
 
 
 def _as_str(value: Any) -> Optional[str]:
@@ -148,7 +150,13 @@ def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
     return result
 
 
-def _parse_json_file(path: Path, *, strict: bool = False) -> Tuple[Optional[Any], Optional[str]]:
+def _parse_json_file(
+    path: Path, *, strict: bool = False, jsonc: bool = False
+) -> Tuple[Optional[Any], Optional[str]]:
+    if jsonc:
+        # JSONC is always strict about the non-finite tokens; the locations
+        # that opt into it are new surfaces with no shipped results.
+        return read_jsonc(path)
     data, error = (read_json_strict if strict else read_json)(path)
     return data, error
 
@@ -170,13 +178,22 @@ class JsonConfigBlock(LintTarget):
     #: results that a tightened parser would turn into "Invalid JSON" on
     #: upgrade. The locations added since opt in, having no such history.
     strict_json: ClassVar[bool] = False
+    #: Whether the host reads this file as JSONC — ``//`` and ``/* */``
+    #: comments and a comma before a closing brace. Off by default: every
+    #: Claude-family location is strict JSON, and accepting comments there
+    #: would stop reporting a file its own host cannot read. A host that
+    #: documents JSONC (OpenCode names both ``opencode.json`` and
+    #: ``opencode.jsonc``) opts in, so a commented config is not reported
+    #: as a parse error. Implies :attr:`strict_json`, which is why the
+    #: locations setting this leave that one at its default.
+    jsonc: ClassVar[bool] = False
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
         default=None, init=False, repr=False
     )
 
     def _ensure_parsed(self) -> None:
         if self._parsed is None:
-            self._parsed = _parse_json_file(self.path, strict=self.strict_json)
+            self._parsed = _parse_json_file(self.path, strict=self.strict_json, jsonc=self.jsonc)
 
     @property
     def parse_error(self) -> Optional[str]:
@@ -434,9 +451,41 @@ class McpBlock(JsonConfigBlock):
     #: separately, per-path); the editor locations are new surfaces with no
     #: established results to preserve, so they require it from the start.
     require_usable_connection: ClassVar[bool] = False
+    #: Per-server maps whose values may hold a committed credential, as
+    #: ``(key, is_http_header)``. Declared on the block because the key names
+    #: are the host's: every Claude-family host spells the environment map
+    #: ``env``, OpenCode spells it ``environment`` and adds ``oauth``. Read
+    #: by the checks ``mcp-valid-json`` keeps for a block whose *shape* it
+    #: defers, so a host with its own dialect does not lose the credential
+    #: scan along with the shape checks.
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = (
+        ("env", False),
+        ("headers", True),
+    )
+    #: Key renames to apply before the credential-*name* test only, for a
+    #: host whose older spelling the shared detector cannot split (OpenCode's
+    #: 1.x ``clientSecret`` against its 2.0 ``client_secret``). Findings
+    #: always name the key as the author wrote it.
+    credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({})
 
-    @property
-    def servers(self) -> List[McpServerConfig]:
+    def server_entries(self) -> List[Tuple[str, Any]]:
+        """Every declared server as ``(name, value)``, in document order.
+
+        A list of pairs rather than a mapping, because a host may declare
+        one server name twice: OpenCode loads two config layouts at once,
+        so a file mid-migration can name the same server in each. A mapping
+        would silently keep one of them, and keeping the copy that does
+        *not* carry the committed credential is how a scanner reports a
+        file clean. Every other host has one layout, where this is exactly
+        ``servers_dict.items()``.
+
+        Values are returned unfiltered so a validating caller can report a
+        server whose value is not an object at all; :attr:`servers` drops
+        those, since there is no configuration to model.
+
+        The seam a host with more than one layout overrides; see
+        :class:`OpenCodeMcpBlock`.
+        """
         data = self.raw_data
         if data is None:
             return []
@@ -448,9 +497,13 @@ class McpBlock(JsonConfigBlock):
             return []
         if not isinstance(servers_dict, dict):
             return []
+        return list(servers_dict.items())
+
+    @property
+    def servers(self) -> List[McpServerConfig]:
         return [
             McpServerConfig.from_dict(name, cfg)
-            for name, cfg in servers_dict.items()
+            for name, cfg in self.server_entries()
             if isinstance(cfg, dict)
         ]
 
@@ -505,6 +558,143 @@ class VsCodeMcpBlock(McpBlock):
 
     def tree_label(self) -> str:
         return "mcp.json (VS Code MCP)"
+
+
+#: Connection fields that identify one OpenCode server, paired with the type
+#: the field has on a server. The *value* type is what does the work: a
+#: server may legitimately be *named* ``command`` or ``type``, and matching
+#: on names alone would read the map holding it as a single server.
+_OPENCODE_CONNECTION_FIELDS = (
+    ("type", str),
+    ("command", list),
+    ("url", str),
+)
+
+
+def _is_opencode_server(value: Any) -> bool:
+    """Whether *value* is one OpenCode MCP server rather than a map of them.
+
+    Answers the same ambiguity upstream's ``isDirectServer`` does, though
+    not identically — it keys on ``type``/``enabled`` holding a non-object,
+    this keys on a connection field of the right type, and the two differ on
+    a bare ``{"enabled": true}``. A server carries a connection field; a map
+    of servers carries server objects. Testing the value and not just the
+    key is what keeps a server named ``command`` — whose ``command`` entry
+    is a nested object, not an argv array — from being mistaken for the
+    server itself. The discriminator is binary, so a ``servers`` map that
+    itself looks like a server is read as one: rare, and it needs a
+    malformed ``servers`` to trigger, but it hides the entries underneath
+    rather than merely misfiling them.
+    """
+    if not isinstance(value, dict):
+        return False
+    return any(isinstance(value.get(field), kind) for field, kind in _OPENCODE_CONNECTION_FIELDS)
+
+
+@dataclass(eq=False)
+class OpenCodeConfigBlock(JsonConfigBlock):
+    """``opencode.json`` or ``opencode.jsonc`` — OpenCode's project config.
+
+    Read at the repository root and inside ``.opencode/``. The whole file is
+    machine configuration, so it is a :class:`JsonConfigBlock` and never
+    reaches a content rule; ``opencode-config-valid`` reads ``raw_data``.
+    """
+
+    category: str = "opencode-config"
+    jsonc: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (OpenCode config)"
+
+
+@dataclass(eq=False)
+class OpenCodeMcpBlock(McpBlock):
+    """The ``mcp`` section of an OpenCode project config.
+
+    A second parser role on the same file as :class:`OpenCodeConfigBlock`,
+    which is what puts OpenCode's MCP servers in front of the shared policy
+    and security rules — ``mcp-prohibited`` finds it through
+    ``find(McpBlock)`` like every other host's configuration.
+
+    OpenCode's *shape* is its own: transports are named for where the server
+    runs (``local``/``remote``) rather than for the wire protocol, a local
+    server's ``command`` is an argv array rather than a string, and the
+    environment map is spelled ``environment``. ``mcp-valid-json`` therefore
+    stands aside from the shape checks for this block and
+    ``opencode-config-valid`` performs them instead; the policy rules and the
+    checks that do not depend on the dialect — a file that is not JSON, a
+    ``url`` carrying user information, and the credentials in the maps
+    declared by :attr:`credential_maps` below — still read this block where
+    they read every other host's.
+    """
+
+    servers_key: ClassVar[str] = "mcp"
+    # OpenCode's config has a documented top-level key for everything from
+    # ``model`` to ``keybinds``. A document with no ``mcp`` key declares no
+    # servers; reading the whole config as a server map would turn every
+    # other setting into a server.
+    allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
+    jsonc: ClassVar[bool] = True
+    #: OpenCode spells the environment map ``environment`` and puts client
+    #: credentials in ``oauth``. ``headers`` it spells like everyone else.
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = (
+        ("environment", False),
+        ("headers", True),
+        ("oauth", False),
+    )
+    credential_key_aliases: ClassVar[Mapping[str, str]] = MCP_OAUTH_V1_TO_V2
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (OpenCode MCP)"
+
+    def server_entries(self) -> List[Tuple[str, Any]]:
+        """Every declared server, under the v1 *and* the v2 layout.
+
+        OpenCode 1.x maps names directly under ``mcp``; 2.0 nests them one
+        level deeper under ``mcp.servers`` and still loads the 1.x form. A
+        file mid-migration therefore carries both, and **both run** — so
+        both are returned, nested first and then every flat sibling.
+
+        Returning one layout or the other is a security hole rather than an
+        approximation: server names are author-controlled, so a config that
+        wraps one harmless server in ``servers`` and leaves a
+        credential-bearing one flat beside it would hide the second from
+        ``mcp-prohibited`` and from the checks ``mcp-valid-json`` keeps for
+        this block. That rule keeps three — a file that is not JSON, a
+        ``url`` carrying user information, and the credentials in the maps
+        declared by :attr:`credential_maps` — and the last two read this
+        list.
+
+        A name declared in both layouts appears twice. That is deliberate:
+        they are two distinct objects that both ship, each can carry its own
+        defect, and a mapping would keep only one. Only one of the two is in
+        effect and this module names no winner; skillsaw reports on both,
+        because a credential in the inert copy is still committed.
+        """
+        data = self.raw_data
+        if data is None:
+            return []
+        section = data.get(self.servers_key)
+        if not isinstance(section, dict):
+            return []
+        nested = section.get("servers")
+        # A v1 server may legitimately be called "servers", and a v2 server
+        # may legitimately be called "command". Nothing forbids either name,
+        # so the shape decides rather than the name.
+        wrapper = isinstance(nested, dict) and not _is_opencode_server(nested)
+        entries: List[Tuple[str, Any]] = list(nested.items()) if wrapper else []
+        for name, cfg in section.items():
+            if wrapper and name == "servers":
+                continue
+            # v2 carries a global ``timeout`` beside ``servers``. It is a
+            # setting, not a server, and upstream skips it by name for
+            # exactly this reason. A v1 server genuinely called ``timeout``
+            # carries a connection field, so it survives the test.
+            if name == "timeout" and not _is_opencode_server(cfg):
+                continue
+            entries.append((name, cfg))
+        return entries
 
 
 @dataclass(eq=False)

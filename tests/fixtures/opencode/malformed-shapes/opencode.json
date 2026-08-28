@@ -1,0 +1,76 @@
+{
+  "$schema": ["https://opencode.ai/config.json"],
+  "agent": "reviewer",
+  "commands": {
+    "changelog": ["draft the changelog"],
+    "no-template": {
+      "description": "Ship it"
+    }
+  },
+  "mcp": {
+    "servers": {
+      "unhashable-type": {
+        "type": ["local"],
+        "command": ["npx", "-y", "@example/mcp"]
+      },
+      "toggled-off": {
+        "enabled": false
+      },
+      "header-token": {
+        "type": "remote",
+        "url": "https://mcp.example.com/mcp",
+        "headers": {
+          "Authorization": "Bearer ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" // notsecret
+        },
+        "oauth": {
+          "clientId": "legacy-id",
+          "client_id": "modern-id",
+          "clientSecret": "oc7yq3wm2ka9zvb4td6xh1prn8gj5sfe" // notsecret
+        }
+      },
+      "bad-maps": {
+        "type": "local",
+        "command": ["npx", "-y", "@example/mcp"],
+        "environment": ["FOO=bar"],
+        "enabled": "yes"
+      },
+      "no-connection": {
+        "type": "remote"
+      },
+      "blank-url": {
+        "type": "remote",
+        "url": "   "
+      },
+      "generic-secret": {
+        "type": "remote",
+        "url": "https://internal.example/mcp",
+        "headers": {
+          "X-Api-Key": "corpfixture3f8a9b2c4d6e8f0a1b3c5d7e" // notsecret
+        }
+      },
+      "not-an-object": "npx -y @example/mcp",
+      "declared-twice": {
+        "type": "local",
+        "command": ["npx", "-y", "@example/v2-copy"]
+      }
+    },
+    "declared-twice": {
+      "type": "local",
+      "command": ["npx", "-y", "@example/v1-copy"]
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "environment": {
+        "GITHUB_TOKEN": "ghp_ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210" // notsecret
+      }
+    }
+  },
+  "agents": {
+    "planner": {
+      "system": 5,
+      "description": ["plans work"]
+    },
+    "not-an-object": "you plan things"
+  }
+}

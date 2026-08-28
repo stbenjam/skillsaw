@@ -4,12 +4,13 @@ import re
 from pathlib import Path
 from typing import List, Set
 
-from skillsaw.context import HAS_COPILOT, RepositoryContext, RepositoryType
+from skillsaw.context import HAS_COPILOT, HAS_OPENCODE, RepositoryContext, RepositoryType
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
     CommandBlock,
     CopilotAgentBlock,
+    OpenCodeAgentBlock,
     SkillBlock,
 )
 
@@ -38,6 +39,14 @@ _TRIGGER_MARKERS = (
     "if the user",
 )
 _RESTATEMENT_FILLER = {"a", "an", "the", "command", "agent", "skill"}
+#: OpenCode directories whose files are primary agents by location alone —
+#: ``config/agent.ts`` scans ``.opencode/{mode,modes}/*.md`` and writes
+#: ``mode: "primary"`` for each, whatever the frontmatter says. Only those
+#: two directories, and only directly under ``.opencode``: the agent globs
+#: are *recursive*, so an ordinary subagent can sit at
+#: ``.opencode/agents/modes/reviewer.md`` and matching on the parent name
+#: alone would exempt it.
+_OPENCODE_PRIMARY_DIRS = frozenset({"mode", "modes"})
 
 
 class DescriptionRoutingRule(Rule):
@@ -56,8 +65,12 @@ class DescriptionRoutingRule(Rule):
     # A Copilot repository is often none of the above repo types (a bare
     # ``.github/agents/`` tree is ``UNKNOWN``), so ``enabled: auto`` also fires
     # on the Copilot format — a Copilot agent's description is what routes it,
-    # exactly the metadata this rule checks on a Claude agent.
-    formats = frozenset({HAS_COPILOT})
+    # exactly the metadata this rule checks on a Claude agent. The same holds
+    # for OpenCode: a bare ``.opencode/agents/`` tree is ``UNKNOWN`` too, and
+    # an OpenCode subagent's description is what the primary agent delegates
+    # on. Without the flag the ``OpenCodeAgentBlock`` traversal below would
+    # never run for exactly the repositories it is for.
+    formats = frozenset({HAS_COPILOT, HAS_OPENCODE})
 
     config_schema = {
         "require-trigger-phrasing": {
@@ -94,10 +107,40 @@ class DescriptionRoutingRule(Rule):
         """Report routing-quality findings as non-blocking warnings."""
         return Severity.WARNING
 
+    @staticmethod
+    def _is_user_selected_agent(block_type: type, block) -> bool:
+        """Whether this agent is picked by a person rather than routed to.
+
+        OpenCode types its agents: a ``mode: primary`` agent is one the user
+        cycles to with Tab, so its description is a label in a menu and no
+        "Use when ..." selector applies — the same reason Copilot agents are
+        exempt above. ``subagent`` and ``all`` *are* selected automatically
+        "based on their descriptions", and ``all`` is the default when the
+        field is absent, so only the explicit ``primary`` is exempt.
+
+        Location answers too. Files directly under
+        :data:`_OPENCODE_PRIMARY_DIRS` are primary whatever their frontmatter
+        says, so they carry no ``mode`` field to read and the directory is
+        what exempts them — but only where that directory is ``.opencode``'s
+        own, which is why the grandparent is checked as well.
+        """
+        if block_type is not OpenCodeAgentBlock:
+            return False
+        parent = block.path.parent
+        if parent.name in _OPENCODE_PRIMARY_DIRS and parent.parent.name == ".opencode":
+            return True
+        return block.field_value("mode") == "primary"
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         """Find weak descriptions across discovered skills, agents, and commands."""
         violations: List[RuleViolation] = []
-        for block_type in (SkillBlock, AgentBlock, CopilotAgentBlock, CommandBlock):
+        for block_type in (
+            SkillBlock,
+            AgentBlock,
+            CopilotAgentBlock,
+            OpenCodeAgentBlock,
+            CommandBlock,
+        ):
             for block in context.lint_tree.find(block_type):
                 if block.frontmatter_error:
                     continue
@@ -149,6 +192,7 @@ class DescriptionRoutingRule(Rule):
                 # but the trigger-phrasing style is not imposed on them.
                 if (
                     block_type not in (CommandBlock, CopilotAgentBlock)
+                    and not self._is_user_selected_agent(block_type, block)
                     and self.config.get("require-trigger-phrasing", True)
                     and not self._has_trigger_phrase(text)
                 ):

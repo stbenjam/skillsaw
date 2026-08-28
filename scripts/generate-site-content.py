@@ -189,6 +189,25 @@ RULE_GROUPS = [
         "unrelated files does not activate them.",
     ),
     (
+        "OpenCode",
+        "opencode",
+        ["opencode-config-valid"],
+        "Validates the OpenCode project config — `opencode.json` or "
+        "`opencode.jsonc`, at the "
+        "repository root or under any `.opencode/` directory — where a "
+        "misspelled key is read, ignored and never reported. OpenCode 2.0 "
+        "renames much of the schema while still loading the 1.x spelling, so "
+        "**both vocabularies are accepted**; what is reported is a file that "
+        "declares both spellings of one setting. Comments and trailing commas "
+        "are fine — OpenCode reads `.json` through a JSONC parser. OpenCode "
+        "reads AGENTS.md for portable instructions, so no OpenCode-specific "
+        "instruction format is validated, and its commands, agents and skills "
+        "get the shared content rules. Enabled automatically wherever an "
+        "`opencode.json` or `opencode.jsonc` exists, or a `.opencode/` "
+        "directory holds OpenCode "
+        "content.",
+    ),
+    (
         "Instruction Files",
         "instruction-files",
         [

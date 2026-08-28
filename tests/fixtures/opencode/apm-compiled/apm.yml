@@ -1,0 +1,6 @@
+name: shipping-agents
+version: 0.3.0
+description: Shared agent context for the shipping platform, compiled by APM
+targets:
+  - claude
+  - opencode

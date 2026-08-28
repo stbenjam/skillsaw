@@ -56,6 +56,8 @@ from skillsaw.blocks import (  # noqa: F401
     JsonConfigBlock,
     McpBlock,
     McpServerConfig,
+    OpenCodeAgentBlock,
+    OpenCodeCommandBlock,
     ParsedFrontmatterBlock,
     PluginRuleBlock,
     PromptBlock,

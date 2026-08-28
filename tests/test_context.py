@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 from skillsaw.context import (
     RepositoryContext,
@@ -20,6 +22,7 @@ from skillsaw.context import (
     HAS_KIRO,
     HAS_CLAUDE_MD,
     HAS_CODERABBIT,
+    HAS_OPENCODE,
 )
 from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
 from skillsaw.discovery.detect import has_skill_md_recursive
@@ -732,6 +735,126 @@ def test_detected_formats_cline_file_and_dir(temp_dir):
     (temp_dir / ".clinerules").unlink()
     (temp_dir / ".clinerules").mkdir()
     assert HAS_CLINE in RepositoryContext(temp_dir).detected_formats
+
+
+def test_detected_formats_opencode_root_config(temp_dir):
+    """A project that configures only a model has no .opencode/ at all"""
+    (temp_dir / "opencode.json").write_text('{"model": "anthropic/claude-sonnet-4-5"}')
+    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+
+
+def test_detected_formats_opencode_jsonc_root_config(temp_dir):
+    """OpenCode reads both extensions, so both are evidence"""
+    (temp_dir / "opencode.jsonc").write_text('{\n  // pinned\n  "model": "x"\n}')
+    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+
+
+def test_detected_formats_opencode_accepts_both_directory_vocabularies(temp_dir):
+    """2.0 renamed each content directory to its plural and still loads the 1.x name"""
+    (temp_dir / ".opencode" / "command").mkdir(parents=True)
+    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+
+    (temp_dir / ".opencode" / "command").rmdir()
+    (temp_dir / ".opencode" / "commands").mkdir()
+    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+
+
+def test_detected_formats_opencode_config_inside_the_directory(temp_dir):
+    (temp_dir / ".opencode").mkdir()
+    (temp_dir / ".opencode" / "opencode.json").write_text('{"model": "x"}')
+    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+
+
+def test_an_empty_opencode_directory_is_not_evidence(temp_dir):
+    """Detection must agree with attachment: nothing here for a rule to read"""
+    (temp_dir / ".opencode").mkdir()
+    assert HAS_OPENCODE not in RepositoryContext(temp_dir).detected_formats
+
+
+def test_opencode_is_not_an_instruction_format(temp_dir):
+    """The instruction-file rules only read AGENTS.md and friends.
+
+    OpenCode does read AGENTS.md — but a repository that ships only
+    ``opencode.json`` has none, and auto-enabling two rules structurally
+    incapable of finding anything is the silent no-op this linter exists to
+    catch. HAS_AGENTS_MD covers the case where the file is actually there.
+    """
+    from skillsaw.context import ALL_INSTRUCTION_FORMATS
+
+    assert HAS_OPENCODE not in ALL_INSTRUCTION_FORMATS
+
+
+def test_a_native_opencode_repo_is_not_apm_compiled_output(temp_dir):
+    """`.opencode/` is APM output only on APM's own evidence, never OpenCode's."""
+    (temp_dir / ".opencode" / "commands").mkdir(parents=True)
+    (temp_dir / ".opencode" / "commands" / "review.md").write_text("Review the diff.\n")
+
+    context = RepositoryContext(temp_dir)
+    assert context.has_apm is False
+    assert context.apm_compiled_roots() == set()
+    assert not context.in_apm_compiled_dir(temp_dir / ".opencode" / "commands" / "review.md")
+
+
+def test_opencode_skills_are_discovered_under_both_spellings(temp_dir):
+    """The negative APM case is only meaningful if the positive one holds."""
+    for spelling in ("skills", "skill"):
+        root = temp_dir / spelling
+        skill = root / ".opencode" / spelling / "release-notes"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: release-notes\ndescription: Assemble release notes. "
+            "Use when cutting a release.\n---\n\n# Release notes\n\nDo the thing.\n"
+        )
+
+        context = RepositoryContext(root)
+        assert [p.name for p in context.skills] == ["release-notes"], spelling
+        assert RepositoryType.AGENTSKILLS in context.repo_types
+
+
+def test_apm_claims_the_opencode_directory_when_it_targets_opencode(temp_dir):
+    (temp_dir / ".apm").mkdir()
+    (temp_dir / "apm.yml").write_text("name: x\ntargets:\n  - opencode\n")
+    (temp_dir / ".opencode" / "command").mkdir(parents=True)
+
+    context = RepositoryContext(temp_dir)
+    assert context.in_apm_compiled_dir(temp_dir / ".opencode" / "command" / "x.md")
+
+
+def test_apm_that_targets_something_else_leaves_opencode_authored(temp_dir):
+    """A source tree alone does not make the directory generated."""
+    (temp_dir / ".apm").mkdir()
+    (temp_dir / "apm.yml").write_text("name: x\ntargets:\n  - claude\n")
+    (temp_dir / ".opencode" / "command").mkdir(parents=True)
+
+    context = RepositoryContext(temp_dir)
+    assert context.has_apm is True
+    assert not context.in_apm_compiled_dir(temp_dir / ".opencode" / "command" / "x.md")
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        None,  # `.apm/` alone is enough to make this an APM project
+        "name: x\ntargets: not-a-list\n",
+        "name: x\n",  # parses, but declares no targets
+    ],
+    ids=["missing", "unparseable-targets", "no-targets-key"],
+)
+def test_an_unreadable_apm_target_list_keeps_apm_owning_the_directory(temp_dir, manifest):
+    """Unknown targets answer True for everything — APM wins when it cannot say.
+
+    `.apm/` alone satisfies `has_apm`, so a repository with no `apm.yml` at
+    all lands here rather than under "targets omit opencode": the directory
+    is treated as compiled output rather than authored.
+    """
+    (temp_dir / ".apm").mkdir()
+    if manifest is not None:
+        (temp_dir / "apm.yml").write_text(manifest)
+    (temp_dir / ".opencode" / "command").mkdir(parents=True)
+
+    context = RepositoryContext(temp_dir)
+    assert context.has_apm is True
+    assert context.in_apm_compiled_dir(temp_dir / ".opencode" / "command" / "x.md")
 
 
 def test_detected_formats_gemini(temp_dir):

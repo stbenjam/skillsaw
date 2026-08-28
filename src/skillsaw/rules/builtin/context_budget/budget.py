@@ -13,6 +13,7 @@ from skillsaw.rules.builtin.content_analysis import (
     CommandBlock,
     CopilotPromptBlock,
     CursorCommandBlock,
+    OpenCodeCommandBlock,
 )
 
 # Anthropic recommends keeping instruction files under ~5k tokens to avoid
@@ -144,6 +145,7 @@ class ContextBudgetRule(Rule):
             CommandBlock: "command-description",
             CursorCommandBlock: "command-description",
             CopilotPromptBlock: "command-description",
+            OpenCodeCommandBlock: "command-description",
         }
         for block_type, category in desc_categories.items():
             warn_limit, error_limit = limits.get(category, (None, None))
