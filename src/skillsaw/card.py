@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import math
 import unicodedata
-from typing import Sequence, Tuple
 from xml.sax.saxutils import escape
 
 from .grade import LETTER_NOTCHES, LOGO_PATH, Grade
@@ -102,17 +101,11 @@ def _truncate(text: str, max_width: int) -> str:
 def render_card(
     grade: Grade,
     repo_name: str,
-    plugin_count: int,
-    skill_count: int,
-    top_rules: Sequence[Tuple[str, int]],
     theme: str = "dark",
 ) -> str:
     """Render a grade-focused SVG card.
 
-    The non-grade parameters are retained for source compatibility with
-    callers from versions that displayed repository statistics. The
-    repository name remains visible; the counts and rule list are deliberately
-    ignored so only a grade change alters the SVG during normal operation.
+    The card contains the repository name and grade.
     """
     if theme not in THEMES:
         raise ValueError(f"unknown theme {theme!r} (choose from {', '.join(sorted(THEMES))})")

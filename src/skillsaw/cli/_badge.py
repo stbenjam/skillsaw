@@ -145,9 +145,6 @@ def _run_badge(args):
                 render_card(
                     grade,
                     repo_name=_repo_display_name(context.root_path),
-                    plugin_count=0,
-                    skill_count=0,
-                    top_rules=[],
                     theme=getattr(args, "theme", "dark"),
                 ).encode("utf-8"),
                 root=context.root_path if args.output is None else badge_path.parent,

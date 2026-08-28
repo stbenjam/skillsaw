@@ -35,9 +35,6 @@ def _render(**overrides):
     kwargs = dict(
         grade=compute_grade(_violations(warnings=5, info=3), content_tokens=12_345),
         repo_name="example/repo",
-        plugin_count=3,
-        skill_count=12,
-        top_rules=[("content-vague", 5), ("skill-frontmatter", 3)],
         theme="light",
     )
     kwargs.update(overrides)
@@ -79,25 +76,6 @@ def test_card_shows_grade_without_volatile_stats():
     assert "Violation density" not in svg
     assert "Content tokens" not in svg
     assert "Top rules" not in svg
-
-
-def test_card_is_unchanged_when_non_grade_inputs_change():
-    grade = compute_grade(_violations(warnings=5), content_tokens=10_000)
-    first = _render(
-        grade=grade,
-        repo_name="first/repo",
-        plugin_count=1,
-        skill_count=2,
-        top_rules=[("content-vague", 5)],
-    )
-    second = _render(
-        grade=grade,
-        repo_name="first/repo",
-        plugin_count=99,
-        skill_count=1_000,
-        top_rules=[("different-rule", 1_000)],
-    )
-    assert first == second
 
 
 def test_card_letter_is_color_graded():
@@ -149,9 +127,6 @@ def test_default_theme_is_dark():
     kwargs = dict(
         grade=compute_grade(_violations(warnings=5, info=3), content_tokens=12_345),
         repo_name="example/repo",
-        plugin_count=3,
-        skill_count=12,
-        top_rules=[("content-vague", 5)],
     )
     assert THEMES["dark"]["bg"] in render_card(**kwargs)
 
