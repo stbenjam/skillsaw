@@ -28,8 +28,9 @@ unavailable).
 
 Run `skillsaw lint --no-collapse .` from the repo root and capture the output.
 `--no-collapse` keeps repetitive findings individually visible to the agent.
-Each violation line includes the severity, file path, line number, message,
-and rule ID — read them all.
+Each violation line includes the severity, file path, message, and rule ID;
+line-specific violations also include a line number. Inventory file-level
+violations even when no line number is present.
 
 If the lint exits 0 with no violations, tell the user the repo is clean and stop.
 

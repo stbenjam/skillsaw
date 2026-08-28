@@ -38,9 +38,10 @@ Run the linter scoped to the files or directories you created or edited:
 skillsaw lint --no-collapse <path>
 ```
 
-Read each violation line: it carries the severity, file path, line number,
-message, and rule ID. Keep `--no-collapse` so repetitive findings remain
-individually visible to the agent. If the repository defines its own lint
+Read each violation line: it carries the severity, file path, message, rule ID,
+and a line number when tied to a specific line. File-level violations omit line
+numbers and still require handling. Keep `--no-collapse` so repetitive findings
+remain individually visible to the agent. If the repository defines its own lint
 entry point (a Makefile `lint` target that runs skillsaw, for example), run
 that first — it may pin a version or pass flags like `--strict` — then use the
 pinned CLI with `--no-collapse` when violations need inspection.
