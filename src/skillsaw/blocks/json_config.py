@@ -574,12 +574,17 @@ _OPENCODE_CONNECTION_FIELDS = (
 def _is_opencode_server(value: Any) -> bool:
     """Whether *value* is one OpenCode MCP server rather than a map of them.
 
-    Mirrors the ``isDirectServer`` check upstream uses for the same
-    ambiguity: a server carries a connection field of the right type, a map
+    Answers the same ambiguity upstream's ``isDirectServer`` does, though
+    not identically — it keys on ``type``/``enabled`` holding a non-object,
+    this keys on a connection field of the right type, and the two differ on
+    a bare ``{"enabled": true}``. A server carries a connection field; a map
     of servers carries server objects. Testing the value and not just the
     key is what keeps a server named ``command`` — whose ``command`` entry
     is a nested object, not an argv array — from being mistaken for the
-    server itself.
+    server itself. The discriminator is binary, so a ``servers`` map that
+    itself looks like a server is read as one: rare, and it needs a
+    malformed ``servers`` to trigger, but it hides the entries underneath
+    rather than merely misfiling them.
     """
     if not isinstance(value, dict):
         return False

@@ -29,6 +29,12 @@
           "client_id": "{env:SENTRY_CLIENT_ID}",
           "callback_port": 19876
         }
+      },
+      "grafana": {
+        "type": "remote",
+        "url": "https://grafana.internal.example/mcp",
+        // The documented off-switch: `oauth` takes an object or `false`.
+        "oauth": false
       }
     }
   },
@@ -47,6 +53,6 @@
     }
   },
   "permissions": [
-    { "shell": { "git push": "ask" } }
+    { "action": "shell", "resource": "git push *", "effect": "ask" }
   ]
 }

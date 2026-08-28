@@ -601,10 +601,14 @@ class OpenCodeCommandBlock(FrontmatteredBlock):
 
 @dataclass(eq=False)
 class OpenCodeAgentBlock(FrontmatteredBlock):
-    """``.opencode/agents/**/*.md`` — OpenCode subagents.
+    """``.opencode/agents/**/*.md`` — an OpenCode agent of either kind.
 
     Covers the 1.x ``agent/`` directory and the older ``mode/`` spelling of
-    the same thing, both of which 2.0 still loads.
+    the same thing, both of which 2.0 still loads. The file's own ``mode``
+    field says which kind it is: a ``primary`` agent is one a person cycles
+    to, while ``subagent`` and the default ``all`` are delegated to on their
+    descriptions. Rules that care about that distinction read the field —
+    the block type holds both.
     """
 
     category: str = "agent"

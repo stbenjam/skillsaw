@@ -3,7 +3,7 @@ Rule: opencode-config-valid
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Mapping, Set, Tuple
 
 from skillsaw.blocks import OpenCodeConfigBlock, OpenCodeMcpBlock
 from skillsaw.context import HAS_OPENCODE, RepositoryContext
@@ -130,7 +130,7 @@ class OpenCodeConfigValidRule(Rule):
             )
         ]
 
-    def _accepted_keys(self, documented: frozenset) -> frozenset:
+    def _accepted_keys(self, documented: FrozenSet[str]) -> FrozenSet[str]:
         """*documented* plus any key the project declares under ``extra-keys``.
 
         One reader for both key sets — the top level and an MCP server entry

@@ -2723,6 +2723,24 @@ class TestOpenCode:
         # And the skill is discovered through the shared agentskills path.
         assert [p.name for p in RepositoryContext(repo).skills] == ["release-notes"]
 
+    def test_an_opencode_command_description_faces_the_command_budget(self, tmp_path):
+        """The description budget is keyed on block *type*, not on `category`.
+
+        Two separate registrations, so the sibling test above does not
+        cover this one: dropping `OpenCodeCommandBlock` from
+        `desc_categories` leaves `category` correct and this limit gone.
+        """
+        repo = tmp_path / "cmddesc"
+        (repo / ".opencode" / "commands").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        description = "Use this command when you need to review the diff carefully " * 40
+        (repo / ".opencode" / "commands" / "review.md").write_text(
+            f"---\ndescription: {description}\n---\n\nShort body.\n"
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["context-budget"]]
+        assert any("command-description limit" in m for m in messages)
+
     def test_a_native_opencode_repo_is_not_apm_build_output(self, tmp_path):
         """No APM evidence means `.opencode/` is authored, whatever APM also uses it for."""
         repo = copy_fixture("opencode/native-v1", tmp_path)
@@ -2798,14 +2816,29 @@ class TestOpenCode:
         ), "a credential under a flat sibling of 'servers' must still be reported"
 
     def test_mcp_prohibited_sees_both_layouts_in_one_file(self, tmp_path):
+        """The message must enumerate names, or reading one layout would pass too.
+
+        Without an `allowlist` the finding names no servers, so the
+        assertion would hold whichever layout `server_entries()` read.
+        """
         repo = copy_fixture("opencode/malformed-shapes", tmp_path)
-        (repo / ".skillsaw.yaml").write_text("rules:\n  mcp-prohibited:\n    enabled: true\n")
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n  mcp-prohibited:\n    enabled: true\n    allowlist:\n      - toggled-off\n"
+        )
 
         found = by_rule(run_lint(repo, config=repo / ".skillsaw.yaml"))["mcp-prohibited"]
         assert [v["file_path"] for v in found] == ["opencode.json"]
+        message = found[0]["message"]
+        assert "header-token" in message, "a server only in the 2.0 wrapper must be seen"
+        assert "playwright" in message, "a server only in the 1.x flat layout must be seen"
 
     def test_malformed_shapes_are_warnings_not_errors(self, tmp_path):
-        """Only an unreadable file and a committed credential are errors."""
+        """A shape defect leaves the rest of the file loading, so none is an error.
+
+        The only error this rule raises is a top level that is not an
+        object; the sibling test pins it. Everything else an OpenCode
+        config can fail at is owned by `mcp-valid-json`.
+        """
         repo = copy_fixture("opencode/malformed-shapes", tmp_path)
         found = by_rule(run_lint(repo))["opencode-config-valid"]
 

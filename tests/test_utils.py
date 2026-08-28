@@ -1175,6 +1175,29 @@ class TestStripJsonc:
         assert data is None
         assert "line 4" in error
 
+    def test_a_newline_inside_a_block_comment_is_kept(self, tmp_path):
+        """The one branch that would shift every line below a `/* */` comment."""
+        from skillsaw.utils import read_jsonc
+
+        path = tmp_path / "opencode.jsonc"
+        path.write_text('{\n  /* two\n     lines */\n  "a": 1\n  "b": 2\n}\n')
+        data, error = read_jsonc(path)
+        assert data is None
+        assert "line 5" in error
+
+    def test_a_plain_json_document_never_reaches_the_stripper(self, tmp_path, monkeypatch):
+        """Valid JSON parses as-is, so the per-character scan is off the common path."""
+        import skillsaw.utils as utils_module
+        from skillsaw.utils import read_jsonc
+
+        def _fail(content):
+            raise AssertionError("strip_jsonc must not run on a document that parses")
+
+        monkeypatch.setattr(utils_module, "strip_jsonc", _fail)
+        path = tmp_path / "opencode.json"
+        path.write_text('{"a": [1, 2], "b": {"c": "https://x.example//p"}}')
+        assert read_jsonc(path) == ({"a": [1, 2], "b": {"c": "https://x.example//p"}}, None)
+
     def test_read_jsonc_rejects_the_non_finite_extension(self, tmp_path):
         from skillsaw.utils import read_jsonc
 

@@ -37,7 +37,7 @@ false positive in someone's CI.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Tuple
+from typing import Any, FrozenSet, Mapping, Tuple
 
 #: The value OpenCode documents for ``$schema``. Both versions point at the
 #: same URL — there is no ``/v2/config.json`` — so a config that names it is
@@ -115,8 +115,12 @@ SHARED_TOP_LEVEL_KEYS: Tuple[str, ...] = (
     "tool_output",
     "username",
     "watcher",
-    # v2 only: session warming.
+    # v2 only. ``v2-compat.ts`` L117 lists both as top-level keys a 1.x
+    # binary cannot lower; ``warming`` is also in ``Config.Info`` while
+    # ``websearch`` appears there only as a permission action. Accepted on
+    # the same permissive-union policy as ``attachments``.
     "warming",
+    "websearch",
     # Deprecated in v1 and migrated automatically when OpenCode can, so
     # they are still written in the wild and are not worth a diagnostic of
     # their own. Their home is ``tui.json``.
@@ -188,7 +192,7 @@ INVERTED_SENSE_NOTE: Mapping[str, str] = {
 #: config into v1 shape and its ``preferLegacy()`` retains the legacy value
 #: for every key. So for these pairs the effective value depends on which
 #: release reads the file, which is worth saying out loud in a diagnostic.
-V2_WINS_UNDER_V2: frozenset = frozenset({"autoshare", "reference"})
+V2_WINS_UNDER_V2: FrozenSet[str] = frozenset({"autoshare", "reference"})
 
 #: Transport values OpenCode accepts, mapped to the connection field each
 #: one requires. OpenCode names a transport for where the server runs rather
@@ -256,7 +260,7 @@ def timeout_is_valid(value: Any) -> bool:
     )
 
 
-def unknown_keys(data: Mapping[str, Any], known: frozenset) -> Tuple[str, ...]:
+def unknown_keys(data: Mapping[str, Any], known: FrozenSet[str]) -> Tuple[str, ...]:
     """String keys of *data* that are not in *known*, in document order.
 
     Non-string keys cannot occur in parsed JSON, but a caller may pass a

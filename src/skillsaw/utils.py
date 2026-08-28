@@ -656,16 +656,11 @@ def strip_jsonc(content: str) -> str:
 
     Strings are tracked, so ``{"url": "https://x"}`` keeps its ``//`` and
     ``{"a": "x,"}`` keeps its comma.
+    The transform is a no-op on any valid JSON document: every branch that
+    blanks a character needs a ``/`` or a ``,`` in a position plain JSON
+    does not allow. :func:`read_jsonc` relies on that to keep this scan off
+    the common path entirely.
     """
-    # A file with neither a slash nor a comma has nothing to strip, and most
-    # ``opencode.json`` files in the wild are plain JSON. The scan below
-    # materializes one list slot per character and joins a second copy, so
-    # skipping it keeps an unbounded, attacker-sized config on the same
-    # memory footprint as an ordinary ``read_json`` (THREAT_MODEL T11 —
-    # whole-file size limits are still open). ``in`` on a str is a C-speed
-    # substring search, so the prefilter costs a single pass.
-    if "/" not in content and "," not in content:
-        return content
     out = list(content)
     length = len(content)
     index = 0
@@ -729,10 +724,27 @@ def read_jsonc(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     Always strict about the non-finite tokens, for the reason
     :func:`read_json_strict` gives: the locations that opt into JSONC are new
     surfaces with no shipped results a tightened parser would change.
+
+    Parsed as-is first, and stripped only if that fails. Most files at these
+    locations are plain JSON, and :func:`strip_jsonc` materializes one list
+    slot per character plus a joined copy — roughly 8x the file resident,
+    against 2x for an ordinary read. Parsing first keeps an unbounded,
+    attacker-sized config off that path (THREAT_MODEL T11 — whole-file size
+    limits are still open) and costs nothing in results, since the strip is
+    a no-op on every document the first parse would have accepted. The
+    reported error still comes from the stripped parse, so its line, column
+    and position stay the ones this function's offset preservation exists
+    for.
     """
     content = read_text(file_path)
     if content is None:
         return None, f"Failed to read {file_path.name}"
+    try:
+        return json.loads(content, parse_constant=_reject_non_finite), None
+    except RecursionError:
+        return None, _TOO_DEEP
+    except ValueError:
+        pass  # May be JSONC. Fall through to the stripped parse.
     try:
         return json.loads(strip_jsonc(content), parse_constant=_reject_non_finite), None
     except ValueError as e:
