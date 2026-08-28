@@ -129,3 +129,21 @@ project guidelines and [DEVELOPMENT.md](DEVELOPMENT.md) for the local setup.
 Questions and bug reports belong in [GitHub
 Issues](https://github.com/stbenjam/skillsaw/issues). skillsaw is licensed under
 the [Apache License 2.0](LICENSE).
+
+## Thank you to our contributors
+
+skillsaw is better because of the people who contribute their time and ideas.
+Thank you!
+
+<!-- contributors:start -->
+- [@btiernay](https://github.com/btiernay)
+- [@cblecker](https://github.com/cblecker)
+- [@ehelms](https://github.com/ehelms)
+- [@jeffreylo](https://github.com/jeffreylo)
+- [@nyechiel](https://github.com/nyechiel)
+- [@rajusem](https://github.com/rajusem)
+- [@skyth3r](https://github.com/skyth3r)
+- [@stbenjam](https://github.com/stbenjam)
+- [@tchughesiv](https://github.com/tchughesiv)
+- [@tyraziel](https://github.com/tyraziel)
+<!-- contributors:end -->
