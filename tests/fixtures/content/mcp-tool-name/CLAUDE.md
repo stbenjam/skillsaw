@@ -26,8 +26,9 @@ same owner, repo, and path arguments.
 
 ## Enabling the servers
 
-Grant the tools in `.claude/settings.json`. Configuration needs the
-fully-qualified identifier, so the entries below are correct as written:
+Add `mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql` and
+`mcp__plugin_github_github__get_file_contents` to the allowed-tools list in
+`.claude/settings.json`:
 
 ```json
 {
@@ -40,5 +41,7 @@ fully-qualified identifier, so the entries below are correct as written:
 }
 ```
 
-A server with no tool segment, written as mcp__atlassian on its own, names
-the server rather than a tool and needs no rewrite.
+The mcp__atlassian server needs a `JIRA_TOKEN` in the environment; ask in
+#platform-help if you do not have one. The tool schemas are published at
+https://mcp.example.com/catalog/mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql
+if you need the full argument reference.

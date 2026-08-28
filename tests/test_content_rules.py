@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import shutil
 
+from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import AutofixConfidence, Severity
 from skillsaw.rules.builtin.content_rules import (
@@ -5029,6 +5030,24 @@ class TestContentMcpToolNameRule:
         assert rule.default_severity() == Severity.WARNING
         assert rule.autofix_confidence == AutofixConfidence.SAFE
         assert rule.supports_autofix
+        assert rule.since == "0.20.0"
+
+    def test_version_gate_shields_pinned_repos(self, temp_dir):
+        """A repo pinned below the rule's since version never sees it; the
+        pin is the upgrade-safety promise for existing users."""
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\nUse `mcp__jira__getJiraIssue`.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentMcpToolNameRule()
+        for version, expected in [("0.19.0", False), ("0.20.0", True)]:
+            config = LinterConfig(version=version, rules={})
+            enabled = config.is_rule_enabled(
+                rule.rule_id,
+                context,
+                repo_types=rule.repo_types,
+                formats=rule.formats,
+                since_version=rule.since,
+            )
+            assert enabled is expected
 
     def test_detects_name_in_plain_prose(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
@@ -5082,6 +5101,66 @@ class TestContentMcpToolNameRule:
         )
         assert self._check(temp_dir) == []
 
+    def test_empty_server_segment_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nA malformed identifier like mcp____tool names no tool.\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_double_underscore_tool_name_keeps_full_name(self, temp_dir):
+        """Only the server prefix is stripped: a tool whose own name
+        contains ``__`` must keep every segment of its name."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nFetch files with `mcp__server__get_file__contents`.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert "'get_file__contents'" in violations[0].message
+
+    def test_tool_name_inside_url_or_path_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "See https://registry.example.com/tools/mcp__jira__getIssue for the\n"
+            "schema, or <https://x.com/t/mcp__jira__getIssue>. Fixtures live in\n"
+            "tools/mcp__jira__getIssue.json.\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_link_text_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nSee [mcp__jira__getIssue](https://example.com/schema) for details.\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_config_instructing_line_not_flagged(self, temp_dir):
+        """Prose that tells the reader to configure a tool genuinely needs
+        the fully-qualified name — rewriting it would break the
+        instruction."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Add `mcp__jira__getIssue` to your allowed-tools list first.\n\n"
+            "Grant mcp__github__create_pull_request in the permissions block\n"
+            "of `settings.json` before running the release flow.\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_multiline_code_span_not_flagged(self, temp_dir):
+        """A code span wrapped across a line break is skipped by design —
+        its columns cannot be mapped to a single splice."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nFetch files with `mcp__plugin_github_github__\nget_file_contents`.\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_same_line_violations_get_distinct_fingerprints(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nCall `mcp__jira__getIssue` then mcp__jira__getIssue again.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 2
+        discriminators = {v.fingerprint_discriminator for v in violations}
+        assert len(discriminators) == 2
+
     def test_short_name_alone_passes(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             "# Rules\n\nFetch files with `get_file_contents` rather than raw HTTP.\n"
@@ -5112,14 +5191,23 @@ class TestContentMcpToolNameRule:
         assert by_name["AGENTS.md"].fixable is True
         assert by_name["AGENTS.md"].fix_confidence == AutofixConfidence.SAFE
 
-    def test_yaml_embedded_body_is_fixable(self, temp_dir):
-        """A YAML-embedded body keeps real file lines, so file_span() can
-        translate its indented columns and the fix is honest."""
+    def test_yaml_embedded_body_fixable_only_when_span_verifies(self, temp_dir):
+        """A literal (``|``) YAML block scalar keeps real file lines, so
+        file_span() can translate its indented columns and the fix is
+        honest.  A folded (``>``) scalar reflows body lines, the span never
+        verifies, and check() must not advertise a fix that fix() would
+        silently drop."""
         repo = copy_content_fixture("mcp-tool-name-coderabbit", temp_dir)
         violations = ContentMcpToolNameRule().check(RepositoryContext(repo))
-        by_name = {v.file_path.name: v for v in violations}
-        assert set(by_name) == {".coderabbit.yaml", "CLAUDE.md"}
-        assert all(v.fixable for v in by_name.values())
+        assert {v.file_path.name for v in violations} == {".coderabbit.yaml", "CLAUDE.md"}
+
+        yaml_violations = [v for v in violations if v.file_path.name == ".coderabbit.yaml"]
+        assert sorted(v.fixable for v in yaml_violations) == [False, True]
+        folded = next(v for v in yaml_violations if not v.fixable)
+        assert folded.fix_confidence is None
+
+        claude = next(v for v in violations if v.file_path.name == "CLAUDE.md")
+        assert claude.fixable is True
 
     def test_no_files_no_violations(self, temp_dir):
         assert self._check(temp_dir) == []
@@ -5200,12 +5288,54 @@ class TestContentMcpToolNameAutofix:
         assert set(by_name) == {"CLAUDE.md", ".coderabbit.yaml"}
 
         yaml_fix = by_name[".coderabbit.yaml"]
-        assert "        getJiraIssue." in yaml_fix.fixed_content
-        assert "mcp__" not in yaml_fix.fixed_content
-        assert yaml_fix.fixed_content.count("\n") == yaml_fix.original_content.count("\n")
+        token = "mcp__plugin_jira_atlassian__getJiraIssue"
+        before = yaml_fix.original_content.split("\n")
+        after = yaml_fix.fixed_content.split("\n")
+        assert len(after) == len(before)
+        # Exactly one line changes — the literal-scalar line holding the
+        # token — and only the token moves on it.  The folded (>) scalar's
+        # token is not fixable and its lines are untouched.
+        changed = [i for i, (b, a) in enumerate(zip(before, after)) if b != a]
+        assert len(changed) == 1
+        line_idx = changed[0]
+        assert before[line_idx] == f"        {token}."
+        assert after[line_idx] == "        getJiraIssue."
 
         for fix in fixes:
             fix.file_path.write_text(fix.fixed_content)
         invalidate_read_caches()
-        assert ContentMcpToolNameRule().check(RepositoryContext(repo)) == []
+        remaining = ContentMcpToolNameRule().check(RepositoryContext(repo))
+        assert [(v.file_path.name, v.fixable) for v in remaining] == [(".coderabbit.yaml", False)]
         assert self._fix(repo) == []
+
+    def test_fix_splices_frontmattered_host(self, temp_dir):
+        """A command body sits below its frontmatter (line_offset > 0); a
+        wrong body-to-file translation degrades to file_span() returning
+        None and a silent no-fix, so the splice is asserted on the real
+        file line."""
+        from skillsaw.utils import invalidate_read_caches
+
+        cmd_dir = temp_dir / ".claude" / "commands"
+        cmd_dir.mkdir(parents=True)
+        content = (
+            "---\n"
+            "description: Deploy the service to staging\n"
+            "---\n"
+            "\n"
+            "# Deploy\n"
+            "\n"
+            "Check the ticket with `mcp__plugin_jira_atlassian__getJiraIssue` first.\n"
+        )
+        (cmd_dir / "deploy.md").write_text(content)
+
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        original_lines = content.split("\n")
+        fixed_lines = fixes[0].fixed_content.split("\n")
+        assert len(fixed_lines) == len(original_lines)
+        assert fixed_lines[6] == "Check the ticket with `getJiraIssue` first."
+        assert fixed_lines[:6] == original_lines[:6]
+
+        (cmd_dir / "deploy.md").write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert ContentMcpToolNameRule().check(RepositoryContext(temp_dir)) == []

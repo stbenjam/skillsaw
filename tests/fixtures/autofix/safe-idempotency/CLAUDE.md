@@ -78,6 +78,15 @@ tools by their short names:
 A bare server name such as mcp__atlassian has no tool segment and stays as
 written.
 
+Tool identifiers inside URLs and paths must never be flagged or rewritten:
+the schema catalog at
+https://mcp.example.com/tools/mcp__plugin_github_github__create_pull_request
+documents every argument.
+
+Prose that instructs configuration keeps the fully-qualified name — add
+`mcp__plugin_github_github__create_pull_request` to the allowed-tools list
+before using the release workflow.
+
 Configuration examples keep the fully-qualified identifier, so nothing in
 the block below is rewritten:
 

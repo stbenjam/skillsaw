@@ -14,7 +14,10 @@ reviews:
     - path: "tests/**"
       instructions: >
         Verify assertions are specific, not just checking that no
-        exception is raised. Each test should follow a clear
+        exception is raised. When a test encodes a Jira acceptance
+        criterion, re-read the ticket with
+        mcp__plugin_jira_atlassian__getJiraIssue before approving a
+        change to it. Each test should follow a clear
         arrange-act-assert structure.
 chat:
   auto_reply: true

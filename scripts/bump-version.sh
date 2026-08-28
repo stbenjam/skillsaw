@@ -37,18 +37,23 @@ fi
 
 echo "Bumping version: $current_version -> $new_version"
 
-# Use python for portable in-place editing (works on both macOS and Linux)
-python3 -c "
+# Use python for portable in-place editing (works on both macOS and Linux).
+# Both python programs are quoted heredocs with values passed as argv: an
+# inline double-quoted program hands quotes, backticks, and $ to the shell,
+# which word-splits or command-substitutes the source before python sees it.
+python3 - "$PYPROJECT" "$INIT_PY" "$ACTION_YML" "$current_version" "$new_version" <<'PY'
 import re, sys
+
+pyproject, init_py, action_yml, current, new = sys.argv[1:6]
 for path, pattern, repl in [
-    ('$PYPROJECT', r'^version = \"$current_version\"', 'version = \"$new_version\"'),
-    ('$INIT_PY', r'^__version__ = \"$current_version\"', '__version__ = \"$new_version\"'),
-    ('$ACTION_YML', r\"default: '$current_version'\", \"default: '$new_version'\"),
+    (pyproject, r'^version = "' + re.escape(current) + '"', 'version = "' + new + '"'),
+    (init_py, r'^__version__ = "' + re.escape(current) + '"', '__version__ = "' + new + '"'),
+    (action_yml, r"default: '" + re.escape(current) + "'", "default: '" + new + "'"),
 ]:
     text = open(path).read()
     text = re.sub(pattern, repl, text, count=1, flags=re.MULTILINE)
     open(path, 'w').write(text)
-"
+PY
 
 echo "Updated:"
 echo "  $PYPROJECT"
@@ -59,7 +64,7 @@ echo "  $ACTION_YML"
 # and a missing file or absent pin is not an error.
 for doc in "${PINNED_DOCS[@]}"; do
     [[ -f "$doc" ]] || continue
-    python3 -c "
+    python3 - "$doc" "$current_version" "$new_version" <<'PY'
 import re, sys
 
 path, current, new = sys.argv[1:4]
@@ -69,11 +74,9 @@ for pattern, repl in [
     (r'rev: v' + re.escape(current), 'rev: v' + new),
     # Plugin dependency floors track the release so scaffolded plugins
     # never pin a version that does not exist (see test_release_metadata).
-    # Prose like 'requires skillsaw X or newer' is deliberately NOT
+    # Prose like "requires skillsaw X or newer" is deliberately NOT
     # rewritten: it records the release that introduced an API, which
-    # does not move.  Keep double quotes out of this heredoc-free
-    # python3 -c string: they close the shell's quoting and the inner
-    # program is word-split into a SyntaxError.
+    # does not move.
     (r'skillsaw>=' + re.escape(current), 'skillsaw>=' + new),
     # The action's documented version input default, which
     # test_release_metadata pins to the project version.
@@ -83,5 +86,5 @@ for pattern, repl in [
 if text != original:
     open(path, 'w').write(text)
     print('  ' + path)
-" "$doc" "$current_version" "$new_version"
+PY
 done

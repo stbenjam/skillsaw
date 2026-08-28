@@ -3,7 +3,7 @@
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, FrozenSet, List, Set, Tuple
 
 from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -11,13 +11,37 @@ from skillsaw.markdown_doc import MarkdownDoc, file_span, splice
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 from skillsaw.utils import read_text
 
+# `mcp__<server>__<tool>` is the flattening Claude Code and the Claude Agent
+# SDK use for MCP tool identifiers — not an MCP-spec fact.  Other clients
+# flatten differently (Codex CLI drops the `mcp` prefix entirely), so the
+# pattern must stay anchored on the literal `mcp__` and never generalize to
+# bare `<server>__<tool>`, which would false-positive on ordinary
+# dunder-style identifiers.
+#
 # Match the maximal `mcp__…` identifier run, then split the server from the
 # tool in Python.  No negative lookahead trails the quantifier: a failing
 # assertion after `[A-Za-z0-9_-]+` would make the engine backtrack into a
 # truncated match and the fix would splice a corrupted span (issue #321).
-# The leading lookbehind is a fixed-width character class, not an assertion
-# wrapped around a quantifier, so it cannot induce that retry either.
+# The leading lookbehind cannot induce that retry either — not because it is
+# fixed-width (a fixed-width lookbehind can still truncate; see
+# unlinked_internal_reference.py), but because when it fails the engine
+# advances into the token, where the required literal `mcp__` no longer
+# matches, so no truncated match exists to splice.
 _MCP_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_-])mcp__[A-Za-z0-9_-]+")
+
+# Lines that instruct configuration genuinely need the fully-qualified name:
+# "add `mcp__jira__getIssue` to your allowed-tools" must keep its prefix or
+# the instruction stops working.  A token on a line containing any of these
+# markers is never flagged.
+_CONFIG_CONTEXT_MARKERS = (
+    "allowed-tools",
+    "allowedtools",
+    "permissions",
+    "settings.json",
+    ".mcp.json",
+    "deny",
+    "matcher",
+)
 
 
 class ContentMcpToolNameRule(Rule):
@@ -52,28 +76,38 @@ class ContentMcpToolNameRule(Rule):
     def _short_name(token: str) -> str:
         """Return the short tool name for *token*, or "" when it has none.
 
-        ``mcp__server__tool`` -> ``tool``.  A token with no ``__`` after the
-        server segment (``mcp__server``) or an empty tool segment
-        (``mcp__server__``) has no short name and is not a tool reference.
-        Known limitation: a tool whose own name contains ``__`` resolves to
-        its last segment; use the ``allow`` option for those.
+        ``mcp__server__tool`` -> ``tool``.  Only the ``mcp__<server>__``
+        prefix is stripped — the split is at the *first* ``__`` after the
+        server segment, so a tool whose own name contains ``__``
+        (``mcp__internal__report__generate``) keeps every segment of its
+        name (``report__generate``).  A token with an empty server segment
+        (``mcp____tool``), no ``__`` after the server (``mcp__server``), or
+        an empty tool segment (``mcp__server__``) is not a tool reference.
         """
         remainder = token[len("mcp__") :]
-        sep = remainder.rfind("__")
-        if sep < 0:
+        sep = remainder.find("__")
+        if sep <= 0:
             return ""
         return remainder[sep + len("__") :]
 
-    def _candidates(self, doc: MarkdownDoc, allow: List[str]) -> List[Tuple[int, int, str, str]]:
+    def _candidates(
+        self, doc: MarkdownDoc, allow: FrozenSet[str]
+    ) -> List[Tuple[int, int, str, str]]:
         """Collect ordered (body_line, col_start, token, short_name) candidates.
 
         Scans prose text and inline code spans — deliberately not fences or
         indented code, where a config example legitimately needs the
-        fully-qualified name.
+        fully-qualified name.  Also skipped: link text (rewriting it would
+        corrupt the link), tokens embedded in URLs or paths, and lines that
+        instruct configuration (see ``_CONFIG_CONTEXT_MARKERS``).
         """
         results: List[Tuple[int, int, str, str]] = []
 
         def collect(body_line: int, base_col: int, text: str) -> None:
+            raw_line = doc.line(body_line)
+            lowered = raw_line.lower()
+            if any(marker in lowered for marker in _CONFIG_CONTEXT_MARKERS):
+                return
             for match in _MCP_TOKEN_RE.finditer(text):
                 token = match.group(0)
                 if token in allow:
@@ -81,15 +115,23 @@ class ContentMcpToolNameRule(Rule):
                 short = self._short_name(token)
                 if not short:
                     continue
-                results.append((body_line, base_col + match.start(), token, short))
+                col = base_col + match.start()
+                # A token preceded by `/` or `.` is part of a URL or path
+                # (https://…/mcp__jira__getIssue, tools/mcp__jira__getIssue.json)
+                # and rewriting it would corrupt the reference.  Checked
+                # adjacent to the complete match in code, never as a
+                # lookbehind on the quantifier (issue #321).
+                if col > 0 and raw_line[col - 1] in "/.":
+                    continue
+                results.append((body_line, col, token, short))
 
         for seg in doc.text_segments():
-            if seg.col_start is None:
+            if seg.in_link or seg.col_start is None:
                 continue
             collect(seg.body_line, seg.col_start, seg.text)
 
         for span in doc.code_spans():
-            if span.multiline or span.col_start is None or span.col_end is None:
+            if span.in_link or span.multiline or span.col_start is None or span.col_end is None:
                 continue
             # col_start/col_end include the backtick markup; scan the raw
             # source between the backticks so columns stay exact even when
@@ -103,13 +145,33 @@ class ContentMcpToolNameRule(Rule):
         return results
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        allow = self.setting("allow")
+        allow = frozenset(self.setting("allow"))
         violations: List[RuleViolation] = []
         for cf in gather_all_content_blocks(context):
-            # A body extracted from a non-markdown host has no span in the
-            # enclosing file to splice into, so fix() always skips it.
-            fixable = not cf.diagnostic_only
-            for body_line, _col, token, short in self._candidates(cf.markdown, allow):
+            body = cf.read_body(strip_code_blocks=False)
+            if not body or "mcp__" not in body:
+                continue
+            candidates = self._candidates(cf.markdown, allow)
+            if not candidates:
+                continue
+            # A fix is only advertised when the candidate's span verifies in
+            # the enclosing file.  ``diagnostic_only`` bodies (decoded out of
+            # a non-markdown host such as a JSON string) never splice; other
+            # hosts can defeat splicing per candidate — a folded YAML scalar
+            # (``>``) reflows body lines, so ``file_span()`` cannot locate
+            # the text and ``fix()`` would silently drop the edit.
+            content = None if cf.diagnostic_only else read_text(cf.path)
+            doc = cf.markdown
+            occurrences: Dict[Tuple[int, str], int] = {}
+            for body_line, col, token, short in candidates:
+                ordinal = occurrences.get((body_line, token), 0)
+                occurrences[(body_line, token)] = ordinal + 1
+                fixable = content is not None and (
+                    file_span(
+                        doc, content, doc.file_line(body_line), body_line, col, col + len(token)
+                    )
+                    is not None
+                )
                 prefix = token[: len(token) - len(short)]
                 violations.append(
                     self.violation(
@@ -118,6 +180,7 @@ class ContentMcpToolNameRule(Rule):
                         block=cf,
                         line=body_line,
                         fixable=fixable,
+                        fingerprint_discriminator=f"{token}:{ordinal}",
                     )
                 )
         return violations
@@ -125,7 +188,7 @@ class ContentMcpToolNameRule(Rule):
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation], **kwargs: object
     ) -> List[AutofixResult]:
-        allow = self.setting("allow")
+        allow = frozenset(self.setting("allow"))
         fixes_by_file: Dict[Path, List[Tuple[str, RuleViolation]]] = defaultdict(list)
         for v in violations:
             if not v.file_path or v.block is None or not v.fixable:
@@ -140,12 +203,19 @@ class ContentMcpToolNameRule(Rule):
             content = read_text(fpath)
             if content is None:
                 continue
-            edits = []
-            violations_fixed = []
-            used_spans = set()
+            edits: List[Tuple[int, int, int, str]] = []
+            violations_fixed: List[RuleViolation] = []
+            used_spans: Set[Tuple[int, int, int]] = set()
+            # One candidate scan per block, not per violation: text_segments()
+            # and code_spans() each return a fresh list copy per call.
+            candidates_by_block: Dict[int, List[Tuple[int, int, str, str]]] = {}
             for token, v in replacements:
                 doc = v.block.markdown
-                for body_line, col, candidate, short in self._candidates(doc, allow):
+                candidates = candidates_by_block.get(id(v.block))
+                if candidates is None:
+                    candidates = self._candidates(doc, allow)
+                    candidates_by_block[id(v.block)] = candidates
+                for body_line, col, candidate, short in candidates:
                     if candidate != token:
                         continue
                     file_line = doc.file_line(body_line)

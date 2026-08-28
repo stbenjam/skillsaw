@@ -1,4 +1,1 @@
 version: "99.0.0"
-rules:
-  content-mcp-tool-name:
-    enabled: true

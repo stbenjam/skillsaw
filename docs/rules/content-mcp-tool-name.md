@@ -22,9 +22,14 @@ installation's naming into an instruction everyone reads: a reader whose
 server is registered under a different name has no tool by that identifier,
 so the instruction silently misdirects the agent.
 
-The short tool name is also simply shorter. Fully-qualified names are long,
-low-signal strings that spend an agent's context window without telling it
-anything the short name does not.
+Brevity is a secondary benefit. Fully-qualified names are long, low-signal
+strings that spend an agent's context window without telling it anything
+the short name does not.
+
+The `mcp__<server>__<tool>` flattening is the convention of Claude Code and
+the Claude Agent SDK, not part of the MCP specification — other clients
+flatten tool names differently. A literal `mcp__` token is Claude-derived
+wherever it appears, which is why this rule applies to every content file.
 
 ## Examples
 
@@ -55,19 +60,31 @@ those inside a fenced block:
 ```
 ````
 
+Prose that *instructs* configuration needs the fully-qualified name too:
+"add `mcp__jira__getIssue` to your allowed-tools list" stops working if the
+prefix is stripped. A name on a line that mentions a configuration surface
+(`allowed-tools`, `allowedTools`, `permissions`, `settings.json`,
+`.mcp.json`, `deny`, `matcher`) is therefore never flagged. Config-adjacent
+prose phrased without any of those markers can still be flagged — list the
+name under `allow` for those cases.
+
 Frontmatter is out of scope for the same reason: a command's
 `allowed-tools:` and an agent's `tools:` list both take the fully-qualified
 identifier, and only body content is scanned.
 
-For anything else that must keep its prefix — including a tool whose own
-name contains `__`, which this rule resolves to its last segment — list the
-full identifier under the `allow` option:
+Names embedded in URLs or file paths, link text, and names split across a
+multi-line code span are never flagged. Only the `mcp__<server>__` prefix
+is ever stripped, so a tool whose own name contains `__` keeps every
+segment of its name.
+
+For anything else that must keep its prefix, list the full identifier under
+the `allow` option:
 
 ```yaml
 rules:
   content-mcp-tool-name:
     allow:
-      - mcp__internal__report__generate
+      - mcp__internal__getDeployStatus
 ```
 
 ## How to fix
