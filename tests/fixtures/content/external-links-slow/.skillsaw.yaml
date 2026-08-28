@@ -2,7 +2,10 @@ version: "99.0.0"
 rules:
   content-broken-external-reference:
     enabled: true
-    timeout: 0.5
-    total-budget: 5
-    concurrency: 2
-    allow-private-hosts: true
+    # One worker and a one-second budget against two routes that stall
+    # for three: the first burns the budget, the second is never
+    # requested, and the run emits its one budget notice. The CLI test
+    # reads these values, so they are load-bearing rather than decorative.
+    timeout: 5
+    total-budget: 1
+    concurrency: 1

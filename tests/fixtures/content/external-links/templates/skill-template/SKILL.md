@@ -12,9 +12,9 @@ placeholders. Delete this paragraph once the skill is real.
 
 Replace these with the systems your skill actually touches:
 
-- [Team runbook](http://127.0.0.1:__PORT__/never-requested-template) — the
+- [Team runbook](http://127.0.0.1:__PORT__/runbooks/your-service) — the
   runbook for the service this skill operates.
-- [Dashboard](http://127.0.0.1:__PORT__/never-requested-template-two) — where
+- [Dashboard](http://127.0.0.1:__PORT__/dashboards/your-service) — where
   to watch the effect of a change.
 
 ## Steps

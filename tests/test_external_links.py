@@ -7,17 +7,25 @@ tests can assert on what was requested *and* on what was not. The
 default-configuration test proves the stronger property: with the rule
 left at its default, a lint run cannot open a socket at all.
 
-The markdown lives in ``tests/fixtures/content/external-links*`` per the
-repository's fixture-first testing rules; only the port — unknowable
-until the server binds — is substituted into the copied fixture.
+The markdown lives in ``tests/fixtures/content/external-links`` and
+``tests/fixtures/content/external-links-slow``. Only the port —
+unknowable until the server binds — is substituted into the copied
+fixture.
 """
 
+import email
+import http.client
+import ipaddress
 import shutil
 import socket
+import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from typing import List, Tuple
 
 import pytest
@@ -27,7 +35,12 @@ from skillsaw.context import RepositoryContext
 from skillsaw.linter import Linter
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.content import ContentBrokenExternalReferenceRule
+from skillsaw.rules.builtin.content.broken_external_reference import (
+    _BoundedRedirectHandler,
+    _EmptyBody,
+)
 
+from .cli_runner import run_cli
 from .test_integration import FIXTURES, run_lint
 
 RULE_ID = "content-broken-external-reference"
@@ -70,6 +83,7 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
     # to /missing without redirect traffic landing there.
     ROUTES = {
         "/ok": (200, None),
+        "/sla": (200, None),
         "/badge.svg": (200, None),
         "/missing": (404, None),
         "/gone": (410, None),
@@ -129,10 +143,16 @@ class _QuietServer(ThreadingHTTPServer):
 
     The timeout tests deliberately abandon a request mid-flight, and the
     default handler would dump a BrokenPipeError traceback per test.
+    Only those are swallowed: a typo in ``ROUTES`` must still show its
+    traceback rather than becoming a quiet 404 that reads as green.
     """
 
+    _EXPECTED = (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)
+
     def handle_error(self, request, client_address):
-        pass
+        if isinstance(sys.exc_info()[1], self._EXPECTED):
+            return
+        super().handle_error(request, client_address)
 
 
 class _LocalServer:
@@ -179,15 +199,22 @@ def server(_module_server):
 
 
 @pytest.fixture(autouse=True)
-def _no_proxy(monkeypatch):
-    """Never route a test request through an ambient proxy.
+def _neutral_network_environment(monkeypatch):
+    """Neither an ambient proxy nor an ambient operator decision.
 
-    ``urllib`` reads the proxy environment, so a developer machine or CI
-    runner with ``http_proxy`` set would send these localhost requests
-    somewhere else entirely — off the loopback interface, which is
-    exactly what this file promises never to do.
+    The proxy half: ``urllib`` reads the proxy environment, so a
+    developer machine or CI runner with ``http_proxy`` set would send
+    these localhost requests somewhere else entirely — off the loopback
+    interface, which is exactly what this file promises never to do.
+
+    The operator half: ``SKILLSAW_NO_NETWORK`` is a variable the docs
+    tell people to export CI-wide, and ``conftest.py`` copies a
+    developer ``.env`` into ``os.environ``. Either would silently gate
+    every test here.
     """
     for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        monkeypatch.delenv(var, raising=False)
+    for var in ("SKILLSAW_NO_NETWORK", "SKILLSAW_ALLOW_PRIVATE_HOSTS"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("no_proxy", "*")
     monkeypatch.setenv("NO_PROXY", "*")
@@ -228,13 +255,14 @@ def closed_port():
         sock.close()
 
 
-def _run_rule(repo: Path, config: dict = None):
-    # allow-private-hosts is required for the loopback server to be
-    # reachable at all — the rule refuses non-public hosts by default.
-    # Tests that exercise that refusal override it back to False.
-    settings = {"enabled": True, "allow-private-hosts": True}
+def _run_rule(repo: Path, config: dict = None, *, allow_private_hosts: bool = True):
+    # The loopback server is only reachable because the *operator* opted
+    # in, which is a constructor argument and never a config key:
+    # `.skillsaw.yaml` is the untrusted input that control defends
+    # against. Tests exercising the refusal pass allow_private_hosts=False.
+    settings = {"enabled": True}
     settings.update(config or {})
-    rule = ContentBrokenExternalReferenceRule(settings)
+    rule = ContentBrokenExternalReferenceRule(settings, allow_private_hosts=allow_private_hosts)
     return rule.check(RepositoryContext(repo))
 
 
@@ -421,6 +449,14 @@ class TestAgainstLocalServer:
 
         assert "/rate-limited" in server.paths()
 
+    def test_reference_links_are_collected(self, tmp_path, server):
+        """``[text][ref]`` resolves in the AST, so the definition is probed."""
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        _run_rule(repo)
+
+        assert "/sla" in server.paths()
+
     def test_template_directories_are_skipped(self, tmp_path, server):
         """Placeholder targets under templates/ are intentional, not rot."""
         repo = _materialize("content/external-links", tmp_path, server.port)
@@ -428,8 +464,9 @@ class TestAgainstLocalServer:
         violations = _run_rule(repo)
 
         assert "/ok" in server.paths()  # liveness
-        assert not [p for p in server.paths() if "template" in p]
-        assert "template" not in "\n".join(_messages(violations))
+        placeholders = [p for p in server.paths() if "your-service" in p]
+        assert placeholders == []
+        assert "your-service" not in "\n".join(_messages(violations))
 
     def test_image_destinations_are_probed(self, tmp_path, server):
         """Badge URLs in a CLAUDE.md are images, and images are links.
@@ -461,7 +498,7 @@ class TestAgainstLocalServer:
 
     @pytest.mark.parametrize("route", ["/head-405", "/head-501"])
     def test_both_head_rejection_codes_fall_back_to_get(self, route, server):
-        rule = ContentBrokenExternalReferenceRule({"enabled": True, "allow-private-hosts": True})
+        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
 
         status, _checked = rule._probe(f"http://127.0.0.1:{server.port}{route}", 5.0, None)
 
@@ -469,7 +506,7 @@ class TestAgainstLocalServer:
         assert status == 404
 
     def test_a_chain_within_the_hop_cap_is_followed_to_its_404(self, server):
-        rule = ContentBrokenExternalReferenceRule({"enabled": True, "allow-private-hosts": True})
+        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
 
         status, _checked = rule._probe(f"http://127.0.0.1:{server.port}/hop/4", 5.0, None)
 
@@ -483,7 +520,7 @@ class TestAgainstLocalServer:
         cannot prove this — a self-redirect trips `max_repeats` (4),
         which the rule leaves untouched.
         """
-        rule = ContentBrokenExternalReferenceRule({"enabled": True, "allow-private-hosts": True})
+        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
 
         status, checked = rule._probe(f"http://127.0.0.1:{server.port}/hop/9", 5.0, None)
 
@@ -492,7 +529,7 @@ class TestAgainstLocalServer:
 
     def test_redirect_out_of_http_is_not_followed(self, server):
         """A 302 into ``ftp://`` ends the chain instead of changing protocol."""
-        rule = ContentBrokenExternalReferenceRule({"enabled": True, "allow-private-hosts": True})
+        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
 
         status, checked = rule._probe(f"http://127.0.0.1:{server.port}/redirect-ftp", 5.0, None)
 
@@ -509,7 +546,21 @@ class TestAgainstLocalServer:
         assert first == second
 
 
-# ── Failure modes that must stay silent ──────────────────────────
+# ── The operator's network controls ──────────────────────────────
+
+
+def _rule_executing_argv(subcommand: str, repo: Path) -> List[str]:
+    """Argv for one rule-executing subcommand against *repo*.
+
+    All four run every enabled rule's ``check()``, so all four are
+    network-executing and all four must honour the gate. ``fix``,
+    ``baseline`` and ``badge`` write only inside the repository, which
+    lives under ``tmp_path``.
+    """
+    argv = [subcommand, "-c", str(repo / ".skillsaw.yaml"), str(repo)]
+    if subcommand == "lint":
+        argv.extend(["--format", "json"])
+    return argv
 
 
 class TestOperatorNetworkGate:
@@ -522,51 +573,170 @@ class TestOperatorNetworkGate:
     """
 
     @pytest.mark.parametrize("subcommand", ["lint", "fix", "baseline", "badge"])
-    def test_flag_exists_on_every_rule_executing_subcommand(self, subcommand):
-        import subprocess
-        import sys
+    def test_flag_gates_every_rule_executing_subcommand(self, subcommand, tmp_path, server):
+        """Behaviour, not `--help` text, on each of the four.
 
-        result = subprocess.run(
-            [sys.executable, "-m", "skillsaw", subcommand, "--help"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        The gate is five hand-copied ``no_network=...`` keyword arguments
+        at the ``Linter(...)`` call sites. Deleting one leaves the flag
+        in ``--help``, leaves an argv-only test green, and silently makes
+        the requests the operator refused. The liveness half — that the
+        same argv *does* reach the server without the flag — is what
+        keeps the gated half from passing vacuously.
+        """
+        repo = _materialize("content/external-links", tmp_path, server.port)
+        argv = _rule_executing_argv(subcommand, repo)
 
-        assert "--no-network" in result.stdout
+        run_cli(argv + ["--allow-private-hosts"])
+        assert server.hits, f"{subcommand} must reach the server without the gate"
+
+        server.reset()
+        run_cli(argv + ["--allow-private-hosts", "--no-network"])
+
+        assert server.hits == [], f"{subcommand} ignored --no-network"
+
+    @pytest.mark.parametrize("subcommand", ["lint", "fix", "baseline", "badge"])
+    def test_env_var_gates_every_rule_executing_subcommand(
+        self, subcommand, tmp_path, server, monkeypatch
+    ):
+        """``Linter`` reads the variable itself, so no call site can miss it."""
+        repo = _materialize("content/external-links", tmp_path, server.port)
+        argv = _rule_executing_argv(subcommand, repo) + ["--allow-private-hosts"]
+
+        run_cli(argv)
+        assert server.hits, f"{subcommand} must reach the server without the gate"
+
+        server.reset()
+        monkeypatch.setenv("SKILLSAW_NO_NETWORK", "1")
+        run_cli(argv)
+
+        assert server.hits == [], f"{subcommand} ignored SKILLSAW_NO_NETWORK"
+
+    def test_the_env_var_reaches_a_directly_constructed_linter(self, tmp_path, monkeypatch):
+        """Not only the CLI: an embedder or a future subcommand too.
+
+        The operator exports the variable for a whole job. If only
+        ``no_network_requested(args)`` read it, the guarantee would rest
+        on every future ``Linter(...)`` call site remembering to ask.
+        """
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "CLAUDE.md").write_text("# Project\n\nBuild with make.\n", encoding="utf-8")
+        monkeypatch.setenv("SKILLSAW_NO_NETWORK", "1")
+
+        linter = Linter(RepositoryContext(repo), LinterConfig.default())
+
+        assert linter._no_network is True
 
     def test_flag_beats_the_repository_config(self, tmp_path, server):
         repo = _materialize("content/external-links", tmp_path, server.port)
 
-        result = run_lint(repo, "--no-network", config=repo / ".skillsaw.yaml")
+        result = run_lint(
+            repo, "--allow-private-hosts", "--no-network", config=repo / ".skillsaw.yaml"
+        )
 
         assert server.hits == []
         assert RULE_ID not in {v["rule_id"] for v in result["out"]["violations"]}
+        assert "skipped (--no-network)" in result["stderr"]
 
-    def test_flag_beats_an_explicit_rule_flag(self, tmp_path, server):
-        """``--rule`` selects which rules run; it does not grant network access."""
+    def test_naming_only_gated_rules_under_the_gate_is_an_error(self, tmp_path, server):
+        """``--rule <network rule> --no-network`` must not exit 0 having done nothing.
+
+        An org that exports ``SKILLSAW_NO_NETWORK`` job-wide and also
+        runs the documented scheduled link-check recipe would otherwise
+        get a permanently green job over an empty rule set — the quiet CI
+        false pass REVIEW.md's T4/T12 bullet asks reviewers to flag.
+        ``--no-custom-rules`` sets the precedent by failing loudly.
+        """
         repo = _materialize("content/external-links", tmp_path, server.port)
 
-        run_lint(repo, "--rule", RULE_ID, "--no-network", config=repo / ".skillsaw.yaml")
+        result = run_lint(
+            repo,
+            "--rule",
+            RULE_ID,
+            "--allow-private-hosts",
+            "--no-network",
+            config=repo / ".skillsaw.yaml",
+        )
 
         assert server.hits == []
+        assert result["rc"] != 0
+        assert "skipped every rule named by --rule" in result["stderr"]
+        assert RULE_ID in result["stderr"]
+
+    def test_gating_one_of_several_named_rules_still_runs_the_others(self, tmp_path, server):
+        """Only an *empty* rule set is an error, not any dropped rule."""
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        result = run_lint(
+            repo,
+            "--rule",
+            RULE_ID,
+            "--rule",
+            "content-broken-internal-reference",
+            "--no-network",
+            config=repo / ".skillsaw.yaml",
+        )
+
+        assert server.hits == []
+        assert result["out"] is not None
 
     def test_env_var_is_honoured(self, tmp_path, server, monkeypatch):
         repo = _materialize("content/external-links", tmp_path, server.port)
         monkeypatch.setenv("SKILLSAW_NO_NETWORK", "1")
 
-        run_lint(repo, config=repo / ".skillsaw.yaml")
+        run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
 
         assert server.hits == []
 
-    @pytest.mark.parametrize("value", ["0", "false", "no", ""])
+    @pytest.mark.parametrize("value", ["0", " 0 ", "false", "FALSE", "no", "No", "off", ""])
     def test_env_var_off_values_do_not_gate(self, value, tmp_path, server, monkeypatch):
         repo = _materialize("content/external-links", tmp_path, server.port)
         monkeypatch.setenv("SKILLSAW_NO_NETWORK", value)
 
-        run_lint(repo, config=repo / ".skillsaw.yaml")
+        run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
 
         assert server.hits, f"SKILLSAW_NO_NETWORK={value!r} must not gate"
+
+    @pytest.mark.parametrize("value", ["1", "true", "TRUE", " yes ", "on", "maybe", "disabled"])
+    def test_anything_else_gates(self, value, tmp_path, server, monkeypatch):
+        """The restriction resolves a typo toward refusing, not toward allowing.
+
+        ``SKILLSAW_NO_NETWORK=disabled`` reads to a human like "the gate
+        is disabled" and turns it on instead. That is deliberate for a
+        variable that takes capability away, and it is the opposite of
+        how ``SKILLSAW_ALLOW_PRIVATE_HOSTS`` resolves the same typo.
+        """
+        repo = _materialize("content/external-links", tmp_path, server.port)
+        monkeypatch.setenv("SKILLSAW_NO_NETWORK", value)
+
+        run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
+
+        assert server.hits == [], f"SKILLSAW_NO_NETWORK={value!r} must gate"
+
+    @pytest.mark.parametrize(
+        "value,granted",
+        [
+            ("1", True),
+            ("true", True),
+            (" YES ", True),
+            ("on", True),
+            ("0", False),
+            ("false", False),
+            ("", False),
+            ("maybe", False),
+            ("allow", False),
+        ],
+    )
+    def test_the_private_host_permission_only_takes_an_explicit_yes(
+        self, value, granted, tmp_path, server, monkeypatch
+    ):
+        """A permission resolves a typo by withholding itself."""
+        repo = _materialize("content/external-links", tmp_path, server.port)
+        monkeypatch.setenv("SKILLSAW_ALLOW_PRIVATE_HOSTS", value)
+
+        run_lint(repo, config=repo / ".skillsaw.yaml")
+
+        assert bool(server.hits) is granted
 
     def test_engaging_the_network_is_announced(self, tmp_path, server):
         """A real subprocess: the warnings registry is process-global.
@@ -625,36 +795,57 @@ class TestOperatorNetworkGate:
         assert Rule.requires_network is False
         assert ContentBrokenExternalReferenceRule.requires_network is True
 
-    def test_a_plugin_rule_declaring_the_attribute_is_gated_too(self, tmp_path):
-        from skillsaw.rule import Rule, Severity as Sev
+    def test_a_custom_rule_declaring_the_attribute_is_gated_too(self, tmp_path):
+        """Driven through the real custom-rule loader, not by calling the filter.
 
-        class _NetworkPluginRule(Rule):
-            requires_network = True
-
-            @property
-            def rule_id(self):
-                return "test-network-plugin"
-
-            @property
-            def description(self):
-                return "test"
-
-            def default_severity(self):
-                return Sev.INFO
-
-            def check(self, context):
-                raise AssertionError("must not run under --no-network")
-
+        The gate's claim is that it runs *after every loader*. A test
+        that appends a rule to ``linter.rules`` and then calls
+        ``_apply_network_gate()`` by hand verifies the filter but not
+        that claim: move the call before ``_load_rules()``, or forget it
+        on a future loader path, and this would still be green while a
+        custom rule with ``requires_network`` ran under the flag.
+        """
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / "CLAUDE.md").write_text("# Project\n\nBuild with make.\n", encoding="utf-8")
+        sentinel = tmp_path / "custom-rule-ran.txt"
+        (repo / "custom_network_rule.py").write_text(
+            "import pathlib\n"
+            "from skillsaw.rule import Rule, Severity\n"
+            "\n"
+            "class NetworkCustomRule(Rule):\n"
+            "    requires_network = True\n"
+            "    default_enabled = True\n"
+            "\n"
+            "    @property\n"
+            "    def rule_id(self):\n"
+            "        return 'test-network-custom'\n"
+            "\n"
+            "    @property\n"
+            "    def description(self):\n"
+            "        return 'records that it ran'\n"
+            "\n"
+            "    def default_severity(self):\n"
+            "        return Severity.INFO\n"
+            "\n"
+            "    def check(self, context):\n"
+            f"        pathlib.Path({str(sentinel)!r}).write_text('ran')\n"
+            "        return []\n",
+            encoding="utf-8",
+        )
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            'version: "99.0.0"\ncustom-rules:\n  - custom_network_rule.py\n', encoding="utf-8"
+        )
 
-        linter = Linter(RepositoryContext(repo), LinterConfig.default(), no_network=True)
-        linter.rules.append(_NetworkPluginRule())
+        # Liveness: the rule really does load and run without the gate.
+        run_cli(["lint", "--format", "json", "-c", str(config), str(repo)])
+        assert sentinel.exists(), "the custom network rule must run without the gate"
+        sentinel.unlink()
 
-        linter._apply_network_gate()
+        run_cli(["lint", "--format", "json", "-c", str(config), str(repo), "--no-network"])
 
-        assert "test-network-plugin" not in {r.rule_id for r in linter.rules}
+        assert not sentinel.exists(), "a custom rule declaring requires_network must be gated"
 
 
 class TestUntrustedConfig:
@@ -702,7 +893,7 @@ class TestUntrustedConfig:
             (-1, 30.0),  # negative must not read as "no cap"
             (float("nan"), 30.0),
             (float("inf"), 30.0),
-            (0, 0.0),  # the one documented way to disable the cap
+            (0, 30.0),  # the "disable the cap" escape hatch is gone
             (10_000, 600.0),
         ],
     )
@@ -779,12 +970,63 @@ class TestPrivateHostConfinement:
             "http://[::ffff:127.0.0.1]/x",
             "http://0.0.0.0/x",
             "http://[fe80::1]/x",
+            "http://[::]/x",
+            "http://[fd00::1]/x",
+            # A trailing root dot and an uppercase name are the same host.
+            "http://127.0.0.1./x",
+            "http://LOCALHOST/x",
         ],
     )
     def test_non_public_hosts_are_refused_by_default(self, url):
         rule = ContentBrokenExternalReferenceRule({"enabled": True})
 
         assert rule._admit(url) is None
+
+    # `ipaddress.ip_address` accepts only dotted-quad; `inet_aton`, which
+    # is what the resolver reaches, also takes bare integers, hex, octal
+    # and short-dotted forms. Classifying these as hostnames is how the
+    # metadata endpoint gets probed with the confinement switched on.
+    _ALTERNATE_SPELLINGS = [
+        ("http://2852039166/latest/meta-data/", "169.254.169.254"),
+        ("http://2130706433/x", "127.0.0.1"),
+        ("http://0x7f000001/x", "127.0.0.1"),
+        ("http://0177.0.0.1/x", "127.0.0.1"),
+        ("http://127.1/x", "127.0.0.1"),
+        ("http://0x7f.0.0.1/x", "127.0.0.1"),
+        ("http://0/x", "0.0.0.0"),
+    ]
+
+    @pytest.mark.parametrize("url,canonical", _ALTERNATE_SPELLINGS)
+    def test_non_canonical_ipv4_literals_are_refused(self, url, canonical):
+        rule = ContentBrokenExternalReferenceRule({"enabled": True})
+
+        # Liveness for the parametrize itself: each spelling really is
+        # the address it claims to be, and really does defeat `ipaddress`.
+        host = url.split("//", 1)[1].split("/", 1)[0]
+        with pytest.raises(ValueError):
+            ipaddress.ip_address(host)
+        assert socket.inet_ntoa(socket.inet_aton(host)) == canonical
+
+        assert rule._admit(url) is None
+
+    @pytest.mark.parametrize("url,_canonical", _ALTERNATE_SPELLINGS)
+    def test_non_canonical_ipv4_redirect_hops_are_refused(self, url, _canonical):
+        """`_accepts_hop` shares `_admit`, so the hop path must agree."""
+        rule = ContentBrokenExternalReferenceRule({"enabled": True})
+
+        assert rule._accepts_hop(url) is False
+
+    @pytest.mark.parametrize("url,_canonical", _ALTERNATE_SPELLINGS)
+    def test_the_operator_can_still_reach_them(self, url, _canonical):
+        """Refusal is the confinement, not a parse failure.
+
+        Without this, a normalization that simply rejected every
+        numeric-looking host would pass the tests above while breaking
+        the operator's opt-in.
+        """
+        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
+
+        assert rule._admit(url) == url
 
     @pytest.mark.parametrize(
         "url",
@@ -799,10 +1041,26 @@ class TestPrivateHostConfinement:
         """Without the opt-in, the whole scripted server is off limits."""
         repo = _materialize("content/external-links", tmp_path, server.port)
 
-        violations = _run_rule(repo, {"allow-private-hosts": False})
+        violations = _run_rule(repo, allow_private_hosts=False)
 
         assert violations == []
         assert server.hits == []
+
+    def test_a_repo_config_key_cannot_grant_private_access(self, tmp_path, server):
+        """The control is operator-only; `.skillsaw.yaml` has no say.
+
+        A repo that could write `allow-private-hosts: true` would be
+        disabling the confinement that exists to contain it (T18). The
+        key is not in `config_schema`, so writing it lands in the
+        settings dict as an unrecognized option and must change nothing.
+        """
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        violations = _run_rule(repo, {"allow-private-hosts": True}, allow_private_hosts=False)
+
+        assert violations == []
+        assert server.hits == []
+        assert "allow-private-hosts" not in ContentBrokenExternalReferenceRule.config_schema
 
 
 class TestRedirectTargetsAreVetted:
@@ -811,11 +1069,8 @@ class TestRedirectTargetsAreVetted:
     def test_redirect_into_an_ignored_host_is_not_followed(self, tmp_path, server):
         """Otherwise ``ignore`` is bypassable by any origin that answers 302."""
         rule = ContentBrokenExternalReferenceRule(
-            {
-                "enabled": True,
-                "allow-private-hosts": True,
-                "ignore": [f"http://127.0.0.1:{server.port}/relocated"],
-            }
+            {"enabled": True, "ignore": [f"http://127.0.0.1:{server.port}/relocated"]},
+            allow_private_hosts=True,
         )
 
         status, checked = rule._probe(f"http://127.0.0.1:{server.port}/redirect-missing", 5.0, None)
@@ -824,27 +1079,118 @@ class TestRedirectTargetsAreVetted:
         assert checked is True
         assert status not in (404, 410)
 
-    def test_redirect_to_a_private_host_is_not_followed(self, server):
+    def test_a_private_hop_is_refused(self):
         """A public URL must not be able to walk the linter inside."""
         rule = ContentBrokenExternalReferenceRule({"enabled": True})
 
         assert rule._accepts_hop("http://169.254.169.254/latest/") is False
         assert rule._accepts_hop("https://example.com/ok") is True
 
-    def test_redirect_carrying_userinfo_is_not_followed(self, server):
+    def test_a_hop_carrying_userinfo_is_refused(self):
         rule = ContentBrokenExternalReferenceRule({"enabled": True})
 
         assert rule._accepts_hop("https://user:token@example.com/x") is False
 
 
-class TestHeadIsNeverEnoughToConvict:
-    """Regression: PR #521's first real-repo run flagged live pages.
+class TestNoBodyIsEverRead:
+    """Not the final response's, and not an intermediate redirect's.
 
-    Two of the reported findings were servers that answer 404 to HEAD and
-    serve the resource on GET — nvlpubs.nist.gov's copy of NIST SP
-    800-53r5, and an azure.microsoft.com product page. RFC 9110 says HEAD
-    must answer as GET would minus the body; real servers disagree, so a
-    candidate violation is confirmed with GET before it is reported.
+    ``HTTPRedirectHandler.http_error_302`` calls ``fp.read()`` on the hop
+    it is leaving, before it opens the next one — an uncapped read of a
+    body nothing here wants. On the GET confirmation path that body is
+    chosen by the origin, and the socket timeout is re-armed on every
+    ``recv``, so an endless chunked stream would be read into the
+    worker's memory for as long as bytes keep arriving.
+    """
+
+    @staticmethod
+    def _handler(hop_timeout=1.0):
+        opened = []
+        handler = _BoundedRedirectHandler(lambda url: True, lambda: hop_timeout)
+        handler.parent = SimpleNamespace(
+            open=lambda new, timeout=None: opened.append((new.full_url, timeout))
+        )
+        return handler, opened
+
+    @staticmethod
+    def _headers(location: str):
+        return email.message_from_string(f"Location: {location}\n", _class=http.client.HTTPMessage)
+
+    @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+    def test_the_hop_body_is_not_read_on_any_redirect_code(self, code):
+        """The base class aliases all of them, so overriding 302 alone is not enough."""
+        reads = []
+        closed = []
+
+        class _Recording:
+            def read(self, *args):
+                reads.append(args)
+                return b"x" * 4096
+
+            def close(self):
+                closed.append(True)
+
+        handler, opened = self._handler()
+        method = getattr(handler, f"http_error_{code}", None)
+        if method is None:  # pragma: no cover - 308 predates 3.11 only
+            pytest.skip(f"urllib has no http_error_{code} on this interpreter")
+        request = urllib.request.Request("http://127.0.0.1:1/from")
+        request.timeout = 30.0
+
+        method(request, _Recording(), code, "Found", self._headers("http://127.0.0.1:1/to"))
+
+        assert reads == []
+        assert closed == [True]  # still released, just never drained
+        assert [url for url, _timeout in opened] == ["http://127.0.0.1:1/to"]
+
+    def test_each_hop_gets_the_remainder_of_the_window_not_the_full_timeout(self):
+        """Otherwise a five-hop chain costs five timeouts instead of one."""
+        handler, opened = self._handler(hop_timeout=0.75)
+        request = urllib.request.Request("http://127.0.0.1:1/from")
+        request.timeout = 30.0
+
+        handler.http_error_302(
+            request,
+            _EmptyBody(SimpleNamespace(close=lambda: None)),
+            302,
+            "Found",
+            self._headers("http://127.0.0.1:1/to"),
+        )
+
+        assert opened == [("http://127.0.0.1:1/to", 0.75)]
+
+    def test_a_refused_hop_still_reads_nothing(self):
+        reads = []
+
+        class _Recording:
+            def read(self, *args):
+                reads.append(args)
+                return b"x"
+
+            def close(self):
+                pass
+
+        handler, _opened = self._handler()
+        handler._accepts = lambda url: False
+        request = urllib.request.Request("http://127.0.0.1:1/from")
+        request.timeout = 30.0
+
+        with pytest.raises(urllib.error.HTTPError):
+            handler.http_error_302(
+                request, _Recording(), 302, "Found", self._headers("http://169.254.169.254/x")
+            )
+
+        assert reads == []
+
+
+class TestHeadIsNeverEnoughToConvict:
+    """A candidate violation is confirmed with GET before it is reported.
+
+    RFC 9110 requires a HEAD response to be what GET would return minus
+    the body. Real servers disagree: nvlpubs.nist.gov answers 404 to HEAD
+    for its copy of NIST SP 800-53r5 and serves the PDF on GET, and
+    azure.microsoft.com does the same on some marketing paths. A HEAD
+    answer alone would report those live pages as dead.
     """
 
     def test_head_404_with_get_200_is_not_reported(self, tmp_path, server):
@@ -864,7 +1210,7 @@ class TestHeadIsNeverEnoughToConvict:
         assert _methods_by_path(server)["/head-410-get-200"] == ["HEAD", "GET"]
 
     def test_a_confirmed_404_is_still_reported(self, tmp_path, server):
-        """The fix must not silence links that really are gone."""
+        """A link that really is gone is still reported after confirmation."""
         repo = _materialize("content/external-links", tmp_path, server.port)
 
         violations = _run_rule(repo)
@@ -896,6 +1242,13 @@ class TestHeadIsNeverEnoughToConvict:
         assert calls == ["HEAD"]  # the confirming GET never ran
         assert checked is True
         assert status is None  # not 404 — nothing was proven
+
+
+# ── Failure modes that must stay silent ──────────────────────────
+
+
+class TestInconclusiveOutcomesAreNeverReported:
+    """Everything the network can say about itself produces no violation."""
 
     def test_offline_produces_no_violations(self, tmp_path, closed_port):
         """Connection refused says nothing about the link."""
@@ -932,6 +1285,13 @@ class TestHeadIsNeverEnoughToConvict:
         violations = _run_rule(repo, {"timeout": 0.5, "total-budget": 30, "concurrency": 2})
 
         assert violations == []
+
+
+# ── The wall-clock budget ────────────────────────────────────────
+
+
+class TestBudgetExhaustion:
+    """A run that ran out of time says so, once, and never convicts."""
 
     def test_exhausted_budget_emits_one_info_notice(self, tmp_path, server):
         repo = _materialize("content/external-links-slow", tmp_path, server.port)
@@ -970,6 +1330,129 @@ class TestHeadIsNeverEnoughToConvict:
         violations = _run_rule(repo)
 
         assert not any("unchecked" in v.message for v in violations)
+
+    def test_the_budget_notice_survives_the_cli(self, tmp_path, server):
+        """End to end: a path-less INFO violation still serializes and exits 0.
+
+        The notice has no ``file_path`` and no ``line``. Nothing else
+        checks that such a violation reaches the JSON report intact, or
+        that an INFO-only run does not flip the exit code.
+        """
+        repo = _materialize("content/external-links-slow", tmp_path, server.port)
+
+        result = run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
+
+        notices = [
+            v
+            for v in result["out"]["violations"]
+            if v["rule_id"] == RULE_ID and "left unchecked" in v["message"]
+        ]
+        assert len(notices) == 1
+        assert notices[0]["severity"] == "info"
+        assert notices[0]["file_path"] is None
+        assert notices[0]["line"] is None
+        assert result["rc"] == 0
+        # The count the message deliberately omits is on the -v log.
+        assert "external URLs unchecked" in result["stderr"]
+
+
+class TestTheRunIsBounded:
+    """The wall clock, not a cooperative socket timeout, ends the run.
+
+    ``timeout`` is a socket timeout: urllib re-arms it on every read, so
+    an origin that dribbles one byte just under it holds a worker
+    indefinitely. ``total-budget`` is what actually bounds the run, and
+    it bounds it by abandoning workers rather than by waiting for them.
+    """
+
+    def test_workers_that_never_return_are_abandoned(self, monkeypatch):
+        """No socket: `_probe` itself blocks, so only the join can end this."""
+        rule = ContentBrokenExternalReferenceRule({"enabled": True})
+        blocked = threading.Event()
+
+        def _never_answers(url, timeout, deadline):
+            blocked.wait(30)  # finite so a failing run does not leak a thread
+            return 200, True
+
+        monkeypatch.setattr(rule, "_probe", _never_answers)
+        urls = [f"https://example.com/{n}" for n in range(4)]
+
+        started = time.monotonic()
+        try:
+            statuses, unchecked = rule._probe_all(urls, timeout=0.2, budget=0.3, concurrency=4)
+            elapsed = time.monotonic() - started
+        finally:
+            blocked.set()
+
+        assert statuses == {}
+        assert unchecked == len(urls)
+        # The load-bearing half: this is what fails if the join ever
+        # starts waiting for the workers instead of abandoning them.
+        assert elapsed < 5.0
+
+    def test_probe_threads_are_daemons(self):
+        """Abandoned is not enough — they must not hold the interpreter open.
+
+        ``concurrent.futures`` registers an atexit hook that joins every
+        live pool worker, so a ThreadPoolExecutor here would bound
+        ``check()``'s return without bounding the process: the report
+        prints and the exit code is never delivered.
+        """
+        rule = ContentBrokenExternalReferenceRule({"enabled": True})
+        seen = []
+
+        def _record(url, timeout, deadline):
+            seen.append(threading.current_thread().daemon)
+            return None, False
+
+        rule._probe = _record
+        rule._probe_all(["https://example.com/a"], timeout=1.0, budget=5.0, concurrency=1)
+
+        assert seen == [True]
+
+    def test_a_bug_in_the_rule_is_not_swallowed_as_a_network_failure(self):
+        """`_NETWORK_ERRORS` must stay narrow, and `_probe_all` must re-raise.
+
+        Widening it to ``except Exception`` — the natural "make it more
+        robust" edit — would turn a ``TypeError`` into "nothing to
+        report" and let the run exit 0 looking healthy. The linter's
+        contract is that a rule bug becomes an unbaselinable
+        ``rule-execution-error`` instead.
+        """
+        rule = ContentBrokenExternalReferenceRule({"enabled": True})
+
+        def _explode(url, timeout, deadline):
+            raise TypeError("a bug in the rule, not a network condition")
+
+        rule._probe = _explode
+
+        with pytest.raises(TypeError):
+            rule._probe_all(["https://example.com/a"], timeout=1.0, budget=5.0, concurrency=1)
+
+    def test_a_network_failure_is_swallowed(self, monkeypatch):
+        """The positive half: an actual network error reports nothing."""
+        rule = ContentBrokenExternalReferenceRule({"enabled": True})
+
+        class _Failing:
+            def open(self, request, timeout=None):
+                raise socket.timeout("timed out")
+
+        monkeypatch.setattr(rule, "_opener", lambda: _Failing())
+
+        assert rule._request("https://example.com/a", "HEAD", 1.0) is None
+
+    def test_a_rule_bug_inside_request_propagates(self, monkeypatch):
+        """Same contract one level down, where `_NETWORK_ERRORS` is applied."""
+        rule = ContentBrokenExternalReferenceRule({"enabled": True})
+
+        class _Buggy:
+            def open(self, request, timeout=None):
+                raise AttributeError("typo in the rule")
+
+        monkeypatch.setattr(rule, "_opener", lambda: _Buggy())
+
+        with pytest.raises(AttributeError):
+            rule._request("https://example.com/a", "HEAD", 1.0)
 
 
 # ── The hermeticity guarantee ────────────────────────────────────
@@ -1026,11 +1509,11 @@ class TestDefaultRunIsOffline:
         """
         repo = _materialize("content/external-links", tmp_path, server.port, keep_config=False)
         (repo / ".skillsaw.yaml").write_text(
-            'version: "99.0.0"\n' "rules:\n" f"  {RULE_ID}:\n" "    allow-private-hosts: true\n",
+            'version: "99.0.0"\n' "rules:\n" f"  {RULE_ID}:\n" "    timeout: 5\n",
             encoding="utf-8",
         )
 
-        result = run_lint(repo, config=repo / ".skillsaw.yaml")
+        result = run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
 
         assert server.hits, "a bare setting must be enough to start requesting"
         assert RULE_ID in {v["rule_id"] for v in result["out"]["violations"]}
@@ -1043,7 +1526,6 @@ class TestDefaultRunIsOffline:
             "rules:\n"
             f"  {RULE_ID}:\n"
             "    enabled: false\n"
-            "    allow-private-hosts: true\n"
             "    timeout: 5\n",
             encoding="utf-8",
         )
@@ -1061,15 +1543,13 @@ class TestDefaultRunIsOffline:
         """
         repo = _materialize("content/external-links", tmp_path, server.port, keep_config=False)
         (repo / ".skillsaw.yaml").write_text(
-            'version: "99.0.0"\n'
-            "rules:\n"
-            f"  {RULE_ID}:\n"
-            "    enabled: false\n"
-            "    allow-private-hosts: true\n",
+            'version: "99.0.0"\n' "rules:\n" f"  {RULE_ID}:\n" "    enabled: false\n",
             encoding="utf-8",
         )
 
-        result = run_lint(repo, "--rule", RULE_ID, config=repo / ".skillsaw.yaml")
+        result = run_lint(
+            repo, "--rule", RULE_ID, "--allow-private-hosts", config=repo / ".skillsaw.yaml"
+        )
 
         assert server.hits, "--rule must force-enable a disabled-by-default rule"
         assert RULE_ID in {v["rule_id"] for v in result["out"]["violations"]}
@@ -1077,7 +1557,7 @@ class TestDefaultRunIsOffline:
     def test_enabling_the_rule_is_what_turns_the_network_on(self, tmp_path, server):
         repo = _materialize("content/external-links", tmp_path, server.port)
 
-        result = run_lint(repo, config=repo / ".skillsaw.yaml")
+        result = run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
 
         fired = [v for v in result["out"]["violations"] if v["rule_id"] == RULE_ID]
         assert len(fired) == 6

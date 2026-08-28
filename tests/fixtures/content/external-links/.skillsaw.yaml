@@ -5,7 +5,3 @@ rules:
     timeout: 5
     total-budget: 30
     concurrency: 4
-    # The scripted test server binds 127.0.0.1, and the rule refuses
-    # non-public hosts unless asked. Opting in here is the only reason
-    # these fixtures are reachable at all.
-    allow-private-hosts: true

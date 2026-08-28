@@ -31,8 +31,13 @@ night. Read the reference material before changing anything under
 - ![Settlement SLO](http://127.0.0.1:__PORT__/badge.svg) — current burn rate,
   rendered from the metrics store.
 
+The settlement SLA is quoted in three places, so it is kept as a single
+[reference definition][sla] and linked from each of them.
+
 The acquirer's rate-limit notice is served without a nice landing page, so
 open it directly: <http://127.0.0.1:__PORT__/rate-limited>
+
+[sla]: http://127.0.0.1:__PORT__/sla
 
 ## Running a reconciliation locally
 
