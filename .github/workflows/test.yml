@@ -12,6 +12,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR supersedes any in-flight run; pushes to main
+# always run to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -35,7 +41,7 @@ jobs:
         run: make venv VENV_EXTRAS=test
 
       - name: Run compatibility tests without coverage
-        run: .venv/bin/pytest tests/ -v
+        run: .venv/bin/pytest tests/ -v -n auto
 
   coverage:
     name: test (3.11)
@@ -216,7 +222,7 @@ jobs:
 
       - name: Test openshift-eng/ai-helpers
         run: |
-          git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
+          git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
           # --no-custom-rules: never execute repo-provided Python from
           # third-party clones in CI (THREAT_MODEL.md T1). This also makes
@@ -260,7 +266,7 @@ jobs:
 
       - name: Test auth0/agent-skills
         run: |
-          git clone https://github.com/auth0/agent-skills.git /tmp/agent-skills
+          git clone --depth 1 https://github.com/auth0/agent-skills.git /tmp/agent-skills
 
           skillsaw --format json --no-custom-rules /tmp/agent-skills | python3 -c "
           import sys, json
@@ -277,7 +283,7 @@ jobs:
 
       - name: Test opendatahub-io/agent-eval-harness
         run: |
-          git clone https://github.com/opendatahub-io/agent-eval-harness.git /tmp/agent-eval-harness
+          git clone --depth 1 https://github.com/opendatahub-io/agent-eval-harness.git /tmp/agent-eval-harness
 
           skillsaw --format json --no-custom-rules /tmp/agent-eval-harness | python3 -c "
           import sys, json
@@ -294,7 +300,7 @@ jobs:
 
       - name: Test kubernetes-sigs/maintainer-tools
         run: |
-          git clone https://github.com/kubernetes-sigs/maintainer-tools.git /tmp/maintainer-tools
+          git clone --depth 1 https://github.com/kubernetes-sigs/maintainer-tools.git /tmp/maintainer-tools
 
           skillsaw --format json --no-custom-rules /tmp/maintainer-tools | python3 -c "
           import sys, json
@@ -311,7 +317,7 @@ jobs:
 
       - name: Test RedHatProductSecurity/prodsec-skills
         run: |
-          git clone https://github.com/RedHatProductSecurity/prodsec-skills.git /tmp/prodsec-skills
+          git clone --depth 1 https://github.com/RedHatProductSecurity/prodsec-skills.git /tmp/prodsec-skills
 
           skillsaw --format json --no-custom-rules /tmp/prodsec-skills | python3 -c "
           import sys, json
@@ -330,8 +336,10 @@ jobs:
         run: |
           # Pinned: an unrelated upstream commit must not turn main red
           # with a message blaming a rule change. Bump deliberately.
-          git clone --filter=blob:none https://github.com/openai/plugins.git /tmp/openai-plugins
-          git -C /tmp/openai-plugins checkout --quiet 11c74d6ba24d3a6d48f54a194cd00ef3beea18f9
+          git init --quiet /tmp/openai-plugins
+          git -C /tmp/openai-plugins remote add origin https://github.com/openai/plugins.git
+          git -C /tmp/openai-plugins fetch --quiet --depth 1 origin 11c74d6ba24d3a6d48f54a194cd00ef3beea18f9
+          git -C /tmp/openai-plugins checkout --quiet FETCH_HEAD
 
           # The flagship Codex catalog (~180 plugins, ~580 skills). The five
           # codex-* rules are clean on it and must stay that way — a finding
@@ -402,8 +410,7 @@ jobs:
 
       - name: Test --output flag with multiple formats
         run: |
-          git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers-output 2>/dev/null || true
-
+          # Reuses the /tmp/ai-helpers clone from the earlier step.
           skillsaw --no-custom-rules --output /tmp/report.json --output /tmp/report.sarif --output /tmp/report.html /tmp/ai-helpers
 
           python3 -c "

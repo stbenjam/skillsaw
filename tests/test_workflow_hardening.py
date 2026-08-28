@@ -219,7 +219,7 @@ def test_codecov_uses_oidc_without_a_repository_secret():
     matrix_test_step = next(
         step for step in test_job["steps"] if step.get("name", "").startswith("Run ")
     )
-    assert matrix_test_step["run"] == ".venv/bin/pytest tests/ -v"
+    assert matrix_test_step["run"] == ".venv/bin/pytest tests/ -v -n auto"
     assert "--cov" not in matrix_test_step["run"]
     assert coverage_job["name"] == "test (3.11)"
     assert coverage_job["permissions"] == {

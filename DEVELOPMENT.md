@@ -18,9 +18,11 @@ This creates a `.venv/` virtualenv and installs skillsaw in editable mode with a
 
 ```bash
 make test         # full suite with coverage
+make test-fast    # full suite without coverage — fastest local loop
 ```
 
-Tests run against Python 3.9–3.14 in CI. Locally, your active Python version is used.
+Both targets run in parallel via pytest-xdist (`-n auto`). Tests run
+against Python 3.9–3.14 in CI. Locally, your active Python version is used.
 
 Most of `tests/test_integration.py` drives the CLI out-of-process via
 `subprocess.run([sys.executable, "-m", "skillsaw", ...])`. pytest-cov 7
