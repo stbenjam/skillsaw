@@ -1,6 +1,6 @@
 ---
 name: skillsaw-lint
-description: "Use when modifying agentic contextual building blocks like skills (SKILL.md), slash commands, agents, hooks, plugins, marketplaces, and instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md, Cursor, Copilot, Cline, or Kiro rules). Run skillsaw on the files you touched, apply autofixes, resolve remaining violations with `skillsaw explain` guidance, and re-lint until clean before considering the work complete."
+description: "Use when modifying agentic contextual building blocks like skills (SKILL.md), slash commands, agents, hooks, plugins, marketplaces, and instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md, Cursor, Copilot, Cline, Kiro, or OpenCode config). Run skillsaw on the files you touched, apply autofixes, resolve remaining violations with `skillsaw explain` guidance, and re-lint until clean before considering the work complete."
 compatibility: "Requires skillsaw CLI. Check the project's Makefile, pyproject.toml, or .venv for the pinned version before installing."
 license: Apache-2.0
 metadata:
@@ -12,11 +12,11 @@ metadata:
 
 You just authored or edited agentic context — a skill, slash command, agent,
 hook, plugin, marketplace, or instruction file (CLAUDE.md, AGENTS.md,
-GEMINI.md, Cursor/Copilot/Cline/Kiro rules). That content feeds an agent's
-context window, and defects in it — weak language, contradictions,
-placeholder text, instructions buried in attention dead zones — degrade every
-future session that loads it. Lint it with **skillsaw** and improve it before
-you report the work as done.
+GEMINI.md, Cursor/Copilot/Cline/Kiro rules, an OpenCode config). That
+content feeds an agent's context window, and defects in it — weak language,
+contradictions, placeholder text, instructions buried in attention dead
+zones — degrade every future session that loads it. Lint it with **skillsaw**
+and improve it before you report the work as done.
 
 Run the skillsaw CLI for every step below; it is the interface for linting,
 fixing, and explaining — replace any hand-rolled check with it.

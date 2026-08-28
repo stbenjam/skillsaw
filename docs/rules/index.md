@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **78** built-in rules organized into the following categories:
+skillsaw includes **79** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Agent Plugins](agent-plugins.md) (3 rules)
@@ -14,6 +14,7 @@ skillsaw includes **78** built-in rules organized into the following categories:
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [OpenClaw](openclaw.md) (1 rule)
 - [Cursor](cursor.md) (2 rules)
+- [OpenCode](opencode.md) (1 rule)
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
 - [Content Intelligence](content-intelligence.md) (24 rules)
@@ -67,6 +68,7 @@ skillsaw includes **78** built-in rules organized into the following categories:
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
 | [`cursor-rules-valid`](cursor-rules-valid.md) | Cursor .mdc rules must have frontmatter that lets the rule activate | error (auto) | auto | Cursor |
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
+| [`opencode-config-valid`](opencode-config-valid.md) | opencode.json(c) must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files | warning (auto) | - | Instruction Files |
 | [`context-budget`](context-budget.md) | Warn when instruction or config files exceed recommended token limits | warning (auto) | - | Context Budget |

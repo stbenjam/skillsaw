@@ -31,9 +31,10 @@ skills-repo/
 
 Standard discovery paths are checked automatically: `.agents/skills/`,
 `.apm/skills/`, `.claude/skills/`, `.github/skills/`, `.cursor/skills/`,
-`.clinerules/skills/`, `.cline/skills/` and `.qwen/skills/`. A `SKILL.md`
-under any of them makes the repository an Agent Skills repository, which
-turns on the `agentskill-*` rules.
+`.clinerules/skills/`, `.cline/skills/`, `.qwen/skills/`,
+`.opencode/skills/` and `.opencode/skill/`. A `SKILL.md` under any of them
+makes the repository an Agent Skills repository, which turns on the
+`agentskill-*` rules.
 
 ## Agent Plugins
 
@@ -225,13 +226,14 @@ configuration files — `mcp.json`, `hooks.json` — are machine config, never
 linted as prose; they get the MCP and hook rules instead.
 
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
-— Cursor, Copilot, Cline and Codex all read it, and one well-linted AGENTS.md
-beats four per-vendor copies that drift apart. skillsaw does not reimplement a
-per-vendor instruction format on top of it; what it adds is coverage of the
-prose each tool keeps in its own directory, plus structural validation
-wherever a tool's own metadata can fail silently — see
-[`cursor-rules-valid`](rules/cursor-rules-valid.md) and
-[`cursor-hooks-valid`](rules/cursor-hooks-valid.md).
+— Cursor, Copilot, Cline, OpenCode and Codex all read it, and one well-linted
+AGENTS.md beats five per-vendor copies that drift apart. skillsaw does not
+reimplement a per-vendor instruction format on top of it; what it adds is
+coverage of the prose each tool keeps in its own directory, plus structural
+validation wherever a tool's own metadata can fail silently — see
+[`cursor-rules-valid`](rules/cursor-rules-valid.md),
+[`cursor-hooks-valid`](rules/cursor-hooks-valid.md) and
+[`opencode-config-valid`](rules/opencode-config-valid.md).
 
 | Tool | Files linted |
 | --- | --- |
@@ -239,20 +241,24 @@ wherever a tool's own metadata can fail silently — see
 | **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
 | **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
 | **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
+| **OpenCode** | `opencode.json(c)` (root and `.opencode/`), `.opencode/commands/**/*.md`, `.opencode/agents/**/*.md`, `.opencode/modes/*.md`, `.opencode/skills/*/SKILL.md`, and the 1.x singular spelling of each (`command/`, `agent/`, `mode/`, `skill/`) |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
 | **Windsurf** | `.windsurfrules` |
 
-skillsaw finds `.cursor/`, `.github/` and `.clinerules/` anywhere in the
-tree, so a monorepo package that carries its own set is linted alongside the
-root's. How much each tool actually reads from a nested directory varies,
+skillsaw finds `.cursor/`, `.github/`, `.clinerules/` and `.opencode/`
+anywhere in the tree, so a monorepo package that carries its own set is
+linted alongside the root's. How much each tool actually reads from a nested
+directory varies,
 and not every case is settled: Cursor documents nested `AGENTS.md` and
 `.cursor/skills/`, but steers rules toward a single root `.cursor/rules/`
 scoped with `globs`, and reports on whether nested rule directories load
 disagree across versions. VS Code walks from the workspace folder up to the
 repository root. Cline and `.github/copilot-instructions.md` resolve one
 path relative to the workspace directory, so a nested copy is read only when
-that directory is the workspace. skillsaw lints every nested tool directory
+that directory is the workspace. OpenCode walks from the working directory
+up to the git worktree root and merges every `.opencode/` it passes, so a
+nested one is read as well as the root's. skillsaw lints every nested tool directory
 either way — committed instructions are worth checking wherever a teammate
 might open them, and a rule that turns out not to load is worth knowing
 about too.
@@ -272,15 +278,51 @@ and gets no `agentskill-*`, content or security checks. Point
 `content-paths` at it for the content and security rules in the meantime.
 
 MCP configuration is read for its servers wherever it lives, so
-`mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json` and
-`.vscode/mcp.json` as well as `.mcp.json`. VS Code spells the server map
-`servers` and adds a sibling `inputs` array for prompted variables; skillsaw
-reads the former and ignores the latter.
+`mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json`,
+`.vscode/mcp.json` and the `mcp` section of `opencode.json(c)` as well as
+`.mcp.json`. VS Code spells the server map `servers` and adds a sibling
+`inputs` array for prompted variables; skillsaw reads the former and ignores
+the latter.
+
+OpenCode is the one host whose *shape* is validated elsewhere. Its
+transports are named for where the server runs (`local`/`remote`) rather
+than for the wire protocol, a local `command` is an argv array rather than a
+string, and its environment map is spelled `environment` — so
+`mcp-valid-json` stands aside and
+[`opencode-config-valid`](rules/opencode-config-valid.md) checks the shape,
+including the embedded-credential scan. The policy rules are unaffected:
+`mcp-prohibited` reads OpenCode servers in both the 1.x flat layout under
+`mcp` and the 2.0 nested one under `mcp.servers`.
 
 Files that are on-demand rather than always-on — Cursor commands, Copilot
-prompt files, Cline workflows — are budgeted by
+prompt files, Cline workflows, OpenCode commands — are budgeted by
 [`context-budget`](rules/context-budget.md) as commands, not as instruction
 files, because they enter the context window only when invoked.
+
+### OpenCode and APM
+
+`.opencode/` is the one editor directory that is also an APM compile target,
+so "authored content" and "build output" have to be told apart. The evidence
+is APM's, never OpenCode's:
+
+- **No `.apm/` and no `apm.yml`** — the repository is native OpenCode.
+  `.opencode/` is authored and everything in it is linted in full.
+- **APM present, but `apm.yml` does not list `opencode`** — APM never writes
+  there, so `.opencode/` is hand-written and still linted in full. A source
+  tree alone does not make a directory generated.
+- **APM present and targeting `opencode`** — `.opencode/` is compiled output
+  and APM wins, exactly as it does for `.claude/`. The content findings
+  belong on the `.apm/` primitives an author can edit, not on copies the
+  next `apm compile` overwrites. The suppression is content-only: the
+  security and structural rules still read what actually ships, because a
+  generated file can be hand-edited. A skill under the compiled directory is
+  not discovered, for the same reason.
+- **`apm.yml` present but its `targets:` unreadable** — APM keeps the
+  directory. Answering "not generated" on a misparse would report every
+  finding twice.
+
+The root `opencode.json(c)` is never treated as build output: APM compiles
+into `.opencode/`, never over a root config.
 
 `.cursor/hooks.json` is a command-execution surface that ships in the
 repository, so its commands are scanned by

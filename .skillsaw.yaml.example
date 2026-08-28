@@ -449,6 +449,13 @@ rules:
     enabled: auto
     severity: warning
 
+  # opencode.json(c) must parse and use keys and MCP server shapes OpenCode reads
+  opencode-config-valid:
+    enabled: auto
+    severity: error
+    # extra-keys: []
+    # additional-placeholders: []
+
   # Require specific assertion types in all promptfoo eval tests
   promptfoo-assertions:
     enabled: false

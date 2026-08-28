@@ -27,9 +27,9 @@ unsafe configuration, and more.
 It understands Agent Skills,
 [Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
 plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
-GEMINI.md, QWEN.md, Cursor, Copilot, Cline, Kiro, hooks, agent configuration,
-and evals. Safe structural fixes can be applied automatically; everything else
-comes with precise, agent-friendly guidance.
+GEMINI.md, QWEN.md, Cursor, Copilot, Cline, Kiro, OpenCode, hooks, agent
+configuration, and evals. Safe structural fixes can be applied automatically;
+everything else comes with precise, agent-friendly guidance.
 
 **[Get started](https://skillsaw.org/getting-started/)** |
 **[Browse the rules](https://skillsaw.org/rules/)** |
