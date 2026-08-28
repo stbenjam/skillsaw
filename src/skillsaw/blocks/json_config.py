@@ -11,8 +11,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
+from types import MappingProxyType
+from typing import Any, ClassVar, Dict, List, Mapping, Optional, Set, Tuple
 
+from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import read_text, read_json, read_json_strict, read_jsonc
 
@@ -449,6 +451,22 @@ class McpBlock(JsonConfigBlock):
     #: separately, per-path); the editor locations are new surfaces with no
     #: established results to preserve, so they require it from the start.
     require_usable_connection: ClassVar[bool] = False
+    #: Per-server maps whose values may hold a committed credential, as
+    #: ``(key, is_http_header)``. Declared on the block because the key names
+    #: are the host's: every Claude-family host spells the environment map
+    #: ``env``, OpenCode spells it ``environment`` and adds ``oauth``. Read
+    #: by the checks ``mcp-valid-json`` keeps for a block whose *shape* it
+    #: defers, so a host with its own dialect does not lose the credential
+    #: scan along with the shape checks.
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = (
+        ("env", False),
+        ("headers", True),
+    )
+    #: Key renames to apply before the credential-*name* test only, for a
+    #: host whose older spelling the shared detector cannot split (OpenCode's
+    #: 1.x ``clientSecret`` against its 2.0 ``client_secret``). Findings
+    #: always name the key as the author wrote it.
+    credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({})
 
     def server_entries(self) -> List[Tuple[str, Any]]:
         """Every declared server as ``(name, value)``, in document order.
@@ -570,7 +588,7 @@ def _is_opencode_server(value: Any) -> bool:
 
 @dataclass(eq=False)
 class OpenCodeConfigBlock(JsonConfigBlock):
-    """``opencode.json(c)`` — OpenCode's project configuration.
+    """``opencode.json`` or ``opencode.jsonc`` — OpenCode's project config.
 
     Read at the repository root and inside ``.opencode/``. The whole file is
     machine configuration, so it is a :class:`JsonConfigBlock` and never
@@ -586,7 +604,7 @@ class OpenCodeConfigBlock(JsonConfigBlock):
 
 @dataclass(eq=False)
 class OpenCodeMcpBlock(McpBlock):
-    """The ``mcp`` section of an ``opencode.json(c)``.
+    """The ``mcp`` section of an OpenCode project config.
 
     A second parser role on the same file as :class:`OpenCodeConfigBlock`,
     which is what puts OpenCode's MCP servers in front of the shared policy
@@ -611,6 +629,14 @@ class OpenCodeMcpBlock(McpBlock):
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
     jsonc: ClassVar[bool] = True
+    #: OpenCode spells the environment map ``environment`` and puts client
+    #: credentials in ``oauth``. ``headers`` it spells like everyone else.
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = (
+        ("environment", False),
+        ("headers", True),
+        ("oauth", False),
+    )
+    credential_key_aliases: ClassVar[Mapping[str, str]] = MCP_OAUTH_V1_TO_V2
 
     def tree_label(self) -> str:
         return f"{self.path.name} (OpenCode MCP)"

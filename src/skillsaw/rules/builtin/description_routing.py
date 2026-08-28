@@ -99,6 +99,21 @@ class DescriptionRoutingRule(Rule):
         """Report routing-quality findings as non-blocking warnings."""
         return Severity.WARNING
 
+    @staticmethod
+    def _is_user_selected_agent(block_type: type, block) -> bool:
+        """Whether this agent is picked by a person rather than routed to.
+
+        OpenCode types its agents: a ``mode: primary`` agent is one the user
+        cycles to with Tab, so its description is a label in a menu and no
+        "Use when ..." selector applies — the same reason Copilot agents are
+        exempt above. ``subagent`` and ``all`` *are* selected automatically
+        "based on their descriptions", and ``all`` is the default when the
+        field is absent, so only the explicit ``primary`` is exempt.
+        """
+        if block_type is not OpenCodeAgentBlock:
+            return False
+        return block.field_value("mode") == "primary"
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         """Find weak descriptions across discovered skills, agents, and commands."""
         violations: List[RuleViolation] = []
@@ -160,6 +175,7 @@ class DescriptionRoutingRule(Rule):
                 # but the trigger-phrasing style is not imposed on them.
                 if (
                     block_type not in (CommandBlock, CopilotAgentBlock)
+                    and not self._is_user_selected_agent(block_type, block)
                     and self.config.get("require-trigger-phrasing", True)
                     and not self._has_trigger_phrase(text)
                 ):

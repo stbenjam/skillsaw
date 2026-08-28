@@ -3,17 +3,13 @@ Rule: opencode-config-valid
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
+from typing import Any, Dict, List, Mapping, Set, Tuple
 
 from skillsaw.blocks import OpenCodeConfigBlock, OpenCodeMcpBlock
 from skillsaw.context import HAS_OPENCODE, RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import opencode as oc
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.secret_detection import (
-    mapped_secret_description,
-    placeholder_markers,
-)
 
 #: The one v1 server form that carries no ``type``: a bare ``{"enabled":
 #: bool}`` toggling a server inherited from a remote organization config.
@@ -22,7 +18,7 @@ _TOGGLE_ONLY_KEYS = frozenset({"enabled", "disabled"})
 
 
 class OpenCodeConfigValidRule(Rule):
-    """Check that opencode.json(c) is parseable and shaped the way OpenCode reads it"""
+    """Check that an OpenCode project config parses and is shaped the way OpenCode reads it"""
 
     since = "0.20.0"
 
@@ -37,14 +33,6 @@ class OpenCodeConfigValidRule(Rule):
                 "MCP server entry, for keys newer than this skillsaw release"
             ),
         },
-        "additional-placeholders": {
-            "type": "list",
-            "default": [],
-            "description": (
-                "Extra case-insensitive substrings that mark a generic "
-                "credential value as a placeholder (suppressing the violation)"
-            ),
-        },
     }
 
     @property
@@ -53,7 +41,10 @@ class OpenCodeConfigValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "opencode.json(c) must parse and use keys and MCP server shapes OpenCode reads"
+        return (
+            "opencode.json and opencode.jsonc must parse and use keys and "
+            "MCP server shapes OpenCode reads"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -70,15 +61,11 @@ class OpenCodeConfigValidRule(Rule):
 
         for block in context.lint_tree.find(OpenCodeConfigBlock):
             if block.parse_error:
-                # Error severity, and no further check is meaningful:
-                # OpenCode cannot read the file at all, so nothing it
-                # configures is in effect.
-                violations.append(
-                    self.violation(
-                        f"Invalid JSON: {block.parse_error}",
-                        file_path=block.path,
-                    )
-                )
+                # No further check is meaningful — OpenCode cannot read the
+                # file at all — and the report itself belongs to
+                # ``mcp-valid-json``: "this is not JSON" is true whatever
+                # dialect the document is written in, and that rule is not
+                # gated on a ``version:`` this rule's ``since`` postdates.
                 continue
 
             data = block.raw_data
@@ -194,12 +181,14 @@ class OpenCodeConfigValidRule(Rule):
     ) -> List[RuleViolation]:
         """Both spellings of one setting, in one document.
 
-        OpenCode normalizes the 1.x key into the 2.0 one, so a file that
-        declares both hands the same setting to the loader twice. Which copy
-        survives is not a coin flip — upstream's ``preferLegacy`` keeps the
-        1.x value and records a ``conflict`` diagnostic of its own — so the
-        message names the winner rather than calling it arbitrary. Either
-        key alone is valid; carrying both is the finding.
+        A file declaring both hands the same setting to the loader twice,
+        and one copy is then ignored. Which one is not readable off the
+        file, and the message says which rather than guessing — the answer
+        is per pair, and for the two in :data:`~skillsaw.formats.opencode.
+        V2_WINS_UNDER_V2` the two OpenCode releases disagree with each
+        other, so those get said out loud instead of picking a side.
+
+        Either key alone is valid; carrying both is the finding.
 
         Driven entirely by the alias tables in
         :mod:`skillsaw.formats.opencode`, so a rename added there is checked
@@ -210,11 +199,17 @@ class OpenCodeConfigValidRule(Rule):
         for v1_key in sorted(oc.both_spellings(data, aliases)):
             v2_key = aliases[v1_key]
             note = oc.INVERTED_SENSE_NOTE.get(v1_key, "")
+            if v1_key in oc.V2_WINS_UNDER_V2:
+                outcome = (
+                    f"which one takes effect depends on the release reading it "
+                    f"(1.x keeps '{v1_key}', 2.0 keeps '{v2_key}')"
+                )
+            else:
+                outcome = f"the '{v1_key}' value is the one that takes effect"
             violations.append(
                 self.violation(
-                    f"{subject} declares both '{v1_key}' and '{v2_key}' — OpenCode "
-                    f"reads '{v1_key}' as '{v2_key}'{note} and keeps the 1.x value, "
-                    f"so '{v2_key}' here is inert; keep one",
+                    f"{subject} declares both '{v1_key}' and '{v2_key}' — they are the "
+                    f"1.x and 2.0 spellings of one setting{note}, and {outcome}; keep one",
                     file_path=path,
                     severity=Severity.WARNING,
                 )
@@ -521,87 +516,32 @@ class OpenCodeConfigValidRule(Rule):
     def _check_mcp_maps(
         self, shown: str, server: Dict[str, Any], path: Path
     ) -> List[RuleViolation]:
-        """``environment``, ``headers`` and ``oauth``: shape, then credentials.
+        """Shape only, for ``environment``, ``headers`` and ``oauth``.
 
-        OpenCode spells the environment map ``environment`` rather than
-        ``env``, which is why the shared MCP shape rule cannot scan it — and
-        why the scan happens here instead of being lost. ``oauth`` is scanned
-        for the same reason: a literal ``clientSecret`` there is as committed
-        as one in a header, and nothing else looks at it.
+        The *credentials* in these maps are deliberately not scanned here.
+        ``mcp-valid-json`` keeps that scan for the blocks whose shape it
+        defers to this rule, reading the map names off
+        :attr:`McpBlock.credential_maps` — which is what makes it survive a
+        ``.skillsaw.yaml`` pinning a ``version:`` older than this rule's
+        ``since``, the ordinary state right after an upgrade. Doing it in
+        both places would report one committed token twice.
         """
         violations: List[RuleViolation] = []
-        for key, header in (("environment", False), ("headers", True), ("oauth", False)):
+        for key in ("environment", "headers", "oauth"):
             if key not in server:
                 continue
             value = server[key]
-            if not isinstance(value, dict):
-                # ``oauth: false`` is the documented way to switch OAuth off,
-                # so only a non-dict that is not that is a shape defect.
-                if key == "oauth" and value is False:
-                    continue
-                violations.append(
-                    self.violation(
-                        f"MCP server '{shown}' '{key}' must be an object",
-                        file_path=path,
-                        severity=Severity.WARNING,
-                    )
-                )
+            if isinstance(value, dict):
                 continue
-            violations.extend(
-                self._mapped_secret_violations(
-                    value,
-                    shown,
-                    path,
-                    header=header,
-                    # The 1.x oauth keys are camelCase, which the shared
-                    # credential-name detector does not split — normalizing
-                    # through the rename table is what lets ``clientSecret``
-                    # be recognized as ``client_secret``.
-                    aliases=oc.MCP_OAUTH_V1_TO_V2 if key == "oauth" else None,
-                    location=key,
-                )
-            )
-        return violations
-
-    def _placeholder_markers(self) -> Tuple[str, ...]:
-        """The placeholder allowlist, extended by this rule's configuration."""
-        return placeholder_markers(self.setting("additional-placeholders"))
-
-    def _mapped_secret_violations(
-        self,
-        values: Dict[Any, Any],
-        shown: str,
-        path: Path,
-        *,
-        header: bool,
-        aliases: Optional[Mapping[str, str]] = None,
-        location: str = "",
-    ) -> List[RuleViolation]:
-        """Report structured credentials without copying their values.
-
-        *aliases* normalizes a key before the credential-name test only; the
-        message always names the key as the author wrote it.
-        """
-        violations: List[RuleViolation] = []
-        markers = self._placeholder_markers()
-        where = {
-            "headers": "HTTP header",
-            "oauth": "OAuth field",
-            "environment": "environment variable",
-        }.get(location, "HTTP header" if header else "environment variable")
-        for name, value in values.items():
-            if not isinstance(name, str) or not isinstance(value, str):
-                continue
-            probe = aliases.get(name, name) if aliases else name
-            description = mapped_secret_description(probe, value, header=header, markers=markers)
-            if description is None:
+            # ``oauth: false`` is the documented way to switch OAuth off, so
+            # only a non-dict that is not that is a shape defect.
+            if key == "oauth" and value is False:
                 continue
             violations.append(
                 self.violation(
-                    f"MCP server '{shown}' {where} '{safe_display(name)}' embeds "
-                    f"{description}; use a placeholder or OpenCode's "
-                    "{env:VAR} substitution instead of a credential value",
+                    f"MCP server '{shown}' '{key}' must be an object",
                     file_path=path,
+                    severity=Severity.WARNING,
                 )
             )
         return violations

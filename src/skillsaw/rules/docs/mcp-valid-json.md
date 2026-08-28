@@ -14,29 +14,46 @@ The server map has two spellings, and each host reads exactly one:
 | plugin manifests | `mcpServers` | Yes |
 | `.cursor/mcp.json` | `mcpServers` | Yes |
 | `.vscode/mcp.json` | `servers` | Yes |
-| `opencode.json(c)` | `mcp` | Yes — shape checked elsewhere |
+| `opencode.json`, `opencode.jsonc` | `mcp`, or `mcp.servers` in 2.0 | Yes |
 
 A file using the other host's key is reported as such — the servers are
 present but will not load. VS Code's documented siblings `inputs` and
-`sandbox` are not servers and are left alone.
+`sandbox` are not servers and are left alone. OpenCode accepts both of its
+own layouts at once and this rule reads both, but the *shape* of an OpenCode
+server is checked elsewhere — see below.
 
 ## Two files this rule does not shape-check
 
 Two hosts have a closed dialect of their own, so their *shape* is validated
 by the rule that knows it, and this rule stands aside to avoid reporting a
-correct file as broken:
+correct file as broken. The two deferrals are not equally wide:
 
 - A portable Agent Plugins `mcp.json` →
-  [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md).
-- An `opencode.json(c)` → [`opencode-config-valid`](opencode-config-valid.md).
+  [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md). **Total**: this rule
+  reads nothing from the file, and the deferral applies only when
+  `agent-plugin` is among the detected repository types, so a forced
+  `--type` leaves the file validated here after all.
+- An `opencode.json` or `opencode.jsonc` →
+  [`opencode-config-valid`](opencode-config-valid.md).
   OpenCode names its transports for where the server runs (`local`/`remote`)
   rather than for the wire protocol, spells a local `command` as an argv
   array, and calls its environment map `environment`.
 
-One check does not stand aside in either case: a `url` carrying user
-information. `url` means the same thing in every dialect, so that finding is
-still reported here — which also means it survives a project pinning a
-`version:` older than the deferring rule's `since`.
+The OpenCode deferral is **partial**, and only it: what does not depend on
+the host's spelling stays here rather than moving. A file that is not JSON
+at all is one. So is a `url` carrying user information, and a credential
+sitting in a server's `environment`, `headers` or `oauth` map — the map
+names differ between hosts, which is why each block declares its own rather
+than this rule naming them. Keeping these here means they still fire for a
+project whose `.skillsaw.yaml` pins a `version:` older than
+`opencode-config-valid`'s `since`, which would otherwise leave the file
+unchecked. What the top level of an OpenCode *config* must look like is a
+claim about OpenCode's schema rather than about JSON, so that one stays with
+the deferring rule.
+
+No equivalent carve-out exists for Agent Plugins — that deferral is total,
+so under a `version:` pin older than `agent-plugin-mcp-valid`'s `since` a
+portable `mcp.json` is validated by neither rule.
 
 Policy rules are unaffected by both deferrals: `mcp-prohibited` and the
 security scanners read the normalized server list, not the raw document.

@@ -16,9 +16,18 @@ reports a 1.x key as an error, and a project can migrate on its own
 schedule.
 
 What it does report is a file that declares *both* spellings of one
-setting. OpenCode folds the old key into the new one, so the setting arrives
-twice and which copy survives depends on merge order — a coin flip written
-into a config file.
+setting. The setting then arrives twice and one copy is ignored — and which
+one is not something you can read off the file.
+
+It is not key order, and it is not the same answer for every key. For most
+pairs the 1.x key wins: its presence makes OpenCode 2.0 read the whole
+document as a 1.x config, and the 2.0 key is dropped as an unknown
+property. Two pairs invert, because the 1.x schema declares both halves and
+the migration coalesces them — `share` beats `autoshare`, and `references`
+beats `reference`. Those same two are also the pairs where the releases
+disagree: a 1.x binary retains the legacy value for every key, so `autoshare`
+wins there while `share` wins under 2.0. The finding names whichever applies
+rather than telling you to delete a key that is actually in effect.
 
 The MCP servers in this file also reach [`mcp-prohibited`](mcp-prohibited.md)
 and the rest of the ecosystem-neutral policy rules, in either the 1.x flat
@@ -29,30 +38,34 @@ check would report a correct OpenCode config as broken.
 
 ## Severity
 
-Three findings are errors by default:
+One finding is an error here: the file parses, but its top level is an array
+or a scalar rather than an object, so OpenCode has no configuration to read.
+
+The other errors an OpenCode config can draw come from
+[`mcp-valid-json`](mcp-valid-json.md) instead, because they hold whatever
+dialect a file is written in. Keeping them there is deliberate: this rule
+carries a `since`, so a project still pinning an older `version:` — the
+ordinary state right after an upgrade — would otherwise have them gated off.
 
 - The file does not parse, so nothing in it is in effect. Comments and a
   trailing comma are *not* parse errors — OpenCode reads both `.json` and
   `.jsonc` through a JSONC parser, and so does skillsaw.
-- The file parses but its top level is an array or a scalar rather than an
-  object, which OpenCode cannot read as configuration either.
-- An MCP server's `environment` or `headers` map holds a real-looking
-  credential, which is now committed.
-
-A fourth credential case is reported by
-[`mcp-valid-json`](mcp-valid-json.md) rather than here: an MCP `url`
-carrying user information, as in `https://user:pass@host/mcp`. `url` means
-the same thing in every host's dialect, so that one check stays in the
-ecosystem-neutral rule even though the rest of the shape check defers here.
+- An MCP server has a committed credential: a `url` carrying user
+  information, as in `https://user:pass@host/mcp`, or a real-looking value in
+  the server's `environment`, `headers` or `oauth` map. The 1.x camelCase
+  OAuth keys are normalized before the credential-name test, so a literal
+  `clientSecret` is recognized as one.
 
 Shape problems are warnings, because the rest of the file still loads: a
 missing or unknown `type`, a `command` that is not a non-empty array of
-strings, a non-string or empty `url`, an `environment` or `headers` that is
-not an object, a `timeout` that is neither a number nor an object of
-`startup`/`catalog`/`execution`/`request`, a non-boolean
+strings, a non-string or empty `url`, an `environment`, `headers` or `oauth`
+that is not an object — `oauth: false` is the documented way to switch OAuth
+off, so that one is valid — a `timeout` that is neither a number nor an
+object of `startup`/`catalog`/`execution`/`request`, a non-boolean
 `enabled`/`disabled`, an agent or command entry that is not an object, a
-`template` that is not a non-empty string, both spellings of one renamed
-key, and a server declared under both layouts at once.
+`template` that is not a non-empty string, both spellings of one renamed key
+(including the 1.x and 2.0 OAuth field names), and a server declared under
+both layouts at once.
 
 Two `$schema` findings are also warnings: a `$schema` that is not a string,
 and one pointing at `https://opencode.ai/tui.json`, which describes
@@ -90,7 +103,9 @@ declares one setting twice:
 
 `type: "stdio"` is not a transport OpenCode knows, `command` must be the
 argv array, there is no `args` key, and `agent`/`agents` both define
-`reviewer`.
+`reviewer`. The unknown transport is reported first and on its own: the rest
+of a server's shape depends on which transport it is, so those checks resume
+once `type` is fixed and the file is linted again.
 
 **Good, 1.x spelling** — comments and a trailing comma are fine:
 
@@ -167,5 +182,5 @@ argv array, there is no `args` key, and `agent`/`agents` both define
     opencode-config-valid:
       extra-keys:
         - somethingNew      # a new top-level key
-        - codemode          # a new key on an MCP server
+        - elicitation       # a new key on an MCP server
   ```

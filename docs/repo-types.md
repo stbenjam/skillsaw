@@ -241,7 +241,7 @@ validation wherever a tool's own metadata can fail silently — see
 | **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
 | **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
 | **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
-| **OpenCode** | `opencode.json(c)` (root and `.opencode/`), `.opencode/commands/**/*.md`, `.opencode/agents/**/*.md`, `.opencode/modes/*.md`, `.opencode/skills/*/SKILL.md`, and the 1.x singular spelling of each (`command/`, `agent/`, `mode/`, `skill/`) |
+| **OpenCode** | `opencode.json` or `opencode.jsonc` at the root and in `.opencode/`, `.opencode/commands/**/*.md`, `.opencode/agents/**/*.md`, `.opencode/modes/*.md`, `.opencode/skills/*/SKILL.md`, and the 1.x singular spelling of each (`command/`, `agent/`, `mode/`, `skill/`) |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
 | **Windsurf** | `.windsurfrules` |
@@ -278,25 +278,29 @@ and gets no `agentskill-*`, content or security checks. Point
 
 MCP configuration is read for its servers wherever it lives, so
 `mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json`,
-`.vscode/mcp.json` and the `mcp` section of `opencode.json(c)` as well as
+`.vscode/mcp.json` and the `mcp` section of an `opencode.json` or
+`opencode.jsonc` as well as
 `.mcp.json`. VS Code spells the server map `servers` and adds a sibling
 `inputs` array for prompted variables; skillsaw reads the former and ignores
 the latter.
 
 Among the editor tools, OpenCode is the one whose *shape* is validated
-elsewhere — Agent Plugins already defers the same way, to its own
+elsewhere — Agent Plugins also defers, though more broadly, to its own
 `agent-plugin-mcp-valid`. OpenCode's transports are named for where the
 server runs (`local`/`remote`) rather than for the wire protocol, a local
 `command` is an argv array rather than a string, and its environment map is
 spelled `environment`, so every field check would misfire. `mcp-valid-json`
 stands aside and
-[`opencode-config-valid`](rules/opencode-config-valid.md) checks the shape,
-including the `environment`/`headers` credential scan.
+[`opencode-config-valid`](rules/opencode-config-valid.md) checks the shape.
 
-One check does not defer: a `url` carrying user information. `url` means the
-same thing in every dialect, so `mcp-valid-json` keeps it even for a
-deferred block — which also means it still fires for a project pinned to a
-`version:` older than `opencode-config-valid`.
+Some checks do not defer. Those that hold whatever dialect a file is written
+in — a document that is not JSON, a `url` carrying user information, a
+credential in a server's `environment`, `headers` or `oauth` map — stay in
+`mcp-valid-json` even for a deferred block, which also means they still fire
+for a project pinned to a `version:` older than `opencode-config-valid`.
+That carve-out is specific to OpenCode; the Agent Plugins deferral is total,
+and applies only while `agent-plugin` is among the detected repository
+types.
 
 The policy rules are unaffected: `mcp-prohibited` reads OpenCode servers in
 the 1.x flat layout under `mcp` *and* the 2.0 nested one under
@@ -334,9 +338,12 @@ is APM's, never OpenCode's:
 
 - **No `.apm/` and no `apm.yml`** — the repository is native OpenCode.
   `.opencode/` is authored and everything in it is linted in full.
-- **APM present, but `apm.yml` does not list `opencode`** — APM never writes
-  there, so `.opencode/` is hand-written and still linted in full. A source
-  tree alone does not make a directory generated.
+- **APM present with a readable `apm.yml` whose `targets:` omit `opencode`**
+  — APM never writes there, so `.opencode/` is hand-written and still linted
+  in full. A source tree alone does not make a directory generated. The
+  manifest has to be readable for this: a repository with an `.apm/`
+  directory and no `apm.yml` at all falls into the last case below, not this
+  one.
 - **APM present and targeting `opencode`** — `.opencode/` is compiled output
   and APM wins, exactly as it does for `.claude/`. The content findings
   belong on the `.apm/` primitives an author can edit, not on copies the
@@ -344,11 +351,15 @@ is APM's, never OpenCode's:
   security and structural rules still read what actually ships, because a
   generated file can be hand-edited. A skill under the compiled directory is
   not discovered, for the same reason.
-- **`apm.yml` present but its `targets:` unreadable** — APM keeps the
-  directory. Answering "not generated" on a misparse would report every
-  finding twice.
+- **The `targets:` list cannot be read** — because `apm.yml` is missing,
+  unparseable, or declares no `targets:` key. APM keeps the directory:
+  answering "not generated" when the manifest cannot say would report every
+  finding twice, once on the `.apm/` source and once on its copy. Note that
+  an `.apm/` directory alone is enough to make a repository an APM project,
+  so a repository with `.apm/` and no `apm.yml` lands here.
 
-The root `opencode.json(c)` is never treated as build output: APM compiles
+A root `opencode.json` or `opencode.jsonc` is never treated as build
+output: APM compiles
 into `.opencode/`, never over a root config.
 
 This determination is made at the repository root only — `apm_compiled_roots()`

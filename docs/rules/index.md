@@ -68,7 +68,7 @@ skillsaw includes **80** built-in rules organized into the following categories:
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
 | [`cursor-rules-valid`](cursor-rules-valid.md) | Cursor .mdc rules must have frontmatter that lets the rule activate | error (auto) | auto | Cursor |
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
-| [`opencode-config-valid`](opencode-config-valid.md) | opencode.json(c) must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
+| [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files | warning (auto) | - | Instruction Files |
 | [`claude-md-agents-import`](claude-md-agents-import.md) | CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' so both assistants read one source of truth | info (auto) | auto | Instruction Files |

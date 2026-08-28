@@ -13,19 +13,26 @@ https://opencode.ai/v2/docs/migrate-v1 (the rename table), read against the
 published JSON Schema at https://opencode.ai/config.json.
 
 **Re-check at each OpenCode 2.0 milestone** (last verified 2026-08-28
-against ``anomalyco/opencode@dev``). The two files that define the v2
-vocabulary, and which disagree with each other today, are:
+against ``anomalyco/opencode@dev``, the only branch — there is no ``main``).
+Two independent, opposite-direction code paths define the vocabulary, and
+they disagree with each other today:
 
-* ``packages/opencode/src/config/v2-compat.ts`` — the shim 1.x uses to read
-  a v2-shaped config. Holds the server structs, the rename table, and the
-  ``preferLegacy`` conflict rule.
-* ``packages/core/src/config/mcp.ts`` — the v2 core MCP schema.
+* ``packages/opencode/src/config/v2-compat.ts`` — what a **1.x** binary uses
+  to lower a v2-shaped config *down* into v1. Holds the server structs and
+  ``preferLegacy()``, which retains the legacy value for every key.
+* ``packages/core/src/v1/config/migrate.ts`` plus
+  ``packages/core/src/config.ts`` — what **2.0** uses to migrate a v1 config
+  *up*. Holds ``isV1()`` and the per-key coalescing that
+  :data:`V2_WINS_UNDER_V2` records.
+
+Their MCP timeout structs differ, which is why :data:`MCP_TIMEOUT_KEYS` is a
+union rather than either one.
 
 There is no published v2 JSON Schema; ``/v2/config.json`` 404s and the v2
 docs still advertise the v1 URL. Until 2.0 is GA, keep every v2-only *value*
-constraint here as permissive as the union of those two files: accepting a
-shape that later proves wrong costs nothing, while rejecting a correct one
-is a false positive in someone's CI.
+constraint here as permissive as the union of those files: accepting a shape
+that later proves wrong costs nothing, while rejecting a correct one is a
+false positive in someone's CI.
 """
 
 from __future__ import annotations
@@ -86,6 +93,12 @@ SHARED_TOP_LEVEL_KEYS: Tuple[str, ...] = (
     "enabled_providers",
     "enterprise",
     "experimental",
+    # ``attachments`` and ``media`` are the same setting under two names
+    # that ship at once: ``packages/core/src/config.ts`` declares
+    # ``attachments`` and the v1 migration emits it, while the docs and
+    # ``v2-compat.ts`` say ``media``. Same two-disagreeing-declarations case
+    # as ``MCP_TIMEOUT_KEYS``, resolved the same way — accept both.
+    "attachments",
     "formatter",
     "instructions",
     "layout",
@@ -158,6 +171,24 @@ MCP_OAUTH_V1_TO_V2: Mapping[str, str] = {
 INVERTED_SENSE_NOTE: Mapping[str, str] = {
     "enabled": " with the sense inverted",
 }
+
+#: v1 keys whose *v2* spelling wins when a config declares both — and only
+#: under OpenCode 2.0, which is why they are called out separately.
+#:
+#: The rule is structural rather than arbitrary. ``ConfigV1.Info`` declares
+#: both halves of these two pairs (each marked deprecated), so the v1→v2
+#: migration can coalesce them and does: ``v1/config/migrate.ts`` reads
+#: ``share: info.share ?? (info.autoshare ? "auto" : undefined)`` and
+#: ``references: info.references ?? info.reference``. Every other pair
+#: renames to a name the v1 schema does not know, so the presence of the v1
+#: key makes ``isV1()`` claim the whole document, the v2 key is dropped as an
+#: excess property, and the v1 value stands.
+#:
+#: A 1.x binary disagrees for exactly these two: ``v2-compat.ts`` lowers a v2
+#: config into v1 shape and its ``preferLegacy()`` retains the legacy value
+#: for every key. So for these pairs the effective value depends on which
+#: release reads the file, which is worth saying out loud in a diagnostic.
+V2_WINS_UNDER_V2: frozenset = frozenset({"autoshare", "reference"})
 
 #: Transport values OpenCode accepts, mapped to the connection field each
 #: one requires. OpenCode names a transport for where the server runs rather
@@ -237,10 +268,12 @@ def unknown_keys(data: Mapping[str, Any], known: frozenset) -> Tuple[str, ...]:
 def both_spellings(data: Mapping[str, Any], aliases: Mapping[str, str]) -> Tuple[str, ...]:
     """v1 keys of *data* whose v2 spelling is declared beside them.
 
-    No caller treats a lone v1 key as wrong — either spelling on its own
-    is valid. Carrying both is the finding: OpenCode 2.0 normalizes the v1 key
-    into the v2 one, so the same setting arrives twice and which copy
-    survives depends on merge order.
+    No caller treats a lone v1 key as wrong — either spelling on its own is
+    valid. Carrying both is the finding: one of the two is then ignored, and
+    which one is not something an author can read off the file. It is not
+    key order, and it is not arbitrary either — see
+    :data:`V2_WINS_UNDER_V2` for the two pairs where the answer inverts, and
+    where the two OpenCode releases disagree with each other.
 
     Aliases that map several v1 keys onto one v2 key (``agent`` and ``mode``
     both become ``agents``) are handled by the plain membership test — each

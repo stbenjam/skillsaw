@@ -131,9 +131,9 @@ _OPENCODE_CONTENT_DIRS = tuple(
 ) + tuple((sub, "*.md", cls) for sub, cls in _OPENCODE_FLAT_DIRS)
 
 #: OpenCode reads its project config under either extension, in either
-#: location. Both are attached when both exist: OpenCode loads one and
-#: ignores the other, and a config the author believes is live but is not is
-#: exactly the kind of silent no-op worth reporting on.
+#: location. Both are attached when both exist, so each is validated on its
+#: own terms — no rule reports the pairing itself, since which one OpenCode
+#: loads is its business rather than a defect in either file.
 _OPENCODE_CONFIG_NAMES = ("opencode.json", "opencode.jsonc")
 
 if TYPE_CHECKING:
@@ -604,7 +604,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
 
     def _add_opencode_config(directory: Path) -> None:
-        """Attach every ``opencode.json(c)`` in *directory* under both roles.
+        """Attach every ``opencode.json`` and ``opencode.jsonc`` in *directory*.
+
+        Both extensions, under both parser roles.
 
         One document, two parser roles: the whole file is validated by
         ``opencode-config-valid``, and its ``mcp`` section is additionally

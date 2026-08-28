@@ -2,7 +2,8 @@
 Rule: mcp-valid-json
 """
 
-from typing import List, Dict, Any, Tuple
+from types import MappingProxyType
+from typing import Any, Dict, List, Mapping, Tuple
 from pathlib import Path
 
 from skillsaw.blocks import AgentPluginMcpBlock, OpenCodeMcpBlock
@@ -24,6 +25,16 @@ def _is_usable(value: Any) -> bool:
     """Whether a required connection field names something spawnable."""
     return isinstance(value, str) and bool(value.strip())
 
+
+#: How a per-server credential map is named in a finding, keyed by the map's
+#: own key so each host's spelling reads naturally. The fallback covers the
+#: two maps this rule reads directly.
+_CREDENTIAL_MAP_LABELS = {
+    "env": "environment variable",
+    "environment": "environment variable",
+    "headers": "HTTP header",
+    "oauth": "OAuth field",
+}
 
 #: Fields that appear on one server, never on a map of them.
 _SERVER_FIELDS = frozenset({"command", "url", "type", "args", "env", "headers"})
@@ -127,17 +138,15 @@ class McpValidJsonRule(Rule):
             # OpenCode config as invalid, so ``opencode-config-valid``
             # validates the shape instead.
             #
-            # The deferral is narrower than the one above, and deliberately
-            # does not claim the file is validated elsewhere: unlike the
+            # The deferral is narrower than the one above. Unlike the
             # ``--type`` gate, nothing here can see whether
-            # ``opencode-config-valid`` is *enabled*. It carries
-            # ``since = "0.20.0"``, so a project whose ``.skillsaw.yaml``
-            # still pins an older ``version:`` — the ordinary state right
-            # after an upgrade — has it gated off while this rule defers.
-            # So the one check that is true in every dialect stays here,
-            # where no version gate can reach it: ``url`` is spelled ``url``
-            # whoever reads the file, and a URL carrying credentials is a
-            # committed secret in any of them. Policy rules are unaffected —
+            # ``opencode-config-valid`` is *enabled*, and it carries
+            # ``since = "0.20.0"`` — so a project whose ``.skillsaw.yaml``
+            # still pins an older ``version:``, the ordinary state right
+            # after an upgrade, has it gated off while this rule defers.
+            # Everything that holds whatever dialect the file is written in
+            # therefore stays here, where no version gate can reach it; see
+            # ``_dialect_neutral_violations``. Policy rules are unaffected —
             # they read ``server_names``, which the block normalizes.
             if isinstance(block, OpenCodeMcpBlock) and HAS_OPENCODE in context.detected_formats:
                 violations.extend(self._dialect_neutral_violations(block))
@@ -243,23 +252,53 @@ class McpValidJsonRule(Rule):
         return violations
 
     def _dialect_neutral_violations(self, block: McpBlock) -> List[RuleViolation]:
-        """The checks that hold whatever dialect a deferred block is written in.
+        """The checks this rule keeps for a block whose *shape* it defers.
 
-        Only one so far. Every other check in this rule reads a field whose
-        name or type differs between hosts; ``url`` does not, and neither
-        does what it means for one to carry user information.
+        Not the whole rule, and not one check either: what stays is
+        everything that does not depend on the host's spelling. A document
+        that is not JSON is unreadable to every host. A ``url`` carrying
+        user information is the same defect in every dialect. So is a
+        credential sitting in a per-server map — the map's *name* differs
+        between hosts, which is why the block declares it in
+        :attr:`McpBlock.credential_maps` rather than this rule naming it.
+
+        Keeping them here rather than in the deferring rule is what makes
+        them survive a ``.skillsaw.yaml`` pinning a ``version:`` older than
+        that rule's ``since``, which is the ordinary state right after an
+        upgrade.
+
+        The line stops at what the *document* must be. That an OpenCode
+        config's top level is an object is a claim about OpenCode's own
+        schema, not about JSON or about MCP, so it stays with the rule that
+        knows the dialect.
         """
         violations: List[RuleViolation] = []
+        if block.parse_error:
+            return [self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)]
         for name, server in block.server_entries():
             if not isinstance(server, dict):
                 continue
+            shown = safe_display(str(name))
             url = server.get("url")
             if isinstance(url, str) and url_has_userinfo(url):
                 violations.append(
                     self.violation(
-                        f"MCP server '{safe_display(str(name))}' 'url' must not "
-                        "contain user information",
+                        f"MCP server '{shown}' 'url' must not contain user information",
                         file_path=block.path,
+                    )
+                )
+            for key, header in block.credential_maps:
+                values = server.get(key)
+                if not isinstance(values, dict):
+                    continue
+                violations.extend(
+                    self._mapped_secret_violations(
+                        values,
+                        server_name=shown,
+                        file_path=block.path,
+                        header=header,
+                        aliases=block.credential_key_aliases,
+                        location=key,
                     )
                 )
         return violations
@@ -525,24 +564,35 @@ class McpValidJsonRule(Rule):
         server_name: str,
         file_path: Path,
         header: bool,
+        aliases: Mapping[str, str] = MappingProxyType({}),
+        location: str = "",
     ) -> List[RuleViolation]:
-        """Report structured credentials without copying their values."""
+        """Report structured credentials without copying their values.
+
+        *aliases* normalizes a key before the credential-*name* test only —
+        a host whose older spelling the shared detector cannot split needs
+        it — while the message always names the key as the author wrote it.
+        *location* names the map for the message when it is not one of the
+        two this rule reads directly.
+        """
         violations = []
+        where = _CREDENTIAL_MAP_LABELS.get(
+            location, "HTTP header" if header else "environment variable"
+        )
         for name, value in values.items():
             if not isinstance(name, str) or not isinstance(value, str):
                 continue
             description = mapped_secret_description(
-                name,
+                aliases.get(name, name),
                 value,
                 header=header,
                 markers=self._placeholder_markers(),
             )
             if description is None:
                 continue
-            location = "HTTP header" if header else "environment variable"
             violations.append(
                 self.violation(
-                    f"MCP server '{server_name}' {location} "
+                    f"MCP server '{server_name}' {where} "
                     f"'{safe_display(name)}' embeds {description}; use a placeholder "
                     "or environment substitution instead of a credential value",
                     file_path=file_path,

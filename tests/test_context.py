@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 from skillsaw.context import (
     RepositoryContext,
@@ -829,13 +831,29 @@ def test_apm_that_targets_something_else_leaves_opencode_authored(temp_dir):
     assert not context.in_apm_compiled_dir(temp_dir / ".opencode" / "command" / "x.md")
 
 
-def test_an_unreadable_apm_target_list_keeps_apm_owning_the_directory(temp_dir):
-    """Unknown targets answer True for everything — APM wins on a misparse."""
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        None,  # `.apm/` alone is enough to make this an APM project
+        "name: x\ntargets: not-a-list\n",
+        "name: x\n",  # parses, but declares no targets
+    ],
+    ids=["missing", "unparseable-targets", "no-targets-key"],
+)
+def test_an_unreadable_apm_target_list_keeps_apm_owning_the_directory(temp_dir, manifest):
+    """Unknown targets answer True for everything — APM wins when it cannot say.
+
+    The missing-manifest case is the one the docs used to file under
+    "targets omit opencode": `.apm/` alone satisfies `has_apm`, so the
+    directory is treated as compiled output rather than authored.
+    """
     (temp_dir / ".apm").mkdir()
-    (temp_dir / "apm.yml").write_text("name: x\ntargets: not-a-list\n")
+    if manifest is not None:
+        (temp_dir / "apm.yml").write_text(manifest)
     (temp_dir / ".opencode" / "command").mkdir(parents=True)
 
     context = RepositoryContext(temp_dir)
+    assert context.has_apm is True
     assert context.in_apm_compiled_dir(temp_dir / ".opencode" / "command" / "x.md")
 
 

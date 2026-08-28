@@ -117,9 +117,10 @@ def _has_env_var_reference(value: str) -> bool:
 def placeholder_markers(extra: Any) -> Tuple[str, ...]:
     """:data:`DEFAULT_PLACEHOLDER_MARKERS` extended by a rule's own config.
 
-    Three rules take an ``additional-placeholders`` option and must agree on
-    what it accepts, or the same ``.skillsaw.yaml`` line suppresses a finding
-    in one rule and not another. Config values are not type-checked when the
+    Every rule taking an ``additional-placeholders`` option reads it through
+    here, so they cannot disagree about what it accepts — otherwise the same
+    ``.skillsaw.yaml`` line would suppress a finding in one rule and not
+    another. Config values are not type-checked when the
     file loads, so any non-sequence contributes nothing rather than raising
     and costing the rule its findings; a sequence contributes its stringable
     members, lowercased for the case-insensitive match callers do.

@@ -119,7 +119,8 @@ _EDITOR_EVIDENCE = {
     # loads the v1 singular. Both spellings are evidence: a repository
     # written for either version is an OpenCode repository, and a rule that
     # fired on only one of them would go quiet the day a project migrated.
-    # ``opencode.json(c)`` inside ``.opencode/`` is listed here; the root
+    # ``opencode.json`` and ``opencode.jsonc`` inside ``.opencode/`` are
+    # listed here; the root
     # copy is a separate marker check in ``instruction_formats``.
     "HAS_OPENCODE": (
         ".opencode",

@@ -3,9 +3,9 @@
 
 # OpenCode
 
-Validates the OpenCode project config — `opencode.json(c)` at the repository root or under any `.opencode/` directory — where a misspelled key is read, ignored and never reported. OpenCode 2.0 renames much of the schema while still loading the 1.x spelling, so **both vocabularies are accepted**; what is reported is a file that declares both spellings of one setting. Comments and trailing commas are fine — OpenCode reads `.json` through a JSONC parser. OpenCode reads AGENTS.md for portable instructions, so no OpenCode-specific instruction format is validated, and its commands, agents and skills get the shared content rules. Enabled automatically wherever an `opencode.json(c)` exists or a `.opencode/` directory holds OpenCode content.
+Validates the OpenCode project config — `opencode.json` or `opencode.jsonc`, at the repository root or under any `.opencode/` directory — where a misspelled key is read, ignored and never reported. OpenCode 2.0 renames much of the schema while still loading the 1.x spelling, so **both vocabularies are accepted**; what is reported is a file that declares both spellings of one setting. Comments and trailing commas are fine — OpenCode reads `.json` through a JSONC parser. OpenCode reads AGENTS.md for portable instructions, so no OpenCode-specific instruction format is validated, and its commands, agents and skills get the shared content rules. Enabled automatically wherever an `opencode.json` or `opencode.jsonc` exists, or a `.opencode/` directory holds OpenCode content.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`opencode-config-valid`](opencode-config-valid.md) | opencode.json(c) must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - |
+| [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - |
 
