@@ -4192,7 +4192,12 @@ class TestContentMcpToolNameSuggestGate:
 
     def test_suggest_fix_strips_and_converges(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_contents(repo)
         _run_fix(repo, "--suggest")
+        after = _snapshot_contents(repo)
+        assert {p: t.count("\n") for p, t in after.items()} == {
+            p: t.count("\n") for p, t in before.items()
+        }
 
         claude = (repo / "CLAUDE.md").read_text()
         assert "run searchJiraIssuesUsingJql" in claude

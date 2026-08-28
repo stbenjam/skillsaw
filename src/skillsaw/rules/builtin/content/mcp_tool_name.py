@@ -143,7 +143,9 @@ class ContentMcpToolNameRule(Rule):
         return results
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        allow = frozenset(self.setting("allow"))
+        # Config validation checks only that `allow` is a list; a non-string
+        # entry must not crash the rule, so filter rather than hash it.
+        allow = frozenset(x for x in self.setting("allow") if isinstance(x, str))
         violations: List[RuleViolation] = []
         for cf in gather_all_content_blocks(context):
             body = cf.read_body(strip_code_blocks=False)
@@ -186,7 +188,9 @@ class ContentMcpToolNameRule(Rule):
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation], **kwargs: object
     ) -> List[AutofixResult]:
-        allow = frozenset(self.setting("allow"))
+        # Config validation checks only that `allow` is a list; a non-string
+        # entry must not crash the rule, so filter rather than hash it.
+        allow = frozenset(x for x in self.setting("allow") if isinstance(x, str))
         fixes_by_file: Dict[Path, List[Tuple[str, int, RuleViolation]]] = defaultdict(list)
         for v in violations:
             if not v.file_path or v.block is None or not v.fixable:

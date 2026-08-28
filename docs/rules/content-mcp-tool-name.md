@@ -29,8 +29,8 @@ Code namespaces a plugin-bundled server, exposing its tools as
 for that plugin's installers.
 
 Brevity is a secondary benefit. Fully-qualified names are long, low-signal
-strings that spend an agent's context window without telling it anything
-the short name does not.
+strings that spend an agent's context window, usually without telling it
+anything the short name does not.
 
 The `mcp__<server>__<tool>` flattening is the convention of Claude Code and
 the Claude Agent SDK, and the same convention appears throughout OpenAI's

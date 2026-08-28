@@ -5195,6 +5195,24 @@ class TestContentMcpToolNameRule:
         rule = ContentMcpToolNameRule({"allow": ["mcp__internal__report__generate"]})
         assert rule.check(RepositoryContext(temp_dir)) == []
 
+    def test_non_string_allow_entries_do_not_crash(self, temp_dir):
+        """Config validation only guarantees `allow` is a list — a mapping
+        inside it must be ignored, not hashed into a TypeError that takes
+        every real finding down with it."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nRun `mcp__internal__report__generate` for the weekly digest.\n"
+        )
+        rule = ContentMcpToolNameRule(
+            {"allow": [{"name": "mcp__internal__report__generate"}, ["nested"]]}
+        )
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
+        rule = ContentMcpToolNameRule(
+            {"allow": [{"bad": "entry"}, "mcp__internal__report__generate"]}
+        )
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
     def test_diagnostic_only_body_reported_not_fixable(self, temp_dir):
         """A Cursor prompt hook's body is decoded out of a JSON string
         literal, so a fix computed against it has no honest span in the
