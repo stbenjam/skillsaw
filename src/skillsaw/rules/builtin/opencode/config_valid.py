@@ -3,7 +3,7 @@ Rule: opencode-config-valid
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.blocks import OpenCodeConfigBlock, OpenCodeMcpBlock
 from skillsaw.context import HAS_OPENCODE, RepositoryContext
@@ -320,11 +320,19 @@ class OpenCodeConfigValidRule(Rule):
                     )
                 )
                 continue
+            # ``template`` is the only required key on a command entry
+            # (``required: ["template"]`` in the published schema), and it
+            # is the prompt the command runs. A JSON entry has no body to
+            # supply it the way a ``.opencode/commands/*.md`` file does, so
+            # an absent key and an empty one are the same defect: a command
+            # that appears in the menu and does nothing.
             template = entry.get("template")
-            if "template" in entry and (not isinstance(template, str) or not template.strip()):
+            if not isinstance(template, str) or not template.strip():
                 violations.append(
                     self.violation(
-                        f"'{where}.template' must be a non-empty string",
+                        f"'{where}.template' must be a non-empty string — it is the "
+                        "prompt the command runs, and a command entry without one "
+                        "is inert",
                         file_path=path,
                         severity=Severity.WARNING,
                     )
@@ -513,18 +521,24 @@ class OpenCodeConfigValidRule(Rule):
     def _check_mcp_maps(
         self, shown: str, server: Dict[str, Any], path: Path
     ) -> List[RuleViolation]:
-        """``environment`` and ``headers``: shape, then embedded credentials.
+        """``environment``, ``headers`` and ``oauth``: shape, then credentials.
 
         OpenCode spells the environment map ``environment`` rather than
         ``env``, which is why the shared MCP shape rule cannot scan it — and
-        why the scan happens here instead of being lost.
+        why the scan happens here instead of being lost. ``oauth`` is scanned
+        for the same reason: a literal ``clientSecret`` there is as committed
+        as one in a header, and nothing else looks at it.
         """
         violations: List[RuleViolation] = []
-        for key, header in (("environment", False), ("headers", True)):
+        for key, header in (("environment", False), ("headers", True), ("oauth", False)):
             if key not in server:
                 continue
             value = server[key]
             if not isinstance(value, dict):
+                # ``oauth: false`` is the documented way to switch OAuth off,
+                # so only a non-dict that is not that is a shape defect.
+                if key == "oauth" and value is False:
+                    continue
                 violations.append(
                     self.violation(
                         f"MCP server '{shown}' '{key}' must be an object",
@@ -533,7 +547,20 @@ class OpenCodeConfigValidRule(Rule):
                     )
                 )
                 continue
-            violations.extend(self._mapped_secret_violations(value, shown, path, header=header))
+            violations.extend(
+                self._mapped_secret_violations(
+                    value,
+                    shown,
+                    path,
+                    header=header,
+                    # The 1.x oauth keys are camelCase, which the shared
+                    # credential-name detector does not split — normalizing
+                    # through the rename table is what lets ``clientSecret``
+                    # be recognized as ``client_secret``.
+                    aliases=oc.MCP_OAUTH_V1_TO_V2 if key == "oauth" else None,
+                    location=key,
+                )
+            )
         return violations
 
     def _placeholder_markers(self) -> Tuple[str, ...]:
@@ -547,20 +574,31 @@ class OpenCodeConfigValidRule(Rule):
         path: Path,
         *,
         header: bool,
+        aliases: Optional[Mapping[str, str]] = None,
+        location: str = "",
     ) -> List[RuleViolation]:
-        """Report structured credentials without copying their values."""
+        """Report structured credentials without copying their values.
+
+        *aliases* normalizes a key before the credential-name test only; the
+        message always names the key as the author wrote it.
+        """
         violations: List[RuleViolation] = []
         markers = self._placeholder_markers()
-        location = "HTTP header" if header else "environment variable"
+        where = {
+            "headers": "HTTP header",
+            "oauth": "OAuth field",
+            "environment": "environment variable",
+        }.get(location, "HTTP header" if header else "environment variable")
         for name, value in values.items():
             if not isinstance(name, str) or not isinstance(value, str):
                 continue
-            description = mapped_secret_description(name, value, header=header, markers=markers)
+            probe = aliases.get(name, name) if aliases else name
+            description = mapped_secret_description(probe, value, header=header, markers=markers)
             if description is None:
                 continue
             violations.append(
                 self.violation(
-                    f"MCP server '{shown}' {location} '{safe_display(name)}' embeds "
+                    f"MCP server '{shown}' {where} '{safe_display(name)}' embeds "
                     f"{description}; use a placeholder or OpenCode's "
                     "{env:VAR} substitution instead of a credential value",
                     file_path=path,

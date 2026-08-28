@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import List, Set
 
-from skillsaw.context import HAS_COPILOT, RepositoryContext, RepositoryType
+from skillsaw.context import HAS_COPILOT, HAS_OPENCODE, RepositoryContext, RepositoryType
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
@@ -57,8 +57,12 @@ class DescriptionRoutingRule(Rule):
     # A Copilot repository is often none of the above repo types (a bare
     # ``.github/agents/`` tree is ``UNKNOWN``), so ``enabled: auto`` also fires
     # on the Copilot format — a Copilot agent's description is what routes it,
-    # exactly the metadata this rule checks on a Claude agent.
-    formats = frozenset({HAS_COPILOT})
+    # exactly the metadata this rule checks on a Claude agent. The same holds
+    # for OpenCode: a bare ``.opencode/agents/`` tree is ``UNKNOWN`` too, and
+    # an OpenCode subagent's description is what the primary agent delegates
+    # on. Without the flag the ``OpenCodeAgentBlock`` traversal below would
+    # never run for exactly the repositories it is for.
+    formats = frozenset({HAS_COPILOT, HAS_OPENCODE})
 
     config_schema = {
         "require-trigger-phrasing": {

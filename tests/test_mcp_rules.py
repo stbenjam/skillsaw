@@ -1275,6 +1275,28 @@ class TestOpenCodeMcpBlock:
         )
         assert block.server_names == {"servers"}
 
+    @pytest.mark.parametrize("server_name", ["command", "type", "url"])
+    def test_a_v2_server_named_after_a_connection_field_is_still_found(self, temp_dir, server_name):
+        """The wrapper test reads value shapes, not key names.
+
+        Matching on names alone would read the whole `servers` map as one v1
+        server, hiding every server inside it from the policy and credential
+        scans — the same hole as reading only one layout.
+        """
+        block = self._block(
+            temp_dir,
+            {"mcp": {"servers": {server_name: {"type": "local", "command": ["npx", "mcp"]}}}},
+        )
+        assert block.server_names == {server_name}
+
+    def test_a_v1_server_named_servers_is_still_told_apart(self, temp_dir):
+        """The other direction of the same test: a real server keeps its reading."""
+        block = self._block(
+            temp_dir,
+            {"mcp": {"servers": {"type": "remote", "url": "https://x.example/mcp"}}},
+        )
+        assert block.server_names == {"servers"}
+
     def test_an_empty_v2_wrapper_declares_no_servers(self, temp_dir):
         block = self._block(temp_dir, {"mcp": {"servers": {}}})
         assert block.server_names == set()

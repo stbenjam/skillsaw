@@ -542,12 +542,30 @@ class VsCodeMcpBlock(McpBlock):
         return "mcp.json (VS Code MCP)"
 
 
-#: Keys that appear on one OpenCode server and never on a map of them. Used
-#: to tell a v2 ``servers`` wrapper apart from a v1 server someone named
-#: ``servers``: nothing forbids the name, so the value decides.
-_OPENCODE_SERVER_FIELDS = frozenset(
-    {"type", "command", "url", "environment", "headers", "enabled", "disabled"}
+#: Connection fields that identify one OpenCode server, paired with the type
+#: the field has on a server. The *value* type is what does the work: a
+#: server may legitimately be *named* ``command`` or ``type``, and matching
+#: on names alone would read the map holding it as a single server.
+_OPENCODE_CONNECTION_FIELDS = (
+    ("type", str),
+    ("command", list),
+    ("url", str),
 )
+
+
+def _is_opencode_server(value: Any) -> bool:
+    """Whether *value* is one OpenCode MCP server rather than a map of them.
+
+    Mirrors the ``isDirectServer`` check upstream uses for the same
+    ambiguity: a server carries a connection field of the right type, a map
+    of servers carries server objects. Testing the value and not just the
+    key is what keeps a server named ``command`` — whose ``command`` entry
+    is a nested object, not an argv array — from being mistaken for the
+    server itself.
+    """
+    if not isinstance(value, dict):
+        return False
+    return any(isinstance(value.get(field), kind) for field, kind in _OPENCODE_CONNECTION_FIELDS)
 
 
 @dataclass(eq=False)
@@ -626,10 +644,10 @@ class OpenCodeMcpBlock(McpBlock):
         if not isinstance(section, dict):
             return []
         nested = section.get("servers")
-        # A v1 server may legitimately be called "servers". Nothing forbids
-        # the name, so the value decides: a v2 wrapper holds server objects,
-        # a v1 server holds connection fields.
-        wrapper = isinstance(nested, dict) and not (_OPENCODE_SERVER_FIELDS & set(nested))
+        # A v1 server may legitimately be called "servers", and a v2 server
+        # may legitimately be called "command". Nothing forbids either name,
+        # so the shape decides rather than the name.
+        wrapper = isinstance(nested, dict) and not _is_opencode_server(nested)
         entries: List[Tuple[str, Any]] = list(nested.items()) if wrapper else []
         for name, cfg in section.items():
             if wrapper and name == "servers":
@@ -637,10 +655,8 @@ class OpenCodeMcpBlock(McpBlock):
             # v2 carries a global ``timeout`` beside ``servers``. It is a
             # setting, not a server, and upstream skips it by name for
             # exactly this reason. A v1 server genuinely called ``timeout``
-            # carries connection fields, so it survives the test.
-            if name == "timeout" and not (
-                isinstance(cfg, dict) and (_OPENCODE_SERVER_FIELDS & set(cfg))
-            ):
+            # carries a connection field, so it survives the test.
+            if name == "timeout" and not _is_opencode_server(cfg):
                 continue
             entries.append((name, cfg))
         return entries

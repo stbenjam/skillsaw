@@ -2710,9 +2710,19 @@ class TestOpenCode:
             "'declared-twice' is declared under both" in m for m in messages
         ), "a server named in both layouts is dead configuration on one side"
         assert any("'agents.not-an-object' must be an object" in m for m in messages)
+        # `template` is the only required key on a command entry, and a JSON
+        # entry has no body to supply it.
+        assert any(
+            "'commands.no-template.template' must be a non-empty string" in m for m in messages
+        )
+        # An OAuth client secret is as committed as one in a header, and
+        # nothing else scans that object.
+        assert any(
+            "OAuth field 'clientSecret' embeds" in m for m in messages
+        ), "the 1.x camelCase spelling must be normalized before the credential test"
 
         errors = [v["message"] for v in found if v["severity"] == "error"]
-        assert len(errors) == 3, errors
+        assert len(errors) == 4, errors
         assert all("embeds" in m for m in errors), "only credentials are errors here"
         assert {v["severity"] for v in found} == {"error", "warning"}
 
