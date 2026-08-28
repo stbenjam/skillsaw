@@ -36,7 +36,12 @@ def test_feedback_creates_redacted_bundle_without_repository_files(tmp_path):
     output = tmp_path / "report.zip"
 
     result = _run_feedback(
-        repo, "--output", str(output), "--message", "Lint failed in CI", "--json"
+        repo,
+        "--output",
+        str(output),
+        "--message",
+        "Lint failed in CI with GITHUB_TOKEN=ghp_" + "a" * 36,
+        "--json",
     )
 
     assert result.returncode == 0, result.stderr
@@ -62,6 +67,7 @@ def test_feedback_creates_redacted_bundle_without_repository_files(tmp_path):
         environment = json.loads(bundle.read(f"{archive_directory}/environment.json"))
         assert environment["lint_extensions_enabled"] is False
         assert environment["config_included"] is False
+        assert "ghp_" not in environment["message"]
         manifest = json.loads(bundle.read(f"{archive_directory}/manifest.json"))
         assert manifest["redactions"] >= 1
         assert set(manifest["files"]) == {
@@ -200,6 +206,7 @@ def test_feedback_rejects_source_files_outside_the_repository(tmp_path):
     assert "inside the repository" in result.stderr
 
 
+@pytest.mark.skipif(os.name != "posix", reason="PTY progress mirroring is POSIX-specific")
 def test_feedback_mirrors_interactive_lint_progress(tmp_path, monkeypatch):
     class InteractiveStderr:
         def __init__(self):
@@ -281,3 +288,96 @@ def test_feedback_records_a_timed_out_diagnostic_lint(tmp_path, monkeypatch):
         "stderr": "progress",
         "timed_out": True,
     }
+
+
+def test_shared_redactor_replaces_authorization_headers():
+    result = redact_text(
+        "Authorization: Bearer abc123def456ghi\r\n"
+        "Proxy-Authorization: Basic Zm9vOmJhcg==\n"
+        "Host: example.test\n"
+    )
+
+    assert result.count == 2
+    assert "abc123def456ghi" not in result.text
+    assert "Zm9vOmJhcg==" not in result.text
+    assert "Authorization: [REDACTED]\r\n" in result.text
+    assert "Host: example.test\n" in result.text
+    assert redact_text(result.text).text == result.text
+
+
+def test_shared_redactor_redacts_sequence_block_scalars():
+    source = "items:\n  - password: |\n      first secret\n      second secret\n  - name: ok\n"
+
+    result = redact_text(source)
+
+    assert result.count == 1
+    assert "first secret" not in result.text
+    assert "second secret" not in result.text
+    assert "  - password: [REDACTED]\n" in result.text
+    assert "  - name: ok\n" in result.text
+    assert redact_text(result.text).text == result.text
+
+
+def test_shared_redactor_redacts_whole_multiword_plain_scalars():
+    result = redact_text("passphrase: correct horse battery staple\nhost: localhost\n")
+
+    assert result.count == 1
+    assert "horse" not in result.text
+    assert "passphrase: [REDACTED]\n" in result.text
+    assert "host: localhost\n" in result.text
+
+
+def test_shared_redactor_keeps_trailing_comments_beside_a_plain_scalar():
+    result = redact_text("password: hunter two # set in CI\n")
+
+    assert result.text == "password: [REDACTED] # set in CI\n"
+
+
+def test_shared_redactor_keeps_non_credential_token_settings():
+    source = "max_tokens: 4096\ntokenizer: cl100k_base\ngithub_token: real-value\n"
+
+    result = redact_text(source)
+
+    assert result.count == 1
+    assert "max_tokens: 4096" in result.text
+    assert "tokenizer: cl100k_base" in result.text
+    assert "github_token: [REDACTED]" in result.text
+
+
+def test_shared_redactor_redacts_private_keys_without_a_footer():
+    source = (
+        "log tail:\n"
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "Proc-Type: 4,ENCRYPTED\n"
+        "\n"
+        "MIIEowIBAAKCAQEAxyz\n"
+        "AAAABBBBCCCCDDDD\n"
+        "\n"
+        "unrelated trailing prose\n"
+    )
+
+    result = redact_text(source)
+
+    assert result.count == 1
+    assert "MIIEowIBAAKCAQEAxyz" not in result.text
+    assert "AAAABBBBCCCCDDDD" not in result.text
+    assert "unrelated trailing prose\n" in result.text
+    assert redact_text(result.text).text == result.text
+
+
+def test_shared_redactor_redacts_the_first_field_after_a_byte_order_mark():
+    result = redact_text("﻿password: hunter2\nhost: localhost\n")
+
+    assert result.count == 1
+    assert "hunter2" not in result.text
+    assert result.text.startswith("﻿password: [REDACTED]")
+    assert "host: localhost\n" in result.text
+
+
+def test_shared_redactor_redacts_a_block_scalar_after_a_byte_order_mark():
+    result = redact_text("﻿password: |\n  first secret\nhost: localhost\n")
+
+    assert result.count == 1
+    assert "first secret" not in result.text
+    assert result.text.startswith("﻿password: [REDACTED]")
+    assert "host: localhost\n" in result.text

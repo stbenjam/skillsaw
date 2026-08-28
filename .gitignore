@@ -159,3 +159,6 @@ apm.lock.yaml
 *.local.json
 .worktrees/
 .claude/worktrees/
+
+# Diagnostic bundles written by `skillsaw feedback`; never commit one.
+.skillsaw-feedback/

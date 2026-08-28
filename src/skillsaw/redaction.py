@@ -84,27 +84,47 @@ CREDENTIAL_FIELD_NAMES = frozenset(
 )
 CREDENTIAL_FIELD_SUFFIXES = tuple(f"_{name}" for name in CREDENTIAL_FIELD_NAMES)
 _REDACTION_CREDENTIAL_FIELD_NAMES = CREDENTIAL_FIELD_NAMES | {"token"}
+# A credential field name is matched at identifier-word boundaries: an optional
+# separated prefix and suffix around the name itself. Matching an arbitrary
+# substring would classify ordinary AI settings such as ``max_tokens`` or
+# ``tokenizer`` as credentials and strip values a bug report needs.
 _CREDENTIAL_NAME_FRAGMENT = "|".join(
     re.escape(name).replace("_", "[_-]")
     for name in sorted(_REDACTION_CREDENTIAL_FIELD_NAMES, key=len, reverse=True)
 )
-_CREDENTIAL_ASSIGNMENT = re.compile(
-    rf"(?im)(?P<prefix>(?:^[ \t]*|(?<=[{{,\[])[ \t]*|^[ \t]*-[ \t]+)"
-    rf"[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?(?:{_CREDENTIAL_NAME_FRAGMENT})"
-    r"[A-Za-z0-9_.-]*[\"']?[ \t]*[:=][ \t]*)(?P<value>"
-    r'\[REDACTED\]|"(?:\\.|[^"\\\r\n])*"|\'(?:\\.|[^\'\\\r\n])*\'|[^\s,}\]\r\n#]+)'
+_CREDENTIAL_FIELD = (
+    rf"[\"']?(?:[A-Za-z0-9_.-]*[_.-])?(?:{_CREDENTIAL_NAME_FRAGMENT})"
+    r"(?:[_.-][A-Za-z0-9_.-]*)?[\"']?"
 )
-_AUTHORIZATION_HEADER = re.compile(r"(?im)^([ \t]*(?:proxy-)?authorization[ \t]*[:=][ \t]*)(.+)$")
+# A UTF-8 BOM survives ``read_text(encoding="utf-8")``, so it has to be allowed
+# before the indentation of the first field or that field is never redacted.
+_LINE_START = r"^\ufeff?[ \t]*"
+# A plain YAML scalar runs to its comment or structural boundary, not to the
+# first space: stopping early leaves most of a multiword credential in place.
+_PLAIN_SCALAR = r"[^\s,}\]\r\n#]+(?:[ \t]+[^\s,}\]\r\n#]+)*"
+_CREDENTIAL_ASSIGNMENT = re.compile(
+    rf"(?im)(?P<prefix>(?:{_LINE_START}|(?<=[{{,\[])[ \t]*|{_LINE_START}-[ \t]+)"
+    rf"{_CREDENTIAL_FIELD}[ \t]*[:=][ \t]*)(?P<value>"
+    rf'\[REDACTED\]|"(?:\\.|[^"\\\r\n])*"|\'(?:\\.|[^\'\\\r\n])*\'|{_PLAIN_SCALAR})'
+)
+_AUTHORIZATION_HEADER = re.compile(
+    rf"(?im)(?P<prefix>{_LINE_START}(?:proxy-)?authorization[ \t]*[:=][ \t]*)"
+    r"(?P<value>[^\r\n]+)"
+)
 _BEARER_TOKEN = re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/-]{12,}")
 _URL_USERINFO = re.compile(r"(?://)([^/\s:@]+(?::[^@/\s]+)?@)")
+_PEM_BEGIN = r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"
 _PEM_PRIVATE_KEY = re.compile(
-    r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----",
+    rf"{_PEM_BEGIN}.*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----",
     re.DOTALL,
 )
+# A truncated excerpt — a log tail cut mid-key — has no footer, so the complete
+# pattern above misses it and only the header would be replaced. Consume the
+# body through the last line that still looks like PEM content instead.
+_PEM_KEY_LINE = r"\r?\n[ \t]*(?:[A-Za-z][A-Za-z0-9-]*:[^\r\n]*|[A-Za-z0-9+/=]+)[ \t]*(?=\r?\n|\Z)"
+_PEM_TRUNCATED_KEY = re.compile(rf"{_PEM_BEGIN}(?:(?:\r?\n[ \t]*)*{_PEM_KEY_LINE})*")
 _BLOCK_SCALAR_CREDENTIAL = re.compile(
-    rf"^(?P<indent>[ \t]*)(?P<key>[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
-    rf"(?:{_CREDENTIAL_NAME_FRAGMENT})[A-Za-z0-9_.-]*[\"']?)"
-    r"[ \t]*:[ \t]*[>|][^\n]*$",
+    rf"{_LINE_START}(?P<dash>-[ \t]+)?(?P<key>{_CREDENTIAL_FIELD})[ \t]*:[ \t]*[>|][^\n]*$",
     re.IGNORECASE,
 )
 _REDACTED = "[REDACTED]"
@@ -133,6 +153,7 @@ def redact_text(text: str) -> RedactionResult:
         return _REDACTED
 
     text, _count = _PEM_PRIVATE_KEY.subn(replacement, text)
+    text, _count = _PEM_TRUNCATED_KEY.subn(replacement, text)
     text, block_redactions = _redact_block_scalars(text)
     redactions += block_redactions
 
@@ -181,8 +202,11 @@ def _redact_block_scalars(text: str) -> tuple[str, int]:
             continue
         redactions += 1
         ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
-        redacted_lines.append(f"{header.group('indent')}{header.group('key')}: {_REDACTED}{ending}")
-        key_indent = len(header.group("indent"))
+        # The key column, not the line indent: a sequence entry (``- password: |``)
+        # puts its body past the dash, and a sibling entry sits at or before it.
+        key_indent = header.start("key")
+        prefix = line[:key_indent]
+        redacted_lines.append(f"{prefix}{header.group('key')}: {_REDACTED}{ending}")
         index += 1
         while index < len(lines):
             candidate = lines[index]
