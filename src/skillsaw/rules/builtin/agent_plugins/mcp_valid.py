@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
@@ -34,8 +35,8 @@ from skillsaw.rules.builtin.secret_detection import (
 
 from ._helpers import (
     AGENT_PLUGIN_REPO_TYPES,
-    MCP_SCHEMAS,
-    MCP_VALIDATORS,
+    mcp_schemas,
+    mcp_validators,
     schema_error_summary,
     stable_key,
     strict_json,
@@ -47,15 +48,22 @@ _SERVER_SCHEMA_NAMES = {
     "streamable-http": "streamableHttpServer",
     "sse": "sseServer",
 }
-_SERVER_VALIDATORS = {
-    version: {
-        server_type: MCP_VALIDATORS[version].evolve(
-            schema=MCP_SCHEMAS[version]["$defs"][schema_name]
-        )
-        for server_type, schema_name in _SERVER_SCHEMA_NAMES.items()
+
+
+@lru_cache(maxsize=None)
+def _server_validators() -> dict:
+    """Per-server-type validators, compiled on first use (see ``_helpers``)."""
+    return {
+        version: {
+            server_type: mcp_validators()[version].evolve(
+                schema=mcp_schemas()[version]["$defs"][schema_name]
+            )
+            for server_type, schema_name in _SERVER_SCHEMA_NAMES.items()
+        }
+        for version in SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS
     }
-    for version in SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS
-}
+
+
 _SUPPORTED_VERSIONS_TEXT = " and ".join(SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS)
 
 
@@ -174,7 +182,7 @@ class AgentPluginMcpValidRule(Rule):
             # error without weakening any other top-level validation.
             schema_version = SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]
             top_view["$schema"] = agent_plugin_schema_id(schema_version, "mcp")
-        validator = MCP_VALIDATORS[schema_version or SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]]
+        validator = mcp_validators()[schema_version or SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]]
         top_errors = list(validator.iter_errors(top_view))
 
         resolved_manifest = contained_resolve(node.path, plugin_root)
@@ -218,7 +226,7 @@ class AgentPluginMcpValidRule(Rule):
         for server_name, server in servers.items():
             server_type = server.get("type") if isinstance(server, dict) else None
             validator = (
-                _SERVER_VALIDATORS[schema_version].get(server_type)
+                _server_validators()[schema_version].get(server_type)
                 if isinstance(server_type, str)
                 else None
             )
