@@ -12,6 +12,15 @@ Read the canonical conventions in `.apm/instructions/`, `CONTRIBUTING.md`, and
 `DEVELOPMENT.md`; read the security posture in [THREAT_MODEL.md](THREAT_MODEL.md).
 Review each change against the checklist below and always flag deviations.
 
+## Proportional review
+
+Do not harp on extremely rare false-positive edge cases when addressing them
+would substantially increase a rule's complexity. Skillsaw supports narrowly
+scoped, per-rule suppressions around the affected block, so users can opt out
+where a rare false positive occurs. Flag a case only when its likelihood or
+impact justifies the added maintenance and complexity; otherwise, accept the
+rule's practical behavior and the available suppression mechanism.
+
 ## Repo coherence
 
 ### Lint rules

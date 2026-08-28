@@ -53,6 +53,7 @@ dev = [
     "black>=26,<27",
     "flake8>=6.0",
     "mypy>=1.0",
+    "pre-commit>=4,<5",
     "skillsaw-runbooks==0.1.0",
 ]
 
