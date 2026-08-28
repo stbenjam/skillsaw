@@ -138,7 +138,10 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
 project guidelines and [DEVELOPMENT.md](DEVELOPMENT.md) for the local setup.
 
 Questions and bug reports belong in [GitHub
-Issues](https://github.com/stbenjam/skillsaw/issues). skillsaw is licensed under
+Issues](https://github.com/stbenjam/skillsaw/issues). For a shareable diagnostic
+bundle, run `skillsaw feedback` in the affected repository and review the ZIP
+before attaching it to an issue — files you add with `--include` are copied in
+verbatim. skillsaw is licensed under
 the [Apache License 2.0](LICENSE).
 
 ## Thank you to our contributors

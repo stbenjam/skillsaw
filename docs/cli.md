@@ -61,6 +61,19 @@ Automatically fix lint violations
 
 Generate a default .skillsaw.yaml config file
 
+## `skillsaw feedback`
+
+Create a local diagnostic bundle for a bug report
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c`, `--config` | Path to .skillsaw.yaml config file to copy into the bundle verbatim (default: auto-discover only; review it for secrets yourself) |  |
+| `-o`, `--output` | Bundle ZIP path (default: .skillsaw-feedback/ under the repository) |  |
+| `--message` | Short description of the problem to include in the bundle |  |
+| `--include` | Copy a repository-relative UTF-8 text file into the bundle verbatim (repeatable; review it for secrets yourself) |  |
+| `--with-extensions` | Run custom and installed plugin rules in the diagnostic lint run |  |
+| `--json` | Print the bundle result as JSON for agents and automation |  |
+
 ## `skillsaw list-rules`
 
 List all available builtin and plugin rules
