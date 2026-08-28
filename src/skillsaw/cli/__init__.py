@@ -9,6 +9,7 @@ from ._parser import _build_parser
 _SUBCOMMANDS = {
     "lint",
     "init",
+    "feedback",
     "list-rules",
     "docs",
     "add",
@@ -62,6 +63,10 @@ def main():
         from ._simple import _run_init
 
         _run_init(args)
+    elif args.command == "feedback":
+        from ._feedback import _run_feedback
+
+        _run_feedback(args)
     elif args.command == "list-rules":
         from ._simple import _run_list_rules
 
