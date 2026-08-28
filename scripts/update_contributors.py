@@ -1,4 +1,4 @@
-"""Update README.md with the repository's human GitHub contributors."""
+"""Update README.md with the repository's human GitHub community contributors."""
 
 from __future__ import annotations
 
@@ -94,17 +94,22 @@ def replace_contributors(readme: str, rendered: str) -> str:
     return "".join(lines[:start_line] + generated + lines[end_line - 1 :])
 
 
-def fetch_contributors(repository: str, token: Optional[str] = None) -> list[object]:
-    """Fetch every contributor page from the GitHub REST API."""
+def fetch_pages(
+    repository: str,
+    resource: str,
+    token: Optional[str] = None,
+    **parameters: str,
+) -> list[object]:
+    """Fetch every page for a repository-scoped GitHub REST resource."""
     if not REPOSITORY_RE.fullmatch(repository):
         raise ValueError("repository must use the owner/name form")
 
-    contributors: list[object] = []
+    records: list[object] = []
     page = 1
     while True:
-        query = urlencode({"per_page": 100, "page": page})
+        query = urlencode({**parameters, "per_page": 100, "page": page})
         request = Request(
-            f"{GITHUB_API}/repos/{repository}/contributors?{query}",
+            f"{GITHUB_API}/repos/{repository}/{resource}?{query}",
             headers={
                 "Accept": "application/vnd.github+json",
                 "User-Agent": "skillsaw-contributor-updater",
@@ -115,11 +120,34 @@ def fetch_contributors(repository: str, token: Optional[str] = None) -> list[obj
         with urlopen(request, timeout=30) as response:
             page_items = json.load(response)
         if not isinstance(page_items, list):
-            raise ValueError("GitHub contributors API returned a non-list response")
-        contributors.extend(page_items)
+            raise ValueError(f"GitHub {resource} API returned a non-list response")
+        records.extend(page_items)
         if len(page_items) < 100:
-            return contributors
+            return records
         page += 1
+
+
+def fetch_contributors(repository: str, token: Optional[str] = None) -> list[object]:
+    """Fetch accounts credited by GitHub's commit contributors endpoint."""
+    return fetch_pages(repository, "contributors", token)
+
+
+def fetch_issue_authors(repository: str, token: Optional[str] = None) -> list[object]:
+    """Fetch accounts that opened issues, excluding pull request authors."""
+    records = fetch_pages(repository, "issues", token, state="all")
+    return [
+        record.get("user")
+        for record in records
+        if isinstance(record, dict) and "pull_request" not in record
+    ]
+
+
+def fetch_community_contributors(repository: str, token: Optional[str] = None) -> list[object]:
+    """Fetch commit contributors and issue filers for the thank-you list."""
+    return [
+        *fetch_contributors(repository, token),
+        *fetch_issue_authors(repository, token),
+    ]
 
 
 def update_readme(path: Path, contributors: Iterable[object]) -> bool:
@@ -146,7 +174,7 @@ def main() -> int:
 
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     try:
-        contributors = fetch_contributors(args.repository, token)
+        contributors = fetch_community_contributors(args.repository, token)
         changed = update_readme(args.readme, contributors)
     except (HTTPError, URLError, OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)

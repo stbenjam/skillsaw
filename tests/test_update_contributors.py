@@ -143,6 +143,51 @@ def test_fetch_contributors_paginates_and_authenticates(monkeypatch):
     )
 
 
+def test_fetch_issue_authors_excludes_pull_requests(monkeypatch):
+    """Issue collection should include filers without counting PR authors twice."""
+    records = [
+        {"user": {"login": "issue-filer", "type": "User"}},
+        {
+            "user": {"login": "pr-author", "type": "User"},
+            "pull_request": {"url": "https://api.github.com/repos/owner/repo/pulls/1"},
+        },
+        {"user": None},
+        "unexpected",
+    ]
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        """Return mixed issue records and capture the requested URL."""
+        requests.append((request, timeout))
+        return io.BytesIO(json.dumps(records).encode())
+
+    monkeypatch.setattr(updater, "urlopen", fake_urlopen)
+
+    authors = updater.fetch_issue_authors("owner/repo", "secret-token")
+
+    assert authors == [{"login": "issue-filer", "type": "User"}, None]
+    assert len(requests) == 1
+    request, timeout = requests[0]
+    assert "/repos/owner/repo/issues?" in request.full_url
+    assert "state=all" in request.full_url
+    assert "per_page=100" in request.full_url
+    assert "page=1" in request.full_url
+    assert timeout == 30
+    assert request.get_header("Authorization") == "Bearer secret-token"
+
+
+def test_fetch_community_contributors_combines_code_and_issue_accounts(monkeypatch):
+    """The generated list should thank both code contributors and issue filers."""
+    code_accounts = [{"login": "coder", "type": "User"}]
+    issue_accounts = [{"login": "reporter", "type": "User"}]
+    monkeypatch.setattr(updater, "fetch_contributors", lambda repository, token: code_accounts)
+    monkeypatch.setattr(updater, "fetch_issue_authors", lambda repository, token: issue_accounts)
+
+    accounts = updater.fetch_community_contributors("owner/repo", "secret-token")
+
+    assert accounts == code_accounts + issue_accounts
+
+
 def test_fetch_contributors_rejects_invalid_repository():
     """Repository input should be restricted to a safe owner/name value."""
     with pytest.raises(ValueError, match="owner/name"):

@@ -18,7 +18,7 @@ help:
 	@echo "  generate-example - Regenerate .skillsaw.yaml.example from builtin rules"
 	@echo "  generate-docs - Regenerate README docs sections when present"
 	@echo "  update        - Regenerate all generated files (APM, example config, docs)"
-	@echo "  update-contributors - Refresh the README contributor table from GitHub"
+	@echo "  update-contributors - Refresh the README community contributor table from GitHub"
 	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Non-destructively verify agent dirs match APM sources (injection/drift gate)"
 	@echo "  benchmark     - Benchmark linting speed on a synthetic repo (SCALE=medium)"
