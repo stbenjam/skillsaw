@@ -60,6 +60,10 @@ Follow these steps in order. Do not skip ahead.
 Parse the argument string. `--serial` sets serial mode. A bare
 integer is the PR number.
 
+Read the repository's `REVIEW.md` before assessing the change. It defines the
+project-specific review priorities and severity calibration that every panel
+member and the arbiter must follow.
+
 Check what the changes are being compared against:
 
 - In the automated workflow, read `/tmp/skillsaw-panel-pr.json` for PR
