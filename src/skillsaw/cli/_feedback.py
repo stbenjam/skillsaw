@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import platform
 import re
 import secrets
+import select
 import subprocess
 import sys
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -102,8 +105,6 @@ def _run_diagnostic_lint(
         "lint",
         "--format",
         "json",
-        "--verbose",
-        "--no-progress",
     ]
     if config_path is not None:
         command.extend(["--config", str(config_path)])
@@ -111,21 +112,12 @@ def _run_diagnostic_lint(
         command.extend(["--no-custom-rules", "--no-plugins"])
     command.append(".")
     try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=120,
-            check=False,
-        )
+        stdout, stderr, return_code = _run_lint_process(command, root)
         return {
-            "command": ["skillsaw", "lint", "--format", "json", "--verbose", "--no-progress"],
-            "exit_code": completed.returncode,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
+            "command": ["skillsaw", "lint", "--format", "json"],
+            "exit_code": return_code,
+            "stdout": stdout,
+            "stderr": stderr,
             "timed_out": False,
         }
     except subprocess.TimeoutExpired as error:
@@ -142,6 +134,52 @@ def _run_diagnostic_lint(
             "stderr": stderr,
             "timed_out": True,
         }
+
+
+def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
+    """Run lint, mirroring its interactive progress line into this terminal."""
+    if not sys.stderr.isatty() or os.name == "nt":
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            check=False,
+        )
+        return completed.stdout, completed.stderr, completed.returncode
+
+    import pty
+
+    master, slave = pty.openpty()
+    captured_stderr = bytearray()
+    try:
+        with tempfile.TemporaryFile(mode="w+b") as stdout_file:
+            process = subprocess.Popen(command, cwd=root, stdout=stdout_file, stderr=slave)
+            os.close(slave)
+            slave = -1
+            while True:
+                readable, _unused, _errors = select.select([master], [], [], 0.1)
+                if readable:
+                    chunk = os.read(master, 65536)
+                    if chunk:
+                        captured_stderr.extend(chunk)
+                        sys.stderr.buffer.write(chunk)
+                        sys.stderr.buffer.flush()
+                    elif process.poll() is not None:
+                        break
+                elif process.poll() is not None:
+                    break
+            return_code = process.wait(timeout=120)
+            stdout_file.seek(0)
+            stdout = stdout_file.read().decode("utf-8", "replace")
+    finally:
+        if slave >= 0:
+            os.close(slave)
+        os.close(master)
+    return stdout, captured_stderr.decode("utf-8", "replace"), return_code
 
 
 def _replace_local_paths(text: str, root: Path, config_path: Path | None) -> str:
