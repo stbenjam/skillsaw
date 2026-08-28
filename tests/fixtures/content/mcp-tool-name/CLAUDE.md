@@ -26,9 +26,7 @@ same owner, repo, and path arguments.
 
 ## Enabling the servers
 
-Add `mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql` and
-`mcp__plugin_github_github__get_file_contents` to the allowed-tools list in
-`.claude/settings.json`:
+Grant the tools in `.claude/settings.json`:
 
 ```json
 {

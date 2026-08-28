@@ -96,6 +96,18 @@ def test_bump_moves_every_pin_site_together(tmp_path):
         assert OLD not in (repo / leftover).read_text()
 
 
+def test_bump_defaults_to_patch_increment(tmp_path):
+    repo = _make_repo(tmp_path)
+    result = subprocess.run(
+        ["bash", str(repo / "scripts" / "bump-version.sh")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert 'version = "1.2.4"' in (repo / "pyproject.toml").read_text()
+    assert '__version__ = "1.2.4"' in (repo / "src" / "skillsaw" / "__init__.py").read_text()
+
+
 def test_bump_skips_missing_docs(tmp_path):
     """Docs get reorganized; a missing pinned doc is not an error."""
     repo = _make_repo(tmp_path)

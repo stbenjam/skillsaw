@@ -38,9 +38,8 @@ fi
 echo "Bumping version: $current_version -> $new_version"
 
 # Use python for portable in-place editing (works on both macOS and Linux).
-# Both python programs are quoted heredocs with values passed as argv: an
-# inline double-quoted program hands quotes, backticks, and $ to the shell,
-# which word-splits or command-substitutes the source before python sees it.
+# Both python programs are quoted heredocs with values passed as argv, so
+# quotes, backticks, and $ in the source never reach the shell.
 python3 - "$PYPROJECT" "$INIT_PY" "$ACTION_YML" "$current_version" "$new_version" <<'PY'
 import re, sys
 
@@ -50,9 +49,11 @@ for path, pattern, repl in [
     (init_py, r'^__version__ = "' + re.escape(current) + '"', '__version__ = "' + new + '"'),
     (action_yml, r"default: '" + re.escape(current) + "'", "default: '" + new + "'"),
 ]:
-    text = open(path).read()
+    with open(path, encoding='utf-8') as f:
+        text = f.read()
     text = re.sub(pattern, repl, text, count=1, flags=re.MULTILINE)
-    open(path, 'w').write(text)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(text)
 PY
 
 echo "Updated:"
@@ -68,7 +69,8 @@ for doc in "${PINNED_DOCS[@]}"; do
 import re, sys
 
 path, current, new = sys.argv[1:4]
-text = original = open(path).read()
+with open(path, encoding='utf-8') as f:
+    text = original = f.read()
 for pattern, repl in [
     (r'skillsaw==' + re.escape(current), 'skillsaw==' + new),
     (r'rev: v' + re.escape(current), 'rev: v' + new),
@@ -84,7 +86,8 @@ for pattern, repl in [
 ]:
     text = re.sub(pattern, repl, text)
 if text != original:
-    open(path, 'w').write(text)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(text)
     print('  ' + path)
 PY
 done

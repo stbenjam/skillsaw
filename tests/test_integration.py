@@ -4176,6 +4176,36 @@ class TestContentUnclosedFenceAutofix:
         assert all(v["file_path"].endswith("SKILL.md") for v in weak)
 
 
+@pytest.mark.integration
+class TestContentMcpToolNameSuggestGate:
+    """content-mcp-tool-name ships its fix at SUGGEST: the strip is
+    mechanically exact but whether it is an adequate replacement is a
+    judgment call, so a plain `skillsaw fix` must leave the files alone."""
+
+    FIXTURE = "content/mcp-tool-name"
+
+    def test_plain_fix_applies_nothing(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_contents(repo)
+        _run_fix(repo)
+        assert _snapshot_contents(repo) == before
+
+    def test_suggest_fix_strips_and_converges(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo, "--suggest")
+
+        claude = (repo / "CLAUDE.md").read_text()
+        assert "run searchJiraIssuesUsingJql" in claude
+        assert "with `getJiraIssue`" in claude
+
+        r = run_lint(repo)
+        assert "content-mcp-tool-name" not in rule_ids(r)
+
+        first = _snapshot_contents(repo)
+        _run_fix(repo, "--suggest")
+        assert _snapshot_contents(repo) == first
+
+
 # ── SAFE Autofix Idempotency Suite ──────────────────────────────
 
 
@@ -4394,7 +4424,6 @@ class TestSafeAutofixIdempotency:
         "agentskill-valid": 7,
         "claude-command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
-        "content-mcp-tool-name": 4,
         "cursor-rules-valid": 3,
     }
 

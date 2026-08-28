@@ -11,43 +11,32 @@ from skillsaw.markdown_doc import MarkdownDoc, file_span, splice
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 from skillsaw.utils import read_text
 
-# `mcp__<server>__<tool>` is the flattening Claude Code and the Claude Agent
-# SDK use for MCP tool identifiers — not an MCP-spec fact.  Other clients
-# flatten differently (Codex CLI drops the `mcp` prefix entirely), so the
-# pattern must stay anchored on the literal `mcp__` and never generalize to
-# bare `<server>__<tool>`, which would false-positive on ordinary
-# dunder-style identifiers.
+# `mcp__<server>__<tool>` is the flattened MCP tool identifier of Claude
+# Code and the Claude Agent SDK, and the same convention appears throughout
+# OpenAI's Codex plugin content — a client convention, not part of the MCP
+# specification.  Keep the pattern anchored on the literal `mcp__` and never
+# generalize it to bare `<server>__<tool>`, which would false-positive on
+# ordinary dunder-style identifiers.
 #
 # Match the maximal `mcp__…` identifier run, then split the server from the
 # tool in Python.  No negative lookahead trails the quantifier: a failing
 # assertion after `[A-Za-z0-9_-]+` would make the engine backtrack into a
 # truncated match and the fix would splice a corrupted span (issue #321).
-# The leading lookbehind cannot induce that retry either — not because it is
-# fixed-width (a fixed-width lookbehind can still truncate; see
-# unlinked_internal_reference.py), but because when it fails the engine
-# advances into the token, where the required literal `mcp__` no longer
-# matches, so no truncated match exists to splice.
+# The leading lookbehind is safe because when it fails the engine advances
+# into the token, where the required literal `mcp__` no longer matches — so
+# no truncated match exists to splice.
 _MCP_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_-])mcp__[A-Za-z0-9_-]+")
-
-# Lines that instruct configuration genuinely need the fully-qualified name:
-# "add `mcp__jira__getIssue` to your allowed-tools" must keep its prefix or
-# the instruction stops working.  A token on a line containing any of these
-# markers is never flagged.
-_CONFIG_CONTEXT_MARKERS = (
-    "allowed-tools",
-    "allowedtools",
-    "permissions",
-    "settings.json",
-    ".mcp.json",
-    "deny",
-    "matcher",
-)
 
 
 class ContentMcpToolNameRule(Rule):
     """Detect fully-qualified MCP tool names in prose"""
 
-    autofix_confidence = AutofixConfidence.SAFE
+    # SUGGEST, deliberately: the splice is mechanically exact, but whether
+    # the strip is an adequate replacement is a judgment call — a generic
+    # short name (`create`, `screenshot`) loses its server hint, and prose
+    # that must communicate a runtime identifier needs a hand rewrite — so
+    # the fix applies only under `skillsaw fix --suggest`.
+    autofix_confidence = AutofixConfidence.SUGGEST
 
     formats = None
     since = "0.20.0"
@@ -98,16 +87,14 @@ class ContentMcpToolNameRule(Rule):
         Scans prose text and inline code spans — deliberately not fences or
         indented code, where a config example legitimately needs the
         fully-qualified name.  Also skipped: link text (rewriting it would
-        corrupt the link), tokens embedded in URLs or paths, and lines that
-        instruct configuration (see ``_CONFIG_CONTEXT_MARKERS``).
+        corrupt the link) and tokens embedded in URLs or paths.
         """
         results: List[Tuple[int, int, str, str]] = []
 
         def collect(body_line: int, base_col: int, text: str) -> None:
-            raw_line = doc.line(body_line)
-            lowered = raw_line.lower()
-            if any(marker in lowered for marker in _CONFIG_CONTEXT_MARKERS):
+            if "mcp__" not in text:
                 return
+            raw_line = doc.line(body_line)
             for match in _MCP_TOKEN_RE.finditer(text):
                 token = match.group(0)
                 if token in allow:
@@ -200,11 +187,17 @@ class ContentMcpToolNameRule(Rule):
         self, context: RepositoryContext, violations: List[RuleViolation], **kwargs: object
     ) -> List[AutofixResult]:
         allow = frozenset(self.setting("allow"))
-        fixes_by_file: Dict[Path, List[Tuple[str, RuleViolation]]] = defaultdict(list)
+        fixes_by_file: Dict[Path, List[Tuple[str, int, RuleViolation]]] = defaultdict(list)
         for v in violations:
             if not v.file_path or v.block is None or not v.fixable:
                 continue
-            fixes_by_file[v.file_path].append((v.message.split("'")[1], v))
+            # The fingerprint discriminator carries the fix target —
+            # token:ordinal, set by check() — so the human-readable message
+            # is never load-bearing for a file-mutating path.
+            token, _, tail = (v.fingerprint_discriminator or "").rpartition(":")
+            if not token or not tail.isdigit():
+                continue
+            fixes_by_file[v.file_path].append((token, int(tail), v))
 
         results: List[AutofixResult] = []
         for fpath, replacements in fixes_by_file.items():
@@ -217,25 +210,18 @@ class ContentMcpToolNameRule(Rule):
             edits: List[Tuple[int, int, int, str]] = []
             violations_fixed: List[RuleViolation] = []
             used_spans: Set[Tuple[int, int, int]] = set()
-            # One candidate scan per block, not per violation: text_segments()
-            # and code_spans() each return a fresh list copy per call.
+            # One candidate scan per block: text_segments() and code_spans()
+            # each return a fresh list copy per call.
             candidates_by_block: Dict[int, List[Tuple[int, int, str, str]]] = {}
-            for token, v in replacements:
+            for token, ordinal, v in replacements:
                 doc = v.block.markdown
                 candidates = candidates_by_block.get(id(v.block))
                 if candidates is None:
                     candidates = self._candidates(doc, allow)
                     candidates_by_block[id(v.block)] = candidates
-                # check() numbers same-token occurrences on a line into the
-                # fingerprint discriminator (token:ordinal); select the same
-                # occurrence here, so a partial violation set — a baseline
-                # suppressing one ordinal — fixes the occurrence it reports,
-                # never an earlier suppressed one.
-                ordinal = 0
-                if v.fingerprint_discriminator:
-                    tail = v.fingerprint_discriminator.rsplit(":", 1)[-1]
-                    if tail.isdigit():
-                        ordinal = int(tail)
+                # Select the occurrence the violation reports, so a partial
+                # violation set — a baseline suppressing one ordinal — never
+                # rewrites an earlier suppressed occurrence in its place.
                 occurrence = -1
                 for body_line, col, candidate, short in candidates:
                     if candidate != token:
@@ -262,7 +248,7 @@ class ContentMcpToolNameRule(Rule):
                     AutofixResult(
                         rule_id=self.rule_id,
                         file_path=fpath,
-                        confidence=AutofixConfidence.SAFE,
+                        confidence=AutofixConfidence.SUGGEST,
                         original_content=content,
                         fixed_content=fixed,
                         description=f"Strip the mcp__ prefix from {len(violations_fixed)} MCP tool name(s)",

@@ -5028,7 +5028,7 @@ class TestContentMcpToolNameRule:
         rule = ContentMcpToolNameRule()
         assert rule.rule_id == "content-mcp-tool-name"
         assert rule.default_severity() == Severity.WARNING
-        assert rule.autofix_confidence == AutofixConfidence.SAFE
+        assert rule.autofix_confidence == AutofixConfidence.SUGGEST
         assert rule.supports_autofix
         assert rule.since == "0.20.0"
 
@@ -5062,8 +5062,9 @@ class TestContentMcpToolNameRule:
         assert "'searchJiraIssuesUsingJql'" in violations[0].message
 
     def test_detects_name_inside_inline_code_span(self, temp_dir):
-        """Code spans are the common case and the standard prose read blanks
-        them — scanning them is the regression this rule exists to hold."""
+        """Most real occurrences sit inside backticks, and
+        read_body(strip_code_blocks=True) blanks code spans — so the rule
+        must scan them itself or it misses the common case."""
         (temp_dir / "CLAUDE.md").write_text(
             "# Rules\n\nFetch files with `mcp__plugin_github_github__get_file_contents`.\n"
         )
@@ -5126,7 +5127,8 @@ class TestContentMcpToolNameRule:
             "The catalog is queried as\n"
             "https://registry.example.com/api?tool=mcp__jira__getIssue and the\n"
             "export downloads as mcp__jira__getIssue.json. Windows agents read\n"
-            "C:\\tools\\mcp__jira__getIssue instead.\n"
+            "C:\\tools\\mcp__jira__getIssue instead, and versioned exports use\n"
+            "the v2.mcp__jira__getIssue naming.\n"
         )
         assert self._check(temp_dir) == []
 
@@ -5136,23 +5138,36 @@ class TestContentMcpToolNameRule:
         )
         assert self._check(temp_dir) == []
 
-    def test_config_instructing_line_not_flagged(self, temp_dir):
-        """Prose that tells the reader to configure a tool genuinely needs
-        the fully-qualified name — rewriting it would break the
-        instruction."""
+    def test_config_instructing_prose_is_flagged(self, temp_dir):
+        """Deliberate: config-instructing prose is flagged like any other
+        prose — the mcp__<server>__ half is non-deterministic there too.
+        The rule doc steers the author to the placeholder form or a fenced
+        example, and the SUGGEST tier keeps the strip from applying
+        unattended."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nAdd `mcp__jira__getIssue` to your allowed-tools list first.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].fix_confidence == AutofixConfidence.SUGGEST
+
+    def test_lookbehind_rejects_prefixed_identifiers(self, temp_dir):
+        """An identifier character before mcp__ means the token is part of
+        a longer name, never a tool reference."""
         (temp_dir / "CLAUDE.md").write_text(
             "# Rules\n\n"
-            "Add `mcp__jira__getIssue` to your allowed-tools list first.\n\n"
-            "Grant mcp__github__create_pull_request in the permissions block\n"
-            "of `settings.json` before running the release flow.\n"
+            "The legacy-mcp__jira__getIssue alias and the v2mcp__jira__getIssue\n"
+            "build target are internal names.\n"
         )
         assert self._check(temp_dir) == []
 
     def test_multiline_code_span_not_flagged(self, temp_dir):
         """A code span wrapped across a line break is skipped by design —
-        its columns cannot be mapped to a single splice."""
+        its columns cannot be mapped to a single splice.  The fragment
+        before the wrap is itself a complete FQ name, so only the
+        multiline skip keeps it clean."""
         (temp_dir / "CLAUDE.md").write_text(
-            "# Rules\n\nFetch files with `mcp__plugin_github_github__\nget_file_contents`.\n"
+            "# Rules\n\nFetch files with `mcp__github__get\nfile_contents`.\n"
         )
         assert self._check(temp_dir) == []
 
@@ -5177,8 +5192,7 @@ class TestContentMcpToolNameRule:
         )
         assert len(self._check(temp_dir)) == 1
 
-        rule = ContentMcpToolNameRule()
-        rule.config = {"allow": ["mcp__internal__report__generate"]}
+        rule = ContentMcpToolNameRule({"allow": ["mcp__internal__report__generate"]})
         assert rule.check(RepositoryContext(temp_dir)) == []
 
     def test_diagnostic_only_body_reported_not_fixable(self, temp_dir):
@@ -5193,7 +5207,7 @@ class TestContentMcpToolNameRule:
         assert by_name["hooks.json"].fixable is False
         assert by_name["hooks.json"].fix_confidence is None
         assert by_name["AGENTS.md"].fixable is True
-        assert by_name["AGENTS.md"].fix_confidence == AutofixConfidence.SAFE
+        assert by_name["AGENTS.md"].fix_confidence == AutofixConfidence.SUGGEST
 
     def test_yaml_embedded_body_fixable_only_when_span_verifies(self, temp_dir):
         """A literal (``|``) YAML block scalar keeps real file lines, so
@@ -5237,7 +5251,7 @@ class TestContentMcpToolNameAutofix:
         (temp_dir / "CLAUDE.md").write_text(self.CONTENT)
         fixes = self._fix(temp_dir)
         assert len(fixes) == 1
-        assert fixes[0].confidence == AutofixConfidence.SAFE
+        assert fixes[0].confidence == AutofixConfidence.SUGGEST
         fixed = fixes[0].fixed_content
         assert "Search with searchJiraIssuesUsingJql first." in fixed
         assert "Fetch files with `get_file_contents`." in fixed
@@ -5344,6 +5358,7 @@ class TestContentMcpToolNameAutofix:
         content = (
             "---\n"
             "description: Deploy the service to staging\n"
+            "allowed-tools: mcp__plugin_jira_atlassian__getJiraIssue\n"
             "---\n"
             "\n"
             "# Deploy\n"
@@ -5357,8 +5372,10 @@ class TestContentMcpToolNameAutofix:
         original_lines = content.split("\n")
         fixed_lines = fixes[0].fixed_content.split("\n")
         assert len(fixed_lines) == len(original_lines)
-        assert fixed_lines[6] == "Check the ticket with `getJiraIssue` first."
-        assert fixed_lines[:6] == original_lines[:6]
+        assert fixed_lines[7] == "Check the ticket with `getJiraIssue` first."
+        # Frontmatter — including the allowed-tools FQ name it must keep —
+        # is byte-identical.
+        assert fixed_lines[:7] == original_lines[:7]
 
         (cmd_dir / "deploy.md").write_text(fixes[0].fixed_content)
         invalidate_read_caches()
