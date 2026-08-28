@@ -223,6 +223,41 @@ def test_apm_yaml_invalid_yaml_fails(temp_dir):
     assert "Invalid YAML" in violations[0].message
 
 
+def test_apm_yaml_empty_name_fails(temp_dir):
+    """`name: ""` is a missing identifier — apm install rejects the manifest."""
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    _make_apm_repo(repo, skills=["my-skill"], apm_yml='name: ""\nversion: "1.0.0"\n')
+
+    context = RepositoryContext(repo)
+    violations = ApmYamlValidRule().check(context)
+    assert len(violations) == 1
+    assert "Required field 'name' is an empty string" in violations[0].message
+
+
+def test_apm_yaml_blank_version_fails(temp_dir):
+    """A whitespace-only version is as absent as an empty one."""
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    _make_apm_repo(repo, skills=["my-skill"], apm_yml='name: pkg\nversion: "   "\n')
+
+    context = RepositoryContext(repo)
+    violations = ApmYamlValidRule().check(context)
+    assert len(violations) == 1
+    assert "Required field 'version' is an empty string" in violations[0].message
+    assert violations[0].line == 2
+
+
+def test_apm_yaml_missing_description_passes(temp_dir):
+    """`description` is optional upstream — only name and version are required."""
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    _make_apm_repo(repo, skills=["my-skill"], apm_yml='name: pkg\nversion: "1.0.0"\n')
+
+    context = RepositoryContext(repo)
+    assert ApmYamlValidRule().check(context) == []
+
+
 def test_apm_yaml_oversized_integer_is_reported_not_raised(temp_dir, oversized_integer_digits):
     """A parser ValueError must remain an ordinary invalid-YAML finding."""
     if oversized_integer_digits is None:
