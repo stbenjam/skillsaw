@@ -109,6 +109,7 @@ runs can update and remove only the comments they own:
 | `strict` | Treat warnings as errors | `false` |
 | `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict: true` is equivalent to `fail-on: warning`, and combining `strict` with a contradictory `fail-on` fails the run | `''` |
 | `verbose` | Include info-level violations | `false` |
+| `rule` | Only run these rules — kebab-case rule ids, one per line or comma-separated. Selection is not permission: a rule that needs the network also requires `no-network: false` | `''` |
 | `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
 | `no-network` | Skip rules that make outbound network requests, whatever the linted repository enables | `true` |
 | `plugins` | Trusted newline-separated pip requirements to install as rule plugins; values can select indexes or URLs | `''` |
@@ -225,29 +226,36 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - run: pipx install skillsaw
-      - run: skillsaw lint . --rule content-broken-external-reference --strict -v
+      - uses: stbenjam/skillsaw@v0
+        with:
+          rule: content-broken-external-reference
+          no-network: false
+          strict: true
+          verbose: true
 ```
 
-`--strict` is load-bearing. The rule reports at `warning`, and the default
-threshold is `fail-on: error` — without it the job stays green even when it
-finds dead links, and a scheduled job whose output nobody reads is only
-useful if it can go red. `-v` surfaces the info-level notice that says the
-network budget ran out before every link was checked.
+Both inputs are needed, and they are not the same decision. `rule` chooses
+which rules run; `no-network: false` grants the capability. Naming the rule
+while the gate stays on is an error, not a green run over an empty rule set,
+so a job that forgets the second line fails loudly rather than reporting no
+dead links.
 
-Using `--rule` rather than `.skillsaw.yaml` keeps the rule out of every
-other run, including local ones, and keeps your `skillsaw badge` grade
-independent of whether a third-party URL 404s today.
+`strict: true` is load-bearing. The rule reports at `warning`, and the
+default threshold is `fail-on: error` — without it the job stays green even
+when it finds dead links, and a scheduled job whose output nobody reads is
+only useful if it can go red. `verbose: true` surfaces the info-level notice
+that says the network budget ran out before every link was checked.
+
+Selecting the rule here rather than enabling it in `.skillsaw.yaml` keeps it
+out of every other run, including local ones, and keeps your `skillsaw badge`
+grade independent of whether a third-party URL 404s today.
 
 A clean run is not proof every link resolved: bot walls, rate limits, 5xx
 responses, timeouts and DNS failures are all treated as inconclusive and
 reported nowhere.
 
-The recipe above runs the CLI directly rather than the `skillsaw` Action,
-because the Action has no per-rule selector today — no `rule`, `skip-rule`
-or `args` input — and enabling the rule the only other way, in
-`.skillsaw.yaml`, is what the section above tells you not to do. Use the
-Action for your pull-request job and the CLI for this one.
+Pin `stbenjam/skillsaw@v0` to a commit SHA in a real workflow, the same way
+the pull-request job above does.
 
 ### Refusing network access outright
 
@@ -268,9 +276,10 @@ rule whatever the flag says: a dead URL has no mechanical fix, and the
 autofix loop re-runs every rule's `check()` once per pass.
 
 Naming only network rules while the gate is on — `--rule
-content-broken-external-reference --no-network`, which is what an
-org-wide `SKILLSAW_NO_NETWORK` export does to the scheduled job above — is
-an error, not a green run over an empty rule set.
+content-broken-external-reference --no-network`, or the Action's `rule`
+input without `no-network: false`, which is also what an org-wide
+`SKILLSAW_NO_NETWORK` export does to the scheduled job above — is an error,
+not a green run over an empty rule set.
 
 The companion control is `--allow-private-hosts`
 (`SKILLSAW_ALLOW_PRIVATE_HOSTS=1`), which lets link checking reach

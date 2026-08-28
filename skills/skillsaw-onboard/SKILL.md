@@ -33,14 +33,14 @@ If not installed, choose the best approach for this environment:
    pip install skillsaw
    ```
 
-3. **Container (podman or docker)** — use this if neither uvx nor pip is available.
-   Use whichever runtime is installed (`podman` or `docker`):
+3. **Container** — use this if neither uvx nor pip is available. Use whichever
+   runtime is installed (`podman` or `docker`):
    ```
    podman pull ghcr.io/stbenjam/skillsaw:latest
    podman run -v $(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw
    ```
    The `:Z` suffix relabels the mount for SELinux. Always mount the repo at
-   `/workspace` and pass subcommands after the image name (e.g. `podman run -v $(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw tree`).
+   `/workspace` and pass subcommands after the image name (e.g. append `tree`).
 
 Verify the installation works by running `skillsaw --version` (or the equivalent for the chosen approach) before proceeding.
 
@@ -172,6 +172,25 @@ jobs:
     steps:
       - uses: stbenjam/skillsaw/review@<SKILLSAW_SHA> # v0
 ```
+
+<!-- skillsaw-disable-next-line content-unlinked-internal-reference -->
+Then ask if they want a weekly external dead-link check — its own scheduled
+workflow, so a slow origin never blocks a merge. If yes, also create `.github/workflows/link-check.yml` from the
+[recipe](https://skillsaw.org/ci/#scheduled-external-link-checking): the Lint
+workflow with a weekly `schedule` cron plus `workflow_dispatch` for `on:`, and
+these inputs on the skillsaw step:
+
+```yaml
+        with:
+          rule: content-broken-external-reference
+          no-network: false
+          strict: true
+          verbose: true
+```
+
+Both are required: `rule` selects the check, `no-network: false` grants the
+network. Naming the rule alone is an error. Keep `strict: true` — the rule
+reports at `warning`.
 
 ### GitLab CI
 
@@ -305,6 +324,7 @@ Remind the user to commit all new/changed files:
 - `.skillsaw-badge.json` and `README.md` (if the badge was set up)
 - `.github/workflows/lint.yml` (if created)
 - `.github/workflows/lint-review.yml` (if created)
+- `.github/workflows/link-check.yml` (if created)
 - `.gitlab-ci.yml` (if modified)
 - `Makefile` (if created or modified)
 - Any files that were fixed
