@@ -177,7 +177,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="append",
         default=[],
         metavar="RULE",
-        help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
+        help="Only run these rules and their validation dependencies (repeatable). "
+        "Config still comes from .skillsaw.yaml.",
     )
     lint_parser.add_argument(
         "--skip-rule",
@@ -251,7 +252,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="append",
         default=[],
         metavar="RULE",
-        help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
+        help="Only run these rules and their validation dependencies (repeatable). "
+        "Config still comes from .skillsaw.yaml.",
     )
     fix_parser.add_argument(
         "--skip-rule",

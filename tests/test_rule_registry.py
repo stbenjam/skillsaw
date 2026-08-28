@@ -44,6 +44,16 @@ def test_default_enabled_values_are_valid():
         )
 
 
+def test_target_dependencies_are_known_builtins():
+    problems = []
+    known = set(BUILTIN_RULE_REGISTRY)
+    for rule_id, cls in BUILTIN_RULE_REGISTRY.items():
+        unknown = set(cls.target_dependencies) - known
+        if unknown:
+            problems.append(f"{rule_id}: {', '.join(sorted(unknown))}")
+    assert problems == [], f"unknown target dependencies: {problems}"
+
+
 def test_default_config_generated_from_registry():
     """default() must cover every builtin rule with the class-level defaults.
 

@@ -2557,6 +2557,20 @@ class TestOpenCode:
         assert found[0]["message"].startswith("Invalid JSON:")
         assert by_rule(r).get("opencode-config-valid", []) == []
 
+    def test_targeting_config_validation_also_runs_its_parse_validation(self, tmp_path):
+        """A focused config check must not pass a file OpenCode cannot read."""
+        repo = copy_fixture("opencode/unparseable", tmp_path)
+        r = run_lint(repo, "--rule", "opencode-config-valid")
+
+        assert r["rc"] == 1
+        found = by_rule(r)
+        assert [v["file_path"] for v in found["mcp-valid-json"]] == ["opencode.jsonc"]
+        assert found.get("opencode-config-valid", []) == []
+        assert set(r["out"]["stats"]["rules_run"]) == {
+            "mcp-valid-json",
+            "opencode-config-valid",
+        }
+
     def test_a_version_pinned_project_still_learns_the_config_is_unreadable(self, tmp_path):
         """The `since` gate, exercised as itself rather than as `enabled: false`.
 
