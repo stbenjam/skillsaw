@@ -24,6 +24,10 @@ night. Read the reference material before changing anything under
   the shared vault.
 - [Legacy vanity URL](http://127.0.0.1:__PORT__/redirect-loop) — misconfigured
   years ago and never cleaned up.
+- [Card scheme rulebook (PDF)](http://127.0.0.1:__PORT__/head-404-get-200) —
+  hosted behind a CDN that mishandles HEAD.
+- [Interchange fee tables](http://127.0.0.1:__PORT__/head-410-get-200) — same
+  CDN, same quirk.
 - <http://127.0.0.1:__PORT__/rate-limited>
 
 ## Running a reconciliation locally

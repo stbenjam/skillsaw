@@ -41,6 +41,16 @@ _BROKEN_STATUSES = {
 # never read) settles those without turning every probe into a download.
 _RETRY_WITH_GET = frozenset({405, 501})
 
+# A HEAD answer is never enough to convict. RFC 9110 says HEAD must
+# return what GET would minus the body, and plenty of servers simply do
+# not: nvlpubs.nist.gov answers 404 to HEAD and serves the PDF on GET,
+# and azure.microsoft.com does the same on some marketing paths. Both
+# showed up as false positives in the first real-repo run of this rule.
+# So a candidate violation is always re-asked with GET, and GET's answer
+# is the one that counts. The extra request is paid only for links that
+# are about to be reported, which is a small minority of any repository.
+_CONFIRM_WITH_GET = frozenset(_BROKEN_STATUSES)
+
 # Same rationale as the sibling internal-reference rule: files under a
 # template directory carry placeholder targets on purpose.
 _TEMPLATE_DIR_NAMES = frozenset({"template", "templates", "_template"})
@@ -269,10 +279,18 @@ class ContentBrokenExternalReferenceRule(Rule):
                 return None, False
             request_timeout = min(timeout, remaining)
         status = self._request(url, "HEAD", request_timeout)
-        if status in _RETRY_WITH_GET:
+        # Ask again with GET for two different reasons: the server
+        # refuses HEAD (405/501), or the HEAD answer would convict the
+        # link (404/410) and a HEAD-only answer is not evidence. Either
+        # way GET is authoritative — including when it answers nothing
+        # at all, which leaves the link unreported.
+        if status in _RETRY_WITH_GET or status in _CONFIRM_WITH_GET:
             if deadline is not None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
+                    # Out of budget mid-confirmation. The unconfirmed
+                    # HEAD status is discarded rather than reported:
+                    # when in doubt, stay silent.
                     return None, True
                 request_timeout = min(timeout, remaining)
             status = self._request(url, "GET", request_timeout)

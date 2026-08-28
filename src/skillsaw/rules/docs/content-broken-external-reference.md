@@ -39,6 +39,7 @@ Everything else is *not* a violation, deliberately:
   between the runner and the host, not the link.
 - Redirect chains longer than five hops, and redirects that leave
   `http`/`https`.
+- A `404`/`410` that a follow-up `GET` does not confirm (see below).
 
 A linter that fails your build because a documentation site rate-limited
 your runner is worse than no linter at all.
@@ -78,10 +79,22 @@ it, and every occurrence is still reported with its own file and line.
 
 ## Network behavior
 
-A `HEAD` request first; if the server answers `405` or `501`, one `GET`
-retry, reading the status and headers and never the body. Redirects are
-followed up to five hops. Requests run on a small thread pool and identify
-themselves as `skillsaw/<version>`.
+A `HEAD` request first, reading the status and headers and never the body.
+The answer is re-asked with `GET` in two cases:
+
+- the server answers `405` or `501` — it refuses `HEAD` outright;
+- the answer was `404` or `410` — a candidate violation.
+
+The second case matters more than it looks. RFC 9110 says a `HEAD`
+response must be what `GET` would return minus the body, and a fair number
+of servers do not comply: NIST's publication host answers `404` to `HEAD`
+and serves the PDF on `GET`. **A `HEAD` alone is never enough to convict** —
+`GET` is the authoritative answer, and if it does not also say `404`/`410`,
+nothing is reported. The extra request is paid only for links about to be
+flagged, so it costs nothing on a healthy repository.
+
+Redirects are followed up to five hops. Requests run on a small thread pool
+and identify themselves as `skillsaw/<version>`.
 
 Two limits bound a run: `timeout` per request and `total-budget` for all
 of them together. When the budget runs out, the URLs still queued are left

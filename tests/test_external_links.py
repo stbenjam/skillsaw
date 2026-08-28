@@ -15,6 +15,7 @@ until the server binds — is substituted into the copied fixture.
 import shutil
 import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import List, Tuple
@@ -91,6 +92,12 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
         elif path == "/head-405":
             # Rejects HEAD outright; the GET retry finds it is gone.
             self._respond(405 if method == "HEAD" else 404, body=b"")
+        elif path == "/head-404-get-200":
+            # nvlpubs.nist.gov's shape: 404 to HEAD, serves it on GET.
+            self._respond(404 if method == "HEAD" else 200, body=b"body")
+        elif path == "/head-410-get-200":
+            # The same mis-implementation spelled with 410.
+            self._respond(410 if method == "HEAD" else 200, body=b"body")
         elif path.startswith("/slow"):
             # Never answers within any timeout the tests configure.
             threading.Event().wait(_SLOW_SECONDS)
@@ -210,6 +217,14 @@ def _messages(violations):
     return [v.message for v in violations]
 
 
+def _methods_by_path(server):
+    """``{path: [method, ...]}`` in request order."""
+    methods = {}
+    for method, path in server.hits:
+        methods.setdefault(path, []).append(method)
+    return methods
+
+
 # ── Rule metadata ────────────────────────────────────────────────
 
 
@@ -308,6 +323,8 @@ class TestAgainstLocalServer:
             "/redirect-loop",  # exceeds the hop cap
             "/redirect-ok",  # 302 -> 200
             "/ok",  # 200
+            "/head-404-get-200",  # HEAD mis-implemented; GET says it is fine
+            "/head-410-get-200",  # same, spelled 410
         ):
             assert never_flagged not in joined
 
@@ -324,26 +341,37 @@ class TestAgainstLocalServer:
                 assert "/missing" in claude_md[line - 1]
         assert {name for name, _ in located} == {"CLAUDE.md", "SKILL.md"}
 
-    def test_each_url_is_requested_once(self, tmp_path, server):
-        """Three occurrences of one URL cost one request, not three."""
+    def test_each_url_is_probed_once(self, tmp_path, server):
+        """Repeated occurrences of one URL cost one probe, not one each."""
         repo = _materialize("content/external-links", tmp_path, server.port)
 
         _run_rule(repo)
 
-        assert server.paths().count("/missing") == 1
-
-    def test_head_first_then_get_only_when_head_is_rejected(self, tmp_path, server):
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        _run_rule(repo)
-
-        methods = {}
-        for method, path in server.hits:
-            methods.setdefault(path, []).append(method)
-        # Every URL is probed with HEAD; only the 405 route earns a GET.
+        methods = _methods_by_path(server)
+        # /ok and /forbidden each appear twice across the two files.
         assert methods["/ok"] == ["HEAD"]
-        assert methods["/gone"] == ["HEAD"]
-        assert methods["/head-405"] == ["HEAD", "GET"]
+        assert methods["/forbidden"] == ["HEAD"]
+        # /missing appears three times and still costs one probe — which
+        # is HEAD plus the confirming GET, not three of them.
+        assert methods["/missing"] == ["HEAD", "GET"]
+
+    def test_healthy_links_cost_a_single_head(self, tmp_path, server):
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        _run_rule(repo)
+
+        methods = _methods_by_path(server)
+        # No GET for anything that was never a candidate violation.
+        assert methods["/ok"] == ["HEAD"]
+        assert methods["/rate-limited"] == ["HEAD"]
+        assert methods["/server-error"] == ["HEAD"]
+
+    def test_head_rejection_falls_back_to_get(self, tmp_path, server):
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        _run_rule(repo)
+
+        assert _methods_by_path(server)["/head-405"] == ["HEAD", "GET"]
 
     def test_urls_in_code_fences_are_never_requested(self, tmp_path, server):
         repo = _materialize("content/external-links", tmp_path, server.port)
@@ -397,7 +425,66 @@ class TestAgainstLocalServer:
 # ── Failure modes that must stay silent ──────────────────────────
 
 
-class TestInconclusiveNetwork:
+class TestHeadIsNeverEnoughToConvict:
+    """Regression: PR #521's first real-repo run flagged live pages.
+
+    Two of the reported findings were servers that answer 404 to HEAD and
+    serve the resource on GET — nvlpubs.nist.gov's copy of NIST SP
+    800-53r5, and an azure.microsoft.com product page. RFC 9110 says HEAD
+    must answer as GET would minus the body; real servers disagree, so a
+    candidate violation is confirmed with GET before it is reported.
+    """
+
+    def test_head_404_with_get_200_is_not_reported(self, tmp_path, server):
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        violations = _run_rule(repo)
+
+        assert "/head-404-get-200" not in "\n".join(_messages(violations))
+        assert _methods_by_path(server)["/head-404-get-200"] == ["HEAD", "GET"]
+
+    def test_head_410_with_get_200_is_not_reported(self, tmp_path, server):
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        violations = _run_rule(repo)
+
+        assert "/head-410-get-200" not in "\n".join(_messages(violations))
+        assert _methods_by_path(server)["/head-410-get-200"] == ["HEAD", "GET"]
+
+    def test_a_confirmed_404_is_still_reported(self, tmp_path, server):
+        """The fix must not silence links that really are gone."""
+        repo = _materialize("content/external-links", tmp_path, server.port)
+
+        violations = _run_rule(repo)
+
+        assert any("/missing" in m for m in _messages(violations))
+        assert _methods_by_path(server)["/missing"] == ["HEAD", "GET"]
+
+    def test_unconfirmable_404_stays_silent(self, monkeypatch):
+        """A budget that expires mid-confirmation reports nothing.
+
+        The HEAD said 404 but the GET never happened, so nothing was
+        proven — and an unconfirmed status must never be reported.
+        Requests are stubbed so the budget, not the network, decides.
+        """
+        rule = ContentBrokenExternalReferenceRule({"enabled": True})
+        calls = []
+
+        def _burn_the_budget(url, method, timeout):
+            calls.append(method)
+            threading.Event().wait(0.25)
+            return 404
+
+        monkeypatch.setattr(rule, "_request", _burn_the_budget)
+
+        status, checked = rule._probe(
+            "http://127.0.0.1:1/never-reached", 5.0, time.monotonic() + 0.2
+        )
+
+        assert calls == ["HEAD"]  # the confirming GET never ran
+        assert checked is True
+        assert status is None  # not 404 — nothing was proven
+
     def test_offline_produces_no_violations(self, tmp_path):
         """Connection refused says nothing about the link."""
         repo = _materialize("content/external-links", tmp_path, _closed_port())
