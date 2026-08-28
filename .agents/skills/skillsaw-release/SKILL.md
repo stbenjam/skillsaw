@@ -22,9 +22,32 @@ Before releasing, verify:
 
 1. Check you are on the `main` branch, it is clean (`git status`), and up to
    date with `origin/main` (`git pull origin main`).
-2. All tests pass: `make test`.
-3. Formatting is clean: `make lint`.
-4. Determine which version to release. If none was specified, review the
+2. Verify the current `main` commit has a successful **push** run of the
+   `Tests` workflow. Do not accept the reduced PR test run: pull requests run
+   Python 3.9 plus the 3.14 coverage job, while a `main` push must have passed
+   Python 3.9, 3.10, 3.11, 3.12, 3.13, and 3.14. The workflow run must test the
+   exact `HEAD` being released:
+
+   ```bash
+   main_sha=$(git rev-parse HEAD)
+   run_id=$(gh run list --workflow test.yml --branch main --commit "$main_sha" \
+     --event push --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+   test -n "$run_id" && test "$run_id" != "null" || {
+     echo "No successful Tests workflow run exists for main at $main_sha" >&2
+     exit 1
+   }
+   gh run view "$run_id" --json jobs | jq -e '
+     [.jobs[] | select(.name | test("^test \\(3\\.(9|10|11|12|13|14)\\)$"))]
+     | length == 6 and all(.[]; .conclusion == "success")
+   ' >/dev/null || {
+     echo "The full Python 3.9–3.14 main test matrix did not pass" >&2
+     exit 1
+   }
+   ```
+
+3. All local tests pass: `make test`.
+4. Formatting is clean: `make lint`.
+5. Determine which version to release. If none was specified, review the
    commits since the last tag. Add a minor bump for new features or rules;
    keep a patch bump for fixes only (the bump script defaults to patch when given no argument).
 
