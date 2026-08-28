@@ -4,7 +4,6 @@
   <style>
     .title { font: 600 16px 'Segoe UI', Ubuntu, 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #e6edf3; }
     .subtitle { font: 400 11px 'Segoe UI', Ubuntu, 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #8b949e; }
-    .grade-label { font: 600 11px 'Segoe UI', Ubuntu, 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #8b949e; letter-spacing: 1.4px; }
     .grade-letter { font: 800 48px 'Segoe UI', Ubuntu, 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #44cc11; }
   </style>
   <rect x="0.5" y="0.5" width="494" height="194" rx="4.5" fill="#0d1117" stroke="#30363d"/>
@@ -12,9 +11,8 @@
     <path fill-rule="evenodd" fill="#44cc11" d="M20.0 12.0L22.3 15.8L19.3 15.3L17.7 17.7L16.6 22.0L14.8 19.5L12.0 20.0L8.2 22.3L8.7 19.3L6.3 17.7L2.0 16.6L4.5 14.8L4.0 12.0L1.7 8.2L4.7 8.7L6.3 6.3L7.4 2.0L9.2 4.5L12.0 4.0L15.8 1.7L15.3 4.7L17.7 6.3L22.0 7.4L19.5 9.2ZM15.0 12.0A3.0 3.0 0 1 0 9.0 12.0A3.0 3.0 0 1 0 15.0 12.0Z"/>
   </g>
   <text x="56" y="30" class="title" data-testid="repo-name">skillsaw</text>
-  <text x="56" y="46" class="subtitle">skillsaw grade</text>
+  <text x="56" y="46" class="subtitle">Agent Context Linter</text>
   <path d="M24 63.5H471" stroke="#30363d"/>
-  <text x="247.5" y="81" text-anchor="middle" class="grade-label">OVERALL GRADE</text>
   <g transform="translate(247.5, 127)">
     <circle r="42" fill="none" stroke="#44cc11" stroke-opacity="0.25" stroke-width="7"/>
     <circle r="42" fill="none" stroke="#44cc11" stroke-width="7" stroke-linecap="round" transform="rotate(-90)" stroke-dasharray="263.89 263.89"/>

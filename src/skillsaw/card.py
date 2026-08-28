@@ -159,7 +159,6 @@ def render_card(
         "  <style>",
         f"    .title {{ font: 600 16px {_FONTS}; fill: {colors['title']}; }}",
         f"    .subtitle {{ font: 400 11px {_FONTS}; fill: {colors['muted']}; }}",
-        f"    .grade-label {{ font: 600 11px {_FONTS}; fill: {colors['muted']}; letter-spacing: 1.4px; }}",
         f"    .grade-letter {{ font: 800 48px {_FONTS}; fill: {accent}; }}",
         "  </style>",
         (
@@ -170,9 +169,8 @@ def render_card(
         f'    <path fill-rule="evenodd" fill="{accent}" d="{LOGO_PATH}"/>',
         "  </g>",
         f'  <text x="56" y="30" class="title" data-testid="repo-name">{name}</text>',
-        '  <text x="56" y="46" class="subtitle">skillsaw grade</text>',
+        '  <text x="56" y="46" class="subtitle">Agent Context Linter</text>',
         f'  <path d="M24 63.5H471" stroke="{colors["border"]}"/>',
-        '  <text x="247.5" y="81" text-anchor="middle" class="grade-label">OVERALL GRADE</text>',
         '  <g transform="translate(247.5, 127)">',
         (
             f'    <circle r="{_RING_RADIUS}" fill="none" stroke="{accent}"'
