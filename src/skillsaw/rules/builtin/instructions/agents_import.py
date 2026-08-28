@@ -104,6 +104,13 @@ class ClaudeMdAgentsImportRule(Rule):
         discovered per directory by the same walk, so the tree already holds
         everything needed: group the two block types on their resolved
         parent directory.
+
+        A CLAUDE.md that is a *symlink* to its AGENTS.md is never a pair:
+        it is the other honest answer to the duplication problem (one file,
+        two names), and the two blocks share a resolved path. The lint tree
+        already dedupes on resolved path, so such a CLAUDE.md usually never
+        reaches a rule at all — the check here states the intent rather
+        than relying on that.
         """
         agents_by_dir: Dict[Path, AgentsMdBlock] = {}
         for block in context.lint_tree.find(AgentsMdBlock):
@@ -118,8 +125,9 @@ class ClaudeMdAgentsImportRule(Rule):
             if parent is None:
                 continue
             agents = agents_by_dir.get(parent)
-            if agents is not None:
-                pairs.append((block, agents))
+            if agents is None or agents.resolved_path == block.resolved_path:
+                continue
+            pairs.append((block, agents))
         pairs.sort(key=lambda pair: str(pair[0].path))
         return pairs
 

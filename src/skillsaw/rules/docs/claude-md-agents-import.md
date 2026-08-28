@@ -71,6 +71,12 @@ content. Anything else does — a heading, a sentence, a fenced code block,
 a second import. That means an inline suppression comment above the import
 keeps the file import-only, and a licence banner does too.
 
+**Also good (a symlink):** making `CLAUDE.md` a symlink to `AGENTS.md` is
+the other honest answer — one file under two names, so there is no second
+copy to drift. The rule stays quiet on it. Note that a symlink is not
+portable to every checkout (Windows without developer mode, some CI
+archive steps), which is why the import is the recommendation.
+
 ## How to fix
 
 1. Make sure `AGENTS.md` holds everything both assistants need. If the two

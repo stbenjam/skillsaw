@@ -573,6 +573,17 @@ class TestClaudeMdAgentsImportRule:
         assert self._check(temp_dir) == []
         assert len(self._check(temp_dir, **{"ignore-generated": False})) == 1
 
+    def test_symlinked_claude_md_is_not_a_pair(self, temp_dir):
+        """One file under two names is the other honest answer.
+
+        openshift-eng/ai-helpers ships exactly this: ``CLAUDE.md`` is a
+        symlink to ``AGENTS.md``. There is no second copy to drift, so the
+        rule stays quiet.
+        """
+        (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
+        (temp_dir / "CLAUDE.md").symlink_to("AGENTS.md")
+        assert self._check(temp_dir) == []
+
     def test_pairing_follows_root_scoped_instruction_discovery(self, temp_dir):
         """Instruction-file discovery is root-scoped, so pairing is too.
 
