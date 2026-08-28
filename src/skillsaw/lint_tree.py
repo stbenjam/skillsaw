@@ -36,6 +36,10 @@ from .blocks import (
     InstructionBlock,
     McpBlock,
     OpenAIMetadataBlock,
+    OpenCodeAgentBlock,
+    OpenCodeCommandBlock,
+    OpenCodeConfigBlock,
+    OpenCodeMcpBlock,
     PluginRuleBlock,
     PromptBlock,
     PromptfooPromptBlock,
@@ -95,7 +99,37 @@ _EDITOR_GLOBS = (
     (".github", "prompts", "**/*.prompt.md", "CopilotPromptBlock"),
     (".github", "chatmodes", "**/*.chatmode.md", "CopilotAgentBlock"),
     (".clinerules", "workflows", "**/*.md", "ClineWorkflowBlock"),
+    # ``mode``/``modes`` are deliberately absent: OpenCode reads those flat
+    # (``{mode,modes}/*.md``), so a nested ``*.instructions.md`` there would
+    # stand aside for a loop that never claims it — the drop this table
+    # exists to prevent. The instruction sweep keeps it, which is right:
+    # OpenCode does not load it either.
+    (".opencode", "commands", "**/*.md", "OpenCodeCommandBlock"),
+    (".opencode", "command", "**/*.md", "OpenCodeCommandBlock"),
+    (".opencode", "agents", "**/*.md", "OpenCodeAgentBlock"),
+    (".opencode", "agent", "**/*.md", "OpenCodeAgentBlock"),
 )
+
+# OpenCode's markdown content directories, as (subdirectory, glob, block
+# class). OpenCode 2.0 renamed each one to its plural and still loads the
+# 1.x singular, so both are linted — a project mid-migration carries both.
+# The globs mirror the loader's own: agents and commands nest (a command at
+# ``commands/git/commit.md`` is named ``git/commit``), while modes — the
+# pre-``agent`` spelling of a primary agent — are read flat.
+_OPENCODE_CONTENT_DIRS = (
+    ("commands", "**/*.md", "OpenCodeCommandBlock"),
+    ("command", "**/*.md", "OpenCodeCommandBlock"),
+    ("agents", "**/*.md", "OpenCodeAgentBlock"),
+    ("agent", "**/*.md", "OpenCodeAgentBlock"),
+    ("modes", "*.md", "OpenCodeAgentBlock"),
+    ("mode", "*.md", "OpenCodeAgentBlock"),
+)
+
+#: OpenCode reads its project config under either extension, in either
+#: location. Both are attached when both exist: OpenCode loads one and
+#: ignores the other, and a config the author believes is live but is not is
+#: exactly the kind of silent no-op worth reporting on.
+_OPENCODE_CONFIG_NAMES = ("opencode.json", "opencode.jsonc")
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -563,6 +597,47 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     for vscode_dir in context.agent_tool_dirs(".vscode"):
         _add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
+
+    def _add_opencode_config(directory: Path) -> None:
+        """Attach every ``opencode.json(c)`` in *directory* under both roles.
+
+        One document, two parser roles: the whole file is validated by
+        ``opencode-config-valid``, and its ``mcp`` section is additionally
+        exposed as an :class:`McpBlock` so the ecosystem-neutral policy and
+        security rules read OpenCode's servers the way they read every other
+        host's. ``_add_parser_block`` is role-aware, so this is one file
+        appearing twice in the tree rather than two findings for one defect.
+        """
+        for name in _OPENCODE_CONFIG_NAMES:
+            _add_parser_block(root, directory / name, OpenCodeConfigBlock)
+            _add_parser_block(root, directory / name, OpenCodeMcpBlock)
+
+    # The project config is read from the repository root as well as from
+    # ``.opencode/``. The root copy is never APM output — APM compiles into
+    # ``.opencode/``, never over a root config — so it is attached
+    # unconditionally.
+    _add_opencode_config(context.root_path)
+
+    _opencode_blocks = {
+        "OpenCodeCommandBlock": OpenCodeCommandBlock,
+        "OpenCodeAgentBlock": OpenCodeAgentBlock,
+    }
+    for opencode_dir in context.agent_tool_dirs(".opencode"):
+        # When APM compiles the ``opencode`` target it owns this whole
+        # directory, so its prose duplicates the ``.apm/`` sources the author
+        # actually edits and the content findings belong there. The copy is
+        # still attached, not skipped, so the security and structural rules
+        # read what really ships — a generated file can be hand-edited.
+        compiled = _is_in_compiled_dir(opencode_dir)
+        for sub, pattern, block_name in _OPENCODE_CONTENT_DIRS:
+            _add_glob(
+                root,
+                opencode_dir / sub,
+                pattern,
+                _opencode_blocks[block_name],
+                content_suppressed=compiled,
+            )
+        _add_opencode_config(opencode_dir)
 
     kiro_steering = context.root_path / ".kiro" / "steering"
     if kiro_steering.is_dir():

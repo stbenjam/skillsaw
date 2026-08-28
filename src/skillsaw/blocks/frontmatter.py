@@ -588,6 +588,29 @@ class CopilotAgentBlock(FrontmatteredBlock):
 
 
 @dataclass(eq=False)
+class OpenCodeCommandBlock(FrontmatteredBlock):
+    """``.opencode/commands/**/*.md`` — OpenCode slash commands.
+
+    Also the OpenCode 1.x ``.opencode/command/`` spelling, which 2.0 still
+    loads. Budgeted as a ``command``: the file enters the context window
+    when the user types ``/name``, not on every turn.
+    """
+
+    category: str = "command"
+
+
+@dataclass(eq=False)
+class OpenCodeAgentBlock(FrontmatteredBlock):
+    """``.opencode/agents/**/*.md`` — OpenCode subagents.
+
+    Covers the 1.x ``agent/`` directory and the older ``mode/`` spelling of
+    the same thing, both of which 2.0 still loads.
+    """
+
+    category: str = "agent"
+
+
+@dataclass(eq=False)
 class CommandBlock(FrontmatteredBlock):
     """commands/*.md in plugins."""
 

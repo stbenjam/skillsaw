@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
 
 from skillsaw.lint_target import LintTarget
-from skillsaw.utils import read_text, read_json, read_json_strict
+from skillsaw.utils import read_text, read_json, read_json_strict, read_jsonc
 
 
 def _as_str(value: Any) -> Optional[str]:
@@ -148,7 +148,13 @@ def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
     return result
 
 
-def _parse_json_file(path: Path, *, strict: bool = False) -> Tuple[Optional[Any], Optional[str]]:
+def _parse_json_file(
+    path: Path, *, strict: bool = False, jsonc: bool = False
+) -> Tuple[Optional[Any], Optional[str]]:
+    if jsonc:
+        # JSONC is always strict about the non-finite tokens; the locations
+        # that opt into it are new surfaces with no shipped results.
+        return read_jsonc(path)
     data, error = (read_json_strict if strict else read_json)(path)
     return data, error
 
@@ -170,13 +176,21 @@ class JsonConfigBlock(LintTarget):
     #: results that a tightened parser would turn into "Invalid JSON" on
     #: upgrade. The locations added since opt in, having no such history.
     strict_json: ClassVar[bool] = False
+    #: Whether the host reads this file as JSONC — ``//`` and ``/* */``
+    #: comments and a comma before a closing brace. Off by default: every
+    #: Claude-family location is strict JSON, and accepting comments there
+    #: would stop reporting a file its own host cannot read. A host that
+    #: documents JSONC (OpenCode names both ``opencode.json`` and
+    #: ``opencode.jsonc``) opts in, so a commented config is not reported
+    #: as a parse error.
+    jsonc: ClassVar[bool] = False
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
         default=None, init=False, repr=False
     )
 
     def _ensure_parsed(self) -> None:
         if self._parsed is None:
-            self._parsed = _parse_json_file(self.path, strict=self.strict_json)
+            self._parsed = _parse_json_file(self.path, strict=self.strict_json, jsonc=self.jsonc)
 
     @property
     def parse_error(self) -> Optional[str]:
@@ -505,6 +519,100 @@ class VsCodeMcpBlock(McpBlock):
 
     def tree_label(self) -> str:
         return "mcp.json (VS Code MCP)"
+
+
+#: Keys that appear on one OpenCode server and never on a map of them. Used
+#: to tell a v2 ``servers`` wrapper apart from a v1 server someone named
+#: ``servers``: nothing forbids the name, so the value decides.
+_OPENCODE_SERVER_FIELDS = frozenset(
+    {"type", "command", "url", "environment", "headers", "enabled", "disabled"}
+)
+
+
+@dataclass(eq=False)
+class OpenCodeConfigBlock(JsonConfigBlock):
+    """``opencode.json(c)`` — OpenCode's project configuration.
+
+    Read at the repository root and inside ``.opencode/``. The whole file is
+    machine configuration, so it is a :class:`JsonConfigBlock` and never
+    reaches a content rule; ``opencode-config-valid`` reads ``raw_data``.
+    """
+
+    category: str = "opencode-config"
+    strict_json: ClassVar[bool] = True
+    jsonc: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (OpenCode config)"
+
+
+@dataclass(eq=False)
+class OpenCodeMcpBlock(McpBlock):
+    """The ``mcp`` section of an ``opencode.json(c)``.
+
+    A second parser role on the same file as :class:`OpenCodeConfigBlock`,
+    which is what puts OpenCode's MCP servers in front of the shared policy
+    and security rules — ``mcp-prohibited`` finds it through
+    ``find(McpBlock)`` like every other host's configuration.
+
+    OpenCode's *shape* is its own: transports are named for where the server
+    runs (``local``/``remote``) rather than for the wire protocol, a local
+    server's ``command`` is an argv array rather than a string, and the
+    environment map is spelled ``environment``. ``mcp-valid-json`` therefore
+    stands aside for this block and ``opencode-config-valid`` checks the
+    shape; only the ecosystem-neutral policy rules read it here.
+    """
+
+    servers_key: ClassVar[str] = "mcp"
+    # OpenCode's config has a documented top-level key for everything from
+    # ``model`` to ``keybinds``. A document with no ``mcp`` key declares no
+    # servers; reading the whole config as a server map would turn every
+    # other setting into a server.
+    allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
+    strict_json: ClassVar[bool] = True
+    jsonc: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (OpenCode MCP)"
+
+    @property
+    def servers(self) -> List[McpServerConfig]:
+        """Every declared server, under either the v1 or the v2 spelling.
+
+        OpenCode 1.x maps names directly under ``mcp``; 2.0 nests them one
+        level deeper under ``mcp.servers`` and still loads the 1.x form.
+        Both are read, because both run: a policy rule that saw only the
+        spelling of the day would go quiet the moment a project migrated.
+        """
+        servers_dict = self.server_map()
+        if servers_dict is None:
+            return []
+        return [
+            McpServerConfig.from_dict(name, cfg)
+            for name, cfg in servers_dict.items()
+            if isinstance(cfg, dict)
+        ]
+
+    def server_map(self) -> Optional[Dict[str, Any]]:
+        """The raw name-to-config mapping, or ``None`` when there is none.
+
+        Shared with ``opencode-config-valid`` so the shape check and the
+        policy rules cannot disagree about which spelling is in force.
+        """
+        data = self.raw_data
+        if data is None:
+            return None
+        section = data.get(self.servers_key)
+        if not isinstance(section, dict):
+            return None
+        nested = section.get("servers")
+        # A v1 server may legitimately be called "servers". Nothing forbids
+        # the name, so the value decides: a v2 wrapper holds server objects,
+        # a v1 server holds connection fields.
+        if isinstance(nested, dict) and not (_OPENCODE_SERVER_FIELDS & set(nested)):
+            return nested
+        return section
 
 
 @dataclass(eq=False)

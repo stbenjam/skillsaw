@@ -1105,3 +1105,81 @@ class TestReplaceFrontmatterField:
 
         content = "---\nname: a\nname: b\n---\n"
         assert replace_frontmatter_field(content, "name", "name: new") == content
+
+
+class TestStripJsonc:
+    """JSONC tolerance: comments and trailing commas, with offsets preserved."""
+
+    def test_line_and_block_comments_become_spaces(self):
+        import json
+
+        from skillsaw.utils import strip_jsonc
+
+        source = '{\n  // a note\n  "a": 1, /* inline */ "b": 2\n}'
+        stripped = strip_jsonc(source)
+        assert json.loads(stripped) == {"a": 1, "b": 2}
+        assert len(stripped) == len(source)
+        assert stripped.count("\n") == source.count("\n")
+
+    def test_trailing_commas_are_removed_in_objects_and_arrays(self):
+        import json
+
+        from skillsaw.utils import strip_jsonc
+
+        source = '{"a": [1, 2,], "b": {"c": 3,},}'
+        assert json.loads(strip_jsonc(source)) == {"a": [1, 2], "b": {"c": 3}}
+
+    def test_separating_commas_survive(self):
+        import json
+
+        from skillsaw.utils import strip_jsonc
+
+        source = '{"a": [1, [2], 3], "b": 4}'
+        assert json.loads(strip_jsonc(source)) == {"a": [1, [2], 3], "b": 4}
+
+    def test_comment_and_comma_syntax_inside_strings_is_data(self):
+        import json
+
+        from skillsaw.utils import strip_jsonc
+
+        source = '{"url": "https://x.example//p", "csv": "a,", "b": "/* not */"}'
+        assert json.loads(strip_jsonc(source)) == {
+            "url": "https://x.example//p",
+            "csv": "a,",
+            "b": "/* not */",
+        }
+
+    def test_an_escaped_quote_does_not_end_the_string(self):
+        import json
+
+        from skillsaw.utils import strip_jsonc
+
+        source = '{"a": "he said \\" // not a comment"}'
+        assert json.loads(strip_jsonc(source)) == {"a": 'he said " // not a comment'}
+
+    def test_an_unterminated_block_comment_runs_to_end_of_file(self):
+        import json
+
+        from skillsaw.utils import strip_jsonc
+
+        source = '{"a": 1}\n/* trailing'
+        assert json.loads(strip_jsonc(source)) == {"a": 1}
+
+    def test_parse_error_positions_still_point_at_the_real_line(self, tmp_path):
+        """Blanking rather than deleting is what keeps the reported line honest."""
+        from skillsaw.utils import read_jsonc
+
+        path = tmp_path / "opencode.jsonc"
+        path.write_text('{\n  // a note\n  "a": 1\n  "b": 2\n}\n')
+        data, error = read_jsonc(path)
+        assert data is None
+        assert "line 4" in error
+
+    def test_read_jsonc_rejects_the_non_finite_extension(self, tmp_path):
+        from skillsaw.utils import read_jsonc
+
+        path = tmp_path / "opencode.jsonc"
+        path.write_text('{"timeout": NaN}')
+        data, error = read_jsonc(path)
+        assert data is None
+        assert "NaN" in error
