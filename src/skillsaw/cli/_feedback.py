@@ -32,7 +32,7 @@ from urllib.parse import urlencode
 from ..config import find_config
 from ..discovery.excludes import path_matches_patterns
 from ..paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
-from ..utils import write_bytes_atomic
+from ..utils import mkdir_parents_anchored, read_text, write_bytes_atomic
 from ._config import _get_version
 
 _ISSUE_URL = "https://github.com/stbenjam/skillsaw/issues/new"
@@ -147,11 +147,10 @@ def _ignore_patterns(root: Path) -> list[str]:
         ignore_file = root / name
         if not safe_is_file(ignore_file):
             continue
-        try:
-            lines = ignore_file.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
+        content = read_text(ignore_file)
+        if content is None:
             continue
-        for line in lines:
+        for line in content.splitlines():
             entry = line.strip()
             # A negation re-includes a path; skipping it keeps this a guardrail
             # that only ever refuses, never grants.
@@ -403,22 +402,22 @@ def _run_feedback(args) -> None:
     config_included = args.config is not None
     if config_included:
         assert config_path is not None
-        try:
-            raw_config = config_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        raw_config = read_text(config_path)
+        if raw_config is None:
             print(f"Error: Could not read config file: {config_path}", file=sys.stderr)
             sys.exit(1)
         artifact_texts["skillsaw-config.yaml"] = raw_config
 
     included_names = []
+    included_bytes: dict[str, bytes] = {}
     for file_path, relative in selected_files:
         try:
-            raw_content = file_path.read_text(encoding="utf-8")
+            raw_content = file_path.read_bytes()
+            raw_content.decode("utf-8")
         except (OSError, UnicodeDecodeError):
             print(f"Error: Could not read --include file: {relative}", file=sys.stderr)
             sys.exit(1)
-        archive_name = f"included/{relative.as_posix()}"
-        artifact_texts[archive_name] = raw_content
+        included_bytes[f"included/{relative.as_posix()}"] = raw_content
         included_names.append(relative.as_posix())
 
     message = args.message
@@ -438,6 +437,7 @@ def _run_feedback(args) -> None:
     artifact_texts["environment.json"] = json.dumps(environment, indent=2, sort_keys=True) + "\n"
 
     artifact_bytes = {name: text.encode("utf-8") for name, text in artifact_texts.items()}
+    artifact_bytes.update(included_bytes)
     manifest = {
         "bundle_schema_version": _BUNDLE_SCHEMA_VERSION,
         "files": {
@@ -454,11 +454,17 @@ def _run_feedback(args) -> None:
         for name, data in sorted(artifact_bytes.items()):
             archive.writestr(f"{bundle_id}/{name}", data)
     archive_bytes = buffer.getvalue()
+    # Anchor to the repository whenever the bundle lands inside it — the default
+    # path does. Both helpers then refuse to create or write through a symlinked
+    # parent, which a bare mkdir would happily follow out of the tree.
+    anchored = output_path.is_relative_to(root)
     try:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        # The shared writer refuses to follow a symlink at the destination,
-        # anchors every parent under *root*, and creates new files 0600.
-        write_bytes_atomic(output_path, archive_bytes)
+        if anchored:
+            mkdir_parents_anchored(output_path.parent, root=root)
+            write_bytes_atomic(output_path, archive_bytes, root=root)
+        else:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            write_bytes_atomic(output_path, archive_bytes)
     except (OSError, zipfile.BadZipFile) as error:
         print(f"Error: Could not write diagnostic bundle: {error}", file=sys.stderr)
         sys.exit(1)

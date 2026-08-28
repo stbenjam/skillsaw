@@ -557,3 +557,46 @@ def test_feedback_refuses_a_credential_named_config(tmp_path):
 
     assert result.returncode == 1
     assert "holds credentials" in result.stderr
+
+
+def test_feedback_includes_a_file_byte_for_byte(tmp_path):
+    """A BOM or CRLF can be the bug being reported, so evidence must not be folded."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    raw = "﻿---\r\nname: demo\r\n---\r\n\r\nCRLF body.\r\n".encode("utf-8")
+    (repo / "reproducer.md").write_bytes(raw)
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--include", "reproducer.md", "--output", str(output), "--json")
+
+    assert result.returncode == 0, result.stderr
+    archive_directory = json.loads(result.stdout)["archive_directory"]
+    with zipfile.ZipFile(output) as bundle:
+        shipped = bundle.read(f"{archive_directory}/included/reproducer.md")
+    assert shipped == raw
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlink behavior is POSIX-specific")
+def test_feedback_refuses_to_write_through_a_symlinked_bundle_directory(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (repo / ".skillsaw-feedback").symlink_to(elsewhere, target_is_directory=True)
+
+    result = _run_feedback(repo)
+
+    assert result.returncode == 1
+    assert "Could not write diagnostic bundle" in result.stderr
+    assert list(elsewhere.iterdir()) == [], "bundle escaped the repository through a symlink"
+
+
+def test_ignore_patterns_survive_a_byte_order_mark(tmp_path):
+    """A .gitignore from a Windows editor must not lose its first pattern."""
+    (tmp_path / ".gitignore").write_bytes("﻿scratch.md\n".encode("utf-8"))
+
+    patterns = _feedback._ignore_patterns(tmp_path)
+
+    assert "scratch.md" in patterns
