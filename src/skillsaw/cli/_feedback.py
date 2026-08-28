@@ -13,6 +13,7 @@ import select
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,13 +30,17 @@ _FEEDBACK_EMAIL = "stephen@bitbin.de"
 _GPG_KEY_URL = "https://github.com/stbenjam.gpg"
 _BUNDLE_SCHEMA_VERSION = 1
 _CREDENTIAL_ASSIGNMENT = re.compile(
-    r"(?im)^(\s*[\"']?[A-Za-z_][A-Za-z0-9_.-]*"
+    r"(?im)^(\s*[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
     r"(?:api[_-]?key|token|secret|password|passphrase|credential)"
     r"[A-Za-z0-9_.-]*[\"']?\s*[:=]\s*)(.+)$"
 )
 _AUTHORIZATION_HEADER = re.compile(r"(?im)^(\s*(?:proxy-)?authorization\s*[:=]\s*)(.+)$")
 _BEARER_TOKEN = re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/-]{12,}")
 _URL_USERINFO = re.compile(r"(?://)([^/\s:@]+(?::[^@/\s]+)?@)")
+_PEM_PRIVATE_KEY = re.compile(
+    r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----",
+    re.DOTALL,
+)
 
 
 def _redact_text(text: str) -> tuple[str, int]:
@@ -47,6 +52,8 @@ def _redact_text(text: str) -> tuple[str, int]:
         redactions += 1
         return "[REDACTED]"
 
+    text, count = _PEM_PRIVATE_KEY.subn(replace_with_marker, text)
+    redactions += count
     for pattern, _description in STRUCTURED_SECRET_PATTERNS:
         text = pattern.sub(replace_with_marker, text)
     text, count = _CREDENTIAL_ASSIGNMENT.subn(r"\1[REDACTED]", text)
@@ -106,6 +113,8 @@ def _run_diagnostic_lint(
         "lint",
         "--format",
         "json",
+        "--verbose",
+        "--no-baseline",
     ]
     if config_path is not None:
         command.extend(["--config", str(config_path)])
@@ -115,7 +124,7 @@ def _run_diagnostic_lint(
     try:
         stdout, stderr, return_code = _run_lint_process(command, root)
         return {
-            "command": ["skillsaw", "lint", "--format", "json"],
+            "command": ["skillsaw", "lint", "--format", "json", "--verbose", "--no-baseline"],
             "exit_code": return_code,
             "stdout": stdout,
             "stderr": stderr,
@@ -129,7 +138,7 @@ def _run_diagnostic_lint(
         if isinstance(stderr, bytes):
             stderr = stderr.decode("utf-8", "replace")
         return {
-            "command": ["skillsaw", "lint", "--format", "json"],
+            "command": ["skillsaw", "lint", "--format", "json", "--verbose", "--no-baseline"],
             "exit_code": None,
             "stdout": stdout,
             "stderr": stderr,
@@ -161,8 +170,17 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
             process = subprocess.Popen(command, cwd=root, stdout=stdout_file, stderr=slave)
             os.close(slave)
             slave = -1
+            deadline = time.monotonic() + 120
             while True:
-                readable, _unused, _errors = select.select([master], [], [], 0.1)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    process.kill()
+                    process.wait()
+                    stdout_file.seek(0)
+                    raise subprocess.TimeoutExpired(
+                        command, 120, output=stdout_file.read(), stderr=bytes(captured_stderr)
+                    )
+                readable, _unused, _errors = select.select([master], [], [], min(0.1, remaining))
                 if readable:
                     try:
                         chunk = os.read(master, 65536)
@@ -179,7 +197,7 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
                         break
                 elif process.poll() is not None:
                     break
-            return_code = process.wait(timeout=120)
+            return_code = process.wait(timeout=max(0, deadline - time.monotonic()))
             stdout_file.seek(0)
             stdout = stdout_file.read().decode("utf-8", "replace")
     finally:
@@ -201,7 +219,7 @@ def _issue_url(bundle_name: str, bundle_sha256: str, message: str) -> str:
     body = (
         "### Diagnostic bundle\n\n"
         "Created with `skillsaw feedback`; repository files are omitted unless explicitly "
-        "included with `--include`. Please attach the generated ZIP to this issue.\n\n"
+        "included with `--include` or `--config`. Please attach the generated ZIP to this issue.\n\n"
         f"- Bundle: `{bundle_name}`\n"
         f"- SHA-256: `{bundle_sha256}`\n"
     )
@@ -254,8 +272,9 @@ def _run_feedback(args) -> None:
         artifact_texts[name], count = _redact_text(cleaned)
         redactions += count
 
-    config_included = config_path is not None
-    if config_path is not None:
+    config_included = args.config is not None
+    if config_included:
+        assert config_path is not None
         raw_config = config_path.read_text(encoding="utf-8", errors="replace")
         artifact_texts["skillsaw-config.yaml"], count = _redact_text(raw_config)
         redactions += count
@@ -264,8 +283,8 @@ def _run_feedback(args) -> None:
     for file_path, relative in selected_files:
         try:
             raw_content = file_path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            print(f"Error: --include only supports UTF-8 text files: {relative}", file=sys.stderr)
+        except (OSError, UnicodeDecodeError):
+            print(f"Error: Could not read --include file: {relative}", file=sys.stderr)
             sys.exit(1)
         archive_name = f"included/{relative.as_posix()}"
         artifact_texts[archive_name], count = _redact_text(raw_content)
@@ -308,7 +327,8 @@ def _run_feedback(args) -> None:
         with zipfile.ZipFile(temporary_path, "x", compression=zipfile.ZIP_DEFLATED) as archive:
             for name, data in sorted(artifact_bytes.items()):
                 archive.writestr(f"{bundle_id}/{name}", data)
-        temporary_path.replace(output_path)
+        os.link(temporary_path, output_path)
+        temporary_path.unlink()
     except (OSError, zipfile.BadZipFile) as error:
         print(f"Error: Could not write diagnostic bundle: {error}", file=sys.stderr)
         sys.exit(1)

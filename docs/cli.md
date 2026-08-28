@@ -63,7 +63,7 @@ Create a redacted diagnostic bundle for a bug report
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
+| `-c`, `--config` | Path to .skillsaw.yaml config file to include after redaction (default: auto-discover only) |  |
 | `-o`, `--output` | Bundle ZIP path (default: .skillsaw-feedback/ under the repository) |  |
 | `--message` | Short description of the problem to include in the bundle |  |
 | `--include` | Include a repository-relative UTF-8 text file after redaction (repeatable) |  |

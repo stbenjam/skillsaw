@@ -248,7 +248,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Create a redacted diagnostic bundle for a bug report",
         description=(
             "Create a local, reviewable diagnostic bundle for a skillsaw bug report. "
-            "It never uploads data or includes repository files unless --include is used."
+            "It never uploads data or includes repository files unless --include or --config is used."
         ),
     )
     feedback_parser.add_argument(
@@ -262,7 +262,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "-c",
         "--config",
         type=Path,
-        help="Path to .skillsaw.yaml config file (default: auto-discover)",
+        help="Path to .skillsaw.yaml config file to include after redaction (default: auto-discover only)",
     )
     feedback_parser.add_argument(
         "-o",

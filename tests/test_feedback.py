@@ -4,11 +4,13 @@ import hashlib
 import errno
 import io
 import json
-import pty
+import os
 import subprocess
 import sys
 import zipfile
 from pathlib import Path
+
+import pytest
 
 from skillsaw.cli import _feedback
 
@@ -54,16 +56,11 @@ def test_feedback_creates_redacted_bundle_without_repository_files(tmp_path):
             f"{archive_directory}/lint-report.json",
             f"{archive_directory}/lint-stderr.txt",
             f"{archive_directory}/manifest.json",
-            f"{archive_directory}/skillsaw-config.yaml",
         ]
         assert all(name.startswith(f"{archive_directory}/") for name in bundle.namelist())
-        assert (
-            "sk-abcdefghijklmnopqrstuvwxyz123456"
-            not in bundle.read(f"{archive_directory}/skillsaw-config.yaml").decode()
-        )
         environment = json.loads(bundle.read(f"{archive_directory}/environment.json"))
         assert environment["lint_extensions_enabled"] is False
-        assert environment["config_included"] is True
+        assert environment["config_included"] is False
         manifest = json.loads(bundle.read(f"{archive_directory}/manifest.json"))
         assert manifest["redactions"] >= 1
         assert set(manifest["files"]) == {
@@ -110,6 +107,19 @@ def test_feedback_includes_only_requested_repository_files_and_redacts_them(tmp_
         assert environment["included_files"] == ["reproducer.md"]
 
 
+def test_feedback_redacts_private_keys_and_exact_credential_names():
+    text, count = _feedback._redact_text(
+        "password: not-a-known-token\n"
+        "secret=also-not-known\n"
+        "-----BEGIN PRIVATE KEY-----\nprivate material\n-----END PRIVATE KEY-----\n"
+    )
+
+    assert "not-a-known-token" not in text
+    assert "also-not-known" not in text
+    assert "private material" not in text
+    assert count >= 3
+
+
 def test_feedback_rejects_source_files_outside_the_repository(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -150,7 +160,10 @@ def test_feedback_mirrors_interactive_lint_progress(tmp_path, monkeypatch):
     assert terminal.buffer.getvalue() == stderr.encode()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="PTY EOF behavior is POSIX-specific")
 def test_feedback_handles_linux_pty_eof(tmp_path, monkeypatch):
+    import pty
+
     class InteractiveStderr:
         def __init__(self):
             self.buffer = io.BytesIO()
@@ -196,7 +209,7 @@ def test_feedback_records_a_timed_out_diagnostic_lint(tmp_path, monkeypatch):
     result = _feedback._run_diagnostic_lint(tmp_path, None, with_extensions=False)
 
     assert result == {
-        "command": ["skillsaw", "lint", "--format", "json"],
+        "command": ["skillsaw", "lint", "--format", "json", "--verbose", "--no-baseline"],
         "exit_code": None,
         "stdout": "report",
         "stderr": "progress",
