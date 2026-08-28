@@ -8,7 +8,7 @@ import secrets
 import stat
 import threading
 from pathlib import Path
-from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple
+from typing import Any, Callable, Dict, List, NoReturn, Optional, Set, Tuple
 
 import yaml
 from ruamel.yaml import YAML as _RuamelYAML
@@ -645,6 +645,72 @@ def read_json_strict(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return None, _TOO_DEEP
 
 
+# PyYAML ships a libyaml-backed loader in most wheels, and it is several
+# times faster than the pure-Python scanner — which matters because
+# skillsaw parses YAML at least once per markdown file (frontmatter) plus
+# once per config and manifest. Both loaders pair the same
+# ``SafeConstructor`` and ``Resolver`` with their parser, so documents
+# resolve to identical values; only the wording of a parse error differs.
+_SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
+# Structures deeper than this are rejected outright. Nothing an ecosystem
+# actually ships comes close — a skill's frontmatter or a marketplace
+# manifest nests a handful of levels — while a hand-crafted document can
+# nest thousands, and the rules, formatters, and fixers that walk a parsed
+# document all recurse. The pure-Python parser used to reject such input
+# incidentally, by exhausting CPython's own stack; that was never a
+# guarantee (the depth that overflows varies by platform, thread stack
+# size, and Python version), so the limit is stated here instead of
+# inherited from the interpreter.
+_MAX_YAML_DEPTH = 100
+
+
+def _reject_overly_nested(data: Any) -> None:
+    """Raise when *data* nests deeper than ``_MAX_YAML_DEPTH``.
+
+    Iterative on purpose: a recursive depth check would be the very stack
+    overflow it exists to prevent. ``RecursionError`` is the signal
+    because every reader already maps it to ``_TOO_DEEP`` — the condition
+    is exactly "too deep for the recursive consumers downstream".
+
+    A container is descended into once. YAML anchors make aliases and
+    outright cycles (``metadata: &m {nested: *m}``) ordinary, valid
+    documents that rules already handle, and re-descending would turn a
+    cycle into an unbounded walk. What a consumer actually recurses
+    through is the object graph, whose depth is what this measures.
+    """
+    stack = [(data, 0)]
+    seen: Set[int] = set()
+    while stack:
+        node, depth = stack.pop()
+        if isinstance(node, dict):
+            children: Any = node.values()
+        elif isinstance(node, (list, tuple, set)):
+            children = node
+        else:
+            continue
+        if depth >= _MAX_YAML_DEPTH:
+            raise RecursionError(_TOO_DEEP)
+        node_id = id(node)
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        stack.extend((child, depth + 1) for child in children)
+
+
+def safe_load_yaml(source: Any) -> Any:
+    """``yaml.safe_load``, using the libyaml parser when it is available.
+
+    Documents nesting deeper than ``_MAX_YAML_DEPTH`` raise
+    ``RecursionError``, which every caller already treats as an
+    unparseable document.
+    """
+    data = yaml.load(source, Loader=_SAFE_LOADER)
+    _reject_overly_nested(data)
+    return data
+
+
 @_file_cache.cached
 def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     """Cached YAML file read. Returns (data, error)."""
@@ -652,7 +718,7 @@ def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     if content is None:
         return None, f"Failed to read {file_path.name}"
     try:
-        return yaml.safe_load(content), None
+        return safe_load_yaml(content), None
     except yaml.YAMLError as e:
         return None, str(e)
     except ValueError as e:
@@ -957,7 +1023,7 @@ def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Opti
     if not m:
         return None, content, None
     try:
-        data = yaml.safe_load(m.group(1))
+        data = safe_load_yaml(m.group(1))
     except (yaml.YAMLError, ValueError, RecursionError) as e:
         error_line = None
         if hasattr(e, "problem_mark") and e.problem_mark is not None:

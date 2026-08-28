@@ -15,7 +15,7 @@ import yaml
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import CodeRabbitNode
-from skillsaw.rules.builtin.utils import read_text
+from skillsaw.rules.builtin.utils import read_text, safe_load_yaml
 
 # ---------------------------------------------------------------------------
 # Rules
@@ -58,7 +58,7 @@ class CoderabbitYamlValidRule(Rule):
             return violations
 
         try:
-            data = yaml.safe_load(raw)
+            data = safe_load_yaml(raw)
         except RecursionError:
             violations.append(
                 self.violation(

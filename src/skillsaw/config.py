@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from skillsaw.paths import safe_resolve
-from skillsaw.utils import commented_key_line, read_yaml_commented
+from skillsaw.utils import commented_key_line, read_yaml_commented, safe_load_yaml
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -115,7 +115,7 @@ class LinterConfig:
 
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+                data = safe_load_yaml(f)
         except (yaml.YAMLError, IOError, UnicodeDecodeError, RecursionError) as e:
             raise ValueError(f"Failed to load config from {config_path}: {e}") from e
 

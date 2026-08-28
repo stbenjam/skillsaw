@@ -906,6 +906,29 @@ def test_parse_frontmatter_recursion_is_reported_as_invalid():
     assert error_line is None
 
 
+def test_safe_load_yaml_rejects_pathological_nesting():
+    """The depth limit is stated, not inherited from CPython's stack.
+
+    Which document overflows the interpreter varies by platform, thread
+    stack size, and Python version, and the libyaml parser does not
+    overflow at all — so the reader enforces the bound itself.
+    """
+    from skillsaw.utils import _MAX_YAML_DEPTH, safe_load_yaml
+
+    depth = _MAX_YAML_DEPTH + 5
+    with pytest.raises(RecursionError):
+        safe_load_yaml("[" * depth + "0" + "]" * depth)
+
+
+def test_safe_load_yaml_accepts_anchor_cycles():
+    """An alias cycle is a valid document, not unbounded nesting."""
+    from skillsaw.utils import safe_load_yaml
+
+    data = safe_load_yaml("metadata: &m\n  nested: *m\n")
+
+    assert data["metadata"]["nested"] is data["metadata"]
+
+
 def test_parse_frontmatter_invalid_timestamp_is_a_parse_error():
     content = "---\ndate: 2026-02-30\n---\nBody\n"
 

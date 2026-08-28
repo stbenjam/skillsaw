@@ -24,6 +24,7 @@ from skillsaw.utils import (
     yaml_nth_key_line as _yaml_nth_key_line_util,
     yaml_nth_list_item_key_line as _yaml_nth_list_item_key_line_util,
     yaml_node_line as _yaml_node_line_util,
+    safe_load_yaml,
 )
 
 from .base import ContentBlock
@@ -124,7 +125,7 @@ class CodeRabbitContentBlock(ContentBlock):
         if not cr_raw:
             return []
         try:
-            cr_data = yaml.safe_load(cr_raw)
+            cr_data = safe_load_yaml(cr_raw)
         except (yaml.YAMLError, ValueError):
             return []
         except RecursionError:

@@ -10,7 +10,12 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.rules.builtin.utils import FRONTMATTER_RE_EMPTY_OK, read_text, frontmatter_key_line
+from skillsaw.rules.builtin.utils import (
+    FRONTMATTER_RE_EMPTY_OK,
+    frontmatter_key_line,
+    read_text,
+    safe_load_yaml,
+)
 
 
 def _parse_frontmatter(content: str):
@@ -28,7 +33,7 @@ def _parse_frontmatter(content: str):
 
     raw = (match.group(1) or "").rstrip("\n")
     try:
-        data = yaml.safe_load(raw) if raw else None
+        data = safe_load_yaml(raw) if raw else None
     except (yaml.YAMLError, ValueError) as e:
         return None, f"Invalid YAML in frontmatter: {e}"
 

@@ -597,7 +597,9 @@ class TestDeeplyNestedDocuments:
 
         target = tmp_path / "deep.yaml"
         target.write_text("a: 1\n", encoding="utf-8")
-        monkeypatch.setattr(yaml_mod, "safe_load", self._explode)
+        # ``yaml.load`` is the one seam every safe reader goes through
+        # (``safe_load_yaml`` selects the libyaml parser and calls it).
+        monkeypatch.setattr(yaml_mod, "load", self._explode)
         assert read_yaml(target) == (None, "Nesting too deep to parse")
 
         monkeypatch.setattr(_Ruamel, "load", self._explode)
@@ -630,7 +632,7 @@ class TestDeeplyNestedDocuments:
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".coderabbit.yaml").write_text("reviews:\n  profile: chill\n", encoding="utf-8")
-        monkeypatch.setattr(yaml_mod, "safe_load", self._explode)
+        monkeypatch.setattr(yaml_mod, "load", self._explode)
 
         context = RepositoryContext(repo)
         assert context.lint_tree is not None

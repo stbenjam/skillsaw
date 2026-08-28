@@ -23,6 +23,7 @@ from skillsaw.utils import (
     frontmatter_key_line as _frontmatter_key_line,
     _extract_frontmatter_text,
     yaml_line_map as _yaml_line_map,
+    safe_load_yaml,
 )
 
 from .base import ContentBlock
@@ -266,7 +267,7 @@ class FrontmatteredBlock(LintTarget):
         Raises ValueError if new_fm_text is not valid YAML.
         """
         try:
-            data = yaml.safe_load(new_fm_text)
+            data = safe_load_yaml(new_fm_text)
         except (yaml.YAMLError, ValueError) as e:
             raise ValueError(f"Invalid YAML: {e}") from e
         if not isinstance(data, dict):
