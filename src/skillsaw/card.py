@@ -63,7 +63,7 @@ THEMES = {
 
 # Grade-ring geometry. The circumference is derived from the radius so
 # the two can never drift apart; both are rendered rounded to 2 decimals.
-_RING_RADIUS = 46
+_RING_RADIUS = 42
 _RING_CIRCUMFERENCE = 2 * math.pi * _RING_RADIUS
 
 
@@ -159,7 +159,8 @@ def render_card(
         "  <style>",
         f"    .title {{ font: 600 16px {_FONTS}; fill: {colors['title']}; }}",
         f"    .subtitle {{ font: 400 11px {_FONTS}; fill: {colors['muted']}; }}",
-        f"    .grade-letter {{ font: 800 44px {_FONTS}; fill: {accent}; }}",
+        f"    .grade-label {{ font: 600 11px {_FONTS}; fill: {colors['muted']}; letter-spacing: 1.4px; }}",
+        f"    .grade-letter {{ font: 800 48px {_FONTS}; fill: {accent}; }}",
         "  </style>",
         (
             f'  <rect x="0.5" y="0.5" width="{CARD_WIDTH - 1}" height="{CARD_HEIGHT - 1}"'
@@ -170,7 +171,9 @@ def render_card(
         "  </g>",
         f'  <text x="56" y="30" class="title" data-testid="repo-name">{name}</text>',
         '  <text x="56" y="46" class="subtitle">skillsaw grade</text>',
-        '  <g transform="translate(415.5, 97.5)">',
+        f'  <path d="M24 63.5H471" stroke="{colors["border"]}"/>',
+        '  <text x="247.5" y="81" text-anchor="middle" class="grade-label">OVERALL GRADE</text>',
+        '  <g transform="translate(247.5, 127)">',
         (
             f'    <circle r="{_RING_RADIUS}" fill="none" stroke="{accent}"'
             ' stroke-opacity="0.25" stroke-width="7"/>'
