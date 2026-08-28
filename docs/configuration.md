@@ -27,9 +27,11 @@ defaults at the latest version.
 !!! warning "Parent configurations are trusted code settings"
     Discovery continues above the nearest Git repository and can select a
     config from a shared workspace or filesystem parent. Such a config can
-    name Python files under `custom-rules`. In CI and when inspecting an
-    unfamiliar checkout, pass `--config` explicitly and use
-    `--no-custom-rules --no-plugins`.
+    name Python files under `custom-rules`, and it can enable
+    `content-broken-external-reference`, which makes outbound requests —
+    for a disabled-by-default rule, *any* key under it is enough. In CI and
+    when inspecting an unfamiliar checkout, pass `--config` explicitly and
+    use `--no-custom-rules --no-plugins --no-network`.
 
 ## Example Configuration
 

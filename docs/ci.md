@@ -109,7 +109,9 @@ runs can update and remove only the comments they own:
 | `strict` | Treat warnings as errors | `false` |
 | `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict: true` is equivalent to `fail-on: warning`, and combining `strict` with a contradictory `fail-on` fails the run | `''` |
 | `verbose` | Include info-level violations | `false` |
+| `rule` | Only run these rules — kebab-case rule ids, one per line or comma-separated. Selection is not permission: a rule that needs the network also requires `no-network: false` | `''` |
 | `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
+| `no-network` | Skip rules that make outbound network requests, whatever the linted repository enables | `true` |
 | `plugins` | Trusted newline-separated pip requirements to install as rule plugins; values can select indexes or URLs | `''` |
 
 ### Outputs
@@ -194,6 +196,98 @@ Both images are served from your repository via
 `raw.githubusercontent.com`. GitHub proxies README images through its
 camo cache, which caches aggressively — a freshly regenerated badge or
 card can appear stale for a while after pushing.
+
+## Scheduled external link checking
+
+A skillsaw run is offline by default — no rule opens a network connection
+unless you turn one on. The only rule that does,
+[`content-broken-external-reference`](rules/content-broken-external-reference.md),
+requests every external `http(s)` link in your context files and reports
+the ones the server says are gone (`404` and `410` only — never a bot
+wall, a rate limit, or a timeout).
+
+Keep it out of your pull-request job, where a slow origin would block a
+merge, and give it a schedule of its own:
+
+```yaml
+name: link-check
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: stbenjam/skillsaw@v0
+        with:
+          rule: content-broken-external-reference
+          no-network: false
+          strict: true
+          verbose: true
+```
+
+Both inputs are needed, and they are not the same decision. `rule` chooses
+which rules run; `no-network: false` grants the capability. Naming the rule
+while the gate stays on is an error, not a green run over an empty rule set,
+so a job that forgets the second line fails loudly rather than reporting no
+dead links.
+
+`strict: true` is load-bearing. The rule reports at `warning`, and the
+default threshold is `fail-on: error` — without it the job stays green even
+when it finds dead links, and a scheduled job whose output nobody reads is
+only useful if it can go red. `verbose: true` surfaces the info-level notice
+that says the network budget ran out before every link was checked.
+
+Selecting the rule here rather than enabling it in `.skillsaw.yaml` keeps it
+out of every other run, including local ones, and keeps your `skillsaw badge`
+grade independent of whether a third-party URL 404s today.
+
+A clean run is not proof every link resolved: bot walls, rate limits, 5xx
+responses, timeouts and DNS failures are all treated as inconclusive and
+reported nowhere.
+
+Pin `stbenjam/skillsaw@v0` to a commit SHA in a real workflow, the same way
+the pull-request job above does.
+
+### Refusing network access outright
+
+`--no-network` (or `SKILLSAW_NO_NETWORK=1`) drops every rule that makes
+outbound requests, on `lint`, `fix`, `baseline`, and `badge` — regardless
+of what the linted repository's `.skillsaw.yaml` enables or what `--rule`
+asks for. The linted repository is untrusted content, so the guarantee has
+to belong to the operator:
+
+```yaml
+      - run: skillsaw lint . --no-network
+```
+
+The `skillsaw` Action sets it by default (`no-network: 'true'`); pass
+`no-network: false` — the literal string, since anything else keeps the
+network off — to opt a scheduled job back in. `fix` never runs a network
+rule whatever the flag says: a dead URL has no mechanical fix, and the
+autofix loop re-runs every rule's `check()` once per pass.
+
+Naming only network rules while the gate is on — `--rule
+content-broken-external-reference --no-network`, or the Action's `rule`
+input without `no-network: false`, which is also what an org-wide
+`SKILLSAW_NO_NETWORK` export does to the scheduled job above — is an error,
+not a green run over an empty rule set.
+
+The companion control is `--allow-private-hosts`
+(`SKILLSAW_ALLOW_PRIVATE_HOSTS=1`), which lets link checking reach
+loopback, private and link-local addresses. It is off unless the operator
+asks, and there is no `.skillsaw.yaml` key for it: a linted repository
+that could grant it could point the runner at its own internal network.
+Leave it off unless you are deliberately checking intranet links from a
+trusted checkout.
 
 ## Other output formats
 

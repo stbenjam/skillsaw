@@ -13,6 +13,7 @@ from .embedded_secrets import ContentEmbeddedSecretsRule
 from .banned_references import ContentBannedReferencesRule
 from .inconsistent_terminology import ContentInconsistentTerminologyRule
 from .instruction_drift import ContentInstructionDriftRule
+from .broken_external_reference import ContentBrokenExternalReferenceRule
 from .broken_internal_reference import ContentBrokenInternalReferenceRule
 from .unlinked_internal_reference import ContentUnlinkedInternalReferenceRule
 from .placeholder_text import ContentPlaceholderTextRule
@@ -40,6 +41,7 @@ __all__ = [
     "ContentBannedReferencesRule",
     "ContentInconsistentTerminologyRule",
     "ContentInstructionDriftRule",
+    "ContentBrokenExternalReferenceRule",
     "ContentBrokenInternalReferenceRule",
     "ContentUnlinkedInternalReferenceRule",
     "ContentPlaceholderTextRule",

@@ -139,6 +139,7 @@ def test_feedback_records_a_timed_out_diagnostic_lint(tmp_path, monkeypatch):
             "json",
             "--verbose",
             "--no-baseline",
+            "--no-network",
             "--no-custom-rules",
             "--no-plugins",
             "<repository>",
@@ -421,6 +422,30 @@ def test_feedback_gates_repository_supplied_rules_behind_with_extensions(tmp_pat
     opted_in = next(iter(seen))
     assert "--no-custom-rules" not in opted_in
     assert "--no-plugins" not in opted_in
+
+
+def test_the_diagnostic_lint_never_reaches_the_network(tmp_path, monkeypatch):
+    """Building a bundle is not an opt-in to outbound requests.
+
+    The child lint reads the repository's own ``.skillsaw.yaml``, where any
+    key under a disabled-by-default rule is enough to enable it — including
+    the one rule that declares ``requires_network``. Unlike custom rules,
+    there is no ``--with-extensions`` escape hatch for this one: a
+    diagnostic snapshot has no reason to request every external URL the
+    repository links, and it runs under a 120s budget besides.
+    """
+    seen = {}
+
+    def capture(command, cwd):
+        seen[tuple(command)] = True
+        return "{}", "", 0
+
+    monkeypatch.setattr(_feedback, "_run_lint_process", capture)
+
+    for with_extensions in (False, True):
+        seen.clear()
+        _feedback._run_diagnostic_lint(tmp_path, None, with_extensions=with_extensions)
+        assert "--no-network" in next(iter(seen))
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
