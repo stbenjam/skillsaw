@@ -364,3 +364,150 @@ def test_safe_terminal_text_strips_escapes_and_control_bytes():
     assert b"\x07" not in mirrored
     assert b"\x08" not in mirrored
     assert b"red" in mirrored
+
+
+def test_feedback_copies_an_explicitly_named_config_verbatim(tmp_path):
+    """--config is the only flag that copies a user-authored file in by default."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    config = repo / ".skillsaw.yaml"
+    body = (
+        "version: 0.20.0\n"
+        "rules:\n"
+        "  agentskill-description:\n"
+        "    enabled: true\n"
+        "api_key: sk-abcdefghijklmnopqrstuvwxyz123456\n"
+    )
+    config.write_text(body)
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--config", str(config), "--output", str(output), "--json")
+
+    assert result.returncode == 0, result.stderr
+    archive_directory = json.loads(result.stdout)["archive_directory"]
+    with zipfile.ZipFile(output) as bundle:
+        assert f"{archive_directory}/skillsaw-config.yaml" in bundle.namelist()
+        shipped = bundle.read(f"{archive_directory}/skillsaw-config.yaml").decode()
+        environment = json.loads(bundle.read(f"{archive_directory}/environment.json"))
+        manifest = json.loads(bundle.read(f"{archive_directory}/manifest.json"))
+    assert environment["config_included"] is True
+    assert shipped == body, "the reporter's config must arrive unmodified"
+    assert (
+        manifest["files"]["skillsaw-config.yaml"]["sha256"]
+        == hashlib.sha256(body.encode()).hexdigest()
+    )
+
+
+def test_feedback_gates_repository_supplied_rules_behind_with_extensions(tmp_path, monkeypatch):
+    """--with-extensions is what lets the diagnostic lint run repo-supplied code."""
+    seen = {}
+
+    def capture(command, cwd):
+        seen[tuple(command)] = True
+        return "{}", "", 0
+
+    monkeypatch.setattr(_feedback, "_run_lint_process", capture)
+
+    _feedback._run_diagnostic_lint(tmp_path, None, with_extensions=False)
+    default_command = next(iter(seen))
+    assert "--no-custom-rules" in default_command
+    assert "--no-plugins" in default_command
+
+    seen.clear()
+    _feedback._run_diagnostic_lint(tmp_path, None, with_extensions=True)
+    opted_in = next(iter(seen))
+    assert "--no-custom-rules" not in opted_in
+    assert "--no-plugins" not in opted_in
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+def test_feedback_writes_the_bundle_privately(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--output", str(output))
+
+    assert result.returncode == 0, result.stderr
+    assert output.stat().st_mode & 0o777 == 0o600
+
+
+def test_feedback_appends_rather_than_replaces_a_non_zip_suffix(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+
+    result = _run_feedback(repo, "--output", str(tmp_path / "bundle.tar.gz"), "--json")
+
+    assert result.returncode == 0, result.stderr
+    assert Path(json.loads(result.stdout)["bundle"]).name == "bundle.tar.gz.zip"
+
+
+def test_feedback_refuses_to_overwrite_an_existing_bundle(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    output = tmp_path / "report.zip"
+    output.write_text("existing\n")
+
+    result = _run_feedback(repo, "--output", str(output))
+
+    assert result.returncode == 1
+    assert "Bundle already exists" in result.stderr
+    assert output.read_text() == "existing\n"
+
+
+def test_feedback_rejects_a_non_utf8_include(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    binary = repo / "capture.bin"
+    binary.write_bytes(b"\xff\xfe\x00\x01")
+
+    result = _run_feedback(repo, "--include", "capture.bin", "--output", str(tmp_path / "r.zip"))
+
+    assert result.returncode == 1
+    assert "Could not read --include file" in result.stderr
+
+
+def test_feedback_rejects_a_directory_include(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+
+    result = _run_feedback(repo, "--include", "docs", "--output", str(tmp_path / "r.zip"))
+
+    assert result.returncode == 1
+    assert "must name a file" in result.stderr
+
+
+def test_feedback_neutralizes_control_bytes_in_the_archived_lint_output(tmp_path, monkeypatch):
+    """The archived copy gets the same scrub as the live mirror, not less."""
+    monkeypatch.setattr(
+        _feedback,
+        "_run_lint_process",
+        lambda command, cwd: ("{}", "\x1b]0;pwned\x07warn\x1b[31m\x08\n", 0),
+    )
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    bundle_path = tmp_path / "report.zip"
+
+    class Args:
+        path = repo
+        config = None
+        output = bundle_path
+        message = ""
+        include: list = []
+        with_extensions = False
+        json = True
+
+    with pytest.raises(SystemExit) as exit_info:
+        _feedback._run_feedback(Args())
+    assert exit_info.value.code == 0
+
+    with zipfile.ZipFile(bundle_path) as bundle:
+        name = next(n for n in bundle.namelist() if n.endswith("lint-stderr.txt"))
+        archived = bundle.read(name).decode()
+    assert "\x1b" not in archived
+    assert "\x07" not in archived
+    assert "\x08" not in archived
+    assert "warn" in archived

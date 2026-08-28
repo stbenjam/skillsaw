@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import io
 import json
 import os
 import platform
@@ -30,25 +31,32 @@ from urllib.parse import urlencode
 from ..config import find_config
 from ..discovery.excludes import path_matches_patterns
 from ..paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
+from ..utils import write_bytes_atomic
 from ._config import _get_version
 
 _ISSUE_URL = "https://github.com/stbenjam/skillsaw/issues/new"
 _FEEDBACK_EMAIL = "stephen@bitbin.de"
 _GPG_KEY_URL = "https://github.com/stbenjam.gpg"
 _BUNDLE_SCHEMA_VERSION = 1
+_LINT_TIMEOUT_SECONDS = 120
 _TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
 
 
-def _safe_terminal_text(data: bytes) -> bytes:
-    """Neutralize child diagnostics before writing them to a terminal.
+def _neutralize_terminal_control(text: str) -> str:
+    """Strip escape and control bytes from child diagnostics.
 
-    Escape and control bytes only: a child that emits them could otherwise
-    retitle the window or drive the clipboard. This is not a secret scan.
+    A child that emits them could otherwise retitle the window or drive the
+    clipboard \u2014 of whoever displays the text, which is the reporter for the
+    live mirror and the maintainer who ``cat``s the archived copy. Both get the
+    same treatment. This is not a secret scan.
     """
-    text = data.decode("utf-8", "replace")
     text = _TERMINAL_ESCAPE.sub("", text)
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "�", text)
-    return text.encode("utf-8", "replace")
+    return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "\ufffd", text)
+
+
+def _safe_terminal_text(data: bytes) -> bytes:
+    """The bytes-level mirror of :func:`_neutralize_terminal_control`."""
+    return _neutralize_terminal_control(data.decode("utf-8", "replace")).encode("utf-8", "replace")
 
 
 def _sha256(data: bytes) -> str:
@@ -63,7 +71,9 @@ def _archive_path(args, root: Path, bundle_id: str) -> Path | None:
     if args.output is not None:
         output = args.output
         if output.suffix.lower() != ".zip":
-            output = output.with_suffix(".zip")
+            # Append rather than with_suffix, which replaces: `bundle.tar.gz`
+            # must become `bundle.tar.gz.zip`, never `bundle.tar.zip`.
+            output = output.with_name(output.name + ".zip")
         return safe_resolve(output)
     return root / ".skillsaw-feedback" / f"{bundle_id}.zip"
 
@@ -198,7 +208,7 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=120,
+            timeout=_LINT_TIMEOUT_SECONDS,
             check=False,
         )
         return completed.stdout, completed.stderr, completed.returncode
@@ -218,7 +228,7 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
             )
             os.close(slave)
             slave = -1
-            deadline = time.monotonic() + 120
+            deadline = time.monotonic() + _LINT_TIMEOUT_SECONDS
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -226,7 +236,10 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
                     process.wait()
                     stdout_file.seek(0)
                     raise subprocess.TimeoutExpired(
-                        command, 120, output=stdout_file.read(), stderr=bytes(captured_stderr)
+                        command,
+                        _LINT_TIMEOUT_SECONDS,
+                        output=stdout_file.read(),
+                        stderr=bytes(captured_stderr),
                     )
                 readable, _unused, _errors = select.select([master], [], [], min(0.1, remaining))
                 if readable:
@@ -333,7 +346,9 @@ def _run_feedback(args) -> None:
         ("lint-report.json", lint["stdout"]),
         ("lint-stderr.txt", lint["stderr"]),
     ):
-        artifact_texts[name] = _replace_local_paths(raw_text, root, config_path)
+        artifact_texts[name] = _neutralize_terminal_control(
+            _replace_local_paths(raw_text, root, config_path)
+        )
 
     config_included = args.config is not None
     if config_included:
@@ -384,25 +399,21 @@ def _run_feedback(args) -> None:
         json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")
 
-    temporary_path = None
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, data in sorted(artifact_bytes.items()):
+            archive.writestr(f"{bundle_id}/{name}", data)
+    archive_bytes = buffer.getvalue()
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = output_path.with_name(f".{output_path.name}.{secrets.token_hex(4)}.tmp")
-        descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "wb") as archive_file:
-            with zipfile.ZipFile(archive_file, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for name, data in sorted(artifact_bytes.items()):
-                    archive.writestr(f"{bundle_id}/{name}", data)
-        os.link(temporary_path, output_path)
-        temporary_path.unlink()
+        # The shared writer refuses to follow a symlink at the destination,
+        # anchors every parent under *root*, and creates new files 0600.
+        write_bytes_atomic(output_path, archive_bytes)
     except (OSError, zipfile.BadZipFile) as error:
         print(f"Error: Could not write diagnostic bundle: {error}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
 
-    bundle_sha256 = _sha256(output_path.read_bytes())
+    bundle_sha256 = _sha256(archive_bytes)
     issue_url = _issue_url(output_path.name, bundle_sha256, message)
     result = {
         "bundle": str(output_path),
