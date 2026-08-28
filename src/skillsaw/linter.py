@@ -354,7 +354,24 @@ class Linter:
 
     def _load_builtin_rules(self):
         """Load builtin rules from skillsaw.rules.builtin"""
-        from .rules.builtin import BUILTIN_RULES
+        from .rules.builtin import BUILTIN_RULE_REGISTRY, BUILTIN_RULES, canonical_rule_id
+
+        # ``--rule`` bypasses normal enablement so one validator can be run in
+        # isolation. Some validators intentionally leave a prerequisite
+        # diagnostic to another builtin rule, though; expand those declared
+        # dependencies before filtering or a targeted run can falsely pass.
+        if self._rule_ids:
+            pending = list(self._rule_ids)
+            while pending:
+                selected = pending.pop()
+                rule_class = BUILTIN_RULE_REGISTRY.get(selected)
+                if rule_class is None:
+                    continue
+                for dependency in rule_class.target_dependencies:
+                    dependency = canonical_rule_id(dependency)
+                    if dependency not in self._rule_ids:
+                        self._rule_ids.add(dependency)
+                        pending.append(dependency)
 
         for rule_class in BUILTIN_RULES:
             rule_instance = rule_class()
