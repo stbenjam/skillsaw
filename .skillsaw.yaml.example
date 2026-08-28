@@ -117,6 +117,13 @@ rules:
     enabled: auto
     severity: error
 
+  # CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' so both assistants read one source of truth
+  claude-md-agents-import:
+    enabled: auto
+    severity: info
+    # allow-extra: false
+    # ignore-generated: true
+
   # Plugin must have .claude-plugin/plugin.json
   claude-plugin-json-required:
     enabled: auto

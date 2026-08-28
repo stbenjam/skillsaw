@@ -3,10 +3,11 @@
 
 # Instruction Files
 
-Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) at the repository root. Checks encoding, non-emptiness, and that `@import` references resolve to existing files. Enabled automatically when one of those files is present.
+Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) at the repository root. Checks encoding, non-emptiness, and that `@import` references resolve to existing files. `claude-md-agents-import` recommends the structure that removes the CLAUDE.md/AGENTS.md duplication entirely — a CLAUDE.md whose whole body is `@AGENTS.md`. Enabled automatically when one of those files is present.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) must be valid and non-empty | warning (auto) | - |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files | warning (auto) | - |
+| [`claude-md-agents-import`](claude-md-agents-import.md) | CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' so both assistants read one source of truth | info (auto) | auto |
 
