@@ -695,7 +695,7 @@ class TestContentEmbeddedSecretsRule:
             ("npm_abcdefghijklmnopqrstuvwxyz1234567890", "npm access token"),  # notsecret
             ("pypi-abcdefghijklmnopqrstuvwxyz", "PyPI API token"),
             (
-                "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456",
+                "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456",  # notsecret
                 "JSON Web Token",
             ),
             ("-----BEGIN RSA PRIVATE KEY-----", "Private key"),
@@ -5324,7 +5324,7 @@ class TestContentMcpToolNameAutofix:
         assert set(by_name) == {"CLAUDE.md", ".coderabbit.yaml"}
 
         yaml_fix = by_name[".coderabbit.yaml"]
-        token = "mcp__plugin_jira_atlassian__getJiraIssue"
+        token = "mcp__plugin_jira_atlassian__getJiraIssue"  # notsecret
         before = yaml_fix.original_content.split("\n")
         after = yaml_fix.fixed_content.split("\n")
         assert len(after) == len(before)
