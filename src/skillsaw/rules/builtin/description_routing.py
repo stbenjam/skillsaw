@@ -15,9 +15,10 @@ from skillsaw.rules.builtin.content_analysis import (
 )
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
-_USE_THIS_TRIGGER_RE = re.compile(
+_ACTIVE_USE_TRIGGER_RE = re.compile(
     r"(?:^|[.!?—]\s+)(?:(?:you )?(?:must|should) )?"
-    r"(?:use|invoke) this(?: (?:skill|agent))?(?: proactively)? "
+    r"(?:use(?: this(?: (?:skill|agent))?| it)?|invoke this(?: (?:skill|agent))?)"
+    r"(?: proactively)? "
     r"(?:when(?:ever)?|if|before|for|to)\b"
 )
 _PASSIVE_USE_TRIGGER_RE = re.compile(
@@ -230,7 +231,7 @@ class DescriptionRoutingRule(Rule):
         without_explanatory_clauses = _EXPLANATORY_USER_TRIGGER_RE.sub("", normalized)
         return (
             any(marker in without_explanatory_clauses for marker in _TRIGGER_MARKERS)
-            or bool(_USE_THIS_TRIGGER_RE.search(without_explanatory_clauses))
+            or bool(_ACTIVE_USE_TRIGGER_RE.search(without_explanatory_clauses))
             or bool(_PASSIVE_USE_TRIGGER_RE.search(without_explanatory_clauses))
             or bool(_FOR_TRIGGER_RE.search(without_explanatory_clauses))
         )
