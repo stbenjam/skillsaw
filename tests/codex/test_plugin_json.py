@@ -247,6 +247,85 @@ class TestPluginStructure:
         assert "hooks.json" in violations[0].message
         assert violations[0].file_path.name == "hooks.json"
 
+    def test_manifest_referenced_assets_dir_is_not_stray(self, tmp_path):
+        """openai/plugins ships interface assets under .codex-plugin/assets/.
+
+        Four plugins in the official catalog (remotion, temporal,
+        superpowers, chatcut) point ``interface.logo`` and friends at
+        ``./.codex-plugin/assets/...``, so Codex loads those files from
+        there. Warning about them contradicts the corpus skillsaw must
+        stay silent on.
+        """
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "widget",
+                "version": "1.0.0",
+                "description": "x",
+                "interface": {
+                    "composerIcon": "./.codex-plugin/assets/composer-icon.svg",
+                    "logo": "./.codex-plugin/assets/logo.png",
+                },
+            },
+        )
+        assets = repo / ".codex-plugin" / "assets"
+        assets.mkdir()
+        (assets / "composer-icon.svg").write_text("<svg/>", encoding="utf-8")
+        (assets / "logo.png").write_bytes(b"\x89PNG")
+
+        assert run_rule(CodexPluginStructureRule, repo) == []
+
+    def test_unreferenced_assets_dir_still_warns(self, tmp_path):
+        """Only what the manifest points at is exempt — strays still warn."""
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "widget", "version": "1.0.0", "description": "x"}
+        )
+        assets = repo / ".codex-plugin" / "assets"
+        assets.mkdir()
+        (assets / "logo.png").write_bytes(b"\x89PNG")
+
+        violations = run_rule(CodexPluginStructureRule, repo)
+
+        assert len(violations) == 1
+        assert "assets" in violations[0].message
+
+    def test_reference_without_leading_dot_slash_is_honored(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "widget",
+                "version": "1.0.0",
+                "description": "x",
+                "interface": {"logo": ".codex-plugin/assets/logo.png"},
+            },
+        )
+        assets = repo / ".codex-plugin" / "assets"
+        assets.mkdir()
+        (assets / "logo.png").write_bytes(b"\x89PNG")
+
+        assert run_rule(CodexPluginStructureRule, repo) == []
+
+    def test_sibling_prefix_does_not_suppress(self, tmp_path):
+        """``assets-old`` must not be exempted by a reference to ``assets``."""
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "widget",
+                "version": "1.0.0",
+                "description": "x",
+                "interface": {"logo": "./.codex-plugin/assets/logo.png"},
+            },
+        )
+        manifest_dir = repo / ".codex-plugin"
+        (manifest_dir / "assets").mkdir()
+        (manifest_dir / "assets" / "logo.png").write_bytes(b"\x89PNG")
+        (manifest_dir / "assets-old").mkdir()
+
+        violations = run_rule(CodexPluginStructureRule, repo)
+
+        assert len(violations) == 1
+        assert "assets-old" in violations[0].message
+
 
 class TestEmptyNames:
     """``name: ""`` is a missing identifier, not a casing nit."""

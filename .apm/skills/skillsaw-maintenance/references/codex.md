@@ -44,7 +44,7 @@ hedge (see Sync notes).
 - **Path rules**: the "start with `./`, resolve relative to the plugin root, stay
   inside the plugin root" wording, and which fields it covers.
 - **`.codex-plugin/` exclusivity**: the "Only `plugin.json` belongs in `.codex-plugin/`"
-  statement.
+  statement, and whether the catalog still contradicts it (see Sync notes).
 - **marketplace.json**: source types and their required fields; the `policy` and
   `category` requirements; `npm` `registry` constraints.
 - **Enum drift**: `policy.installation` and `policy.authentication` values.
@@ -130,6 +130,14 @@ upstream requires and why skillsaw does not enforce it.
   spec — `validate_plugin.py:454` reads only the skill-root path. skillsaw supports it
   as observed catalog compatibility; do not tighten it to skill-root semantics without
   upstream documenting it.
+- `codex-plugin-structure` exempts anything inside `.codex-plugin/` that the manifest
+  references. The prose spec says only `plugin.json` belongs there, but four catalog
+  plugins (remotion, temporal, superpowers, chatcut) keep `interface` assets in
+  `.codex-plugin/assets/` and point at them with `./.codex-plugin/assets/...`, so Codex
+  loads them. Observed catalog compatibility, like the plugin-root `openai.yaml` form
+  above: do not tighten it back to a literal reading of the prose. The exemption reads
+  every string in the manifest rather than a list of path fields, so it cannot drift out
+  of step with `_PATH_FIELDS`.
 
 ## Regression check
 Clone https://github.com/openai/plugins and run skillsaw's `codex-*` rules against it.
