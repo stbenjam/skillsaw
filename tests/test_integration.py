@@ -4905,6 +4905,57 @@ class TestContentMcpToolNameSuggestGate:
 
     FIXTURE = "content/mcp-tool-name"
 
+    def test_text_collapses_only_same_file_server_occurrences(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        raw = run_lint(repo, "--rule", "content-mcp-tool-name", "--strict")
+        findings = by_rule(raw)["content-mcp-tool-name"]
+        assert raw["rc"] == 1
+        assert len(findings) == 6
+        assert summary(raw)["warnings"] == 6
+
+        text = run_lint(
+            repo,
+            "--rule",
+            "content-mcp-tool-name",
+            "--strict",
+            fmt="text",
+            verbose=False,
+        )
+        assert text["rc"] == raw["rc"]
+        assert text["stdout"].count("3 fully-qualified MCP tool names") == 1
+        assert "'mcp__plugin_jira_atlassian__' server prefix" in text["stdout"]
+        assert "[CLAUDE.md:9]" in text["stdout"]
+        assert "mcp__plugin_github_github__get_file_contents" in text["stdout"]
+        # The same Jira prefix appears twice in a different file; that pair
+        # remains two actionable rows because files never merge and two is
+        # below the collapse threshold.
+        assert text["stdout"].count("[.claude/skills/jira-triage/SKILL.md:") == 2
+        assert "Warnings: 6" in text["stdout"]
+        assert "[?] 6 violation(s) fixable with `skillsaw fix --suggest`" in text["stdout"]
+        assert "Rule docs" in text["stdout"]
+        raw_grade = summary(raw)["grade"]
+        assert (
+            f"Grade:    {raw_grade['letter']} ({raw_grade['density']:.2f} weighted violations"
+            in text["stdout"]
+        )
+
+    def test_baseline_keeps_each_collapsed_occurrence(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        result = run_cli(["baseline", "--no-custom-rules", str(repo)])
+        assert result.returncode == 0
+        baseline = json.loads((repo / ".skillsaw-baseline.json").read_text())
+        entries = [v for v in baseline["violations"] if v["rule_id"] == "content-mcp-tool-name"]
+        assert len(entries) == 6
+        assert len({v["fingerprint"] for v in entries}) == 6
+
+        lint = run_lint(repo, "--rule", "content-mcp-tool-name")
+        assert lint["rc"] == 0
+        assert by_rule(lint).get("content-mcp-tool-name", []) == []
+        assert summary(lint)["warnings"] == 0
+        assert summary(lint)["baseline_suppressed"] == 6
+
     def test_plain_fix_applies_nothing(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         before = _snapshot_contents(repo)
@@ -4913,6 +4964,8 @@ class TestContentMcpToolNameSuggestGate:
 
     def test_suggest_fix_strips_and_converges(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
+        before_lint = run_lint(repo, "--rule", "content-mcp-tool-name")
+        assert len(by_rule(before_lint)["content-mcp-tool-name"]) == 6
         before = _snapshot_contents(repo)
         _run_fix(repo, "--suggest")
         after = _snapshot_contents(repo)

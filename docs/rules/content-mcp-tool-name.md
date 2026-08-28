@@ -109,6 +109,10 @@ A violation in a body decoded out of a non-markdown host — a JSON hook
 prompt, a folded (`>`) YAML scalar — is reported without an automatic fix;
 apply the same rewrites by hand.
 
+When three or more findings in one file share a server prefix, terminal
+output groups them into one readable row. This is presentation only: machine
+reports, baselines, counts, and fixes still retain every occurrence.
+
 ## Configuration
 
 ```yaml
