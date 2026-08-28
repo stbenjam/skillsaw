@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from skillsaw.context import RepositoryContext
+from skillsaw.paths import clear_resolve_cache
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.codex import (
     CodexMarketplaceJsonValidRule,
@@ -548,6 +549,11 @@ class TestRegistrationSurvivesUnresolvablePlugins:
             raise exc("nope")
 
         monkeypatch.setattr(Path, "resolve", boom)
+        # ``safe_resolve`` memoizes for the lifetime of a lint pass, so the
+        # answers tree construction already computed would satisfy the rule
+        # without ever reaching the injected raise. Dropping the memo is what
+        # puts the rule's own scan in front of it.
+        clear_resolve_cache()
         assert CodexMarketplaceRegistrationRule({}).check(context) == []
 
 

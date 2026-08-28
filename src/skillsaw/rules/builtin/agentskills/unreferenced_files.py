@@ -99,7 +99,7 @@ import re
 import textwrap
 from collections import deque
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -152,6 +152,12 @@ _IMPORT_LINE_RE = re.compile(
 # markdown frequently omits the language tag, and non-Python fence content
 # simply yields no resolvable imports.
 _PY_FENCE_INFOS = {"", "python", "py", "python3"}
+
+# Every AST field that holds a list of statements: a module, a compound
+# statement (``if``/``for``/``while``/``with``/``try``/``def``/``class``),
+# an ``except`` handler, or a ``match`` case. Nothing else can contain an
+# ``import``.
+_STMT_BODY_FIELDS = ("body", "orelse", "finalbody", "handlers", "cases")
 
 
 class AgentSkillUnreferencedFilesRule(Rule):
@@ -327,8 +333,17 @@ class AgentSkillUnreferencedFilesRule(Rule):
         """Files referenced from the roots, following every referenced local file."""
         skill_resolved = safe_resolve(skill_path) or skill_path
         resolved_of = {f: (safe_resolve(f) or f) for f in all_files}
-        resolved_files = set(resolved_of.values())
+        # Direct link and import targets are compared as resolved path
+        # *strings*: resolution answers are already in hand here, and the
+        # module-path arithmetic behind an ``import a.b.c`` is string
+        # concatenation that ``pathlib`` would re-parse at every step.
+        resolved_str_of = {f: str(resolved_of[f]) for f in all_files}
+        resolved_file_strs = set(resolved_str_of.values())
         rel_of = {f: resolved_of[f].relative_to(skill_resolved).as_posix() for f in all_files}
+        # Needles that do not depend on which file is doing the mentioning,
+        # lowered once per candidate instead of once per (source, candidate)
+        # pair (matching is case-insensitive — see ``_text_mentions``).
+        base_needles_of = {f: frozenset((rel_of[f].lower(), f.name.lower())) for f in all_files}
         all_dirs = self._candidate_dirs(rel_of.values())
         block_by_path = {
             (safe_resolve(block.path) or block.path): block
@@ -360,12 +375,17 @@ class AgentSkillUnreferencedFilesRule(Rule):
             text_lower = text.lower()
 
             newly_referenced: List[Path] = []
+            # Where this source sits inside the skill, as a posix relative
+            # directory ("" at the skill root).  Every needle relative to
+            # the mentioning file is a suffix of a skill-relative path, so
+            # one lookup here replaces a per-candidate ``os.path.relpath``.
+            source_rel_dir = self._source_rel_dir(resolved_source, skill_resolved)
 
             # Markdown links, resolved relative to the linking file.  Link
             # syntax only means anything in markdown sources; scripts and
             # data files contribute raw-text mentions below.  Python sources
             # additionally reference the modules they import.
-            direct_targets: Set[Path] = set()
+            direct_targets: Set[str] = set()
             suffix = source.suffix.lower()
             if suffix == ".md":
                 block = block_by_path.get(resolved_source)
@@ -376,20 +396,20 @@ class AgentSkillUnreferencedFilesRule(Rule):
                     covered_dirs.update(link_dirs)
                 direct_targets.update(
                     self._fence_import_targets(
-                        doc, text, resolved_source.parent, skill_resolved, resolved_files
+                        doc, text, resolved_source.parent, skill_resolved, resolved_file_strs
                     )
                 )
             elif suffix == ".py":
                 direct_targets.update(
                     self._python_import_targets(
-                        text, resolved_source.parent, skill_resolved, resolved_files
+                        text, resolved_source.parent, skill_resolved, resolved_file_strs
                     )
                 )
             for candidate in all_files:
                 if candidate in referenced:
                     continue
-                if resolved_of[candidate] in direct_targets or self._text_mentions(
-                    text_lower, candidate, rel_of[candidate], source.parent, skill_resolved
+                if resolved_str_of[candidate] in direct_targets or self._text_mentions(
+                    text_lower, base_needles_of[candidate], rel_of[candidate], source_rel_dir
                 ):
                     referenced.add(candidate)
                     newly_referenced.append(candidate)
@@ -397,15 +417,18 @@ class AgentSkillUnreferencedFilesRule(Rule):
             # Directory mentions in prose/code cover their contents.
             if directory_covers:
                 for rel_dir in all_dirs - covered_dirs:
-                    if self._dir_mentioned(text_lower, rel_dir, source.parent, skill_resolved):
+                    if self._dir_mentioned(text_lower, rel_dir, source_rel_dir):
                         covered_dirs.add(rel_dir)
-                for candidate in all_files:
-                    if candidate in referenced:
-                        continue
-                    rel = rel_of[candidate]
-                    if any(rel.startswith(d + "/") for d in covered_dirs):
-                        referenced.add(candidate)
-                        newly_referenced.append(candidate)
+                # Only worth a sweep once some directory is covered: with
+                # none, the membership test below can never succeed.
+                if covered_dirs:
+                    dir_prefixes = tuple(d + "/" for d in covered_dirs)
+                    for candidate in all_files:
+                        if candidate in referenced:
+                            continue
+                        if rel_of[candidate].startswith(dir_prefixes):
+                            referenced.add(candidate)
+                            newly_referenced.append(candidate)
 
             # Transitive traversal: every referenced file becomes a source,
             # so a data file read by a documented script is not dead
@@ -435,9 +458,9 @@ class AgentSkillUnreferencedFilesRule(Rule):
     @staticmethod
     def _link_targets(
         doc: MarkdownDoc, base_dir: Path, skill_resolved: Path
-    ) -> Tuple[Set[Path], Set[str]]:
-        """Resolve local link targets to (files, skill-relative directories)."""
-        files: Set[Path] = set()
+    ) -> Tuple[Set[str], Set[str]]:
+        """Resolve local link targets to (resolved file paths, skill-relative dirs)."""
+        files: Set[str] = set()
         dirs: Set[str] = set()
         for link in doc.links():
             target = link.href.strip()
@@ -467,7 +490,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             if safe_is_dir(resolved):
                 dirs.add(resolved.relative_to(skill_resolved).as_posix())
             elif safe_is_file(resolved):
-                files.add(resolved)
+                files.add(str(resolved))
         return files, dirs
 
     # -- python imports -------------------------------------------------------
@@ -478,8 +501,8 @@ class AgentSkillUnreferencedFilesRule(Rule):
         text: str,
         source_dir: Path,
         skill_resolved: Path,
-        resolved_files: Set[Path],
-    ) -> Set[Path]:
+        resolved_file_strs: Set[str],
+    ) -> Set[str]:
         """Imports taught inside python (or unlabeled) fenced code blocks.
 
         Instructional markdown routinely shows agents how to use bundled
@@ -489,7 +512,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
         AST (:meth:`MarkdownDoc.fences`); the content is sliced from the
         raw file text via the fence's file line range.
         """
-        targets: Set[Path] = set()
+        targets: Set[str] = set()
         lines: Optional[List[str]] = None
         for fence in doc.fences():
             info_words = fence.info.split() if fence.info else []
@@ -506,7 +529,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             if not body.strip():
                 continue
             targets.update(
-                self._python_import_targets(body, source_dir, skill_resolved, resolved_files)
+                self._python_import_targets(body, source_dir, skill_resolved, resolved_file_strs)
             )
         return targets
 
@@ -515,30 +538,33 @@ class AgentSkillUnreferencedFilesRule(Rule):
         text: str,
         source_dir: Path,
         skill_resolved: Path,
-        resolved_files: Set[Path],
-    ) -> Set[Path]:
+        resolved_file_strs: Set[str],
+    ) -> Set[str]:
         """Bundled files reachable through this Python source's imports.
 
         Dotted module paths are resolved within the skill relative to the
         skill root and to the importing file's directory (bundled scripts
         are invoked from either); relative imports resolve against the
         importing file's package.  Containment is enforced by membership
-        in *resolved_files* — modules outside the skill are never marked.
+        in *resolved_file_strs* — modules outside the skill are never marked.
         """
-        targets: Set[Path] = set()
-        for module, names, level in self._parse_imports(text):
+        parsed = self._parse_imports(text)
+        if not parsed:
+            return set()
+        targets: Set[str] = set()
+        for module, names, level in parsed:
             parts = module.split(".") if module else []
             if level:
                 base = source_dir
                 for _ in range(level - 1):
                     base = base.parent
-                bases = [base]
+                bases = [str(base)]
             else:
-                bases = [skill_resolved]
+                bases = [str(skill_resolved)]
                 if source_dir != skill_resolved:
-                    bases.append(source_dir)
+                    bases.append(str(source_dir))
             for base in bases:
-                self._mark_module(base, parts, names, resolved_files, targets)
+                self._mark_module(base, parts, names, resolved_file_strs, targets)
         return targets
 
     @staticmethod
@@ -548,6 +574,13 @@ class AgentSkillUnreferencedFilesRule(Rule):
         Uses ``ast.parse``; sources the parser rejects (Python 2 scripts,
         templates) fall back to a line-based scan of import statements.
         """
+        # Both branches below need the literal keyword: an ``Import`` /
+        # ``ImportFrom`` node cannot exist without it, and the fallback
+        # regex matches on it too. Rejecting here keeps ``ast.parse`` off
+        # import-free sources — most fenced code blocks, and data files
+        # that only reached the parser because they end in ``.py``.
+        if "import" not in text:
+            return []
         imports: List[Tuple[str, List[str], int]] = []
         try:
             tree = ast.parse(text)
@@ -568,21 +601,34 @@ class AgentSkillUnreferencedFilesRule(Rule):
                         (module.lstrip("."), [n for n in names if n.isidentifier()], level)
                     )
             return imports
-        for node in ast.walk(tree):
+        # Statement-scoped traversal rather than ``ast.walk``: imports are
+        # statements, so they only ever live in a statement body, and
+        # expressions — which are the overwhelming majority of nodes in any
+        # real source file — cannot contain one. Walking the whole tree
+        # visits every operand and literal to find a handful of imports.
+        stack: List[ast.AST] = [tree]
+        while stack:
+            node = stack.pop()
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     imports.append((alias.name, [], 0))
-            elif isinstance(node, ast.ImportFrom):
+                continue
+            if isinstance(node, ast.ImportFrom):
                 imports.append((node.module or "", [a.name for a in node.names], node.level))
+                continue
+            for field in _STMT_BODY_FIELDS:
+                children = getattr(node, field, None)
+                if children:
+                    stack.extend(children)
         return imports
 
     @staticmethod
     def _mark_module(
-        base: Path,
+        base: str,
         parts: List[str],
         names: List[str],
-        resolved_files: Set[Path],
-        targets: Set[Path],
+        resolved_file_strs: Set[str],
+        targets: Set[str],
     ) -> None:
         """Mark the bundled files a dotted import resolves to under *base*.
 
@@ -590,25 +636,27 @@ class AgentSkillUnreferencedFilesRule(Rule):
         import c`` marks ``a/b/c.py`` when it exists, else the ``a.b``
         module itself.  Package ``__init__.py`` files along the dotted
         path execute on import, so they are marked too.  Pure set
-        membership — no filesystem access.
+        membership on native path strings — no filesystem access, and no
+        ``pathlib`` re-parse per dotted component.
         """
+        init_suffix = os.sep + "__init__.py"
 
-        def mark(prefix: Path) -> bool:
-            module = prefix.parent / (prefix.name + ".py")
-            if module in resolved_files:
+        def mark(prefix: str) -> bool:
+            module = prefix + ".py"
+            if module in resolved_file_strs:
                 targets.add(module)
                 return True
-            init = prefix / "__init__.py"
-            if init in resolved_files:
+            init = prefix + init_suffix
+            if init in resolved_file_strs:
                 targets.add(init)
                 return True
             return False
 
         prefix = base
         for part in parts:
-            prefix = prefix / part
-            init = prefix / "__init__.py"
-            if init in resolved_files:
+            prefix = prefix + os.sep + part
+            init = prefix + init_suffix
+            if init in resolved_file_strs:
                 targets.add(init)
 
         if not names:
@@ -616,25 +664,26 @@ class AgentSkillUnreferencedFilesRule(Rule):
             return
         for name in names:
             # `from a.b import c`: c may be a submodule or a symbol in a.b.
-            if not mark(prefix / name):
+            if not mark(prefix + os.sep + name):
                 mark(prefix)
 
     def _text_mentions(
         self,
         text_lower: str,
-        candidate: Path,
+        base_needles: FrozenSet[str],
         rel: str,
-        source_dir: Path,
-        skill_resolved: Path,
+        source_rel_dir: str,
     ) -> bool:
-        """Whether the (pre-lowered) source text mentions *candidate*.
+        """Whether the (pre-lowered) source text mentions the candidate.
 
         Matching is case-insensitive: needles are lowered against the
         caller's once-per-source lowered blob, so ``FORMS.md`` in prose
-        covers ``forms.md`` on disk.
+        covers ``forms.md`` on disk.  *base_needles* holds the two needles
+        that do not depend on the mentioning file (skill-relative path and
+        bare name), pre-lowered once per candidate.
         """
-        needles = {rel.lower(), candidate.name.lower()}
-        source_rel = self._relative_needle(candidate, source_dir, skill_resolved)
+        needles = set(base_needles)
+        source_rel = self._relative_needle(rel, source_rel_dir)
         if source_rel:
             needles.add(source_rel.lower())
         return any(
@@ -642,15 +691,13 @@ class AgentSkillUnreferencedFilesRule(Rule):
             for needle in needles
         )
 
-    def _dir_mentioned(
-        self, text_lower: str, rel_dir: str, source_dir: Path, skill_resolved: Path
-    ) -> bool:
+    def _dir_mentioned(self, text_lower: str, rel_dir: str, source_rel_dir: str) -> bool:
         """Whether the (pre-lowered) source text mentions the directory.
 
         Case-insensitive, like ``_text_mentions``.
         """
         rels = {rel_dir.lower()}
-        source_rel = self._relative_needle(skill_resolved / rel_dir, source_dir, skill_resolved)
+        source_rel = self._relative_needle(rel_dir, source_rel_dir)
         if source_rel:
             rels.add(source_rel.lower())
         needles: Set[Tuple[str, str]] = set()
@@ -668,17 +715,35 @@ class AgentSkillUnreferencedFilesRule(Rule):
         )
 
     @staticmethod
-    def _relative_needle(target: Path, source_dir: Path, skill_resolved: Path) -> Optional[str]:
-        """Path of *target* relative to the mentioning file's directory.
+    def _source_rel_dir(resolved_source: Path, skill_resolved: Path) -> str:
+        """The mentioning file's directory, relative to the skill root.
+
+        ``""`` for a source at the skill root, and for the (impossible in
+        practice) case of a source outside the skill, where no
+        source-relative needle can be formed anyway.
+        """
+        try:
+            return resolved_source.parent.relative_to(skill_resolved).as_posix().strip(".")
+        except ValueError:
+            return ""
+
+    @staticmethod
+    def _relative_needle(rel: str, source_rel_dir: str) -> Optional[str]:
+        """*rel* rewritten relative to the mentioning file's directory.
 
         Lets ``references/a.md`` reference ``references/img/x.png`` as
-        ``img/x.png``.  Upward (``..``) paths are skipped — the skill-relative
-        needle already matches inside them.
+        ``img/x.png``.  Both arguments are skill-relative posix paths, so
+        this is the string form of ``os.path.relpath``: a target outside
+        the source's directory would only yield an upward ``..`` path,
+        which is skipped — the skill-relative needle already matches
+        inside it.
         """
-        rel = Path(os.path.relpath(target, source_dir)).as_posix()
-        if rel.startswith(".."):
-            return None
-        return rel
+        if not source_rel_dir:
+            return rel
+        if rel == source_rel_dir:
+            return "."
+        prefix = source_rel_dir + "/"
+        return rel[len(prefix) :] if rel.startswith(prefix) else None
 
     def _pattern(self, needle: str, after: str) -> re.Pattern:
         key = (needle, after)

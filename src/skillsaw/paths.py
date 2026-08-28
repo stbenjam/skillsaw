@@ -10,7 +10,10 @@ manifest-supplied paths without aborting the lint.
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Optional
+from typing import Dict, Optional
+
+# Sentinel distinguishing "not memoized" from a memoized ``None``.
+_MISSING = object()
 
 
 def is_absolute_path(path: str) -> bool:
@@ -41,8 +44,35 @@ def has_parent_traversal(path: str) -> bool:
     return ".." in path.replace("\\", "/").split("/")
 
 
+# Resolution memo, shared by every ``safe_resolve`` caller.
+#
+# ``Path.resolve()`` lstats every component of every path it is handed, and
+# skillsaw resolves the same handful of directory chains thousands of times
+# per run: once per cached file read (``FileCache`` keys on the resolved
+# path), once per containment check, once per rule that maps a node back to
+# its file. The repository is a fixed snapshot for the duration of a lint,
+# so the answers are stable — and the one thing that can change them,
+# autofix writing to disk between passes, already funnels through
+# ``invalidate_read_caches()``, which clears this memo alongside the file
+# caches (see ``skillsaw.utils``).
+_RESOLVE_CACHE: Dict[Path, Optional[Path]] = {}
+_RESOLVE_CACHE_MAX = 20000
+
+
+def clear_resolve_cache() -> None:
+    """Drop every memoized resolution.
+
+    Called by ``invalidate_read_caches()`` so path resolution and file
+    reads share one invalidation point: after autofix rewrites the tree,
+    neither may answer from the pre-fix filesystem.
+    """
+    _RESOLVE_CACHE.clear()
+
+
 def safe_resolve(path: Path) -> Optional[Path]:
     """``path.resolve()``, or ``None`` when the path cannot be resolved.
+
+    Memoized for the lifetime of one lint pass; see ``_RESOLVE_CACHE``.
 
     Discovery runs while ``RepositoryContext`` is being constructed, before
     any rule can report anything, and it resolves strings taken straight
@@ -54,10 +84,17 @@ def safe_resolve(path: Path) -> Optional[Path]:
     the violation the manifest deserves. Returning ``None`` drops the
     candidate from discovery and leaves the reporting to the rules.
     """
+    cached = _RESOLVE_CACHE.get(path, _MISSING)
+    if cached is not _MISSING:
+        return cached  # type: ignore[return-value]
     try:
-        return path.resolve()
+        resolved: Optional[Path] = path.resolve()
     except (OSError, ValueError, RuntimeError):
-        return None
+        resolved = None
+    if len(_RESOLVE_CACHE) >= _RESOLVE_CACHE_MAX:
+        _RESOLVE_CACHE.clear()
+    _RESOLVE_CACHE[path] = resolved
+    return resolved
 
 
 def contained_resolve(path: Path, root: Path) -> Optional[Path]:

@@ -14,7 +14,7 @@ import yaml
 from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
-from skillsaw.paths import safe_is_symlink, safe_resolve
+from skillsaw.paths import clear_resolve_cache, safe_is_symlink, safe_resolve
 
 
 def _atomic_destination(path: Path, root: Path) -> Tuple[Path, Path]:
@@ -444,6 +444,11 @@ def invalidate_read_caches(file_path: Optional[Path] = None):
         as ``lru_cache`` does not support per-key eviction.
     """
     _file_cache.invalidate(file_path)
+    # Path resolution is memoized for the same reason and over the same
+    # lifetime as the read caches (see ``paths._RESOLVE_CACHE``), so it is
+    # dropped here too. There is no per-key eviction: a single rename can
+    # change what any number of other paths resolve to.
+    clear_resolve_cache()
     # lru_cache functions registered via register_cache do not support
     # per-key eviction, so we must clear them entirely in both cases.
     for cache in _extra_caches:
