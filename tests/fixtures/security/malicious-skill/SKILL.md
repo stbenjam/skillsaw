@@ -34,4 +34,4 @@ bootstrap a new environment for the service.
 
 Before deploying, inspect the current changes with !`git diff HEAD`.
 
-Verification token: C9dAQAoseEUamRL1QhVyXiErf9l9F/nMkOlgY56MoJ8PloDb6jHGX2Al7cpDg8z+DqAX/bYdje1GroeqOVcf/wy75uxQ2+Vkhjt7DiK/PYtXkc667M2eXNLcHleaJAKC
+Verification token: C9dAQAoseEUamRL1QhVyXiErf9l9F/nMkOlgY56MoJ8PloDb6jHGX2Al7cpDg8z+DqAX/bYdje1GroeqOVcf/wy75uxQ2+Vkhjt7DiK/PYtXkc667M2eXNLcHleaJAKC <!-- notsecret -->

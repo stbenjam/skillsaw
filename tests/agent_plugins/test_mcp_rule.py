@@ -219,9 +219,9 @@ class TestMcpServerEntries:
 
     def test_env_and_headers_reject_credentials_without_echoing_values(self, tmp_path):
         schema_base = "https://agent-plugins.org/schemas/1.0.0"
-        env_secret = "r4Nd0m-V4lu3-Q8z2-W7k9"
+        env_secret = "r4Nd0m-V4lu3-Q8z2-W7k9"  # notsecret
         authorization_secret = "Bearer q7K9m2V4w8R3n6D1"
-        structured_token = "ghp_aB3cD4eF5gH6iJ7kL8mN9pQ0rS1uV2wX3yZ4"
+        structured_token = "ghp_aB3cD4eF5gH6iJ7kL8mN9pQ0rS1uV2wX3yZ4"  # notsecret
         structured_secret = f"{structured_token}:${{PLUGIN_ROOT}}"
         manifest = {
             "$schema": f"{schema_base}/plugin.schema.json",
@@ -516,7 +516,7 @@ class TestRemoteUrlPolicy:
 
 
 class TestPlaceholderConfiguration:
-    HEADERS = {"X-Api-Key": "corp-vault-9f2b41d7c6"}
+    HEADERS = {"X-Api-Key": "corp-vault-9f2b41d7c6"}  # notsecret
 
     def test_project_placeholder_convention_errors_by_default(self, tmp_path):
         _write_plugin(tmp_path, _remote("https://example.com/mcp", headers=self.HEADERS))
@@ -537,7 +537,7 @@ class TestPlaceholderConfiguration:
         assert findings == []
 
     def test_structured_tokens_survive_a_placeholder_allowlist(self, tmp_path):
-        token = "ghp_aB3cD4eF5gH6iJ7kL8mN9pQ0rS1uV2wX3yZ4"
+        token = "ghp_aB3cD4eF5gH6iJ7kL8mN9pQ0rS1uV2wX3yZ4"  # notsecret
         _write_plugin(
             tmp_path,
             _remote("https://example.com/mcp", headers={"X-Api-Key": f"corp-vault-{token}"}),
