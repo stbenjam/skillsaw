@@ -21,6 +21,7 @@ class OpenCodeConfigValidRule(Rule):
     """Check that an OpenCode project config parses and is shaped the way OpenCode reads it"""
 
     since = "0.20.0"
+    target_dependencies = ("mcp-valid-json",)
 
     formats = frozenset({HAS_OPENCODE})
 

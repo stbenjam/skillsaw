@@ -20,7 +20,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--format` | Output format for stdout (default: text) (choices: text, json, sarif, html, code-climate, gitlab) | `text` |
 | `--output` | Write output to FILE. Format is inferred from extension (.htm, .html, .json, .sarif, .txt) or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). Use the prefix when an extension is ambiguous (e.g. .json could be json or gitlab/code-climate). Can be specified multiple times. |  |
 | `--type` | Override auto-detected repository type (repeatable). Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit, apm, promptfoo, codex-plugin, codex-marketplace, agent-plugin. |  |
-| `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |
+| `--rule` | Only run these rules and their validation dependencies (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-baseline` | Ignore baseline file even if .skillsaw-baseline.json exists |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
@@ -48,7 +48,7 @@ Automatically fix lint violations
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover from the first path) |  |
 | `--dry-run` | Preview fixes without writing changes |  |
 | `--suggest` | Also apply suggested fixes (not just safe ones) |  |
-| `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |
+| `--rule` | Only run these rules and their validation dependencies (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
 | `--no-network` | Skip every rule that makes outbound network requests, whatever the linted repository's .skillsaw.yaml enables (env: SKILLSAW_NO_NETWORK=1). Accepted on fix for argv compatibility only: fix never runs network rules, so this has no effect there |  |
