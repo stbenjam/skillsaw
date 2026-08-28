@@ -1,23 +1,33 @@
-# AGENTS.md
+# ledger
 
-Conventions for the `ledger` service, running on OpenCode 2.0.
+A double-entry ledger. Every balance in the system is derived by replaying
+entries, never stored — so an entry, once written, is immutable.
 
-## Build and test
+## The one rule that matters
 
-- Install dependencies with `pnpm install`.
-- Run the unit suite with `pnpm test`.
-- Run the contract tests with `pnpm test:contract`. They need the sandbox
-  API key in `.env.local`; copy `.env.example` and fill it in.
+Amounts are integers of minor units. A float anywhere in a money path is a
+correctness bug, not a style preference: `0.1 + 0.2` does not equal `0.3`,
+and a cent lost here is a cent that never reconciles.
 
-## Code conventions
+Use `Money.fromMinor(1250)` for £12.50. `Money` refuses construction from a
+float.
 
-- Format with `pnpm format`. CI rejects unformatted code.
-- Amounts are integers of minor units. Never use a floating-point type for
-  money.
-- Every exported function has an explicit return type.
+## Working here
 
-## Pull requests
+| Task | Command |
+| --- | --- |
+| Install | `pnpm install` |
+| Unit tests | `pnpm test` |
+| Contract tests | `pnpm test:contract` |
+| Format | `pnpm format` |
 
-- One logical change per pull request.
-- Reference the issue key in the title, e.g. `LED-88: retry settlement`.
-- Update `CHANGELOG.md` when the change is user-visible.
+The contract suite talks to the sandbox settlement API. Copy `.env.example`
+to `.env.local` and fill in `SANDBOX_KEY` before running it; without the key
+it skips, which is easy to mistake for passing.
+
+## Before you open a pull request
+
+Run `pnpm format` — CI rejects unformatted code. Put one logical change in
+each pull request, reference the issue key in the title (`LED-88: retry
+settlement`), and add a `CHANGELOG.md` entry when the change is visible to
+an integrator.
