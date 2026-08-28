@@ -4468,7 +4468,9 @@ class TestDescriptionRouting:
         routing_violations = self._routing_violations(result)
         expected_clean = {
             "active-invoke-whenever",
+            "active-use-for-direct",
             "active-use-for",
+            "active-use-it-when",
             "active-use-to",
             "modal-after-em-dash",
             "passive-must-whenever",
