@@ -37,3 +37,14 @@ rules:
     exclude:
       - "**/references/**"
       - "**/*template.md"
+  # development.instructions.md carries genuinely dense cross-cutting
+  # conventions (autofix invariants, ecosystem provenance, per-tool recipes)
+  # that don't split cleanly across files without duplicating context every
+  # rule author needs at once — raise the ceiling rather than fragment it.
+  context-budget:
+    limits:
+      instruction:
+        warn: 5000
+  content-progressive-disclosure:
+    limits:
+      instruction: 5000
