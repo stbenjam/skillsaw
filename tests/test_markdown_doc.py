@@ -473,16 +473,17 @@ class TestContentMapLocate:
 
     @staticmethod
     def _linear_locate(cmap, content_pos):
-        entry = cmap.entries[0]
-        for candidate in cmap.entries:
-            if candidate[0] <= content_pos:
-                entry = candidate
+        index = 0
+        for i, start in enumerate(cmap._starts):
+            if start <= content_pos:
+                index = i
             else:
                 break
-        line_start, body_line0, raw_col = entry
+        body_line0 = cmap._map_start + index
+        raw_col = cmap._column(index)
         if raw_col is None:
             return body_line0, None
-        return body_line0, raw_col + (content_pos - line_start)
+        return body_line0, raw_col + (content_pos - cmap._starts[index])
 
     def test_matches_linear_scan(self):
         body = "\n".join(f"Line {i} has a ref src/file_{i}.py here." for i in range(200))
@@ -490,6 +491,22 @@ class TestContentMapLocate:
         cmap = _ContentMap(body.split("\n"), 0, content)
         for pos in range(0, len(content) + 5):
             assert cmap.locate(pos) == self._linear_locate(cmap, pos), pos
+
+    def test_columns_are_resolved_only_for_lines_that_are_located(self):
+        """A construct sits on a handful of a paragraph's lines.
+
+        Locating a raw column costs a search of the source line, so a long
+        paragraph must not pay for every line of itself to answer two
+        queries.
+        """
+        body = "\n".join(f"Line {i} of a long paragraph." for i in range(200))
+        cmap = _ContentMap(body.split("\n"), 0, body)
+
+        assert cmap._cols == {}, "nothing is resolved before the first query"
+        cmap.locate(0)
+        cmap.locate(cmap._starts[7] + 3)
+
+        assert sorted(cmap._cols) == [0, 7]
 
     def test_offset_before_first_entry_clamps(self):
         cmap = _ContentMap(["only line"], 0, "only line")
@@ -507,7 +524,7 @@ class TestContentMapLocate:
             body = "\n".join(f"path src/file_{i}.py" for i in range(n))
             cmap = _ContentMap(body.split("\n"), 0, body)
             t = time.process_time()
-            for start, _line, _col in cmap.entries:
+            for start in cmap._starts:
                 cmap.locate(start)
             return time.process_time() - t
 

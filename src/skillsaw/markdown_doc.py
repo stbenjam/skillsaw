@@ -307,50 +307,67 @@ class _ContentMap:
     """
 
     def __init__(self, body_lines: List[str], map_start: int, content: str):
-        # entries: (content_offset_of_line_start, body_line_0based, raw_col or None)
-        self.entries: List[Tuple[int, int, Optional[int]]] = []
-        pos = 0
-        for i, content_line in enumerate(content.split("\n")):
-            body_line0 = map_start + i
-            raw = body_lines[body_line0] if 0 <= body_line0 < len(body_lines) else ""
-            col: Optional[int] = None
-            if content_line:
-                idx = raw.find(content_line)
-                if idx >= 0:
-                    col = idx
-                else:
-                    # Tab expansion in block prefixes can prepend spaces to the
-                    # content line that don't exist in the raw source.  Try
-                    # matching without the synthetic leading spaces.
-                    stripped = content_line.lstrip(" ")
-                    if stripped:
-                        idx = raw.find(stripped)
-                        if idx >= 0:
-                            adjusted = idx - (len(content_line) - len(stripped))
-                            col = adjusted if adjusted >= 0 else None
-            else:
-                col = 0
-            self.entries.append((pos, body_line0, col))
-            pos += len(content_line) + 1
-        # ``entries`` is sorted by its first field (line-start offset), which is
-        # strictly increasing.  Keep a parallel list of just those offsets so
-        # ``locate`` can binary-search instead of scanning linearly — the scan
-        # was O(n) per call and ``locate`` is called ~once per content line, so
-        # a large single paragraph made lint O(n^2) (see issue #318).
-        self._starts: List[int] = [e[0] for e in self.entries]
+        self._body_lines = body_lines
+        self._map_start = map_start
+        self._content = content
+        # Line-start offsets within the content, strictly increasing, so
+        # ``locate`` can binary-search instead of scanning linearly — the
+        # scan was O(n) per call and ``locate`` is called ~once per content
+        # line, so a large single paragraph made lint O(n^2) (issue #318).
+        starts = [0]
+        newline = content.find("\n")
+        while newline >= 0:
+            starts.append(newline + 1)
+            newline = content.find("\n", newline + 1)
+        self._starts: List[int] = starts
+        # Columns are resolved per line on first use, not up front. Locating
+        # one costs a search of the raw source line, and a construct is only
+        # ever positioned on the handful of lines it actually touches — a
+        # long paragraph would otherwise pay for every line of itself to
+        # answer two or three queries.
+        self._cols: Dict[int, Optional[int]] = {}
+
+    def _column(self, index: int) -> Optional[int]:
+        """Where line *index* of the content starts in its raw source line."""
+        start = self._starts[index]
+        end = self._starts[index + 1] - 1 if index + 1 < len(self._starts) else len(self._content)
+        content_line = self._content[start:end]
+        if not content_line:
+            return 0
+        body_line0 = self._map_start + index
+        body_lines = self._body_lines
+        raw = body_lines[body_line0] if 0 <= body_line0 < len(body_lines) else ""
+        idx = raw.find(content_line)
+        if idx >= 0:
+            return idx
+        # Tab expansion in block prefixes can prepend spaces to the content
+        # line that don't exist in the raw source.  Try matching without the
+        # synthetic leading spaces.
+        stripped = content_line.lstrip(" ")
+        if stripped:
+            idx = raw.find(stripped)
+            if idx >= 0:
+                adjusted = idx - (len(content_line) - len(stripped))
+                return adjusted if adjusted >= 0 else None
+        return None
 
     def locate(self, content_pos: int) -> Tuple[int, Optional[int]]:
         """Return (body_line_0based, raw_col or None) for a content offset."""
-        # Rightmost entry whose start offset is <= content_pos.  ``_starts[0]``
+        # Rightmost line whose start offset is <= content_pos.  ``_starts[0]``
         # is always 0, so the index never goes negative for a valid offset;
         # clamp defensively anyway.
-        idx = bisect.bisect_right(self._starts, content_pos) - 1
-        if idx < 0:
-            idx = 0
-        line_start, body_line0, raw_col = self.entries[idx]
+        index = bisect.bisect_right(self._starts, content_pos) - 1
+        if index < 0:
+            index = 0
+        body_line0 = self._map_start + index
+        cols = self._cols
+        if index in cols:
+            raw_col = cols[index]
+        else:
+            raw_col = cols[index] = self._column(index)
         if raw_col is None:
             return body_line0, None
-        return body_line0, raw_col + (content_pos - line_start)
+        return body_line0, raw_col + (content_pos - self._starts[index])
 
 
 class _InlineWalker:

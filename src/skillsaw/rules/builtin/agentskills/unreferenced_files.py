@@ -108,7 +108,6 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
 from skillsaw.utils import read_text
 
-from skillsaw.discovery import exact_name_exists
 from skillsaw.paths import safe_is_dir, safe_is_file, safe_resolve
 
 from ._helpers import SKILL_REPO_TYPES, contained_skill_file
@@ -158,6 +157,20 @@ _PY_FENCE_INFOS = {"", "python", "py", "python3"}
 # an ``except`` handler, or a ``match`` case. Nothing else can contain an
 # ``import``.
 _STMT_BODY_FIELDS = ("body", "orelse", "finalbody", "handlers", "cases")
+
+
+def _entry_is_file(entry) -> bool:
+    """``DirEntry.is_file()`` that never raises.
+
+    Matches ``exact_name_exists``: symlinks are followed, so a link to a
+    real ``SKILL.md`` marks a nested skill, while a directory squatting on
+    the name does not. A dangling link or an unreadable parent answers
+    "no" rather than aborting the scan.
+    """
+    try:
+        return entry.is_file()
+    except OSError:
+        return False
 
 
 class AgentSkillUnreferencedFilesRule(Rule):
@@ -271,30 +284,47 @@ class AgentSkillUnreferencedFilesRule(Rule):
         followed nor listed: a link escaping the skill root would make
         ``resolve().relative_to()`` raise, and a symlinked markdown file
         must never pull out-of-tree content into the reference traversal.
+
+        One ``scandir`` per directory answers all of it. The directory
+        entry already carries whether it is a link and whether it is a
+        directory, so asking it costs nothing, where ``os.walk`` plus a
+        ``Path.is_symlink()`` per entry and an existence probe per
+        subdirectory is three extra syscalls for every name in the tree.
+        Order matches the ``os.walk`` traversal it replaces: a directory's
+        own files, sorted, then its subdirectories in sorted order.
         """
         files: List[Path] = []
-        try:
-            for dirpath, dirnames, filenames in os.walk(skill_path):
-                base = Path(dirpath)
-                # Same nested-skill predicate as discovery: a subdirectory
-                # with a mis-cased skill.md is not a nested skill, so its
-                # files stay in this skill's scan on every filesystem.
-                dirnames[:] = sorted(
-                    d
-                    for d in dirnames
-                    if not d.startswith(".")
-                    and not (base / d).is_symlink()
-                    and not exact_name_exists(base / d, "SKILL.md")
-                )
-                for name in sorted(filenames):
-                    if name.startswith("."):
+        # Sorted subdirectories are pushed reversed so they pop in order,
+        # which walks depth-first through the tree exactly as before.
+        stack: List[Tuple[Path, bool]] = [(skill_path, True)]
+        while stack:
+            directory, is_root = stack.pop()
+            try:
+                with os.scandir(directory) as scan:
+                    entries = sorted(scan, key=lambda entry: entry.name)
+            except OSError:
+                continue
+            # Same nested-skill predicate as discovery: a subdirectory with
+            # a mis-cased skill.md is not a nested skill, so its files stay
+            # in this skill's scan on every filesystem.
+            if not is_root and any(
+                entry.name == "SKILL.md" and _entry_is_file(entry) for entry in entries
+            ):
+                continue
+            subdirectories: List[Tuple[Path, bool]] = []
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                try:
+                    if entry.is_symlink():
                         continue
-                    path = base / name
-                    if path.is_symlink():
+                    if entry.is_dir():
+                        subdirectories.append((directory / entry.name, False))
                         continue
-                    files.append(path)
-        except OSError:
-            pass
+                except OSError:
+                    continue
+                files.append(directory / entry.name)
+            stack.extend(reversed(subdirectories))
         return files
 
     @staticmethod
