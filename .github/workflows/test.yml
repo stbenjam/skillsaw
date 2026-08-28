@@ -25,7 +25,11 @@ jobs:
       contents: read
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.12", "3.13", "3.14"]
+        # PRs cover only the oldest and newest supported versions — src/ has
+        # no version-conditional code paths, so the middle versions exercise
+        # identical code. Pushes to main run the full matrix. 3.11 is covered
+        # by the coverage job on every run.
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.9", "3.14"]') || fromJSON('["3.9", "3.10", "3.12", "3.13", "3.14"]') }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
