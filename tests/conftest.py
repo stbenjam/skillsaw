@@ -2,13 +2,83 @@
 Pytest fixtures and configuration
 """
 
+import ipaddress
 import json
 import os
+import socket
 import sys
 import pytest
 from pathlib import Path
 import tempfile
 import shutil
+
+# Proxy variables reroute a loopback request off the machine, and
+# SKILLSAW_* are operator decisions the suite must make for itself.
+_NEUTRALIZED_ENV_VARS = (
+    "http_proxy",
+    "https_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "SKILLSAW_NO_NETWORK",
+    "SKILLSAW_ALLOW_PRIVATE_HOSTS",
+)
+
+
+def _stays_on_this_machine(address) -> bool:
+    """Whether connecting to *address* keeps the traffic on loopback."""
+    if not isinstance(address, (tuple, list)) or not address:
+        # AF_UNIX takes a path, not a host/port pair.
+        return True
+    host = address[0]
+    if not isinstance(host, str):
+        return False
+    host = host.strip("[]").split("%", 1)[0]
+    if host in ("", "localhost"):
+        return True
+    try:
+        parsed = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return parsed.is_loopback or parsed.is_unspecified
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _the_suite_never_leaves_this_machine():
+    """Fail any test that opens a socket to somewhere other than loopback.
+
+    skillsaw ships one rule that makes outbound requests, and its tests
+    promise every request goes to a local ``http.server``. A promise
+    nothing enforces is a promise that erodes: an ambient proxy, a
+    fixture URL that stopped being substituted, or a future test written
+    against a real host would all pass quietly. This is the guard that
+    would not.
+    """
+    for var in _NEUTRALIZED_ENV_VARS:
+        os.environ.pop(var, None)
+
+    real = {name: getattr(socket.socket, name) for name in ("connect", "connect_ex")}
+
+    def _guarded(name):
+        original = real[name]
+
+        def wrapper(self, address, *args, **kwargs):
+            if not _stays_on_this_machine(address):
+                raise RuntimeError(
+                    f"socket.{name}({address!r}): no test may reach the network. "
+                    "Point it at the local http.server fixture instead."
+                )
+            return original(self, address, *args, **kwargs)
+
+        return wrapper
+
+    for name in real:
+        setattr(socket.socket, name, _guarded(name))
+    try:
+        yield
+    finally:
+        for name, original in real.items():
+            setattr(socket.socket, name, original)
 
 
 def _load_dotenv():

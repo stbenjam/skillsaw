@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **79** built-in rules organized into the following categories:
+skillsaw includes **81** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Agent Plugins](agent-plugins.md) (3 rules)
@@ -14,9 +14,10 @@ skillsaw includes **79** built-in rules organized into the following categories:
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [OpenClaw](openclaw.md) (1 rule)
 - [Cursor](cursor.md) (2 rules)
+- [OpenCode](opencode.md) (1 rule)
 - [Instruction Files](instruction-files.md) (3 rules)
 - [Context Budget](context-budget.md) (1 rule)
-- [Content Intelligence](content-intelligence.md) (24 rules)
+- [Content Intelligence](content-intelligence.md) (25 rules)
 - [CodeRabbit](coderabbit.md) (2 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
@@ -67,6 +68,7 @@ skillsaw includes **79** built-in rules organized into the following categories:
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
 | [`cursor-rules-valid`](cursor-rules-valid.md) | Cursor .mdc rules must have frontmatter that lets the rule activate | error (auto) | auto | Cursor |
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
+| [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files | warning (auto) | - | Instruction Files |
 | [`claude-md-agents-import`](claude-md-agents-import.md) | CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' so both assistants read one source of truth | info (auto) | auto | Instruction Files |
@@ -86,6 +88,7 @@ skillsaw includes **79** built-in rules organized into the following categories:
 | [`content-inconsistent-terminology`](content-inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | - | Content Intelligence |
 | [`content-instruction-drift`](content-instruction-drift.md) | Detect near-duplicate sections that have drifted apart across instruction files | info (auto) | - | Content Intelligence |
 | [`content-broken-internal-reference`](content-broken-internal-reference.md) | Detect markdown links where the target file does not exist | warning (auto) | auto | Content Intelligence |
+| [`content-broken-external-reference`](content-broken-external-reference.md) | Detect external http(s) links whose server reports them gone (404/410; opt-in, makes network requests) | warning (disabled) | - | Content Intelligence |
 | [`content-unlinked-internal-reference`](content-unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto | Content Intelligence |
 | [`content-placeholder-text`](content-placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - | Content Intelligence |
 | [`content-unclosed-fence`](content-unclosed-fence.md) | Detect code fences opened but never closed, hiding the rest of the file from content rules | warning (auto) | auto | Content Intelligence |

@@ -2,21 +2,21 @@
 Rule: mcp-valid-json
 """
 
-import re
-from typing import List, Dict, Any, Tuple
+from types import MappingProxyType
+from typing import Any, Dict, List, Mapping, Tuple
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from skillsaw.blocks import AgentPluginMcpBlock
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.blocks import AgentPluginMcpBlock, OpenCodeMcpBlock
+from skillsaw.context import HAS_OPENCODE, RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.utils import is_finite_number
 from skillsaw.lint_target import PluginNode
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.secret_detection import (
-    DEFAULT_PLACEHOLDER_MARKERS,
     mapped_secret_description,
+    placeholder_markers,
+    url_has_userinfo,
 )
 from skillsaw.rules.builtin.utils import read_json
 
@@ -26,49 +26,15 @@ def _is_usable(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-# ``scheme://…@`` ahead of any path/query/fragment — the structural shape of
-# embedded user information.
-_URL_USERINFO_RE = re.compile(r"://[^/?#]*@")
-
-# WHATWG URL parsing — every browser and Node runtime — is lenient about the
-# ``//`` after a special scheme: it accepts any slash run (backslashes too),
-# so a JS client reads ``https:user:pass@example.com/mcp`` as user
-# information for example.com while RFC 3986, and urlsplit with it, see one
-# opaque path. Such spellings are retried in their normalized form.
-_WHATWG_SPECIAL_SCHEME_RE = re.compile(r"^(https?|wss?|ftp|file):", re.IGNORECASE)
-
-
-def _url_has_userinfo(url: str) -> bool:
-    """Whether a URL carries user information, even when malformed.
-
-    urlsplit raises ValueError on some malformed URLs; the conservative
-    fallback scans for the userinfo shape so an unparseable URL cannot
-    smuggle embedded credentials past the check. Slashless special-scheme
-    spellings are additionally retried the way a WHATWG client would
-    normalize them.
-    """
-
-    def carries(candidate: str) -> bool:
-        try:
-            parsed = urlsplit(candidate)
-        except ValueError:
-            return _URL_USERINFO_RE.search(candidate) is not None
-        return parsed.username is not None or parsed.password is not None
-
-    if carries(url):
-        return True
-    match = _WHATWG_SPECIAL_SCHEME_RE.match(url)
-    if not match:
-        return False
-    rest = url[match.end() :]
-    if rest.startswith("//"):
-        # Already in authority form — the first parse was authoritative.
-        return False
-    # The lstrip lives outside the f-string: a backslash in an expression
-    # is a SyntaxError on the 3.9–3.11 interpreters this package supports.
-    stripped = rest.lstrip("/\\")
-    return carries(f"{match.group(0)}//{stripped}".replace("\\", "/"))
-
+#: How a per-server credential map is named in a finding, keyed by the map's
+#: own key so each host's spelling reads naturally. The fallback covers the
+#: two maps this rule reads directly.
+_CREDENTIAL_MAP_LABELS = {
+    "env": "environment variable",
+    "environment": "environment variable",
+    "headers": "HTTP header",
+    "oauth": "OAuth field",
+}
 
 #: Fields that appear on one server, never on a map of them.
 _SERVER_FIELDS = frozenset({"command", "url", "type", "args", "env", "headers"})
@@ -162,6 +128,28 @@ class McpValidJsonRule(Rule):
                 isinstance(block, AgentPluginMcpBlock)
                 and RepositoryType.AGENT_PLUGIN in context.repo_types
             ):
+                continue
+            # OpenCode's dialect shares the idea of an MCP server and almost
+            # none of the spelling: transports are named for where the server
+            # runs (``local``/``remote``) rather than for the wire protocol,
+            # a local ``command`` is an argv array, the environment map is
+            # ``environment``, and v2 splits ``timeout`` into an object.
+            # Every *shape* check below would report a correctly written
+            # OpenCode config as invalid, so ``opencode-config-valid``
+            # validates the shape instead.
+            #
+            # The deferral is narrower than the one above. Unlike the
+            # ``--type`` gate, nothing here can see whether
+            # ``opencode-config-valid`` is *enabled*, and it carries
+            # ``since = "0.20.0"`` — so a project whose ``.skillsaw.yaml``
+            # still pins an older ``version:``, the ordinary state right
+            # after an upgrade, has it gated off while this rule defers.
+            # Everything that holds whatever dialect the file is written in
+            # therefore stays here, where no version gate can reach it; see
+            # ``_dialect_neutral_violations``. Policy rules are unaffected —
+            # they read ``server_names``, which the block normalizes.
+            if isinstance(block, OpenCodeMcpBlock) and HAS_OPENCODE in context.detected_formats:
+                violations.extend(self._dialect_neutral_violations(block))
                 continue
             if block.parse_error:
                 violations.append(
@@ -261,6 +249,58 @@ class McpValidJsonRule(Rule):
             if plugin_json_path.exists():
                 violations.extend(self._validate_plugin_json_mcp(plugin_json_path))
 
+        return violations
+
+    def _dialect_neutral_violations(self, block: McpBlock) -> List[RuleViolation]:
+        """The checks this rule keeps for a block whose *shape* it defers.
+
+        Not the whole rule, and not one check either: what stays is
+        everything that does not depend on the host's spelling. A document
+        that is not JSON is unreadable to every host. A ``url`` carrying
+        user information is the same defect in every dialect. So is a
+        credential sitting in a per-server map — the map's *name* differs
+        between hosts, which is why the block declares it in
+        :attr:`McpBlock.credential_maps` rather than this rule naming it.
+
+        Keeping them here rather than in the deferring rule is what makes
+        them survive a ``.skillsaw.yaml`` pinning a ``version:`` older than
+        that rule's ``since``, which is the ordinary state right after an
+        upgrade.
+
+        The line stops at what the *document* must be. That an OpenCode
+        config's top level is an object is a claim about OpenCode's own
+        schema, not about JSON or about MCP, so it stays with the rule that
+        knows the dialect.
+        """
+        violations: List[RuleViolation] = []
+        if block.parse_error:
+            return [self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)]
+        for name, server in block.server_entries():
+            if not isinstance(server, dict):
+                continue
+            shown = safe_display(str(name))
+            url = server.get("url")
+            if isinstance(url, str) and url_has_userinfo(url):
+                violations.append(
+                    self.violation(
+                        f"MCP server '{shown}' 'url' must not contain user information",
+                        file_path=block.path,
+                    )
+                )
+            for key, header in block.credential_maps:
+                values = server.get(key)
+                if not isinstance(values, dict):
+                    continue
+                violations.extend(
+                    self._mapped_secret_violations(
+                        values,
+                        server_name=shown,
+                        file_path=block.path,
+                        header=header,
+                        aliases=block.credential_key_aliases,
+                        location=key,
+                    )
+                )
         return violations
 
     def _validate_plugin_json_mcp(self, plugin_json: Path) -> List[RuleViolation]:
@@ -440,7 +480,7 @@ class McpValidJsonRule(Rule):
                     )
                 )
             elif isinstance(server_config.get("url"), str):
-                if _url_has_userinfo(server_config["url"]):
+                if url_has_userinfo(server_config["url"]):
                     violations.append(
                         self.violation(
                             f"MCP server '{shown}' 'url' must not contain user information",
@@ -515,10 +555,7 @@ class McpValidJsonRule(Rule):
 
     def _placeholder_markers(self) -> Tuple[str, ...]:
         """The placeholder allowlist, extended by this rule's configuration."""
-        extra = self.config.get("additional-placeholders", [])
-        if not isinstance(extra, list):
-            return DEFAULT_PLACEHOLDER_MARKERS
-        return DEFAULT_PLACEHOLDER_MARKERS + tuple(str(m).lower() for m in extra if str(m))
+        return placeholder_markers(self.config.get("additional-placeholders", []))
 
     def _mapped_secret_violations(
         self,
@@ -527,24 +564,35 @@ class McpValidJsonRule(Rule):
         server_name: str,
         file_path: Path,
         header: bool,
+        aliases: Mapping[str, str] = MappingProxyType({}),
+        location: str = "",
     ) -> List[RuleViolation]:
-        """Report structured credentials without copying their values."""
+        """Report structured credentials without copying their values.
+
+        *aliases* normalizes a key before the credential-*name* test only —
+        a host whose older spelling the shared detector cannot split needs
+        it — while the message always names the key as the author wrote it.
+        *location* names the map for the message when it is not one of the
+        two this rule reads directly.
+        """
         violations = []
+        where = _CREDENTIAL_MAP_LABELS.get(
+            location, "HTTP header" if header else "environment variable"
+        )
         for name, value in values.items():
             if not isinstance(name, str) or not isinstance(value, str):
                 continue
             description = mapped_secret_description(
-                name,
+                aliases.get(name, name),
                 value,
                 header=header,
                 markers=self._placeholder_markers(),
             )
             if description is None:
                 continue
-            location = "HTTP header" if header else "environment variable"
             violations.append(
                 self.violation(
-                    f"MCP server '{server_name}' {location} "
+                    f"MCP server '{server_name}' {where} "
                     f"'{safe_display(name)}' embeds {description}; use a placeholder "
                     "or environment substitution instead of a credential value",
                     file_path=file_path,

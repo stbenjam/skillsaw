@@ -36,6 +36,10 @@ from .blocks import (
     InstructionBlock,
     McpBlock,
     OpenAIMetadataBlock,
+    OpenCodeAgentBlock,
+    OpenCodeCommandBlock,
+    OpenCodeConfigBlock,
+    OpenCodeMcpBlock,
     PluginRuleBlock,
     PromptBlock,
     PromptfooPromptBlock,
@@ -95,7 +99,42 @@ _EDITOR_GLOBS = (
     (".github", "prompts", "**/*.prompt.md", "CopilotPromptBlock"),
     (".github", "chatmodes", "**/*.chatmode.md", "CopilotAgentBlock"),
     (".clinerules", "workflows", "**/*.md", "ClineWorkflowBlock"),
+    # OpenCode 2.0 renamed each content directory to its plural and still
+    # loads the 1.x singular, so both are listed. ``mode``/``modes`` are
+    # deliberately absent — see ``_OPENCODE_FLAT_DIRS``.
+    (".opencode", "commands", "**/*.md", "OpenCodeCommandBlock"),
+    (".opencode", "command", "**/*.md", "OpenCodeCommandBlock"),
+    (".opencode", "agents", "**/*.md", "OpenCodeAgentBlock"),
+    (".opencode", "agent", "**/*.md", "OpenCodeAgentBlock"),
 )
+
+# The OpenCode directories the loader reads *flat*: ``{mode,modes}/*.md``,
+# the pre-``agent`` spelling of a primary agent. They are kept out of
+# ``_EDITOR_GLOBS`` on purpose. That table tells the repository-wide
+# ``*.instructions.md`` sweep where to stand aside, and its match is
+# lexical — it does not check depth — so listing a flat directory there
+# would make the sweep yield a *nested* ``modes/x/y.instructions.md`` to a
+# loop that only ever claims the top level, dropping the file from the tree
+# entirely. Standing aside is only safe where the owning glob is recursive.
+# Nothing is lost: OpenCode does not load a nested file there either, so the
+# sweep claiming it as ordinary instruction prose is the right answer.
+_OPENCODE_FLAT_DIRS = (
+    ("modes", "OpenCodeAgentBlock"),
+    ("mode", "OpenCodeAgentBlock"),
+)
+
+# Every OpenCode markdown directory the tree attaches, as (subdirectory,
+# glob, block-class name) — the recursive ones derived from _EDITOR_GLOBS so
+# the two tables cannot drift, plus the flat ones above.
+_OPENCODE_CONTENT_DIRS = tuple(
+    (sub, pattern, cls) for editor, sub, pattern, cls in _EDITOR_GLOBS if editor == ".opencode"
+) + tuple((sub, "*.md", cls) for sub, cls in _OPENCODE_FLAT_DIRS)
+
+#: OpenCode reads its project config under either extension, in either
+#: location. Both are attached when both exist, so each is validated on its
+#: own terms — no rule reports the pairing itself, since which one OpenCode
+#: loads is its business rather than a defect in either file.
+_OPENCODE_CONFIG_NAMES = ("opencode.json", "opencode.jsonc")
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -563,6 +602,49 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     for vscode_dir in context.agent_tool_dirs(".vscode"):
         _add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
+
+    def _add_opencode_config(directory: Path) -> None:
+        """Attach every ``opencode.json`` and ``opencode.jsonc`` in *directory*.
+
+        Both extensions, under both parser roles.
+
+        One document, two parser roles: the whole file is validated by
+        ``opencode-config-valid``, and its ``mcp`` section is additionally
+        exposed as an :class:`McpBlock` so the ecosystem-neutral policy and
+        security rules read OpenCode's servers the way they read every other
+        host's. ``_add_parser_block`` is role-aware, so this is one file
+        appearing twice in the tree rather than two findings for one defect.
+        """
+        for name in _OPENCODE_CONFIG_NAMES:
+            _add_parser_block(root, directory / name, OpenCodeConfigBlock)
+            _add_parser_block(root, directory / name, OpenCodeMcpBlock)
+
+    # The project config is read from the repository root as well as from
+    # ``.opencode/``. The root copy is never APM output — APM compiles into
+    # ``.opencode/``, never over a root config — so it is attached
+    # unconditionally.
+    _add_opencode_config(context.root_path)
+
+    _opencode_blocks = {
+        "OpenCodeCommandBlock": OpenCodeCommandBlock,
+        "OpenCodeAgentBlock": OpenCodeAgentBlock,
+    }
+    for opencode_dir in context.agent_tool_dirs(".opencode"):
+        # When APM compiles the ``opencode`` target it owns this whole
+        # directory, so its prose duplicates the ``.apm/`` sources the author
+        # actually edits and the content findings belong there. The copy is
+        # still attached, not skipped, so the security and structural rules
+        # read what really ships — a generated file can be hand-edited.
+        compiled = _is_in_compiled_dir(opencode_dir)
+        for sub, pattern, block_name in _OPENCODE_CONTENT_DIRS:
+            _add_glob(
+                root,
+                opencode_dir / sub,
+                pattern,
+                _opencode_blocks[block_name],
+                content_suppressed=compiled,
+            )
+        _add_opencode_config(opencode_dir)
 
     kiro_steering = context.root_path / ".kiro" / "steering"
     if kiro_steering.is_dir():
