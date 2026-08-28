@@ -39,6 +39,11 @@ _TRIGGER_MARKERS = (
     "if the user",
 )
 _RESTATEMENT_FILLER = {"a", "an", "the", "command", "agent", "skill"}
+#: OpenCode directories whose files are primary agents by location alone —
+#: ``config/agent.ts`` scans ``{mode,modes}/*.md`` and writes
+#: ``mode: "primary"`` for each, whatever the frontmatter says. The glob is
+#: flat, so the parent directory name is an exact test.
+_OPENCODE_PRIMARY_DIRS = frozenset({"mode", "modes"})
 
 
 class DescriptionRoutingRule(Rule):
@@ -109,9 +114,15 @@ class DescriptionRoutingRule(Rule):
         exempt above. ``subagent`` and ``all`` *are* selected automatically
         "based on their descriptions", and ``all`` is the default when the
         field is absent, so only the explicit ``primary`` is exempt.
+
+        Location answers too. Files under :data:`_OPENCODE_PRIMARY_DIRS` are
+        primary whatever their frontmatter says, so they carry no ``mode``
+        field to read and the directory is what exempts them.
         """
         if block_type is not OpenCodeAgentBlock:
             return False
+        if block.path.parent.name in _OPENCODE_PRIMARY_DIRS:
+            return True
         return block.field_value("mode") == "primary"
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:

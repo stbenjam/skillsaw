@@ -843,9 +843,9 @@ def test_apm_that_targets_something_else_leaves_opencode_authored(temp_dir):
 def test_an_unreadable_apm_target_list_keeps_apm_owning_the_directory(temp_dir, manifest):
     """Unknown targets answer True for everything — APM wins when it cannot say.
 
-    The missing-manifest case is the one the docs used to file under
-    "targets omit opencode": `.apm/` alone satisfies `has_apm`, so the
-    directory is treated as compiled output rather than authored.
+    `.apm/` alone satisfies `has_apm`, so a repository with no `apm.yml` at
+    all lands here rather than under "targets omit opencode": the directory
+    is treated as compiled output rather than authored.
     """
     (temp_dir / ".apm").mkdir()
     if manifest is not None:

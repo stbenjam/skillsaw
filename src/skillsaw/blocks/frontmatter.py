@@ -604,11 +604,13 @@ class OpenCodeAgentBlock(FrontmatteredBlock):
     """``.opencode/agents/**/*.md`` — an OpenCode agent of either kind.
 
     Covers the 1.x ``agent/`` directory and the older ``mode/`` spelling of
-    the same thing, both of which 2.0 still loads. The file's own ``mode``
-    field says which kind it is: a ``primary`` agent is one a person cycles
-    to, while ``subagent`` and the default ``all`` are delegated to on their
-    descriptions. Rules that care about that distinction read the field —
-    the block type holds both.
+    the same thing, both of which 2.0 still loads. Under ``agent(s)/`` the
+    file's own ``mode`` field says which kind it is: a ``primary`` agent is
+    one a person cycles to, while ``subagent`` and the default ``all`` are
+    delegated to on their descriptions. Under ``mode(s)/`` the directory
+    decides instead — OpenCode types every file there ``primary`` whatever
+    the frontmatter says. Rules that care about that distinction read both;
+    the block type holds every kind.
     """
 
     category: str = "agent"
