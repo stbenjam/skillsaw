@@ -3,7 +3,9 @@
 A bare path like `src/config.ts` in prose is not clickable and not
 machine-navigable. Wrapping it in markdown link syntax
 (`[src/config.ts](src/config.ts)`) makes it a navigable reference
-that tools and agents can follow to read the file's contents.
+that tools and agents can follow to read the file's contents. The rule only
+reports paths that resolve to an existing target inside the repository, so
+technology names and illustrative paths do not create unactionable findings.
 
 ## Examples
 
@@ -23,5 +25,4 @@ See [src/config.ts](src/config.ts) for the shared configuration.
 
 Wrap the bare path in markdown link syntax: `[path](path)`. When the
 violation message says "file exists, autofixable", `skillsaw fix` can
-wrap it automatically. For paths that do not exist, verify the path
-is correct before linking.
+wrap it automatically. Paths without a resolvable local target are ignored.
