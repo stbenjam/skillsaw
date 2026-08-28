@@ -2,9 +2,13 @@
 End-to-end integration tests for the skillsaw CLI.
 
 Each test copies a static fixture from tests/fixtures/ into a temp
-directory, invokes ``python -m skillsaw lint --format json -v`` via
-subprocess, and asserts on the parsed JSON output: rule IDs, severities,
-violation counts, line numbers, exit codes, and stats.
+directory, invokes ``skillsaw lint --format json -v`` through
+``tests.cli_runner.run_cli``, and asserts on the parsed JSON output: rule
+IDs, severities, violation counts, line numbers, exit codes, and stats.
+
+``run_cli`` drives the CLI in-process; the handful of tests that need a
+real interpreter — import isolation, stdout encoding, the colour cascade —
+call ``subprocess.run`` directly and say why.
 
 Fixtures may contain ``<!-- skillsaw-assert rule-id -->`` directives.
 Each directive declares that the NEXT non-directive, non-blank line must
@@ -25,6 +29,8 @@ from typing import Dict, List, Set
 
 import pytest
 
+from tests.cli_runner import run_cli
+
 FIXTURES = Path(__file__).parent / "fixtures"
 
 _ASSERT_RE = re.compile(
@@ -37,7 +43,7 @@ _ASSERT_RE = re.compile(
 
 
 def run_lint(path, *extra_args, config=None, verbose=True, fmt="json"):
-    args = [sys.executable, "-m", "skillsaw", "lint"]
+    args = ["lint"]
     if fmt:
         args.extend(["--format", fmt])
     if verbose:
@@ -48,7 +54,7 @@ def run_lint(path, *extra_args, config=None, verbose=True, fmt="json"):
     # CLI argument order their names describe (extra paths follow it)
     args.append(str(path))
     args.extend(extra_args)
-    result = subprocess.run(args, capture_output=True, text=True, timeout=60)
+    result = run_cli(args)
     output = None
     if fmt == "json" and result.stdout.strip():
         output = json.loads(result.stdout)
@@ -1176,9 +1182,7 @@ class TestFixMultiplePaths:
     """
 
     def _run_fix(self, *cli_args):
-        args = [sys.executable, "-m", "skillsaw", "fix"]
-        args.extend(str(a) for a in cli_args)
-        return subprocess.run(args, capture_output=True, text=True, timeout=60)
+        return run_cli(["fix", *cli_args])
 
     def test_fix_two_repos_fixes_both(self, tmp_path):
         """Every path passed to fix gets fixed, not just the last one."""
@@ -3964,10 +3968,7 @@ class TestUnlinkedInternalReferenceAutofix:
     """Integration tests for content-unlinked-internal-reference autofix via CLI."""
 
     def _run_fix(self, path, *extra_args):
-        args = [sys.executable, "-m", "skillsaw", "fix"]
-        args.extend(extra_args)
-        args.append(str(path))
-        return subprocess.run(args, capture_output=True, text=True, timeout=60)
+        return run_cli(["fix", *extra_args, path])
 
     def test_fix_duplicate_paths_via_cli(self, tmp_path):
         """CLI fix wraps duplicate bare paths without double-wrapping."""
@@ -4372,10 +4373,7 @@ def _discover_safe_autofix_rule_ids() -> Set[str]:
 
 
 def _run_fix(path, *extra_args):
-    args = [sys.executable, "-m", "skillsaw", "fix"]
-    args.extend(extra_args)
-    args.append(str(path))
-    result = subprocess.run(args, capture_output=True, text=True, timeout=120)
+    result = run_cli(["fix", *extra_args, path])
     assert (
         result.returncode == 0
     ), f"skillsaw fix failed with rc={result.returncode}: {result.stderr}"
