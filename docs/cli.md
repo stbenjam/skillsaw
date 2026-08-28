@@ -25,6 +25,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--no-baseline` | Ignore baseline file even if .skillsaw-baseline.json exists |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
 | `--no-network` | Skip every rule that makes outbound network requests, whatever the linted repository's .skillsaw.yaml enables (env: SKILLSAW_NO_NETWORK=1) |  |
+| `--allow-private-hosts` | Let network rules probe loopback, private and link-local hosts. Off unless the operator asks: the linted repository cannot enable it (env: SKILLSAW_ALLOW_PRIVATE_HOSTS=1) |  |
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
@@ -51,6 +52,7 @@ Automatically fix lint violations
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
 | `--no-network` | Skip every rule that makes outbound network requests, whatever the linted repository's .skillsaw.yaml enables (env: SKILLSAW_NO_NETWORK=1) |  |
+| `--allow-private-hosts` | Let network rules probe loopback, private and link-local hosts. Off unless the operator asks: the linted repository cannot enable it (env: SKILLSAW_ALLOW_PRIVATE_HOSTS=1) |  |
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
@@ -119,6 +121,7 @@ Generate or update the baseline file from current violations
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories) |  |
 | `--no-network` | Skip every rule that makes outbound network requests, whatever the linted repository's .skillsaw.yaml enables (env: SKILLSAW_NO_NETWORK=1) |  |
+| `--allow-private-hosts` | Let network rules probe loopback, private and link-local hosts. Off unless the operator asks: the linted repository cannot enable it (env: SKILLSAW_ALLOW_PRIVATE_HOSTS=1) |  |
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 
 ## `skillsaw badge`
@@ -133,6 +136,7 @@ Grade the repository and write a shields.io badge JSON file
 | `--theme` | Report card color theme, used with --large (default: dark) (choices: light, dark) | `dark` |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories) |  |
 | `--no-network` | Skip every rule that makes outbound network requests, whatever the linted repository's .skillsaw.yaml enables (env: SKILLSAW_NO_NETWORK=1) |  |
+| `--allow-private-hosts` | Let network rules probe loopback, private and link-local hosts. Off unless the operator asks: the linted repository cannot enable it (env: SKILLSAW_ALLOW_PRIVATE_HOSTS=1) |  |
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
 

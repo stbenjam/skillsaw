@@ -243,6 +243,12 @@ A clean run is not proof every link resolved: bot walls, rate limits, 5xx
 responses, timeouts and DNS failures are all treated as inconclusive and
 reported nowhere.
 
+The recipe above runs the CLI directly rather than the `skillsaw` Action,
+because the Action has no per-rule selector today — no `rule`, `skip-rule`
+or `args` input — and enabling the rule the only other way, in
+`.skillsaw.yaml`, is what the section above tells you not to do. Use the
+Action for your pull-request job and the CLI for this one.
+
 ### Refusing network access outright
 
 `--no-network` (or `SKILLSAW_NO_NETWORK=1`) drops every rule that makes
@@ -257,6 +263,19 @@ to belong to the operator:
 
 The `skillsaw` Action sets it by default (`no-network: 'true'`); pass
 `no-network: false` to opt a scheduled job back in.
+
+Naming only network rules while the gate is on — `--rule
+content-broken-external-reference --no-network`, which is what an
+org-wide `SKILLSAW_NO_NETWORK` export does to the scheduled job above — is
+an error, not a green run over an empty rule set.
+
+The companion control is `--allow-private-hosts`
+(`SKILLSAW_ALLOW_PRIVATE_HOSTS=1`), which lets link checking reach
+loopback, private and link-local addresses. It is off unless the operator
+asks, and there is no `.skillsaw.yaml` key for it: a linted repository
+that could grant it could point the runner at its own internal network.
+Leave it off unless you are deliberately checking intranet links from a
+trusted checkout.
 
 ## Other output formats
 

@@ -61,6 +61,14 @@ enterprise CI job can assert "skillsaw made no network calls" from a flag
 rather than by auditing every linted repository's YAML. The shipped
 GitHub Action sets `no-network: 'true'` by default for the same reason.
 
+Naming only gated rules under `--no-network` — `skillsaw lint . --rule
+content-broken-external-reference --no-network` — is an error rather than
+a run that checks nothing and exits 0.
+
+The other operator-only control is `--allow-private-hosts`
+(`SKILLSAW_ALLOW_PRIVATE_HOSTS=1`), which lifts the confinement described
+below. Neither control can be set from `.skillsaw.yaml`.
+
 When the network *does* engage, skillsaw says so on stderr:
 
 ```console
@@ -84,12 +92,22 @@ anywhere in your context files:
 
 Destinations are confined to public hosts. A URL whose host is a loopback,
 private, link-local, reserved, multicast or IPv4-mapped address — or a
-`localhost` name — is refused unless you set `allow-private-hosts: true`.
-The same check re-runs on every redirect hop, so an origin cannot redirect
-the linter onto your internal network. An internal *hostname* that resolves
-to a private address is not caught (that would need a resolver lookup, and
-would still lose to DNS rebinding); use `--no-network` or network egress
-control if that matters.
+`localhost` name — is refused. So are the spellings of those addresses that
+a resolver accepts and `ipaddress` does not: `http://2852039166/`,
+`http://0x7f000001/`, `http://0177.0.0.1/` and `http://127.1/` are
+classified from the same normalization the resolver would apply, without
+performing a lookup. The check re-runs on every redirect hop, so an origin
+cannot redirect the linter onto your internal network.
+
+Lifting that confinement is the operator's call, not the repository's:
+`skillsaw lint . --allow-private-hosts`, or
+`SKILLSAW_ALLOW_PRIVATE_HOSTS=1`. There is deliberately no `.skillsaw.yaml`
+key for it. The repository is the actor the confinement exists to contain,
+so a setting it could write would not be a control at all.
+
+An internal *hostname* that resolves to a private address is not caught
+(that would need a resolver lookup, and would still lose to DNS rebinding);
+use `--no-network` or network egress control if that matters.
 
 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` are honored, so a restricted-egress
 environment can route or block these requests the usual way.
@@ -191,13 +209,36 @@ and serves the PDF on `GET`. **A `HEAD` alone is never enough to convict** —
 nothing is reported. The extra request is paid only for links about to be
 flagged, so it costs nothing on a healthy repository.
 
-Redirects are followed up to five hops. Requests run on a small thread pool
-and identify themselves as `skillsaw/<version>`.
+Redirects are followed up to five hops. Requests run on a small pool of
+daemon threads and identify themselves as
+`skillsaw/<version> (+https://skillsaw.org)`.
 
-Two limits bound a run: `timeout` per request and `total-budget` for all
-of them together. When the budget runs out, the URLs still queued are left
-unchecked and the run emits one info-level notice saying how many — never
-one per URL.
+Two limits bound a run: `timeout` and `total-budget`. `timeout` is the
+socket timeout for a single request, so it bounds each read rather than a
+whole request — a redirect chain or a slow header stream can cost several
+multiples of it. `total-budget` is the wall clock for all requests
+together, and it is what actually bounds the run: workers are joined
+against it, and any still running when it expires are abandoned. They are
+daemon threads, so an abandoned one cannot hold the process open at exit
+either. There is no way to switch the budget off; `0` and negatives mean
+the default, and the value is clamped.
+
+When the budget runs out, the URLs still queued are left unchecked and the
+run emits one info-level notice — one per run, never one per URL. The
+notice says that some URLs went unchecked but not how many: it has no file
+path, so its baseline identity is a hash of its message, and a count that
+moves with runner latency would re-fingerprint it every run. Run with `-v`
+for the count.
+
+### Deliberately not a general link checker
+
+Anchor and fragment checking, response caching between runs, retry and
+backoff, configurable accepted status ranges, and authenticated requests
+are all out of scope. This rule exists to catch link rot in agent context
+files with skillsaw's reporting — `explain`, baselines, suppressions,
+severity, the grade — around it. For a full-featured link checker over a
+whole documentation tree, use [lychee](https://github.com/lycheeverse/lychee)
+or [markdown-link-check](https://github.com/tcort/markdown-link-check).
 
 ## How to fix
 
@@ -220,6 +261,10 @@ rules:
       - https://*.staging.example.net/*        # glob
 ```
 
+Patterns are matched against the URL that is actually requested, which has
+had its fragment stripped, so write entries without a `#fragment` — one
+that carries a fragment never matches.
+
 *Any* setting for this rule — `ignore` or `timeout` alone, and even an
 unrecognized key — enables it, because it is disabled by default. To
 configure it without turning it on, keep an explicit `enabled: false`.
@@ -227,26 +272,10 @@ configure it without turning it on, keep an explicit `enabled: false`.
 ### CI recipe
 
 Run it on a schedule rather than on every pull request, so a flaky origin
-can never block a merge:
-
-```yaml
-name: link-check
-on:
-  schedule:
-    - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
-  workflow_dispatch:
-
-jobs:
-  links:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: pipx install skillsaw
-      - run: skillsaw lint . --rule content-broken-external-reference
-```
-
-`--rule` enables the rule for that run without committing it to
-`.skillsaw.yaml`, so your per-PR lint stays offline.
+can never block a merge. The workflow to copy is in the
+[CI guide](https://skillsaw.org/ci/#scheduled-external-link-checking) —
+there is one copy of it, because a recipe that omits `--strict` produces a
+job that stays green while reporting dead links.
 
 ## Configuration
 
@@ -259,11 +288,10 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `timeout` | Per-request timeout in seconds (clamped to 30) | `5.0` |
-| `total-budget` | Wall-clock seconds for all requests in a run; remaining URLs are left unchecked. 0 disables the cap (clamped to 600) | `30.0` |
-| `concurrency` | Maximum simultaneous requests (clamped to 32) | `8` |
-| `ignore` | URL patterns never requested — a glob (fnmatch) when it contains *, ? or [, otherwise a literal prefix | `[]` |
-| `allow-private-hosts` | Probe URLs whose host is a loopback, private, link-local or otherwise non-public IP literal. Off by default so a repo cannot aim the linter at its runner's internal network | `false` |
+| `timeout` | Socket timeout in seconds for one request (clamped to 0.1-30; a value that is not a finite number falls back to the default) | `5.0` |
+| `total-budget` | Wall-clock seconds for all requests in a run; remaining URLs are left unchecked (clamped to 600; there is no way to disable the cap — 0 and negatives mean the default) | `30.0` |
+| `concurrency` | Maximum simultaneous requests (clamped to 1-32) | `8` |
+| `ignore` | URL patterns never requested — a glob (fnmatch) when it contains *, ? or [, otherwise a literal prefix. Matched against the requested URL, which has no fragment | `[]` |
 
 ## Research Basis
 

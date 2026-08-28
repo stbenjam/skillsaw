@@ -34,7 +34,7 @@ inputs:
     required: false
     default: 'true'
   no-network:
-    description: 'Skip rules that make outbound network requests, whatever the linted repository enables. Defaults on: the repo being linted must not be able to aim the runner at a network it chose'
+    description: 'Skip rules that make outbound network requests, whatever the linted repository enables (recommended for CI on untrusted PRs)'
     required: false
     default: 'true'
 
