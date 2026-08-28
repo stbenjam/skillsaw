@@ -3,6 +3,7 @@ Rule for validating openclaw metadata in SKILL.md frontmatter
 """
 
 import difflib
+import re
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -13,6 +14,13 @@ from skillsaw.utils import yaml_path_line_lookup
 VALID_OS_VALUES = {"darwin", "linux", "win32"}
 VALID_INSTALL_KINDS = {"brew", "node", "go", "uv", "download"}
 VALID_ARCHIVE_TYPES = {"tar.gz", "tar.bz2", "zip"}
+
+# openclaw accepts `sha256` only on `download` entries, and requires exactly
+# 64 lowercase hex digits after trimming and lowercasing (see
+# parseInstallSpec in src/skills/loading/frontmatter.ts). A value that is not
+# a string, or that fails this pattern, makes openclaw drop the whole install
+# entry — the checksum is not merely ignored, the installer disappears.
+SHA256_DIGEST = re.compile(r"\A[a-f0-9]{64}\Z")
 
 # Known top-level keys under metadata.openclaw from OpenClaw and ClawHub. Used
 # only for typo detection — unknown keys are silently ignored by openclaw, so
@@ -375,6 +383,31 @@ class OpenclawMetadataRule(Rule):
                             )
                         )
 
+            # `sha256` pins the downloaded artifact. openclaw reads it only on
+            # `download` entries, and a malformed digest drops the entry rather
+            # than failing loudly, so the installer silently never appears.
+            if "sha256" in entry and effective_kind == "download":
+                sha_val = entry["sha256"]
+                sha_line = node_line(f"{entry_path}.sha256")
+                if not isinstance(sha_val, str):
+                    violations.append(
+                        self.violation(
+                            f"'metadata.openclaw.install[{i}].sha256' must be a string",
+                            file_path=skill_md,
+                            line=sha_line,
+                        )
+                    )
+                elif not SHA256_DIGEST.match(sha_val.strip().lower()):
+                    violations.append(
+                        self.violation(
+                            f"'metadata.openclaw.install[{i}].sha256' must be 64 hex "
+                            "digits (a SHA-256 digest); openclaw drops the whole "
+                            "install entry otherwise",
+                            file_path=skill_md,
+                            line=sha_line,
+                        )
+                    )
+
             if "archive" in entry:
                 archive = entry["archive"]
                 archive_line = node_line(f"{entry_path}.archive")
@@ -386,7 +419,11 @@ class OpenclawMetadataRule(Rule):
                             line=archive_line,
                         )
                     )
-                elif archive not in VALID_ARCHIVE_TYPES:
+                # openclaw trims and lowercases `archive` before matching
+                # (resolveArchiveType -> normalizeOptionalLowercaseString), so
+                # `ZIP` and ` zip ` are accepted upstream and must not be
+                # reported here.
+                elif archive.strip().lower() not in VALID_ARCHIVE_TYPES:
                     violations.append(
                         self.violation(
                             f"'metadata.openclaw.install[{i}].archive' is '{archive}', "
