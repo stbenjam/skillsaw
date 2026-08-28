@@ -2705,6 +2705,12 @@ class TestOpenCode:
         repo = copy_fixture("opencode/malformed-shapes", tmp_path)
         found = by_rule(run_lint(repo))["opencode-config-valid"]
 
+        messages = [v["message"] for v in found]
+        assert any(
+            "'declared-twice' is declared under both" in m for m in messages
+        ), "a server named in both layouts is dead configuration on one side"
+        assert any("'agents.not-an-object' must be an object" in m for m in messages)
+
         errors = [v["message"] for v in found if v["severity"] == "error"]
         assert len(errors) == 3, errors
         assert all("embeds" in m for m in errors), "only credentials are errors here"
@@ -2724,6 +2730,40 @@ class TestOpenCode:
         assert '"startup"' in config and '"codemode"' in config
 
         assert by_rule(run_lint(repo)).get("opencode-config-valid", []) == []
+
+    @staticmethod
+    def _opencode_repo(tmp_path, name, config_text):
+        """A minimal repository holding one root `opencode.json`."""
+        repo = tmp_path / name
+        repo.mkdir()
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / "opencode.json").write_text(config_text)
+        return repo
+
+    def test_a_config_whose_top_level_is_not_an_object_is_an_error(self, tmp_path):
+        """The file parses, but OpenCode cannot read it as configuration."""
+        repo = self._opencode_repo(tmp_path, "toplevel", '["model", "anthropic/x"]')
+
+        found = by_rule(run_lint(repo))["opencode-config-valid"]
+        assert [(v["severity"], v["message"]) for v in found] == [
+            ("error", "OpenCode configuration must be a JSON object")
+        ]
+
+    def test_a_non_object_mcp_section_is_a_warning(self, tmp_path):
+        repo = self._opencode_repo(tmp_path, "mcpshape", '{"mcp": ["playwright"]}')
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+        assert messages == ["'mcp' must be a JSON object"]
+
+    def test_a_mirrored_schema_url_is_information_not_a_defect(self, tmp_path):
+        """A vendored copy is legitimate, so it is a note rather than a finding."""
+        repo = self._opencode_repo(
+            tmp_path, "mirror", '{"$schema": "https://mirror.internal/opencode.json"}'
+        )
+
+        found = by_rule(run_lint(repo))["opencode-config-valid"]
+        assert [v["severity"] for v in found] == ["info"]
+        assert "mirror.internal" in found[0]["message"]
 
     def test_a_claude_mcp_file_is_still_validated_beside_an_opencode_config(self, tmp_path):
         """The deferral is keyed on the block type, not on the repository.

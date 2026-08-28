@@ -44,7 +44,15 @@
           "X-Api-Key": "corpfixture3f8a9b2c4d6e8f0a1b3c5d7e" // notsecret
         }
       },
-      "not-an-object": "npx -y @example/mcp"
+      "not-an-object": "npx -y @example/mcp",
+      "declared-twice": {
+        "type": "local",
+        "command": ["npx", "-y", "@example/v2-copy"]
+      }
+    },
+    "declared-twice": {
+      "type": "local",
+      "command": ["npx", "-y", "@example/v1-copy"]
     },
     "playwright": {
       "type": "local",
@@ -58,6 +66,7 @@
     "planner": {
       "system": 5,
       "description": ["plans work"]
-    }
+    },
+    "not-an-object": "you plan things"
   }
 }
