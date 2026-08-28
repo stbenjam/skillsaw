@@ -300,11 +300,31 @@ def is_dot_claude(root: Path, apm: bool) -> bool:
     )
 
 
-def is_promptfoo_repo(root: Path, walk_files: Callable[[Path], object]) -> bool:
+def promptfoo_config_candidates(root: Path, walk_files: Callable[[Path], object]) -> List[Path]:
+    """Files whose name could name a Promptfoo config, in walk order.
+
+    A superset of what either consumer accepts: repository-type detection
+    tests the authored name, while the lint tree globs the platform's
+    normcased one, so the prefix is tested normcased here and each caller
+    applies its own rule to the handful this returns. Sharing it is what
+    keeps the repository from being walked twice to answer one question —
+    detection runs during ``RepositoryContext`` construction and the tree
+    builder needs the same files a moment later.
+    """
+    return [
+        path
+        for path in walk_files(root)  # type: ignore[union-attr]
+        if os.path.normcase(path.name).startswith("promptfooconfig")
+    ]
+
+
+def is_promptfoo_repo(
+    root: Path, candidates: List[Path], walk_files: Callable[[Path], object]
+) -> bool:
     """Return whether repository files include a Promptfoo configuration."""
     if any(
         path.name.startswith("promptfooconfig") and path.suffix in (".yaml", ".yml")
-        for path in walk_files(root)
+        for path in candidates
     ):
         return True
     evals = root / "evals"
@@ -325,6 +345,7 @@ def marker_types(
     apm: bool,
     should_skip: Callable[[Path], bool],
     walk_files: Callable[[Path], object],
+    promptfoo_candidates: List[Path],
 ) -> Set[str]:
     """Return independently detectable type labels (excluding ecosystems)."""
     found: Set[str] = set()
@@ -336,6 +357,6 @@ def marker_types(
         found.add("apm")
     if is_dot_claude(root, apm):
         found.add("dot-claude")
-    if is_promptfoo_repo(root, walk_files):
+    if is_promptfoo_repo(root, promptfoo_candidates, walk_files):
         found.add("promptfoo")
     return found

@@ -515,6 +515,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
                 apm=self.has_apm,
                 should_skip=self._should_skip_dir,
                 walk_files=self._walk_files,
+                promptfoo_candidates=self.promptfoo_config_candidates(),
             )
         }
 
@@ -581,6 +582,20 @@ class RepositoryContext(RepositoryProvenanceMixin):
     #: Both walks live in discovery, which is where filesystem traversal
     #: belongs; the context keeps the names its callers use.
     _walk_files = staticmethod(detect_discovery.walk_files)
+
+    def promptfoo_config_candidates(self) -> List[Path]:
+        """Files that could be Promptfoo configs, found by one shared walk.
+
+        Repository-type detection asks during construction and the lint
+        tree asks while building; without the cache each pays its own walk
+        of the whole repository to answer the same question.
+        """
+        cached = self.__dict__.get("_promptfoo_candidates")
+        if cached is None:
+            cached = detect_discovery.promptfoo_config_candidates(self.root_path, self._walk_files)
+            self.__dict__["_promptfoo_candidates"] = cached
+        return cached
+
     _should_skip_dir = staticmethod(detect_discovery.should_skip_dir)
 
     def has_marketplace(self) -> bool:

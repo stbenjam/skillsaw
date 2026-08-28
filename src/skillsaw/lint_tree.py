@@ -1154,12 +1154,13 @@ def _build_promptfoo_nodes(
                 _try_add_config(yaml_file, parent, require_keys=True)
 
     # Pass 1a: promptfooconfig* anywhere in repo (naming convention → no key
-    # check).  One pruned walk instead of two whole-repo rglobs — pruning
-    # matches the repo-type detector, which already skips .git/node_modules/
-    # .venv and friends.
+    # check).  The candidates come from the walk repository-type detection
+    # already did — one pruned walk for the whole run, where this used to
+    # repeat it. Pruning matches the detector, which skips .git/
+    # node_modules/.venv and friends.
     yaml_matches: list[Path] = []
     yml_matches: list[Path] = []
-    for f in context._walk_files(context.root_path):
+    for f in context.promptfoo_config_candidates():
         if fnmatch.fnmatch(f.name, "promptfooconfig*.yaml"):
             yaml_matches.append(f)
         elif fnmatch.fnmatch(f.name, "promptfooconfig*.yml"):
