@@ -2597,9 +2597,8 @@ class TestOpenCode:
                 "2.0 spellings of one setting, and only one of the two values is in "
                 "effect; keep one",
             ),
-            # A pair inside an agent entry runs the other way: under the 2.0
-            # `agents` section `lowerAgent` promotes `system` and drops
-            # `prompt`, the opposite of the top level.
+            # A pair inside an agent entry: under the 2.0 `agents` section
+            # `lowerAgent` promotes `system` and drops `prompt`.
             (
                 {"agents": {"x": {"prompt": "Old.", "system": "New."}}},
                 "agents.x declares both 'prompt' and 'system' — they are the 1.x "

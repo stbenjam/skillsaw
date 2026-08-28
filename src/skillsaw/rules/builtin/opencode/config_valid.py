@@ -184,12 +184,12 @@ class OpenCodeConfigValidRule(Rule):
         A file declaring both hands the same setting to the loader twice,
         and one copy is then ignored. Which one is not readable off the
         file: it turns on the release doing the reading and on where the
-        pair sits — under the v2 ``agents`` section the v2 field wins, the
-        opposite of a top-level pair, and an MCP server's
-        ``enabled``/``disabled`` resolves one way under a 1.x binary and the
-        other under a 2.0 one. So the message names no winner. It says only
-        that one of the two values is inert, which holds under every
-        reading, and "keep one" is the fix whichever value survives.
+        pair sits — under the v2 ``agents`` section the v2 field wins, and
+        an MCP server's ``enabled``/``disabled`` resolves one way under a
+        1.x binary and the other under a 2.0 one. So the message names no
+        winner. It says only that one of the two values is inert, which
+        holds under every reading, and "keep one" is the fix whichever
+        value survives.
 
         Either key alone is valid; carrying both is the finding.
 
@@ -353,14 +353,15 @@ class OpenCodeConfigValidRule(Rule):
             shown = safe_display(str(name))
             if name in seen:
                 # The 1.x and 2.0 layouts both declare this server, so the
-                # file ships two objects under one name. Upstream keeps the
-                # 1.x one; the other is dead configuration an author almost
-                # certainly means to be live.
+                # file ships two objects under one name and only one of them
+                # is in effect. The message names no winner: "keep one" is
+                # the fix whichever survives, and naming the wrong half would
+                # point the author at deleting the live server.
                 violations.append(
                     self.violation(
                         f"MCP server '{shown}' is declared under both 'mcp.servers' "
-                        "(2.0) and 'mcp' directly (1.x) — OpenCode keeps the 1.x "
-                        "entry, so the other one is inert; keep one",
+                        "(2.0) and 'mcp' directly (1.x) — they are two separate "
+                        "objects and only one of them is in effect; keep one",
                         file_path=path,
                         severity=Severity.WARNING,
                     )

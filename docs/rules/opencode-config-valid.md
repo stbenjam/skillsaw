@@ -33,14 +33,15 @@ What it does report is a file that declares *both* spellings of one
 setting. The setting then arrives twice and one copy is ignored — and which
 copy that is depends on *where* the pair sits, not on key order.
 
-The finding never names the surviving value, because the file does not record
-what decides it. A top-level 1.x key makes OpenCode 2.0 read the whole
-document as a 1.x config, so the 2.0 key drops — but `autoshare`/`share` and
-`reference`/`references` are declared on both halves of the 1.x schema, so
+The finding never names the surviving value. Which copy survives depends on
+the section the pair sits in *and* on the release doing the reading, and the
+file records only the first. A top-level 1.x key makes OpenCode 2.0 read the
+whole document as a 1.x config, so the 2.0 key drops — but `autoshare`/`share`
+and `reference`/`references` are declared on both halves of the 1.x schema, so
 that reasoning does not reach them. Under the 2.0 `agents` section it is the
-*2.0* field that survives, the opposite of the top level. An MCP server's
-`enabled`/`disabled` resolves one way when a 1.x binary lowers a 2.0-shaped
-file and the other way when a 2.0 binary reads a nested `mcp.servers` entry.
+*2.0* field that survives. An MCP server's `enabled`/`disabled` resolves one
+way when a 1.x binary lowers a 2.0-shaped file and the other way when a 2.0
+binary reads a nested `mcp.servers` entry.
 
 So the message says only that one of the two values is in effect. Either key
 alone is valid, so keeping one and deleting the other is the fix whichever

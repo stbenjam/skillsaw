@@ -146,12 +146,12 @@ TOP_LEVEL_KEYS = frozenset(
 
 #: Agent-entry key -> its v2 spelling, for entries under ``agent``/``agents``.
 #:
-#: A pair here is reported without naming a winner, because the winner is
-#: decided by *where* the entry sits and skillsaw cannot say which section a
-#: reader ends up in: under the v1 ``agent`` section the v1 spelling stands,
-#: while under the v2 ``agents`` section ``lowerAgent`` promotes the v2 field
+#: A pair here is reported without naming a winner, even though the section
+#: decides it: under the v1 ``agent`` section the v1 spelling stands, while
+#: under the v2 ``agents`` section ``lowerAgent`` promotes the v2 field
 #: (``system`` into ``prompt``, ``disabled`` into ``disable``) and the v1 one
-#: is the excess property that drops.
+#: is the excess property that drops. No table in this module names a winner,
+#: so this one does not either.
 #:
 #: There is deliberately no companion set of *known* agent keys: OpenCode
 #: folds an unrecognized agent field into the provider ``options``, so naming
@@ -281,10 +281,11 @@ def both_spellings(data: Mapping[str, Any], aliases: Mapping[str, str]) -> Tuple
 
     No caller treats a lone v1 key as wrong — either spelling on its own is
     valid. Carrying both is the finding: one of the two is then ignored, and
-    which copy that is turns on the release doing the reading and on where
-    the pair sits, neither of which the file records. No table names a
-    winner. The diagnostic says only that one of the two values is inert,
-    which holds under every reading, and the fix is the same either way.
+    which copy that is turns on the release doing the reading as well as on
+    where the pair sits, and the file records only the second. No table names
+    a winner: the fix is the same either way, and naming the wrong half would
+    point the author at deleting the live value. The diagnostic says only
+    that one of the two values is inert, which holds under every reading.
 
     Aliases that map several v1 keys onto one v2 key (``agent`` and ``mode``
     both become ``agents``) are handled by the plain membership test — each

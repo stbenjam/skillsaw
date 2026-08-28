@@ -668,9 +668,9 @@ class OpenCodeMcpBlock(McpBlock):
 
         A name declared in both layouts appears twice. That is deliberate:
         they are two distinct objects that both ship, each can carry its own
-        defect, and a mapping would keep only one. Upstream resolves the
-        collision in favour of the 1.x value; skillsaw reports on both,
-        because a credential in the losing copy is still committed.
+        defect, and a mapping would keep only one. Only one of the two is in
+        effect and this module names no winner; skillsaw reports on both,
+        because a credential in the inert copy is still committed.
         """
         data = self.raw_data
         if data is None:
