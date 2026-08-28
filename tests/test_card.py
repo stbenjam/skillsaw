@@ -72,7 +72,11 @@ def test_card_shows_grade_without_volatile_stats():
     svg = _render(grade=grade)
     fields = _texts_by_testid(svg)
     assert fields["grade-letter"] == grade.letter
-    assert fields == {"repo-name": "example/repo", "grade-letter": grade.letter}
+    assert fields == {
+        "product-name": "skillsaw",
+        "repo-name": "example/repo",
+        "grade-letter": grade.letter,
+    }
     assert "Violation density" not in svg
     assert "Content tokens" not in svg
     assert "Top rules" not in svg
@@ -146,14 +150,14 @@ def test_card_escapes_repo_name():
 def test_card_truncates_long_names():
     svg = _render(repo_name="x" * 100)
     fields = _texts_by_testid(svg)
-    assert len(fields["repo-name"]) <= 30
+    assert len(fields["repo-name"]) <= 20
     assert fields["repo-name"].endswith("…")
 
 
 def test_card_ascii_truncation_behavior_unchanged():
-    assert _texts_by_testid(_render(repo_name="x" * 100))["repo-name"] == "x" * 29 + "…"
-    exactly_thirty = "a" * 30
-    assert _texts_by_testid(_render(repo_name=exactly_thirty))["repo-name"] == exactly_thirty
+    assert _texts_by_testid(_render(repo_name="x" * 100))["repo-name"] == "x" * 19 + "…"
+    exactly_twenty = "a" * 20
+    assert _texts_by_testid(_render(repo_name=exactly_twenty))["repo-name"] == exactly_twenty
 
 
 def test_card_truncates_wide_glyph_names_by_display_width():
@@ -162,8 +166,8 @@ def test_card_truncates_wide_glyph_names_by_display_width():
     name = "日本語プロジェクト管理支援用大規模開発環境設定集約リポジトリ超"
     shown = _texts_by_testid(_render(repo_name=name))["repo-name"]
     assert shown.endswith("…")
-    assert _display_width(shown) <= 30
-    assert shown == name[:14] + "…"
+    assert _display_width(shown) <= 20
+    assert shown == name[:9] + "…"
 
 
 def test_card_mixed_width_names_share_the_budget():
@@ -171,7 +175,7 @@ def test_card_mixed_width_names_share_the_budget():
 
     shown = _texts_by_testid(_render(repo_name="skill-日本語-" + "z" * 40))["repo-name"]
     assert shown.endswith("…")
-    assert _display_width(shown) <= 30
+    assert _display_width(shown) <= 20
 
 
 def test_f_grade_draws_empty_ring_without_stray_dot():
@@ -236,7 +240,11 @@ def test_badge_card_writes_svg(tmp_path):
     svg = card_file.read_text(encoding="utf-8")
     fields = _texts_by_testid(svg)
     assert fields["grade-letter"]
-    assert fields == {"repo-name": repo.name, "grade-letter": fields["grade-letter"]}
+    assert fields == {
+        "product-name": "skillsaw",
+        "repo-name": repo.name,
+        "grade-letter": fields["grade-letter"],
+    }
 
     # Dark theme is the default.
     assert THEMES["dark"]["bg"] in svg

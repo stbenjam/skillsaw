@@ -114,7 +114,7 @@ def render_card(
     # and an on-scale letter, but a public function shouldn't crash on
     # unexpected inputs.
     accent = SHIELDS_COLOR_HEX.get(grade.color, "#888888")
-    name = escape(_truncate(repo_name or "repository", 30))
+    name = escape(_truncate(repo_name or "repository", 20))
     letter = escape(grade.letter)
 
     # Ring fill reflects the grade's position on the fixed notch scale
@@ -152,6 +152,8 @@ def render_card(
         "  <style>",
         f"    .title {{ font: 600 16px {_FONTS}; fill: {colors['title']}; }}",
         f"    .subtitle {{ font: 400 11px {_FONTS}; fill: {colors['muted']}; }}",
+        f"    .repo-label {{ font: 600 9px {_FONTS}; fill: {colors['muted']}; letter-spacing: 1px; }}",
+        f"    .repo-name {{ font: 600 13px {_FONTS}; fill: {colors['title']}; }}",
         f"    .grade-letter {{ font: 800 48px {_FONTS}; fill: {accent}; }}",
         "  </style>",
         (
@@ -161,8 +163,10 @@ def render_card(
         '  <g transform="translate(24, 17)">',
         f'    <path fill-rule="evenodd" fill="{accent}" d="{LOGO_PATH}"/>',
         "  </g>",
-        f'  <text x="56" y="30" class="title" data-testid="repo-name">{name}</text>',
+        '  <text x="56" y="30" class="title" data-testid="product-name">skillsaw</text>',
         '  <text x="56" y="46" class="subtitle">Agent Context Linter</text>',
+        f'  <text x="471" y="27" text-anchor="end" class="repo-label">REPOSITORY</text>',
+        f'  <text x="471" y="46" text-anchor="end" class="repo-name" data-testid="repo-name">{name}</text>',
         f'  <path d="M24 63.5H471" stroke="{colors["border"]}"/>',
         '  <g transform="translate(247.5, 127)">',
         (
