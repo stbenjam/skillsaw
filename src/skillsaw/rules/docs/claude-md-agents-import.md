@@ -1,0 +1,142 @@
+## Why
+
+Claude Code reads `CLAUDE.md`. Almost every other agent — Codex, Cursor,
+Copilot, Gemini CLI, Jules, Zed — reads `AGENTS.md`. A team that supports
+both keeps two copies of the same instructions, and two copies is a
+maintenance obligation nobody signed up for: someone tightens the testing
+section in one file, ships, and the other assistant keeps following the old
+rule. This is the single most common structural complaint about agent
+instruction files today.
+
+Claude Code's `@path` import syntax answers it directly. A `CLAUDE.md`
+whose entire body is:
+
+```markdown
+@AGENTS.md
+```
+
+makes Claude Code load `AGENTS.md` at startup. There is now one source of
+truth, every assistant reads the same words, and divergence is not
+something to police — it is impossible.
+
+This rule is the structural recommendation; `content-instruction-drift` is
+the detector for what happens without it. Drift compares sections across
+instruction files and reports near-duplicates that have grown apart, which
+is a real finding *after* the copies exist. This rule fires earlier, on the
+existence of the duplicated pair, and recommends the layout under which
+drift can never occur. The two never fight: an import-only `CLAUDE.md` has
+no sections for drift to compare, so the recommended end state is silent
+under both rules. If you would rather keep the copies and be told when they
+diverge, disable this rule and keep `content-instruction-drift`.
+
+Severity is INFO by design. Keeping Claude-specific content in `CLAUDE.md`
+is a legitimate choice — Claude Code has features (skills, plugins, hooks,
+subagents) that other assistants do not — and a linter must not call that a
+defect.
+
+## Examples
+
+**Bad (two full copies of the same instructions):**
+
+```markdown
+<!-- AGENTS.md -->
+# Project instructions
+
+## Testing
+Run `make test` before every push.
+
+<!-- CLAUDE.md -->
+# Project instructions
+
+## Testing
+Run `make test` before every push.
+```
+
+**Good (one source of truth, imported):**
+
+```markdown
+<!-- CLAUDE.md — the whole file -->
+@AGENTS.md
+```
+
+**Also good (a comment above the import):**
+
+```markdown
+<!-- Imported so Claude Code and every other agent read one file. -->
+@AGENTS.md
+```
+
+Blank lines and HTML comments are the exact tolerance: they never count as
+content. Anything else does — a heading, a sentence, a fenced code block,
+a second import. That means an inline suppression comment above the import
+keeps the file import-only, and a licence banner does too.
+
+## How to fix
+
+1. Make sure `AGENTS.md` holds everything both assistants need. If the two
+   files have diverged, reconcile them there first —
+   `content-instruction-drift` will name the sections that disagree.
+2. Replace the whole body of `CLAUDE.md` with a single line:
+
+   ```markdown
+   @AGENTS.md
+   ```
+
+3. Re-run skillsaw. `instruction-imports-valid` validates the import
+   resolves, so a typo in the path is caught by that rule rather than
+   silently ignored by Claude Code.
+
+When `CLAUDE.md` is a byte-for-byte copy of `AGENTS.md` (identical after
+trailing whitespace is stripped), `skillsaw fix --suggest` performs step 2
+for you. It is a SUGGEST fix, not a SAFE one: replacing a file's contents
+is a judgment call, so plain `skillsaw fix` never does it. The fix
+deliberately changes the file's line count — it restructures the file
+rather than editing a span inside it. Anything that is not an exact copy is
+reported only; skillsaw will not decide for you which sentences survive.
+
+### Keeping Claude-specific content
+
+Two supported ways to keep extras:
+
+```yaml
+rules:
+  claude-md-agents-import:
+    # Accept the import plus Claude-specific sections; report only a
+    # CLAUDE.md that has no import at all.
+    allow-extra: true
+```
+
+with the file laid out as the import first, extras after:
+
+```markdown
+@AGENTS.md
+
+## Claude Code specifics
+Use the `review` skill before opening a PR.
+```
+
+or turn the rule off entirely:
+
+```yaml
+rules:
+  claude-md-agents-import:
+    enabled: false
+```
+
+Per-file suppression works too — put a directive above the first line of
+non-import content:
+
+```markdown
+@AGENTS.md
+
+<!-- skillsaw-disable-next-line claude-md-agents-import -->
+## Claude Code specifics
+```
+
+### Generated CLAUDE.md files
+
+A `CLAUDE.md` produced by a compiler such as
+[APM](https://github.com/danielmeppiel/apm) cannot be hand-replaced with an
+import — the next build overwrites it. Files carrying a generated-file
+marker are skipped by default; set `ignore-generated: false` to include
+them anyway.
