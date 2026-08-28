@@ -80,9 +80,7 @@ class OpenCodeConfigValidRule(Rule):
 
             violations.extend(self._check_schema(data, block.path))
             violations.extend(self._check_top_level_keys(data, block.path))
-            violations.extend(
-                self._mixed_spellings(data, oc.TOP_LEVEL_V1_TO_V2, block.path, name_winner=True)
-            )
+            violations.extend(self._mixed_spellings(data, oc.TOP_LEVEL_V1_TO_V2, block.path))
             violations.extend(self._check_agents(data, block.path))
             violations.extend(self._check_commands(data, block.path))
             mcp_block = mcp_blocks.get(block.resolved_path)
@@ -180,26 +178,18 @@ class OpenCodeConfigValidRule(Rule):
         aliases: Mapping[str, str],
         path: Path,
         where: str = "",
-        name_winner: bool = False,
     ) -> List[RuleViolation]:
         """Both spellings of one setting, in one document.
 
         A file declaring both hands the same setting to the loader twice,
         and one copy is then ignored. Which one is not readable off the
-        file, and it is a fact about the *table* rather than about the key
-        name — under the v2 ``agents`` section it is the v2 field that wins,
-        the opposite of the top level — so a caller opts in with
-        *name_winner* only where it can derive the answer for every key it
-        passes. It is off by default: the message then says only that one of
-        the two is inert, which holds under every reading.
-
-        Two callers set it. The top level derives the winner structurally
-        (the v1 key makes ``isV1()`` claim the whole document and the v2 key
-        drops as an excess property), minus the pairs in
-        :data:`~skillsaw.formats.opencode.TOP_LEVEL_WINNER_UNSTATED`, whose
-        halves the v1 schema declares. The MCP server's
-        ``enabled``/``disabled`` derives it from ``normalizeServer``, which
-        re-reads the raw ``enabled`` and lets it override.
+        file: it turns on the release doing the reading and on where the
+        pair sits — under the v2 ``agents`` section the v2 field wins, the
+        opposite of a top-level pair, and an MCP server's
+        ``enabled``/``disabled`` resolves one way under a 1.x binary and the
+        other under a 2.0 one. So the message names no winner. It says only
+        that one of the two values is inert, which holds under every
+        reading, and "keep one" is the fix whichever value survives.
 
         Either key alone is valid; carrying both is the finding.
 
@@ -212,14 +202,11 @@ class OpenCodeConfigValidRule(Rule):
         for v1_key in sorted(oc.both_spellings(data, aliases)):
             v2_key = aliases[v1_key]
             note = oc.INVERTED_SENSE_NOTE.get(v1_key, "")
-            if name_winner and v1_key not in oc.TOP_LEVEL_WINNER_UNSTATED:
-                outcome = f"the '{v1_key}' value is the one that takes effect"
-            else:
-                outcome = "only one of the two values is in effect"
             violations.append(
                 self.violation(
                     f"{subject} declares both '{v1_key}' and '{v2_key}' — they are the "
-                    f"1.x and 2.0 spellings of one setting{note}, and {outcome}; keep one",
+                    f"1.x and 2.0 spellings of one setting{note}, and only one of the "
+                    "two values is in effect; keep one",
                     file_path=path,
                     severity=Severity.WARNING,
                 )
@@ -412,11 +399,7 @@ class OpenCodeConfigValidRule(Rule):
 
         violations.extend(
             self._mixed_spellings(
-                server,
-                oc.MCP_SERVER_V1_TO_V2,
-                path,
-                where=f"MCP server '{shown}'",
-                name_winner=True,
+                server, oc.MCP_SERVER_V1_TO_V2, path, where=f"MCP server '{shown}'"
             )
         )
         oauth = server.get("oauth")

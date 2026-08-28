@@ -660,9 +660,11 @@ class OpenCodeMcpBlock(McpBlock):
         approximation: server names are author-controlled, so a config that
         wraps one harmless server in ``servers`` and leaves a
         credential-bearing one flat beside it would hide the second from
-        ``mcp-prohibited`` and from the credential scan — and from the one
-        check ``mcp-valid-json`` keeps for this block, since that too reads
-        this list.
+        ``mcp-prohibited`` and from the checks ``mcp-valid-json`` keeps for
+        this block. That rule keeps three — a file that is not JSON, a
+        ``url`` carrying user information, and the credentials in the maps
+        declared by :attr:`credential_maps` — and the last two read this
+        list.
 
         A name declared in both layouts appears twice. That is deliberate:
         they are two distinct objects that both ship, each can carry its own

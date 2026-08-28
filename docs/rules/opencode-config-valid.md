@@ -33,24 +33,19 @@ What it does report is a file that declares *both* spellings of one
 setting. The setting then arrives twice and one copy is ignored — and which
 copy that is depends on *where* the pair sits, not on key order.
 
-The finding names the surviving value only where that is derivable. For most
-**top-level** pairs the 1.x key wins: its presence makes OpenCode 2.0 read
-the whole document as a 1.x config, and the 2.0 key is dropped as an unknown
-property. Two top-level pairs are different — `autoshare`/`share` and
-`reference`/`references` — because the 1.x schema declares both halves, so
-that reasoning does not apply and the coalescing is decided in per-key code
-rather than by the schema. The other named winner is an MCP server's
-`enabled`/`disabled`, where OpenCode re-reads the 1.x `enabled` last and lets
-it override.
+The finding never names the surviving value, because the file does not record
+what decides it. A top-level 1.x key makes OpenCode 2.0 read the whole
+document as a 1.x config, so the 2.0 key drops — but `autoshare`/`share` and
+`reference`/`references` are declared on both halves of the 1.x schema, so
+that reasoning does not reach them. Under the 2.0 `agents` section it is the
+*2.0* field that survives, the opposite of the top level. An MCP server's
+`enabled`/`disabled` resolves one way when a 1.x binary lowers a 2.0-shaped
+file and the other way when a 2.0 binary reads a nested `mcp.servers` entry.
 
-Everywhere else — a pair inside an agent entry, or inside a server's `oauth`
-object — the finding names no winner: it says only that one of the two
-values is in effect. The top-level reasoning genuinely does not carry down
-there. Under the 2.0 `agents` section it is the *2.0* field that survives,
-the opposite of the top level, so naming the 1.x key would tell you to delete
-the live value. Either key alone is valid, so keeping one and deleting the
-other is the fix whichever one survives — and saying nothing is better than
-naming the wrong one.
+So the message says only that one of the two values is in effect. Either key
+alone is valid, so keeping one and deleting the other is the fix whichever
+one survives — and saying nothing is better than naming the wrong one, which
+would point you at deleting the value that is live.
 
 The MCP servers in this file also reach [`mcp-prohibited`](mcp-prohibited.md)
 and the rest of the ecosystem-neutral policy rules, in either the 1.x flat

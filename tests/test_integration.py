@@ -2573,16 +2573,18 @@ class TestOpenCode:
     @pytest.mark.parametrize(
         "config,expected",
         [
-            # Most *top-level* pairs rename to a name the 1.x schema does not
-            # know, so the 1.x key makes OpenCode 2.0 read the whole document
-            # as 1.x and drop the 2.0 one.
+            # A *top-level* rename to a name the 1.x schema does not know
+            # resolves in favour of the 1.x key under a 2.0 reader, and the
+            # finding still declines to say so: the fix is the same whichever
+            # value survives, and a wrong name costs the author the live one.
             (
                 {"agent": {}, "agents": {}},
-                "the 'agent' value is the one that takes effect",
+                "declares both 'agent' and 'agents' — they are the 1.x and 2.0 "
+                "spellings of one setting, and only one of the two values is in "
+                "effect; keep one",
             ),
-            # These two are different: the 1.x schema declares both halves,
-            # so that reasoning does not apply and the finding names no
-            # winner at all — the fix is the same whichever value survives.
+            # The 1.x schema declares both halves of these two, so even that
+            # reasoning does not reach them.
             (
                 {"autoshare": True, "share": "manual"},
                 "declares both 'autoshare' and 'share' — they are the 1.x and 2.0 "
@@ -2595,18 +2597,21 @@ class TestOpenCode:
                 "2.0 spellings of one setting, and only one of the two values is in "
                 "effect; keep one",
             ),
-            # A *nested* pair names no winner either, and this one is why:
-            # under the 2.0 `agents` section `lowerAgent` promotes `system`
-            # and drops `prompt`, the opposite of the top level. Naming the
-            # 1.x key here would point the author at the live value.
+            # A pair inside an agent entry runs the other way: under the 2.0
+            # `agents` section `lowerAgent` promotes `system` and drops
+            # `prompt`, the opposite of the top level.
             (
                 {"agents": {"x": {"prompt": "Old.", "system": "New."}}},
                 "agents.x declares both 'prompt' and 'system' — they are the 1.x "
                 "and 2.0 spellings of one setting, and only one of the two values "
                 "is in effect; keep one",
             ),
-            # The one nested pair that does name a winner, on its own
-            # evidence: `normalizeServer` re-reads the raw `enabled` last.
+            # An MCP server's `enabled`/`disabled` is the pair the two
+            # releases resolve in opposite directions: a 1.x binary lowering
+            # a 2.0-shaped file re-reads the raw `enabled` last, while a 2.0
+            # binary declares only `disabled` and drops `enabled` as an
+            # excess property. Both layouts are pinned, because the flat one
+            # is the layout a 2.0 reader drops entirely.
             (
                 {
                     "mcp": {
@@ -2620,8 +2625,24 @@ class TestOpenCode:
                 },
                 "MCP server 'linear' declares both 'enabled' and 'disabled' — they "
                 "are the 1.x and 2.0 spellings of one setting with the sense "
-                "inverted, and the 'enabled' value is the one that takes effect; "
-                "keep one",
+                "inverted, and only one of the two values is in effect; keep one",
+            ),
+            (
+                {
+                    "mcp": {
+                        "servers": {
+                            "linear": {
+                                "type": "remote",
+                                "url": "https://mcp.linear.app/sse",
+                                "enabled": True,
+                                "disabled": False,
+                            }
+                        }
+                    }
+                },
+                "MCP server 'linear' declares both 'enabled' and 'disabled' — they "
+                "are the 1.x and 2.0 spellings of one setting with the sense "
+                "inverted, and only one of the two values is in effect; keep one",
             ),
         ],
     )
@@ -2910,8 +2931,8 @@ class TestOpenCode:
             for v in by_rule(run_lint(repo))["mcp-valid-json"]
         )
 
-        # Every finding this rule makes on a parseable file is a warning now
-        # that the credential scan lives in mcp-valid-json.
+        # Every defect in this fixture is a shape problem, and a shape
+        # problem leaves the rest of the file loading.
         assert {v["severity"] for v in found} == {"warning"}
 
     def test_a_bare_enabled_toggle_is_not_a_missing_transport(self, tmp_path):

@@ -21,8 +21,11 @@ Two independent, opposite-direction code paths define the vocabulary:
   ``preferLegacy()``.
 * ``packages/core/src/v1/config/migrate.ts`` plus
   ``packages/core/src/config.ts`` — what **2.0** uses to migrate a v1 config
-  *up*. Holds ``isV1()`` and the per-key coalescing that
-  :data:`TOP_LEVEL_WINNER_UNSTATED` marks as not settled by the schema.
+  *up*. Holds ``isV1()``, the top-level key set it tests, and the per-key
+  coalescing that decides what a 2.0 reader keeps.
+
+The two paths disagree about which half of a renamed pair survives, which is
+why no table here names one.
 
 Their MCP timeout structs differ, which is why :data:`MCP_TIMEOUT_KEYS` is a
 union rather than either one.
@@ -165,10 +168,15 @@ AGENT_V1_TO_V2: Mapping[str, str] = {
 #: spells it ``disabled`` with the sense inverted, so a server carrying both
 #: says two different things at once rather than the same thing twice.
 #:
-#: The one nested table whose pair *does* name a winner, and it is named on
-#: its own evidence rather than the top level's: ``normalizeServer`` re-reads
-#: the raw ``enabled`` after computing ``disabled`` and lets it override, so
-#: the v1 key decides wherever the server sits.
+#: Which half a reader honours is not determinable from the file, and the two
+#: releases disagree. ``normalizeServer`` re-reads the raw ``enabled`` after
+#: computing ``disabled`` and lets it override — but that function is the
+#: **1.x lowering path**, what a 1.x binary runs over a v2-shaped config. A
+#: 2.0 binary never reaches it: ``isV1()`` tests a top-level key set that
+#: excludes ``mcp``, the decode ignores excess properties, and
+#: ``packages/core/src/config/mcp.ts`` declares ``disabled`` and not
+#: ``enabled``. Both spellings at once therefore has an indeterminate
+#: effective value, and the fix is to carry only one of them.
 MCP_SERVER_V1_TO_V2: Mapping[str, str] = {
     "enabled": "disabled",
 }
@@ -192,25 +200,6 @@ MCP_OAUTH_V1_TO_V2: Mapping[str, str] = {
 INVERTED_SENSE_NOTE: Mapping[str, str] = {
     "enabled": " with the sense inverted",
 }
-
-#: **Top-level** v1 keys whose pair is reported *without* naming which value
-#: takes effect. Only the top level consults this set — the nested tables
-#: name no winner at all, so a key name is enough to identify an exception
-#: here and would not be anywhere else.
-#:
-#: For every other *top-level* rename the answer is structural: the v1 schema
-#: does not know the v2 name, so the presence of the v1 key makes ``isV1()``
-#: claim the whole document, the v2 key is dropped as an excess property, and
-#: the v1 value stands. These two pairs are different — ``ConfigV1.Info``
-#: declares both halves (each marked deprecated) — so that reasoning does not
-#: apply and the coalescing is decided in per-key code rather than by the
-#: schema.
-#:
-#: skillsaw does not assert which half survives there. The finding says only
-#: that one of the two values is inert, which holds under every reading, and
-#: either key alone is valid — so "keep one, delete the other" is the fix
-#: whichever one it turns out to be.
-TOP_LEVEL_WINNER_UNSTATED: FrozenSet[str] = frozenset({"autoshare", "reference"})
 
 #: Transport values OpenCode accepts, mapped to the connection field each
 #: one requires. OpenCode names a transport for where the server runs rather
@@ -292,11 +281,10 @@ def both_spellings(data: Mapping[str, Any], aliases: Mapping[str, str]) -> Tuple
 
     No caller treats a lone v1 key as wrong — either spelling on its own is
     valid. Carrying both is the finding: one of the two is then ignored, and
-    which copy that is depends on the table rather than on key order. Only
-    the callers that can derive the winner name it — the top level, minus
-    the pairs in :data:`TOP_LEVEL_WINNER_UNSTATED`, and the MCP server's
-    ``enabled``/``disabled``. Everywhere else the diagnostic names no
-    winner, because the fix is the same either way.
+    which copy that is turns on the release doing the reading and on where
+    the pair sits, neither of which the file records. No table names a
+    winner. The diagnostic says only that one of the two values is inert,
+    which holds under every reading, and the fix is the same either way.
 
     Aliases that map several v1 keys onto one v2 key (``agent`` and ``mode``
     both become ``agents``) are handled by the plain membership test — each

@@ -332,9 +332,11 @@ a line.
 
 ### OpenCode and APM
 
-`.opencode/` is the one editor directory that is also an APM compile target,
-so "authored content" and "build output" have to be told apart. The evidence
-is APM's, never OpenCode's:
+`.opencode/` is an editor directory that is also an APM compile target
+(`.claude`, `.cursor`, `.gemini`, `.opencode`, `.agents`), so "authored
+content" and "build output" have to be told apart. The four readings below
+resolve the same way for each of those directories; the evidence is APM's,
+never OpenCode's:
 
 - **No `.apm/` and no `apm.yml`** — the repository is native OpenCode.
   `.opencode/` is authored and everything in it is linted in full.
