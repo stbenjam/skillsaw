@@ -85,6 +85,18 @@ class ApmYamlValidRule(Rule):
                         line=commented_key_line(data, field),
                     )
                 )
+            elif not value.strip():
+                # "name and version are the only required fields. Both must
+                # be non-empty strings" — an empty value is a missing
+                # identifier, not a formatting nit, and `apm install`
+                # rejects the manifest outright.
+                violations.append(
+                    self.violation(
+                        f"Required field '{field}' is an empty string in apm.yml",
+                        file_path=apm_yml,
+                        line=commented_key_line(data, field),
+                    )
+                )
 
         # Optional string fields: not required, but must be strings when present.
         for field in ("description",):

@@ -3298,6 +3298,7 @@ BROKEN_FIXTURES = [
     "cursor-rules/broken-frontmatter",
     "cursor-rules/broken-hooks",
     "cursor-rules/prompt-hooks",
+    "instructions/agents-import/duplicated-pair",
     "opencode/broken",
 ]
 
@@ -3320,6 +3321,7 @@ CLEAN_FIXTURES = [
     "codex/clean",
     "cursor-rules/clean",
     "editor-tools/monorepo",
+    "instructions/agents-import/import-only",
     "opencode/native-v1",
     "opencode/native-v2",
 ]
@@ -4400,6 +4402,108 @@ class TestContentMcpToolNameSuggestGate:
         first = _snapshot_contents(repo)
         _run_fix(repo, "--suggest")
         assert _snapshot_contents(repo) == first
+
+
+@pytest.mark.integration
+class TestClaudeMdAgentsImport:
+    """End-to-end coverage for claude-md-agents-import.
+
+    The four fixtures are the four states a CLAUDE.md/AGENTS.md pair can be
+    in: an exact duplicate (fires, SUGGEST-fixable), a diverged copy (fires
+    and so does ``content-instruction-drift``, not fixable), the recommended
+    import-only end state (silent under every rule), and the import plus
+    Claude-specific extras (fires, and is accepted under ``allow-extra``).
+    """
+
+    FIXTURES = "instructions/agents-import"
+
+    def test_duplicated_pair_is_reported_and_fixable(self, tmp_path):
+        repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
+        r = run_lint(repo)
+        ours = [v for v in violations(r) if v["rule_id"] == "claude-md-agents-import"]
+        assert len(ours) == 1
+        assert ours[0]["severity"] == "info"
+        assert ours[0]["file_path"].endswith("CLAUDE.md")
+        assert ours[0]["line"] == 1
+        assert ours[0]["fixable"] is True
+        # Identical copies are intentional sync, so drift correctly stays
+        # quiet — this rule is what catches the duplication.
+        assert "content-instruction-drift" not in rule_ids(r)
+        # An INFO recommendation never breaks the default exit code.
+        assert r["rc"] == 0
+
+    def test_diverged_pair_reports_both_rules(self, tmp_path):
+        """Drift and this rule are complementary, not competing.
+
+        Drift names the section that disagrees; this rule recommends the
+        structure under which sections cannot disagree. Both firing on a
+        diverged pair is the designed outcome.
+        """
+        repo = copy_fixture(f"{self.FIXTURES}/diverged-pair", tmp_path)
+        r = run_lint(repo)
+        grouped = by_rule(r)
+        assert len(grouped["claude-md-agents-import"]) == 1
+        assert grouped["claude-md-agents-import"][0]["fixable"] is False
+        assert len(grouped["content-instruction-drift"]) == 1
+        assert grouped["content-instruction-drift"][0]["file_path"].endswith("CLAUDE.md")
+
+    def test_import_only_end_state_lints_completely_clean(self, tmp_path):
+        repo = copy_fixture(f"{self.FIXTURES}/import-only", tmp_path)
+        r = run_lint(repo)
+        assert violations(r) == []
+        assert r["rc"] == 0
+
+    def test_import_plus_extras_reports_the_first_extra_line(self, tmp_path):
+        repo = copy_fixture(f"{self.FIXTURES}/import-plus-extras", tmp_path)
+        r = run_lint(repo)
+        ours = [v for v in violations(r) if v["rule_id"] == "claude-md-agents-import"]
+        assert len(ours) == 1
+        assert ours[0]["line"] == 4  # the '## Claude Code specifics' heading
+        assert ours[0]["fixable"] is False
+
+    def test_allow_extra_accepts_the_import_plus_extras(self, tmp_path):
+        repo = copy_fixture(f"{self.FIXTURES}/import-plus-extras", tmp_path)
+        config = tmp_path / "allow-extra.yaml"
+        config.write_text(
+            'version: "99.0.0"\nrules:\n  claude-md-agents-import:\n    allow-extra: true\n'
+        )
+        r = run_lint(repo, config=config)
+        assert "claude-md-agents-import" not in rule_ids(r)
+
+    def test_plain_fix_leaves_the_duplicate_alone(self, tmp_path):
+        """Replacing a file's contents is SUGGEST-only."""
+        repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
+        before = _snapshot_contents(repo)
+        _run_fix(repo)
+        assert _snapshot_contents(repo) == before
+
+    def test_suggest_fix_converges_and_relints_clean(self, tmp_path):
+        repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
+        agents_before = (repo / "AGENTS.md").read_text()
+
+        _run_fix(repo, "--suggest")
+
+        # A file-restructuring fix, not a splice: the line count collapsing
+        # from the whole duplicated body to one import line is the point,
+        # so this deliberately does not assert line preservation.
+        assert (repo / "CLAUDE.md").read_text() == "@AGENTS.md\n"
+        assert (repo / "AGENTS.md").read_text() == agents_before
+
+        r = run_lint(repo)
+        assert violations(r) == []
+
+    def test_suggest_fix_is_idempotent(self, tmp_path):
+        repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
+        _run_fix(repo, "--suggest")
+        first = _snapshot_contents(repo)
+        _run_fix(repo, "--suggest")
+        assert _snapshot_contents(repo) == first
+
+    def test_suggest_fix_declines_the_diverged_pair(self, tmp_path):
+        repo = copy_fixture(f"{self.FIXTURES}/diverged-pair", tmp_path)
+        before = _snapshot_contents(repo)
+        _run_fix(repo, "--suggest")
+        assert _snapshot_contents(repo) == before
 
 
 # ── SAFE Autofix Idempotency Suite ──────────────────────────────

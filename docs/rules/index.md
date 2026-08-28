@@ -14,8 +14,7 @@ skillsaw includes **79** built-in rules organized into the following categories:
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [OpenClaw](openclaw.md) (1 rule)
 - [Cursor](cursor.md) (2 rules)
-- [OpenCode](opencode.md) (1 rule)
-- [Instruction Files](instruction-files.md) (2 rules)
+- [Instruction Files](instruction-files.md) (3 rules)
 - [Context Budget](context-budget.md) (1 rule)
 - [Content Intelligence](content-intelligence.md) (24 rules)
 - [CodeRabbit](coderabbit.md) (2 rules)
@@ -68,9 +67,9 @@ skillsaw includes **79** built-in rules organized into the following categories:
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
 | [`cursor-rules-valid`](cursor-rules-valid.md) | Cursor .mdc rules must have frontmatter that lets the rule activate | error (auto) | auto | Cursor |
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
-| [`opencode-config-valid`](opencode-config-valid.md) | opencode.json(c) must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files | warning (auto) | - | Instruction Files |
+| [`claude-md-agents-import`](claude-md-agents-import.md) | CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' so both assistants read one source of truth | info (auto) | auto | Instruction Files |
 | [`context-budget`](context-budget.md) | Warn when instruction or config files exceed recommended token limits | warning (auto) | - | Context Budget |
 | [`content-weak-language`](content-weak-language.md) | Detect hedging, vague, and non-actionable language in instruction files | info (auto) | - | Content Intelligence |
 | [`content-tautological`](content-tautological.md) | Detect tautological instructions that the model already follows by default | info (auto) | - | Content Intelligence |

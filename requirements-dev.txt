@@ -4,14 +4,15 @@
 # Testing
 pytest>=7.0
 pytest-cov>=7.0
+pytest-xdist>=3
 coverage[toml]>=7.10  # needed for [tool.coverage.run] patch = ["subprocess"] in pyproject.toml
 
 # Code quality
 black>=26,<27
 flake8>=6.0
 mypy>=1.0
+pre-commit>=4,<5
 
 # Build
 build>=1.5.0
 twine>=7.0.0
-

@@ -215,13 +215,13 @@ def test_codecov_uses_oidc_without_a_repository_secret():
     assert "use_oidc: true" in workflow
     assert "CODECOV_TOKEN" not in workflow
     assert test_job["permissions"] == {"contents": "read"}
-    assert "3.11" not in test_job["strategy"]["matrix"]["python-version"]
+    assert "3.14" not in test_job["strategy"]["matrix"]["python-version"]
     matrix_test_step = next(
         step for step in test_job["steps"] if step.get("name", "").startswith("Run ")
     )
-    assert matrix_test_step["run"] == ".venv/bin/pytest tests/ -v"
+    assert matrix_test_step["run"] == ".venv/bin/pytest tests/ -v -n auto"
     assert "--cov" not in matrix_test_step["run"]
-    assert coverage_job["name"] == "test (3.11)"
+    assert coverage_job["name"] == "test (3.14)"
     assert coverage_job["permissions"] == {
         "contents": "read",
         "id-token": "write",
