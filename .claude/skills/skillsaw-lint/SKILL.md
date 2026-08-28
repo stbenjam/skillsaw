@@ -35,13 +35,15 @@ with `uvx skillsaw==<version>` as the prefix for every command below (or
 Run the linter scoped to the files or directories you created or edited:
 
 ```sh
-skillsaw lint <path>
+skillsaw lint --no-collapse <path>
 ```
 
 Read each violation line: it carries the severity, file path, line number,
-message, and rule ID. If the repository defines its own lint entry point (a
-Makefile `lint` target that runs skillsaw, for example), run that instead —
-it may pin a version or pass flags like `--strict`.
+message, and rule ID. Keep `--no-collapse` so repetitive findings remain
+individually visible to the agent. If the repository defines its own lint
+entry point (a Makefile `lint` target that runs skillsaw, for example), run
+that first — it may pin a version or pass flags like `--strict` — then use the
+pinned CLI with `--no-collapse` when violations need inspection.
 
 If the lint exits 0 with no violations, your work is clean — stop here and
 report done.
@@ -74,11 +76,11 @@ its guidance.
 
 ## Step 5: Re-lint until clean
 
-Re-run `skillsaw lint <path>` after your edits and repeat Steps 3–4 until it
-exits 0. Then run `skillsaw` from the repository root to confirm your changes
-introduced no violations elsewhere. The lint output ends with a letter grade
-for the repository's agentic content — leave it the same or better than you
-found it.
+Re-run `skillsaw lint --no-collapse <path>` after your edits and repeat Steps
+3–4 until it exits 0. Then run `skillsaw lint --no-collapse .` from the
+repository root to confirm your changes introduced no violations elsewhere.
+The lint output ends with a letter grade for the repository's agentic content
+— leave it the same or better than you found it.
 
 ## When to escalate
 

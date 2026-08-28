@@ -248,6 +248,7 @@ def format_text(
     fail_level: str = "error",
     color: bool = False,
     hyperlinks: bool = False,
+    collapse: bool = True,
 ) -> str:
     show_info = should_show_info(verbose, fail_level)
     red = "\033[91m" if color else ""
@@ -295,24 +296,41 @@ def format_text(
             f"{terminal_safe(diagnostic.message)}"
         )
 
+    def diagnostics(items: Sequence[RuleViolation]) -> List[_TextDiagnostic]:
+        if collapse:
+            return _text_diagnostics(items, context)
+        return [_TextDiagnostic.individual(violation) for violation in items]
+
+    error_diagnostics = diagnostics(errors_list)
+    warning_diagnostics = diagnostics(warnings_list)
+    info_diagnostics = diagnostics(info_list) if show_info else []
+
     output = []
 
     if errors_list:
         output.append(f"\n{red}{bold}Errors:{reset}")
-        for diagnostic in _text_diagnostics(errors_list, context):
+        for diagnostic in error_diagnostics:
             output.append(f"  {fmt_violation(diagnostic)}")
 
     if warnings_list:
         output.append(f"\n{yellow}{bold}Warnings:{reset}")
-        for diagnostic in _text_diagnostics(warnings_list, context):
+        for diagnostic in warning_diagnostics:
             output.append(f"  {fmt_violation(diagnostic)}")
 
     if show_info and info_list:
         output.append(f"\n{blue}{bold}Info:{reset}")
-        for diagnostic in _text_diagnostics(info_list, context):
+        for diagnostic in info_diagnostics:
             output.append(f"  {fmt_violation(diagnostic)}")
 
     shown = errors_list + warnings_list + (info_list if show_info else [])
+    diagnostic_count = len(error_diagnostics) + len(warning_diagnostics) + len(info_diagnostics)
+    grouped_count = len(shown) - diagnostic_count
+    if grouped_count:
+        output.append(
+            f"\n{dim}{grouped_count} finding(s) grouped into summary rows above — "
+            f"run with `--no-collapse` to show every finding.{reset}"
+        )
+
     documented = sorted({v.rule_id for v in shown if v.rule_id in builtin_ids})
     if documented:
         if hyperlinks:

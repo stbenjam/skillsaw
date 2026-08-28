@@ -26,9 +26,10 @@ unavailable).
 
 ## Step 2: Run the lint and build an inventory
 
-Run `skillsaw` (lint) from the repo root and capture the output. Each
-violation line includes the severity, file path, line number, message, and
-rule ID — read them all.
+Run `skillsaw lint --no-collapse .` from the repo root and capture the output.
+`--no-collapse` keeps repetitive findings individually visible to the agent.
+Each violation line includes the severity, file path, line number, message,
+and rule ID — read them all.
 
 If the lint exits 0 with no violations, tell the user the repo is clean and stop.
 
@@ -49,7 +50,8 @@ hunk is correct, run `skillsaw fix --suggest` to apply the tier. If any hunk is
 wrong, skip the tier entirely, handle those violations manually in Step 5, and
 keep only the edits you judged correct.
 
-Re-run `skillsaw` and report how many violations the autofixer resolved.
+Re-run `skillsaw lint --no-collapse .` and report how many violations the
+autofixer resolved.
 
 ## Step 4: Read fix guidance for each remaining rule
 
@@ -73,10 +75,11 @@ Handle the violations file by file. For each violation:
    structure, and formatting
 3. Keep edits minimal — never rewrite a whole file to fix one line
 
-After finishing a file, re-run `skillsaw` scoped to confirm the violations
-are gone and your edit introduced no new ones. Always re-lint even after an edit
-that looks obviously correct: wrap a path in a link, split a section,
-or add a directive, and you can trip a *different* rule you now have to fix.
+After finishing a file, re-run `skillsaw lint --no-collapse <path>` scoped to
+confirm the violations are gone and your edit introduced no new ones. Always
+re-lint even after an edit that looks obviously correct: wrap a path in a
+link, split a section, or add a directive, and you can trip a *different* rule
+you now have to fix.
 
 ### Handle common cases
 

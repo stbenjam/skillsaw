@@ -725,6 +725,22 @@ class TestUnreferencedSkillFiles:
         assert "image-catalog/orphan.txt" in text["stdout"]
         assert "Warnings: 9" in text["stdout"]
 
+        expanded = run_lint(
+            repo,
+            "--rule",
+            self.RULE,
+            "--strict",
+            "--no-collapse",
+            fmt="text",
+            verbose=False,
+        )
+        assert expanded["rc"] == raw["rc"]
+        assert "files under 'assets/'" not in expanded["stdout"]
+        assert "image-catalog/assets/front.png" in expanded["stdout"]
+        assert "video-catalog/assets/front.mp4" in expanded["stdout"]
+        assert "grouped into summary rows" not in expanded["stdout"]
+        assert "Warnings: 9" in expanded["stdout"]
+
     def test_baseline_still_records_and_suppresses_each_collapsed_finding(self, tmp_path):
         repo = copy_fixture("agentskills/unreferenced-collapse", tmp_path)
 
@@ -4941,6 +4957,22 @@ class TestContentMcpToolNameSuggestGate:
             f"Grade:    {raw_grade['letter']} ({raw_grade['density']:.2f} weighted violations"
             in text["stdout"]
         )
+
+        expanded = run_lint(
+            repo,
+            "--rule",
+            "content-mcp-tool-name",
+            "--strict",
+            "--no-collapse",
+            fmt="text",
+            verbose=False,
+        )
+        assert expanded["rc"] == raw["rc"]
+        assert "fully-qualified MCP tool names use the" not in expanded["stdout"]
+        assert "mcp__plugin_jira_atlassian__getJiraIssue" in expanded["stdout"]
+        assert "mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql" in expanded["stdout"]
+        assert "grouped into summary rows" not in expanded["stdout"]
+        assert "Warnings: 6" in expanded["stdout"]
 
     def test_baseline_keeps_each_collapsed_occurrence(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)

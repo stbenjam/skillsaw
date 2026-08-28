@@ -18,6 +18,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--strict` | Treat warnings as errors (equivalent to --fail-on warning; overrides the config file's strict/fail-on settings) |  |
 | `--fail-on` | Fail on violations at this severity or above (default: error; --strict is equivalent to --fail-on warning). Overrides the config file's strict/fail-on settings. (choices: error, warning, info) |  |
 | `--format` | Output format for stdout (default: text) (choices: text, json, sarif, html, code-climate, gitlab) | `text` |
+| `--no-collapse` | Show every text diagnostic instead of grouping repetitive findings (text output only) |  |
 | `--output` | Write output to FILE. Format is inferred from extension (.htm, .html, .json, .sarif, .txt) or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). Use the prefix when an extension is ambiguous (e.g. .json could be json or gitlab/code-climate). Can be specified multiple times. |  |
 | `--type` | Override auto-detected repository type (repeatable). Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit, apm, promptfoo, codex-plugin, codex-marketplace, agent-plugin. |  |
 | `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |

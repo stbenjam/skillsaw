@@ -97,4 +97,6 @@ apply the same rewrites by hand.
 
 When three or more findings in one file share a server prefix, terminal
 output groups them into one readable row. This is presentation only: machine
-reports, baselines, counts, and fixes still retain every occurrence.
+reports, baselines, counts, and fixes still retain every occurrence. Run
+`skillsaw lint --no-collapse <path>` to show every occurrence as its own
+terminal row.

@@ -356,8 +356,17 @@ def test_text_collapses_unreferenced_skill_subtrees_only(valid_plugin):
     assert "skills/first/scripts/two.py" in output
     assert "skills/first/orphan.txt" in output
     assert "Warnings: 9" in output
+    assert "4 finding(s) grouped into summary rows above" in output
+    assert "run with `--no-collapse` to show every finding" in output
     assert len(violations) == 9
     assert [(v.file_path, v.message) for v in violations] == before
+
+    expanded = format_text(violations, context, [], "1.0.0", collapse=False)
+
+    assert "files under 'assets/'" not in expanded
+    assert all(str(path.relative_to(context.root_path)) in expanded for path in paths)
+    assert "grouped into summary rows" not in expanded
+    assert "Warnings: 9" in expanded
 
 
 def test_structured_reports_keep_collapsed_text_findings_individual(valid_plugin):
@@ -500,6 +509,8 @@ def test_text_mcp_collapse_keeps_raw_totals_and_order(valid_plugin):
     assert "missing discriminator" in output
     assert "malformed discriminator" in output
     assert "Warnings: 11" in output
+    assert "4 finding(s) grouped into summary rows above" in output
+    assert "run with `--no-collapse` to show every finding" in output
     assert "[?] 11 violation(s) fixable with `skillsaw fix --suggest`" in output
     assert f"Grade:    {grade.letter} ({grade.density:.2f} weighted violations" in output
     assert "https://skillsaw.org/rules/content-mcp-tool-name/" in output

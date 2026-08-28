@@ -248,6 +248,7 @@ def _run_lint(args):
         fail_level=fail_level,
         color=color,
         hyperlinks=hyperlinks_enabled(sys.stdout, color),
+        collapse=not args.no_collapse,
     )
     print(stdout_output)
 
@@ -265,6 +266,7 @@ def _run_lint(args):
                 duration=lint_duration,
                 grade=grade,
                 fail_level=fail_level,
+                collapse=not args.no_collapse,
             )
         out_path = Path(output_path)
         try:

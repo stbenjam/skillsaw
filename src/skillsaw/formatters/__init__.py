@@ -118,6 +118,7 @@ def format_report(
     fail_level: str = "error",
     color: bool = False,
     hyperlinks: bool = False,
+    collapse: bool = True,
 ) -> str:
     """
     Format lint results in the specified format.
@@ -139,6 +140,7 @@ def format_report(
         color: Emit ANSI colors (text format only — resolved by the caller
             via ``color_enabled()``; file outputs stay plain)
         hyperlinks: Emit OSC 8 terminal hyperlinks (text format only)
+        collapse: Group repetitive text diagnostics into summary rows
     """
     # Normalized once here, at the single point every format and every sink
     # — stdout and each --output file — passes through. A rule cannot know
@@ -159,6 +161,7 @@ def format_report(
             fail_level=fail_level,
             color=color,
             hyperlinks=hyperlinks,
+            collapse=collapse,
         )
     )
 
@@ -176,6 +179,7 @@ def _render_report(
     fail_level: str = "error",
     color: bool = False,
     hyperlinks: bool = False,
+    collapse: bool = True,
 ) -> str:
     """Dispatch to the per-format renderer. See :func:`format_report`."""
     if fmt == "text":
@@ -193,6 +197,7 @@ def _render_report(
             fail_level,
             color=color,
             hyperlinks=hyperlinks,
+            collapse=collapse,
         )
     elif fmt == "json":
         from .json_fmt import format_json

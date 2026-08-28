@@ -143,6 +143,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Output format for stdout (default: text)",
     )
     lint_parser.add_argument(
+        "--no-collapse",
+        action="store_true",
+        help="Show every text diagnostic instead of grouping repetitive findings "
+        "(text output only)",
+    )
+    lint_parser.add_argument(
         "--output",
         dest="outputs",
         action="append",
