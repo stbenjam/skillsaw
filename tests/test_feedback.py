@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from skillsaw.cli import _feedback
+from skillsaw.redaction import redact_text
 
 
 def _run_feedback(path: Path, *args: str):
@@ -134,6 +135,31 @@ def test_feedback_redacts_block_scalar_credentials_without_losing_siblings():
     assert "second secret" not in text
     assert "host: localhost" in text
     assert count == 1
+
+
+def test_shared_redactor_handles_multiline_secrets_and_is_idempotent():
+    source = (
+        "password: >\r\n"
+        "  first secret\r\n"
+        "\r\n"
+        "  second secret\r\n"
+        "host: localhost\r\n"
+        "-----BEGIN PRIVATE KEY-----\r\n"
+        "private material\r\n"
+        "-----END PRIVATE KEY-----\r\n"
+    )
+
+    result = redact_text(source)
+
+    assert result.count == 2
+    assert "first secret" not in result.text
+    assert "second secret" not in result.text
+    assert "private material" not in result.text
+    assert "password: [REDACTED]\r\n" in result.text
+    assert "host: localhost\r\n" in result.text
+    repeated = redact_text(result.text)
+    assert repeated.text == result.text
+    assert repeated.count == 0
 
 
 def test_feedback_rejects_source_files_outside_the_repository(tmp_path):
