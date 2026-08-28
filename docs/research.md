@@ -420,6 +420,41 @@ template directories where placeholder links are expected.
 
 ---
 
+## [Broken External Reference](rules/content-broken-external-reference.md)
+
+**Rule:** `content-broken-external-reference`
+
+**Detects external `http(s)` links whose server reports them gone** (HTTP 404
+or 410), the outward-facing half of `content-broken-internal-reference`.
+
+The failure mode is the same as for a broken internal link — an agent told to
+consult a URL cannot distinguish a dead page from a live one, and may
+hallucinate the content from the link text rather than report that the
+reference failed — but the evidence is weaker, because it arrives over a
+network the linter does not control.
+
+That asymmetry drives the design. The rule is opt-in rather than
+`auto`: a lint run must stay hermetic and reproducible unless the user
+explicitly asks for network checking, which is also why it belongs in a
+scheduled job rather than a per-PR gate. And only `404` and `410` are treated
+as evidence. Bot walls (`401`/`403`), rate limits (`429`), origin errors
+(`5xx`), timeouts, and DNS or TLS failures describe the network between the
+runner and the host, not the link — a check that reported them would produce
+exactly the flaky, ignored output that link checkers are notorious for, and
+false positives in a linter train users to stop reading its output.
+
+**References:**
+
+- [W3C Link Checker](https://validator.w3.org/checklink) — Broken links are
+  a recognized web quality defect with long-standing tooling
+- [RFC 9110 §15.5.5, §15.5.11](https://www.rfc-editor.org/rfc/rfc9110#name-404-not-found)
+  — `404 Not Found` and `410 Gone` are the only status codes that assert the
+  target resource does not exist; `403` and `429` describe the requester
+- [Google Technical Writing: Links](https://developers.google.com/tech-writing/two/links)
+  — "Don't force readers to backtrack because a link doesn't work"
+
+---
+
 ## [Unlinked Internal Reference](rules/content-unlinked-internal-reference.md)
 
 **Rule:** `content-unlinked-internal-reference`

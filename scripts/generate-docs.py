@@ -176,6 +176,7 @@ RULE_GROUPS = [
             "content-inconsistent-terminology",
             "content-instruction-drift",
             "content-broken-internal-reference",
+            "content-broken-external-reference",
             "content-unlinked-internal-reference",
             "content-placeholder-text",
             "content-unclosed-fence",

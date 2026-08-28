@@ -24,6 +24,15 @@ jobs:
       contents: read
       pull-requests: write
 
+    # `changed-rules.py` already subtracts rules that declare
+    # `requires_network`, but this job clones third-party repositories and
+    # lints them with their own `.skillsaw.yaml` in place, and an empty
+    # changed-rules list would leave the run unrestricted. The environment
+    # variable rather than `--no-network` because the merge-base venv is an
+    # older skillsaw that would reject the flag.
+    env:
+      SKILLSAW_NO_NETWORK: "1"
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
