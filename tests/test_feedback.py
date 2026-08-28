@@ -36,6 +36,10 @@ def test_feedback_creates_redacted_bundle_without_repository_files(tmp_path):
     assert Path(payload["bundle"]) == output.resolve()
     assert payload["sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()
     assert "template=bug_report.yml" in payload["issue_url"]
+    assert payload["email"] == {
+        "to": "stephen@bitbin.de",
+        "gpg_key": "https://github.com/stbenjam.gpg",
+    }
     assert payload["included_files"] == []
     with zipfile.ZipFile(output) as bundle:
         assert sorted(bundle.namelist()) == [
@@ -56,6 +60,21 @@ def test_feedback_creates_redacted_bundle_without_repository_files(tmp_path):
         manifest = json.loads(bundle.read("manifest.json"))
         assert manifest["redactions"] >= 1
         assert set(manifest["files"]) == set(bundle.namelist()) - {"manifest.json"}
+
+
+def test_feedback_text_output_requires_review_before_sharing(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--output", str(output))
+
+    assert result.returncode == 0, result.stderr
+    assert "Review before sharing" in result.stdout
+    assert "best effort to redact" in result.stdout
+    assert "not guaranteed to catch every secret" in result.stdout
+    assert "stephen@bitbin.de" in result.stdout
+    assert "https://github.com/stbenjam.gpg" in result.stdout
 
 
 def test_feedback_includes_only_requested_repository_files_and_redacts_them(tmp_path):

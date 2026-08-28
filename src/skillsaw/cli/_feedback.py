@@ -21,6 +21,8 @@ from ..rules.builtin.secret_detection import STRUCTURED_SECRET_PATTERNS
 from ._config import _get_version
 
 _ISSUE_URL = "https://github.com/stbenjam/skillsaw/issues/new"
+_FEEDBACK_EMAIL = "stephen@bitbin.de"
+_GPG_KEY_URL = "https://github.com/stbenjam.gpg"
 _BUNDLE_SCHEMA_VERSION = 1
 _CREDENTIAL_ASSIGNMENT = re.compile(
     r"(?im)^(\s*[\"']?[A-Za-z_][A-Za-z0-9_.-]*"
@@ -268,15 +270,27 @@ def _run_feedback(args) -> None:
         "bundle": str(output_path),
         "sha256": bundle_sha256,
         "issue_url": issue_url,
+        "email": {"to": _FEEDBACK_EMAIL, "gpg_key": _GPG_KEY_URL},
         "included_files": included_names,
         "redactions": redactions,
     }
     if args.json:
         print(json.dumps(result, sort_keys=True))
     else:
-        print(f"Created diagnostic bundle: {output_path}")
-        print(f"SHA-256: {bundle_sha256}")
-        print(f"Redactions applied: {redactions}")
-        print("Review the ZIP, then attach it to a bug report:")
-        print(issue_url)
+        print("Feedback bundle created")
+        print(f"  File:     {output_path}")
+        print(f"  SHA-256:  {bundle_sha256}")
+        print(f"  Redacted: {redactions} value(s)")
+        print()
+        print("Review before sharing")
+        print("  Open the ZIP and confirm you are comfortable sharing every file in it.")
+        print("  skillsaw makes a best effort to redact credential-shaped values, but")
+        print("  redaction is not guaranteed to catch every secret or sensitive detail.")
+        print()
+        print("Share the reviewed bundle")
+        print("  GitHub issue:")
+        print(f"    {issue_url}")
+        print("  Private email:")
+        print(f"    Attach it to {_FEEDBACK_EMAIL}")
+        print(f"    Optional GPG key: {_GPG_KEY_URL}")
     sys.exit(0)
