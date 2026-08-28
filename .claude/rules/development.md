@@ -59,6 +59,39 @@ the lint tree, or `utils.py` read paths, save a baseline on main and compare on 
   per-key ruamel parses. Avoid ruamel round-trip parsing — it is ~30x slower and was the dominant cost of lint-tree construction.
 - Keep per-blob work (whole-body `.lower()`, config-file stats) outside
   the per-block loop — run it once per `check()`.
+- **Give a character class its ranges.** `re` builds no bitmap for a class
+  holding an astral codepoint, so every item is tested against every
+  character scanned — ~100 tag characters spelled out one by one cost ten
+  times what the two ranges they collapse into do.
+- **Factor a long literal alternation with `literal_alternation()`.** `re`
+  tries branches one at a time, so a flat fifty-verb alternation matched
+  per line costs up to fifty attempts; the prefix trie matches the same
+  language for less than half.
+- **Caches are bounded by memory, not by a count of entries.** A count
+  cannot express what the bound protects, and one low enough to be safe
+  for large files is a cliff for many small ones: past it, every rule
+  evicts what the previous rule cached and the linter re-reads the whole
+  repository once per rule. `FileCache` takes a byte `budget`.
+- **`safe_resolve` is memoized for the lifetime of a pass**, cleared by
+  `invalidate_read_caches()` with the file caches. Do not add a second
+  resolution cache; a test that makes the filesystem start failing
+  mid-run must drop the memo (`clear_resolve_cache()`).
+- **Prefer one gate scan to several.** Where several patterns each scan a
+  whole document, a single necessary condition in front of them (a union
+  character class, a shared required literal) skips the documents that
+  cannot match at all.
+
+### Startup
+
+The CLI must import nothing that lints before it has printed the banner:
+repository discovery, the block hierarchy, the markdown parser, the rule
+registry and both YAML parsers are most of what a lint imports, and none
+of it is needed to parse arguments or name the paths. `RepositoryType`,
+`FAIL_ON_LEVELS` and the warning categories live in small modules for
+this reason, and `_run_lint` imports the heavy machinery below its own
+banner. `tests/test_cli_startup.py` pins the boundary in fresh
+interpreters — a single module-scope import puts all of it back, and
+nothing else would notice.
 
 ## Markdown: AST for reading, splice for writing
 
