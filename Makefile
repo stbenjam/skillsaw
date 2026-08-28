@@ -6,15 +6,15 @@ VENV_EXTRAS_STAMP := $(VENV)/.skillsaw-extras-$(subst $(comma),-,$(VENV_EXTRAS))
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: help venv format lint test test-fast clean update update-contributors apm verify-apm generate-example generate-docs generate-site-content serve-site build-site benchmark benchmark-save benchmark-compare profile badge self-lint
+.PHONY: help venv format lint test test-coverage clean update update-contributors apm verify-apm generate-example generate-docs generate-site-content serve-site build-site benchmark benchmark-save benchmark-compare profile badge self-lint
 
 help:
 	@echo "Available targets:"
 	@echo "  venv          - Create virtualenv and install dev dependencies"
 	@echo "  format        - Fix code formatting with black"
 	@echo "  lint          - Check code formatting with black"
-	@echo "  test          - Run pytest tests (parallel, with coverage)"
-	@echo "  test-fast     - Run pytest tests in parallel without coverage"
+	@echo "  test          - Run pytest tests in parallel"
+	@echo "  test-coverage - Run pytest tests with coverage (CI)"
 	@echo "  clean         - Remove Python cache files and virtualenv"
 	@echo "  generate-example - Regenerate .skillsaw.yaml.example from builtin rules"
 	@echo "  generate-docs - Regenerate README docs sections when present"
@@ -41,10 +41,12 @@ lint: $(VENV_EXTRAS_STAMP)
 	$(VENV)/bin/black --check src/ tests/
 
 test: $(VENV_EXTRAS_STAMP)
-	$(VENV)/bin/pytest tests/ -v -n auto --cov=src/skillsaw --cov-report=xml --cov-report=term
-
-test-fast: $(VENV_EXTRAS_STAMP)
 	$(VENV)/bin/pytest tests/ -q -n auto
+
+# Coverage instrumentation (including the subprocess patch for the CLI
+# integration tests) roughly doubles the runtime, so it runs only in CI.
+test-coverage: $(VENV_EXTRAS_STAMP)
+	$(VENV)/bin/pytest tests/ -q -n auto --cov=src/skillsaw --cov-report=xml --cov-report=term
 
 # Generate example config in a temp dir to avoid clobbering .skillsaw.yaml
 generate-example: $(VENV_EXTRAS_STAMP)
