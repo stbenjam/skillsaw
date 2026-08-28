@@ -81,7 +81,7 @@ the lint tree, or `utils.py` read paths, save a baseline on main and compare on 
   `RepositoryType`, `FAIL_ON_LEVELS` and the warning categories live in
   small modules for this reason, and `_run_lint` imports the repository
   and linter machinery below its own banner. The boundary is pinned by
-  [tests/test_cli_startup.py](../../tests/test_cli_startup.py).
+  `tests/test_cli_startup.py`.
 
 ## Markdown: AST for reading, splice for writing
 

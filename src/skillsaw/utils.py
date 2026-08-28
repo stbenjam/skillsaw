@@ -322,10 +322,14 @@ def write_bytes_atomic(path: Path, content: bytes, *, root: Optional[Path] = Non
 _NODE_OVERHEAD_BYTES = 64
 
 #: Cap on nodes walked while sizing one entry. The accounting runs on every
-#: insertion, so it must cost less than what it protects; a document big
-#: enough to reach the cap is big enough to be charged as if it filled the
-#: budget, which keeps it out of the cache entirely.
+#: insertion, so it must cost less than what it protects.
 _SIZE_WALK_LIMIT = 20_000
+
+#: Returned when the size walk gives up at ``_SIZE_WALK_LIMIT``. A document
+#: that large has no size the cache can trust, so it gets one no budget
+#: admits — a concrete number would be admitted by any cache configured
+#: above it, and then charged wrongly for as long as it stayed.
+UNCACHEABLE_SIZE = -1
 
 
 def _approximate_size(value: Any) -> int:
@@ -335,8 +339,8 @@ def _approximate_size(value: Any) -> int:
     it: the readers return whole documents, and one charged as though it
     were a scalar is one the byte budget cannot see. The walk is
     iterative, descends into each container once (aliases and cycles are
-    ordinary in YAML), and gives up at ``_SIZE_WALK_LIMIT`` nodes by
-    charging the whole budget.
+    ordinary in YAML), and returns :data:`UNCACHEABLE_SIZE` if it reaches
+    ``_SIZE_WALK_LIMIT`` nodes without finishing.
     """
     total = 0
     visited: Set[int] = set()
@@ -347,7 +351,7 @@ def _approximate_size(value: Any) -> int:
         node = stack.pop()
         walked += 1
         if walked > _SIZE_WALK_LIMIT:
-            return FileCache.DEFAULT_BUDGET
+            return UNCACHEABLE_SIZE
         if isinstance(node, str):
             total += len(node)
             continue
@@ -433,10 +437,13 @@ class FileCache:
             # Compute outside the lock to avoid holding it during I/O.
             result = func(*args, **kwargs)
             cost = _approximate_size(result)
-            if cost > self._budget:
-                # No amount of eviction makes room for this one, and
-                # keeping it would put the cache permanently over the
-                # bound it exists to hold. Hand it back uncached.
+            if cost == UNCACHEABLE_SIZE or cost > self._budget:
+                # Either the value is too large for eviction to ever make
+                # room, or it is too large to have been sized at all. Both
+                # would put the cache permanently over the bound it exists
+                # to hold — and the second would do it invisibly, charged
+                # at whatever the walk stopped counting. Hand it back
+                # uncached; the reader recomputes it next time.
                 return result
             with self._lock:
                 if self._total_bytes + cost > self._budget:

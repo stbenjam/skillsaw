@@ -982,6 +982,34 @@ class TestFileCacheBudget:
         assert text_store, "the text cache must not be the only one evicted"
         assert parsed_store
 
+    def test_a_value_too_large_to_size_is_never_cached(self, tmp_path):
+        """The size walk gives up past ``_SIZE_WALK_LIMIT`` nodes.
+
+        What it returns then has to be rejected by every budget, not just
+        the default one: a concrete number is admitted by any cache
+        configured above it, and then charged at whatever the walk had
+        counted so far, which is exactly the accounting the byte budget
+        exists to keep honest.
+        """
+        huge = list(range(skillsaw_utils._SIZE_WALK_LIMIT + 10))
+        assert skillsaw_utils._approximate_size(huge) == skillsaw_utils.UNCACHEABLE_SIZE
+
+        # A budget far above anything the walk could have counted.
+        cache = skillsaw_utils.FileCache(budget=1 << 40)
+        calls = {"n": 0}
+
+        @cache.cached
+        def reader(path):
+            calls["n"] += 1
+            return list(range(skillsaw_utils._SIZE_WALK_LIMIT + 10))
+
+        target = tmp_path / "huge.yaml"
+        assert reader(target) == huge
+        assert reader(target) == huge
+
+        assert calls["n"] == 2, "an unsized value must be recomputed, not served"
+        assert cache._total_bytes == 0
+
 
 def test_frontmatter_rejects_a_document_nested_past_the_limit():
     """The depth guard raises RecursionError; readers report it, not crash."""
