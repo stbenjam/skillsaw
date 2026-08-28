@@ -10,6 +10,7 @@ from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
     CommandBlock,
     CopilotAgentBlock,
+    OpenCodeAgentBlock,
     SkillBlock,
 )
 
@@ -97,7 +98,13 @@ class DescriptionRoutingRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         """Find weak descriptions across discovered skills, agents, and commands."""
         violations: List[RuleViolation] = []
-        for block_type in (SkillBlock, AgentBlock, CopilotAgentBlock, CommandBlock):
+        for block_type in (
+            SkillBlock,
+            AgentBlock,
+            CopilotAgentBlock,
+            OpenCodeAgentBlock,
+            CommandBlock,
+        ):
             for block in context.lint_tree.find(block_type):
                 if block.frontmatter_error:
                     continue

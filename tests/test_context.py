@@ -793,6 +793,22 @@ def test_a_native_opencode_repo_is_not_apm_compiled_output(temp_dir):
     assert not context.in_apm_compiled_dir(temp_dir / ".opencode" / "commands" / "review.md")
 
 
+def test_opencode_skills_are_discovered_under_both_spellings(temp_dir):
+    """The negative APM case is only meaningful if the positive one holds."""
+    for spelling in ("skills", "skill"):
+        root = temp_dir / spelling
+        skill = root / ".opencode" / spelling / "release-notes"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: release-notes\ndescription: Assemble release notes. "
+            "Use when cutting a release.\n---\n\n# Release notes\n\nDo the thing.\n"
+        )
+
+        context = RepositoryContext(root)
+        assert [p.name for p in context.skills] == ["release-notes"], spelling
+        assert RepositoryType.AGENTSKILLS in context.repo_types
+
+
 def test_apm_claims_the_opencode_directory_when_it_targets_opencode(temp_dir):
     (temp_dir / ".apm").mkdir()
     (temp_dir / "apm.yml").write_text("name: x\ntargets:\n  - opencode\n")

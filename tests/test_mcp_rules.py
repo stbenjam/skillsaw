@@ -1300,3 +1300,62 @@ class TestOpenCodeMcpBlock:
         violations = McpProhibitedRule({"allowlist": ["playwright"]}).check(context)
         assert len(violations) == 1
         assert "exfil" in violations[0].message
+
+    def test_both_layouts_in_one_file_are_read(self, temp_dir):
+        """A file mid-migration carries both, and both load.
+
+        Returning one layout would let a config hide a server behind the
+        other, since the discriminator reads author-chosen names.
+        """
+        block = self._block(
+            temp_dir,
+            {
+                "mcp": {
+                    "exfil": {"type": "local", "command": ["npx", "@attacker/mcp"]},
+                    "servers": {"playwright": {"type": "local", "command": ["npx", "playwright"]}},
+                }
+            },
+        )
+        assert block.server_names == {"exfil", "playwright"}
+
+    def test_a_name_declared_in_both_layouts_is_returned_twice(self, temp_dir):
+        """Two objects ship, each able to carry its own defect."""
+        block = self._block(
+            temp_dir,
+            {
+                "mcp": {
+                    "dup": {"type": "local", "command": ["npx", "one"]},
+                    "servers": {"dup": {"type": "local", "command": ["npx", "two"]}},
+                }
+            },
+        )
+        names = [name for name, _ in block.server_entries()]
+        assert names.count("dup") == 2
+        assert block.server_names == {"dup"}
+
+    def test_a_v2_global_timeout_is_not_read_as_a_server(self, temp_dir):
+        """v2 puts a `timeout` setting beside `servers`; upstream skips it too."""
+        block = self._block(
+            temp_dir,
+            {
+                "mcp": {
+                    "timeout": {"startup": 5000},
+                    "servers": {"ok": {"type": "local", "command": ["npx", "mcp"]}},
+                }
+            },
+        )
+        assert block.server_names == {"ok"}
+
+    def test_a_v1_server_actually_named_timeout_survives(self, temp_dir):
+        """Only a value carrying no connection field is treated as the setting."""
+        block = self._block(
+            temp_dir,
+            {"mcp": {"timeout": {"type": "local", "command": ["npx", "timeout-mcp"]}}},
+        )
+        assert block.server_names == {"timeout"}
+
+    def test_a_non_object_server_value_is_still_listed(self, temp_dir):
+        """The validating rule needs it; `servers` drops it."""
+        block = self._block(temp_dir, {"mcp": {"broken": "npx mcp"}})
+        assert block.server_entries() == [("broken", "npx mcp")]
+        assert block.servers == []

@@ -2095,6 +2095,17 @@ class TestEditorTools:
             ".clinerules/style.md",
             ".clinerules/policy.txt",
             ".clinerules/workflows/release.md",
+            # OpenCode, in both vocabularies and both glob shapes: the 1.x
+            # singulars, the flat mode directories, a nested command (the
+            # loader names it ``db/migrate``), and a package's own
+            # ``.opencode/``. An exact set, so a glob that stops attaching
+            # fails here rather than passing silently.
+            ".opencode/command/deploy.md",
+            ".opencode/commands/db/migrate.md",
+            ".opencode/agent/auditor.md",
+            ".opencode/modes/architect.md",
+            ".opencode/mode/legacy-planner.md",
+            "apps/web/.opencode/commands/lighthouse.md",
         }
 
     def test_frontmattered_editor_files_report_file_line_numbers(self, tmp_path):
@@ -2590,15 +2601,26 @@ class TestOpenCode:
         assert "sentry" in found[0]["message"]
         assert "playwright" not in found[0]["message"]
 
-    def test_opencode_content_reaches_the_content_rules(self, tmp_path):
-        """Commands, agents and skills under .opencode all land in an agent's context."""
-        repo = copy_fixture("opencode/native-v1", tmp_path)
-        r = run_lint(repo)
-        paths = {v["file_path"] for v in violations(r)}
+    def test_opencode_content_is_budgeted_by_its_role(self, tmp_path):
+        """A command enters the window on `/name`; an agent is a subagent.
 
-        assert ".opencode/agents/reviewer.md" in paths
-        tree = run_lint(repo, fmt=None)
-        assert tree["rc"] == 0
+        `category` is what carries that, and `context-budget` keys on it —
+        so a block typed as always-on instruction prose would face the wrong
+        limit and never say so.
+        """
+        from skillsaw.blocks import OpenCodeAgentBlock, OpenCodeCommandBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("opencode/native-v1", tmp_path)
+        tree = RepositoryContext(repo).lint_tree
+
+        commands = {b.path.name: b.category for b in tree.find(OpenCodeCommandBlock)}
+        agents = {b.path.name: b.category for b in tree.find(OpenCodeAgentBlock)}
+        assert commands == {"changelog.md": "command"}
+        assert agents == {"reviewer.md": "agent"}
+
+        # And the skill is discovered through the shared agentskills path.
+        assert [p.name for p in RepositoryContext(repo).skills] == ["release-notes"]
 
     def test_a_native_opencode_repo_is_not_apm_build_output(self, tmp_path):
         """No APM evidence means `.opencode/` is authored, whatever APM also uses it for."""
@@ -2626,6 +2648,11 @@ class TestOpenCode:
             v for v in violations(r) if v["file_path"].startswith(".opencode/")
         ], "APM-compiled OpenCode output must not report content findings"
         # The skill under the compiled directory is not discovered either.
+        # Its frontmatter is deliberately invalid — a missing description and
+        # a non-conforming name — so this assertion has teeth: a discovered
+        # copy would fire agentskill-* rather than pass silently.
+        skill = (repo / ".opencode/skills/release-notes/SKILL.md").read_text()
+        assert "description:" not in skill and "name: Release Notes" in skill
         assert not any(v["rule_id"].startswith("agentskill-") for v in violations(r))
 
     def test_a_non_scalar_transport_is_reported_rather_than_crashing(self, tmp_path):

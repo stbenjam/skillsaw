@@ -1,5 +1,5 @@
 ---
-description: Reviews a diff for correctness bugs and missing tests
+description: Reviews a diff for correctness bugs and missing tests. Use when a branch is ready for review or when asked to check a change before merging.
 mode: subagent
 model: anthropic/claude-sonnet-4-5
 temperature: 0.1

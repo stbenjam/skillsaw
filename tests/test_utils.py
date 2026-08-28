@@ -1183,3 +1183,45 @@ class TestStripJsonc:
         data, error = read_jsonc(path)
         assert data is None
         assert "NaN" in error
+
+
+class TestOpenCodeTimeout:
+    """`timeout` is a number in 1.x and an object in 2.0, and upstream ships
+    two disagreeing declarations of that object — so the accepted key set is
+    their union."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            5000,
+            0,
+            30.5,
+            {},
+            {"startup": 45000, "catalog": 30000, "execution": 600000},
+            {"startup": 5000, "request": 10000},
+            {"catalog": 1},
+        ],
+    )
+    def test_accepted(self, value):
+        from skillsaw.formats.opencode import timeout_is_valid
+
+        assert timeout_is_valid(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            True,
+            False,
+            "30s",
+            None,
+            [30000],
+            {"startup": True},
+            {"catalog": "30s"},
+            {"unknown": 1},
+            {"startup": 1, "unknown": 2},
+        ],
+    )
+    def test_rejected(self, value):
+        from skillsaw.formats.opencode import timeout_is_valid
+
+        assert not timeout_is_valid(value)

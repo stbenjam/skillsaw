@@ -34,7 +34,7 @@
   },
   "agents": {
     "reviewer": {
-      "description": "Reviews a diff for correctness bugs and missing tests",
+      "description": "Reviews a diff for correctness bugs and missing tests. Use when a branch is ready for review.",
       "mode": "subagent",
       "system": "You review diffs. Report only defects you can point at a line for.",
       "disabled": false
