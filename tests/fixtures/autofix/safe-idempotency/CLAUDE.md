@@ -81,7 +81,11 @@ written.
 Tool identifiers inside URLs and paths must never be flagged or rewritten:
 the schema catalog at
 https://mcp.example.com/tools/mcp__plugin_github_github__create_pull_request
-documents every argument.
+documents every argument, the same catalog is queried as
+https://mcp.example.com/api?tool=mcp__plugin_github_github__create_pull_request,
+the export downloads as mcp__plugin_github_github__create_pull_request.json,
+and Windows agents read it from
+C:\tools\mcp__plugin_github_github__create_pull_request instead.
 
 Prose that instructs configuration keeps the fully-qualified name — add
 `mcp__plugin_github_github__create_pull_request` to the allowed-tools list

@@ -116,12 +116,23 @@ class ContentMcpToolNameRule(Rule):
                 if not short:
                     continue
                 col = base_col + match.start()
-                # A token preceded by `/` or `.` is part of a URL or path
-                # (https://…/mcp__jira__getIssue, tools/mcp__jira__getIssue.json)
-                # and rewriting it would corrupt the reference.  Checked
-                # adjacent to the complete match in code, never as a
-                # lookbehind on the quantifier (issue #321).
-                if col > 0 and raw_line[col - 1] in "/.":
+                # A token embedded in a URL or path must keep its exact
+                # spelling, so reject a match preceded by a path separator
+                # or dot (https://…/mcp__jira__getIssue, C:\tools\…), one
+                # whose whitespace-delimited chunk carries a URL scheme
+                # (query and fragment positions), or one followed by a
+                # filename extension (mcp__jira__getIssue.json).  Every
+                # check reads characters adjacent to the complete match in
+                # code, never as a lookaround on the quantifier (issue
+                # #321).
+                before = raw_line[:col]
+                if before and before[-1] in "/.\\":
+                    continue
+                chunk_start = max(before.rfind(" "), before.rfind("\t")) + 1
+                if "://" in before[chunk_start:]:
+                    continue
+                after = raw_line[col + len(token) :]
+                if after[:1] == "." and after[1:2].isalnum():
                     continue
                 results.append((body_line, col, token, short))
 
@@ -215,18 +226,32 @@ class ContentMcpToolNameRule(Rule):
                 if candidates is None:
                     candidates = self._candidates(doc, allow)
                     candidates_by_block[id(v.block)] = candidates
+                # check() numbers same-token occurrences on a line into the
+                # fingerprint discriminator (token:ordinal); select the same
+                # occurrence here, so a partial violation set — a baseline
+                # suppressing one ordinal — fixes the occurrence it reports,
+                # never an earlier suppressed one.
+                ordinal = 0
+                if v.fingerprint_discriminator:
+                    tail = v.fingerprint_discriminator.rsplit(":", 1)[-1]
+                    if tail.isdigit():
+                        ordinal = int(tail)
+                occurrence = -1
                 for body_line, col, candidate, short in candidates:
                     if candidate != token:
                         continue
                     file_line = doc.file_line(body_line)
                     if file_line != v.file_line:
                         continue
+                    occurrence += 1
+                    if occurrence != ordinal:
+                        continue
                     located = file_span(doc, content, file_line, body_line, col, col + len(token))
                     if located is None:
-                        continue
+                        break
                     key = (file_line, located[0], located[1])
                     if key in used_spans:
-                        continue
+                        break
                     used_spans.add(key)
                     edits.append((file_line, located[0], located[1], short))
                     violations_fixed.append(v)

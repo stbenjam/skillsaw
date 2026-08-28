@@ -5122,7 +5122,11 @@ class TestContentMcpToolNameRule:
             "# Rules\n\n"
             "See https://registry.example.com/tools/mcp__jira__getIssue for the\n"
             "schema, or <https://x.com/t/mcp__jira__getIssue>. Fixtures live in\n"
-            "tools/mcp__jira__getIssue.json.\n"
+            "tools/mcp__jira__getIssue.json.\n\n"
+            "The catalog is queried as\n"
+            "https://registry.example.com/api?tool=mcp__jira__getIssue and the\n"
+            "export downloads as mcp__jira__getIssue.json. Windows agents read\n"
+            "C:\\tools\\mcp__jira__getIssue instead.\n"
         )
         assert self._check(temp_dir) == []
 
@@ -5307,6 +5311,26 @@ class TestContentMcpToolNameAutofix:
         remaining = ContentMcpToolNameRule().check(RepositoryContext(repo))
         assert [(v.file_path.name, v.fixable) for v in remaining] == [(".coderabbit.yaml", False)]
         assert self._fix(repo) == []
+
+    def test_fix_targets_reported_occurrence(self, temp_dir):
+        """With one of two same-token occurrences suppressed (a baseline
+        holding back ordinal :0), fix() must rewrite the occurrence the
+        surviving violation reports, not the first unused one."""
+        content = "# Rules\n\nCall `mcp__jira__getJiraIssue` then mcp__jira__getJiraIssue again.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        rule = ContentMcpToolNameRule()
+        violations = rule.check(context)
+        assert [v.fingerprint_discriminator for v in violations] == [
+            "mcp__jira__getJiraIssue:0",
+            "mcp__jira__getJiraIssue:1",
+        ]
+
+        fixes = rule.fix(context, [violations[1]])
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == (
+            "# Rules\n\nCall `mcp__jira__getJiraIssue` then getJiraIssue again.\n"
+        )
 
     def test_fix_splices_frontmattered_host(self, temp_dir):
         """A command body sits below its frontmatter (line_offset > 0); a
