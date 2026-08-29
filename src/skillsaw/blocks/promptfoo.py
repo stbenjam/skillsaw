@@ -11,10 +11,9 @@ from dataclasses import dataclass
 from io import StringIO
 from typing import List, Optional
 
-from ruamel.yaml import YAML as _RuamelYAML
 
 from skillsaw.lint_target import LintTarget
-from skillsaw.utils import read_text, read_yaml_commented, commented_item_line
+from skillsaw.utils import read_text, read_yaml_commented, commented_item_line, roundtrip_yaml
 
 from .base import ContentBlock
 
@@ -32,10 +31,14 @@ class PromptfooPromptBlock(ContentBlock):
         return self.body if self.body is not None else ""
 
     def write_body(self, new_body: str) -> None:
-        ruyaml = _RuamelYAML()
-        ruyaml.preserve_quotes = True
         raw = self.path.read_text(encoding="utf-8")
-        data = ruyaml.load(raw)
+        try:
+            # Bounded like every other load: this reads the file again
+            # rather than the tree's cached copy, so it is its own way in
+            # for untrusted nesting.
+            ruyaml, data = roundtrip_yaml(raw)
+        except RecursionError:
+            return
         if data is None or not isinstance(data, dict):
             return
         prompts = data.get("prompts")

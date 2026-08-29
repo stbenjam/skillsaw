@@ -1220,6 +1220,29 @@ def read_yaml_commented(
         return None, _TOO_DEEP, None
 
 
+def roundtrip_yaml(source: str) -> Tuple[Any, Any]:
+    """Round-trip-load *source* under the readers' nesting bound.
+
+    Returns ``(yaml, data)`` — the loader to dump back through, so a
+    caller keeps the round-trip style it read with — and raises
+    ``RecursionError`` on a document past ``_MAX_YAML_DEPTH``, like
+    every other reader here.
+
+    A write path cannot use :func:`read_yaml_commented`: that reader is
+    cached, and mutating what it returns corrupts the document every
+    later reader is handed. So a caller intending to edit and write back
+    has to load its own — which is exactly how two of them ended up
+    constructing a bare ``YAML()`` and taking untrusted nesting with
+    neither half of the bound. This is that caller's entry point.
+    """
+    _reject_deep_before_compose(source)
+    yaml_rt = _RuamelYAML()
+    yaml_rt.preserve_quotes = True
+    data = yaml_rt.load(source)
+    _reject_overly_nested(data)
+    return yaml_rt, data
+
+
 def commented_key_line(node: Any, key: str) -> Optional[int]:
     """Get the 1-based line number of *key* in a ruamel ``CommentedMap``."""
     if isinstance(node, CommentedMap) and key in node:

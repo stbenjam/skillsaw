@@ -995,6 +995,46 @@ def test_aliases_cannot_build_a_graph_deeper_than_the_source_reads(tmp_path):
     assert data is None
 
 
+def test_the_write_paths_load_under_the_same_bound(tmp_path):
+    """A writer loads its own document, and must not be the way in.
+
+    ``read_yaml_commented`` is cached, so a caller that edits and writes
+    back cannot use it — which is how two block writers came to build a
+    bare ``YAML()`` and take untrusted nesting with neither half of the
+    bound. Both now go through ``roundtrip_yaml`` and degrade to a no-op
+    instead of letting ``RecursionError`` escape into a rule's fix.
+    """
+    from skillsaw.blocks.coderabbit import CodeRabbitContentBlock
+    from skillsaw.blocks.promptfoo import PromptfooPromptBlock
+    from skillsaw.utils import _MAX_YAML_DEPTH
+
+    depth = _MAX_YAML_DEPTH + 50
+    deep = "[" * depth + "0" + "]" * depth
+
+    config = tmp_path / "promptfooconfig.yaml"
+    config.write_text(f"prompts:\n  - hello\nextra: {deep}\n", encoding="utf-8")
+    prompt = PromptfooPromptBlock.__new__(PromptfooPromptBlock)
+    prompt.path, prompt.yaml_path = config, "prompts[0]"
+    prompt.write_body("replaced")
+    assert "hello" in config.read_text(encoding="utf-8")
+
+    coderabbit = tmp_path / ".coderabbit.yaml"
+    coderabbit.write_text(f"reviews:\n  profile: chill\nextra: {deep}\n", encoding="utf-8")
+    review = CodeRabbitContentBlock.__new__(CodeRabbitContentBlock)
+    review.path, review.yaml_path = coderabbit, "reviews.profile"
+    review.write_body("assertive")
+    assert "chill" in coderabbit.read_text(encoding="utf-8")
+
+    # The bound must not cost an ordinary document its edit.
+    shallow = tmp_path / "shallow.yaml"
+    shallow.write_text("prompts:\n  - old\ndescription: keep me\n", encoding="utf-8")
+    writable = PromptfooPromptBlock.__new__(PromptfooPromptBlock)
+    writable.path, writable.yaml_path = shallow, "prompts[0]"
+    writable.write_body("new")
+    written = shallow.read_text(encoding="utf-8")
+    assert "new" in written and "keep me" in written
+
+
 @pytest.mark.parametrize(
     "source, expected",
     [

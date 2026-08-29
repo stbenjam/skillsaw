@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Set, Tuple
 
 import yaml
-from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 
 from skillsaw.utils import (
@@ -25,6 +24,7 @@ from skillsaw.utils import (
     yaml_nth_list_item_key_line as _yaml_nth_list_item_key_line_util,
     yaml_node_line as _yaml_node_line_util,
     safe_load_yaml,
+    roundtrip_yaml,
 )
 
 from .base import ContentBlock
@@ -52,10 +52,11 @@ class CodeRabbitContentBlock(ContentBlock):
         # traversal.  Any unexpected structure degrades to a no-op rather than
         # crashing the fix run.
         try:
-            ruyaml = _RuamelYAML()
-            ruyaml.preserve_quotes = True
             raw = self.path.read_text(encoding="utf-8")
-            data = ruyaml.load(raw)
+            # Bounded like every other load: this reads the file again
+            # rather than the tree's cached copy, so it is its own way in
+            # for untrusted nesting.
+            ruyaml, data = roundtrip_yaml(raw)
             if data is None:
                 return
 
@@ -83,7 +84,7 @@ class CodeRabbitContentBlock(ContentBlock):
             buf = StringIO()
             ruyaml.dump(data, buf)
             self.path.write_text(buf.getvalue(), encoding="utf-8")
-        except (OSError, UnicodeDecodeError, _RuamelYAMLError):
+        except (OSError, UnicodeDecodeError, _RuamelYAMLError, RecursionError):
             return
 
     def tree_label(self) -> str:
