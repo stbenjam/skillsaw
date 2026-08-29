@@ -86,13 +86,17 @@ resolved violations.
 ## Upgrading
 
 A skillsaw upgrade can change which files parse, and a file that starts
-parsing starts being linted. YAML parsing moved to libyaml, which accepts
-a tab used as a token separator in frontmatter (`name:<TAB>value`, a
-trailing tab, a tab before a `#` comment) where the previous parser
-reported an error. Both YAML 1.1 and 1.2 permit it, so
-the new behaviour is the correct one — but a file whose frontmatter
-previously failed to parse now has its fields checked, and any violation
-that surfaces is not in your baseline.
+parsing starts being linted. YAML parsing moved to libyaml (on builds
+carrying PyYAML's C extension, which most wheels do), and it accepts
+documents PyYAML's own scanner was stricter than the YAML spec about.
+Measured so far: a tab used as a token separator (`name:<TAB>value`, a
+trailing tab, a tab before a `#` comment), a `?` inside a flow
+collection (`globs: [tests/?_*.py]`), and a block-scalar header followed
+by `#`. That list is what has been measured, not a boundary — if a file
+of yours stopped reporting a parse error, this is why. The spec permits
+all of them, so the new behaviour is the correct one, but a file whose
+frontmatter previously failed to parse now has its fields checked, and
+any violation that surfaces is not in your baseline.
 
 If your baseline predates the upgrade and CI fails on violations you did
 not introduce, re-run `skillsaw baseline` to take them up, then fix them

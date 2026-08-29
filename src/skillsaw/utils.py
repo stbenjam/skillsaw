@@ -395,17 +395,6 @@ def _push_attributes(node: Any, stack: List[Any]) -> None:
             stack.append(held)
 
 
-#: Above this, a scalar is charged once per object rather than once per
-#: reference. An alias is one object however many times the document names
-#: it, so counting references is counting memory that is not there: a 2 MiB
-#: anchored string used 64 times measures 128.0 MiB against the 2.0 MiB it
-#: holds, which refuses the entry and has every rule reparse the file. The
-#: dedup is not applied below this size because identity bookkeeping on
-#: every short string would cost more across a whole document than the
-#: over-count it prevents, and a small scalar counted twice is noise.
-_DEDUPE_SCALAR_BYTES = 4096
-
-
 def _remember(node: Any, visited: Set[int], alive: List[Any]) -> None:
     """Record *node* so a later reference to it is skipped.
 
@@ -437,15 +426,27 @@ def _approximate_size(value: Any) -> int:
         node = stack.pop()
         node_id = id(node)
         if node_id in visited:
-            # A second reference to something already measured. This is
-            # the walk's one dedup point, and it sits above the counter
-            # deliberately: the limit bounds distinct objects, not names
-            # for them. An alias is ordinary in YAML and one anchor may
-            # be named tens of thousands of times, which would abandon
-            # the walk over a graph holding three objects — and an
-            # abandoned walk costs every rule a reparse of the file, far
-            # more than finishing it. It also terminates cycles, which
-            # the limit alone used to do.
+            # A second reference to something already measured, and
+            # the walk's one dedup point. It covers every node, not
+            # just large ones: an alias is one object however many
+            # times a document names it, so both the charge and the
+            # limit have to count objects rather than references.
+            #
+            # Counting references was wrong twice over. It charged a
+            # 2 MiB anchored string used 64 times as 128 MiB, refusing
+            # an entry that holds 2 MiB; and it let 20,000 references
+            # to one short string exhaust the limit over a graph
+            # holding three objects. An abandoned walk is not free —
+            # the value cannot be cached, so every rule reparses the
+            # file, which costs far more than finishing.
+            #
+            # Registering every scalar rather than only large ones also
+            # measures faster, because a repeated key is not re-sized:
+            # 6.50ms to 5.41ms on a 442-plugin marketplace manifest,
+            # whose charge falls from 1,114,329 to 881,010 as the
+            # interned keys stop being counted once per occurrence.
+            #
+            # It also terminates cycles, which the limit alone used to.
             continue
         walked += 1
         if walked > _SIZE_WALK_LIMIT:
@@ -457,11 +458,7 @@ def _approximate_size(value: Any) -> int:
             # length the budget would have been shown. ``getsizeof``
             # reports what the object actually holds, header included.
             size = sys.getsizeof(node)
-            if size >= _DEDUPE_SCALAR_BYTES:
-                # Only large scalars are registered: identity bookkeeping
-                # on every short string costs more across a document than
-                # the double-count it would save.
-                _remember(node, visited, alive)
+            _remember(node, visited, alive)
             total += size
             # Not an unconditional ``continue``: ruamel returns
             # ``ScalarString`` subclasses that carry an ``Anchor`` in a
@@ -493,8 +490,7 @@ def _approximate_size(value: Any) -> int:
             # An exotic ``__sizeof__``. Aborting a lint from inside cache
             # accounting would be worse than charging the flat estimate.
             size = _NODE_OVERHEAD_BYTES
-        if size >= _DEDUPE_SCALAR_BYTES:
-            _remember(node, visited, alive)
+        _remember(node, visited, alive)
         total += size
         _push_attributes(node, stack)
     return total or 1
@@ -1142,8 +1138,12 @@ def read_jsonc(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
 # times faster than the pure-Python scanner — which matters because
 # skillsaw parses YAML at least once per markdown file (frontmatter) plus
 # once per config and manifest. Both loaders pair the same
-# ``SafeConstructor`` and ``Resolver`` with their parser, so documents
-# resolve to identical values; only the wording of a parse error differs.
+# ``SafeConstructor`` and ``Resolver`` with their parser, so a document
+# both accept resolves to the same value in every shape this repository
+# parses. They do not accept quite the same documents, and there are
+# rare tag forms both accept and resolve differently (``a: !`` is
+# ``None`` on one and ``''`` on the other) — see :func:`safe_load_yaml`
+# for both directions and what each means for an existing baseline.
 _SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 
@@ -1293,15 +1293,18 @@ def safe_load_yaml(source: Any) -> Any:
     failures are rare, so the happy path pays nothing.
 
     **libyaml accepts, PyYAML rejects** — and this direction cannot be
-    retried, because a document libyaml accepts never reaches the
-    retry. A tab used as a token separator (``name:\tvalue``, a trailing
-    tab, a tab before a ``#`` comment, a tab between a key and its
-    ``:``) is a ``ScannerError`` on PyYAML's own scanner and parses
-    cleanly here. Both YAML 1.1 and 1.2 permit it outside indentation,
-    so libyaml is right and PyYAML is the stricter-than-spec outlier —
-    but it means such a file stops reporting a parse error and starts
-    being linted, which can surface violations a baseline does not
-    carry. A tab used as *indentation* stays an error in both.
+    retried, because a document libyaml accepts never reaches the retry.
+    The class is *documents PyYAML's own scanner is stricter than the
+    spec about*, and it is wider than any list worth spelling out here.
+    The shapes measured so far: a tab used as a token separator
+    (``name:\tvalue``, a trailing tab, a tab before a ``#`` comment, a
+    tab between a key and its ``:``); a ``?`` inside a flow collection
+    (``globs: [tests/?_*.py]``); and a block-scalar header followed
+    immediately by ``#``. Both YAML 1.1 and 1.2 permit all of them, so
+    libyaml is right and PyYAML is the outlier — but a file that stops
+    reporting a parse error starts being linted, which can surface
+    violations an existing baseline does not carry. A tab used as
+    *indentation* stays an error in both.
 
     Note ruamel still rejects the tab class, so ``read_yaml`` and
     ``read_yaml_commented`` disagree about it. That is a real exception

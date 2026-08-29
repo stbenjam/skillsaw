@@ -1067,7 +1067,14 @@ def test_documents_only_the_pure_python_loader_accepts_still_parse(source, expec
         "name\t: value\n",  # tab between a key and its colon
         "name: \tvalue\n",  # space then tab
         "a:\n  b:\tvalue\n",  # nested
+        "keywords: [how?, why?]\n",  # ? inside a flow collection
+        "globs: [tests/?_*.py]\n",  # the same, as a glob a rule file might carry
+        "a: |#\n  x\n",  # block-scalar header followed by a comment marker
     ],
+)
+@pytest.mark.skipif(
+    not hasattr(yaml, "CSafeLoader"),
+    reason="the widening is libyaml's; without it safe_load_yaml is the pure loader",
 )
 def test_documents_only_libyaml_accepts_now_parse(source):
     """The other direction of the accepted-document set, which the
@@ -1081,7 +1088,10 @@ def test_documents_only_libyaml_accepts_now_parse(source):
     parses here. Both YAML 1.1 and 1.2 permit it outside indentation.
 
     Pinned so the accepted set is characterized in both directions
-    rather than asserted in one.
+    rather than asserted in one. These shapes are what has been
+    measured, not a proof of the boundary: the class is "documents
+    PyYAML's own scanner is stricter than the spec about", and it is
+    wider than this list.
     """
     from skillsaw.utils import safe_load_yaml
 
@@ -1089,6 +1099,24 @@ def test_documents_only_libyaml_accepts_now_parse(source):
         yaml.load(source, Loader=yaml.SafeLoader)
 
     assert safe_load_yaml(source) is not None
+
+
+def test_the_accelerated_loader_is_the_one_under_test():
+    """Canary for the tests above, which skip without libyaml.
+
+    Those tests are the only thing characterizing the widened direction,
+    and a wheel without the C extension makes them vacuous rather than
+    wrong. This one always runs, so a build that quietly lost the
+    accelerator says so here instead of going quiet there — and it is
+    also the thing that would make every performance claim in this
+    branch not apply.
+    """
+    from skillsaw.utils import _SAFE_LOADER
+
+    if hasattr(yaml, "CSafeLoader"):
+        assert _SAFE_LOADER is yaml.CSafeLoader
+    else:  # pragma: no cover - depends on the installed wheel
+        assert _SAFE_LOADER is yaml.SafeLoader
 
 
 def test_a_tab_used_as_indentation_is_still_an_error():
@@ -1522,6 +1550,44 @@ class TestFileCacheBudget:
 
         # And the recorded refusal still does its job after the eviction.
         assert len(unsizeable(target)) == skillsaw_utils._SIZE_WALK_LIMIT + 10
+
+    def test_the_lost_race_never_hands_back_the_refusal_marker(self, tmp_path):
+        """The store's other value-returning exit needs the same guard.
+
+        A reader computes outside the lock. If another caller fills the
+        key in that window, this one keeps what is already charged
+        rather than overwriting it — but what is already charged may be
+        the refusal marker, and the caller asked for a document. No
+        threads are needed to reach it: the branch fires whenever the
+        key appears between the miss and the insert, so the reader
+        plants it itself.
+        """
+        target = tmp_path / "raced.json"
+        cache = skillsaw_utils.FileCache(budget=1 << 20)
+        planted = {"done": False}
+
+        @cache.cached
+        def reader(path):
+            if not planted["done"]:
+                planted["done"] = True
+                # Land the key while this call is outside the lock —
+                # exactly what a second thread would have done.
+                resolved = skillsaw_utils.safe_resolve(path) or path
+                marker = skillsaw_utils._entry_cost(skillsaw_utils._UNSIZEABLE, resolved)
+                store = reader._store
+                store.setdefault(resolved, {})[((), ())] = (
+                    marker,
+                    skillsaw_utils._UNSIZEABLE,
+                )
+                cache._total_bytes += marker
+            return {"real": "document"}
+
+        result = reader(target)
+
+        assert planted["done"], "the race window must actually have been used"
+        assert result == {"real": "document"}
+        assert result is not skillsaw_utils._UNSIZEABLE
+        assert not isinstance(result, skillsaw_utils._Unsizeable)
 
     def test_a_marker_too_large_for_the_budget_is_not_stored(self, tmp_path):
         """The refusal marker obeys the bound it is helping to keep.
@@ -2021,11 +2087,25 @@ def test_depth_guard_measures_the_real_graph_depth():
 
 def test_approximate_size_charges_a_parsed_document_its_structure():
     """A whole document charged as though it were a scalar is one the
-    byte budget cannot see."""
+    byte budget cannot see.
+
+    Built by parsing rather than from literals. ``"v" * 100`` written
+    inside a comprehension is constant-folded, so every iteration shares
+    one string object — and the walk charges an object once however many
+    names reach it, which would make this measure interning rather than
+    structure. A real document's values are distinct objects.
+    """
+    import json
+
     from skillsaw.utils import _approximate_size
 
-    small = _approximate_size(({"name": "x"}, None))
-    large = _approximate_size(({"items": [{"k": "v" * 100} for _ in range(200)]}, None))
+    small = _approximate_size((json.loads('{"name": "x"}'), None))
+    large = _approximate_size(
+        (
+            json.loads(json.dumps({"items": [{"k": f"{i:03d}" + "v" * 100} for i in range(200)]})),
+            None,
+        )
+    )
 
     assert large > 100 * small
 
