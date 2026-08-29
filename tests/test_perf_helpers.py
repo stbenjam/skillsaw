@@ -71,9 +71,9 @@ class TestRequiredLiteral:
 class TestCaseFoldedGate:
     """The gate has to fold text the way ``re.IGNORECASE`` compares it.
 
-    ``str.lower`` leaves U+017F (long s) and U+212A (Kelvin sign) alone
-    while the regex engine matches them against "s" and "k", so a gate
-    built on it silently drops a document the pattern does match.
+    ``str.lower`` leaves U+017F (long s) alone while the regex engine
+    matches it against "s", so a gate built on it silently drops a
+    document the pattern does match.
     """
 
     PATTERN = re.compile(r"\buse\s+tabs\b", re.IGNORECASE)

@@ -1155,8 +1155,8 @@ def _build_promptfoo_nodes(
 
     # Pass 1a: promptfooconfig* anywhere in repo (naming convention → no key
     # check).  The candidates come from the walk repository-type detection
-    # already did — one pruned walk for the whole run, where this used to
-    # repeat it. Pruning matches the detector, which skips .git/
+    # already did — one pruned walk for the whole run rather than one
+    # each. Pruning matches the detector, which skips .git/
     # node_modules/.venv and friends.
     yaml_matches: list[Path] = []
     yml_matches: list[Path] = []

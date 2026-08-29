@@ -112,11 +112,10 @@ _resolve_generation = 0
 #: cliff rather than a limit, and past it the memo silently gives back the
 #: 2.6s it exists for.
 #:
-#: 64 MiB became such a cliff once the charge above stopped understating.
-#: A large skill marketplace holds ~18.3k distinct paths, charged 59.7 MB
-#: — 93% of the old bound, with a repository slightly larger falling off
-#: it. The number moved to state what is held rather than to make room
-#: for a change, the same correction ``FileCache.DEFAULT_BUDGET`` needed.
+#: A large skill marketplace holds ~18.3k distinct paths for ~59.7 MB
+#: charged, so 64 MiB would sit at 93% of the bound with a slightly
+#: larger repository falling off it. The bound states what such a
+#: repository holds, with room above it.
 #:
 #: Note the charge is deliberately conservative — measured at 1.2x to 1.9x
 #: real RSS across path shapes — so this bound is not the memory it
