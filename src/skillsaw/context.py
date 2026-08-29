@@ -263,8 +263,9 @@ class RepositoryContext(RepositoryProvenanceMixin):
 
     def rebuild_lint_tree(self) -> None:
         self._lint_tree = None
-        # A rebuild is where the filesystem may have moved under the memo.
+        # A rebuild is where the filesystem may have moved under both memos.
         self.__dict__.pop("_promptfoo_candidates", None)
+        clear_resolve_cache()
 
     @property
     def repo_type(self) -> RepositoryType:

@@ -1296,6 +1296,58 @@ class TestFileCacheBudget:
 
         assert reader(target) == "after the write"
 
+    def test_the_key_and_the_generation_describe_one_filesystem(self, tmp_path):
+        """Resolving the key is itself an answer about the filesystem.
+
+        A generation captured after the resolve cannot tell that an
+        invalidation landed in between, so a symlink retargeted in that
+        window has the new target's bytes filed under the old target's
+        key — and a later direct read of the old path is served the wrong
+        file for the rest of the pass. Capturing at entry covers the
+        resolve as well as the read.
+        """
+        import skillsaw.paths as paths
+
+        old = tmp_path / "old.txt"
+        new = tmp_path / "new.txt"
+        old.write_text("OLD", encoding="utf-8")
+        new.write_text("NEW", encoding="utf-8")
+        link = tmp_path / "link.txt"
+        link.symlink_to(old)
+
+        cache = skillsaw_utils.FileCache(budget=1_000_000)
+
+        @cache.cached
+        def reader(path):
+            return path.read_text(encoding="utf-8")
+
+        real_resolve = skillsaw_utils.safe_resolve
+        armed = [True]
+
+        def resolve_then_move(path):
+            resolved = real_resolve(path)
+            if armed[0]:
+                # Exactly the window under test: after the key is
+                # resolved, before the read that fills it.
+                armed[0] = False
+                link.unlink()
+                link.symlink_to(new)
+                paths.clear_resolve_cache()
+                cache.invalidate()
+            return resolved
+
+        skillsaw_utils.safe_resolve = resolve_then_move
+        try:
+            assert reader(link) == "NEW"
+        finally:
+            skillsaw_utils.safe_resolve = real_resolve
+            paths.clear_resolve_cache()
+
+        # The read describes the post-move filesystem; the key describes
+        # the pre-move one. Nothing that mismatched may be retained.
+        assert reader._store.get(old.resolve()) is None
+        assert cache._total_bytes == 0
+
     def test_racing_readers_agree_on_one_value_and_one_charge(self, tmp_path):
         """Two threads missing the same key both compute outside the lock.
 

@@ -407,6 +407,34 @@ class TestFindCache:
         context.rebuild_lint_tree()
         assert len(context.lint_tree.find(FrontmatterField)) == 2
 
+    def test_rebuild_lint_tree_drops_stale_path_resolutions(self, tmp_path):
+        """A rebuild is the declared "the filesystem may have moved" seam.
+
+        It clears the Promptfoo walk for that reason. Before this branch a
+        rebuild also re-ran every ``Path.resolve()``; memoizing them
+        without clearing here means a caller who retargets a symlink and
+        rebuilds gets containment and discovery answers from the old tree.
+        """
+        import skillsaw.paths as paths
+
+        context = self._make_skill_repo(tmp_path)
+        old = tmp_path / "old"
+        new = tmp_path / "new"
+        old.mkdir()
+        new.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(old)
+
+        assert paths.safe_resolve(link) == old.resolve()
+        link.unlink()
+        link.symlink_to(new)
+        # Still the pre-move answer, which is the memo working as intended.
+        assert paths.safe_resolve(link) == old.resolve()
+
+        context.rebuild_lint_tree()
+
+        assert paths.safe_resolve(link) == new.resolve()
+
     def test_find_filtered_stores_into_the_live_cache(self, tmp_path):
         """Anything that drops the memo mid-call detaches the dict.
 

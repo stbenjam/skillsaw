@@ -506,6 +506,12 @@ class FileCache:
         self._stores.append(store)
 
         def wrapper(*args, **kwargs):
+            # Read before anything else this call will depend on. Resolving
+            # the key is itself an answer about the filesystem, so a
+            # generation captured after it cannot tell that an invalidation
+            # landed in between — and a symlink retargeted in that window
+            # gets the new target's bytes filed under the old target's key.
+            generation = self._generation
             # The first positional arg is always the file path.
             file_path = args[0] if args else None
             try:
@@ -523,10 +529,9 @@ class FileCache:
                 bucket = store.get(resolved)
                 if bucket is not None and sub_key in bucket:
                     return bucket[sub_key][1]
-            # Compute outside the lock to avoid holding it during I/O.
-            # The generation is read first so the insert below can tell
+            # Compute outside the lock to avoid holding it during I/O;
+            # the generation captured at entry tells the insert below
             # whether the filesystem was declared changed meanwhile.
-            generation = self._generation
             result = func(*args, **kwargs)
             cost = _entry_cost(result)
             if cost == UNCACHEABLE_SIZE or cost > self._budget:
