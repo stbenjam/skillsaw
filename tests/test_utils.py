@@ -1282,9 +1282,13 @@ class TestFileCacheBudget:
         import skillsaw.paths as paths
 
         source = inspect.getsource(skillsaw_utils.invalidate_read_caches)
-        clears_memo = source.index("clear_resolve_cache()")
+        drops_identity = source.index("invalidate_path_identity()")
         clears_files = source.index("_file_cache.invalidate(")
-        assert clears_memo < clears_files, "resolution must be dropped first"
+        assert drops_identity < clears_files, "resolution must be dropped first"
+
+        # And the helper it delegates to keeps the same order internally.
+        helper = inspect.getsource(skillsaw_utils.invalidate_path_identity)
+        assert helper.index("clear_resolve_cache()") < helper.index("_generation += 1")
 
         # And both actually happen.
         target = tmp_path / "a.md"
@@ -1354,6 +1358,55 @@ class TestFileCacheBudget:
         charged = paths._path_cost(long_path)
 
         assert charged >= 2 * sys.getsizeof(str(long_path)), charged
+
+    def test_declaring_paths_moved_refuses_a_read_that_predates_it(self, tmp_path):
+        """Clearing the memo alone tells the cache keyed by it nothing.
+
+        ``RepositoryContext`` and ``rebuild_lint_tree`` both declare that
+        path identity may have changed. A reader already in flight has
+        resolved under the old identity, and without a generation bump it
+        finishes and files the new target's bytes under the old target's
+        key — a read of that path then returns the wrong file.
+
+        The cache is *not* emptied: a retargeted link does not change what
+        the file it used to point at contains.
+        """
+        from pathlib import Path
+
+        old = tmp_path / "old.md"
+        new = tmp_path / "new.md"
+        old.write_text("OLD", encoding="utf-8")
+        new.write_text("NEW", encoding="utf-8")
+        link = tmp_path / "link.md"
+        link.symlink_to(old)
+
+        skillsaw_utils.invalidate_read_caches()
+        # A second file's entry must survive; only the racing read is refused.
+        bystander = tmp_path / "bystander.md"
+        bystander.write_text("KEEP", encoding="utf-8")
+        skillsaw_utils.read_text(bystander)
+
+        real_resolve = skillsaw_utils.safe_resolve
+        armed = [True]
+
+        def resolve_then_declare_moved(path):
+            resolved = real_resolve(path)
+            if armed[0] and path == link:
+                armed[0] = False
+                link.unlink()
+                link.symlink_to(new)
+                skillsaw_utils.invalidate_path_identity()
+            return resolved
+
+        skillsaw_utils.safe_resolve = resolve_then_declare_moved
+        try:
+            assert skillsaw_utils.read_text(link) == "NEW"
+        finally:
+            skillsaw_utils.safe_resolve = real_resolve
+
+        assert skillsaw_utils.read_text._store.get(old.resolve()) is None
+        assert skillsaw_utils.read_text._store.get(bystander.resolve()) is not None
+        skillsaw_utils.invalidate_read_caches()
 
     def test_a_clear_during_a_resolution_is_not_undone_by_it(self, tmp_path):
         """The sibling of the ``FileCache`` generation check.

@@ -720,6 +720,29 @@ def register_cache(func):
     return func
 
 
+def invalidate_path_identity() -> None:
+    """Declare that what a path resolves to may have changed.
+
+    Drops the resolution memo and bumps the file cache's generation
+    without emptying it. Both halves are needed and neither is the other:
+    the memo holds the answers, and the cache is *keyed* by those answers,
+    so a reader already in flight would otherwise finish against a
+    resolution just declared stale and file its bytes under it.
+
+    The generation is bumped rather than the cache cleared because the
+    entries themselves are still good — a retargeted link does not change
+    what the file it used to point at contains. Only admissions racing the
+    change are refused.
+
+    This is the entry point for a caller that knows the shape of the tree
+    moved but not that any file's *content* did; :func:`invalidate_read_caches`
+    is the one for after a write.
+    """
+    clear_resolve_cache()
+    with _file_cache._lock:
+        _file_cache._generation += 1
+
+
 def invalidate_read_caches(file_path: Optional[Path] = None):
     """Clear file-reading caches.
 
@@ -745,7 +768,7 @@ def invalidate_read_caches(file_path: Optional[Path] = None):
     # cache first leaves a window where a reader captures the *new*
     # generation and still resolves an old target, then files the new
     # target's bytes under it.
-    clear_resolve_cache()
+    invalidate_path_identity()
     _file_cache.invalidate(file_path)
     # lru_cache functions registered via register_cache do not support
     # per-key eviction, so we must clear them entirely in both cases.

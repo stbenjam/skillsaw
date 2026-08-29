@@ -23,8 +23,8 @@ from .formats.codex import (
 from .discovery import detect as detect_discovery
 from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import path_matches_patterns
-from .paths import clear_resolve_cache, safe_is_dir, safe_resolve
-from .utils import read_yaml
+from .paths import safe_is_dir, safe_resolve
+from .utils import invalidate_path_identity, read_yaml
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 from .repo_type import RepositoryType  # noqa: F401 - re-exported for callers
 
@@ -154,11 +154,11 @@ class RepositoryContext(RepositoryProvenanceMixin):
         """
         # A new context is a new pass, which is exactly the lifetime the
         # resolution memo claims; clearing here makes that true for a
-        # long-lived library caller, which could otherwise lint, retarget
-        # a symlink, and lint again off the first pass's filesystem. The
-        # CLI finishes each path before building the next context, so no
-        # run loses a memo it still needs.
-        clear_resolve_cache()
+        # long-lived library caller, which could otherwise lint, retarget a
+        # symlink, and lint again off the first pass's filesystem. The file
+        # cache is keyed by those resolutions, so it is told as well; see
+        # ``invalidate_path_identity``.
+        invalidate_path_identity()
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
@@ -263,9 +263,9 @@ class RepositoryContext(RepositoryProvenanceMixin):
 
     def rebuild_lint_tree(self) -> None:
         self._lint_tree = None
-        # A rebuild is where the filesystem may have moved under both memos.
+        # A rebuild is where the filesystem may have moved under the memos.
         self.__dict__.pop("_promptfoo_candidates", None)
-        clear_resolve_cache()
+        invalidate_path_identity()
 
     @property
     def repo_type(self) -> RepositoryType:
