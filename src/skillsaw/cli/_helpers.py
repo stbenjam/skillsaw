@@ -7,7 +7,7 @@ import sys
 import warnings
 from pathlib import Path
 
-from ..notices import CustomRuleWarning, NetworkAccessWarning
+from ..notices import CustomRuleWarning
 from ..repo_type import RepositoryType
 from skillsaw.paths import safe_resolve
 

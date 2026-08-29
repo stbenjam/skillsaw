@@ -18,7 +18,7 @@ from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
 
-from .notices import CustomRuleWarning, NetworkAccessWarning  # noqa: F401 - re-export
+from .notices import CustomRuleWarning  # noqa: F401 - re-export
 from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from .context import RepositoryContext
 from .config import LinterConfig
