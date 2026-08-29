@@ -46,7 +46,7 @@ The schema is bundled from a pinned revision of the official static-assets
 repository. Validation is fully offline and never follows a repository-owned
 schema URL.
 
-## Configuration
+## Registry types
 
 Self-hosted registries can replace the accepted package vocabulary:
 
