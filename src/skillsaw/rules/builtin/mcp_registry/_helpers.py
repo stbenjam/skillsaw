@@ -30,9 +30,11 @@ SEMVER = re.compile(
 
 _VERSION_ATOM = r"v?[0-9]+(?:\.[0-9]+){0,3}(?:-[0-9A-Za-z.-]+)?"
 _COMPARATOR = rf"(?:\^|~|>=|<=|>|<|=)\s*{_VERSION_ATOM}"
-_COMPARATOR_RANGE = re.compile(rf"\A\s*{_COMPARATOR}(?:\s+{_COMPARATOR})*\s*\Z")
+_COMPARATOR_SET = rf"{_COMPARATOR}(?:\s+{_COMPARATOR})*"
+_COMPARATOR_RANGE = re.compile(rf"\A\s*{_COMPARATOR_SET}\s*\Z")
 _HYPHEN_RANGE = re.compile(rf"\A\s*{_VERSION_ATOM}\s-\s{_VERSION_ATOM}\s*\Z")
-_OR_RANGE = re.compile(rf"\A\s*{_VERSION_ATOM}\s*(?:\|\|\s*{_VERSION_ATOM}\s*)+\Z")
+_RANGE_ALTERNATIVE = rf"(?:{_COMPARATOR_SET}|{_VERSION_ATOM})"
+_OR_RANGE = re.compile(rf"\A\s*{_RANGE_ALTERNATIVE}\s*" rf"(?:\|\|\s*{_RANGE_ALTERNATIVE}\s*)+\Z")
 _DOTTED_VERSION = re.compile(
     r"\A\s*(?:v?[0-9]+|[xX*])(?:\.(?:[0-9]+|[xX*])){1,2}" r"(?:-[0-9A-Za-z.-]+)?\s*\Z"
 )

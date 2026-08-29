@@ -26,6 +26,7 @@ _DNS_LABEL = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
 _SERVER_NAME = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z")
 _PACKAGE_TRANSPORTS = frozenset({"stdio", "streamable-http", "sse"})
 _REMOTE_TRANSPORTS = frozenset({"streamable-http", "sse"})
+_SEMANTIC_SAMPLE_LIMIT = 4
 
 
 def _name_problem(value: object) -> Optional[str]:
@@ -46,17 +47,67 @@ def _name_problem(value: object) -> Optional[str]:
     return None
 
 
-def _schema_error_is_owned(
-    error,
-    *,
-    invalid_name: bool,
-    owned_errors: set[tuple[tuple, object]],
-) -> bool:
+def _mapping_item(data: dict, key: str, index: object) -> Optional[dict]:
+    """Return one mapping-valued list item from untrusted publisher data."""
+    values = data.get(key)
+    if not isinstance(index, int) or not isinstance(values, list):
+        return None
+    if index < 0 or index >= len(values):
+        return None
+    value = values[index]
+    return value if isinstance(value, dict) else None
+
+
+def _schema_error_is_owned(error, *, invalid_name: bool, data: dict) -> bool:
     """Drop a schema error when a more precise semantic diagnostic owns it."""
     path = tuple(error.absolute_path)
     if invalid_name and path == ("name",) and error.validator == "pattern":
         return True
-    return (path, error.validator) in owned_errors
+    if len(path) == 3 and path[0] == "packages":
+        package = _mapping_item(data, "packages", path[1])
+        if package is None:
+            return False
+        if path[2] == "transport" and error.validator == "anyOf":
+            transport = package.get("transport")
+            transport_type = transport.get("type") if isinstance(transport, dict) else None
+            return isinstance(transport_type, str) and transport_type not in _PACKAGE_TRANSPORTS
+        if path[2] == "version" and error.validator == "not":
+            package_version = package.get("version")
+            return isinstance(package_version, str) and is_version_range(package_version)
+    if len(path) == 2 and path[0] == "remotes" and error.validator == "anyOf":
+        remote = _mapping_item(data, "remotes", path[1])
+        remote_type = remote.get("type") if remote is not None else None
+        return isinstance(remote_type, str) and remote_type not in _REMOTE_TRANSPORTS
+    return False
+
+
+def _indexed_problem(
+    collection: str,
+    field: str,
+    indices: list[int],
+    count: int,
+    requirement: str,
+) -> str:
+    """Render one bounded diagnostic for a repeated indexed defect."""
+    if count == 1:
+        subject = f"{collection}[{indices[0]}]{field}"
+    else:
+        shown = ", ".join(str(index) for index in indices)
+        remaining = count - len(indices)
+        if remaining:
+            shown += f", and {remaining} more"
+        subject = f"{collection}[]{field} at indices {shown}"
+    return f"{subject} {requirement}"
+
+
+def _registry_types_summary(values: frozenset[str], *, limit: int = 20) -> str:
+    """Render configured values safely without allowing an unbounded message."""
+    ordered = sorted(values)
+    rendered = ", ".join(safe_display(value) for value in ordered[:limit])
+    remaining = len(ordered) - limit
+    if remaining > 0:
+        rendered += f", and {remaining} more"
+    return rendered or "(none configured)"
 
 
 class McpRegistryServerJsonValidRule(Rule):
@@ -161,7 +212,6 @@ class McpRegistryServerJsonValidRule(Rule):
                 )
             )
 
-        owned_schema_errors: set[tuple[tuple, object]] = set()
         version = data.get("version")
         if isinstance(version, str) and is_version_range(version):
             violations.append(
@@ -172,6 +222,19 @@ class McpRegistryServerJsonValidRule(Rule):
                 )
             )
 
+        semantic_counts = {
+            "registry-type": 0,
+            "package-transport": 0,
+            "package-version": 0,
+            "remote-transport": 0,
+        }
+        semantic_indices = {key: [] for key in semantic_counts}
+
+        def record_semantic(kind: str, index: int) -> None:
+            semantic_counts[kind] += 1
+            if len(semantic_indices[kind]) < _SEMANTIC_SAMPLE_LIMIT:
+                semantic_indices[kind].append(index)
+
         packages = data.get("packages")
         if isinstance(packages, list):
             for index, package in enumerate(packages):
@@ -179,38 +242,14 @@ class McpRegistryServerJsonValidRule(Rule):
                     continue
                 registry_type = package.get("registryType")
                 if isinstance(registry_type, str) and registry_type not in allowed_registry_types:
-                    violations.append(
-                        self.violation(
-                            f"packages[{index}].registryType must be one of "
-                            f"{', '.join(sorted(allowed_registry_types))}",
-                            file_path=block.path,
-                            fingerprint_discriminator=f"package:{index}:registry-type",
-                        )
-                    )
+                    record_semantic("registry-type", index)
                 transport = package.get("transport")
                 transport_type = transport.get("type") if isinstance(transport, dict) else None
                 if isinstance(transport_type, str) and transport_type not in _PACKAGE_TRANSPORTS:
-                    owned_schema_errors.add((("packages", index, "transport"), "anyOf"))
-                    violations.append(
-                        self.violation(
-                            f"packages[{index}].transport.type must be one of "
-                            "sse, stdio, streamable-http",
-                            file_path=block.path,
-                            fingerprint_discriminator=f"package:{index}:transport",
-                        )
-                    )
+                    record_semantic("package-transport", index)
                 package_version = package.get("version")
                 if isinstance(package_version, str) and is_version_range(package_version):
-                    if package_version == "latest":
-                        owned_schema_errors.add((("packages", index, "version"), "not"))
-                    violations.append(
-                        self.violation(
-                            f"packages[{index}].version must identify one exact "
-                            "release, not a tag or range",
-                            file_path=block.path,
-                            fingerprint_discriminator=f"package:{index}:version-range",
-                        )
-                    )
+                    record_semantic("package-version", index)
 
         remotes = data.get("remotes")
         if isinstance(remotes, list):
@@ -219,14 +258,50 @@ class McpRegistryServerJsonValidRule(Rule):
                     continue
                 transport_type = remote.get("type")
                 if isinstance(transport_type, str) and transport_type not in _REMOTE_TRANSPORTS:
-                    owned_schema_errors.add((("remotes", index), "anyOf"))
-                    violations.append(
-                        self.violation(
-                            f"remotes[{index}].type must be one of sse, streamable-http",
-                            file_path=block.path,
-                            fingerprint_discriminator=f"remote:{index}:transport",
-                        )
+                    record_semantic("remote-transport", index)
+
+        semantic_specs = (
+            (
+                "registry-type",
+                "packages",
+                ".registryType",
+                f"must be one of {_registry_types_summary(allowed_registry_types)}",
+            ),
+            (
+                "package-transport",
+                "packages",
+                ".transport.type",
+                "must be one of sse, stdio, streamable-http",
+            ),
+            (
+                "package-version",
+                "packages",
+                ".version",
+                "must identify one exact release, not a tag or range",
+            ),
+            (
+                "remote-transport",
+                "remotes",
+                ".type",
+                "must be one of sse, streamable-http",
+            ),
+        )
+        for kind, collection, field, requirement in semantic_specs:
+            count = semantic_counts[kind]
+            if count:
+                violations.append(
+                    self.violation(
+                        _indexed_problem(
+                            collection,
+                            field,
+                            semantic_indices[kind],
+                            count,
+                            requirement,
+                        ),
+                        file_path=block.path,
+                        fingerprint_discriminator=f"semantic:{kind}",
                     )
+                )
 
         schema_summary = schema_error_summary(
             error
@@ -234,7 +309,7 @@ class McpRegistryServerJsonValidRule(Rule):
             if not _schema_error_is_owned(
                 error,
                 invalid_name=name_problem is not None,
-                owned_errors=owned_schema_errors,
+                data=data,
             )
         )
         if schema_summary:

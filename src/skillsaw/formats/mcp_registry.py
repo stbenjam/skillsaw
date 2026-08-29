@@ -12,6 +12,7 @@ MCP_REGISTRY_SCHEMA_ID = (
     "https://static.modelcontextprotocol.io/schemas/"
     f"{MCP_REGISTRY_SCHEMA_VERSION}/server.schema.json"
 )
+_REMOTE_TRANSPORTS = frozenset({"streamable-http", "sse"})
 
 _SCHEMA_ID_RE = re.compile(
     r"\Ahttps://static\.modelcontextprotocol\.io/schemas/"
@@ -43,12 +44,14 @@ def is_mcp_registry_server(data: object) -> bool:
         return False
     packages = data.get("packages")
     if isinstance(packages, list) and any(
-        isinstance(package, dict) and "registryType" in package for package in packages
+        isinstance(package, dict) and {"registryType", "identifier", "transport"} <= package.keys()
+        for package in packages
     ):
         return True
     remotes = data.get("remotes")
     return isinstance(remotes, list) and any(
-        isinstance(remote, dict) and "type" in remote for remote in remotes
+        isinstance(remote, dict) and remote.get("type") in _REMOTE_TRANSPORTS and "url" in remote
+        for remote in remotes
     )
 
 

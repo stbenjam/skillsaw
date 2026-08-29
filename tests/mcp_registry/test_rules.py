@@ -183,6 +183,25 @@ class TestMcpRegistrySchemaRule:
         assert any("registrytype" in message for message in messages_lower(findings))
         assert configured == []
 
+    def test_configured_registry_types_are_sanitized_in_diagnostics(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["registryType"] = "company-internal"
+        _write_server(path, data)
+
+        findings = lint_rules(
+            repo,
+            VALID_RULE,
+            rule_config={
+                VALID_RULE: {"registry-types": ["npm", "escape\x1b[31m", "bidi\u202evalue"]}
+            },
+        )
+        combined = "\n".join(finding.message for finding in findings)
+
+        assert "\x1b" not in combined
+        assert "\u202e" not in combined
+        assert "\N{REPLACEMENT CHARACTER}" in combined
+
     @pytest.mark.parametrize("transport", ["stdio", "streamable-http", "sse"])
     def test_package_transport_enum_passes(self, tmp_path, transport):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
@@ -229,6 +248,7 @@ class TestMcpRegistrySchemaRule:
             "1.0 - 2.0",
             "1.2 || 1.3",
             ">=1.0.0 <2.0.0",
+            "^1.0.0 || ^2.0.0",
         ],
     )
     def test_top_level_version_ranges_are_errors(self, tmp_path, version):
@@ -282,15 +302,36 @@ class TestMcpRegistrySchemaRule:
         assert "$.packages[4]" not in summary
         assert "and 6 more schema errors" in summary
 
-    def test_package_compound_comparator_range_is_an_error(self, tmp_path):
+    @pytest.mark.parametrize("version", [">=1.0.0 <2.0.0", "^1.0.0 || ^2.0.0"])
+    def test_package_compound_comparator_range_is_an_error(self, tmp_path, version):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
-        data["packages"][0]["version"] = ">=1.0.0 <2.0.0"
+        data["packages"][0]["version"] = version
         _write_server(path, data)
 
         findings = lint_rules(repo, VALID_RULE)
 
         assert any("packages[0].version" in message for message in messages_lower(findings))
+
+    def test_repeated_semantic_defects_are_aggregated_per_category(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"] = [
+            {
+                "registryType": "company-internal",
+                "identifier": f"weather-{index}",
+                "version": "1.x",
+                "transport": {"type": "websocket"},
+            }
+            for index in range(50)
+        ]
+        data["remotes"] = [{"type": "stdio"} for _ in range(50)]
+        _write_server(path, data)
+
+        findings = _for_rule(lint_rules(repo, VALID_RULE), VALID_RULE)
+
+        assert len(findings) == 4
+        assert all("and 46 more" in finding.message for finding in findings)
 
     def test_non_semver_label_containing_x_is_not_misread_as_a_range(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)

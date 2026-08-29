@@ -64,6 +64,24 @@ class TestMcpRegistryDetection:
         assert context.mcp_registry_server_paths() == []
         assert context.lint_tree.find(McpRegistryServerBlock) == []
 
+    def test_generic_application_remotes_are_not_registry_evidence(self, tmp_path):
+        (tmp_path / "server.json").write_text(
+            json.dumps(
+                {
+                    "name": "api",
+                    "description": "service",
+                    "version": "1",
+                    "remotes": [{"type": "git"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        context = RepositoryContext(tmp_path)
+
+        assert RepositoryType.MCP_REGISTRY not in context.repo_types
+        assert context.mcp_registry_server_paths() == []
+
     def test_vendor_and_node_modules_documents_are_ignored(self, tmp_path):
         for parent in (tmp_path / "vendor" / "service", tmp_path / "node_modules" / "service"):
             parent.mkdir(parents=True)
