@@ -1172,13 +1172,15 @@ def read_yaml_commented(
     ``CommentedMap`` / ``CommentedSeq`` supporting ``.lc.key()`` and
     ``.lc.item()`` for line-number lookups.
 
-    Nesting is bounded here for the same reason and by the same rule as
-    :func:`safe_load_yaml`. ruamel is pure Python, so it raises rather
-    than faulting — but it raises wherever the interpreter's own stack
-    happens to give out, which is the incidental limit ``_MAX_YAML_DEPTH``
-    exists to replace. Without this the two readers disagree about the
-    same file: a document a hundred levels deep was rejected by
-    ``read_yaml`` and accepted here.
+    Nesting is bounded here for the same reason, by the same rule, and in
+    both the same places as :func:`safe_load_yaml`: the source is
+    prescanned before ruamel sees it, and the loaded graph is measured
+    after. ruamel is pure Python, so it raises rather than faulting — but
+    it raises wherever the interpreter's own stack happens to give out,
+    which is the incidental limit ``_MAX_YAML_DEPTH`` exists to replace.
+    Without both checks the two readers disagree about the same file: a
+    document a hundred levels deep was rejected by ``read_yaml`` and
+    accepted here, and an alias-built graph slipped past the prescan.
     """
     content = read_text(file_path)
     if content is None:
@@ -1191,6 +1193,16 @@ def read_yaml_commented(
     ry.preserve_quotes = True
     try:
         data = ry.load(content)
+        # The prescan bounds the depth the *source* spells out. Aliases
+        # build a graph deeper than the text does: a file of one-line
+        # entries, each referencing the anchor on the line before it,
+        # reaches any depth at all at a syntactic depth of two. Measuring
+        # the loaded graph as well is what ``safe_load_yaml`` already does
+        # after its own prescan, and the two readers have to agree about a
+        # file — without this one rule reported a ``.coderabbit.yaml`` too
+        # deep to parse while another, in the same run, was handed the
+        # 20,000-deep map it had built.
+        _reject_overly_nested(data)
         return data, None, None
     except _RuamelYAMLError as e:
         line = None

@@ -75,7 +75,8 @@ the lint tree, or `utils.py` read paths, save a baseline on main and compare on 
   it. A count cap is fine for fixed-small entries (`_RESOLVE_CACHE_MAX`,
   `_MAX_CACHED_PATTERNS`) when it sits well above the largest realistic
   workload — size it so no workload reaches it. A `Path` is not fixed-small:
-  manifests supply the strings, so `_RESOLVE_CACHE` is byte-budgeted too.
+  manifests supply the strings, so `_RESOLVE_CACHE` is byte-budgeted too —
+  and by `sys.getsizeof`, on the rule below, not by `len`.
 - **Charge a cache entry once, at admission, and credit back the stored
   number.** `len(text)` is not bytes — CPython stores one, two or four per
   character (PEP 393), so emoji retain 4x what `len` reports; use
@@ -147,10 +148,14 @@ tests against a local `http.server`.
 - **Always report line numbers** on every violation traceable to a specific line, except whole-file violations.
 - **Use `read_yaml_commented()`** (from `utils.py`) for YAML — never use
   `yaml.safe_load()`, `read_yaml()`, or a bare `CSafeLoader`. Raw text goes
-  through `safe_load_yaml()`, which bounds nesting *before* the document is
+  through `safe_load_yaml()`. **The nesting bound has two halves, and every
+  reader needs both.** Count collection-start events *before* the document is
   composed: libyaml recurses in C with no guard and segfaults on a deeply
-  nested file, so a check on the parsed object runs after the crash. Keep line numbers via the ruamel.yaml
-  objects `read_yaml_commented()` returns.
+  nested file, so a check on the parsed object runs after the crash. Then
+  measure the loaded graph, because aliases build depth the source never
+  spells out — a file of one-line entries each pointing at the anchor above
+  it is two levels deep as text and any depth at all as an object. Keep line
+  numbers via the ruamel.yaml objects `read_yaml_commented()` returns.
 - **Use `commented_key_line(node, key)` / `commented_item_line(node, index)`** to extract 1-based line numbers from ruamel data structures.
 - **Never fabricate line numbers** — if a field is missing, omit the line.
 - **Declare `repo_types`** to control when `enabled: auto` fires.

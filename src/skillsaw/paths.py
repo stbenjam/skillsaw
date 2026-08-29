@@ -9,6 +9,7 @@ manifest-supplied paths without aborting the lint.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Dict, Optional
 
@@ -57,15 +58,16 @@ def has_parent_traversal(path: str) -> bool:
 # caches (see ``skillsaw.utils``).
 _RESOLVE_CACHE: Dict[Path, Optional[Path]] = {}
 
-#: Bytes an entry is charged: both path strings plus the two ``Path``
-#: objects and dict slots holding them.
+#: Charged on top of what the two paths themselves measure, for the dict
+#: entry holding them: hash, key and value pointers, and the slack a hash
+#: table carries between resizes.
 _RESOLVE_ENTRY_OVERHEAD_BYTES = 256
 
 #: What the memo may retain. A count cap cannot express this bound, because
 #: a ``Path`` is not fixed-small: manifests supply path strings, and at the
 #: 4 KB a filesystem permits, a quarter-million of them measured 2.1 GB
 #: resident. The budget has to sit well above what a real repository needs —
-#: a large skill marketplace resolves ~20.5k distinct paths for ~9.6 MB
+#: a large skill marketplace resolves ~20.5k distinct paths for ~17.3 MB
 #: charged here — because every rule sweeps the same set, so a bound the
 #: repository can cross is a cliff rather than a limit.
 _RESOLVE_CACHE_BUDGET_BYTES = 64 * 1024 * 1024
@@ -75,6 +77,18 @@ _RESOLVE_CACHE_BUDGET_BYTES = 64 * 1024 * 1024
 #: that has not changed, so declining to remember costs time and nothing
 #: else. Evicting instead would be the cliff described above.
 _resolve_cache_bytes = 0
+
+
+def _path_cost(path: Path) -> int:
+    """Bytes *path* retains: its string, plus the ``Path`` holding it.
+
+    ``len()`` is a character count, not a byte count. CPython stores one,
+    two or four bytes per character (PEP 393), so a path of emoji retains
+    four times what ``len`` reports and one of CJK twice — and a manifest
+    chooses those characters, not this repository. The same correction the
+    file cache makes for cached text, for the same reason.
+    """
+    return sys.getsizeof(str(path)) + sys.getsizeof(path)
 
 
 def clear_resolve_cache() -> None:
@@ -112,11 +126,9 @@ def safe_resolve(path: Path) -> Optional[Path]:
     except (OSError, ValueError, RuntimeError):
         resolved = None
     global _resolve_cache_bytes
-    cost = (
-        len(str(path))
-        + (len(str(resolved)) if resolved is not None else 0)
-        + _RESOLVE_ENTRY_OVERHEAD_BYTES
-    )
+    cost = _RESOLVE_ENTRY_OVERHEAD_BYTES + _path_cost(path)
+    if resolved is not None:
+        cost += _path_cost(resolved)
     if _resolve_cache_bytes + cost <= _RESOLVE_CACHE_BUDGET_BYTES:
         _RESOLVE_CACHE[path] = resolved
         _resolve_cache_bytes += cost

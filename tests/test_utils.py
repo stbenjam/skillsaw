@@ -968,6 +968,33 @@ def test_both_yaml_readers_agree_about_one_file(offset, tmp_path):
     assert (plain_error is None) == (commented_error is None)
 
 
+def test_aliases_cannot_build_a_graph_deeper_than_the_source_reads(tmp_path):
+    """Depth in the text and depth in the object are different numbers.
+
+    The prescan counts what the source spells out. A file of one-line
+    entries, each referencing the anchor on the line before it, is two
+    levels deep as text and arbitrarily deep as a graph — so the loaded
+    object has to be measured too, exactly as `safe_load_yaml` measures
+    it after its own prescan. Without that the two readers split on one
+    file inside a single run: `coderabbit-yaml-valid` reported a
+    `.coderabbit.yaml` too deep to parse while the schema rule, reading
+    the same bytes, was handed the graph it had built.
+    """
+    from skillsaw.utils import _MAX_YAML_DEPTH, _TOO_DEEP, read_yaml, read_yaml_commented
+
+    depth = _MAX_YAML_DEPTH + 50
+    lines = ["l0: &a0 [x]"] + [f"l{index}: &a{index} [*a{index - 1}]" for index in range(1, depth)]
+    target = tmp_path / "aliased.yaml"
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    _, plain_error = read_yaml(target)
+    data, commented_error, _ = read_yaml_commented(target)
+
+    assert plain_error == _TOO_DEEP
+    assert commented_error == _TOO_DEEP
+    assert data is None
+
+
 @pytest.mark.parametrize(
     "source, expected",
     [
@@ -1120,6 +1147,40 @@ class TestFileCacheBudget:
         finally:
             paths._RESOLVE_CACHE_BUDGET_BYTES = budget
             paths.clear_resolve_cache()
+
+    def test_resolution_paths_are_charged_by_what_they_retain(self):
+        """``len()`` is a character count, not a byte count.
+
+        CPython stores one, two or four bytes per character (PEP 393), so
+        a manifest naming its directories in emoji retains four times
+        what a character count charges. This is the same correction the
+        file cache already makes for cached text, and it was missed when
+        the memo's count cap became a byte budget: two paths of equal
+        length and unequal weight were charged the same number.
+        """
+        from pathlib import Path
+
+        import skillsaw.paths as paths
+
+        # Equal character counts, unequal storage widths.
+        narrow = Path("/nonexistent/" + "a" * 500)
+        wide = Path("/nonexistent/" + "\U0001f600" * 500)
+        assert len(str(narrow)) == len(str(wide))
+
+        try:
+            paths.clear_resolve_cache()
+            paths.safe_resolve(narrow)
+            narrow_charge = paths._resolve_cache_bytes
+
+            paths.clear_resolve_cache()
+            paths.safe_resolve(wide)
+            wide_charge = paths._resolve_cache_bytes
+        finally:
+            paths.clear_resolve_cache()
+
+        # Four bytes per character against one, for the key and the
+        # resolved value alike. Charging by length makes these equal.
+        assert wide_charge > narrow_charge * 2
 
     def test_clearing_the_resolution_memo_resets_its_accounting(self):
         """Otherwise the budget is spent once and never recovered, and the
