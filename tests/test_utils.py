@@ -1408,6 +1408,48 @@ class TestFileCacheBudget:
         assert skillsaw_utils.read_text._store.get(bystander.resolve()) is not None
         skillsaw_utils.invalidate_read_caches()
 
+    def test_the_refusal_marker_evicts_like_any_other_entry(self, tmp_path):
+        """The marker is small, but it is not free.
+
+        It is charged, so a cache already at its budget has to make room
+        for it like anything else. If it were stored without going
+        through eviction the total would creep past the bound one
+        unsizeable file at a time -- and the marker exists precisely for
+        repositories with many of them.
+        """
+        cache = skillsaw_utils.FileCache(budget=4096)
+
+        @cache.cached
+        def small(path):
+            return "x" * 200
+
+        @cache.cached
+        def unsizeable(path):
+            return list(range(skillsaw_utils._SIZE_WALK_LIMIT + 10))
+
+        # Fill the cache to the point where an insert must evict.
+        for i in range(40):
+            small(tmp_path / f"small{i}.md")
+        assert cache._total_bytes <= cache._budget
+        filled = cache._total_bytes
+        assert filled > 0, "the fixture must actually fill the cache"
+
+        target = tmp_path / "huge.json"
+        assert len(unsizeable(target)) == skillsaw_utils._SIZE_WALK_LIMIT + 10
+
+        assert cache._total_bytes <= cache._budget, "the marker must not push it over"
+
+        stored = [
+            value
+            for store in cache._stores
+            for bucket in store.values()
+            for _cost, value in bucket.values()
+        ]
+        assert skillsaw_utils._UNSIZEABLE in stored, "the refusal was still recorded"
+
+        # And the recorded refusal still does its job after the eviction.
+        assert len(unsizeable(target)) == skillsaw_utils._SIZE_WALK_LIMIT + 10
+
     def test_a_value_too_large_to_size_is_walked_once_not_every_call(self, tmp_path):
         """Refusing to cache must not mean re-deciding on every call.
 
@@ -1545,6 +1587,32 @@ class TestFileCacheBudget:
         marker = skillsaw_utils._entry_cost(skillsaw_utils._UNSIZEABLE, resolved)
         assert cache._total_bytes == marker, "only the refusal is charged"
         assert cache._total_bytes < sys.getsizeof(huge), "never the value itself"
+
+    def test_an_object_that_refuses_to_be_sized_is_charged_the_flat_estimate(self):
+        """``sys.getsizeof`` runs attacker-influenced ``__sizeof__`` code.
+
+        A parsed document can carry an object whose ``__sizeof__`` raises
+        or returns a non-integer. Letting that escape would abort a lint
+        from inside cache accounting -- a read of the file is what asked
+        for the size, and the caller only wanted the file's contents.
+        """
+
+        class Hostile:
+            def __sizeof__(self):
+                raise TypeError("no size for you")
+
+        class Liar:
+            def __sizeof__(self):
+                return "not an integer"
+
+        for value in (Hostile(), Liar()):
+            size = skillsaw_utils._approximate_size(value)
+            assert size >= skillsaw_utils._NODE_OVERHEAD_BYTES, value
+            assert isinstance(size, int)
+
+        # And the same object nested inside a document still sizes.
+        nested = {"a": [Hostile(), {"b": Liar()}]}
+        assert skillsaw_utils._approximate_size(nested) > 0
 
     def test_a_scalar_is_charged_by_what_it_retains(self):
         """A scalar is not always small.
