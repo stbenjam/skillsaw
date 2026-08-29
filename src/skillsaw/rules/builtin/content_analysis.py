@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import signal
+import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -287,15 +288,49 @@ def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
 # guards; a dict keyed by the compiled pattern object is one identity
 # hash.
 #
-# An entry is a few short strings plus a reference to a pattern its owner
-# — a rule class body, or the config the pass is running under — holds
-# anyway. The builtin patterns are module constants and number in the low
-# hundreds; only config-supplied ones are compiled per run, so the cap is
-# a backstop for a long-lived process linting many differently-configured
-# repositories. It drops the oldest half rather than everything: a cap a
-# workload can cross must not be a cliff.
+# The builtin patterns are module constants and number in the low
+# hundreds, a few hundred bytes each; only config-supplied ones are
+# compiled per run, so the bound is a backstop for a long-lived process
+# linting many differently-configured repositories.
+#
+# Bytes, not a count. An entry is not fixed-small in either half: nothing
+# caps the length of a config-supplied pattern, and the dict is keyed by
+# the compiled pattern itself, so it keeps that pattern alive after the
+# config that compiled it is gone — it is the retainer, not a passenger on
+# one. A single 200,000-character pattern measures 3.4 MB compiled, so a
+# count cap of 20,000 bounded this at gigabytes. ``sys.getsizeof`` on a
+# compiled pattern does scale with its code array, so the charge is a
+# direct measurement rather than an estimate.
+#
+# Over budget it drops the oldest half rather than everything: a bound a
+# workload can cross must not be a cliff. Accounting sits in the miss
+# branch only — the lookup stays one identity hash, which is the whole
+# point of the dict.
 _LITERALS_BY_PATTERN: Dict[re.Pattern, Tuple[str, ...]] = {}
-_MAX_CACHED_PATTERNS = 20_000
+_LITERALS_CACHE_BUDGET_BYTES = 8 * 1024 * 1024
+_literals_cache_bytes = 0
+
+#: What each entry costs, charged at admission and credited back verbatim
+#: on eviction. A parallel dict rather than a second slot in the value:
+#: the value is read on the hot path and the cost only in the miss branch,
+#: so pairing them would put a tuple index in front of every lookup.
+_LITERALS_COSTS: Dict[re.Pattern, int] = {}
+
+#: Charged on top of what the pattern and its literals measure, for the
+#: two dict entries — value and cost — and the hash-table slack behind
+#: them.
+_LITERALS_ENTRY_OVERHEAD_BYTES = 256
+
+
+def _literals_entry_cost(pattern: "re.Pattern", literals: Tuple[str, ...]) -> int:
+    """What one ``_LITERALS_BY_PATTERN`` entry retains, in bytes."""
+    return (
+        _LITERALS_ENTRY_OVERHEAD_BYTES
+        + sys.getsizeof(pattern)
+        + sys.getsizeof(pattern.pattern)
+        + sys.getsizeof(literals)
+        + sum(sys.getsizeof(literal) for literal in literals)
+    )
 
 
 # ``str.lower`` is not the fold ``re.IGNORECASE`` uses, and ``str.casefold``
@@ -330,11 +365,24 @@ def _pattern_literals(pattern: re.Pattern) -> Tuple[str, ...]:
     """Literals every match of *pattern* must contain (see `_required_literals`)."""
     literals = _LITERALS_BY_PATTERN.get(pattern)
     if literals is None:
+        global _literals_cache_bytes
         literals = _required_literals(pattern.pattern, pattern.flags)
-        if len(_LITERALS_BY_PATTERN) >= _MAX_CACHED_PATTERNS:
-            for stale in list(_LITERALS_BY_PATTERN)[: _MAX_CACHED_PATTERNS // 2]:
+        cost = _literals_entry_cost(pattern, literals)
+        if cost > _LITERALS_CACHE_BUDGET_BYTES:
+            # Remembering it would evict everything else and still not
+            # fit. Recomputing costs time; retaining it costs the budget.
+            return literals
+        while _LITERALS_BY_PATTERN and _literals_cache_bytes + cost > _LITERALS_CACHE_BUDGET_BYTES:
+            # Halves, not everything: a bound a workload can cross must
+            # not be a cliff. Repeated because entries are not uniform —
+            # dropping half of a memo holding one large pattern and many
+            # small ones need not free enough for the next one.
+            for stale in list(_LITERALS_BY_PATTERN)[: len(_LITERALS_BY_PATTERN) // 2 or 1]:
+                _literals_cache_bytes -= _LITERALS_COSTS.pop(stale)
                 del _LITERALS_BY_PATTERN[stale]
         _LITERALS_BY_PATTERN[pattern] = literals
+        _LITERALS_COSTS[pattern] = cost
+        _literals_cache_bytes += cost
     return literals
 
 

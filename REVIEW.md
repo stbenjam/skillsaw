@@ -60,7 +60,7 @@ Review every change against these surfaces: skillsaw reads untrusted repo conten
 ### Untrusted input: regex, deserialization, paths
 
 - Check **unbounded regex from config or file content (ReDoS, T13)**: any new place that compiles a repo- or config-supplied pattern and runs it against file content must run under the per-pattern wall-clock budget (`regex-timeout`, `SIGALRM`). Flag catastrophic-backtracking-prone patterns and any regex over untrusted input without a timeout.
-- Check **unsafe YAML or deserialization (T5)**: config and rule parsing must use `yaml.safe_load` / `YAML(typ='safe')` (or ruamel round-trip). Flag any `yaml.load` without a safe loader, `pickle`, `eval`, `exec`, or `__reduce__`-style deserialization on untrusted input.
+- Check **unsafe YAML or deserialization (T5)**: config and rule parsing must go through the bounded readers — `safe_load_yaml()` for raw text, `read_yaml_commented()` when line numbers are wanted, `roundtrip_yaml()` in a write path. A bare `yaml.safe_load` or `YAML(typ='safe')` is *not* enough: neither applies the pre-compose event bound that keeps libyaml from recursing in C past its stack, nor the post-load graph bound that catches depth built out of aliases. Flag any `yaml.load` without a safe loader, any bare `YAML()`, `pickle`, `eval`, `exec`, or `__reduce__`-style deserialization on untrusted input.
 - Check **path traversal (T6)**: confine any path derived from repo-controlled input (marketplace `source`, config paths) to the repo root (`candidate.relative_to(self.root_path)` or equivalent) before reading. Flag path joins from untrusted fields that skip that check.
 
 ### CI gate, secrets, and supply chain

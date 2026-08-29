@@ -1141,10 +1141,20 @@ def test_documents_only_libyaml_accepts_now_parse(source):
     parses here. Both YAML 1.1 and 1.2 permit it outside indentation.
 
     Pinned so the accepted set is characterized in both directions
-    rather than asserted in one. These shapes are what has been
-    measured, not a proof of the boundary: the class is "documents
-    PyYAML's own scanner is stricter than the spec about", and it is
-    wider than this list.
+    rather than asserted in one. The class is "documents PyYAML's
+    scanner rejects and libyaml accepts", which is not the same as
+    "documents PyYAML is stricter than the spec about" — the parameters
+    divide into both. The tab forms and the flow-collection ``?`` are
+    spec-valid, so there libyaml is right and PyYAML is the stricter
+    outlier. ``a: |#`` is not: a comment must be preceded by
+    whitespace, so that document is malformed and libyaml is the lax
+    one. It is pinned here because the effect on a user is identical
+    either way — the file stops reporting a parse error and starts
+    being linted — but a reader deciding whether to fix the file or
+    baseline it needs the difference, so ``docs/baseline.md`` keeps it.
+
+    These shapes are what has been measured, not a proof of the
+    boundary; the class is wider than this list.
     """
     from skillsaw.utils import safe_load_yaml
 
@@ -1373,6 +1383,49 @@ class TestFileCacheBudget:
         finally:
             paths._RESOLVE_CACHE_BUDGET_BYTES = budget
             paths.clear_resolve_cache()
+
+    def test_a_relative_path_is_never_memoized(self, tmp_path):
+        """The memo key does not say which directory it resolved under.
+
+        ``safe_resolve`` is reachable from public entry points that take a
+        caller-supplied path and never build a context —
+        ``init_marketplace(path=...)`` and the component-add helpers — so a
+        library embedding skillsaw can hand it ``Path("repo")`` from one
+        working directory and then from another. Keyed on the path alone,
+        the second call answers with the first directory's repository, and
+        the caller inspects or writes the wrong tree.
+
+        Absolute paths stay memoized: they are 4,636 of the 4,637
+        resolutions a self-lint performs.
+        """
+        import os
+        from pathlib import Path
+
+        import skillsaw.paths as paths
+
+        first_dir = tmp_path / "first"
+        second_dir = tmp_path / "second"
+        (first_dir / "repo").mkdir(parents=True)
+        (second_dir / "repo").mkdir(parents=True)
+
+        paths.clear_resolve_cache()
+        origin = os.getcwd()
+        try:
+            os.chdir(first_dir)
+            first = paths.safe_resolve(Path("repo"))
+            os.chdir(second_dir)
+            second = paths.safe_resolve(Path("repo"))
+        finally:
+            os.chdir(origin)
+
+        assert first == (first_dir / "repo").resolve()
+        assert second == (second_dir / "repo").resolve()
+        assert not any(key.is_absolute() is False for key in paths._RESOLVE_CACHE)
+
+        absolute = (second_dir / "repo").resolve()
+        paths.safe_resolve(absolute)
+        assert absolute in paths._RESOLVE_CACHE, "absolute paths must still be memoized"
+        paths.clear_resolve_cache()
 
     def test_resolution_paths_are_charged_by_what_they_retain(self):
         """``len()`` is a character count, not a byte count.

@@ -184,6 +184,85 @@ class TestPatternsMatchingAnywhere:
         assert patterns_matching_anywhere("xxxx", patterns) == []
 
 
+class TestPatternLiteralCacheBudget:
+    """The literals memo retains the patterns it is keyed by."""
+
+    def _reset(self):
+        import skillsaw.rules.builtin.content_analysis as ca
+
+        ca._LITERALS_BY_PATTERN.clear()
+        ca._LITERALS_COSTS.clear()
+        ca._literals_cache_bytes = 0
+
+    def test_a_long_config_pattern_is_charged_what_it_retains(self):
+        """Not a fixed-small entry, so not boundable by a count.
+
+        Nothing caps the length of a config-supplied banned pattern, and
+        the memo is keyed by the compiled pattern — so it is what keeps
+        that pattern alive once the config that compiled it is gone. A
+        count cap high enough to never evict a real workload would let
+        a sequence of such configs retain gigabytes.
+        """
+        import skillsaw.rules.builtin.content_analysis as ca
+
+        self._reset()
+        try:
+            small = re.compile(r"\bfoo bar baz\b")
+            ca._pattern_literals(small)
+            after_small = ca._literals_cache_bytes
+
+            large = re.compile("x" * 200_000)
+            ca._pattern_literals(large)
+            charged = ca._literals_cache_bytes - after_small
+
+            assert after_small < 4096, "a short pattern must stay cheap"
+            assert charged > 1_000_000, (
+                "the compiled pattern is the bulk of what the entry retains "
+                "and must be charged, not just its literals"
+            )
+        finally:
+            self._reset()
+
+    def test_the_budget_stops_unbounded_growth(self):
+        import skillsaw.rules.builtin.content_analysis as ca
+
+        self._reset()
+        budget = ca._LITERALS_CACHE_BUDGET_BYTES
+        try:
+            ca._LITERALS_CACHE_BUDGET_BYTES = 64 * 1024
+            for index in range(400):
+                ca._pattern_literals(re.compile(f"alpha{index}beta" + "z" * 200))
+
+            assert ca._literals_cache_bytes <= 64 * 1024
+            assert len(ca._LITERALS_BY_PATTERN) < 400, "the budget never evicted"
+            assert len(ca._LITERALS_COSTS) == len(ca._LITERALS_BY_PATTERN)
+            assert ca._literals_cache_bytes == sum(
+                ca._LITERALS_COSTS.values()
+            ), "eviction must credit back the number charged at admission"
+        finally:
+            ca._LITERALS_CACHE_BUDGET_BYTES = budget
+            self._reset()
+
+    def test_an_entry_larger_than_the_budget_is_never_stored(self):
+        import skillsaw.rules.builtin.content_analysis as ca
+
+        self._reset()
+        budget = ca._LITERALS_CACHE_BUDGET_BYTES
+        try:
+            ca._LITERALS_CACHE_BUDGET_BYTES = 4096
+            oversized = re.compile("y" * 100_000)
+
+            assert ca._pattern_literals(oversized) == ca._required_literals(
+                oversized.pattern, oversized.flags
+            ), "refusing to remember must not change the answer"
+            assert oversized not in ca._LITERALS_BY_PATTERN
+            assert ca._literals_cache_bytes == 0
+            assert not ca._LITERALS_COSTS
+        finally:
+            ca._LITERALS_CACHE_BUDGET_BYTES = budget
+            self._reset()
+
+
 class TestFastTopLevelKeyLines:
     def test_simple_mapping(self):
         result = _fast_top_level_key_lines("name: x\ndescription: y\n")

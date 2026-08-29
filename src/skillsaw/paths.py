@@ -49,6 +49,21 @@ def has_parent_traversal(path: str) -> bool:
 
 # Resolution memo, shared by every ``safe_resolve`` caller.
 #
+# Absolute paths only. A relative path names a different file after a
+# ``chdir``, and the key does not say which directory the answer was
+# resolved under — so a library embedding skillsaw, which reaches
+# ``safe_resolve`` through the public ``init_marketplace(path=...)`` and
+# component-add helpers without ever building a context, would get the
+# first working directory's repository back for the second one's path.
+# Skipping the memo there rather than widening the key keeps the lookup a
+# single dict ``get``: reading ``Path.cwd()`` per call to build a keyable
+# absolute form costs a syscall on the hot path to serve one caller per
+# run. A self-lint resolves 4,636 absolute paths and one relative one —
+# the root the CLI was handed, which it resolves before joining anything
+# onto it, so every path derived from it is absolute and still memoized.
+# Since no relative path is stored, none can be answered from here, and
+# the check that keeps them out sits in the miss branch.
+#
 # ``Path.resolve()`` lstats every component of every path it is handed, and
 # skillsaw resolves the same handful of directory chains thousands of times
 # per run: once per cached file read (``FileCache`` keys on the resolved
@@ -193,7 +208,8 @@ def resolve_generation() -> int:
 def safe_resolve(path: Path) -> Optional[Path]:
     """``path.resolve()``, or ``None`` when the path cannot be resolved.
 
-    Memoized for the lifetime of one lint pass; see ``_RESOLVE_CACHE``.
+    Memoized for the lifetime of one lint pass, absolute paths only; see
+    ``_RESOLVE_CACHE``.
 
     Discovery runs while ``RepositoryContext`` is being constructed, before
     any rule can report anything, and it resolves strings taken straight
@@ -213,6 +229,11 @@ def safe_resolve(path: Path) -> Optional[Path]:
         resolved: Optional[Path] = path.resolve()
     except (OSError, ValueError, RuntimeError):
         resolved = None
+    if not path.is_absolute():
+        # Tested here rather than ahead of the lookup: no relative path is
+        # ever stored, so its lookup always misses anyway, and the check
+        # stays off the path every cache hit takes.
+        return resolved
     global _resolve_cache_bytes
     cost = _RESOLVE_ENTRY_OVERHEAD_BYTES + _path_cost(path)
     if resolved is not None:
