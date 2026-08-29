@@ -57,8 +57,11 @@ hedge (see Sync notes).
 - `src/skillsaw/rules/builtin/codex/`: `codex-plugin-json-valid`,
   `codex-plugin-structure`, `codex-marketplace-json-valid`,
   `codex-marketplace-registration`, `codex-openai-metadata`.
-- Detection — `src/skillsaw/context.py` (`RepositoryType.CODEX_PLUGIN`,
-  `RepositoryType.CODEX_MARKETPLACE`, `_discover_codex_plugins`,
+- Repository types — `src/skillsaw/repo_type.py` defines the
+  `RepositoryType` enum (`CODEX_PLUGIN`, `CODEX_MARKETPLACE`); add a
+  member there. `src/skillsaw/context.py` re-exports the name, so an
+  edit made there works and is still in the wrong file.
+- Detection — `src/skillsaw/context.py` (`_discover_codex_plugins`,
   `_discover_codex_marketplaces`); the state-free discovery walks live
   in `src/skillsaw/discovery/codex.py`.
 - Lint tree nodes — `src/skillsaw/lint_target.py` (`CodexPluginNode`, the

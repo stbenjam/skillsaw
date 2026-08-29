@@ -178,6 +178,18 @@ def path_within_roots(path: Path, roots: AbstractSet[Path]) -> bool:
     return path in roots or any(parent in roots for parent in path.parents)
 
 
+def resolve_generation() -> int:
+    """The memo's current generation, for a cache keyed on its answers.
+
+    ``FileCache`` keys entries on resolved paths, so a read that spans a
+    clear resolved under one filesystem and is admitted under another.
+    Its own generation cannot see that: the two are bumped by separate
+    statements, and a reader finishing between them passes a check
+    against the one that has not moved yet.
+    """
+    return _resolve_generation
+
+
 def safe_resolve(path: Path) -> Optional[Path]:
     """``path.resolve()``, or ``None`` when the path cannot be resolved.
 

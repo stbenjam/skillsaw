@@ -1633,6 +1633,53 @@ class TestFileCacheBudget:
         # And the recorded refusal still does its job after the eviction.
         assert len(unsizeable(target)) == skillsaw_utils._SIZE_WALK_LIMIT + 10
 
+    def test_a_read_spanning_either_half_of_an_identity_change_is_refused(self, tmp_path):
+        """``invalidate_path_identity`` is two statements, not one.
+
+        It drops the resolution memo and then bumps the file cache's
+        generation. A reader that resolves before the first and admits
+        between them passes a check against the counter that has not
+        moved yet — and files the *new* target's bytes under the *old*
+        target's resolved key, where a later direct read finds them.
+
+        Reproduced deterministically by releasing the reader inside that
+        window rather than by racing threads.
+        """
+        import skillsaw.paths as paths
+
+        old_target = tmp_path / "old.txt"
+        new_target = tmp_path / "new.txt"
+        old_target.write_text("OLD", encoding="utf-8")
+        new_target.write_text("NEW", encoding="utf-8")
+        link = tmp_path / "link.txt"
+        link.symlink_to(old_target)
+
+        real_resolve = skillsaw_utils.safe_resolve
+
+        def resolve_then_retarget(path):
+            resolved = real_resolve(path)
+            if path == link:
+                # The window: the link moves and the memo is dropped, but
+                # the file cache has not been told yet.
+                link.unlink()
+                link.symlink_to(new_target)
+                paths.clear_resolve_cache()
+            return resolved
+
+        skillsaw_utils.safe_resolve = resolve_then_retarget
+        try:
+            assert skillsaw_utils.read_text(link) == "NEW"
+            # Asserted before any teardown: clearing the cache first would
+            # make an empty store prove nothing.
+            stale = skillsaw_utils.read_text._store.get(old_target.resolve())
+        finally:
+            skillsaw_utils.safe_resolve = real_resolve
+            skillsaw_utils.invalidate_read_caches()
+
+        # Whatever the reader was handed, nothing may be filed under the
+        # resolution that was declared stale mid-read.
+        assert stale is None, stale
+
     def test_the_lost_race_never_hands_back_the_refusal_marker(self, tmp_path):
         """The store's other value-returning exit needs the same guard.
 

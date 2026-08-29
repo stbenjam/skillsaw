@@ -15,7 +15,13 @@ import yaml
 from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
-from skillsaw.paths import _path_cost, clear_resolve_cache, safe_is_symlink, safe_resolve
+from skillsaw.paths import (
+    _path_cost,
+    clear_resolve_cache,
+    resolve_generation,
+    safe_is_symlink,
+    safe_resolve,
+)
 
 
 def _atomic_destination(path: Path, root: Path) -> Tuple[Path, Path]:
@@ -588,6 +594,12 @@ class FileCache:
             # landed in between — and a symlink retargeted in that window
             # gets the new target's bytes filed under the old target's key.
             generation = self._generation
+            # And the memo's, because this cache is keyed on its answers.
+            # The two are bumped by separate statements, so a read that
+            # straddles either one resolved under one filesystem and would
+            # be admitted under another: checking only this cache's own
+            # counter passes a reader that finished between them.
+            resolved_generation = resolve_generation()
             # The first positional arg is always the file path.
             file_path = args[0] if args else None
             try:
@@ -629,7 +641,10 @@ class FileCache:
                     # this; the refusal is simply not remembered there.
                     return result
                 with self._lock:
-                    if self._generation == generation:
+                    if (
+                        self._generation == generation
+                        and resolve_generation() == resolved_generation
+                    ):
                         bucket = store.get(resolved)
                         if bucket is None or sub_key not in bucket:
                             if self._total_bytes + marker > self._budget:
@@ -645,7 +660,7 @@ class FileCache:
                 # cost one bounded walk, not an abandoned one.
                 return result
             with self._lock:
-                if self._generation != generation:
+                if self._generation != generation or resolve_generation() != resolved_generation:
                     # Invalidated while this read was in flight, so the
                     # value describes the filesystem from before the
                     # change. Hand it to this caller — it is the answer
@@ -782,7 +797,9 @@ def invalidate_path_identity() -> None:
     The generation is bumped rather than the cache cleared because the
     entries themselves are still good — a retargeted link does not change
     what the file it used to point at contains. Only admissions racing the
-    change are refused.
+    change are refused, and a reader checks both counters precisely
+    because these two statements are not one: one finishing between them
+    would otherwise pass a check against whichever has not moved yet.
 
     This is the entry point for a caller that knows the shape of the tree
     moved but not that any file's *content* did; :func:`invalidate_read_caches`
