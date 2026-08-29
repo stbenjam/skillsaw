@@ -135,7 +135,15 @@ class TestMcpRegistrySchemaRule:
 
         assert lint_rules(repo, VALID_RULE) == []
 
-    @pytest.mark.parametrize("src", ["http://example.com/icon.png", "file:/tmp/icon.png"])
+    @pytest.mark.parametrize(
+        "src",
+        [
+            "http://example.com/icon.png",
+            "file:/tmp/icon.png",
+            "https:icon.png",
+            "https:/icon.png",
+        ],
+    )
     def test_icon_sources_must_use_https(self, tmp_path, src):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
@@ -367,7 +375,10 @@ class TestMcpRegistrySchemaRule:
         assert "$.packages[4]" not in summary
         assert "and 6 more schema errors" in summary
 
-    @pytest.mark.parametrize("version", [">=1.0.0 <2.0.0", "^1.0.0 || ^2.0.0", "*"])
+    @pytest.mark.parametrize(
+        "version",
+        [">=1.0.0 <2.0.0", "^1.0.0 || ^2.0.0", "1.x || 2.x", "1.2.* || >=2.0.0", "*"],
+    )
     def test_package_compound_comparator_range_is_an_error(self, tmp_path, version):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
@@ -377,6 +388,26 @@ class TestMcpRegistrySchemaRule:
         findings = lint_rules(repo, VALID_RULE)
 
         assert any("packages[0].version" in message for message in messages_lower(findings))
+
+    @pytest.mark.parametrize("version", ["1.2", "next"])
+    def test_npm_package_version_must_be_an_exact_semver(self, tmp_path, version):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["version"] = version
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("packages[0].version" in message for message in messages_lower(findings))
+
+    def test_non_npm_package_may_use_a_format_specific_exact_version(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["registryType"] = "pypi"
+        data["packages"][0]["version"] = "2026.8"
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
 
     def test_repeated_semantic_defects_are_aggregated_per_category(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
@@ -517,27 +548,19 @@ class TestMcpRegistryNpmNameRule:
         assert findings[0].file_path == package_path
         assert "mcpname" in findings[0].message.lower()
 
-    def test_invalid_adjacent_package_json_is_reported(self, tmp_path):
+    def test_invalid_adjacent_package_without_identity_is_ignored(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         package_path = repo / "package.json"
         package_path.write_text('{"name": ', encoding="utf-8")
 
-        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+        assert lint_rules(repo, NPM_NAME_RULE) == []
 
-        assert len(findings) == 1
-        assert findings[0].file_path == package_path
-        assert "cannot be verified" in findings[0].message.lower()
-
-    def test_non_object_adjacent_package_json_is_reported(self, tmp_path):
+    def test_non_object_adjacent_package_without_identity_is_ignored(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         package_path = repo / "package.json"
         package_path.write_text("[]", encoding="utf-8")
 
-        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
-
-        assert len(findings) == 1
-        assert findings[0].file_path == package_path
-        assert "json object" in findings[0].message.lower()
+        assert lint_rules(repo, NPM_NAME_RULE) == []
 
     def test_external_npm_package_without_local_manifest_is_quiet(self, tmp_path):
         server = {

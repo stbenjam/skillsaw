@@ -10,9 +10,11 @@ for a local `package.json` whose `name` matches the package `identifier`. When
 the Registry entry declares `version`, the local manifest's `version` must
 also match exactly before the rule treats it as that published release. It
 supports a package beside `server.json` and packages elsewhere in a monorepo.
-The matching local manifest must:
+Only a valid JSON-object manifest can supply package name/version identity;
+adjacency alone is not enough, so a malformed or non-object `package.json`
+whose identity cannot be established remains out of scope. The matching local
+manifest must:
 
-- be valid strict JSON;
 - declare a string-valued `mcpName`; and
 - set `mcpName` to the exact `server.json` `name`, including case.
 

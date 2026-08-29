@@ -32,10 +32,9 @@ class McpRegistryNpmNameMatchRule(Rule):
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        by_name, by_directory = self._package_index(context)
+        by_name = self._package_index(context)
         violations: List[RuleViolation] = []
         checked: set[Tuple[Path, str, str]] = set()
-        unverifiable: set[Path] = set()
         for block in context.lint_tree.find(McpRegistryServerBlock):
             if block.parse_error or block.raw_data is None:
                 continue
@@ -59,50 +58,14 @@ class McpRegistryNpmNameMatchRule(Rule):
                         and manifest.raw_data.get("version") == package_version
                     )
                 ]
-                adjacent = by_directory.get(block.path.parent)
-                if (
-                    not candidates
-                    and adjacent is not None
-                    and (adjacent.parse_error is not None or adjacent.raw_data is None)
-                ):
-                    candidates = [adjacent]
                 for manifest in candidates:
                     manifest_path = manifest.path
                     data = manifest.raw_data
-                    error = manifest.parse_error
                     key = (manifest_path, identifier, server_name)
                     if key in checked:
                         continue
                     checked.add(key)
-                    if error is not None:
-                        if manifest_path in unverifiable:
-                            continue
-                        unverifiable.add(manifest_path)
-                        violations.append(
-                            self.violation(
-                                "Local npm package.json is invalid JSON, so its "
-                                "mcpName cannot be verified",
-                                file_path=manifest_path,
-                                fingerprint_discriminator=(
-                                    f"npm:{stable_key(identifier)}:invalid-json"
-                                ),
-                            )
-                        )
-                        continue
                     if not isinstance(data, dict):
-                        if manifest_path in unverifiable:
-                            continue
-                        unverifiable.add(manifest_path)
-                        violations.append(
-                            self.violation(
-                                "Local npm package.json must contain a JSON object "
-                                "so its mcpName can be verified",
-                                file_path=manifest_path,
-                                fingerprint_discriminator=(
-                                    f"npm:{stable_key(identifier)}:not-object"
-                                ),
-                            )
-                        )
                         continue
                     mcp_name = data.get("mcpName")
                     if mcp_name is None:
@@ -133,17 +96,12 @@ class McpRegistryNpmNameMatchRule(Rule):
     @staticmethod
     def _package_index(
         context: RepositoryContext,
-    ) -> tuple[
-        Dict[str, List[McpRegistryNpmPackageBlock]],
-        Dict[Path, McpRegistryNpmPackageBlock],
-    ]:
+    ) -> Dict[str, List[McpRegistryNpmPackageBlock]]:
         """Index typed local package-manifest targets by npm name."""
         by_name: Dict[str, List[McpRegistryNpmPackageBlock]] = {}
-        by_directory: Dict[Path, McpRegistryNpmPackageBlock] = {}
         for manifest in context.lint_tree.find(McpRegistryNpmPackageBlock):
             data = manifest.raw_data
-            by_directory[manifest.path.parent] = manifest
             package_name = data.get("name") if isinstance(data, dict) else None
             if isinstance(package_name, str):
                 by_name.setdefault(package_name, []).append(manifest)
-        return by_name, by_directory
+        return by_name

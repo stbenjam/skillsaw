@@ -14,6 +14,8 @@ and the Registry's semantic publishing constraints.
   ASCII letter or digit.
 - Top-level and package versions identify one exact release rather than
   `latest`, a comparator, a wildcard, an OR expression, or a hyphen range.
+- npm package versions use strict SemVer; other package registries may use
+  their own format-specific exact-version syntax.
 - Package transports are `stdio`, `streamable-http`, or `sse`. Remote
   transports are `streamable-http` or `sse`.
 - MCPB packages declare the required `fileSha256` integrity hash.

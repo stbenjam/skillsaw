@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import List, Optional
+from urllib.parse import urlsplit
 
 from skillsaw.blocks import McpRegistryServerBlock
 from skillsaw.context import RepositoryContext
@@ -17,6 +18,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import (
     MCP_REGISTRY_REPO_TYPES,
+    SEMVER,
     is_version_range,
     registry_validator,
     schema_error_summary,
@@ -25,7 +27,6 @@ from ._helpers import (
 _DNS_LABEL = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
 _SERVER_NAME = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z")
 _CLEAN_SUBFOLDER = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
-_HTTPS_URI = re.compile(r"\Ahttps:", re.IGNORECASE)
 _PACKAGE_TRANSPORTS = frozenset({"stdio", "streamable-http", "sse"})
 _REMOTE_TRANSPORTS = frozenset({"streamable-http", "sse"})
 _SEMANTIC_SAMPLE_LIMIT = 4
@@ -56,6 +57,15 @@ def _is_clean_relative_subfolder(value: str) -> bool:
     if value.startswith("/") or value.endswith("/") or _CLEAN_SUBFOLDER.fullmatch(value) is None:
         return False
     return all(segment not in {"", ".", ".."} for segment in value.split("/"))
+
+
+def _is_https_url(value: str) -> bool:
+    """Require the network authority implied by the schema's HTTPS URL contract."""
+    try:
+        parsed = urlsplit(value)
+        return parsed.scheme.lower() == "https" and parsed.hostname is not None
+    except ValueError:
+        return False
 
 
 def _mapping_item(data: dict, key: str, index: object) -> Optional[dict]:
@@ -261,7 +271,10 @@ class McpRegistryServerJsonValidRule(Rule):
                 if isinstance(transport_type, str) and transport_type not in _PACKAGE_TRANSPORTS:
                     record_semantic("package-transport", index)
                 package_version = package.get("version")
-                if isinstance(package_version, str) and is_version_range(package_version):
+                if isinstance(package_version, str) and (
+                    is_version_range(package_version)
+                    or (registry_type == "npm" and SEMVER.fullmatch(package_version) is None)
+                ):
                     record_semantic("package-version", index)
                 if registry_type == "mcpb" and "fileSha256" not in package:
                     record_semantic("mcpb-hash", index)
@@ -279,7 +292,7 @@ class McpRegistryServerJsonValidRule(Rule):
         if isinstance(icons, list):
             for index, icon in enumerate(icons):
                 src = icon.get("src") if isinstance(icon, dict) else None
-                if isinstance(src, str) and _HTTPS_URI.match(src) is None:
+                if isinstance(src, str) and not _is_https_url(src):
                     record_semantic("icon-src", index)
 
         repository = data.get("repository")
