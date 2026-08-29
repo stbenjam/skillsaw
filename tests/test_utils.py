@@ -1141,7 +1141,11 @@ class TestFileCacheBudget:
         file-text cache — the largest, and the one the parsed documents
         in the other stores are derived from.
         """
-        cache = skillsaw_utils.FileCache(budget=2000)
+        # Sized from what an entry actually costs rather than a bare
+        # number: the charge includes the key, so a fixed budget silently
+        # stops holding two entries the moment tmp_path gets longer.
+        entry = skillsaw_utils._entry_cost("t" * 100, tmp_path / "f0.txt")
+        cache = skillsaw_utils.FileCache(budget=entry * 8)
 
         @cache.cached
         def text_reader(path):
@@ -1221,6 +1225,73 @@ class TestFileCacheBudget:
         # Four bytes per character against one, for the key and the
         # resolved value alike. Charging by length makes these equal.
         assert wide_charge > narrow_charge * 2
+
+    def test_a_long_key_costs_more_than_a_short_one(self, tmp_path):
+        """The key is variable, so a constant cannot stand in for it.
+
+        ``_ENTRY_OVERHEAD_BYTES`` was tuned against an ordinary repository
+        path, where it is almost exactly right. Manifests supply the
+        strings, though, and a 4 KB path retains twelve times it — the
+        same "a ``Path`` is not fixed-small" rule this branch wrote for
+        the resolution memo, applied to the cache beside it.
+        """
+        short = tmp_path / "a.md"
+        long = tmp_path / ("/".join("d" * 60 for _ in range(60)) + "/a.md")
+
+        value = "x" * 100
+        short_cost = skillsaw_utils._entry_cost(value, short)
+        long_cost = skillsaw_utils._entry_cost(value, long)
+
+        # Same value, same machinery; only the key differs.
+        assert long_cost > short_cost + 3000, (short_cost, long_cost)
+        # And a keyless call still charges value plus machinery.
+        assert skillsaw_utils._entry_cost(value) < short_cost
+
+    def test_a_clear_during_a_resolution_is_not_undone_by_it(self, tmp_path):
+        """The sibling of the ``FileCache`` generation check.
+
+        ``Path.resolve()`` runs outside the lock, so a clear can land
+        between the syscall and the insert. Without a generation the
+        pre-change target is written in after the drop meant to remove
+        it, and every later containment check and cached read is handed a
+        target the filesystem no longer has.
+        """
+        from pathlib import Path
+
+        import skillsaw.paths as paths
+
+        old = tmp_path / "old"
+        new = tmp_path / "new"
+        old.mkdir()
+        new.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(old)
+
+        paths.clear_resolve_cache()
+        real_resolve = Path.resolve
+        armed = [True]
+
+        def resolve_then_clear(self, *args, **kwargs):
+            resolved = real_resolve(self, *args, **kwargs)
+            if armed[0] and self == link:
+                armed[0] = False
+                link.unlink()
+                link.symlink_to(new)
+                paths.clear_resolve_cache()
+            return resolved
+
+        Path.resolve = resolve_then_clear
+        try:
+            # The caller still gets the answer it asked for...
+            assert paths.safe_resolve(link) == old.resolve()
+        finally:
+            Path.resolve = real_resolve
+
+        # ...but it must not outlive the clear that overtook it.
+        assert link not in paths._RESOLVE_CACHE
+        assert paths._resolve_cache_bytes == 0
+        assert paths.safe_resolve(link) == new.resolve()
+        paths.clear_resolve_cache()
 
     def test_clearing_the_resolution_memo_resets_its_accounting(self):
         """Otherwise the budget is spent once and never recovered, and the

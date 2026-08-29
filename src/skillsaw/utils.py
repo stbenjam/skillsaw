@@ -15,7 +15,7 @@ import yaml
 from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
-from skillsaw.paths import clear_resolve_cache, safe_is_symlink, safe_resolve
+from skillsaw.paths import _path_cost, clear_resolve_cache, safe_is_symlink, safe_resolve
 
 
 def _atomic_destination(path: Path, root: Path) -> Tuple[Path, Path]:
@@ -332,14 +332,17 @@ _SIZE_WALK_LIMIT = 20_000
 #: above it, and then charged wrongly for as long as it stayed.
 UNCACHEABLE_SIZE = -1
 
-#: Charged on top of every entry's value, for the machinery that holds it:
-#: a resolved ``Path`` key and the string inside it, the per-path bucket
-#: dict, the sub-key tuple, and a slot in each of the two dicts. That runs
-#: to over 500 bytes even for a short path, against which an empty
-#: ``read_text`` result charged by its value alone costs one byte. Without
-#: it a repository of many small files is bounded by nothing: 20,000 empty
-#: entries charge 20 KB against a budget in the tens of megabytes while
-#: really holding 11 MiB.
+#: Charged on top of every entry's value and its key, for the machinery
+#: between them: the per-path bucket dict, the sub-key tuple, and a slot in
+#: each of the two dicts. Without it a repository of many small files is
+#: bounded by nothing — 20,000 empty ``read_text`` results charge 20 KB
+#: against a budget in the tens of megabytes while really holding 11 MiB.
+#:
+#: The key is measured rather than folded in here. This constant used to
+#: stand in for it too, at a value tuned to an ordinary repository path;
+#: but manifests supply the strings, and by this branch's own rule a
+#: ``Path`` is not fixed-small. A 4 KB path retains 12x this, and one of
+#: 400 short components 29x.
 _ENTRY_OVERHEAD_BYTES = 512
 
 
@@ -446,19 +449,27 @@ def _approximate_size(value: Any) -> int:
     return total or 1
 
 
-def _entry_cost(value: Any) -> int:
-    """What one cache entry costs — its value plus the entry holding it.
+def _entry_cost(value: Any, key: Any = None) -> int:
+    """What one cache entry costs — its value, its key, and the machinery.
 
     Called once, at admission. The number is then stored beside the value
     and credited back verbatim by eviction, clearing and invalidation:
     re-measuring at teardown charges back whatever the value happens to
     measure *then*, which a caller mutating a parsed document turns into
     a negative total or phantom bytes.
+
+    *key* is the resolved path the entry is filed under. It is measured
+    because it is variable — the same reason the resolution memo measures
+    its own — where a flat constant is only ever right for the path length
+    it was tuned against.
     """
     size = _approximate_size(value)
     if size == UNCACHEABLE_SIZE:
         return UNCACHEABLE_SIZE
-    return size + _ENTRY_OVERHEAD_BYTES
+    cost = size + _ENTRY_OVERHEAD_BYTES
+    if isinstance(key, Path):
+        cost += _path_cost(key)
+    return cost
 
 
 class FileCache:
@@ -533,7 +544,7 @@ class FileCache:
             # the generation captured at entry tells the insert below
             # whether the filesystem was declared changed meanwhile.
             result = func(*args, **kwargs)
-            cost = _entry_cost(result)
+            cost = _entry_cost(result, resolved)
             if cost == UNCACHEABLE_SIZE or cost > self._budget:
                 # Either the value is too large for eviction to ever make
                 # room, or it is too large to have been sized at all. Both

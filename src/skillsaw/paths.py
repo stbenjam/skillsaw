@@ -81,6 +81,16 @@ _RESOLVE_COMPONENT_BYTES = 32
 #: quietly give back the speed it exists for.
 _resolve_lock = threading.Lock()
 
+#: Bumped by every clear, and captured before ``Path.resolve()`` runs. The
+#: resolution happens outside the lock, so a clear can land between the
+#: syscall and the insert — and without this the answer from before the
+#: change is written in *after* the drop meant to remove it, and every
+#: later containment check and cached read is handed a target the
+#: filesystem no longer has. ``FileCache`` carries the same counter for
+#: the same reason; this memo is a separate global and is not covered by
+#: it.
+_resolve_generation = 0
+
 #: What the memo may retain. A count cap cannot express this bound, because
 #: a ``Path`` is not fixed-small: manifests supply path strings, and at the
 #: 4 KB a filesystem permits, a quarter-million of them measured 2.1 GB
@@ -126,8 +136,9 @@ def clear_resolve_cache() -> None:
     reads share one invalidation point: after autofix rewrites the tree,
     neither may answer from the pre-fix filesystem.
     """
-    global _resolve_cache_bytes
+    global _resolve_cache_bytes, _resolve_generation
     with _resolve_lock:
+        _resolve_generation += 1
         _RESOLVE_CACHE.clear()
         _resolve_cache_bytes = 0
 
@@ -150,6 +161,7 @@ def safe_resolve(path: Path) -> Optional[Path]:
     cached = _RESOLVE_CACHE.get(path, _MISSING)
     if cached is not _MISSING:
         return cached  # type: ignore[return-value]
+    generation = _resolve_generation
     try:
         resolved: Optional[Path] = path.resolve()
     except (OSError, ValueError, RuntimeError):
@@ -162,9 +174,13 @@ def safe_resolve(path: Path) -> Optional[Path]:
         # Rechecked under the lock: another caller may have resolved the
         # same path while this one was in ``Path.resolve()``, and the
         # entry it inserted is already charged. Charging again would bill
-        # one dict entry twice.
-        if path not in _RESOLVE_CACHE and (
-            _resolve_cache_bytes + cost <= _RESOLVE_CACHE_BUDGET_BYTES
+        # one dict entry twice. A clear landing in that same window means
+        # this answer predates it — hand it to the caller that asked, but
+        # do not file it where it would outlive the drop.
+        if (
+            _resolve_generation == generation
+            and path not in _RESOLVE_CACHE
+            and _resolve_cache_bytes + cost <= _RESOLVE_CACHE_BUDGET_BYTES
         ):
             _RESOLVE_CACHE[path] = resolved
             _resolve_cache_bytes += cost
