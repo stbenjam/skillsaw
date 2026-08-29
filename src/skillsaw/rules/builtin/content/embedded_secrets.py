@@ -36,21 +36,25 @@ _REFERENCE_MAX_BITS = 4.0
 # fixed prefix and remainder keeps the exception exact without adding another
 # contiguous access-key-shaped value that repository push protection rejects.
 _AWS_DOCUMENTATION_ACCESS_KEY_ID_PARTS = ("AKIAIOSF", "ODNN7EXAMPLE")
+_RSA_PRIVATE_KEY_HEADER = "-----BEGIN RSA PRIVATE KEY-----"
 
-# Exact literals audited from public documentation corpora.  These are values,
-# not substring markers: extending or changing one character must keep the
-# candidate reportable.  The RSA header has an additional context check below
-# so a PEM block carrying key material is never exempted.
+# Exact literals audited from public documentation corpora, compared
+# case-insensitively after trimming surrounding whitespace. These are values,
+# not substring markers: a candidate containing extra text remains reportable.
+# The RSA header has an additional context check below so a PEM block carrying
+# key material is never exempted.
 _KNOWN_EXAMPLE_VALUES = KNOWN_SECRET_EXAMPLE_VALUES | frozenset(
     {
         "sk_live_abc123xyz789",
         "sk_live_abc123def456",
         "django-insecure-...",
-        "-----BEGIN RSA PRIVATE KEY-----",
+        _RSA_PRIVATE_KEY_HEADER,
     }
 )
-_RSA_PRIVATE_KEY_HEADER = "-----BEGIN RSA PRIVATE KEY-----"
+_KNOWN_EXAMPLE_VALUE_CASEFOLDS = frozenset(value.casefold() for value in _KNOWN_EXAMPLE_VALUES)
 _PEM_KEY_MATERIAL = re.compile(r"[A-Za-z0-9+/]{32,}={0,2}")
+_PEM_METADATA_LINE = re.compile(r"(?:Proc-Type|DEK-Info)\s*:")
+_PEM_LOOKAHEAD_NONBLANK_LINES = 8
 
 
 def _shannon_entropy(value: str) -> float:
@@ -83,11 +87,13 @@ def _length_adjusted_entropy(value: str) -> float:
 
 
 def _is_known_example_value(value: str) -> bool:
-    """Whether *value* exactly matches one audited documentation literal."""
-    if value in _KNOWN_EXAMPLE_VALUES:
+    """Whether normalized *value* matches one audited documentation literal."""
+    normalized = value.strip().casefold()
+    if normalized in _KNOWN_EXAMPLE_VALUE_CASEFOLDS:
         return True
     prefix, remainder = _AWS_DOCUMENTATION_ACCESS_KEY_ID_PARTS
-    return value.startswith(prefix) and value[len(prefix) :] == remainder
+    prefix = prefix.casefold()
+    return normalized.startswith(prefix) and normalized[len(prefix) :] == remainder.casefold()
 
 
 class ContentEmbeddedSecretsRule(Rule):
@@ -103,7 +109,8 @@ class ContentEmbeddedSecretsRule(Rule):
             "description": (
                 'Minimum Shannon entropy (bits/char) a generic key = "value" '
                 "match must reach to be reported; structured tokens (AKIA…, "
-                "ghp_…, private keys) are always reported"
+                "ghp_…, private keys) remain reportable except for exact "
+                "audited documentation literals"
             ),
         },
         "additional-placeholders": {
@@ -116,10 +123,10 @@ class ContentEmbeddedSecretsRule(Rule):
         },
     }
 
-    # Each entry is (compiled_pattern, description, is_generic).  Structured
-    # token formats are high-confidence and always reported.  Generic
-    # assignment patterns capture the candidate value in group 1 and are
-    # gated by the placeholder allowlist and entropy threshold.
+    # Each entry is (compiled_pattern, description, is_generic). Structured
+    # token formats are high-confidence unless an exact audited documentation
+    # literal applies. Generic assignment patterns capture the candidate value
+    # in group 1 and are gated by the placeholder allowlist and entropy threshold.
     _PATTERNS = [(pattern, desc, False) for pattern, desc in STRUCTURED_SECRET_PATTERNS] + [
         (re.compile(p), desc, generic)
         for p, desc, generic in [
@@ -170,13 +177,28 @@ class ContentEmbeddedSecretsRule(Rule):
     def _pem_key_material_follows(lines: List[str], line_index: int, match: re.Match) -> bool:
         """Whether an RSA header introduces key material instead of teaching text."""
         remainder = lines[line_index][match.end() :]
-        if remainder.startswith("\\n") and _PEM_KEY_MATERIAL.match(remainder[2:]):
+        if _PEM_KEY_MATERIAL.search(remainder):
             return True
-        for following in lines[line_index + 1 :]:
-            candidate = following.strip()
+
+        nonblank_seen = 0
+        # Traditional encrypted PEM has two metadata lines. Eight nonblank
+        # lines leave room for serialized formatting while bounding work on
+        # adversary-controlled content.
+        for following_index in range(line_index + 1, len(lines)):
+            candidate = lines[following_index].strip()
             if not candidate:
                 continue
-            return _PEM_KEY_MATERIAL.fullmatch(candidate) is not None
+            nonblank_seen += 1
+            if _PEM_METADATA_LINE.search(candidate):
+                if nonblank_seen >= _PEM_LOOKAHEAD_NONBLANK_LINES:
+                    break
+                continue
+            if _PEM_KEY_MATERIAL.search(candidate):
+                return True
+            if "-----END RSA PRIVATE KEY-----" in candidate:
+                return False
+            if nonblank_seen >= _PEM_LOOKAHEAD_NONBLANK_LINES:
+                break
         return False
 
     @classmethod
@@ -188,17 +210,19 @@ class ContentEmbeddedSecretsRule(Rule):
         if not _is_known_example_value(value):
             return True
 
-        prefix = lines[line_index][: match.start()]
         remainder = lines[line_index][match.end() :]
-        token_chars = "_+/=-"
-        if (prefix and (prefix[-1].isalnum() or prefix[-1] in token_chars)) or (
-            remainder and (remainder[0].isalnum() or remainder[0] in token_chars)
-        ):
-            # The regex matched a known example only as the prefix of a longer
-            # candidate.  That close variant has no exemption.
-            return True
         if value == _RSA_PRIVATE_KEY_HEADER:
+            prefix = lines[line_index][: match.start()]
+            if (prefix and prefix[-1].isalnum()) or (remainder and remainder[0].isalnum()):
+                # The header is embedded in a larger token, not standalone.
+                return True
             return cls._pem_key_material_follows(lines, line_index, match)
+
+        # AWS access-key IDs contain only uppercase letters and digits. Syntax
+        # such as '=' or quotes delimits the known documentation value, while
+        # another format-valid character makes it a longer reportable token.
+        if remainder and remainder[0] in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789":
+            return True
         return False
 
     def _generic_match_reportable(

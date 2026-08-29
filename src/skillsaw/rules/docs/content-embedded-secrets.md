@@ -18,12 +18,15 @@ Two classes of match are handled differently:
 - **Generic credential assignments** (`password = "…"`, `api_key: "…"`,
   `secret_key`, `access_token`) are gated to avoid flagging documentation
   examples:
-    - *Placeholder allowlist*: values containing obvious placeholder
-      markers (`example`, `placeholder`, `dummy`, `changeme`, `your-…`, …),
-      exact audited examples (`hunter2`, `sk_live_abc123xyz789`,
-      `sk_live_abc123def456`, `django-insecure-...`), template syntax
-      (`<your-key>`, `${VAR}`, `{{ var }}`), or a single repeated character
-      are skipped. Extend the list with `additional-placeholders`.
+    - *Placeholder allowlist*: values containing obvious substring markers
+      (`example`, `placeholder`, `dummy`, `changeme`, `your-…`, …), template
+      syntax (`<your-key>`, `${VAR}`, `{{ var }}`), or a single repeated
+      character are skipped. Extend the substring list with
+      `additional-placeholders`.
+    - *Audited examples*: exact values (`hunter2`, `sk_live_abc123xyz789`,
+      `sk_live_abc123def456`, and the literal three-dot value
+      `django-insecure-...`) are skipped after trimming surrounding whitespace
+      and comparing case-insensitively. Close variants remain reportable.
     - *Entropy gating*: the value's Shannon entropy must reach
       `entropy-threshold` (default 3.5 bits/char). Real random secrets
       pass; English-ish placeholder strings do not. Values shorter than
