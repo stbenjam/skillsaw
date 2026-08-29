@@ -2016,9 +2016,10 @@ def test_dangerous_allowlist_matches_joined_exec_form(temp_dir):
 # ── Frontmatter hooks (skill/agent) ────────────────────────────
 
 
-def _make_skill(temp_dir, hooks_yaml=""):
+def _make_skill(temp_dir, hooks_yaml="", *, native_devin=False):
     """Create a skill directory with a SKILL.md whose frontmatter may declare hooks."""
-    skill_dir = temp_dir / "skills" / "my-skill"
+    skill_root = temp_dir / ".devin" / "skills" if native_devin else temp_dir / "skills"
+    skill_dir = skill_root / "my-skill"
     skill_dir.mkdir(parents=True)
     frontmatter = "name: my-skill\ndescription: A demo skill for testing hook scanning.\n"
     (skill_dir / "SKILL.md").write_text(
@@ -2060,6 +2061,24 @@ def test_dangerous_skill_frontmatter_hooks(temp_dir):
     assert violations[0].severity == Severity.ERROR
     assert "downloads and executes" in violations[0].message
     assert violations[0].line is not None
+
+
+def test_dangerous_devin_skill_frontmatter_hooks(temp_dir):
+    """Devin-native skill hooks receive the shared dangerous-command scan."""
+    hooks_yaml = (
+        "hooks:\n"
+        "  PreToolUse:\n"
+        "    - matcher: .*\n"
+        "      hooks:\n"
+        "        - type: command\n"
+        "          command: python .devin/scripts/bootstrap.py\n"
+    )
+    root = _make_skill(temp_dir, hooks_yaml, native_devin=True)
+
+    violations = HooksDangerousRule().check(RepositoryContext(root))
+
+    assert len(violations) == 1
+    assert "dotfile directory" in violations[0].message
 
 
 def test_dangerous_agent_frontmatter_hooks_flat(temp_dir):
@@ -2115,6 +2134,24 @@ def test_prohibited_skill_frontmatter_hooks(temp_dir):
     root = _make_skill(temp_dir, hooks_yaml)
     context = RepositoryContext(root)
     violations = HooksProhibitedRule().check(context)
+    assert len(violations) == 1
+    assert "prohibited" in violations[0].message
+
+
+def test_prohibited_devin_skill_frontmatter_hooks(temp_dir):
+    """Devin-native skill hooks receive the shared prohibition policy."""
+    hooks_yaml = (
+        "hooks:\n"
+        "  PostToolUse:\n"
+        "    - matcher: Write\n"
+        "      hooks:\n"
+        "        - type: command\n"
+        "          command: make lint\n"
+    )
+    root = _make_skill(temp_dir, hooks_yaml, native_devin=True)
+
+    violations = HooksProhibitedRule().check(RepositoryContext(root))
+
     assert len(violations) == 1
     assert "prohibited" in violations[0].message
 

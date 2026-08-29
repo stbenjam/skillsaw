@@ -370,6 +370,14 @@ class SkillNode(LintTarget):
 
 
 @dataclass(eq=False)
+class DevinSkillNode(LintTarget):
+    """A Devin-native skill directory with optional frontmatter."""
+
+    def tree_label(self) -> str:
+        return f"{self.path.name}/ [devin skill]"
+
+
+@dataclass(eq=False)
 class CodexMarketplaceConfigNode(LintTarget):
     """The .agents/plugins/marketplace.json manifest file (OpenAI Codex).
 

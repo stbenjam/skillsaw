@@ -16,6 +16,7 @@ from .discovery import merge_plugin_dirs
 from .discovery import codex as codex_discovery
 from .discovery import claude as claude_discovery
 from .discovery import agent_plugins as agent_plugins_discovery
+from .formats import devin
 from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_local_source_path,  # noqa: F401 - compatibility re-export
@@ -53,6 +54,7 @@ SKILL_REPO_TYPES = {
 HAS_CURSOR = "HAS_CURSOR"
 HAS_COPILOT = "HAS_COPILOT"
 HAS_CLINE = "HAS_CLINE"
+HAS_DEVIN = "HAS_DEVIN"
 HAS_GEMINI = "HAS_GEMINI"
 HAS_QWEN = "HAS_QWEN"
 HAS_AGENTS_MD = "HAS_AGENTS_MD"
@@ -70,6 +72,7 @@ ALL_INSTRUCTION_FORMATS = frozenset(
     {
         HAS_CURSOR,
         HAS_COPILOT,
+        HAS_DEVIN,
         HAS_GEMINI,
         HAS_QWEN,
         HAS_AGENTS_MD,
@@ -152,12 +155,8 @@ class RepositoryContext(RepositoryProvenanceMixin):
             content_paths: Extra content glob patterns (from config) picked up
                 by the lint tree.
         """
-        # A new context is a new pass, which is exactly the lifetime the
-        # resolution memo claims; clearing here makes that true for a
-        # long-lived library caller, which could otherwise lint, retarget a
-        # symlink, and lint again off the first pass's filesystem. The file
-        # cache is keyed by those resolutions, so it is told as well; see
-        # ``invalidate_path_identity``.
+        # A new context is a new pass, the lifetime the memo claims —
+        # or a library caller retargets a symlink and lints it stale.
         invalidate_path_identity()
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
@@ -437,14 +436,11 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self._lint_tree = None
 
     def _discover_instruction_files(self) -> List[Path]:
-        """Discover instruction files at the repo root and named .instructions.md files.
+        """Discover root and nested instruction files read by supported tools.
 
-        Finds:
-        - Root-level AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md
-        - Any ``*.instructions.md`` files anywhere in the repo tree (Copilot
-          named instruction files such as ``coding.instructions.md``)
-
-        Shares one filesystem walk with :meth:`agent_tool_dirs`.
+        Includes root conventions, Copilot ``*.instructions.md`` files, and
+        Devin's documented names at nested project levels. The work shares
+        one filesystem walk with :meth:`agent_tool_dirs`.
         """
         return list(self._repository_scan().instruction_files)
 
@@ -460,7 +456,8 @@ class RepositoryContext(RepositoryProvenanceMixin):
         """Return every non-excluded directory called *name* in the repository.
 
         Cursor (``.cursor``), Copilot/VS Code (``.github``), Cline
-        (``.clinerules``) and OpenCode (``.opencode``) all read their
+        (``.clinerules``), Devin (``.devin``/``.windsurf``), and OpenCode
+        (``.opencode``) all read their
         customizations from the nearest enclosing directory, so a monorepo
         package may carry its own alongside the repository root's.
         """
@@ -517,6 +514,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
                 should_skip=self._should_skip_dir,
                 walk_files=self._walk_files,
                 promptfoo_candidates=self.promptfoo_config_candidates(),
+                tool_dirs=self._repository_scan().tool_dirs,
             )
         }
 
@@ -580,16 +578,13 @@ class RepositoryContext(RepositoryProvenanceMixin):
             for item in children
         )
 
-    #: Both walks live in discovery, which is where filesystem traversal
-    #: belongs; the context keeps the names its callers use.
     _walk_files = staticmethod(detect_discovery.walk_files)
 
     def promptfoo_config_candidates(self) -> List[Path]:
         """Files that could be Promptfoo configs, from one shared walk.
 
-        Type detection and the lint tree both ask, and uncached each
-        walks the repository for the same answer. Dropped by
-        ``rebuild_lint_tree``, where that answer can go stale.
+        Type detection and the lint tree both ask; uncached, each walks
+        the repository for it. Dropped by ``rebuild_lint_tree``.
         """
         cached = self.__dict__.get("_promptfoo_candidates")
         if cached is None:
@@ -889,6 +884,11 @@ class RepositoryContext(RepositoryProvenanceMixin):
             claim_boundary=self._contained_plugin_claim_boundary,
             containment_claims_possible=self._contained_plugin_claims_possible,
             is_containment_plugin=self._is_containment_plugin,
+            additional_skill_dirs=(
+                directory / "skills"
+                for name in devin.TOOL_DIR_NAMES
+                for directory in self.agent_tool_dirs(name)
+            ),
         )
 
     def __str__(self):

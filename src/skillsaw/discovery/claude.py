@@ -218,6 +218,7 @@ def discover_skills(
     claim_boundary: Callable[[Path], Optional[Path]],
     containment_claims_possible: Callable[[], bool],
     is_containment_plugin: Callable[[Path], bool],
+    additional_skill_dirs: Iterable[Path] = (),
 ) -> List[Path]:
     """Discover contained Agent Skill directories across repository roots."""
     skills: List[Path] = []
@@ -304,6 +305,9 @@ def discover_skills(
             path = root / rel
             if path.is_dir() and not in_apm_compiled_dir(path):
                 walk(path)
+        for path in additional_skill_dirs:
+            if path.is_dir() and not in_apm_compiled_dir(path):
+                walk(path, safe_resolve(root) or root)
     for plugin in plugins:
         path = plugin / "skills"
         if path.is_dir():

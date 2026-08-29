@@ -13,6 +13,7 @@ from skillsaw.rules.builtin.content_analysis import (
     CommandBlock,
     CopilotPromptBlock,
     CursorCommandBlock,
+    DevinSkillBlock,
     OpenCodeCommandBlock,
 )
 
@@ -142,6 +143,7 @@ class ContextBudgetRule(Rule):
         # would face no limit at all.
         desc_categories = {
             SkillBlock: "skill-description",
+            DevinSkillBlock: "skill-description",
             CommandBlock: "command-description",
             CursorCommandBlock: "command-description",
             CopilotPromptBlock: "command-description",
