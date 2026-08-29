@@ -3960,6 +3960,7 @@ BROKEN_FIXTURES = [
     "instructions/agents-import/duplicated-pair",
     "opencode/broken",
     "opencode/malformed-shapes",
+    "skills-lock/invalid",
 ]
 
 CLEAN_FIXTURES = [

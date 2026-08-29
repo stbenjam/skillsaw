@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "skills": {
+    "": [],
+    "broken": {
+      "source": 42,
+      "sourceType": "future-registry",
+      "computedHash": "NOT-A-HASH",
+      "sourceUrl": "",
+      "ref": null,
+      "skillPath": "../README.md",
+      "subagents": [
+        "",
+        3
+      ],
+      "wellKnownDigest": "sha256:nope"
+    }
+  }
+}

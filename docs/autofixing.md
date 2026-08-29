@@ -38,7 +38,11 @@ Summary:
 - `[?]` — a **SUGGEST** fix exists; it is only applied with `skillsaw fix --suggest`.
 
 Autofix never rewrites vendor-managed plugins under `.codex/plugins/`, even
-when a rule reports a finding there.
+when a rule reports a finding there. It likewise never rewrites externally
+sourced lint-tree content, including APM packages under `apm_modules/` and
+skills installed from external `skills-lock.json` sources; those findings
+remain diagnostic even when `lint-external-content` is left at its default
+`true`.
 
 The JSON format carries the same information as an additive `fixable` boolean (plus `fix_confidence`: `safe` or `suggest` when fixable) on each violation. Fixability is per violation, not per rule — a rule that can only fix some shapes of a problem (e.g. `content-unlinked-internal-reference` only wraps references whose target file exists) marks only those violations. Because `skillsaw fix` batches several violations into one fix per file, its `Fixed N issue(s)` count can differ from the number of marked violations.
 

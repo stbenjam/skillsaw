@@ -1,6 +1,4 @@
-"""
-Repository context detection and management
-"""
+"""Repository context detection and management."""
 
 from __future__ import annotations
 
@@ -27,6 +25,7 @@ from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
+from .repository_external_content import RepositoryExternalContentMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 
 if TYPE_CHECKING:
@@ -78,6 +77,7 @@ HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
 HAS_CODERABBIT = "HAS_CODERABBIT"
 HAS_OPENCODE = "HAS_OPENCODE"
+HAS_SKILLS_LOCK = "HAS_SKILLS_LOCK"
 # Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE
 # and HAS_OPENCODE are deliberately absent: the instruction-file rules only
 # ever look at AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose
@@ -106,12 +106,8 @@ _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 _UNSET = object()
 
 
-class RepositoryContext(RepositoryProvenanceMixin):
-    """
-    Context information about the repository being linted
-
-    Automatically detects repository type and gathers relevant metadata.
-    """
+class RepositoryContext(RepositoryExternalContentMixin, RepositoryProvenanceMixin):
+    """Detected repository metadata used during linting."""
 
     _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
 
@@ -157,6 +153,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         repo_types: Optional[Set[RepositoryType]] = None,
         exclude_patterns: Optional[List[str]] = None,
         content_paths: Optional[List[str]] = None,
+        lint_external_content: bool = True,
     ):
         """
         Initialize repository context
@@ -170,9 +167,12 @@ class RepositoryContext(RepositoryProvenanceMixin):
                 mutating the attribute and calling :meth:`apply_excludes`.
             content_paths: Extra content glob patterns (from config) picked up
                 by the lint tree.
+            lint_external_content: Whether externally sourced nodes should be
+                attached to the lint tree.
         """
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
+        self.lint_external_content = lint_external_content
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self.has_apm = self._detect_apm()
@@ -442,6 +442,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self._contained_plugin_roots = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
+        self.reset_external_content_provenance()
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
 
@@ -498,6 +499,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
             self.is_path_excluded,
             self._repository_scan().tool_dirs,
             self._repository_scan().legacy_editor_files,
+            self._repository_scan().skills_lock_files,
         )
 
     #: Alias for the one definition in discovery. Two copies of "which

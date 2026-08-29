@@ -534,6 +534,12 @@ rules:
     # allow-bidi-controls: false
     # allowed-codepoints: []
 
+  # skills-lock.json files must be valid and portable project lockfiles
+  skills-lock-valid:
+    enabled: auto
+    severity: error
+    # extra-source-types: []
+
 # Load custom rules from these files
 custom-rules: []
 
@@ -552,6 +558,9 @@ exclude:
 
 # Additional markdown files to run content rules on (glob format)
 content-paths: []
+
+# Report findings in external content (autofix never rewrites it)
+lint-external-content: true
 
 # Treat warnings as errors
 strict: false
