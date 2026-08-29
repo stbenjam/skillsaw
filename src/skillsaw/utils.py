@@ -426,27 +426,24 @@ def _approximate_size(value: Any) -> int:
         node = stack.pop()
         node_id = id(node)
         if node_id in visited:
-            # A second reference to something already measured, and
-            # the walk's one dedup point. It covers every node, not
-            # just large ones: an alias is one object however many
-            # times a document names it, so both the charge and the
-            # limit have to count objects rather than references.
+            # A second reference to something already measured, and the
+            # walk's one dedup point. It covers every node: an alias is
+            # one object however many times a document names it, so both
+            # the charge and the limit count objects rather than names.
             #
-            # Counting references was wrong twice over. It charged a
+            # Counting references is wrong twice over: it charges a
             # 2 MiB anchored string used 64 times as 128 MiB, refusing
-            # an entry that holds 2 MiB; and it let 20,000 references
-            # to one short string exhaust the limit over a graph
-            # holding three objects. An abandoned walk is not free —
-            # the value cannot be cached, so every rule reparses the
-            # file, which costs far more than finishing.
+            # an entry that holds 2 MiB, and it lets 20,000 references
+            # to one short string exhaust the limit over a graph holding
+            # three objects. An abandoned walk is not free — the value
+            # cannot be cached, so every rule reparses the file, which
+            # costs far more than finishing.
             #
             # Registering every scalar rather than only large ones also
-            # measures faster, because a repeated key is not re-sized:
-            # 6.50ms to 5.41ms on a 442-plugin marketplace manifest,
-            # whose charge falls from 1,114,329 to 881,010 as the
-            # interned keys stop being counted once per occurrence.
+            # measures faster, because a repeated key is sized once
+            # instead of once per occurrence.
             #
-            # It also terminates cycles, which the limit alone used to.
+            # This is also what terminates a cycle.
             continue
         walked += 1
         if walked > _SIZE_WALK_LIMIT:
@@ -1142,7 +1139,8 @@ def read_jsonc(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
 # both accept resolves to the same value in every shape this repository
 # parses. They do not accept quite the same documents, and there are
 # rare tag forms both accept and resolve differently (``a: !`` is
-# ``None`` on one and ``''`` on the other) — see :func:`safe_load_yaml`
+# ``None`` on the pure loader and ``''`` on libyaml) — see
+# :func:`safe_load_yaml`
 # for both directions and what each means for an existing baseline.
 _SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
@@ -1211,7 +1209,12 @@ def _reject_overly_nested(data: Any) -> None:
             stack.extend((child, False) for child in children)
             continue
         on_path.discard(node_id)
-        height = 0
+        # A container is one level whether or not it holds anything. At
+        # zero, an empty terminal collection contributes nothing while a
+        # scalar contributes one, so this measure and the pre-compose
+        # event count — which sees the empty collection's start event —
+        # disagree by one at the boundary.
+        height = 1
         for child in children:
             if _child_containers(child) is None:
                 height = max(height, 1)
@@ -1280,8 +1283,10 @@ def safe_load_yaml(source: Any) -> Any:
 
     libyaml pairs the same ``SafeConstructor`` and ``Resolver`` with its
     own parser, so a document both loaders accept resolves to the same
-    value. They do not accept quite the same documents, and the
-    difference runs in both directions.
+    value in every shape this repository parses. There are rare tag
+    forms both accept and resolve differently — ``a: !`` is ``None`` on
+    the pure loader and ``''`` on libyaml. They also do not accept quite
+    the same documents, and that difference runs in both directions.
 
     **libyaml rejects, PyYAML accepts.** The JSON-style escaped
     surrogate pair that any ASCII-safe JSON-to-YAML conversion emits for
@@ -1294,17 +1299,22 @@ def safe_load_yaml(source: Any) -> Any:
 
     **libyaml accepts, PyYAML rejects** — and this direction cannot be
     retried, because a document libyaml accepts never reaches the retry.
-    The class is *documents PyYAML's own scanner is stricter than the
-    spec about*, and it is wider than any list worth spelling out here.
+    The class is *documents PyYAML's scanner rejects and libyaml
+    accepts*, and it is wider than any list worth spelling out here.
+    Mostly that is PyYAML being stricter than the spec; at least one
+    shape is libyaml being looser.
     The shapes measured so far: a tab used as a token separator
     (``name:\tvalue``, a trailing tab, a tab before a ``#`` comment, a
     tab between a key and its ``:``); a ``?`` inside a flow collection
     (``globs: [tests/?_*.py]``); and a block-scalar header followed
-    immediately by ``#``. Both YAML 1.1 and 1.2 permit all of them, so
-    libyaml is right and PyYAML is the outlier — but a file that stops
-    reporting a parse error starts being linted, which can surface
-    violations an existing baseline does not carry. A tab used as
-    *indentation* stays an error in both.
+    immediately by ``#``. The spec permits the first two outside
+    indentation, so there libyaml is right and PyYAML is the stricter
+    outlier. The third runs the other way — a comment must be preceded
+    by whitespace, so ``a: |#`` is libyaml being lax where ``a: | #``
+    parses on both. Either way, a file that stops reporting a parse
+    error starts being linted, which can surface violations an existing
+    baseline does not carry. A tab used as *indentation* stays an error
+    in both.
 
     Note ruamel still rejects the tab class, so ``read_yaml`` and
     ``read_yaml_commented`` disagree about it. That is a real exception

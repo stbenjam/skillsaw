@@ -46,8 +46,8 @@ def test_importing_the_cli_pulls_in_nothing_that_lints():
 def test_building_the_parser_pulls_in_nothing_that_lints():
     """``--type``'s choices and ``--fail-on``'s levels are the temptation here.
 
-    Both used to be read off modules that can lint, which meant every
-    invocation paid for them just to render a help string.
+    Neither may be read off a module that can lint: every invocation
+    would pay for the import just to render a help string.
     """
     loaded = _modules_after("from skillsaw.cli._parser import _build_parser\n_build_parser()")
 

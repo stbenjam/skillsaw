@@ -968,6 +968,59 @@ def test_both_yaml_readers_agree_about_one_file(offset, tmp_path):
     assert (plain_error is None) == (commented_error is None)
 
 
+@pytest.mark.parametrize("leaf", ["0", "{}", "[]"])
+def test_the_two_depth_bounds_agree_on_an_empty_terminal_collection(leaf):
+    """The two halves measure different things and must still agree.
+
+    ``_reject_deep_before_compose`` counts collection start events;
+    ``_reject_overly_nested`` measures the loaded graph's height. An
+    empty terminal collection has a start event but holds nothing, so a
+    height that begins at zero counts it as one level less than the
+    event stream does — and the two halves then disagree at exactly the
+    boundary, on whichever install runs only one of them.
+
+    Parametrized over the leaf because a scalar leaf cannot see it: the
+    shape that diverged is the empty one.
+
+    Forced onto the pure loader, because that is where the divergence
+    lives. With libyaml present ``safe_load_yaml`` runs the prescan too,
+    so both sides consult the same bound and agree whatever the height
+    measure does — which would make this pass vacuously on CI.
+    """
+    import skillsaw.utils as utils_module
+    from skillsaw.utils import _MAX_YAML_DEPTH, _reject_deep_before_compose, safe_load_yaml
+
+    real_loader = utils_module._SAFE_LOADER
+    utils_module._SAFE_LOADER = yaml.SafeLoader
+    try:
+        _assert_bounds_agree(_MAX_YAML_DEPTH, _reject_deep_before_compose, safe_load_yaml, leaf)
+    finally:
+        utils_module._SAFE_LOADER = real_loader
+
+
+def _assert_bounds_agree(_MAX_YAML_DEPTH, _reject_deep_before_compose, safe_load_yaml, leaf):
+    for depth in (_MAX_YAML_DEPTH - 3, _MAX_YAML_DEPTH - 2, _MAX_YAML_DEPTH - 1):
+        source = (
+            "".join("  " * i + f"a{i}:\n" for i in range(depth))
+            + "  " * depth
+            + f"a{depth}: {leaf}\n"
+        )
+
+        try:
+            _reject_deep_before_compose(source)
+            prescan_rejects = False
+        except RecursionError:
+            prescan_rejects = True
+
+        try:
+            safe_load_yaml(source)
+            reader_rejects = False
+        except RecursionError:
+            reader_rejects = True
+
+        assert prescan_rejects == reader_rejects, (leaf, depth)
+
+
 def test_aliases_cannot_build_a_graph_deeper_than_the_source_reads(tmp_path):
     """Depth in the text and depth in the object are different numbers.
 
@@ -1108,8 +1161,8 @@ def test_the_accelerated_loader_is_the_one_under_test():
     and a wheel without the C extension makes them vacuous rather than
     wrong. This one always runs, so a build that quietly lost the
     accelerator says so here instead of going quiet there — and it is
-    also the thing that would make every performance claim in this
-    branch not apply.
+    also the thing that would make every performance claim made for the
+    libyaml switch not apply.
     """
     from skillsaw.utils import _SAFE_LOADER
 
@@ -1643,7 +1696,8 @@ class TestFileCacheBudget:
         # Still returns the right answer, just without remembering.
         assert len(unsizeable(target)) == skillsaw_utils._SIZE_WALK_LIMIT + 10
 
-    def test_an_aliased_graph_is_sized_by_its_objects_not_its_references(self):
+    @pytest.mark.parametrize("anchored", ["{k: v}", "[v]", "hello", ""])
+    def test_an_aliased_graph_is_sized_by_its_objects_not_its_references(self, anchored):
         """The walk limit bounds distinct objects, not names for them.
 
         An alias is ordinary in YAML and a document may name one anchor
@@ -1651,9 +1705,14 @@ class TestFileCacheBudget:
         abandons the walk over a graph holding three objects, and an
         abandoned walk is not free: the value cannot be cached, so every
         rule reparses the file — far more expensive than finishing.
+
+        Every node kind, not just containers. Registering only large
+        scalars leaves 20,000 references to one short string — or to one
+        null — exhausting the limit just the same, and a container-only
+        case cannot see that: containers are registered either way.
         """
         count = skillsaw_utils._SIZE_WALK_LIMIT + 5_000
-        source = "anchor: &x {k: v}\nitems:\n" + "".join("  - *x\n" for _ in range(count))
+        source = f"anchor: &x {anchored}\nitems:\n" + "".join("  - *x\n" for _ in range(count))
         data = skillsaw_utils.safe_load_yaml(source)
 
         assert len({id(item) for item in data["items"]}) == 1, "one object, many names"
@@ -1675,9 +1734,9 @@ class TestFileCacheBudget:
     def test_a_cycle_terminates_the_walk(self):
         """Aliases and cycles are both ordinary in YAML.
 
-        The limit used to be what stopped a cycle. Now that a repeated
-        reference is skipped before it is counted, the identity check is
-        what terminates it, so pin that it does.
+        A cycle is terminated by the identity check, not by the walk
+        limit: a repeated reference is skipped before it is counted, so
+        the limit is never reached. Pin that it does terminate.
         """
         looping_list = []
         looping_list.append(looping_list)
