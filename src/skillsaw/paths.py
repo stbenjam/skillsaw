@@ -57,14 +57,24 @@ def has_parent_traversal(path: str) -> bool:
 # caches (see ``skillsaw.utils``).
 _RESOLVE_CACHE: Dict[Path, Optional[Path]] = {}
 
-#: An entry is two ``Path`` objects, a few hundred bytes; the cap is a
-#: backstop against unbounded growth in a long-lived process that never
-#: invalidates, not a working limit. It has to sit well above the number of
-#: distinct paths a real repository resolves — a large skill marketplace
-#: reaches ~20k — because every rule sweeps the same set, so a cap the
-#: repository can cross is a cliff rather than a limit: the memo is thrown
-#: away and rebuilt on every sweep.
-_RESOLVE_CACHE_MAX = 250_000
+#: Bytes an entry is charged: both path strings plus the two ``Path``
+#: objects and dict slots holding them.
+_RESOLVE_ENTRY_OVERHEAD_BYTES = 256
+
+#: What the memo may retain. A count cap cannot express this bound, because
+#: a ``Path`` is not fixed-small: manifests supply path strings, and at the
+#: 4 KB a filesystem permits, a quarter-million of them measured 2.1 GB
+#: resident. The budget has to sit well above what a real repository needs —
+#: a large skill marketplace resolves ~20.5k distinct paths for ~9.6 MB
+#: charged here — because every rule sweeps the same set, so a bound the
+#: repository can cross is a cliff rather than a limit.
+_RESOLVE_CACHE_BUDGET_BYTES = 64 * 1024 * 1024
+
+#: Charged so far. Once the budget is reached the memo simply stops
+#: accepting entries: it is a pure speed optimization over a filesystem
+#: that has not changed, so declining to remember costs time and nothing
+#: else. Evicting instead would be the cliff described above.
+_resolve_cache_bytes = 0
 
 
 def clear_resolve_cache() -> None:
@@ -74,7 +84,9 @@ def clear_resolve_cache() -> None:
     reads share one invalidation point: after autofix rewrites the tree,
     neither may answer from the pre-fix filesystem.
     """
+    global _resolve_cache_bytes
     _RESOLVE_CACHE.clear()
+    _resolve_cache_bytes = 0
 
 
 def safe_resolve(path: Path) -> Optional[Path]:
@@ -99,12 +111,15 @@ def safe_resolve(path: Path) -> Optional[Path]:
         resolved: Optional[Path] = path.resolve()
     except (OSError, ValueError, RuntimeError):
         resolved = None
-    if len(_RESOLVE_CACHE) >= _RESOLVE_CACHE_MAX:
-        # Drop the oldest half rather than everything: dicts keep insertion
-        # order, so what survives is what was resolved most recently.
-        for stale in list(_RESOLVE_CACHE)[: _RESOLVE_CACHE_MAX // 2]:
-            del _RESOLVE_CACHE[stale]
-    _RESOLVE_CACHE[path] = resolved
+    global _resolve_cache_bytes
+    cost = (
+        len(str(path))
+        + (len(str(resolved)) if resolved is not None else 0)
+        + _RESOLVE_ENTRY_OVERHEAD_BYTES
+    )
+    if _resolve_cache_bytes + cost <= _RESOLVE_CACHE_BUDGET_BYTES:
+        _RESOLVE_CACHE[path] = resolved
+        _resolve_cache_bytes += cost
     return resolved
 
 

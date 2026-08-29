@@ -1075,7 +1075,10 @@ def _reject_deep_before_compose(source: str) -> None:
         for event in yaml.parse(source, Loader=_SAFE_LOADER):
             if isinstance(event, _YAML_OPEN_EVENTS):
                 depth += 1
-                if depth > _MAX_YAML_DEPTH:
+                # ``>=``, matching ``_reject_overly_nested``. The two
+                # bounds have to agree exactly or a document falls between
+                # them and one reader accepts what another rejects.
+                if depth >= _MAX_YAML_DEPTH:
                     raise RecursionError(_TOO_DEEP)
             elif isinstance(event, _YAML_CLOSE_EVENTS):
                 depth -= 1
@@ -1150,10 +1153,22 @@ def read_yaml_commented(
     Returns ``(data, error_msg, error_line)`` where *data* is a
     ``CommentedMap`` / ``CommentedSeq`` supporting ``.lc.key()`` and
     ``.lc.item()`` for line-number lookups.
+
+    Nesting is bounded here for the same reason and by the same rule as
+    :func:`safe_load_yaml`. ruamel is pure Python, so it raises rather
+    than faulting — but it raises wherever the interpreter's own stack
+    happens to give out, which is the incidental limit ``_MAX_YAML_DEPTH``
+    exists to replace. Without this the two readers disagree about the
+    same file: a document a hundred levels deep was rejected by
+    ``read_yaml`` and accepted here.
     """
     content = read_text(file_path)
     if content is None:
         return None, f"Failed to read {file_path.name}", None
+    try:
+        _reject_deep_before_compose(content)
+    except RecursionError:
+        return None, _TOO_DEEP, None
     ry = _RuamelYAML()
     ry.preserve_quotes = True
     try:

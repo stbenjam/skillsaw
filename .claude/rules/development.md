@@ -74,7 +74,8 @@ the lint tree, or `utils.py` read paths, save a baseline on main and compare on 
   `FileCache` takes a byte `budget`, and never caches a value larger than
   it. A count cap is fine for fixed-small entries (`_RESOLVE_CACHE_MAX`,
   `_MAX_CACHED_PATTERNS`) when it sits well above the largest realistic
-  workload — size it so no workload reaches it.
+  workload — size it so no workload reaches it. A `Path` is not fixed-small:
+  manifests supply the strings, so `_RESOLVE_CACHE` is byte-budgeted too.
 - **Charge a cache entry once, at admission, and credit back the stored
   number.** `len(text)` is not bytes — CPython stores one, two or four per
   character (PEP 393), so emoji retain 4x what `len` reports; use

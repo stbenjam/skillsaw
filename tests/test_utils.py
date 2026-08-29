@@ -923,17 +923,49 @@ def test_safe_load_yaml_rejects_pathological_nesting():
         safe_load_yaml("[" * depth + "0" + "]" * depth)
 
 
-def test_a_document_just_under_the_bound_still_parses():
-    """The bound replaced an incidental limit far above it.
+@pytest.mark.parametrize("offset, accepted", [(-2, True), (-1, False), (0, False)])
+def test_the_depth_bound_sits_where_it_says_it_does(offset, accepted):
+    """Both sides of the boundary, not just the rejecting one.
 
-    Only ever testing rejection would let the limit drift down onto
-    documents that parse today, which is the direction that breaks
-    people rather than protects them.
+    The bound replaced an incidental limit far above it, so only ever
+    testing rejection would let it drift down onto documents that parse
+    today — the direction that breaks people rather than protects them.
+    The document is a mapping wrapping a chain of sequences, so its
+    container count is ``depth + 1``.
     """
     from skillsaw.utils import _MAX_YAML_DEPTH, safe_load_yaml
 
-    depth = _MAX_YAML_DEPTH - 1
-    assert safe_load_yaml("[" * depth + "0" + "]" * depth) is not None
+    depth = _MAX_YAML_DEPTH + offset
+    source = "extra: " + "[" * depth + "0" + "]" * depth
+
+    if accepted:
+        assert safe_load_yaml(source) is not None
+    else:
+        with pytest.raises(RecursionError):
+            safe_load_yaml(source)
+
+
+@pytest.mark.parametrize("offset", [-2, -1, 0, 5])
+def test_both_yaml_readers_agree_about_one_file(offset, tmp_path):
+    """`read_yaml` bounds through libyaml, `read_yaml_commented` through
+    ruamel, and they must reach the same verdict on the same document.
+
+    ruamel is pure Python, so it raises rather than faulting — but left
+    alone it raises wherever the interpreter's stack gives out, which is
+    the incidental limit the explicit bound exists to replace. A document
+    a hundred levels deep was rejected by one reader and accepted by the
+    other, and the two comparisons were off by one against each other.
+    """
+    from skillsaw.utils import _MAX_YAML_DEPTH, read_yaml, read_yaml_commented
+
+    depth = _MAX_YAML_DEPTH + offset
+    target = tmp_path / "nested.yaml"
+    target.write_text("extra: " + "[" * depth + "0" + "]" * depth + "\n", encoding="utf-8")
+
+    _, plain_error = read_yaml(target)
+    _, commented_error, _ = read_yaml_commented(target)
+
+    assert (plain_error is None) == (commented_error is None)
 
 
 @pytest.mark.parametrize(
@@ -1060,6 +1092,49 @@ class TestFileCacheBudget:
         text_store, parsed_store = cache._stores
         assert text_store, "the text cache must not be the only one evicted"
         assert parsed_store
+
+    def test_the_resolution_memo_is_bounded_by_bytes_not_entries(self, tmp_path):
+        """A ``Path`` is not a fixed-small entry.
+
+        Manifests supply path strings, and at the length a filesystem
+        permits a quarter-million of them measured 2.1 GB resident — so a
+        count cap cannot express this bound. Past the budget the memo
+        simply stops accepting: it is a pure speed optimization over a
+        filesystem that has not changed, so declining to remember costs
+        time and nothing else.
+        """
+        from pathlib import Path
+
+        import skillsaw.paths as paths
+
+        paths.clear_resolve_cache()
+        budget = paths._RESOLVE_CACHE_BUDGET_BYTES
+        try:
+            paths._RESOLVE_CACHE_BUDGET_BYTES = 4096
+            long_tail = "/".join("d" * 100 for _ in range(8))
+            for index in range(200):
+                paths.safe_resolve(Path(f"/nonexistent/{index}/{long_tail}"))
+
+            assert paths._resolve_cache_bytes <= 4096
+            assert len(paths._RESOLVE_CACHE) < 200, "the budget never stopped admissions"
+        finally:
+            paths._RESOLVE_CACHE_BUDGET_BYTES = budget
+            paths.clear_resolve_cache()
+
+    def test_clearing_the_resolution_memo_resets_its_accounting(self):
+        """Otherwise the budget is spent once and never recovered, and the
+        memo stops working for every later pass in a long-lived process."""
+        from pathlib import Path
+
+        import skillsaw.paths as paths
+
+        paths.safe_resolve(Path("/nonexistent/probe"))
+        assert paths._resolve_cache_bytes > 0
+
+        paths.clear_resolve_cache()
+
+        assert paths._resolve_cache_bytes == 0
+        assert not paths._RESOLVE_CACHE
 
     def test_a_value_too_large_to_size_is_never_cached(self, tmp_path):
         """The size walk gives up past ``_SIZE_WALK_LIMIT`` nodes.
