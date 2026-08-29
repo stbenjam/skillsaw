@@ -801,7 +801,7 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) == 1
         assert "Private key" in violations[0].message
 
-    @pytest.mark.parametrize("width", [15, 12, 8, 4])
+    @pytest.mark.parametrize("width", [15, 12, 8, 4, 3, 2, 1])
     def test_pem_short_wrapped_key_material_still_fires(self, temp_dir, width):
         wrapped_material = "\n".join(
             _PEM_MATERIAL[index : index + width] for index in range(0, len(_PEM_MATERIAL), width)

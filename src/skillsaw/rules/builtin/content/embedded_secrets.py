@@ -52,7 +52,7 @@ _KNOWN_EXAMPLE_VALUES = KNOWN_SECRET_EXAMPLE_VALUES | frozenset(
     }
 )
 _KNOWN_EXAMPLE_VALUE_CASEFOLDS = frozenset(value.casefold() for value in _KNOWN_EXAMPLE_VALUES)
-_PEM_BASE64_LINE = re.compile(r"[A-Za-z0-9+/]{4,}={0,2}")
+_PEM_BASE64_LINE = re.compile(r"[A-Za-z0-9+/]+={0,2}")
 _PEM_KEY_MATERIAL_MIN_CHARS = 32
 _PEM_END_MARKER = "-----END RSA PRIVATE KEY-----"
 _PEM_METADATA_FIELD = re.compile(
@@ -62,7 +62,7 @@ _PEM_METADATA_FIELD = re.compile(
     re.IGNORECASE,
 )
 _PEM_SERIALIZED_LINE_BREAK = re.compile(r"(?:\\+r)?\\+n")
-_PEM_LOOKAHEAD_PHYSICAL_LINES = 8
+_PEM_LOOKAHEAD_PHYSICAL_LINES = 40
 _PEM_LOOKAHEAD_CHARS_PER_LINE = 4096
 # Punctuation that can decorate a complete logical line in Markdown, YAML,
 # JSON, or shell examples. Base64 characters (+, /, =) are deliberately not
@@ -236,9 +236,10 @@ class ContentEmbeddedSecretsRule(Rule):
         if reached_end_marker:
             return False
 
-        # Traditional encrypted PEM has two metadata lines. Eight physical
-        # lines leave room for serialized formatting while bounding both blank
-        # input and long lines for every header in adversary-controlled text.
+        # Forty physical lines accommodate traditional encryption metadata, a
+        # blank separator, and the 32 one-column base64 characters needed to
+        # reach the evidence threshold. The fixed limit still bounds blank or
+        # long input for every header in adversary-controlled text.
         lookahead_end = min(len(lines), line_index + 1 + _PEM_LOOKAHEAD_PHYSICAL_LINES)
         for following_index in range(line_index + 1, lookahead_end):
             candidate = lines[following_index][:_PEM_LOOKAHEAD_CHARS_PER_LINE]
