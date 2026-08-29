@@ -713,6 +713,10 @@ class TestContentEmbeddedSecretsRule:
             ("const API_KEY = 'sk_live_abc123def457';", "Hardcoded API key"),
             ("SECRET_KEY = 'django-insecure-..x'", "Hardcoded secret key"),
             ('private_key = "-----BEGIN RSA PRIVATE KEY-----X"', "Private key"),
+            (f'private_key = "{_RSA_HEADER}-"', "Private key"),
+            (f'private_key = "-{_RSA_HEADER}"', "Private key"),
+            (f'private_key = "{_RSA_HEADER}_"', "Private key"),
+            (f'private_key = "_{_RSA_HEADER}"', "Private key"),
         ],
         ids=[
             "hunter2-near-miss",
@@ -720,6 +724,10 @@ class TestContentEmbeddedSecretsRule:
             "stripe-def456-near-miss",
             "django-insecure-near-miss",
             "rsa-header-near-miss",
+            "rsa-extra-trailing-hyphen",
+            "rsa-extra-leading-hyphen",
+            "rsa-trailing-underscore",
+            "rsa-leading-underscore",
         ],
     )
     def test_known_example_close_variants_still_fire(self, temp_dir, line, expected_desc):
@@ -788,6 +796,23 @@ class TestContentEmbeddedSecretsRule:
         violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
         assert len(violations) == 1
         assert "Private key" in violations[0].message
+
+    def test_pem_short_wrapped_key_material_still_fires(self, temp_dir):
+        wrapped_material = "\n".join(
+            _PEM_MATERIAL[index : index + 16] for index in range(0, len(_PEM_MATERIAL), 16)
+        )
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{_RSA_HEADER}\n{wrapped_material}\n-----END RSA PRIVATE KEY-----\n"
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "Private key" in violations[0].message
+
+    def test_single_short_pem_like_teaching_token_is_exempt(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{_RSA_HEADER}\nabcdefghijklmnop\n-----END RSA PRIVATE KEY-----\n"
+        )
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
 
     @pytest.mark.parametrize(
         "content",

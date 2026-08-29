@@ -52,7 +52,8 @@ _KNOWN_EXAMPLE_VALUES = KNOWN_SECRET_EXAMPLE_VALUES | frozenset(
     }
 )
 _KNOWN_EXAMPLE_VALUE_CASEFOLDS = frozenset(value.casefold() for value in _KNOWN_EXAMPLE_VALUES)
-_PEM_KEY_MATERIAL = re.compile(r"[A-Za-z0-9+/]{32,}={0,2}")
+_PEM_KEY_MATERIAL_FRAGMENT = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
+_PEM_KEY_MATERIAL_MIN_CHARS = 32
 _PEM_METADATA_FIELD = re.compile(
     r"(?:Proc-Type\s*:\s*4\s*,\s*ENCRYPTED|"
     r"DEK-Info\s*:\s*[A-Za-z0-9-]+\s*,\s*[0-9A-Fa-f]{16,32}"
@@ -61,6 +62,10 @@ _PEM_METADATA_FIELD = re.compile(
 )
 _PEM_LOOKAHEAD_PHYSICAL_LINES = 8
 _PEM_LOOKAHEAD_CHARS_PER_LINE = 4096
+# Syntax that can surround a standalone teaching literal. Token-extending
+# punctuation such as hyphens and underscores is deliberately absent.
+_RSA_HEADER_LEFT_DELIMITERS = frozenset("\"'`([{<>=:,>*")
+_RSA_HEADER_RIGHT_DELIMITERS = frozenset("\"'`)]}>:,;.!?\\*")
 
 
 def _shannon_entropy(value: str) -> float:
@@ -102,11 +107,14 @@ def _is_known_example_value(value: str) -> bool:
     return normalized.startswith(prefix) and normalized[len(prefix) :] == remainder.casefold()
 
 
-def _contains_pem_key_material(candidate: str) -> bool:
-    """Detect a bounded PEM payload without treating encryption metadata as one."""
+def _pem_key_material_chars(candidate: str) -> int:
+    """Count bounded PEM payload fragments, excluding encryption metadata."""
     bounded = candidate[:_PEM_LOOKAHEAD_CHARS_PER_LINE]
     without_metadata = _PEM_METADATA_FIELD.sub("", bounded)
-    return _PEM_KEY_MATERIAL.search(without_metadata) is not None
+    return sum(
+        len(match.group(0).rstrip("="))
+        for match in _PEM_KEY_MATERIAL_FRAGMENT.finditer(without_metadata)
+    )
 
 
 class ContentEmbeddedSecretsRule(Rule):
@@ -190,7 +198,8 @@ class ContentEmbeddedSecretsRule(Rule):
     def _pem_key_material_follows(lines: List[str], line_index: int, match: re.Match) -> bool:
         """Whether an RSA header introduces key material instead of teaching text."""
         remainder = lines[line_index][match.end() : match.end() + _PEM_LOOKAHEAD_CHARS_PER_LINE]
-        if _contains_pem_key_material(remainder):
+        material_chars = _pem_key_material_chars(remainder)
+        if material_chars >= _PEM_KEY_MATERIAL_MIN_CHARS:
             return True
 
         # Traditional encrypted PEM has two metadata lines. Eight physical
@@ -201,7 +210,8 @@ class ContentEmbeddedSecretsRule(Rule):
             candidate = lines[following_index][:_PEM_LOOKAHEAD_CHARS_PER_LINE].strip()
             if not candidate:
                 continue
-            if _contains_pem_key_material(candidate):
+            material_chars += _pem_key_material_chars(candidate)
+            if material_chars >= _PEM_KEY_MATERIAL_MIN_CHARS:
                 return True
             if "-----END RSA PRIVATE KEY-----" in candidate:
                 return False
@@ -220,7 +230,15 @@ class ContentEmbeddedSecretsRule(Rule):
         previous_char = line[match.start() - 1 : match.start()]
         next_char = line[match.end() : match.end() + 1]
         if value == _RSA_PRIVATE_KEY_HEADER:
-            if previous_char.isalnum() or next_char.isalnum():
+            left_delimited = (
+                not previous_char
+                or previous_char.isspace()
+                or previous_char in _RSA_HEADER_LEFT_DELIMITERS
+            )
+            right_delimited = (
+                not next_char or next_char.isspace() or next_char in _RSA_HEADER_RIGHT_DELIMITERS
+            )
+            if not left_delimited or not right_delimited:
                 # The header is embedded in a larger token, not standalone.
                 return True
             return cls._pem_key_material_follows(lines, line_index, match)
