@@ -4627,6 +4627,22 @@ class TestDescriptionRouting:
         }
 
 
+class TestUnlinkedInternalReferenceSignal:
+    """Only actionable local targets should reach first-run output."""
+
+    def test_reports_existing_target_and_ignores_path_shaped_prose(self, tmp_path):
+        repo = copy_fixture("content/unlinked-reference-signal", tmp_path)
+
+        found = by_rule(run_lint(repo, "--rule", "content-unlinked-internal-reference"))[
+            "content-unlinked-internal-reference"
+        ]
+
+        assert len(found) == 1
+        assert "docs/release-checklist.md" in found[0]["message"]
+        assert found[0]["line"] == 4
+        assert found[0]["fixable"] is True
+
+
 class TestUnlinkedInternalReferenceAutofix:
     """Integration tests for content-unlinked-internal-reference autofix via CLI."""
 
