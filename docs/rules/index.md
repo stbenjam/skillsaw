@@ -3,22 +3,24 @@
 
 # Rules Reference
 
-skillsaw includes **83** built-in rules organized into the following categories:
+skillsaw includes **87** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
+- [Vercel](vercel.md) (1 rule)
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [Claude Code](claude.md) (13 rules)
 - [OpenAI Codex](codex.md) (5 rules)
 - [Hooks](hooks.md) (3 rules)
 - [Security](security.md) (4 rules)
-- [MCP (Model Context Protocol)](mcp.md) (2 rules)
+- [MCP (Model Context Protocol)](mcp.md) (5 rules)
 - [OpenClaw](openclaw.md) (1 rule)
 - [Cursor](cursor.md) (2 rules)
+- [Copilot / VS Code](copilot.md) (1 rule)
 - [Devin](devin.md) (2 rules)
 - [OpenCode](opencode.md) (1 rule)
 - [Instruction Files](instruction-files.md) (3 rules)
 - [Context Budget](context-budget.md) (1 rule)
-- [Content Intelligence](content-intelligence.md) (25 rules)
+- [Content Intelligence](content-intelligence.md) (24 rules)
 - [CodeRabbit](coderabbit.md) (2 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
@@ -36,6 +38,7 @@ skillsaw includes **83** built-in rules organized into the following categories:
 | [`agentskill-evals`](agentskill-evals.md) | Validate evals/evals.json format when present | warning (auto) | - | agentskills.io |
 | [`agentskill-evals-required`](agentskill-evals-required.md) | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - | agentskills.io |
 | [`agentskill-unreferenced-files`](agentskill-unreferenced-files.md) | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - | agentskills.io |
+| [`skills-lock-valid`](skills-lock-valid.md) | skills-lock.json files must be valid and portable project lockfiles | error (auto) | - | Vercel |
 | [`agent-plugin-json-valid`](agent-plugin-json-valid.md) | Agent Plugins plugin.json and skills location must conform to a supported schema | error (auto) | - | Agent Plugins |
 | [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md) | Agent Plugins mcp.json must conform to a supported schema and semantics | error (auto) | - | Agent Plugins |
 | [`agent-plugin-required`](agent-plugin-required.md) | Plugins must also be available as vendor-neutral Agent Plugins v1 packages, with shared manifest metadata in sync | warning (disabled) | auto | Agent Plugins |
@@ -64,11 +67,15 @@ skillsaw includes **83** built-in rules organized into the following categories:
 | [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments or Markdown link labels invisible to human review | warning (auto) | - | Security |
 | [`security-encoded-payload`](security-encoded-payload.md) | Detect long high-entropy base64/hex blobs that can smuggle encoded payloads | warning (auto) | - | Security |
 | [`security-dynamic-context`](security-dynamic-context.md) | Require an allowlist for dynamic context commands that execute shell code while loading agent context | warning (auto) | - | Security |
-| [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
+| [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must use valid syntax and a host-readable server structure | error | - | MCP (Model Context Protocol) |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
+| [`mcp-registry-server-json-valid`](mcp-registry-server-json-valid.md) | MCP Registry server.json must conform to a supported schema and its enums | error (auto) | - | MCP (Model Context Protocol) |
+| [`mcp-registry-version-semver`](mcp-registry-version-semver.md) | MCP Registry server versions should use strict Semantic Versioning 2.0.0 | warning (auto) | - | MCP (Model Context Protocol) |
+| [`mcp-registry-npm-name-match`](mcp-registry-npm-name-match.md) | Local npm package.json mcpName must match MCP Registry server.json name | error (auto) | - | MCP (Model Context Protocol) |
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
 | [`cursor-rules-valid`](cursor-rules-valid.md) | Cursor .mdc rules must have frontmatter that lets the rule activate | error (auto) | auto | Cursor |
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
+| [`copilot-agent-valid`](copilot-agent-valid.md) | Copilot and VS Code custom agents must use target-compatible frontmatter | error (auto) | - | Copilot / VS Code |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
 | [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
@@ -91,7 +98,6 @@ skillsaw includes **83** built-in rules organized into the following categories:
 | [`content-inconsistent-terminology`](content-inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | - | Content Intelligence |
 | [`content-instruction-drift`](content-instruction-drift.md) | Detect near-duplicate sections that have drifted apart across instruction files | info (auto) | - | Content Intelligence |
 | [`content-broken-internal-reference`](content-broken-internal-reference.md) | Detect markdown links where the target file does not exist | warning (auto) | auto | Content Intelligence |
-| [`content-broken-external-reference`](content-broken-external-reference.md) | Detect external http(s) links whose server reports them gone (404/410; opt-in, makes network requests) | warning (disabled) | - | Content Intelligence |
 | [`content-unlinked-internal-reference`](content-unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto | Content Intelligence |
 | [`content-placeholder-text`](content-placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - | Content Intelligence |
 | [`content-unclosed-fence`](content-unclosed-fence.md) | Detect code fences opened but never closed, hiding the rest of the file from content rules | warning (auto) | auto | Content Intelligence |

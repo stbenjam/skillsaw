@@ -9,13 +9,12 @@ import hashlib
 import importlib.util
 import inspect
 import logging
-import os
 import re
 import sys
 import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
-from skillsaw.paths import safe_is_symlink, safe_resolve
+from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -140,51 +139,10 @@ def _node_content_suppressed(block) -> bool:
     return False
 
 
-# Spellings of "no" and "yes" the network environment variables accept.
-# Anything outside both sets is a typo, and the two variables resolve a
-# typo in opposite directions — see below.
-_ENV_OFF_VALUES = frozenset({"", "0", "false", "no", "off"})
-_ENV_ON_VALUES = frozenset({"1", "true", "yes", "on"})
-
-
-def _env_restriction(name: str) -> bool:
-    """Whether the operator asked for the restriction *name* names.
-
-    For a variable that takes capability away (``SKILLSAW_NO_NETWORK``),
-    an unrecognized value means the restriction applies: ``=maybe`` is a
-    typo, and the safe reading of a typo is the more restrictive one.
-    """
-    return os.environ.get(name, "").strip().lower() not in _ENV_OFF_VALUES
-
-
-def _env_permission(name: str) -> bool:
-    """Whether the operator granted the permission *name* names.
-
-    The mirror image of :func:`_env_restriction`. For a variable that
-    hands capability out (``SKILLSAW_ALLOW_PRIVATE_HOSTS``), only an
-    explicit yes counts, so a typo withholds the permission rather than
-    granting it.
-    """
-    return os.environ.get(name, "").strip().lower() in _ENV_ON_VALUES
-
-
-class EmptyNetworkRuleSetError(ValueError):
-    """Every rule ``--rule`` named needs the network, and the network is off.
-
-    A ``ValueError`` like the other construction-time refusals, so a
-    caller that only handles those keeps working. It is a distinct type
-    because the advice differs by caller: on ``lint`` the operator can
-    drop ``--no-network``, while ``fix`` forces the gate on itself and
-    has no flag to drop — see ``cli._fix``.
-    """
-
-    def __init__(self, rule_ids: List[str]):
-        self.rule_ids = rule_ids
-        super().__init__(
-            "--no-network (or SKILLSAW_NO_NETWORK) skipped every rule named "
-            f"by --rule: {', '.join(rule_ids)}. Nothing would be checked — "
-            "drop --no-network, or name a rule that does not need the network."
-        )
+def _node_externally_sourced(block) -> bool:
+    """Whether *block* or any ancestor is externally sourced."""
+    getter = getattr(block, "in_external_source", None)
+    return bool(getter) if getter is not None else False
 
 
 class Linter:
@@ -201,8 +159,6 @@ class Linter:
         baseline: Optional["BaselineFile"] = None,
         no_custom_rules: bool = False,
         no_plugins: bool = False,
-        no_network: bool = False,
-        allow_private_hosts: bool = False,
     ):
         from .rules.builtin import canonical_rule_id
 
@@ -215,17 +171,6 @@ class Linter:
         self._baseline = baseline
         self._no_custom_rules = no_custom_rules
         self._no_plugins = no_plugins
-        # The environment half of the operator's network controls is read
-        # here, not only in the CLI helper. An operator who exports
-        # SKILLSAW_NO_NETWORK for a whole CI job means it for anything
-        # that constructs a Linter — a future subcommand, an embedder, an
-        # in-process test — not just for the call sites that currently
-        # remember to pass the flag. The gate is one-way: either source
-        # turns it on, and nothing in the repository turns it back off.
-        self._no_network = no_network or _env_restriction("SKILLSAW_NO_NETWORK")
-        self._allow_private_hosts = allow_private_hosts or _env_permission(
-            "SKILLSAW_ALLOW_PRIVATE_HOSTS"
-        )
         self._plugin_load_violations: List[RuleViolation] = []
         self._vendor_managed_cache: Dict[Path, bool] = {}
         self._stale_baseline_entries: List["BaselineEntry"] = []
@@ -243,9 +188,14 @@ class Linter:
             self.context.content_paths = self.config.content_paths
             self.context.exclude_patterns = self.config.exclude_patterns
             self.context.apply_excludes()
+        if self.context.lint_external_content != self.config.lint_external_content:
+            self.context.lint_external_content = self.config.lint_external_content
+            self.context.rebuild_lint_tree()
         self.rules: List[Rule] = []
         self._load_rules()
-        self._apply_network_gate()
+        enabled_surfaces = self._enabled_builtin_surfaces()
+        for rule in self.rules:
+            rule._enabled_surface_rule_ids = enabled_surfaces
 
         if self._rule_ids:
             unknown = self._rule_ids - self._known_rule_ids
@@ -259,6 +209,74 @@ class Linter:
             if unknown:
                 formatted = ", ".join(sorted(unknown))
                 raise ValueError(f"Unknown rule(s) in --skip-rule: {formatted}")
+
+    def _enabled_builtin_surfaces(self) -> frozenset:
+        """Builtin format surfaces available independently of CLI selection.
+
+        ``--rule`` narrows which checks execute, not which repository syntax
+        those checks may inspect. Version/config/skip gates still preserve the
+        rule surface users opted into; explicitly targeting the owning rule
+        bypasses normal enablement just as it does during rule loading.
+        """
+        from .rules.builtin import BUILTIN_RULE_REGISTRY
+
+        enabled = set()
+        known_surfaces = set(BUILTIN_RULE_REGISTRY)
+        requested = set()
+        retained_rules = []
+        for rule in self.rules:
+            try:
+                dependencies = rule.surface_dependencies
+                if isinstance(dependencies, str) or not isinstance(
+                    dependencies, (tuple, list, set, frozenset)
+                ):
+                    raise TypeError("surface_dependencies must be a collection of rule IDs")
+                if not all(isinstance(dependency, str) for dependency in dependencies):
+                    raise TypeError("surface_dependencies must contain only string rule IDs")
+                unknown = set(dependencies) - known_surfaces
+                if unknown:
+                    raise ValueError(
+                        "unknown builtin surface dependency: " + ", ".join(sorted(unknown))
+                    )
+            except Exception as error:
+                source = getattr(rule, "_source", "builtin")
+                if not source.startswith("plugin:"):
+                    raise ValueError(
+                        f"Rule '{rule.rule_id}' has invalid surface_dependencies: {error}"
+                    ) from error
+                plugin_name = source.removeprefix("plugin:")
+                self._plugin_load_violations.append(
+                    RuleViolation(
+                        rule_id="plugin-load-error",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"Plugin '{plugin_name}': rule '{rule.rule_id}' has invalid "
+                            f"surface dependencies and was skipped: {error}"
+                        ),
+                    )
+                )
+                continue
+            retained_rules.append(rule)
+            requested.update(dependencies)
+        self.rules = retained_rules
+        for rule_id in requested:
+            rule_class = BUILTIN_RULE_REGISTRY[rule_id]
+            instance = rule_class()
+            if rule_id in self._skip_rule_ids:
+                continue
+            if self._rule_ids and rule_id in self._rule_ids:
+                enabled.add(rule_id)
+                continue
+            if self.config.is_rule_enabled(
+                rule_id,
+                self.context,
+                instance.repo_types,
+                instance.formats,
+                since_version=instance.since,
+                deprecated=instance.deprecated,
+            ):
+                enabled.add(rule_id)
+        return frozenset(enabled)
 
     def _load_rules(self):
         """Load all enabled rules"""
@@ -281,48 +299,6 @@ class Linter:
         if not self._no_custom_rules:
             for custom_rule_path in self.config.custom_rules:
                 self._load_custom_rule(custom_rule_path)
-
-    @staticmethod
-    def _is_network_rule(rule) -> bool:
-        # getattr: duck-typed custom rules may not inherit from Rule.
-        return bool(getattr(rule, "requires_network", False))
-
-    def _apply_network_gate(self):
-        """Apply the operator's network decisions to the loaded rules.
-
-        Three things happen here, and here only: rules declaring
-        ``requires_network`` are dropped under ``--no-network``, the
-        operator's ``--allow-private-hosts`` decision is pushed onto the
-        ones that survive, and the run announces itself when the network
-        engages.
-
-        This runs after every loader — builtin, plugin, and custom — so
-        one filter covers all three, and it is deliberately independent
-        of ``--rule``: a linted repository must never be able to decide
-        that skillsaw is allowed on the network, and neither should a
-        flag that only selects *which* rules run.
-        """
-        network_rules = [r for r in self.rules if self._is_network_rule(r)]
-        if not network_rules:
-            return
-        rule_ids = sorted(r.rule_id for r in network_rules)
-        if self._no_network:
-            self.rules = [r for r in self.rules if not self._is_network_rule(r)]
-            for rule_id in rule_ids:
-                logger.info("Rule %-30s skipped (--no-network)", rule_id)
-            if self._rule_ids and self._rule_ids <= set(rule_ids):
-                # Every rule the operator asked for was just dropped, so
-                # the run would exit 0 having checked nothing. That is the
-                # quiet CI false pass REVIEW.md's T4/T12 bullet asks
-                # reviewers to flag — say so rather than looking healthy.
-                raise EmptyNetworkRuleSetError(rule_ids)
-            return
-        # Reaching non-public hosts is an operator decision, never a
-        # repo-config one, so it is pushed onto the rule rather than read
-        # from `.skillsaw.yaml` (see T18).
-        for rule in network_rules:
-            rule.allow_private_hosts = self._allow_private_hosts
-        warnings.warn(NetworkAccessWarning(rule_ids), stacklevel=2)
 
     def _load_builtin_rules(self):
         """Load builtin rules from skillsaw.rules.builtin"""
@@ -1049,6 +1025,36 @@ class Linter:
         resolved = safe_resolve(path) or path
         return resolved in self._compiled_copy_paths()
 
+    def _is_external_source_path(self, path: Optional[Path]) -> bool:
+        """Whether *path* sits inside an externally sourced tree root."""
+        if path is None:
+            return False
+        if not path.is_absolute():
+            path = self.context.root_path / path
+        resolved = safe_resolve(path) or path
+        return path_within_roots(
+            resolved, self._external_source_roots()
+        ) or self.context.is_externally_sourced(resolved)
+
+    def _external_source_roots(self) -> Set[Path]:
+        """External roots from repository provenance and contributed tree tags."""
+        cached = getattr(self, "_external_source_root_cache", None)
+        if cached is None:
+            cached = set(self.context.externally_sourced_roots())
+            cached.update(
+                node.resolved_path
+                for node in self.context.lint_tree.walk()
+                if node.externally_sourced
+            )
+            self._external_source_root_cache = cached
+        return cached
+
+    def _is_on_external_source(self, violation: RuleViolation) -> bool:
+        """Whether *violation* belongs to externally sourced content."""
+        if violation.block is not None and _node_externally_sourced(violation.block):
+            return True
+        return self._is_external_source_path(violation.file_path)
+
     def _is_vendor_managed(self, file_path: Optional[Path]) -> bool:
         """Whether *file_path* belongs to a plugin installed into this checkout.
 
@@ -1099,6 +1105,12 @@ class Linter:
                     v.file_path or "(no file)",
                     v.file_line or "?",
                 )
+            elif not self.config.lint_external_content and self._is_on_external_source(v):
+                logger.info(
+                    "Suppressed %-30s %s (externally sourced content)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
+                )
             elif _is_prose_duplicate_rule(v.rule_id) and self._is_on_compiled_copy(v):
                 # A compiled copy of a source read elsewhere: its prose-quality
                 # and budget findings would double the source's, so drop them.
@@ -1111,10 +1123,12 @@ class Linter:
                     v.rule_id,
                     v.file_path or "(no file)",
                 )
-            elif self._is_vendor_managed(v.file_path) or (
-                v.block is not None and v.block.diagnostic_only
+            elif (
+                self._is_on_external_source(v)
+                or self._is_vendor_managed(v.file_path)
+                or (v.block is not None and v.block.diagnostic_only)
             ):
-                # Still reported — a hostile third-party skill is worth
+                # Still reported — hostile third-party content is worth
                 # knowing about — but never advertised as fixable, because
                 # fix() is about to stand down on it. Confidence goes with
                 # fixability, or JSON/SARIF would still claim SAFE/SUGGEST.
@@ -1257,13 +1271,23 @@ class Linter:
             # ``fix()`` does not read it, so handing the violation over would
             # still invite a rewrite of text that has no honest span in the
             # file that holds it (a prompt decoded out of JSON, say).
-            fixable_input = [v for v in visible if v.block is None or not v.block.diagnostic_only]
+            fixable_input = [
+                v
+                for v in visible
+                if (v.block is None or not v.block.diagnostic_only)
+                and not self._is_on_external_source(v)
+            ]
             if fixable_input and rule.supports_autofix:
                 try:
                     fixes = [
                         f
                         for f in rule.fix(self.context, fixable_input)
                         if not self._is_vendor_managed(f.file_path)
+                        and not self._is_external_source_path(f.file_path)
+                        and (
+                            f.rename_from is None
+                            or not self._is_external_source_path(f.rename_from)
+                        )
                     ]
                     all_fixes.extend(fixes)
                     fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
@@ -1387,6 +1411,8 @@ class Linter:
             self.context.rebuild_lint_tree()
             if hasattr(self, "_suppression_cache"):
                 self._suppression_cache.clear()
+            if hasattr(self, "_external_source_root_cache"):
+                del self._external_source_root_cache
 
         return all_applied, all_suggested
 

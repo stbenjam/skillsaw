@@ -9,13 +9,7 @@ from ..context import RepositoryContext
 from ..linter import Linter
 from ..utils import write_bytes_atomic
 from ._config import load_config
-from ._helpers import (
-    _RuleProgress,
-    _ansi_colors,
-    allow_private_hosts_requested,
-    color_enabled,
-    no_network_requested,
-)
+from ._helpers import _RuleProgress, _ansi_colors, color_enabled
 from skillsaw.paths import safe_resolve
 
 _BADGE_FILENAME = ".skillsaw-badge.json"
@@ -87,16 +81,19 @@ def _run_badge(args):
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
 
-    context = RepositoryContext(args.path)
     config, _config_path = load_config(args, args.path)
+    context = RepositoryContext(
+        args.path,
+        exclude_patterns=config.exclude_patterns,
+        content_paths=config.content_paths,
+        lint_external_content=config.lint_external_content,
+    )
 
     try:
         linter = Linter(
             context,
             config,
             no_custom_rules=args.no_custom_rules,
-            no_network=no_network_requested(args),
-            allow_private_hosts=allow_private_hosts_requested(args),
             no_plugins=args.no_plugins,
         )
     except ValueError as e:

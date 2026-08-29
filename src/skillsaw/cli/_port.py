@@ -41,6 +41,7 @@ def _port_targets(path: Path, config: LinterConfig) -> list:
         path,
         exclude_patterns=config.exclude_patterns,
         content_paths=config.content_paths,
+        lint_external_content=config.lint_external_content,
     )
     targets = context.distinct_plugin_dirs()
     return targets or [path]
@@ -132,14 +133,17 @@ def _run_port(args):
             # A port isn't done until the target format's own rules accept
             # it. Config advisories (e.g. deprecation notices) belong to
             # lint runs; only the format's own findings gate the port.
-            context = RepositoryContext(target, exclude_patterns=config.exclude_patterns)
+            context = RepositoryContext(
+                target,
+                exclude_patterns=config.exclude_patterns,
+                lint_external_content=config.lint_external_content,
+            )
             linter = Linter(
                 context,
                 config,
                 rule_ids=verify_rules,
                 no_plugins=True,
                 no_custom_rules=True,
-                no_network=True,
             )
             for violation in linter.run():
                 if violation.rule_id in verify_rules:
@@ -182,14 +186,17 @@ def _run_port(args):
             catalog_path = base / CODEX_CATALOG
             catalog_path.parent.mkdir(parents=True, exist_ok=True)
             catalog_path.write_text(catalog_content, encoding="utf-8")
-            context = RepositoryContext(base, exclude_patterns=config.exclude_patterns)
+            context = RepositoryContext(
+                base,
+                exclude_patterns=config.exclude_patterns,
+                lint_external_content=config.lint_external_content,
+            )
             linter = Linter(
                 context,
                 config,
                 rule_ids={"codex-marketplace-json-valid"},
                 no_plugins=True,
                 no_custom_rules=True,
-                no_network=True,
             )
             from ..rule import Severity
 

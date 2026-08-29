@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "skills": {
+    "release-notes": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sourceUrl": "https://github.com/vercel-labs/skills.git",
+      "ref": "main",
+      "skillPath": "skills/release-notes/SKILL.md",
+      "subagents": [
+        "",
+        "reviewer"
+      ]
+    },
+    "workspace-helper": {
+      "source": "../shared-skills/workspace-helper",
+      "sourceType": "local",
+      "computedHash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    }
+  }
+}

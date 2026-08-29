@@ -1,0 +1,1 @@
+"""MCP Registry rule tests."""

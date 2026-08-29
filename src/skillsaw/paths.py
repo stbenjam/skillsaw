@@ -13,7 +13,7 @@ import os
 import sys
 import threading
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Dict, Optional
+from typing import AbstractSet, Dict, Optional
 
 # Sentinel distinguishing "not memoized" from a memoized ``None``.
 _MISSING = object()
@@ -171,6 +171,11 @@ def clear_resolve_cache() -> None:
         _resolve_generation += 1
         _RESOLVE_CACHE.clear()
         _resolve_cache_bytes = 0
+
+
+def path_within_roots(path: Path, roots: AbstractSet[Path]) -> bool:
+    """Whether resolved *path* equals or descends from an indexed root."""
+    return path in roots or any(parent in roots for parent in path.parents)
 
 
 def safe_resolve(path: Path) -> Optional[Path]:

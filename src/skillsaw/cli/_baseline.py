@@ -8,7 +8,6 @@ from ..context import RepositoryContext
 from ..linter import Linter
 from ..rule import Severity
 from ._config import _get_version, load_config
-from ._helpers import allow_private_hosts_requested, no_network_requested
 from skillsaw.paths import safe_resolve
 
 
@@ -23,6 +22,7 @@ def _run_baseline(args):
         args.path,
         exclude_patterns=config.exclude_patterns,
         content_paths=config.content_paths,
+        lint_external_content=config.lint_external_content,
     )
 
     try:
@@ -30,8 +30,6 @@ def _run_baseline(args):
             context,
             config,
             no_custom_rules=args.no_custom_rules,
-            no_network=no_network_requested(args),
-            allow_private_hosts=allow_private_hosts_requested(args),
             no_plugins=args.no_plugins,
         )
     except ValueError as e:

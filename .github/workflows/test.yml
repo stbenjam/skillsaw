@@ -148,14 +148,6 @@ jobs:
   integration:
     runs-on: ubuntu-latest
 
-    # This job clones third-party repositories and lints them with their own
-    # `.skillsaw.yaml` in place — the untrusted config input THREAT_MODEL.md
-    # T18 describes, which can enable a rule that makes outbound requests.
-    # Set at job level rather than as a flag per invocation so a clone step
-    # added later inherits it.
-    env:
-      SKILLSAW_NO_NETWORK: "1"
-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

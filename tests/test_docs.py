@@ -12,6 +12,7 @@ from skillsaw.docs.extractor import extract_docs
 from skillsaw.docs.html_renderer import render_html, COLOR_THEMES
 from skillsaw.docs.markdown_renderer import render_markdown
 from skillsaw.docs.models import DocsOutput, MarketplaceDoc, PluginDoc
+from skillsaw.formats.mcp_registry import MCP_REGISTRY_SCHEMA_ID
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1201,6 +1202,25 @@ class TestDocsCLI:
         result = self._run(str(valid_plugin), "--format", "markdown", "--output", str(out_dir))
         assert result.returncode == 0
         assert (out_dir / "README.md").exists()
+
+    def test_docs_warns_for_registry_only_repository(self, temp_dir):
+        (temp_dir / "server.json").write_text(
+            json.dumps(
+                {
+                    "$schema": MCP_REGISTRY_SCHEMA_ID,
+                    "name": "com.example/weather",
+                    "description": "An MCP Registry publisher document.",
+                    "version": "1.0.0",
+                }
+            ),
+            encoding="utf-8",
+        )
+        out_dir = temp_dir / "out"
+
+        result = self._run(str(temp_dir), "--output", str(out_dir))
+
+        assert result.returncode == 0
+        assert "doesn't appear to be a recognized repository" in result.stderr
 
     def test_docs_default_output_refuses_symlinked_page(self, valid_plugin, temp_dir):
         output_dir = temp_dir / "skillsaw-docs"

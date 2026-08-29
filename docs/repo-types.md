@@ -85,6 +85,32 @@ may contain root `plugin.json`, `.claude-plugin/plugin.json`, and
 matching repository type and applies its rule family independently. One
 format's manifest does not substitute for another's.
 
+## MCP Registry publisher metadata
+
+Publisher repositories for the
+[official MCP Registry](https://github.com/modelcontextprotocol/registry)
+can keep one or more `server.json` documents at the repository root or inside
+monorepo packages:
+
+```text
+weather-server/
+├── server.json           # Registry publisher metadata
+└── package.json          # npm ownership metadata, when locally available
+```
+
+Automatic detection requires either the canonical MCP Registry `$schema` URL
+or the Registry's distinctive server identity plus package/remote shape. This
+keeps unrelated application files named `server.json` out of scope. Use
+`--type mcp-registry` when an intended Registry document is too malformed to
+provide detection evidence.
+
+The Registry rules validate strict JSON against the bundled immutable
+2025-12-11 schema, enforce the reverse-DNS server namespace and current
+transport/registry type vocabulary, reject version ranges, recommend strict
+Semantic Versioning, and compare a local npm package's `mcpName` with the
+`server.json` `name`. The npm check never queries a package registry; an
+external package with no matching local `package.json` is left alone.
+
 ## Single Plugin
 
 ```
@@ -221,7 +247,7 @@ Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files 
 
 ## APM (Agent Package Manager)
 
-Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output.
+Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output. Package content under `apm_modules/` is externally sourced: it is linted but never autofixed by default, and `lint-external-content: false` omits it from the lint tree.
 
 ## Editor and CLI tool files
 
@@ -236,6 +262,15 @@ does not look at on-demand commands, prompts, agents or workflows. The JSON
 configuration files — `mcp.json`, `hooks.json` — are machine config, never
 linted as prose; they get the MCP and hook rules instead.
 
+The same separation applies to the Vercel skills CLI's project
+`skills-lock.json`: it is generated machine state, so only
+[`skills-lock-valid`](rules/skills-lock-valid.md) checks it. The rule validates
+the structure and portability metadata the CLI reads; it does not pass the
+generated JSON through content-quality rules. Installed skill directories
+named by remote lock entries are tagged as externally sourced. They remain
+visible to rules by default but are never autofixed; see
+[`lint-external-content`](configuration.md#external-content) for the opt-out.
+
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
 — Cursor, Copilot, Cline, OpenCode and Codex all read it, and one well-linted
 AGENTS.md beats five per-vendor copies that drift apart. skillsaw does not
@@ -243,12 +278,14 @@ reimplement a per-vendor instruction format on top of it; what it adds is
 coverage of the prose each tool keeps in its own directory, plus structural
 validation wherever a tool's own metadata can fail silently — see
 [`cursor-rules-valid`](rules/cursor-rules-valid.md),
-[`cursor-hooks-valid`](rules/cursor-hooks-valid.md) and
+[`cursor-hooks-valid`](rules/cursor-hooks-valid.md),
+[`copilot-agent-valid`](rules/copilot-agent-valid.md), and
 [`opencode-config-valid`](rules/opencode-config-valid.md).
 
 | Tool | Files linted |
 | --- | --- |
 | **Portable** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
+| **Vercel skills CLI** | Every `skills-lock.json`, plus matching installed skill payloads unless `lint-external-content: false` |
 | **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
 | **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
 | **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
@@ -256,6 +293,16 @@ validation wherever a tool's own metadata can fail silently — see
 | **Devin CLI / Desktop** | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/` equivalents and `.windsurfrules` |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
+
+Discovery and validation are separate layers for Copilot. Every Markdown file
+under `.github/agents/` and every `*.chatmode.md` file under the legacy
+`.github/chatmodes/` directory is attached as agent prose, so it receives the
+shared content and security rules.
+[`copilot-agent-valid`](rules/copilot-agent-valid.md) additionally validates
+the YAML fields that determine how GitHub cloud and VS Code interpret the
+agent, including their target-specific model, tool, subagent, handoff, MCP,
+metadata, and hook behavior. Unknown tool names remain valid, matching both
+consumers' forward-compatible behavior.
 
 skillsaw finds `.cursor/`, `.github/`, `.clinerules/`, `.opencode/`, `.devin/`
 and `.windsurf/`
@@ -275,6 +322,14 @@ instruction files at multiple project levels; Devin Desktop also discovers
 `AGENTS.md` case-insensitively. skillsaw lints every nested tool directory either way —
 committed instructions are worth checking wherever a teammate might open
 them, and a rule that turns out not to load is worth knowing about too.
+
+`skills-lock.json` is recursive for a different reason: each project that
+runs the skills CLI owns its own lockfile, so a monorepo can legitimately
+commit several. Exact-name lockfiles are discovered throughout the checkout;
+vendored directories and configured `exclude` paths stay out of scope.
+Lockfiles still contribute external-source provenance when the lockfile path
+itself is excluded: an `exclude` must not make autofix reinterpret a managed
+dependency as authored content.
 
 The plain `GEMINI.md` and `QWEN.md` formats remain root-only. `AGENTS.md`
 (including Desktop's case-insensitive spelling), `AGENTS.local.md`,
@@ -296,7 +351,8 @@ so a newly added Devin field does not break existing repositories.
 MCP configuration is read for its servers wherever it lives, so
 `mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json`,
 `.vscode/mcp.json` and the `mcp` section of an `opencode.json` or
-`opencode.jsonc` as well as
+`opencode.jsonc`, plus `mcp-servers` embedded in Copilot custom-agent
+frontmatter, as well as
 `.mcp.json`. VS Code spells the server map `servers` and adds a sibling
 `inputs` array for prompted variables; skillsaw reads the former and ignores
 the latter.

@@ -14,7 +14,7 @@ from typing import Callable, Dict, Iterable, Iterator, List, Mapping, Optional, 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.formats import devin
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
 WALK_SKIP_DIRS = frozenset(
@@ -50,6 +50,9 @@ class RepositoryScan:
     instruction_files: Tuple[Path, ...]
     tool_dirs: Dict[str, Tuple[Path, ...]]
     legacy_editor_files: Dict[str, Tuple[Path, ...]]
+    mcp_registry_files: Tuple[Path, ...]
+    package_json_files: Tuple[Path, ...]
+    skills_lock_files: Tuple[Path, ...]
 
 
 #: Pre-directory instruction files, read from the nearest enclosing directory
@@ -66,6 +69,9 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     found = {root / name for name in root_names if (root / name).exists()}
     tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
     legacy_editor: Dict[str, List[Path]] = {name: [] for name in LEGACY_EDITOR_FILES}
+    mcp_registry_files: List[Path] = []
+    package_json_files: List[Path] = []
+    skills_locks: List[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
@@ -73,6 +79,12 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
         found.update(here / name for name in filenames if name.endswith(".instructions.md"))
         if not vendored:
             found.update(here / name for name in filenames if devin.is_instruction_filename(name))
+            if "server.json" in filenames:
+                mcp_registry_files.append(here / "server.json")
+            if "package.json" in filenames:
+                package_json_files.append(here / "package.json")
+            if "skills-lock.json" in filenames:
+                skills_locks.append(here / "skills-lock.json")
         # The root copy has always been attached; a nested one is a new
         # claim, so it follows the tool-directory rule rather than the
         # instruction-file one and stays out of vendored trees.
@@ -89,6 +101,9 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
         instruction_files=tuple(sorted(found)),
         tool_dirs={name: tuple(sorted(paths)) for name, paths in tool_dirs.items()},
         legacy_editor_files={name: tuple(sorted(paths)) for name, paths in legacy_editor.items()},
+        mcp_registry_files=tuple(sorted(mcp_registry_files)),
+        package_json_files=tuple(sorted(package_json_files)),
+        skills_lock_files=tuple(sorted(skills_locks)),
     )
 
 
@@ -159,6 +174,7 @@ def instruction_formats(
     is_excluded: Callable[[Path], bool],
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
     legacy_editor_files: Optional[Mapping[str, Iterable[Path]]] = None,
+    skills_lock_files: Optional[Iterable[Path]] = None,
 ) -> Set[str]:
     """Return instruction-format evidence labels from non-excluded markers.
 
@@ -270,6 +286,10 @@ def instruction_formats(
             any(path.name == "CLAUDE.md" and not is_excluded(path) for path in files),
         ),
         ("HAS_CODERABBIT", marker(".coderabbit.yaml")),
+        (
+            "HAS_SKILLS_LOCK",
+            any(not is_excluded(path) for path in (skills_lock_files or ())),
+        ),
     )
     found.update(label for label, present in checks if present)
     return found
@@ -297,21 +317,29 @@ def has_skill_md_recursive(
     root: Path,
     should_skip: Callable[[Path], bool],
     _visited: Optional[Set[Path]] = None,
+    _boundary: Optional[Path] = None,
 ) -> bool:
-    """Return whether a recursive, guarded walk finds an Agent Skill."""
+    """Return whether a contained recursive walk finds an Agent Skill."""
     if _visited is None:
         _visited = set()
     resolved_root = safe_resolve(root)
-    if resolved_root is None or resolved_root in _visited:
+    if resolved_root is None:
+        return False
+    if _boundary is None:
+        _boundary = resolved_root
+    if not resolved_root.is_relative_to(_boundary) or resolved_root in _visited:
         return False
     _visited.add(resolved_root)
+    if (
+        exact_name_exists(root, "SKILL.md")
+        and contained_resolve(root / "SKILL.md", _boundary) is not None
+    ):
+        return True
     try:
         for item in root.iterdir():
             if should_skip(item):
                 continue
-            if exact_name_exists(item, "SKILL.md"):
-                return True
-            if item.is_dir() and has_skill_md_recursive(item, should_skip, _visited):
+            if item.is_dir() and has_skill_md_recursive(item, should_skip, _visited, _boundary):
                 return True
     except OSError:
         pass
@@ -324,16 +352,30 @@ def is_agentskills_repo(
     extra_skill_roots: Iterable[Path] = (),
 ) -> bool:
     """Return whether the repository contains an Agent Skill entrypoint."""
-    if exact_name_exists(root, "SKILL.md"):
+    resolved_root = safe_resolve(root)
+    if resolved_root is None:
+        return False
+    if (
+        exact_name_exists(root, "SKILL.md")
+        and contained_resolve(root / "SKILL.md", resolved_root) is not None
+    ):
         return True
     for rel in CONVENTIONAL_SKILL_DIRS:
         path = root / rel
-        if path.is_dir() and has_skill_md_recursive(path, should_skip):
+        if (
+            contained_resolve(path, resolved_root) is not None
+            and path.is_dir()
+            and has_skill_md_recursive(path, should_skip, _boundary=resolved_root)
+        ):
             return True
     for path in extra_skill_roots:
-        if path.is_dir() and has_skill_md_recursive(path, should_skip):
+        if (
+            contained_resolve(path, resolved_root) is not None
+            and path.is_dir()
+            and has_skill_md_recursive(path, should_skip, _boundary=resolved_root)
+        ):
             return True
-    return has_skill_md_recursive(root, should_skip)
+    return has_skill_md_recursive(root, should_skip, _boundary=resolved_root)
 
 
 def is_dot_claude(root: Path, apm: bool) -> bool:

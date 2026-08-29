@@ -37,6 +37,13 @@ class LintTarget:
     #: smuggle instructions past every security rule.
     content_suppressed: bool = field(default=False, repr=False)
 
+    #: Whether this node comes from outside the repository's authorship
+    #: boundary. Lock-managed skills and APM packages are the first producers;
+    #: keeping provenance on the tree makes reporting policy and the autofix
+    #: safety boundary independent of any particular rule. Descendants inherit
+    #: it through ``in_external_source``.
+    externally_sourced: bool = field(default=False, repr=False)
+
     #: Content this linter reads but must never rewrite. Set on node types
     #: whose text is embedded in a document of another format — a prompt
     #: string inside JSON, say — where a fix computed against the extracted
@@ -136,6 +143,16 @@ class LintTarget:
         node: Optional["LintTarget"] = self
         while node is not None:
             if node.content_suppressed:
+                return True
+            node = node.parent
+        return False
+
+    @property
+    def in_external_source(self) -> bool:
+        """Whether this node or an ancestor is externally sourced."""
+        node: Optional["LintTarget"] = self
+        while node is not None:
+            if node.externally_sourced:
                 return True
             node = node.parent
         return False

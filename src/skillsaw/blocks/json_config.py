@@ -8,7 +8,7 @@ content-quality rules never see them.  Dedicated rules locate them with
 
 from __future__ import annotations
 
-import json
+from itertools import islice
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -16,7 +16,7 @@ from typing import Any, ClassVar, Dict, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
-from skillsaw.utils import read_text, read_json, read_json_strict, read_jsonc
+from skillsaw.utils import commented_key_line, read_text, read_json, read_json_strict, read_jsonc
 
 
 def _as_str(value: Any) -> Optional[str]:
@@ -57,9 +57,10 @@ class HookHandler:
     status_message: Optional[str] = None
     shell: Optional[str] = None
     allowed_env_vars: Optional[List[str]] = None
+    source_line: Optional[int] = None
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "HookHandler":
+    def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookHandler":
         """Build a handler from raw JSON, dropping values of the wrong type.
 
         The annotations here are a contract the JSON cannot be trusted to
@@ -72,6 +73,7 @@ class HookHandler:
         field falsy, which every consumer already handles, and
         ``hooks-json-valid`` reads the raw document and reports the shape.
         """
+        command_line = commented_key_line(d, "command")
         return cls(
             type=_as_str(d.get("type")) or "",
             command=_as_str(d.get("command")),
@@ -91,6 +93,7 @@ class HookHandler:
             status_message=_as_str(d.get("statusMessage")),
             shell=_as_str(d.get("shell")),
             allowed_env_vars=_as_str_list(d.get("allowedEnvVars")),
+            source_line=command_line + line_offset if command_line is not None else None,
         )
 
 
@@ -102,13 +105,13 @@ class HookEventConfig:
     handlers: List[HookHandler] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "HookEventConfig":
+    def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookEventConfig":
         handlers: List[HookHandler] = []
         raw_hooks = d.get("hooks", [])
         if isinstance(raw_hooks, list):
             for h in raw_hooks:
                 if isinstance(h, dict):
-                    handlers.append(HookHandler.from_dict(h))
+                    handlers.append(HookHandler.from_dict(h, line_offset=line_offset))
         return cls(
             # Coerced like the handler fields: a list-valued matcher reaches
             # every consumer annotated ``str``, and the generated docs page
@@ -121,7 +124,7 @@ class HookEventConfig:
         )
 
 
-def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
+def parse_hooks_events(hooks_obj: Any, *, line_offset: int = 0) -> Dict[str, List[HookEventConfig]]:
     """Parse a ``hooks`` object into event configs.
 
     Supports both the nested (hooks.json / settings.json) format
@@ -140,9 +143,9 @@ def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
             if not isinstance(cfg, dict):
                 continue
             if "hooks" in cfg:
-                entries.append(HookEventConfig.from_dict(cfg))
+                entries.append(HookEventConfig.from_dict(cfg, line_offset=line_offset))
             elif "type" in cfg:
-                handler = HookHandler.from_dict(cfg)
+                handler = HookHandler.from_dict(cfg, line_offset=line_offset)
                 matcher = _as_str(cfg.get("matcher")) or ".*"
                 entries.append(HookEventConfig(matcher=matcher, handlers=[handler]))
         if entries:
@@ -215,6 +218,28 @@ class JsonConfigBlock(LintTarget):
 
 
 @dataclass(eq=False)
+class McpRegistryServerBlock(JsonConfigBlock):
+    """Publisher metadata for one MCP Registry server."""
+
+    category: str = "mcp registry"
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return "server.json (MCP Registry)"
+
+
+@dataclass(eq=False)
+class McpRegistryNpmPackageBlock(JsonConfigBlock):
+    """Local npm ownership metadata referenced by Registry publisher data."""
+
+    category: str = "mcp registry npm package"
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return "package.json (MCP Registry npm package)"
+
+
+@dataclass(eq=False)
 class HooksBlock(JsonConfigBlock):
     """hooks/hooks.json in a plugin."""
 
@@ -241,6 +266,58 @@ class HooksBlock(JsonConfigBlock):
         return result
 
 
+def _inline_payload_token_count(data: Any) -> int:
+    """Estimate tokens for an inline payload with bounded graph traversal.
+
+    YAML aliases preserve object identity. Serializing an acyclic doubling
+    alias graph expands it exponentially, while recursive aliases fail only
+    after the serializer has already walked substantial hostile input. Count
+    each container once and cap scheduled nodes instead; token estimates are
+    advisory, so bounded and source-shape-proportional is the honest contract.
+    """
+    max_nodes = 10_000
+    pending = [data if data is not None else {}]
+    seen_containers: Set[int] = set()
+    characters = 0
+    visited = 0
+
+    while pending and visited < max_nodes:
+        value = pending.pop()
+        visited += 1
+        if isinstance(value, str):
+            characters += len(value) + 2
+        elif value is None:
+            characters += 4
+        elif isinstance(value, bool):
+            characters += 4 if value else 5
+        elif isinstance(value, (int, float)):
+            characters += len(repr(value))
+        elif isinstance(value, (dict, list, tuple, set, frozenset)):
+            identity = id(value)
+            if identity in seen_containers:
+                # Approximate the compact alias/reference present in source.
+                characters += 1
+                continue
+            seen_containers.add(identity)
+            available = max_nodes - visited - len(pending)
+            characters += 2
+            if isinstance(value, dict):
+                item_count = min(len(value), max(available // 2, 0))
+                characters += max(2 * item_count - 1, 0)
+                for key, item in islice(value.items(), item_count):
+                    pending.extend((key, item))
+            else:
+                item_count = min(len(value), max(available, 0))
+                characters += max(item_count - 1, 0)
+                pending.extend(islice(value, item_count))
+        else:
+            # Timestamps and other YAML scalars need only a stable shape cost;
+            # calling str/repr could execute or allocate without a useful gain.
+            characters += len(type(value).__name__) + 2
+
+    return characters // 4
+
+
 class _InlineJsonPayload:
     """Config that arrived by value in a manifest field, not in a file.
 
@@ -260,7 +337,7 @@ class _InlineJsonPayload:
             self._parsed = (self.inline_data, None)
 
     def estimate_tokens(self) -> int:
-        return len(json.dumps(self.inline_data or {})) // 4
+        return _inline_payload_token_count(self.inline_data)
 
     # LintTarget compares by (type, resolved path), which assumes the path
     # identifies the config. It does not here: a manifest can declare an
@@ -414,11 +491,8 @@ class McpServerConfig:
         )
 
 
-@dataclass(eq=False)
-class McpBlock(JsonConfigBlock):
-    """.mcp.json at the project root, inside a plugin, or in ``.cursor/``."""
-
-    category: str = "mcp"
+class McpConfigRole:
+    """Host-neutral interface shared by JSON and embedded-YAML MCP nodes."""
 
     #: Top-level key holding the server map. Every host but VS Code spells
     #: it ``mcpServers``; see :class:`VsCodeMcpBlock`.
@@ -467,6 +541,12 @@ class McpBlock(JsonConfigBlock):
     #: 1.x ``clientSecret`` against its 2.0 ``client_secret``). Findings
     #: always name the key as the author wrote it.
     credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({})
+    #: Host-specific transport spellings normalized before the shared shape
+    #: validator chooses the required connection field. GitHub Copilot calls
+    #: a process-backed server ``local``; the portable MCP spelling is
+    #: ``stdio``. Keeping the alias on the block lets the shared validator
+    #: remain host-neutral.
+    type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({})
 
     def server_entries(self) -> List[Tuple[str, Any]]:
         """Every declared server as ``(name, value)``, in document order.
@@ -509,7 +589,17 @@ class McpBlock(JsonConfigBlock):
 
     @property
     def server_names(self) -> Set[str]:
-        return {s.name for s in self.servers}
+        # JSON object keys are always strings, but YAML-backed roles can carry
+        # a malformed scalar key. Policy rules sort this set, so normalize
+        # defensively after the shape rule reports the non-string name.
+        return {str(s.name) for s in self.servers}
+
+
+@dataclass(eq=False)
+class McpBlock(JsonConfigBlock, McpConfigRole):
+    """JSON MCP configuration at a host-owned path or inline manifest field."""
+
+    category: str = "mcp"
 
 
 @dataclass(eq=False)
@@ -605,6 +695,17 @@ class OpenCodeConfigBlock(JsonConfigBlock):
 
     def tree_label(self) -> str:
         return f"{self.path.name} (OpenCode config)"
+
+
+@dataclass(eq=False)
+class SkillsLockBlock(JsonConfigBlock):
+    """A project ``skills-lock.json`` written by Vercel's skills CLI."""
+
+    category: str = "skills-lock"
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return "skills-lock.json (skills lockfile)"
 
 
 @dataclass(eq=False)
@@ -705,6 +806,43 @@ class CodexInlineMcpBlock(_InlineJsonPayload, McpBlock):
 
     def tree_label(self) -> str:
         return f"{self.path.name} (inline mcpServers)"
+
+
+@dataclass(eq=False)
+class CopilotAgentMcpBlock(McpConfigRole, LintTarget):
+    """``mcp-servers`` embedded in Copilot custom-agent frontmatter.
+
+    This is a direct lint-tree target rather than a ``JsonConfigBlock``: its
+    payload is line-preserving YAML, while :class:`McpConfigRole` supplies the
+    host-neutral interface shared MCP rules consume.
+    """
+
+    category: str = "mcp"
+    inline_data: Optional[Dict[str, Any]] = None
+    source_line: Optional[int] = None
+    allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({"local": "stdio"})
+
+    @property
+    def parse_error(self) -> None:
+        return None
+
+    @property
+    def raw_data(self) -> Optional[Dict[str, Any]]:
+        return self.inline_data if isinstance(self.inline_data, dict) else None
+
+    def estimate_tokens(self) -> int:
+        return _inline_payload_token_count(self.inline_data)
+
+    def source_line_for(self, node: Any, key: Any) -> Optional[int]:
+        """Translate a nested frontmatter key to its file-absolute line."""
+        nested = commented_key_line(node, key)
+        return nested + 1 if nested is not None else self.source_line
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (agent mcp-servers)"
 
 
 @dataclass(eq=False)

@@ -2,9 +2,8 @@
 
 !!! warning "skillsaw itself is a supply chain surface"
     Any tool you run in CI can be a vector. Pin skillsaw to a specific
-    version and commit SHA, and use `--no-custom-rules --no-network` on
-    untrusted PRs. See [Skillsaw as a vector](#skillsaw-as-a-vector) for
-    details.
+    version and commit SHA, and use `--no-custom-rules` on untrusted PRs.
+    See [Skillsaw as a vector](#skillsaw-as-a-vector) for details.
 
 AI coding assistants execute hooks, MCP servers, and shell commands defined
 in repository configuration files. An attacker who lands a malicious
@@ -159,6 +158,8 @@ be defined:
 | Plugin `.mcp.json` | mcp-prohibited, mcp-valid-json |
 | Codex manifest-declared or inline `hooks` | hooks-dangerous, hooks-prohibited |
 | Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
+| Copilot / VS Code agent `hooks:` frontmatter | hooks-dangerous, hooks-prohibited |
+| Copilot cloud/shared agent `mcp-servers:` frontmatter | mcp-prohibited, mcp-valid-json |
 | Agent Plugin `mcp.json` | mcp-prohibited, agent-plugin-mcp-valid |
 | `.apm/hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | `.apm/settings.json` | hooks-dangerous, hooks-prohibited, claude-settings-dangerous |
@@ -217,38 +218,3 @@ builtin rules. Additional mitigations for CI environments:
 - **Don't expose tokens to the linting step.** Use GitHub's
   `permissions` block to restrict the `GITHUB_TOKEN` scope, and never
   pass secrets as environment variables to the step that runs skillsaw.
-
-### Network access
-
-One builtin rule, `content-broken-external-reference`, makes outbound
-requests: it asks each external link's server whether the link is still
-there. It is disabled by default, but the linted repository's
-`.skillsaw.yaml` can enable it — and that file is written by the same
-person who opens the pull request. A fork PR can therefore add four lines
-of config plus a link to an intranet host or a cloud metadata address, and
-have the runner issue that request from inside your network. The response
-comes back as a lint finding the PR author can read.
-
-Use `--no-network` when running skillsaw on untrusted PRs:
-
-```bash
-skillsaw lint --no-custom-rules --no-network
-```
-
-It drops every rule that declares `requires_network`, whatever the
-repository's config enables and whatever `--rule` names. `SKILLSAW_NO_NETWORK=1`
-does the same for a whole job, and the
-[skillsaw Action](ci.md#github-action) sets `no-network: 'true'` by
-default, so an Action-based workflow already has it. Additional
-mitigations:
-
-- **Keep the destination confinement on.** Loopback, private, link-local
-  and reserved addresses are refused unless the *operator* passes
-  `--allow-private-hosts`. There is no `.skillsaw.yaml` key for it —
-  don't add the flag to a job that lints untrusted checkouts.
-- **Check the link rot on a schedule instead.** A cron job over your own
-  repository gets the same findings without a fork PR choosing the URLs.
-  See [scheduled external link checking](ci.md#scheduled-external-link-checking).
-- **Control egress at the runner.** `--no-network` is a skillsaw-level
-  gate; network policy is the one that does not depend on skillsaw
-  parsing a URL correctly.

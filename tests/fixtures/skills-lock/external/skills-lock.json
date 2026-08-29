@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "skills": {
+    "external-dep": {
+      "source": "example/external-skills",
+      "sourceType": "github",
+      "skillPath": "skills/external-dep/SKILL.md",
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "local-copy": {
+      "source": "./skills/local-source",
+      "sourceType": "local",
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  }
+}

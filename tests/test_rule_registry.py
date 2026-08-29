@@ -44,14 +44,15 @@ def test_default_enabled_values_are_valid():
         )
 
 
-def test_target_dependencies_are_known_builtins():
+@pytest.mark.parametrize("attribute", ["target_dependencies", "surface_dependencies"])
+def test_rule_dependencies_are_known_builtins(attribute):
     problems = []
     known = set(BUILTIN_RULE_REGISTRY)
     for rule_id, cls in BUILTIN_RULE_REGISTRY.items():
-        unknown = set(cls.target_dependencies) - known
+        unknown = set(getattr(cls, attribute)) - known
         if unknown:
             problems.append(f"{rule_id}: {', '.join(sorted(unknown))}")
-    assert problems == [], f"unknown target dependencies: {problems}"
+    assert problems == [], f"unknown {attribute.replace('_', ' ')}: {problems}"
 
 
 def test_default_config_generated_from_registry():

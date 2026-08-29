@@ -27,4 +27,5 @@ class RepositoryType(Enum):
     CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
     CODEX_MARKETPLACE = "codex-marketplace"  # .agents/plugins/marketplace.json
     AGENT_PLUGIN = "agent-plugin"  # Portable Agent Plugins plugin.json
+    MCP_REGISTRY = "mcp-registry"  # MCP Registry server.json publisher metadata
     UNKNOWN = "unknown"  # Not a recognized repo type
