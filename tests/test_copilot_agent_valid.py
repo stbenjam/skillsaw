@@ -470,6 +470,25 @@ def test_embedded_yaml_payload_token_estimate_tolerates_non_json_values(tmp_path
     assert embedded[0].estimate_tokens() > 0
 
 
+def test_embedded_yaml_payload_token_estimate_does_not_expand_alias_dag(tmp_path):
+    aliases = ["wide-0: &wide-0 [leaf, leaf]"]
+    aliases.extend(
+        f"wide-{index}: &wide-{index} [*wide-{index - 1}, *wide-{index - 1}]"
+        for index in range(1, 18)
+    )
+    _write_agent(
+        tmp_path,
+        "description: Uses a broad but acyclic YAML alias graph\n"
+        + "\n".join(aliases)
+        + "\nmcp-servers:\n  local:\n    command: node\n    env: *wide-17",
+    )
+
+    embedded = RepositoryContext(tmp_path).lint_tree.find(CopilotAgentMcpBlock)
+
+    assert len(embedded) == 1
+    assert 0 < embedded[0].estimate_tokens() < 1_000
+
+
 def test_hook_shape_and_dangerous_command_logic_are_shared(tmp_path):
     _write_agent(
         tmp_path,

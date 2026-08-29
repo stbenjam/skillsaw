@@ -8,7 +8,7 @@ content-quality rules never see them.  Dedicated rules locate them with
 
 from __future__ import annotations
 
-import json
+from itertools import islice
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -245,14 +245,55 @@ class HooksBlock(JsonConfigBlock):
 
 
 def _inline_payload_token_count(data: Any) -> int:
-    """Estimate tokens for an inline payload without trusting its value types."""
-    try:
-        rendered = json.dumps(data or {})
-    except (TypeError, ValueError, RecursionError):
-        # YAML can produce timestamps and recursive aliases that JSON cannot
-        # encode. Token estimates are advisory; repr is cycle-safe.
-        rendered = repr(data or {})
-    return len(rendered) // 4
+    """Estimate tokens for an inline payload with bounded graph traversal.
+
+    YAML aliases preserve object identity. Serializing an acyclic doubling
+    alias graph expands it exponentially, while recursive aliases fail only
+    after the serializer has already walked substantial hostile input. Count
+    each container once and cap scheduled nodes instead; token estimates are
+    advisory, so bounded and source-shape-proportional is the honest contract.
+    """
+    max_nodes = 10_000
+    pending = [data if data is not None else {}]
+    seen_containers: Set[int] = set()
+    characters = 0
+    visited = 0
+
+    while pending and visited < max_nodes:
+        value = pending.pop()
+        visited += 1
+        if isinstance(value, str):
+            characters += len(value) + 2
+        elif value is None:
+            characters += 4
+        elif isinstance(value, bool):
+            characters += 4 if value else 5
+        elif isinstance(value, (int, float)):
+            characters += len(repr(value))
+        elif isinstance(value, (dict, list, tuple, set, frozenset)):
+            identity = id(value)
+            if identity in seen_containers:
+                # Approximate the compact alias/reference present in source.
+                characters += 1
+                continue
+            seen_containers.add(identity)
+            available = max_nodes - visited - len(pending)
+            characters += 2
+            if isinstance(value, dict):
+                item_count = min(len(value), max(available // 2, 0))
+                characters += max(2 * item_count - 1, 0)
+                for key, item in islice(value.items(), item_count):
+                    pending.extend((key, item))
+            else:
+                item_count = min(len(value), max(available, 0))
+                characters += max(item_count - 1, 0)
+                pending.extend(islice(value, item_count))
+        else:
+            # Timestamps and other YAML scalars need only a stable shape cost;
+            # calling str/repr could execute or allocate without a useful gain.
+            characters += len(type(value).__name__) + 2
+
+    return characters // 4
 
 
 class _InlineJsonPayload:
