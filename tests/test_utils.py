@@ -1718,6 +1718,39 @@ class TestFileCacheBudget:
         assert result is not skillsaw_utils._UNSIZEABLE
         assert not isinstance(result, skillsaw_utils._Unsizeable)
 
+    def test_the_rest_of_the_call_is_charged_too(self, tmp_path):
+        """An entry is filed under more than its path.
+
+        ``heading_line(path, heading)`` files one entry per heading, and
+        the inner dict holds that heading for as long as the entry lives.
+        A heading is repository content of any length, so leaving it out
+        of the charge is the same error as leaving out the path: the
+        counter reports a number that is not what the cache holds, and
+        nothing evicts because nothing looks large.
+        """
+        target = tmp_path / "doc.md"
+        target.write_text("body", encoding="utf-8")
+
+        budget = 500_000
+        cache = skillsaw_utils.FileCache(budget=budget)
+
+        @cache.cached
+        def reader(path, heading):
+            return 1
+
+        for index in range(50):
+            reader(target, ("X" * 100_000) + str(index))
+
+        retained = sum(
+            sys.getsizeof(sub_key[0][0])
+            for store in cache._stores
+            for bucket in store.values()
+            for sub_key in bucket
+        )
+        assert retained > 0, "the fixture must actually retain the headings"
+        assert cache._total_bytes >= retained, (cache._total_bytes, retained)
+        assert cache._total_bytes <= budget
+
     def test_the_superseded_maxsize_keyword_still_constructs_a_cache(self):
         """``skillsaw.utils`` is re-exported wholesale to custom rules.
 
@@ -1957,7 +1990,9 @@ class TestFileCacheBudget:
         assert calls["n"] == 2, "an unsized value must be recomputed, not served"
 
         resolved = skillsaw_utils.safe_resolve(target) or target
-        marker = skillsaw_utils._entry_cost(skillsaw_utils._UNSIZEABLE, resolved)
+        # The sub-key is charged too, so the expectation carries the same
+        # empty one the wrapper builds for a single-argument call.
+        marker = skillsaw_utils._entry_cost(skillsaw_utils._UNSIZEABLE, resolved, ((), ()))
         assert cache._total_bytes == marker, "only the refusal is charged"
         assert cache._total_bytes < sys.getsizeof(huge), "never the value itself"
 

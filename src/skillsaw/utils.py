@@ -500,8 +500,8 @@ def _approximate_size(value: Any) -> int:
     return total or 1
 
 
-def _entry_cost(value: Any, key: Any = None) -> int:
-    """What one cache entry costs — its value, its key, and the machinery.
+def _entry_cost(value: Any, key: Any = None, sub_key: Any = None) -> int:
+    """What one cache entry costs — its value, its keys, and the machinery.
 
     Called once, at admission. The number is then stored beside the value
     and credited back verbatim by eviction, clearing and invalidation:
@@ -513,6 +513,14 @@ def _entry_cost(value: Any, key: Any = None) -> int:
     because it is variable — the same reason the resolution memo measures
     its own — where a flat constant is only ever right for the path length
     it was tuned against.
+
+    *sub_key* is the rest of the call: the remaining arguments, held by
+    the inner dict for as long as the entry lives. It is variable for the
+    same reason and by the same authors — ``heading_line(path, heading)``
+    files one entry per heading, and a heading is repository content of
+    any length. Left uncharged, fifty of them at 100 KB apiece retain
+    5 MB against a counter reporting 57 KB, so nothing evicts and the
+    budget bounds nothing.
     """
     size = _approximate_size(value)
     if size == UNCACHEABLE_SIZE:
@@ -520,6 +528,11 @@ def _entry_cost(value: Any, key: Any = None) -> int:
     cost = size + _ENTRY_OVERHEAD_BYTES
     if isinstance(key, Path):
         cost += _path_cost(key)
+    if sub_key is not None:
+        sub_size = _approximate_size(sub_key)
+        if sub_size == UNCACHEABLE_SIZE:
+            return UNCACHEABLE_SIZE
+        cost += sub_size
     return cost
 
 
@@ -653,10 +666,10 @@ class FileCache:
             result = func(*args, **kwargs)
             if known_unsizeable:
                 return result
-            cost = _entry_cost(result, resolved)
+            cost = _entry_cost(result, resolved, sub_key)
             if cost == UNCACHEABLE_SIZE:
                 # Remember the refusal so the abandoned walk is paid once.
-                marker = _entry_cost(_UNSIZEABLE, resolved)
+                marker = _entry_cost(_UNSIZEABLE, resolved, sub_key)
                 if marker > self._budget:
                     # Same rule as a value too large to admit: eviction
                     # cannot make room, so storing it would leave the
