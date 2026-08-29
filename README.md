@@ -28,9 +28,9 @@ It understands Agent Skills,
 [Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
 plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
 GEMINI.md, QWEN.md, Cursor, Copilot, Cline, Devin, Kiro, OpenCode, hooks, agent
-configuration, Vercel skills CLI lockfiles, and evals. Safe structural fixes
-can be applied automatically; everything else comes with precise,
-agent-friendly guidance.
+configuration, MCP Registry `server.json` publisher metadata, Vercel skills CLI
+lockfiles, and evals. Safe structural fixes can be applied automatically;
+everything else comes with precise, agent-friendly guidance.
 
 Content installed under APM's `apm_modules/` and skills installed from
 external `skills-lock.json` sources are tracked as external in the lint tree.

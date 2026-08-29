@@ -85,6 +85,32 @@ may contain root `plugin.json`, `.claude-plugin/plugin.json`, and
 matching repository type and applies its rule family independently. One
 format's manifest does not substitute for another's.
 
+## MCP Registry publisher metadata
+
+Publisher repositories for the
+[official MCP Registry](https://github.com/modelcontextprotocol/registry)
+can keep one or more `server.json` documents at the repository root or inside
+monorepo packages:
+
+```text
+weather-server/
+├── server.json           # Registry publisher metadata
+└── package.json          # npm ownership metadata, when locally available
+```
+
+Automatic detection requires either the canonical MCP Registry `$schema` URL
+or the Registry's distinctive server identity plus package/remote shape. This
+keeps unrelated application files named `server.json` out of scope. Use
+`--type mcp-registry` when an intended Registry document is too malformed to
+provide detection evidence.
+
+The Registry rules validate strict JSON against the bundled immutable
+2025-12-11 schema, enforce the reverse-DNS server namespace and current
+transport/registry type vocabulary, reject version ranges, recommend strict
+Semantic Versioning, and compare a local npm package's `mcpName` with the
+`server.json` `name`. The npm check never queries a package registry; an
+external package with no matching local `package.json` is left alone.
+
 ## Single Plugin
 
 ```

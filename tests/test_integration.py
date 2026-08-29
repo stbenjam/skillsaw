@@ -358,6 +358,60 @@ class TestRootLevelMcp:
         assert "mcp-valid-json" not in rule_ids(r)
 
 
+# ── MCP Registry publisher metadata ─────────────────────────────
+
+
+@pytest.mark.integration
+class TestMcpRegistry:
+    def test_clean_server_json_passes_end_to_end(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 0, violations(r)
+        assert "mcp-registry" in r["out"]["stats"]["repo_types"]
+        assert "mcp-registry-server-json-valid" not in rule_ids(r)
+        assert "mcp-registry-version-semver" not in rule_ids(r)
+        assert "mcp-registry-npm-name-match" not in rule_ids(r)
+
+    def test_broken_server_json_reports_all_registry_rule_families(self, tmp_path):
+        repo = copy_fixture("mcp-registry/broken", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 1
+        assert {
+            "mcp-registry-server-json-valid",
+            "mcp-registry-npm-name-match",
+        } <= rule_ids(r)
+        # The version is a forbidden range, so validity owns the finding and
+        # the advisory SemVer rule deliberately does not duplicate it.
+        assert "mcp-registry-version-semver" not in rule_ids(r)
+
+    def test_explicit_type_reports_malformed_server_json(self, tmp_path):
+        (tmp_path / "server.json").write_text('{"name": ', encoding="utf-8")
+        r = run_lint(
+            tmp_path,
+            "--type",
+            "mcp-registry",
+            "--rule",
+            "mcp-registry-server-json-valid",
+        )
+
+        assert r["rc"] == 1
+        assert "mcp-registry-server-json-valid" in rule_ids(r)
+        assert any("Invalid JSON" in item["message"] for item in violations(r))
+
+    def test_unrelated_server_json_does_not_activate_registry_rules(self, tmp_path):
+        repo = copy_fixture("mcp-registry/unrelated", tmp_path)
+        r = run_lint(repo)
+
+        assert "mcp-registry" not in r["out"]["stats"]["repo_types"]
+        assert not {
+            "mcp-registry-server-json-valid",
+            "mcp-registry-version-semver",
+            "mcp-registry-npm-name-match",
+        } & rule_ids(r)
+
+
 # ── Agent Plugins v1 ─────────────────────────────────────────────
 
 
@@ -3941,6 +3995,8 @@ BROKEN_FIXTURES = [
     "supply-chain-hooks/malicious",
     "apm/hooks-dangerous",
     "root-mcp/invalid-json",
+    "mcp-registry/broken",
+    "mcp-registry/non-semver",
     "agent-plugins/broken-manifest",
     "agent-plugins/broken-mcp",
     "agent-plugins/missing-portable",
@@ -3978,6 +4034,7 @@ CLEAN_FIXTURES = [
     "apm/hooks-clean",
     "supply-chain-hooks/clean",
     "root-mcp/clean",
+    "mcp-registry/clean",
     "agent-plugins/clean",
     "codex/clean",
     "cursor-rules/clean",

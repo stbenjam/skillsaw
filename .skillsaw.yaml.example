@@ -471,6 +471,22 @@ rules:
     severity: error
     # allowlist: []
 
+  # Local npm package.json mcpName must match MCP Registry server.json name
+  mcp-registry-npm-name-match:
+    enabled: auto
+    severity: error
+
+  # MCP Registry server.json must conform to a supported schema and its enums
+  mcp-registry-server-json-valid:
+    enabled: auto
+    severity: error
+    # registry-types: []
+
+  # MCP Registry server versions should use strict Semantic Versioning 2.0.0
+  mcp-registry-version-semver:
+    enabled: auto
+    severity: warning
+
   # MCP configuration must use valid syntax and a host-readable server structure
   mcp-valid-json:
     enabled: true

@@ -26,7 +26,9 @@ from .discovery.excludes import path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
 from .repository_external_content import RepositoryExternalContentMixin
+from .repository_mcp_registry import RepositoryMcpRegistryMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
+from .repository_scan import RepositoryScanMixin
 
 if TYPE_CHECKING:
     from .lint_target import LintTarget
@@ -47,6 +49,7 @@ class RepositoryType(Enum):
     CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
     CODEX_MARKETPLACE = "codex-marketplace"  # .agents/plugins/marketplace.json
     AGENT_PLUGIN = "agent-plugin"  # Portable Agent Plugins plugin.json
+    MCP_REGISTRY = "mcp-registry"  # MCP Registry server.json publisher metadata
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -106,7 +109,12 @@ _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 _UNSET = object()
 
 
-class RepositoryContext(RepositoryExternalContentMixin, RepositoryProvenanceMixin):
+class RepositoryContext(
+    RepositoryScanMixin,
+    RepositoryMcpRegistryMixin,
+    RepositoryExternalContentMixin,
+    RepositoryProvenanceMixin,
+):
     """Detected repository metadata used during linting."""
 
     _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
@@ -124,6 +132,7 @@ class RepositoryContext(RepositoryExternalContentMixin, RepositoryProvenanceMixi
         RepositoryType.CODEX_PLUGIN,
         RepositoryType.AGENT_PLUGIN,
         RepositoryType.AGENTSKILLS,
+        RepositoryType.MCP_REGISTRY,
         RepositoryType.CODERABBIT,
         RepositoryType.PROMPTFOO,
     ]
@@ -175,7 +184,7 @@ class RepositoryContext(RepositoryExternalContentMixin, RepositoryProvenanceMixi
         self.lint_external_content = lint_external_content
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
-        self.has_apm = self._detect_apm()
+        self.has_apm = detect_discovery.has_apm(self.root_path)
         self._scan: Optional[detect_discovery.RepositoryScan] = None
         self._apm_compiled_roots: Optional[Set[Path]] = None
         self._apm_targets: Any = _UNSET  # frozenset once read; None = unknown
@@ -187,6 +196,7 @@ class RepositoryContext(RepositoryExternalContentMixin, RepositoryProvenanceMixi
         self._agent_plugin_roots: Optional[Set[Path]] = None
         self._contained_plugin_roots: Optional[Set[Path]] = None
         self._agent_plugin_claims: Optional[Set[Path]] = None
+        self._init_mcp_registry(repo_types)
         self._provenance_cache: Dict[Path, PluginProvenance] = {}
         # Views over _provenance_cache, invalidated with it: keeping them
         # beside it is what makes their lifetimes match the records they
@@ -439,77 +449,12 @@ class RepositoryContext(RepositoryExternalContentMixin, RepositoryProvenanceMixi
         self._codex_evidence = None
         self._agent_plugin_claims = None
         self._agent_plugin_roots = None
-        self._contained_plugin_roots = None
+        self._contained_plugin_roots = self._mcp_registry_paths = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
         self.reset_external_content_provenance()
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
-
-    def _discover_instruction_files(self) -> List[Path]:
-        """Discover root and nested instruction files read by supported tools.
-
-        Includes root conventions, Copilot ``*.instructions.md`` files, and
-        Devin's documented names at nested project levels. The work shares
-        one filesystem walk with :meth:`agent_tool_dirs`.
-        """
-        return list(self._repository_scan().instruction_files)
-
-    def _repository_scan(self) -> detect_discovery.RepositoryScan:
-        """Return the cached single-pass walk of the repository."""
-        if self._scan is None:
-            self._scan = detect_discovery.scan_repository(
-                self.root_path, self._INSTRUCTION_FILENAMES
-            )
-        return self._scan
-
-    def agent_tool_dirs(self, name: str) -> List[Path]:
-        """Return every non-excluded directory called *name* in the repository.
-
-        Cursor (``.cursor``), Copilot/VS Code (``.github``), Cline
-        (``.clinerules``), Devin (``.devin``/``.windsurf``), and OpenCode
-        (``.opencode``) all read their
-        customizations from the nearest enclosing directory, so a monorepo
-        package may carry its own alongside the repository root's.
-        """
-        return [
-            path
-            for path in self._repository_scan().tool_dirs.get(name, ())
-            if not self.is_path_excluded(path)
-        ]
-
-    def legacy_editor_files(self, name: str) -> List[Path]:
-        """Every non-excluded *name* file in the repository.
-
-        Cursor and Cline read their pre-directory instruction file from the
-        nearest enclosing directory, exactly as they read `.cursor/` and
-        `.clinerules/`, so a monorepo package carries its own. Detection and
-        attachment both read this, so they cannot disagree about a nested one.
-        """
-        return [
-            path
-            for path in self._repository_scan().legacy_editor_files.get(name, ())
-            if not self.is_path_excluded(path)
-        ]
-
-    def _detect_formats(self) -> Set[str]:
-        return detect_discovery.instruction_formats(
-            self.root_path,
-            self.instruction_files,
-            self.is_path_excluded,
-            self._repository_scan().tool_dirs,
-            self._repository_scan().legacy_editor_files,
-            self._repository_scan().skills_lock_files,
-        )
-
-    #: Alias for the one definition in discovery. Two copies of "which
-    #: directories does a walk prune" are how a checkout starts being walked
-    #: differently by two callers that both believe they agree.
-    _WALK_SKIP_DIRS = detect_discovery.WALK_SKIP_DIRS
-
-    def _detect_apm(self) -> bool:
-        """Check if this repository uses the APM (Agent Package Manager) format"""
-        return detect_discovery.has_apm(self.root_path)
 
     def _detect_types(self) -> Set[RepositoryType]:
         """Detect all applicable repository types.
@@ -547,6 +492,8 @@ class RepositoryContext(RepositoryExternalContentMixin, RepositoryProvenanceMixi
             types.add(RepositoryType.CODEX_PLUGIN)
         if self.agent_plugins:
             types.add(RepositoryType.AGENT_PLUGIN)
+        if self.mcp_registry_server_paths():
+            types.add(RepositoryType.MCP_REGISTRY)
 
         if not types:
             types.add(RepositoryType.UNKNOWN)

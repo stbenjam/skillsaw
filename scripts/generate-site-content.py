@@ -172,8 +172,16 @@ RULE_GROUPS = [
     (
         "MCP (Model Context Protocol)",
         "mcp",
-        ["mcp-valid-json", "mcp-prohibited"],
-        None,
+        [
+            "mcp-valid-json",
+            "mcp-prohibited",
+            "mcp-registry-server-json-valid",
+            "mcp-registry-version-semver",
+            "mcp-registry-npm-name-match",
+        ],
+        "Validates both MCP client configuration and MCP Registry publisher "
+        "metadata. Registry rules use the bundled 2025-12-11 schema and local "
+        "package metadata; they never query a package registry.",
     ),
     (
         "OpenClaw",
