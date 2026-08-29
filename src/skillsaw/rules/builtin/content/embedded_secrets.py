@@ -68,6 +68,8 @@ _PEM_METADATA_FIELD = re.compile(
     re.IGNORECASE,
 )
 _PEM_SERIALIZED_LINE_BREAK = re.compile(r"(?:\\+r)?\\+n|(?:\\+u000[dD])?\\+u000[aA]")
+_PEM_SERIALIZED_SOLIDUS = re.compile(r"\\+(?:/|u002[fF])")
+_PEM_SERIALIZED_HORIZONTAL_SPACE = re.compile(r"\\+(?:t|u0009|u0020)")
 _PEM_LOOKAHEAD_PHYSICAL_LINES = 72
 _PEM_LOOKAHEAD_CHARS_PER_LINE = 4096
 _PEM_SCAN_MAX_CHARS_PER_BLOB = 1024 * 1024
@@ -242,6 +244,11 @@ def _pem_context_segments(candidate: str) -> Tuple[List[Optional[str]], bool, bo
     segments: List[Optional[str]] = []
     saw_encryption_metadata = False
     for logical_line in _PEM_SERIALIZED_LINE_BREAK.split(bounded):
+        # JSON permits escaping a solidus, and serialized PEM whitespace can
+        # appear as a tab or Unicode space escape. Decode only those bounded,
+        # payload-safe spellings before validating the complete base64 line.
+        logical_line = _PEM_SERIALIZED_SOLIDUS.sub("/", logical_line)
+        logical_line = _PEM_SERIALIZED_HORIZONTAL_SPACE.sub(" ", logical_line)
         if _PEM_METADATA_FIELD.search(logical_line):
             saw_encryption_metadata = True
         without_metadata = _PEM_METADATA_FIELD.sub("", logical_line)

@@ -862,6 +862,25 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) == 1
         assert "Private key" in violations[0].message
 
+    @pytest.mark.parametrize(
+        "serialized_material",
+        [
+            _PEM_MATERIAL[:24] + r"\/" + _PEM_MATERIAL[25:],
+            _PEM_MATERIAL[:24] + r"\u002f" + _PEM_MATERIAL[25:],
+            _PEM_MATERIAL[:24] + r"\t" + _PEM_MATERIAL[24:],
+            _PEM_MATERIAL[:24] + r"\u0020" + _PEM_MATERIAL[24:],
+        ],
+        ids=["solidus", "unicode-solidus", "tab", "unicode-space"],
+    )
+    def test_serialized_pem_payload_escapes_still_fire(self, temp_dir, serialized_material):
+        (temp_dir / "CLAUDE.md").write_text(
+            f'private_key = "{_RSA_HEADER}\\n{serialized_material}'
+            '\\n-----END RSA PRIVATE KEY-----"\n'
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "Private key" in violations[0].message
+
     @pytest.mark.parametrize("width", [15, 12, 8, 4, 3, 2, 1])
     def test_pem_short_wrapped_key_material_still_fires(self, temp_dir, width):
         wrapped_material = "\n".join(
