@@ -113,14 +113,14 @@ def _is_known_example_value(value: str) -> bool:
     return normalized.startswith(prefix) and normalized[len(prefix) :] == remainder.casefold()
 
 
-def _pem_context_piece(candidate: str) -> Tuple[int, bool, bool]:
+def _pem_context_segments(candidate: str) -> Tuple[List[Optional[int]], bool]:
     """Classify one bounded physical PEM-context line.
 
-    Returns ``(payload_chars, reached_end_marker, structurally_valid)``.
-    Literal serialized line breaks are treated as logical lines. Each
-    non-empty logical line must consist entirely of base64 payload after
-    removing exact PEM encryption metadata and surrounding syntax; prose is
-    invalid instead of contributing base64-looking words to the aggregate.
+    Returns payload character counts for base64-shaped logical lines, ``None``
+    for non-payload logical lines, and whether the RSA end marker was reached.
+    Empty lines and exact encryption metadata are neutral. This lets callers
+    continue a bounded search past Markdown labels without letting prose
+    contribute base64-looking words to the payload aggregate.
     """
     bounded = candidate[:_PEM_LOOKAHEAD_CHARS_PER_LINE]
     marker_index = bounded.find(_PEM_END_MARKER)
@@ -128,16 +128,30 @@ def _pem_context_piece(candidate: str) -> Tuple[int, bool, bool]:
     if reached_end_marker:
         bounded = bounded[:marker_index]
 
-    payload_chars = 0
+    segments: List[Optional[int]] = []
     for logical_line in _PEM_SERIALIZED_LINE_BREAK.split(bounded):
         without_metadata = _PEM_METADATA_FIELD.sub("", logical_line)
         undecorated = without_metadata.strip(_PEM_LINE_DECORATION)
         if not undecorated:
             continue
         if _PEM_BASE64_LINE.fullmatch(undecorated) is None:
-            return 0, reached_end_marker, False
-        payload_chars += len(undecorated.rstrip("="))
-    return payload_chars, reached_end_marker, True
+            segments.append(None)
+            continue
+        segments.append(len(undecorated.rstrip("=")))
+    return segments, reached_end_marker
+
+
+def _pem_material_progress(material_chars: int, candidate: str) -> Tuple[int, bool, bool]:
+    """Advance one bounded candidate, resetting at non-payload segments."""
+    segments, reached_end_marker = _pem_context_segments(candidate)
+    for segment_chars in segments:
+        if segment_chars is None:
+            material_chars = 0
+            continue
+        material_chars += segment_chars
+        if material_chars >= _PEM_KEY_MATERIAL_MIN_CHARS:
+            return material_chars, reached_end_marker, True
+    return material_chars, reached_end_marker, False
 
 
 def _is_rsa_header_delimiter(character: str) -> bool:
@@ -228,10 +242,8 @@ class ContentEmbeddedSecretsRule(Rule):
     def _pem_key_material_follows(lines: List[str], line_index: int, match: re.Match) -> bool:
         """Whether an RSA header introduces key material instead of teaching text."""
         remainder = lines[line_index][match.end() : match.end() + _PEM_LOOKAHEAD_CHARS_PER_LINE]
-        material_chars, reached_end_marker, structurally_valid = _pem_context_piece(remainder)
-        if not structurally_valid:
-            return False
-        if material_chars >= _PEM_KEY_MATERIAL_MIN_CHARS:
+        material_chars, reached_end_marker, detected = _pem_material_progress(0, remainder)
+        if detected:
             return True
         if reached_end_marker:
             return False
@@ -243,11 +255,10 @@ class ContentEmbeddedSecretsRule(Rule):
         lookahead_end = min(len(lines), line_index + 1 + _PEM_LOOKAHEAD_PHYSICAL_LINES)
         for following_index in range(line_index + 1, lookahead_end):
             candidate = lines[following_index][:_PEM_LOOKAHEAD_CHARS_PER_LINE]
-            chars, reached_end_marker, structurally_valid = _pem_context_piece(candidate)
-            if not structurally_valid:
-                return False
-            material_chars += chars
-            if material_chars >= _PEM_KEY_MATERIAL_MIN_CHARS:
+            material_chars, reached_end_marker, detected = _pem_material_progress(
+                material_chars, candidate
+            )
+            if detected:
                 return True
             if reached_end_marker:
                 return False

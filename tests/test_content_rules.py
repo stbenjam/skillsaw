@@ -781,6 +781,16 @@ class TestContentEmbeddedSecretsRule:
                 f"\\nDEK-Info: AES-256-CBC,{_PEM_IV}\\n{_PEM_MATERIAL}"
                 '\\n-----END RSA PRIVATE KEY-----"\n'
             ),
+            (
+                f"{_RSA_HEADER}\n"
+                "<!-- leaked key -->\n"
+                f"{_PEM_MATERIAL}\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\n<!-- leaked key -->'
+                f'\\n{_PEM_MATERIAL}\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
         ],
         ids=[
             "encrypted-metadata",
@@ -793,6 +803,8 @@ class TestContentEmbeddedSecretsRule:
             "escaped-crlf",
             "same-line-encrypted-metadata",
             "escaped-encrypted-metadata",
+            "markdown-comment-before-material",
+            "escaped-comment-before-material",
         ],
     )
     def test_pem_block_with_key_material_still_fires(self, temp_dir, content):
