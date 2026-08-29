@@ -158,10 +158,18 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                         file_exists = safe_exists(resolved)
                     except ValueError:
                         pass
+                # A path-shaped phrase that cannot resolve locally is not an
+                # actionable linking opportunity.  Requiring an existing
+                # in-repository target keeps examples such as
+                # ``JavaScript/Node.js`` and ``examples/app/config.yaml`` from
+                # dominating first-run results while preserving every real
+                # local reference this rule can make navigable.
+                if not file_exists:
+                    continue
                 # fix() only wraps references whose target exists on disk,
                 # and never rewrites a body extracted from another format —
                 # there is no span in the enclosing file to splice into.
-                fixable = file_exists and not cf.diagnostic_only
+                fixable = not cf.diagnostic_only
                 msg = f"Unlinked path reference: '{path_str}' — consider wrapping in link syntax [{path_str}]({path_str})"
                 if fixable:
                     msg += " (file exists, autofixable)"
