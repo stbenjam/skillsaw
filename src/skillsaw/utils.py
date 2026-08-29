@@ -1306,10 +1306,9 @@ def read_yaml_commented(
         # entries, each referencing the anchor on the line before it,
         # reaches any depth at all at a syntactic depth of two. Measuring
         # the loaded graph as well is what ``safe_load_yaml`` already does
-        # after its own prescan, and the two readers have to agree about a
-        # file — without this one rule reported a ``.coderabbit.yaml`` too
-        # deep to parse while another, in the same run, was handed the
-        # 20,000-deep map it had built.
+        # after its own prescan. Every reader needs both halves, and needs
+        # them to agree: two rules reading the same file through different
+        # readers must reach the same verdict on it.
         _reject_overly_nested(data)
         return data, None, None
     except _RuamelYAMLError as e:
