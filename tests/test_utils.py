@@ -1119,6 +1119,35 @@ def test_the_accelerated_loader_is_the_one_under_test():
         assert _SAFE_LOADER is yaml.SafeLoader
 
 
+def test_the_line_number_readers_carry_the_depth_bound_too():
+    """The bound is a property of every reader, not of the main ones.
+
+    ``_fast_top_level_key_nodes`` composes through libyaml, whose
+    composer is recursive C with no guard — handed a deep enough
+    document the process dies with SIGSEGV, which no ``except`` can
+    catch. ``_ruamel_load`` is pure Python and raises instead, but it
+    raises wherever the interpreter's stack gives out, and an escaping
+    ``RecursionError`` becomes an unbaselinable rule-execution error
+    rather than the parse failure its callers handle.
+
+    Both are reached only after a bounded reader has already accepted
+    the file, so neither should see a document like this. That is the
+    argument for the guard, not against it: the next reader added here
+    will be copied from these.
+    """
+    from skillsaw.utils import _MAX_YAML_DEPTH, _fast_top_level_key_nodes, _ruamel_load
+
+    deep = "a:\n" + "".join(" " * (i + 1) + "b:\n" for i in range(_MAX_YAML_DEPTH + 50))
+
+    assert _fast_top_level_key_nodes(deep) is None
+    assert _ruamel_load(deep) is None
+
+    # A document inside the bound still parses through both.
+    shallow = "a:\n  b:\n    c: 1\n"
+    assert _fast_top_level_key_nodes(shallow) is not None
+    assert _ruamel_load(shallow) is not None
+
+
 def test_a_tab_used_as_indentation_is_still_an_error():
     """The tab that changed behaviour is the separator, not indentation.
 
