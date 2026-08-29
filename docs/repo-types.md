@@ -32,9 +32,20 @@ skills-repo/
 Standard discovery paths are checked automatically: `.agents/skills/`,
 `.apm/skills/`, `.claude/skills/`, `.github/skills/`, `.cursor/skills/`,
 `.clinerules/skills/`, `.cline/skills/`, `.qwen/skills/`,
-`.opencode/skills/` and `.opencode/skill/`. A `SKILL.md` under any of them
-makes the repository an Agent Skills repository, which turns on the
+`.opencode/skills/` and `.opencode/skill/`. A portable `SKILL.md` under any
+of them makes the repository an Agent Skills repository, which turns on the
 `agentskill-*` rules.
+
+Devin also reads native skills from `.devin/skills/` and the legacy
+`.windsurf/skills/` spelling, including those directories under nested
+workspace/package roots. Those files deliberately use a separate dialect:
+their YAML frontmatter is optional, `name` defaults from the directory, and
+Devin adds model, subagent, permission, tool, and trigger fields. They get
+the shared content and security rules plus
+[`devin-skill-valid`](rules/devin-skill-valid.md), not the portable
+`agentskill-valid`/`agentskill-name` requirements. A skill under the portable
+`.agents/skills/` location remains an Agent Skills skill even in a Devin
+repository and keeps the `agentskill-*` validation.
 
 ## Agent Plugins
 
@@ -243,9 +254,9 @@ validation wherever a tool's own metadata can fail silently — see
 | **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
 | **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
 | **OpenCode** | `opencode.json` or `opencode.jsonc` at the root and in `.opencode/`, `.opencode/commands/**/*.md`, `.opencode/agents/**/*.md`, `.opencode/modes/*.md`, `.opencode/skills/*/SKILL.md`, and the 1.x singular spelling of each (`command/`, `agent/`, `mode/`, `skill/`) |
+| **Devin CLI / Desktop** | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/` equivalents and `.windsurfrules` |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
-| **Windsurf** | `.windsurfrules` |
 
 Discovery and validation are separate layers for Copilot. Every file under
 `.github/agents/` and legacy `.github/chatmodes/` is attached as agent prose,
@@ -256,7 +267,8 @@ agent, including their target-specific model, tool, subagent, handoff, MCP,
 metadata, and hook behavior. Unknown tool names remain valid, matching both
 consumers' forward-compatible behavior.
 
-skillsaw finds `.cursor/`, `.github/`, `.clinerules/` and `.opencode/`
+skillsaw finds `.cursor/`, `.github/`, `.clinerules/`, `.opencode/`, `.devin/`
+and `.windsurf/`
 anywhere in the tree, so a monorepo package that carries its own set is
 linted alongside the root's. How much each tool actually reads from a nested
 directory varies, and not every case is settled: Cursor documents nested
@@ -268,23 +280,28 @@ folder up to the repository root. Cline and
 directory, so a nested copy is read only when that directory is the
 workspace. OpenCode walks from the working directory up to the git worktree
 root and merges every `.opencode/` it passes, so a nested one is read as
-well as the root's. skillsaw lints every nested tool directory either way —
+well as the root's. Devin reads rule directories and its supported plain
+instruction files at multiple project levels; Devin Desktop also discovers
+`AGENTS.md` case-insensitively. skillsaw lints every nested tool directory either way —
 committed instructions are worth checking wherever a teammate might open
 them, and a rule that turns out not to load is worth knowing about too.
 
-Two things are the exception, and both are root-only today.
+The plain `GEMINI.md` and `QWEN.md` formats remain root-only. `AGENTS.md`
+(including Desktop's case-insensitive spelling), `AGENTS.local.md`,
+`AGENT.md`, `CLAUDE.md`, and `.windsurfrules` are discovered at every project
+level for Devin's location-scoped behavior. A file shared with another tool
+is attached once, so a nested `CLAUDE.md` or `AGENTS.md` does not produce
+duplicate content findings.
 
-The plain instruction files — `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and
-`QWEN.md` — are read at the repository root only, so a nested
-`apps/web/AGENTS.md` is not linted even though Cursor and Codex read one.
-Point `content-paths` at it to include it.
+Most conventional skill directories remain root-only: a skill in
+`apps/web/.cursor/skills/review/SKILL.md` is not discovered. Devin is the
+exception because its workspace scan explicitly supports nested `.devin/`
+and `.windsurf/` roots; native skills under either are discovered there.
 
-Skills are the other: the conventional skill directories in the table above
-(`.cursor/skills/`, `.clinerules/skills/`, `.github/skills/` and the rest)
-are discovered under the repository root only. A skill in a nested
-workspace — `apps/web/.cursor/skills/review/SKILL.md` — is not discovered
-and gets no `agentskill-*`, content or security checks. Point
-`content-paths` at it for the content and security rules in the meantime.
+[`devin-rules-valid`](rules/devin-rules-valid.md) validates rule YAML,
+activation fields, repository-relative glob patterns, and Devin Desktop's
+12,000-character workspace-rule limit. Unknown frontmatter keys are accepted
+so a newly added Devin field does not break existing repositories.
 
 MCP configuration is read for its servers wherever it lives, so
 `mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json`,

@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **82** built-in rules organized into the following categories:
+skillsaw includes **84** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Agent Plugins](agent-plugins.md) (3 rules)
@@ -15,6 +15,7 @@ skillsaw includes **82** built-in rules organized into the following categories:
 - [OpenClaw](openclaw.md) (1 rule)
 - [Cursor](cursor.md) (2 rules)
 - [Copilot / VS Code](copilot.md) (1 rule)
+- [Devin](devin.md) (2 rules)
 - [OpenCode](opencode.md) (1 rule)
 - [Instruction Files](instruction-files.md) (3 rules)
 - [Context Budget](context-budget.md) (1 rule)
@@ -70,8 +71,10 @@ skillsaw includes **82** built-in rules organized into the following categories:
 | [`cursor-rules-valid`](cursor-rules-valid.md) | Cursor .mdc rules must have frontmatter that lets the rule activate | error (auto) | auto | Cursor |
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
 | [`copilot-agent-valid`](copilot-agent-valid.md) | Copilot and VS Code custom agents must use target-compatible frontmatter | error (auto) | - | Copilot / VS Code |
+| [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
+| [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
 | [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
-| [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
+| [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md and tool-compatible alternatives) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files | warning (auto) | - | Instruction Files |
 | [`claude-md-agents-import`](claude-md-agents-import.md) | CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' so both assistants read one source of truth | info (auto) | auto | Instruction Files |
 | [`context-budget`](context-budget.md) | Warn when instruction or config files exceed recommended token limits | warning (auto) | - | Context Budget |

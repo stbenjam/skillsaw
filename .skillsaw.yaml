@@ -19,6 +19,7 @@ exclude:
   - "src/skillsaw/marketplace/templates/*"
   # Testing fixtures with intentional errors
   - "tests/fixtures/*"
+  - "examples/plugins/skillsaw-example-plugin/tests/fixture/*"
   # Git worktrees (local only, not committed)
   - ".worktrees/*"
   - ".claude/worktrees/*"

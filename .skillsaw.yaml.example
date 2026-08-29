@@ -427,6 +427,17 @@ rules:
     enabled: auto
     severity: error
 
+  # Devin workspace rules must have valid activation frontmatter and fit its size limit
+  devin-rules-valid:
+    enabled: auto
+    severity: error
+    # max-characters: 12000
+
+  # Devin-native SKILL.md frontmatter must use Devin's documented field shapes
+  devin-skill-valid:
+    enabled: auto
+    severity: error
+
   # Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests
   hooks-dangerous:
     enabled: auto
@@ -444,7 +455,7 @@ rules:
     severity: error
     # allowlist: []
 
-  # Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) must be valid and non-empty
+  # Instruction files (AGENTS.md and tool-compatible alternatives) must be valid and non-empty
   instruction-file-valid:
     enabled: auto
     severity: warning
