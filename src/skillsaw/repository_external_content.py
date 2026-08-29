@@ -74,6 +74,7 @@ class RepositoryExternalContentMixin:
                 for name, entry in entries.items()
                 if isinstance(name, str)
                 and isinstance(entry, dict)
+                and skills_lock_format.entry_has_valid_provenance(entry)
                 and skills_lock_format.entry_is_external(
                     entry,
                     lock_root=lockfile.parent,

@@ -54,6 +54,21 @@ def sanitize_install_name(value: str) -> str:
     return sanitized[:255] or "unnamed-skill"
 
 
+def entry_has_valid_provenance(entry: Mapping[str, object]) -> bool:
+    """Whether an entry has enough valid evidence to assign ownership."""
+    source = entry.get("source")
+    source_type = entry.get("sourceType")
+    computed_hash = entry.get("computedHash")
+    return (
+        isinstance(source, str)
+        and bool(source.strip())
+        and isinstance(source_type, str)
+        and bool(source_type.strip())
+        and isinstance(computed_hash, str)
+        and bool(COMPUTED_HASH_RE.fullmatch(computed_hash))
+    )
+
+
 def entry_is_external(
     entry: Mapping[str, object], *, lock_root: Path, repository_root: Path
 ) -> bool:

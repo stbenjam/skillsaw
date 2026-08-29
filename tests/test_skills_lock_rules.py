@@ -345,6 +345,36 @@ def test_malformed_lock_fails_open_for_skill_linting(tmp_path: Path) -> None:
     assert not context.is_externally_sourced_skill(skill)
 
 
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {},
+        {
+            "source": "example/external-skills",
+            "sourceType": "github",
+            "computedHash": "not-a-sha256",
+        },
+    ],
+)
+def test_structurally_invalid_lock_entry_fails_open_for_skill_linting(
+    tmp_path: Path, entry: dict[str, object]
+) -> None:
+    _write_lock(
+        tmp_path / "skills-lock.json",
+        {"version": 1, "skills": {"external-dep": entry}},
+    )
+    skill = tmp_path / ".agents" / "skills" / "external-dep"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: external-dep\ndescription: Use when testing invalid provenance.\n---\n"
+    )
+
+    context = RepositoryContext(tmp_path, lint_external_content=False)
+
+    assert [node.path for node in context.lint_tree.find(SkillNode)] == [skill]
+    assert not context.is_externally_sourced_skill(skill)
+
+
 def test_cli_reports_external_findings_but_never_advertises_a_fix(tmp_path: Path) -> None:
     repo = _copy_fixture("skills-lock/external", tmp_path)
 
