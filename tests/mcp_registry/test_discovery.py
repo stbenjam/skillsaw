@@ -5,8 +5,10 @@ from importlib import resources
 
 from skillsaw.blocks import (
     ContentBlock,
+    McpBlock,
     McpRegistryNpmPackageBlock,
     McpRegistryServerBlock,
+    SettingsBlock,
 )
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats.mcp_registry import (
@@ -116,6 +118,39 @@ class TestMcpRegistryDetection:
 
         assert context.mcp_registry_server_paths() == [path]
         assert [block.path for block in context.lint_tree.find(McpRegistryServerBlock)] == [path]
+
+    def test_unrelated_explicit_type_disables_registry_discovery(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+
+        context = RepositoryContext(repo, repo_types={RepositoryType.PROMPTFOO})
+
+        assert context.mcp_registry_server_paths() == []
+        assert context.lint_tree.find(McpRegistryServerBlock) == []
+        assert context.lint_tree.find(McpRegistryNpmPackageBlock) == []
+
+    def test_registry_parser_roles_do_not_hide_plugin_contributors(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        context = RepositoryContext(repo)
+        context.plugin_tree_contributors.append(
+            (
+                "test-plugin",
+                lambda _context, _root: [
+                    McpBlock(path=repo / "server.json"),
+                    SettingsBlock(path=repo / "package.json"),
+                ],
+            )
+        )
+
+        assert [block.path for block in context.lint_tree.find(McpRegistryServerBlock)] == [
+            repo / "server.json"
+        ]
+        assert [block.path for block in context.lint_tree.find(McpRegistryNpmPackageBlock)] == [
+            repo / "package.json"
+        ]
+        assert [block.path for block in context.lint_tree.find(McpBlock)] == [repo / "server.json"]
+        assert [block.path for block in context.lint_tree.find(SettingsBlock)] == [
+            repo / "package.json"
+        ]
 
     def test_escaping_server_json_symlink_is_not_detection_evidence(self, tmp_path):
         outside = tmp_path / "outside"

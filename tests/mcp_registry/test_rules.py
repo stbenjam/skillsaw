@@ -9,6 +9,7 @@ from skillsaw.context import RepositoryType
 from skillsaw.formats.mcp_registry import MCP_REGISTRY_SCHEMA_ID
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.mcp_registry._helpers import schema_error_summary
+from skillsaw.rules.builtin.mcp_registry.npm_name_match import McpRegistryNpmNameMatchRule
 
 from ._helpers import (
     NPM_NAME_RULE,
@@ -377,7 +378,14 @@ class TestMcpRegistrySchemaRule:
 
     @pytest.mark.parametrize(
         "version",
-        [">=1.0.0 <2.0.0", "^1.0.0 || ^2.0.0", "1.x || 2.x", "1.2.* || >=2.0.0", "*"],
+        [
+            ">=1.0.0 <2.0.0",
+            "^1.0.0 || ^2.0.0",
+            "1.x || 2.x",
+            "1.2.* || >=2.0.0",
+            "1.0 - 2.0 || 3.0 - 4.0",
+            "*",
+        ],
     )
     def test_package_compound_comparator_range_is_an_error(self, tmp_path, version):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
@@ -408,6 +416,26 @@ class TestMcpRegistrySchemaRule:
         _write_server(path, data)
 
         assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize(
+        ("registry_type", "version"),
+        [
+            ("pypi", "~=1.4"),
+            ("pypi", ">=1.0,<2.0"),
+            ("nuget", "[1.0,2.0)"),
+            ("cargo", ">=1.0, <2.0"),
+        ],
+    )
+    def test_registry_specific_package_ranges_are_errors(self, tmp_path, registry_type, version):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["registryType"] = registry_type
+        data["packages"][0]["version"] = version
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("packages[0].version" in message for message in messages_lower(findings))
 
     def test_repeated_semantic_defects_are_aggregated_per_category(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
@@ -588,3 +616,35 @@ class TestMcpRegistryNpmNameRule:
         (repo / "package.json").write_text('{"name": ', encoding="utf-8")
 
         assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
+    def test_non_npm_server_does_not_build_package_index(self, tmp_path, monkeypatch):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["registryType"] = "pypi"
+        _write_server(path, data)
+
+        def unexpected_index(_context):
+            pytest.fail("non-npm metadata must not build the package.json index")
+
+        monkeypatch.setattr(
+            McpRegistryNpmNameMatchRule,
+            "_package_index",
+            staticmethod(unexpected_index),
+        )
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
+    @pytest.mark.parametrize("invalid_version", [None, 7])
+    def test_invalid_declared_version_skips_ownership_matching(self, tmp_path, invalid_version):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["version"] = invalid_version
+        _write_server(path, data)
+        package_path = repo / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package.pop("mcpName")
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+
+        findings = lint_rules(repo, NPM_NAME_RULE)
+
+        assert _for_rule(findings, NPM_NAME_RULE) == []

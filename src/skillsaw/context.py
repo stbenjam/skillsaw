@@ -190,7 +190,7 @@ class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
         self._agent_plugin_roots: Optional[Set[Path]] = None
         self._contained_plugin_roots: Optional[Set[Path]] = None
         self._agent_plugin_claims: Optional[Set[Path]] = None
-        self._init_mcp_registry(RepositoryType.MCP_REGISTRY in (repo_types or set()))
+        self._init_mcp_registry(repo_types)
         self._provenance_cache: Dict[Path, PluginProvenance] = {}
         # Views over _provenance_cache, invalidated with it: keeping them
         # beside it is what makes their lifetimes match the records they

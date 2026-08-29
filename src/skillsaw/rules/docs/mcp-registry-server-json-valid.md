@@ -14,6 +14,8 @@ and the Registry's semantic publishing constraints.
   ASCII letter or digit.
 - Top-level and package versions identify one exact release rather than
   `latest`, a comparator, a wildcard, an OR expression, or a hyphen range.
+  Package checks also recognize registry-native requirement syntax such as
+  PyPI specifier lists, Cargo comma-joined requirements, and NuGet intervals.
 - npm package versions use strict SemVer; other package registries may use
   their own format-specific exact-version syntax.
 - Package transports are `stdio`, `streamable-http`, or `sse`. Remote

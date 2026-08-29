@@ -10,6 +10,17 @@ from ..paths import safe_resolve
 from ..utils import write_bytes_atomic
 from ._config import load_config
 
+_DOCS_REPO_TYPES = {
+    RepositoryType.SINGLE_PLUGIN,
+    RepositoryType.MARKETPLACE,
+    RepositoryType.AGENTSKILLS,
+    RepositoryType.DOT_CLAUDE,
+    RepositoryType.APM,
+    RepositoryType.CODEX_PLUGIN,
+    RepositoryType.CODEX_MARKETPLACE,
+    RepositoryType.AGENT_PLUGIN,
+}
+
 
 def _docs_output_root(output: Path) -> Path:
     """Resolve the output parent so lexical and anchored paths agree."""
@@ -31,7 +42,7 @@ def _run_docs(args):
         content_paths=config.content_paths,
     )
 
-    if context.repo_type == RepositoryType.UNKNOWN:
+    if not context.repo_types.intersection(_DOCS_REPO_TYPES):
         print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)
         print(
             "Expected: .claude-plugin/plugin.json, plugins/ directory, or SKILL.md (agentskills.io)\n",

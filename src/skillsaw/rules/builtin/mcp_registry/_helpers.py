@@ -34,9 +34,9 @@ _COMPARATOR_SET = rf"{_COMPARATOR}(?:\s+{_COMPARATOR})*"
 _COMPARATOR_RANGE = re.compile(rf"\A\s*{_COMPARATOR_SET}\s*\Z")
 _HYPHEN_RANGE = re.compile(rf"\A\s*{_VERSION_ATOM}\s-\s{_VERSION_ATOM}\s*\Z")
 _DOTTED_VERSION_ATOM = r"(?:v?[0-9]+|[xX*])(?:\.(?:[0-9]+|[xX*])){1,2}" r"(?:-[0-9A-Za-z.-]+)?"
-_RANGE_ALTERNATIVE = rf"(?:{_COMPARATOR_SET}|{_DOTTED_VERSION_ATOM}|{_VERSION_ATOM}|[xX*])"
-_OR_RANGE = re.compile(rf"\A\s*{_RANGE_ALTERNATIVE}\s*" rf"(?:\|\|\s*{_RANGE_ALTERNATIVE}\s*)+\Z")
 _DOTTED_VERSION = re.compile(rf"\A\s*{_DOTTED_VERSION_ATOM}\s*\Z")
+_PYPI_SPECIFIER = re.compile(r"\A\s*(?:~=|==|!=|<=|>=|<|>|===)")
+_NUGET_RANGE = re.compile(r"\A\s*[\[(].*[\])]\s*\Z")
 _URI = re.compile(r"\A[A-Za-z][A-Za-z0-9+.-]*:" r"[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*\Z")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
@@ -44,16 +44,37 @@ _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 def is_version_range(value: str) -> bool:
     """Whether value uses a range/tag form forbidden by the Registry."""
     stripped = value.strip()
-    if stripped == "latest" or stripped in {"*", "x", "X"}:
+    if stripped == "latest" or stripped in {"*", "x", "X"} or "||" in stripped:
         return True
     if any(
-        pattern.fullmatch(stripped) is not None
-        for pattern in (_COMPARATOR_RANGE, _HYPHEN_RANGE, _OR_RANGE)
+        pattern.fullmatch(stripped) is not None for pattern in (_COMPARATOR_RANGE, _HYPHEN_RANGE)
     ):
         return True
     return _DOTTED_VERSION.fullmatch(stripped) is not None and any(
         marker in stripped for marker in ("x", "X", "*")
     )
+
+
+def is_package_version_range(registry_type: object, value: str) -> bool:
+    """Recognize range syntax in the package registry's own vocabulary."""
+    if is_version_range(value):
+        return True
+    stripped = value.strip()
+    if registry_type == "pypi":
+        # PEP 440 requirement specifiers may be comma-joined and may carry
+        # environment markers. Neither form identifies one published file.
+        return _PYPI_SPECIFIER.match(stripped) is not None or any(
+            marker in stripped for marker in (",", ";")
+        )
+    if registry_type == "nuget":
+        # NuGet interval and bracketed pin syntax belongs to dependency
+        # ranges; publisher metadata takes the bare package version.
+        return _NUGET_RANGE.fullmatch(stripped) is not None or "," in stripped
+    if registry_type == "cargo":
+        # Cargo joins multiple requirements with commas; the individual
+        # comparator and wildcard forms are handled by is_version_range().
+        return "," in stripped
+    return False
 
 
 def _is_uri(value: object) -> bool:

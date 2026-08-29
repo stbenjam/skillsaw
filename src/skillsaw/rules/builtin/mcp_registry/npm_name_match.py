@@ -12,6 +12,8 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import MCP_REGISTRY_REPO_TYPES, stable_key
 
+_MISSING = object()
+
 
 class McpRegistryNpmNameMatchRule(Rule):
     """Check local npm package identity against Registry publisher identity."""
@@ -32,9 +34,7 @@ class McpRegistryNpmNameMatchRule(Rule):
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        by_name = self._package_index(context)
-        violations: List[RuleViolation] = []
-        checked: set[Tuple[Path, str, str]] = set()
+        references: List[Tuple[str, str, object]] = []
         for block in context.lint_tree.find(McpRegistryServerBlock):
             if block.parse_error or block.raw_data is None:
                 continue
@@ -48,49 +48,62 @@ class McpRegistryNpmNameMatchRule(Rule):
                 identifier = package.get("identifier")
                 if not isinstance(identifier, str):
                     continue
-                package_version = package.get("version")
-                candidates = [
-                    manifest
-                    for manifest in by_name.get(identifier, ())
-                    if not isinstance(package_version, str)
-                    or (
-                        isinstance(manifest.raw_data, dict)
-                        and manifest.raw_data.get("version") == package_version
+                package_version = package.get("version", _MISSING)
+                if package_version is not _MISSING and not isinstance(package_version, str):
+                    # Schema validation owns malformed declared versions. An
+                    # invalid value cannot identify a local published release.
+                    continue
+                references.append((server_name, identifier, package_version))
+
+        if not references:
+            return []
+
+        by_name = self._package_index(context)
+        violations: List[RuleViolation] = []
+        checked: set[Tuple[Path, str, str]] = set()
+        for server_name, identifier, package_version in references:
+            candidates = [
+                manifest
+                for manifest in by_name.get(identifier, ())
+                if package_version is _MISSING
+                or (
+                    isinstance(manifest.raw_data, dict)
+                    and manifest.raw_data.get("version") == package_version
+                )
+            ]
+            for manifest in candidates:
+                manifest_path = manifest.path
+                data = manifest.raw_data
+                key = (manifest_path, identifier, server_name)
+                if key in checked:
+                    continue
+                checked.add(key)
+                if not isinstance(data, dict):
+                    continue
+                mcp_name = data.get("mcpName")
+                if mcp_name is None:
+                    message = (
+                        "Local npm package.json must declare 'mcpName' "
+                        f"equal to {safe_display(server_name)!r}"
                     )
-                ]
-                for manifest in candidates:
-                    manifest_path = manifest.path
-                    data = manifest.raw_data
-                    key = (manifest_path, identifier, server_name)
-                    if key in checked:
-                        continue
-                    checked.add(key)
-                    if not isinstance(data, dict):
-                        continue
-                    mcp_name = data.get("mcpName")
-                    if mcp_name is None:
-                        message = (
-                            "Local npm package.json must declare 'mcpName' "
-                            f"equal to {safe_display(server_name)!r}"
-                        )
-                    elif not isinstance(mcp_name, str):
-                        message = "Local npm package.json 'mcpName' must be a string"
-                    elif mcp_name != server_name:
-                        message = (
-                            "Local npm package.json 'mcpName' must exactly match "
-                            f"server.json name {safe_display(server_name)!r}"
-                        )
-                    else:
-                        continue
-                    violations.append(
-                        self.violation(
-                            message,
-                            file_path=manifest_path,
-                            fingerprint_discriminator=(
-                                f"npm:{stable_key((identifier, server_name))}:mcp-name"
-                            ),
-                        )
+                elif not isinstance(mcp_name, str):
+                    message = "Local npm package.json 'mcpName' must be a string"
+                elif mcp_name != server_name:
+                    message = (
+                        "Local npm package.json 'mcpName' must exactly match "
+                        f"server.json name {safe_display(server_name)!r}"
                     )
+                else:
+                    continue
+                violations.append(
+                    self.violation(
+                        message,
+                        file_path=manifest_path,
+                        fingerprint_discriminator=(
+                            f"npm:{stable_key((identifier, server_name))}:mcp-name"
+                        ),
+                    )
+                )
         return violations
 
     @staticmethod

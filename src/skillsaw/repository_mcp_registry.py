@@ -8,7 +8,7 @@ results for RepositoryContext.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import Iterable, TYPE_CHECKING, List, Optional
 
 from .formats.mcp_registry import is_mcp_registry_server
 from .paths import contained_resolve, safe_is_file, safe_resolve
@@ -24,16 +24,23 @@ class RepositoryMcpRegistryMixin:
     if TYPE_CHECKING:
         root_path: Path
         _mcp_registry_paths: Optional[List[Path]]
+        _mcp_registry_enabled: bool
         _mcp_registry_forced: bool
 
         def _repository_scan(self) -> RepositoryScan: ...
 
         def is_path_excluded(self, path: Path) -> bool: ...
 
-    def _init_mcp_registry(self, forced: bool) -> None:
+    def _init_mcp_registry(self, repo_types: Optional[Iterable[object]]) -> None:
         """Initialize Registry state without growing the context orchestrator."""
+        selected = None
+        if repo_types is not None:
+            selected = any(
+                getattr(repo_type, "value", None) == "mcp-registry" for repo_type in repo_types
+            )
         self._mcp_registry_paths = None
-        self._mcp_registry_forced = forced
+        self._mcp_registry_enabled = selected is not False
+        self._mcp_registry_forced = selected is True
 
     def mcp_registry_server_paths(self) -> List[Path]:
         """Return high-confidence, contained Registry server.json documents.
@@ -43,6 +50,8 @@ class RepositoryMcpRegistryMixin:
         identity plus package/remote shape. --type mcp-registry is the escape
         hatch for malformed documents that cannot identify themselves.
         """
+        if not self._mcp_registry_enabled:
+            return []
         if self._mcp_registry_paths is None:
             paths: List[Path] = []
             root = safe_resolve(self.root_path)

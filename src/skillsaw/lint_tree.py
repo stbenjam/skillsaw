@@ -497,10 +497,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # reaches content-quality rules as prose.
     registry_servers = context.mcp_registry_server_paths()
     for server_json in registry_servers:
-        _add_block(root, server_json, McpRegistryServerBlock)
+        _add_parser_block(root, server_json, McpRegistryServerBlock)
     if registry_servers:
         for package_json in context.package_json_paths():
-            _add_block(root, package_json, McpRegistryNpmPackageBlock)
+            _add_parser_block(root, package_json, McpRegistryNpmPackageBlock)
 
     # --- Editor-owned content directories (Cursor, Copilot/VS Code, Cline) ---
     # These tools read AGENTS.md for portable instructions — already attached

@@ -19,6 +19,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from ._helpers import (
     MCP_REGISTRY_REPO_TYPES,
     SEMVER,
+    is_package_version_range,
     is_version_range,
     registry_validator,
     schema_error_summary,
@@ -272,7 +273,7 @@ class McpRegistryServerJsonValidRule(Rule):
                     record_semantic("package-transport", index)
                 package_version = package.get("version")
                 if isinstance(package_version, str) and (
-                    is_version_range(package_version)
+                    is_package_version_range(registry_type, package_version)
                     or (registry_type == "npm" and SEMVER.fullmatch(package_version) is None)
                 ):
                     record_semantic("package-version", index)

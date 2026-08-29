@@ -22,8 +22,10 @@ field in `package.json`. It must exactly match the server `name` in
 
 For every `packages[]` entry whose `registryType` is `npm`, the rule looks
 for a local `package.json` whose `name` matches the package `identifier`. When
-the Registry entry declares `version`, the local manifest's `version` must
-also match exactly before the rule treats it as that published release. It
+the Registry entry declares a string `version`, the local manifest's `version`
+must also match exactly before the rule treats it as that published release.
+Malformed declared versions remain owned by schema validation because they
+cannot identify a local release. It
 supports a package beside `server.json` and packages elsewhere in a monorepo.
 Only a valid JSON-object manifest can supply package name/version identity;
 adjacency alone is not enough, so a malformed or non-object `package.json`
