@@ -1298,6 +1298,63 @@ class TestFileCacheBudget:
         assert paths._resolve_cache_bytes == 0
         assert skillsaw_utils._file_cache._total_bytes == 0
 
+    def test_a_slots_string_is_one_slot_not_many_characters(self):
+        """``__slots__ = "_yaml_anchor"`` is legal and means one slot.
+
+        Iterating the string yields its characters, so the attribute walk
+        looked up attributes named ``_``, ``y``, ``a`` … found none, and
+        did nothing at all — for every ruamel ``ScalarString``, which is
+        exactly where the metadata it was added to reach lives.
+        """
+        from ruamel.yaml.scalarstring import ScalarString
+
+        assert skillsaw_utils._slot_names(ScalarString) == ("_yaml_anchor",)
+
+        declared_as_string = type("OneSlot", (), {"__slots__": "solo"})
+        assert skillsaw_utils._slot_names(declared_as_string) == ("solo",)
+
+    def test_an_anchor_name_is_charged_with_its_scalar(self):
+        """A string subclass can carry metadata; a plain ``str`` cannot.
+
+        ruamel hands back ``ScalarString`` objects holding an ``Anchor``,
+        and an anchor name is authored text of any length. Recognising the
+        object as ``str`` and returning charged the short scalar text and
+        left the name uncounted — the same shape as the ``.ca`` metadata
+        the container branches were fixed for, in the one branch that
+        still returned early.
+        """
+        from skillsaw.utils import _RuamelYAML
+
+        name = "A" * 2_000_000
+        document = _RuamelYAML().load(f"key: &{name} value\nother: *{name}\n")
+
+        charged = skillsaw_utils._approximate_size(document)
+
+        assert charged >= sys.getsizeof(name), charged
+        # An ordinary document must not pay for the machinery.
+        plain = _RuamelYAML().load("a: 1\nb: [x, y]\nc: hello\n")
+        assert skillsaw_utils._approximate_size(plain) < 20_000
+
+    def test_a_long_component_is_charged_by_what_the_path_keeps(self):
+        """A ``Path`` keeps its own string alive more than once.
+
+        The rendered path lives in ``_str`` and the components separately
+        — ``_parts`` before 3.12, ``_raw_paths`` plus a normcase cache
+        after — so a one-million-character component retains two to three
+        times what one copy measures. The per-component term covers a
+        path's structure; nothing covered its length.
+        """
+        from pathlib import Path
+
+        import skillsaw.paths as paths
+
+        component = "z" * 200_000
+        long_path = Path("/tmp/" + component)
+
+        charged = paths._path_cost(long_path)
+
+        assert charged >= 2 * sys.getsizeof(str(long_path)), charged
+
     def test_a_clear_during_a_resolution_is_not_undone_by_it(self, tmp_path):
         """The sibling of the ``FileCache`` generation check.
 

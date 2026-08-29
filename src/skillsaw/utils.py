@@ -358,7 +358,17 @@ def _slot_names(klass: type) -> Tuple[str, ...]:
     """Every ``__slots__`` name *klass* inherits, resolved once per type."""
     names = _SLOT_NAMES.get(klass)
     if names is None:
-        names = tuple(slot for base in klass.__mro__ for slot in getattr(base, "__slots__", ()))
+        names = []
+        for base in klass.__mro__:
+            declared = base.__dict__.get("__slots__", ())
+            # ``__slots__ = "_yaml_anchor"`` is legal and means one slot of
+            # that name. Iterating the string yields its characters, so a
+            # class declaring it this way — every ruamel ``ScalarString``
+            # does — silently contributed no slots at all.
+            if isinstance(declared, str):
+                declared = (declared,)
+            names.extend(declared)
+        names = tuple(names)
         _SLOT_NAMES[klass] = names
     return names
 
@@ -443,6 +453,12 @@ def _approximate_size(value: Any) -> int:
             if size >= _DEDUPE_SCALAR_BYTES and not _charge_once(node, visited, alive):
                 continue
             total += size
+            # Not an unconditional ``continue``: ruamel returns
+            # ``ScalarString`` subclasses that carry an ``Anchor`` in a
+            # slot, and an anchor name is authored text of any length. A
+            # plain ``str`` has no slots, so this costs one memoized
+            # lookup for the common case.
+            _push_attributes(node, stack)
             continue
         node_id = id(node)
         if isinstance(node, dict):

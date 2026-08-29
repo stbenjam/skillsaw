@@ -65,14 +65,27 @@ _RESOLVE_CACHE: Dict[Path, Optional[Path]] = {}
 #: table carries between resizes.
 _RESOLVE_ENTRY_OVERHEAD_BYTES = 256
 
+#: How many copies of its own string a ``Path`` keeps alive. CPython holds
+#: the rendered path in ``_str`` and the components separately — through
+#: ``_parts`` before 3.12, and ``_raw_paths`` plus a normcase cache from
+#: 3.12 on. Measured with a one-million-character component, the distinct
+#: strings retained come to 2x the rendered size on 3.11 and 3x on 3.12 and
+#: 3.13, so a path's content is charged three times rather than once. The
+#: per-component term below covers a path's *structure*; this covers its
+#: *length*, and a path can be oversized in either direction.
+_PATH_STRING_COPIES = 3
+
 #: Charged per path component. ``sys.getsizeof`` on a ``Path`` is shallow:
 #: the object keeps its components in ``__slots__`` — the parts tuple, and
 #: a second cased copy once anything compares paths — so the string is not
 #: the whole of what an entry holds. Measured against real RSS over 40,000
-#: ordinary repository paths and 2,000 of 200 distinct components each,
-#: the shortfall is ~19 bytes per component in both shapes; 32 leaves room
-#: for the layout differing across the Python versions this supports.
-_RESOLVE_COMPONENT_BYTES = 32
+#: ordinary repository paths, 2,000 of 200 distinct components each, and
+#: 300 of one 50,000-character component — each in a *fresh* process,
+#: because ``ru_maxrss`` reports a peak and a second measurement in the
+#: same process reads against whatever the first one already reached. The
+#: many-component shape is the demanding one at ~43 bytes per component;
+#: 64 leaves room for the layout differing across supported Pythons.
+_RESOLVE_COMPONENT_BYTES = 64
 
 #: Serializes admission only. Lookups stay lock-free, so the hit path — the
 #: whole point of the memo — is untouched; two threads missing the same
@@ -95,10 +108,20 @@ _resolve_generation = 0
 #: a ``Path`` is not fixed-small: manifests supply path strings, and at the
 #: 4 KB a filesystem permits, a quarter-million of them measured 2.1 GB
 #: resident. The budget has to sit well above what a real repository needs —
-#: a large skill marketplace holds ~18.3k distinct paths for ~29.7 MB
-#: charged here — because every rule sweeps the same set, so a bound the
-#: repository can cross is a cliff rather than a limit.
-_RESOLVE_CACHE_BUDGET_BYTES = 64 * 1024 * 1024
+#: every rule sweeps the same set, so a bound the repository can cross is a
+#: cliff rather than a limit, and past it the memo silently gives back the
+#: 2.6s it exists for.
+#:
+#: 64 MiB became such a cliff once the charge above stopped understating.
+#: A large skill marketplace holds ~18.3k distinct paths, charged 59.7 MB
+#: — 93% of the old bound, with a repository slightly larger falling off
+#: it. The number moved to state what is held rather than to make room
+#: for a change, the same correction ``FileCache.DEFAULT_BUDGET`` needed.
+#:
+#: Note the charge is deliberately conservative — measured at 1.2x to 1.9x
+#: real RSS across path shapes — so this bound is not the memory it
+#: permits. 256 MiB nominal corresponds to roughly 135-210 MB resident.
+_RESOLVE_CACHE_BUDGET_BYTES = 256 * 1024 * 1024
 
 #: Charged so far. Once the budget is reached the memo simply stops
 #: accepting entries: it is a pure speed optimization over a filesystem
@@ -116,6 +139,10 @@ def _path_cost(path: Path) -> int:
     chooses those characters, not this repository. The same correction the
     file cache makes for cached text, for the same reason.
 
+    Nor is one copy of that string the whole of it: a ``Path`` keeps its
+    components alive separately from the rendered path, so the same text is
+    retained two or three times over depending on the interpreter.
+
     ``getsizeof`` on the ``Path`` is not the rest of it, either: it reports
     the object's own struct and not the components hanging off its slots.
     They are counted rather than walked — a separator count is a C-speed
@@ -126,7 +153,11 @@ def _path_cost(path: Path) -> int:
     components = text.count(os.sep) + 1
     if os.altsep:
         components += text.count(os.altsep)
-    return sys.getsizeof(text) + sys.getsizeof(path) + components * _RESOLVE_COMPONENT_BYTES
+    return (
+        sys.getsizeof(text) * _PATH_STRING_COPIES
+        + sys.getsizeof(path)
+        + components * _RESOLVE_COMPONENT_BYTES
+    )
 
 
 def clear_resolve_cache() -> None:
