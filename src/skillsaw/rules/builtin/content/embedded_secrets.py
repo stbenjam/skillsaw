@@ -58,6 +58,8 @@ _KNOWN_EXAMPLE_VALUES = KNOWN_SECRET_EXAMPLE_VALUES | frozenset(
 _KNOWN_EXAMPLE_VALUE_CASEFOLDS = frozenset(value.casefold() for value in _KNOWN_EXAMPLE_VALUES)
 _PEM_BASE64_LINE = re.compile(r"[A-Za-z0-9+/]+={0,2}")
 _PEM_KEY_MATERIAL_MIN_CHARS = 32
+_PEM_ENCRYPTED_MATERIAL_MIN_CHARS = 64
+_PEM_ENCRYPTED_MATERIAL_MIN_ENTROPY = 4.5
 _PEM_END_MARKER = "-----END RSA PRIVATE KEY-----"
 _PEM_METADATA_FIELD = re.compile(
     r"(?:Proc-Type\s*:\s*4\s*,\s*ENCRYPTED|"
@@ -66,7 +68,7 @@ _PEM_METADATA_FIELD = re.compile(
     re.IGNORECASE,
 )
 _PEM_SERIALIZED_LINE_BREAK = re.compile(r"(?:\\+r)?\\+n|(?:\\+u000[dD])?\\+u000[aA]")
-_PEM_LOOKAHEAD_PHYSICAL_LINES = 40
+_PEM_LOOKAHEAD_PHYSICAL_LINES = 72
 _PEM_LOOKAHEAD_CHARS_PER_LINE = 4096
 _PEM_SCAN_MAX_CHARS_PER_BLOB = 1024 * 1024
 _PEM_SCAN_MIN_CANDIDATE_COST = 64
@@ -268,6 +270,22 @@ def _unencrypted_material_with_segment(material: str, segment: str) -> str:
     return ""
 
 
+def _encrypted_material_is_credible(material: str) -> bool:
+    """Whether legacy encrypted PEM has a complete ciphertext-sized prefix."""
+    if len(material.rstrip("=")) < _PEM_ENCRYPTED_MATERIAL_MIN_CHARS:
+        return False
+    # A traditional encrypted RSA key is much longer than one 64-character
+    # PEM line. Requiring one complete base64 quantum line avoids treating a
+    # handful of standalone prose headings as ciphertext while retaining
+    # arbitrary physical-line and intra-line whitespace wrapping.
+    prefix = material[:_PEM_ENCRYPTED_MATERIAL_MIN_CHARS]
+    try:
+        base64.b64decode(prefix, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return _shannon_entropy(prefix) >= _PEM_ENCRYPTED_MATERIAL_MIN_ENTROPY
+
+
 def _pem_material_progress(state: _PemMaterialState, candidate: str) -> Tuple[bool, bool]:
     """Advance one bounded candidate, resetting at non-payload segments."""
     segments, reached_end_marker, saw_encryption_metadata = _pem_context_segments(candidate)
@@ -279,7 +297,10 @@ def _pem_material_progress(state: _PemMaterialState, candidate: str) -> Tuple[bo
         if state.encrypted:
             combined = state.material + segment
             state.material = combined if _PEM_BASE64_LINE.fullmatch(combined) else segment
-            detected = len(state.material.rstrip("=")) >= _PEM_KEY_MATERIAL_MIN_CHARS
+            _possible, confirms_der = _rsa_private_key_der_prefix_status(state.material)
+            detected = _encrypted_material_is_credible(state.material) or (
+                len(state.material.rstrip("=")) >= _PEM_KEY_MATERIAL_MIN_CHARS and confirms_der
+            )
         else:
             state.material = _unencrypted_material_with_segment(state.material, segment)
             _possible, confirmed = _rsa_private_key_der_prefix_status(state.material)
@@ -384,7 +405,9 @@ class ContentEmbeddedSecretsRule(Rule):
         if budget is None:
             budget = _PemScanBudget(_PEM_SCAN_MAX_CHARS_PER_BLOB)
         state = _PemMaterialState()
-        remainder = lines[line_index][match.end() : match.end() + _PEM_LOOKAHEAD_CHARS_PER_LINE]
+        remainder = lines[line_index][match.end() :]
+        remainder_truncated = len(remainder) > _PEM_LOOKAHEAD_CHARS_PER_LINE
+        remainder = remainder[:_PEM_LOOKAHEAD_CHARS_PER_LINE]
         if not budget.claim(remainder):
             return True
         reached_end_marker, detected = _pem_material_progress(state, remainder)
@@ -392,14 +415,18 @@ class ContentEmbeddedSecretsRule(Rule):
             return True
         if reached_end_marker:
             return False
+        if remainder_truncated:
+            return True
 
-        # Forty physical lines accommodate traditional encryption metadata, a
-        # blank separator, and the 32 one-column base64 characters needed to
-        # reach the evidence threshold. The fixed limit still bounds blank or
-        # long input for every header in adversary-controlled text.
+        # Seventy-two physical lines accommodate traditional encryption
+        # metadata, a blank separator, and the 64 one-column base64 characters
+        # needed for credible ciphertext evidence. The per-blob work budget
+        # still bounds repeated headers in adversary-controlled text.
         lookahead_end = min(len(lines), line_index + 1 + _PEM_LOOKAHEAD_PHYSICAL_LINES)
         for following_index in range(line_index + 1, lookahead_end):
-            candidate = lines[following_index][:_PEM_LOOKAHEAD_CHARS_PER_LINE]
+            candidate = lines[following_index]
+            candidate_truncated = len(candidate) > _PEM_LOOKAHEAD_CHARS_PER_LINE
+            candidate = candidate[:_PEM_LOOKAHEAD_CHARS_PER_LINE]
             if not budget.claim(candidate):
                 return True
             reached_end_marker, detected = _pem_material_progress(state, candidate)
@@ -407,6 +434,8 @@ class ContentEmbeddedSecretsRule(Rule):
                 return True
             if reached_end_marker:
                 return False
+            if candidate_truncated:
+                return True
         return False
 
     @classmethod

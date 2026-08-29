@@ -821,6 +821,16 @@ class TestContentEmbeddedSecretsRule:
                 "II EowI BAAK CAQEA7 vYp3uF6h Q9wK2mN5rT8xZ1cV4bG0sLd\n"
                 "-----END RSA PRIVATE KEY-----\n"
             ),
+            (
+                f"{_RSA_HEADER}\n"
+                + (" " * 200).join(_PEM_MATERIAL)
+                + "\n-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f"{_RSA_HEADER} "
+                + (" " * 200).join(_PEM_MATERIAL)
+                + " -----END RSA PRIVATE KEY-----\n"
+            ),
             (f"7. {_RSA_HEADER}\n" f"18. {_PEM_MATERIAL}\n" "302. -----END RSA PRIVATE KEY-----\n"),
         ],
         ids=[
@@ -841,6 +851,8 @@ class TestContentEmbeddedSecretsRule:
             "intraline-whitespace",
             "escaped-intraline-whitespace",
             "irregular-whitespace-after-one-char-prefix",
+            "truncated-whitespace-heavy-line",
+            "truncated-whitespace-heavy-remainder",
             "ordered-list",
         ],
     )
@@ -857,6 +869,19 @@ class TestContentEmbeddedSecretsRule:
         )
         (temp_dir / "CLAUDE.md").write_text(
             f"{_RSA_HEADER}\n{wrapped_material}\n-----END RSA PRIVATE KEY-----\n"
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "Private key" in violations[0].message
+
+    def test_encrypted_pem_one_char_wrapping_still_fires(self, temp_dir):
+        wrapped_material = "\n".join(_PEM_ENCRYPTED_MATERIAL)
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{_RSA_HEADER}\n"
+            "Proc-Type: 4,ENCRYPTED\n"
+            f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
+            f"{wrapped_material}\n"
+            "-----END RSA PRIVATE KEY-----\n"
         )
         violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
         assert len(violations) == 1
@@ -934,8 +959,30 @@ class TestContentEmbeddedSecretsRule:
                 f"\\\\nDEK-Info: AES-256-CBC,{_PEM_IV}"
                 '\\\\n-----END RSA PRIVATE KEY-----"\n'
             ),
+            (
+                f"{_RSA_HEADER}\n"
+                "Proc-Type: 4,ENCRYPTED\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
+                "Configuration\nDocumentation\nTroubleshooting\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                "Proc-Type: 4,ENCRYPTED\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
+                "Configuration\nDocumentation\nTroubleshooting\n"
+                "Configuration\nDocumentation\nTroubleshooting\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
         ],
-        ids=["multiline", "same-line", "escaped", "double-escaped"],
+        ids=[
+            "multiline",
+            "same-line",
+            "escaped",
+            "double-escaped",
+            "standalone-headings",
+            "repeated-standalone-headings",
+        ],
     )
     def test_pem_metadata_without_key_material_is_exempt(self, temp_dir, content):
         (temp_dir / "CLAUDE.md").write_text(content)
