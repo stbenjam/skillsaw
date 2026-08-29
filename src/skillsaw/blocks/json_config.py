@@ -226,6 +226,17 @@ class McpRegistryServerBlock(JsonConfigBlock):
 
 
 @dataclass(eq=False)
+class McpRegistryNpmPackageBlock(JsonConfigBlock):
+    """Local npm ownership metadata referenced by Registry publisher data."""
+
+    category: str = "mcp registry npm package"
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return "package.json (MCP Registry npm package)"
+
+
+@dataclass(eq=False)
 class HooksBlock(JsonConfigBlock):
     """hooks/hooks.json in a plugin."""
 

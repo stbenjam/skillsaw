@@ -1,8 +1,13 @@
 """MCP Registry repository detection and lint-tree routing."""
 
 import json
+from importlib import resources
 
-from skillsaw.blocks import ContentBlock, McpRegistryServerBlock
+from skillsaw.blocks import (
+    ContentBlock,
+    McpRegistryNpmPackageBlock,
+    McpRegistryServerBlock,
+)
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats.mcp_registry import (
     MCP_REGISTRY_SCHEMA_ID,
@@ -25,6 +30,8 @@ class TestMcpRegistryDetection:
         blocks = context.lint_tree.find(McpRegistryServerBlock)
         assert [block.path for block in blocks] == [repo / "server.json"]
         assert all(not isinstance(block, ContentBlock) for block in blocks)
+        packages = context.lint_tree.find(McpRegistryNpmPackageBlock)
+        assert [block.path for block in packages] == [repo / "package.json"]
 
     def test_nested_workspace_document_is_detected(self, tmp_path):
         repo = copy_fixture("mcp-registry/monorepo", tmp_path)
@@ -109,6 +116,26 @@ class TestMcpRegistryDetection:
         assert RepositoryType.MCP_REGISTRY not in context.repo_types
         assert context.lint_tree.find(McpRegistryServerBlock) == []
 
+    def test_escaping_package_json_symlink_is_not_attached(self, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "package.json").write_text(
+            json.dumps({"name": "@example/weather-mcp"}),
+            encoding="utf-8",
+        )
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "server.json").write_text(
+            json.dumps({"$schema": MCP_REGISTRY_SCHEMA_ID}),
+            encoding="utf-8",
+        )
+        (repo / "package.json").symlink_to(outside / "package.json")
+
+        context = RepositoryContext(repo)
+
+        assert context.package_json_paths() == []
+        assert context.lint_tree.find(McpRegistryNpmPackageBlock) == []
+
 
 class TestMcpRegistrySchemaBundle:
     def test_schema_version_parser_is_exact(self):
@@ -122,3 +149,13 @@ class TestMcpRegistrySchemaBundle:
         assert schema["title"] == "server.json defining a Model Context Protocol (MCP) server"
         server = schema["definitions"]["ServerDetail"]
         assert server["required"] == ["name", "description", "version"]
+
+    def test_upstream_mit_notice_is_bundled(self):
+        notice = (
+            resources.files("skillsaw.schemas.mcp_registry.v2025_12_11")
+            .joinpath("LICENSE")
+            .read_text(encoding="utf-8")
+        )
+
+        assert "MIT License" in notice
+        assert "Copyright (c) 2025 Model Context Protocol" in notice

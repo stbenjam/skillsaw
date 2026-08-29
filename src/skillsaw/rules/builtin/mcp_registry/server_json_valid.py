@@ -228,7 +228,7 @@ class McpRegistryServerJsonValidRule(Rule):
                         )
                     )
 
-        schema_errors = [
+        schema_summary = schema_error_summary(
             error
             for error in registry_validator().iter_errors(checked)
             if not _schema_error_is_owned(
@@ -236,13 +236,12 @@ class McpRegistryServerJsonValidRule(Rule):
                 invalid_name=name_problem is not None,
                 owned_errors=owned_schema_errors,
             )
-        ]
-        if schema_errors:
+        )
+        if schema_summary:
             violations.append(
                 self.violation(
                     f"server.json does not conform to MCP Registry "
-                    f"{MCP_REGISTRY_SCHEMA_VERSION}: "
-                    f"{schema_error_summary(schema_errors)}",
+                    f"{MCP_REGISTRY_SCHEMA_VERSION}: {schema_summary}",
                     file_path=block.path,
                     fingerprint_discriminator="server:schema",
                 )

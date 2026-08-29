@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import Iterable, TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryType
@@ -43,7 +43,7 @@ _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 def is_version_range(value: str) -> bool:
     """Whether value uses a range/tag form forbidden by the Registry."""
     stripped = value.strip()
-    if value == "latest":
+    if stripped == "latest":
         return True
     if any(
         pattern.fullmatch(stripped) is not None
@@ -123,13 +123,17 @@ def format_schema_error(error: ValidationError) -> str:
     return f"{path}: {detail}"
 
 
-def schema_error_summary(errors: list[ValidationError], *, limit: int = 4) -> str:
-    """Summarize schema errors without flooding one malformed document."""
-    ordered = sorted(
-        errors, key=lambda error: (tuple(map(str, error.absolute_path)), error.message)
-    )
-    rendered = [format_schema_error(error) for error in ordered[:limit]]
-    remaining = len(ordered) - len(rendered)
+def schema_error_summary(errors: Iterable[ValidationError], *, limit: int = 4) -> str:
+    """Summarize an error stream with bounded memory and deterministic order."""
+    sample = []
+    count = 0
+    for error in errors:
+        count += 1
+        if len(sample) < limit:
+            sample.append(error)
+    sample.sort(key=lambda error: (tuple(map(str, error.absolute_path)), error.message))
+    rendered = [format_schema_error(error) for error in sample]
+    remaining = count - len(rendered)
     if remaining:
         rendered.append(f"and {remaining} more schema error{'s' if remaining != 1 else ''}")
     return "; ".join(rendered)

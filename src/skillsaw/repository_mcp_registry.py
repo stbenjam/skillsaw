@@ -59,9 +59,15 @@ class RepositoryMcpRegistryMixin:
         return list(self._mcp_registry_paths)
 
     def package_json_paths(self) -> List[Path]:
-        """Return non-vendored, non-excluded package manifests."""
-        return [
-            path
-            for path in self._repository_scan().package_json_files
-            if not self.is_path_excluded(path)
-        ]
+        """Return contained, non-vendored, non-excluded package manifests."""
+        root = safe_resolve(self.root_path)
+        if root is None:
+            return []
+        paths: List[Path] = []
+        for path in self._repository_scan().package_json_files:
+            if self.is_path_excluded(path):
+                continue
+            resolved = contained_resolve(path, root)
+            if resolved is not None and safe_is_file(resolved):
+                paths.append(path)
+        return paths

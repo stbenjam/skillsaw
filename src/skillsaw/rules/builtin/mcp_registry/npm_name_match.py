@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
-from skillsaw.blocks import McpRegistryServerBlock
+from skillsaw.blocks import McpRegistryNpmPackageBlock, McpRegistryServerBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
-from skillsaw.paths import contained_resolve, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.utils import read_json_strict
 
 from ._helpers import MCP_REGISTRY_REPO_TYPES, stable_key
 
@@ -56,10 +54,13 @@ class McpRegistryNpmNameMatchRule(Rule):
                 if (
                     not candidates
                     and adjacent is not None
-                    and (adjacent[2] is not None or not isinstance(adjacent[1], dict))
+                    and (adjacent.parse_error is not None or adjacent.raw_data is None)
                 ):
                     candidates = [adjacent]
-                for manifest_path, data, error in candidates:
+                for manifest in candidates:
+                    manifest_path = manifest.path
+                    data = manifest.raw_data
+                    error = manifest.parse_error
                     key = (manifest_path, identifier, server_name)
                     if key in checked:
                         continue
@@ -124,23 +125,16 @@ class McpRegistryNpmNameMatchRule(Rule):
     def _package_index(
         context: RepositoryContext,
     ) -> tuple[
-        Dict[str, List[Tuple[Path, Any, Any]]],
-        Dict[Path, Tuple[Path, Any, Any]],
+        Dict[str, List[McpRegistryNpmPackageBlock]],
+        Dict[Path, McpRegistryNpmPackageBlock],
     ]:
-        """Read local package manifests once and index them by npm name."""
-        root = safe_resolve(context.root_path)
-        if root is None:
-            return {}, {}
-        by_name: Dict[str, List[Tuple[Path, Any, Any]]] = {}
-        by_directory: Dict[Path, Tuple[Path, Any, Any]] = {}
-        for manifest_path in context.package_json_paths():
-            resolved = contained_resolve(manifest_path, root)
-            if resolved is None or not safe_is_file(resolved):
-                continue
-            data, error = read_json_strict(resolved)
-            record = (manifest_path, data, error)
-            by_directory[manifest_path.parent] = record
+        """Index typed local package-manifest targets by npm name."""
+        by_name: Dict[str, List[McpRegistryNpmPackageBlock]] = {}
+        by_directory: Dict[Path, McpRegistryNpmPackageBlock] = {}
+        for manifest in context.lint_tree.find(McpRegistryNpmPackageBlock):
+            data = manifest.raw_data
+            by_directory[manifest.path.parent] = manifest
             package_name = data.get("name") if isinstance(data, dict) else None
             if isinstance(package_name, str):
-                by_name.setdefault(package_name, []).append(record)
+                by_name.setdefault(package_name, []).append(manifest)
         return by_name, by_directory

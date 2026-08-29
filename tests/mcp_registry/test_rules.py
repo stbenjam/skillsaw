@@ -3,10 +3,12 @@
 import json
 
 import pytest
+from jsonschema.exceptions import ValidationError
 
 from skillsaw.context import RepositoryType
 from skillsaw.formats.mcp_registry import MCP_REGISTRY_SCHEMA_ID
 from skillsaw.rule import Severity
+from skillsaw.rules.builtin.mcp_registry._helpers import schema_error_summary
 
 from ._helpers import (
     NPM_NAME_RULE,
@@ -218,6 +220,7 @@ class TestMcpRegistrySchemaRule:
         "version",
         [
             "latest",
+            " latest ",
             "^1.2.3",
             "~1.2.3",
             ">=1.2.3",
@@ -250,15 +253,34 @@ class TestMcpRegistrySchemaRule:
         assert "exact release" in combined
         assert "at most 255" in combined
 
-    def test_package_version_range_is_an_error(self, tmp_path):
+    @pytest.mark.parametrize("version", ["1.x", " latest "])
+    def test_package_version_range_is_an_error(self, tmp_path, version):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
-        data["packages"][0]["version"] = "1.x"
+        data["packages"][0]["version"] = version
         _write_server(path, data)
 
         findings = lint_rules(repo, VALID_RULE)
 
         assert any("packages[0].version" in message for message in messages_lower(findings))
+
+    def test_schema_error_summary_retains_a_bounded_sample(self):
+        errors = (
+            ValidationError(
+                "must be an object",
+                validator="type",
+                validator_value="object",
+                path=["packages", index],
+            )
+            for index in range(10)
+        )
+
+        summary = schema_error_summary(errors)
+
+        assert "$.packages[0]" in summary
+        assert "$.packages[3]" in summary
+        assert "$.packages[4]" not in summary
+        assert "and 6 more schema errors" in summary
 
     def test_package_compound_comparator_range_is_an_error(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
