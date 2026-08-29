@@ -1,6 +1,4 @@
-"""
-Repository context detection and management
-"""
+"""Repository context detection and management."""
 
 from __future__ import annotations
 
@@ -109,11 +107,7 @@ _UNSET = object()
 
 
 class RepositoryContext(RepositoryExternalContentMixin, RepositoryProvenanceMixin):
-    """
-    Context information about the repository being linted
-
-    Automatically detects repository type and gathers relevant metadata.
-    """
+    """Detected repository metadata used during linting."""
 
     _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
 

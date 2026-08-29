@@ -15,7 +15,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
-from skillsaw.paths import safe_is_symlink, safe_resolve
+from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -1093,10 +1093,9 @@ class Linter:
         if not path.is_absolute():
             path = self.context.root_path / path
         resolved = safe_resolve(path) or path
-        return any(
-            resolved == root or resolved.is_relative_to(root)
-            for root in self._external_source_roots()
-        )
+        return path_within_roots(
+            resolved, self._external_source_roots()
+        ) or self.context.is_externally_sourced(resolved)
 
     def _external_source_roots(self) -> Set[Path]:
         """External roots from repository provenance and contributed tree tags."""

@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Dict, List, Mapping, Optional, Set, Tuple
 
 from .formats import skills_lock as skills_lock_format
-from .paths import safe_is_dir, safe_resolve
+from .paths import (
+    path_within_roots,
+    safe_exists,
+    safe_is_dir,
+    safe_is_file,
+    safe_is_symlink,
+    safe_resolve,
+)
 from .utils import read_json_strict
 
 if TYPE_CHECKING:
@@ -27,6 +34,7 @@ class RepositoryExternalContentMixin:
         skills: List[Path]
         _externally_sourced_skill_roots: Optional[Set[Path]]
         _externally_sourced_roots: Optional[Set[Path]]
+        _external_path_verdict_cache: Dict[Path, bool]
 
         def _repository_scan(self) -> "RepositoryScan": ...
 
@@ -36,6 +44,7 @@ class RepositoryExternalContentMixin:
         """Invalidate provenance views after repository discovery changes."""
         self._externally_sourced_skill_roots = None
         self._externally_sourced_roots = None
+        self._external_path_verdict_cache = {}
 
     def skills_lock_files(self) -> List[Path]:
         """Return every non-excluded project ``skills-lock.json``."""
@@ -63,31 +72,29 @@ class RepositoryExternalContentMixin:
         repository_root = safe_resolve(self.root_path) or self.root_path
         projects: List[Tuple[Path, Set[str]]] = []
         for lockfile in self._repository_scan().skills_lock_files:
-            data, error = read_json_strict(lockfile)
-            if error or not isinstance(data, dict):
+            project_root = safe_resolve(lockfile.parent)
+            if project_root is None or not project_root.is_relative_to(repository_root):
                 continue
-            entries = data.get("skills")
-            if not isinstance(entries, dict):
-                continue
-            external_names = {
-                skills_lock_format.sanitize_install_name(name)
-                for name, entry in entries.items()
-                if isinstance(name, str)
-                and isinstance(entry, dict)
-                and skills_lock_format.entry_has_valid_provenance(entry)
-                and skills_lock_format.entry_is_external(
-                    entry,
-                    lock_root=lockfile.parent,
+
+            # The lexical lock location is a project boundary even when the
+            # file is malformed, unreadable, or an escaping symlink. Failing
+            # open prevents an outer monorepo lock from reclassifying nested
+            # authored content. Only contained regular files are read.
+            external_names: Set[str] = set()
+            resolved_lockfile = safe_resolve(lockfile)
+            if (
+                resolved_lockfile is not None
+                and resolved_lockfile.is_relative_to(project_root)
+                and safe_is_file(resolved_lockfile)
+            ):
+                parsed_names = self._external_names_from_lock(
+                    resolved_lockfile,
+                    lock_root=project_root,
                     repository_root=repository_root,
                 )
-            }
-            project_root = safe_resolve(lockfile.parent)
-            # A valid nested lock is a project boundary even when none of its
-            # entries are external (including an empty ``skills`` mapping).
-            # Otherwise an outer monorepo lock can mislabel nested authored
-            # content that happens to share an install name.
-            if project_root is not None:
-                projects.append((project_root, external_names))
+                if parsed_names is not None:
+                    external_names = parsed_names
+            projects.append((project_root, external_names))
 
         # Longest path first: the nearest nested lock owns the project.
         projects.sort(key=lambda item: len(item[0].parts), reverse=True)
@@ -110,6 +117,81 @@ class RepositoryExternalContentMixin:
 
         self._externally_sourced_skill_roots = roots
         return set(roots)
+
+    @staticmethod
+    def _external_names_from_lock(
+        lockfile: Path, *, lock_root: Path, repository_root: Path
+    ) -> Optional[Set[str]]:
+        """Return externally sourced install names, or ``None`` if malformed."""
+        data, error = read_json_strict(lockfile)
+        if error or not isinstance(data, dict):
+            return None
+        entries = data.get("skills")
+        if not isinstance(entries, dict):
+            return None
+        return {
+            skills_lock_format.sanitize_install_name(name)
+            for name, entry in entries.items()
+            if isinstance(name, str)
+            and isinstance(entry, Mapping)
+            and skills_lock_format.entry_has_valid_provenance(entry)
+            and skills_lock_format.entry_is_external(
+                entry,
+                lock_root=lock_root,
+                repository_root=repository_root,
+            )
+        }
+
+    @staticmethod
+    def _skill_root(path: Path) -> Optional[Path]:
+        """Return the conventional installed-skill directory containing *path*."""
+        for candidate in (path, *path.parents):
+            if candidate.parent.name in {"skill", "skills"}:
+                return candidate
+        return None
+
+    def _ancestor_lock_marks_external(self, path: Path) -> bool:
+        """Resolve lock provenance when linting a dependency subtree directly."""
+        skill_root = self._skill_root(path)
+        if skill_root is None:
+            return False
+
+        for directory in skill_root.parents:
+            lockfile = directory / "skills-lock.json"
+            if not safe_exists(lockfile) and not safe_is_symlink(lockfile):
+                if safe_exists(directory / ".git"):
+                    break
+                continue
+
+            project_root = safe_resolve(directory)
+            resolved_lockfile = safe_resolve(lockfile)
+            if (
+                project_root is None
+                or resolved_lockfile is None
+                or not resolved_lockfile.is_relative_to(project_root)
+                or not safe_is_file(resolved_lockfile)
+            ):
+                return False
+            external_names = self._external_names_from_lock(
+                resolved_lockfile,
+                lock_root=project_root,
+                repository_root=project_root,
+            )
+            return (
+                external_names is not None
+                and skills_lock_format.sanitize_install_name(skill_root.name) in external_names
+            )
+        return False
+
+    @staticmethod
+    def _ancestor_apm_marks_external(path: Path) -> bool:
+        """Resolve APM package provenance when linting below ``apm_modules``."""
+        for candidate in (path, *path.parents):
+            if candidate.name != "apm_modules":
+                continue
+            owner = candidate.parent
+            return safe_is_dir(owner / ".apm") or safe_is_file(owner / "apm.yml")
+        return False
 
     def is_externally_sourced_skill(self, path: Path) -> bool:
         """Whether the installed skill at *path* has external provenance."""
@@ -149,7 +231,14 @@ class RepositoryExternalContentMixin:
         resolved = safe_resolve(path)
         if resolved is None:
             return False
-        return any(
-            resolved == root or resolved.is_relative_to(root)
-            for root in self.externally_sourced_roots()
-        )
+        if path_within_roots(resolved, self.externally_sourced_roots()):
+            return True
+        cache = getattr(self, "_external_path_verdict_cache", None)
+        if cache is None:
+            cache = {}
+            self._external_path_verdict_cache = cache
+        if resolved not in cache:
+            cache[resolved] = self._ancestor_apm_marks_external(
+                resolved
+            ) or self._ancestor_lock_marks_external(resolved)
+        return cache[resolved]

@@ -100,6 +100,29 @@ def test_unresolvable_paths_fail_open_without_aborting_provenance(
     assert not context.is_externally_sourced(unresolved)
 
 
+def test_external_provenance_ignores_lock_projects_outside_repository(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    lockfile = outside / "skills-lock.json"
+    lockfile.write_text('{"version": 1, "skills": {}}\n')
+    context = RepositoryContext(repo)
+    context._repository_scan().skills_lock_files = (lockfile,)
+    context.reset_external_content_provenance()
+
+    assert context.externally_sourced_skill_roots() == set()
+
+
+def test_external_path_checks_cover_known_roots_and_lazy_cache(tmp_path: Path) -> None:
+    repo = _copy_apm_fixture(tmp_path)
+    context = RepositoryContext(repo)
+
+    assert context.is_externally_sourced(repo / "apm_modules" / "example")
+    del context._external_path_verdict_cache
+    assert not context.is_externally_sourced(repo / "promptfooconfig-local.yaml")
+
+
 def test_fix_never_rewrites_external_apm_content(tmp_path: Path) -> None:
     repo = _copy_apm_fixture(tmp_path)
     skill_file = (
@@ -121,6 +144,29 @@ def test_fix_never_rewrites_external_apm_content(tmp_path: Path) -> None:
     violations = linter.run()
     applied, suggested = linter.fix_and_apply()
 
+    assert len(violations) == 1
+    assert violations[0].fixable is False
+    assert applied == []
+    assert suggested == []
+    assert skill_file.read_text() == original
+
+
+def test_targeted_fix_never_rewrites_external_apm_content(tmp_path: Path) -> None:
+    repo = _copy_apm_fixture(tmp_path)
+    skill_dir = repo / "apm_modules" / "example" / "vendor-package" / "skills" / "external-skill"
+    skill_file = skill_dir / "SKILL.md"
+    original = skill_file.read_text()
+    context = RepositoryContext(skill_dir)
+    linter = Linter(
+        context,
+        LinterConfig.default(),
+        rule_ids={"agentskill-name"},
+    )
+
+    violations = linter.run()
+    applied, suggested = linter.fix_and_apply()
+
+    assert context.is_externally_sourced(skill_dir)
     assert len(violations) == 1
     assert violations[0].fixable is False
     assert applied == []

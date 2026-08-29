@@ -14,6 +14,17 @@ from types import SimpleNamespace
 import pytest
 
 from skillsaw.cli._helpers import _resolve_lint_paths
+from skillsaw.paths import path_within_roots
+
+
+def test_path_within_roots_uses_exact_or_ancestor_membership(tmp_path):
+    external = tmp_path / "external"
+    roots = {external}
+
+    assert path_within_roots(external, roots)
+    assert path_within_roots(external / "nested" / "file.md", roots)
+    assert not path_within_roots(tmp_path / "external-sibling", roots)
+
 
 # ── Pass 1: _resolve_lint_paths ────────────────────────────────
 

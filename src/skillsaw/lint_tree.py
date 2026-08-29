@@ -62,7 +62,14 @@ from .formats.codex import (
 )
 from .formats import devin
 from .utils import has_apm_generated_header, read_text
-from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
+from .paths import (
+    contained_resolve,
+    path_within_roots,
+    safe_exists,
+    safe_is_dir,
+    safe_is_file,
+    safe_resolve,
+)
 from .formats.promptfoo import (
     extract_file_refs,
     is_promptfoo_config,
@@ -1122,11 +1129,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if not external_roots:
             return False
         resolved = safe_resolve(path)
-        return resolved is not None and any(
-            resolved == external or resolved.is_relative_to(external) for external in external_roots
-        )
+        return resolved is not None and path_within_roots(resolved, external_roots)
 
-    def _tag_and_prune_external(parent: LintTarget) -> None:
+    def _tag_and_prune_external(parent: LintTarget, inherited_external: bool = False) -> None:
         """Apply the repository's external-content boundary to every node.
 
         Centralizing this after builtin and plugin contributors finish means
@@ -1136,14 +1141,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """
         kept: list[LintTarget] = []
         for child in parent.children:
-            child.externally_sourced = child.externally_sourced or _path_is_external(child.path)
+            child.externally_sourced = (
+                child.externally_sourced or inherited_external or _path_is_external(child.path)
+            )
             if child.externally_sourced and not context.lint_external_content:
                 continue
-            _tag_and_prune_external(child)
+            _tag_and_prune_external(child, child.externally_sourced)
             kept.append(child)
         parent.children = kept
 
-    _tag_and_prune_external(root)
+    root.externally_sourced = root.externally_sourced or context.is_externally_sourced(
+        context.root_path
+    )
+    _tag_and_prune_external(root, root.externally_sourced)
     root.set_parents()
     nodes = list(root.walk())
     logger.info("Built lint tree: %d nodes", len(nodes))

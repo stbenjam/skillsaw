@@ -22,6 +22,7 @@ class SkillsLockValidRule(Rule):
     """Check that project skills lockfiles match the shape the skills CLI reads."""
 
     since = "0.20.0"
+    repo_types = None  # lockfiles can be committed in any repository type
     formats = frozenset({HAS_SKILLS_LOCK})
 
     config_schema = {
@@ -321,6 +322,14 @@ class SkillsLockValidRule(Rule):
         discriminator: str,
     ) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
+        if "\x00" in skill_path:
+            violations.append(
+                self.violation(
+                    f"Skill '{shown_name}' field 'skillPath' must not contain NUL characters",
+                    file_path=path,
+                    fingerprint_discriminator=f"{discriminator}:skillPath-nul",
+                )
+            )
         if skills_lock.is_absolute_path(skill_path) or skills_lock.has_parent_segment(skill_path):
             violations.append(
                 self.violation(

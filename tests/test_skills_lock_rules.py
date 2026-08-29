@@ -208,6 +208,15 @@ def test_skill_path_requires_skill_md_as_final_component(tmp_path: Path) -> None
     assert any("must end with 'SKILL.md'" in message for message in _messages(tmp_path))
 
 
+def test_skill_path_rejects_nul(tmp_path: Path) -> None:
+    _write_lock(
+        tmp_path / "skills-lock.json",
+        {"version": 1, "skills": {"unsafe": _entry(skillPath="skills/\0/SKILL.md")}},
+    )
+
+    assert any("must not contain NUL" in message for message in _messages(tmp_path))
+
+
 def test_unknown_source_type_can_be_allowlisted(tmp_path: Path) -> None:
     _write_lock(
         tmp_path / "skills-lock.json",
@@ -361,6 +370,44 @@ def test_external_matching_uses_nearest_nested_lock(tmp_path: Path) -> None:
     assert not context.is_externally_sourced_skill(skill)
 
 
+def test_malformed_nested_lock_remains_a_project_boundary(tmp_path: Path) -> None:
+    _write_lock(
+        tmp_path / "skills-lock.json",
+        {"version": 1, "skills": {"shared": _entry()}},
+    )
+    nested = tmp_path / "packages" / "web"
+    nested.mkdir(parents=True)
+    (nested / "skills-lock.json").write_text("{broken")
+    skill = nested / "agent" / "skills" / "shared"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: shared\ndescription: Use when testing a malformed nested lock.\n---\n"
+    )
+
+    context = RepositoryContext(tmp_path, lint_external_content=False)
+
+    assert [node.path for node in context.lint_tree.find(SkillNode)] == [skill]
+    assert not context.is_externally_sourced_skill(skill)
+
+
+def test_escaping_lockfile_symlink_is_not_read_for_provenance(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "outside-lock.json"
+    _write_lock(outside, {"version": 1, "skills": {"external-dep": _entry()}})
+    (repo / "skills-lock.json").symlink_to(outside)
+    skill = repo / ".agents" / "skills" / "external-dep"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: external-dep\ndescription: Use when testing a lock symlink.\n---\n"
+    )
+
+    context = RepositoryContext(repo, lint_external_content=False)
+
+    assert [node.path for node in context.lint_tree.find(SkillNode)] == [skill]
+    assert not context.is_externally_sourced_skill(skill)
+
+
 def test_malformed_lock_fails_open_for_skill_linting(tmp_path: Path) -> None:
     (tmp_path / "skills-lock.json").write_text("{broken")
     skill = tmp_path / ".agents" / "skills" / "external-dep"
@@ -461,3 +508,25 @@ def test_fix_never_rewrites_an_external_lock_managed_skill(tmp_path: Path) -> No
     assert external.read_text() == original
     assert "name: local-copy" in local_copy.read_text()
     assert "name: authored-skill" in authored.read_text()
+
+
+def test_targeted_fix_never_rewrites_an_external_lock_managed_skill(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_fixture("skills-lock/external", tmp_path)
+    external_dir = repo / ".agents" / "skills" / "external-dep"
+    external = external_dir / "SKILL.md"
+    original = external.read_text()
+
+    context = RepositoryContext(external_dir)
+    lint_result = run_cli(
+        ["lint", external_dir, "--rule", "agentskill-name", "--format", "json", "--no-progress"]
+    )
+    result = run_cli(["fix", external_dir, "--rule", "agentskill-name", "--no-progress"])
+    violations = json.loads(lint_result.stdout)["violations"]
+
+    assert context.is_externally_sourced(external_dir)
+    assert len(violations) == 1
+    assert violations[0]["fixable"] is False
+    assert result.returncode == 0
+    assert external.read_text() == original
