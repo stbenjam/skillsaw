@@ -343,6 +343,47 @@ UNCACHEABLE_SIZE = -1
 _ENTRY_OVERHEAD_BYTES = 512
 
 
+#: Slot names per type, flattened over the MRO. The lookup below runs once
+#: per container in a walk that runs on every cache insertion, and almost
+#: every type it sees declares no slots at all — resolving that to an empty
+#: tuple once per type keeps the common case a single dict hit. Keyed by
+#: type objects, of which a process loads a bounded number.
+_SLOT_NAMES: Dict[type, Tuple[str, ...]] = {}
+
+
+def _slot_names(klass: type) -> Tuple[str, ...]:
+    """Every ``__slots__`` name *klass* inherits, resolved once per type."""
+    names = _SLOT_NAMES.get(klass)
+    if names is None:
+        names = tuple(slot for base in klass.__mro__ for slot in getattr(base, "__slots__", ()))
+        _SLOT_NAMES[klass] = names
+    return names
+
+
+def _push_attributes(node: Any, stack: List[Any]) -> None:
+    """Queue whatever *node* holds in attributes rather than in items.
+
+    This is where ruamel keeps the half of a commented document that has
+    no key or value to be found under: comment tokens hang off ``.ca``,
+    beside the mapping rather than inside it, and a comment-heavy config
+    retained three times what it was charged. Both storage forms are
+    needed — ruamel's containers put ``.ca`` in a ``__slots__`` entry and
+    their line info in ``__dict__`` — but neither is named here, so this
+    stays a fact about Python objects rather than about ruamel.
+
+    A ``CommentedMap`` is a ``dict``, so the container branches have to
+    ask as well; reaching this only from the scalar tail would walk right
+    past every one of them.
+    """
+    attributes = getattr(node, "__dict__", None)
+    if attributes:
+        stack.append(attributes)
+    for slot in _slot_names(type(node)):
+        held = getattr(node, slot, None)
+        if held is not None:
+            stack.append(held)
+
+
 def _approximate_size(value: Any) -> int:
     """Roughly how many bytes *value* keeps alive, for cache accounting.
 
@@ -380,6 +421,7 @@ def _approximate_size(value: Any) -> int:
             total += _NODE_OVERHEAD_BYTES * len(node)
             stack.extend(node.keys())
             stack.extend(node.values())
+            _push_attributes(node, stack)
             continue
         if isinstance(node, (list, tuple, set, frozenset)):
             if node_id in visited:
@@ -388,6 +430,7 @@ def _approximate_size(value: Any) -> int:
             alive.append(node)
             total += _NODE_OVERHEAD_BYTES * len(node)
             stack.extend(node)
+            _push_attributes(node, stack)
             continue
         # A scalar is not always small: PyYAML resolves ``0x`` followed by
         # a few million hex digits into a multi-megabyte ``int``, and the
@@ -399,6 +442,7 @@ def _approximate_size(value: Any) -> int:
             # An exotic ``__sizeof__``. Aborting a lint from inside cache
             # accounting would be worse than charging the flat estimate.
             total += _NODE_OVERHEAD_BYTES
+        _push_attributes(node, stack)
     return total or 1
 
 

@@ -1084,6 +1084,28 @@ class TestFileCacheBudget:
         cache.invalidate(target)
         assert cache._total_bytes == 0
 
+    def test_comment_metadata_is_charged_not_walked_past(self, tmp_path):
+        """ruamel keeps comments beside a mapping, not inside it.
+
+        Comment tokens hang off ``.ca``, which a walk descending only keys
+        and values never reaches — a comment-heavy config retained about
+        three times what it was charged. A ``CommentedMap`` is itself a
+        ``dict``, so the container branches have to ask for attributes
+        too; asking only in the scalar tail walks past every one.
+        """
+        from skillsaw.utils import read_yaml_commented
+
+        body = "\n".join(f"k{i}: v" for i in range(200)) + "\n"
+        commented = "\n".join(f"# {'c' * 200}\nk{i}: v" for i in range(200)) + "\n"
+        (tmp_path / "plain.yaml").write_text(body, encoding="utf-8")
+        (tmp_path / "commented.yaml").write_text(commented, encoding="utf-8")
+
+        plain = skillsaw_utils._approximate_size(read_yaml_commented(tmp_path / "plain.yaml"))
+        rich = skillsaw_utils._approximate_size(read_yaml_commented(tmp_path / "commented.yaml"))
+
+        # Same data either way; the difference is comment tokens alone.
+        assert rich == skillsaw_utils.UNCACHEABLE_SIZE or rich > plain * 2
+
     def test_text_is_charged_by_what_it_retains_not_its_length(self):
         """CPython stores a string at one, two or four bytes per character
         (PEP 393), so a document of emoji retains four times the length a

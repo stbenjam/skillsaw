@@ -436,3 +436,45 @@ class TestSourceRelativeDirectory:
         would be reported unreferenced.
         """
         assert self._rel(f"{directory}/script.py") == directory
+
+
+class TestWindowsModulePaths:
+    """Import targets are compared as ``normcase``d path strings.
+
+    The comparison has to be the case-insensitive one ``Path`` equality
+    would have made on Windows, where ``import MyModule`` really does
+    reach ``mymodule.py``. Folding only the base directory left every
+    authored component unfolded, so the bundled module was reported
+    unreferenced on exactly the platform the folding exists for.
+    """
+
+    @staticmethod
+    def _marked(parts, names, on_disk):
+        import os
+        from unittest import mock
+
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        targets: set = set()
+        # normcase is the identity on POSIX, so the Windows behaviour has
+        # to be simulated to be tested at all.
+        with mock.patch.object(os.path, "normcase", str.lower):
+            AgentSkillUnreferencedFilesRule._mark_module(
+                os.path.normcase("/skill"), list(parts), list(names), set(on_disk), targets
+            )
+        return targets
+
+    def test_a_mixed_case_import_reaches_the_lowercased_module(self):
+        assert self._marked(["MyModule"], [], {"/skill/mymodule.py"}) == {"/skill/mymodule.py"}
+
+    def test_a_mixed_case_from_import_reaches_its_submodule(self):
+        assert self._marked(["Pkg"], ["Helper"], {"/skill/pkg/helper.py"}) == {
+            "/skill/pkg/helper.py"
+        }
+
+    def test_a_mixed_case_package_marks_its_init(self):
+        assert self._marked(["Pkg", "Sub"], [], {"/skill/pkg/__init__.py"}) == {
+            "/skill/pkg/__init__.py"
+        }

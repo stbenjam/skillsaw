@@ -676,6 +676,13 @@ class AgentSkillUnreferencedFilesRule(Rule):
         ``Path`` equality makes on Windows.
         """
         init_suffix = os.sep + "__init__.py"
+        # ``base`` arrives normcased, but the dotted components come from
+        # the authored import statement — ``import MyModule`` would have
+        # built a target the normcased ``mymodule.py`` on disk never
+        # matches. Folded once here rather than per membership test;
+        # identity on POSIX.
+        parts = [os.path.normcase(part) for part in parts]
+        names = [os.path.normcase(name) for name in names]
 
         def mark(prefix: str) -> bool:
             module = prefix + ".py"
