@@ -389,15 +389,27 @@ def _approximate_size(value: Any) -> int:
             total += _NODE_OVERHEAD_BYTES * len(node)
             stack.extend(node)
             continue
-        total += _NODE_OVERHEAD_BYTES
+        # A scalar is not always small: PyYAML resolves ``0x`` followed by
+        # a few million hex digits into a multi-megabyte ``int``, and the
+        # hex path has no digit limit to stop it. Charge what the object
+        # holds, floored at the overhead a slot costs regardless.
+        try:
+            total += max(sys.getsizeof(node), _NODE_OVERHEAD_BYTES)
+        except TypeError:
+            # An exotic ``__sizeof__``. Aborting a lint from inside cache
+            # accounting would be worse than charging the flat estimate.
+            total += _NODE_OVERHEAD_BYTES
     return total or 1
 
 
 def _entry_cost(value: Any) -> int:
     """What one cache entry costs — its value plus the entry holding it.
 
-    Every accounting site goes through here, so what admission charges and
-    what eviction credits back cannot drift apart.
+    Called once, at admission. The number is then stored beside the value
+    and credited back verbatim by eviction, clearing and invalidation:
+    re-measuring at teardown charges back whatever the value happens to
+    measure *then*, which a caller mutating a parsed document turns into
+    a negative total or phantom bytes.
     """
     size = _approximate_size(value)
     if size == UNCACHEABLE_SIZE:
@@ -464,7 +476,7 @@ class FileCache:
             with self._lock:
                 bucket = store.get(resolved)
                 if bucket is not None and sub_key in bucket:
-                    return bucket[sub_key]
+                    return bucket[sub_key][1]
             # Compute outside the lock to avoid holding it during I/O.
             result = func(*args, **kwargs)
             cost = _entry_cost(result)
@@ -477,21 +489,28 @@ class FileCache:
                 # uncached; the reader recomputes it next time.
                 return result
             with self._lock:
+                bucket = store.get(resolved)
+                if bucket is not None and sub_key in bucket:
+                    # Another caller computed this key while we were
+                    # outside the lock. Its value is the one already
+                    # charged, so keep it: overwriting would leave the
+                    # cache holding one value and the budget recording the
+                    # cost of a different one, and a later invalidation
+                    # would subtract a charge that was never added.
+                    return bucket[sub_key][1]
                 if self._total_bytes + cost > self._budget:
                     self._evict(cost)
-                bucket = store.setdefault(resolved, {})
-                if sub_key not in bucket:
-                    self._total_bytes += cost
-                bucket[sub_key] = result
+                # Fetched after eviction, which may have dropped this
+                # path's bucket along with everything else it freed.
+                store.setdefault(resolved, {})[sub_key] = (cost, result)
+                self._total_bytes += cost
             return result
 
         wrapper._store = store  # type: ignore[attr-defined]
 
         def _clear():
             with self._lock:
-                freed = sum(
-                    _entry_cost(value) for bucket in store.values() for value in bucket.values()
-                )
+                freed = sum(cost for bucket in store.values() for cost, _ in bucket.values())
                 store.clear()
                 self._total_bytes -= freed
 
@@ -525,7 +544,7 @@ class FileCache:
                 bucket = store.pop(path, None)
                 if bucket is None:
                     continue
-                freed += sum(_entry_cost(value) for value in bucket.values())
+                freed += sum(cost for cost, _ in bucket.values())
                 if freed >= target:
                     break
         self._total_bytes -= freed
@@ -550,7 +569,7 @@ class FileCache:
                 for store in self._stores:
                     bucket = store.pop(resolved, None)
                     if bucket is not None:
-                        self._total_bytes -= sum(_entry_cost(value) for value in bucket.values())
+                        self._total_bytes -= sum(cost for cost, _ in bucket.values())
 
 
 # Singleton cache used by all utility functions.

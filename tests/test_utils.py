@@ -1011,6 +1011,79 @@ class TestFileCacheBudget:
         assert calls["n"] == 2, "an unsized value must be recomputed, not served"
         assert cache._total_bytes == 0
 
+    def test_a_scalar_is_charged_by_what_it_retains(self):
+        """A scalar is not always small.
+
+        PyYAML resolves ``0x`` followed by a few million hex digits into a
+        multi-megabyte ``int`` — and unlike the decimal path, the hex one
+        has no digit limit to stop it. Charged a flat estimate, an
+        arbitrary number of such documents sit in the cache while the
+        total stays near zero.
+        """
+        big = int("f" * 200_000, 16)
+
+        charged = skillsaw_utils._approximate_size(big)
+
+        assert charged >= sys.getsizeof(big)
+        assert skillsaw_utils._approximate_size(None) == skillsaw_utils._NODE_OVERHEAD_BYTES
+
+    def test_mutating_a_cached_value_does_not_corrupt_the_total(self, tmp_path):
+        """The readers hand back parsed documents a caller can mutate.
+
+        Recomputing an entry's size at teardown charges back whatever it
+        measures then, not what admission charged: growing a cached
+        mapping drove the total negative, shrinking one left phantom
+        bytes behind.
+        """
+        cache = skillsaw_utils.FileCache(budget=1_000_000)
+
+        @cache.cached
+        def reader(path):
+            return {"k": "v"}
+
+        grown = reader(tmp_path / "a.yaml")
+        grown["big"] = "x" * 100_000
+        reader.cache_clear()
+        assert cache._total_bytes == 0
+
+        shrunk = reader(tmp_path / "b.yaml")
+        shrunk.clear()
+        cache.invalidate(tmp_path / "b.yaml")
+        assert cache._total_bytes == 0
+
+    def test_racing_readers_agree_on_one_value_and_one_charge(self, tmp_path):
+        """Two threads missing the same key both compute outside the lock.
+
+        Whoever loses must not overwrite the winner's value, or the cache
+        holds one value while the budget records the cost of another and
+        invalidation subtracts a charge that was never added.
+        """
+        import threading
+
+        cache = skillsaw_utils.FileCache(budget=10_000_000)
+        started = threading.Barrier(4)
+        sizes = iter([100, 200_000, 300_000, 400_000])
+        lock = threading.Lock()
+
+        @cache.cached
+        def reader(path):
+            with lock:
+                size = next(sizes)
+            started.wait(timeout=5)
+            return "x" * size
+
+        target = tmp_path / "contended.md"
+        seen = []
+        threads = [threading.Thread(target=lambda: seen.append(reader(target))) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert len(set(seen)) == 1, "every caller must be handed the same value"
+        cache.invalidate(target)
+        assert cache._total_bytes == 0
+
     def test_text_is_charged_by_what_it_retains_not_its_length(self):
         """CPython stores a string at one, two or four bytes per character
         (PEP 393), so a document of emoji retains four times the length a

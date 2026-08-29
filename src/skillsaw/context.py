@@ -152,13 +152,11 @@ class RepositoryContext(RepositoryProvenanceMixin):
             content_paths: Extra content glob patterns (from config) picked up
                 by the lint tree.
         """
-        # A new context is a new pass over a repository, which is exactly
-        # the lifetime the resolution memo claims. Clearing here is what
-        # makes that true for a long-lived library caller: without it a
-        # process that lints, changes directory or retargets a symlink,
-        # and lints again would answer the second pass from the first
-        # one's filesystem. The CLI constructs one context per path and
-        # finishes linting it before building the next, so nothing in a
+        # A new context is a new pass, which is exactly the lifetime the
+        # resolution memo claims; clearing here makes that true for a
+        # long-lived library caller, which could otherwise lint, retarget
+        # a symlink, and lint again off the first pass's filesystem. The
+        # CLI finishes each path before building the next context, so no
         # run loses a memo it still needs.
         clear_resolve_cache()
         self.root_path = safe_resolve(root_path) or root_path
@@ -265,6 +263,8 @@ class RepositoryContext(RepositoryProvenanceMixin):
 
     def rebuild_lint_tree(self) -> None:
         self._lint_tree = None
+        # A rebuild is where the filesystem may have moved under the memo.
+        self.__dict__.pop("_promptfoo_candidates", None)
 
     @property
     def repo_type(self) -> RepositoryType:
@@ -584,11 +584,11 @@ class RepositoryContext(RepositoryProvenanceMixin):
     _walk_files = staticmethod(detect_discovery.walk_files)
 
     def promptfoo_config_candidates(self) -> List[Path]:
-        """Files that could be Promptfoo configs, found by one shared walk.
+        """Files that could be Promptfoo configs, from one shared walk.
 
-        Repository-type detection asks during construction and the lint
-        tree asks while building; without the cache each pays its own walk
-        of the whole repository to answer the same question.
+        Type detection and the lint tree both ask, and uncached each
+        walks the repository for the same answer. Dropped by
+        ``rebuild_lint_tree``, where that answer can go stale.
         """
         cached = self.__dict__.get("_promptfoo_candidates")
         if cached is None:
