@@ -5,19 +5,32 @@ from __future__ import annotations
 import json
 import re
 from importlib import resources
-from typing import Any, Dict, Optional
+from types import MappingProxyType
+from typing import Any, Dict, Mapping, Optional
 
-MCP_REGISTRY_SCHEMA_VERSION = "2025-12-11"
-MCP_REGISTRY_SCHEMA_ID = (
-    "https://static.modelcontextprotocol.io/schemas/"
-    f"{MCP_REGISTRY_SCHEMA_VERSION}/server.schema.json"
+MCP_REGISTRY_SCHEMA_PACKAGES: Mapping[str, str] = MappingProxyType(
+    {
+        "2025-12-11": "skillsaw.schemas.mcp_registry.v2025_12_11",
+    }
 )
+MCP_REGISTRY_SCHEMA_VERSIONS = frozenset(MCP_REGISTRY_SCHEMA_PACKAGES)
+# Registry schema versions are ISO dates, so lexical order identifies the
+# newest bundled release while older entries remain available for validation.
+MCP_REGISTRY_SCHEMA_VERSION = max(MCP_REGISTRY_SCHEMA_VERSIONS)
 _REMOTE_TRANSPORTS = frozenset({"streamable-http", "sse"})
 
 _SCHEMA_ID_RE = re.compile(
     r"\Ahttps://static\.modelcontextprotocol\.io/schemas/"
     r"([A-Za-z0-9_~.-]+)/server\.schema\.json\Z"
 )
+
+
+def mcp_registry_schema_id(version: str) -> str:
+    """Return the canonical MCP Registry schema identifier for a version."""
+    return "https://static.modelcontextprotocol.io/schemas/" f"{version}/server.schema.json"
+
+
+MCP_REGISTRY_SCHEMA_ID = mcp_registry_schema_id(MCP_REGISTRY_SCHEMA_VERSION)
 
 
 def mcp_registry_schema_version(value: object) -> Optional[str]:
@@ -55,11 +68,18 @@ def is_mcp_registry_server(data: object) -> bool:
     )
 
 
-def load_mcp_registry_schema() -> Dict[str, Any]:
-    """Load the bundled released schema without making a network request."""
-    resource = resources.files("skillsaw.schemas.mcp_registry.v2025_12_11").joinpath(
-        "server.schema.json"
-    )
+def load_mcp_registry_schema(
+    version: str = MCP_REGISTRY_SCHEMA_VERSION,
+) -> Dict[str, Any]:
+    """Load one bundled released schema without making a network request."""
+    package = MCP_REGISTRY_SCHEMA_PACKAGES.get(version)
+    if package is None:
+        supported = ", ".join(sorted(MCP_REGISTRY_SCHEMA_VERSIONS))
+        raise ValueError(
+            f"Unsupported MCP Registry schema version {version!r}; "
+            f"available versions: {supported}"
+        )
+    resource = resources.files(package).joinpath("server.schema.json")
     with resource.open("r", encoding="utf-8") as stream:
         data = json.load(stream)
     if not isinstance(data, dict):  # pragma: no cover - packaged invariant

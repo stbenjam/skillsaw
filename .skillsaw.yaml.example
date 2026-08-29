@@ -470,7 +470,7 @@ rules:
     enabled: auto
     severity: error
 
-  # MCP Registry server.json must conform to schema 2025-12-11 and its enums
+  # MCP Registry server.json must conform to a supported schema and its enums
   mcp-registry-server-json-valid:
     enabled: auto
     severity: error

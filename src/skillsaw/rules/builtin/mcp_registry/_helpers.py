@@ -10,7 +10,12 @@ from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryType
 from skillsaw.diagnostics import safe_display
-from skillsaw.formats.mcp_registry import load_mcp_registry_schema
+from skillsaw.formats.mcp_registry import (
+    MCP_REGISTRY_SCHEMA_VERSION,
+    MCP_REGISTRY_SCHEMA_VERSIONS,
+    load_mcp_registry_schema,
+    mcp_registry_schema_version,
+)
 
 if TYPE_CHECKING:
     from jsonschema.exceptions import ValidationError
@@ -37,6 +42,7 @@ _DOTTED_VERSION_ATOM = r"(?:v?[0-9]+|[xX*])(?:\.(?:[0-9]+|[xX*])){1,2}" r"(?:-[0
 _DOTTED_VERSION = re.compile(rf"\A\s*{_DOTTED_VERSION_ATOM}\s*\Z")
 _PYPI_SPECIFIER = re.compile(r"\A\s*(?:~=|==|!=|<=|>=|<|>|===)")
 _NUGET_RANGE = re.compile(r"\A\s*[\[(].*[\])]\s*\Z")
+_URL_TEMPLATE_VARIABLE = re.compile(r"\{[^{}\s]+\}")
 _URI = re.compile(r"\A[A-Za-z][A-Za-z0-9+.-]*:" r"[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*\Z")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
@@ -44,14 +50,17 @@ _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 def is_version_range(value: str) -> bool:
     """Whether value uses a range/tag form forbidden by the Registry."""
     stripped = value.strip()
-    if stripped == "latest" or stripped in {"*", "x", "X"} or "||" in stripped:
+    if not stripped or stripped == "latest" or stripped in {"*", "x", "X"}:
+        return True
+    if "||" in stripped:
         return True
     if any(
         pattern.fullmatch(stripped) is not None for pattern in (_COMPARATOR_RANGE, _HYPHEN_RANGE)
     ):
         return True
+    version_core = stripped.partition("-")[0]
     return _DOTTED_VERSION.fullmatch(stripped) is not None and any(
-        marker in stripped for marker in ("x", "X", "*")
+        component in {"x", "X", "*"} for component in version_core.lstrip("v").split(".")
     )
 
 
@@ -107,16 +116,49 @@ def _is_uri(value: object) -> bool:
     return True
 
 
+def is_http_url_template(value: str) -> bool:
+    """Validate an HTTP URL after safely standing in for template variables."""
+    substituted = _URL_TEMPLATE_VARIABLE.sub("1", value)
+    if "{" in substituted or "}" in substituted or not _is_uri(substituted):
+        return False
+    try:
+        parsed = urlsplit(substituted)
+        return parsed.scheme.lower() in {"http", "https"} and parsed.hostname is not None
+    except ValueError:
+        return False
+
+
+def declares_unsupported_schema(data: object) -> bool:
+    """Whether a Registry document canonically declares an unbundled version."""
+    if not isinstance(data, dict):
+        return False
+    version = mcp_registry_schema_version(data.get("$schema"))
+    return version is not None and version not in MCP_REGISTRY_SCHEMA_VERSIONS
+
+
 # Importing jsonschema and compiling the validator costs measurable startup
 # time. Repositories without Registry publisher metadata should pay neither.
-@lru_cache(maxsize=1)
-def registry_validator():
-    """Return the validator for the bundled immutable 2025-12-11 schema."""
-    from jsonschema import Draft7Validator, FormatChecker
+@lru_cache(maxsize=None)
+def registry_validator(schema_version: str = MCP_REGISTRY_SCHEMA_VERSION):
+    """Return a cached validator for one bundled immutable schema version."""
+    from jsonschema import FormatChecker
+    from jsonschema.validators import validator_for
+    from referencing import Registry
 
     checker = FormatChecker()
     checker.checks("uri")(_is_uri)
-    return Draft7Validator(load_mcp_registry_schema(), format_checker=checker)
+    schema = load_mcp_registry_schema(schema_version)
+    validator_class = validator_for(schema, default=None)
+    if validator_class is None:
+        dialect = safe_display(schema.get("$schema"))
+        raise RuntimeError(
+            f"Bundled MCP Registry schema {schema_version!r} declares "
+            f"unsupported JSON Schema dialect {dialect!r}"
+        )
+    validator_class.check_schema(schema)
+    # An empty referencing registry fails closed for every non-local $ref;
+    # Registry publisher metadata must never make validation retrieve a URL.
+    return validator_class(schema, format_checker=checker, registry=Registry())
 
 
 def format_schema_error(error: ValidationError) -> str:

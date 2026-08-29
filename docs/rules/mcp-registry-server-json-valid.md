@@ -3,7 +3,7 @@
 
 # mcp-registry-server-json-valid
 
-MCP Registry server.json must conform to schema 2025-12-11 and its enums
+MCP Registry server.json must conform to a supported schema and its enums
 
 | | |
 |---|---|
@@ -14,27 +14,29 @@ MCP Registry server.json must conform to schema 2025-12-11 and its enums
 | **Category** | [MCP (Model Context Protocol)](mcp.md) |
 
 MCP Registry publishers describe a server in `server.json`. This rule
-validates that document against the official
-[2025-12-11 schema](https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json)
+validates that document against the exact supported schema version it declares,
+including the official
+[2025-12-11 schema](https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json),
 and the Registry's semantic publishing constraints.
 
 ## What is checked
 
 - The file is strict JSON containing an object.
-- `$schema` is the canonical 2025-12-11 schema identifier.
+- `$schema` is the canonical identifier for a bundled, supported schema version.
 - Required fields and nested objects conform to the bundled released schema,
   including URI, length, hash, argument, and transport shapes.
 - `name` contains exactly one slash. Its namespace is a true reverse-DNS
   sequence of valid labels, and its server portion starts and ends with an
   ASCII letter or digit.
-- Top-level and package versions identify one exact release rather than
+- Top-level and package versions identify one non-blank exact release rather than
   `latest`, a comparator, a wildcard, an OR expression, or a hyphen range.
   Package checks also recognize registry-native requirement syntax such as
   PyPI specifier lists, Cargo comma-joined requirements, and NuGet intervals.
 - npm package versions use strict SemVer; other package registries may use
   their own format-specific exact-version syntax.
 - Package transports are `stdio`, `streamable-http`, or `sse`. Remote
-  transports are `streamable-http` or `sse`.
+  transports are `streamable-http` or `sse`; their HTTP URL templates remain
+  structurally valid after supported `{variable}` placeholders are substituted.
 - MCPB packages declare the required `fileSha256` integrity hash.
 - Icon sources use HTTPS, and `repository.subfolder` is a clean relative path
   without empty, current-directory, or parent-directory segments.
@@ -42,9 +44,12 @@ and the Registry's semantic publishing constraints.
   `mcpb` by default. These are the package types documented by the
   [official Registry](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/package-types.mdx).
 
-The schema is bundled from a pinned revision of the official static-assets
-repository. Validation is fully offline and never follows a repository-owned
-schema URL.
+Each supported schema is bundled from a pinned revision of the official
+static-assets repository. Validation is fully offline and never follows a
+repository-owned schema URL. Older bundles remain available when a newer
+version is added, so each document continues to use the schema it declares.
+An unknown future canonical version receives one unsupported-version diagnostic
+and is not interpreted using the newest known schema.
 
 ## Registry types
 
@@ -106,7 +111,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `registry-types` | Package registryType values accepted in addition to the transport enums fixed by schema 2025-12-11 | `["npm", "pypi", "cargo", "oci", "nuget", "mcpb"]` |
+| `registry-types` | Package registryType values accepted in addition to the transport enums fixed by the document's schema version | `["npm", "pypi", "cargo", "oci", "nuget", "mcpb"]` |
 
 
 *Run `skillsaw explain mcp-registry-server-json-valid` to see this documentation and the rule's effective configuration in your terminal.*

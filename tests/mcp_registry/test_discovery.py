@@ -3,6 +3,9 @@
 import json
 from importlib import resources
 
+import pytest
+from jsonschema import Draft7Validator, Draft202012Validator
+
 from skillsaw.blocks import (
     ContentBlock,
     McpBlock,
@@ -13,10 +16,14 @@ from skillsaw.blocks import (
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats.mcp_registry import (
     MCP_REGISTRY_SCHEMA_ID,
+    MCP_REGISTRY_SCHEMA_PACKAGES,
     MCP_REGISTRY_SCHEMA_VERSION,
+    MCP_REGISTRY_SCHEMA_VERSIONS,
     load_mcp_registry_schema,
+    mcp_registry_schema_id,
     mcp_registry_schema_version,
 )
+from skillsaw.rules.builtin.mcp_registry import _helpers as registry_helpers
 
 from ._helpers import copy_fixture
 
@@ -196,12 +203,78 @@ class TestMcpRegistrySchemaBundle:
         assert mcp_registry_schema_version("http://example.com/server.schema.json") is None
         assert mcp_registry_schema_version(42) is None
 
+    def test_supported_versions_select_the_latest_canonical_identifier(self):
+        assert MCP_REGISTRY_SCHEMA_VERSION == max(MCP_REGISTRY_SCHEMA_VERSIONS)
+        assert MCP_REGISTRY_SCHEMA_ID == mcp_registry_schema_id(MCP_REGISTRY_SCHEMA_VERSION)
+        assert MCP_REGISTRY_SCHEMA_VERSION in MCP_REGISTRY_SCHEMA_VERSIONS
+
     def test_bundled_schema_is_the_pinned_release(self):
-        schema = load_mcp_registry_schema()
+        schema = load_mcp_registry_schema(MCP_REGISTRY_SCHEMA_VERSION)
 
         assert schema["title"] == "server.json defining a Model Context Protocol (MCP) server"
         server = schema["definitions"]["ServerDetail"]
         assert server["required"] == ["name", "description", "version"]
+
+    @pytest.mark.parametrize(
+        ("version", "package"),
+        sorted(MCP_REGISTRY_SCHEMA_PACKAGES.items()),
+    )
+    def test_registered_bundle_is_complete_and_offline(self, version, package):
+        root = resources.files(package)
+        schema = load_mcp_registry_schema(version)
+
+        assert schema["$id"] == mcp_registry_schema_id(version)
+        assert root.joinpath("server.schema.json").is_file()
+        assert root.joinpath("LICENSE").is_file()
+        assert root.joinpath("SCHEMA-SOURCE.md").is_file()
+
+        pending = [schema]
+        references = []
+        while pending:
+            value = pending.pop()
+            if isinstance(value, dict):
+                for keyword in ("$ref", "$dynamicRef", "$recursiveRef"):
+                    reference = value.get(keyword)
+                    if isinstance(reference, str):
+                        references.append(reference)
+                pending.extend(value.values())
+            elif isinstance(value, list):
+                pending.extend(value)
+        assert all(reference.startswith("#") for reference in references)
+
+    def test_validator_cache_is_version_and_dialect_aware(self, monkeypatch):
+        schemas = {
+            "draft7": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+            },
+            "draft2020": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+            },
+            "unknown": {
+                "$schema": "https://example.invalid/unknown-dialect",
+                "type": "object",
+            },
+        }
+        monkeypatch.setattr(registry_helpers, "load_mcp_registry_schema", schemas.__getitem__)
+        registry_helpers.registry_validator.cache_clear()
+        try:
+            draft7 = registry_helpers.registry_validator("draft7")
+            draft2020 = registry_helpers.registry_validator("draft2020")
+
+            assert isinstance(draft7, Draft7Validator)
+            assert isinstance(draft2020, Draft202012Validator)
+            assert registry_helpers.registry_validator("draft7") is draft7
+            assert draft2020 is not draft7
+            with pytest.raises(RuntimeError, match="unsupported JSON Schema dialect"):
+                registry_helpers.registry_validator("unknown")
+        finally:
+            registry_helpers.registry_validator.cache_clear()
+
+    def test_unbundled_schema_version_is_rejected(self):
+        with pytest.raises(ValueError, match="available versions: 2025-12-11"):
+            load_mcp_registry_schema("2099-01-01")
 
     def test_upstream_mit_notice_is_bundled(self):
         notice = (

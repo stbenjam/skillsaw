@@ -6,10 +6,14 @@ import pytest
 from jsonschema.exceptions import ValidationError
 
 from skillsaw.context import RepositoryType
-from skillsaw.formats.mcp_registry import MCP_REGISTRY_SCHEMA_ID
+from skillsaw.formats.mcp_registry import (
+    MCP_REGISTRY_SCHEMA_ID,
+    MCP_REGISTRY_SCHEMA_VERSIONS,
+)
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.mcp_registry._helpers import schema_error_summary
 from skillsaw.rules.builtin.mcp_registry.npm_name_match import McpRegistryNpmNameMatchRule
+from skillsaw.rules.builtin.mcp_registry.server_json_valid import _SEMANTIC_POLICIES
 
 from ._helpers import (
     NPM_NAME_RULE,
@@ -35,6 +39,9 @@ def _for_rule(findings, rule_id):
 
 
 class TestMcpRegistrySchemaRule:
+    def test_every_schema_version_has_an_explicit_semantic_policy(self):
+        assert frozenset(_SEMANTIC_POLICIES) == MCP_REGISTRY_SCHEMA_VERSIONS
+
     def test_clean_publisher_metadata_passes(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
 
@@ -80,13 +87,20 @@ class TestMcpRegistrySchemaRule:
         data["$schema"] = (
             "https://static.modelcontextprotocol.io/schemas/" "2026-01-01/server.schema.json"
         )
+        # A future document may violate the current schema and semantics. It
+        # must not be interpreted using a version it did not declare.
+        data["name"] = "not-reverse-dns"
+        data["description"] = ""
+        data["version"] = "latest"
         _write_server(path, data)
 
-        findings = lint_rules(repo, VALID_RULE)
+        findings = lint_rules(repo, VALID_RULE, SEMVER_RULE, NPM_NAME_RULE)
 
-        combined = "\n".join(messages_lower(findings))
-        assert "unsupported" in combined
-        assert "2025-12-11" in combined
+        assert len(findings) == 1
+        message = findings[0].message.lower()
+        assert "unsupported" in message
+        assert "2025-12-11" in message
+        assert "does not conform" not in message
 
     def test_schema_constraints_are_reported_without_values(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
@@ -238,19 +252,7 @@ class TestMcpRegistrySchemaRule:
         configured = lint_rules(
             repo,
             VALID_RULE,
-            rule_config={
-                VALID_RULE: {
-                    "registry-types": [
-                        "npm",
-                        "pypi",
-                        "cargo",
-                        "oci",
-                        "nuget",
-                        "mcpb",
-                        "company-internal",
-                    ]
-                }
-            },
+            rule_config={VALID_RULE: {"registry-types": ["company-internal"]}},
         )
 
         assert any("registrytype" in message for message in messages_lower(findings))
@@ -308,9 +310,64 @@ class TestMcpRegistrySchemaRule:
         assert "packages[0].transport.type" in combined
         assert "remotes[0].type" in combined
 
+    def test_package_and_remote_url_templates_must_be_structurally_valid(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["transport"] = {
+            "type": "streamable-http",
+            "url": "https://[",
+        }
+        data["remotes"][0]["url"] = "https://["
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+        combined = "\n".join(messages_lower(findings))
+
+        assert "packages[0].transport.url" in combined
+        assert "remotes[0].url" in combined
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://{host",
+            "ftp://example.com/mcp",
+            "https:/mcp",
+            "https://example.com:70000/mcp",
+            " https://example.com/mcp",
+        ],
+    )
+    def test_package_and_remote_url_templates_reject_invalid_edges(self, tmp_path, url):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["transport"] = {"type": "streamable-http", "url": url}
+        data["remotes"][0]["url"] = url
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+        combined = "\n".join(messages_lower(findings))
+
+        assert "packages[0].transport.url" in combined
+        assert "remotes[0].url" in combined
+
+    def test_package_and_remote_url_templates_allow_variables(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        template = "https://{host}:{port}/mcp/{path}?token={token}"
+        data["packages"][0]["transport"] = {
+            "type": "streamable-http",
+            "url": template,
+        }
+        data["remotes"][0]["url"] = template
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
     @pytest.mark.parametrize(
         "version",
         [
+            "",
+            " ",
+            "\t",
             "latest",
             " latest ",
             "^1.2.3",
@@ -417,6 +474,21 @@ class TestMcpRegistrySchemaRule:
 
         assert lint_rules(repo, VALID_RULE) == []
 
+    @pytest.mark.parametrize("version", ["", "   ", "\t"])
+    @pytest.mark.parametrize("registry_type", ["pypi", "cargo", "nuget", "oci", "mcpb"])
+    def test_non_npm_package_version_must_not_be_blank(self, tmp_path, registry_type, version):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["registryType"] = registry_type
+        data["packages"][0]["version"] = version
+        if registry_type == "mcpb":
+            data["packages"][0]["fileSha256"] = "0" * 64
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("packages[0].version" in message for message in messages_lower(findings))
+
     @pytest.mark.parametrize(
         ("registry_type", "version"),
         [
@@ -466,6 +538,26 @@ class TestMcpRegistrySchemaRule:
         findings = lint_rules(repo, VALID_RULE)
 
         assert not any("exact release" in message for message in messages_lower(findings))
+
+    def test_x_in_semver_prerelease_is_not_misread_as_a_wildcard(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["version"] = "1.2.3-next"
+        data["packages"][0]["version"] = "1.2.3-next"
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    def test_wildcard_core_with_prerelease_remains_a_range(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["version"] = "1.2.x-next"
+        data["packages"][0]["version"] = "1.2.x-next"
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("exact release" in message for message in messages_lower(findings))
 
 
 class TestMcpRegistrySemverRule:

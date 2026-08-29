@@ -10,7 +10,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 
-from ._helpers import MCP_REGISTRY_REPO_TYPES, stable_key
+from ._helpers import MCP_REGISTRY_REPO_TYPES, declares_unsupported_schema, stable_key
 
 _MISSING = object()
 
@@ -36,7 +36,11 @@ class McpRegistryNpmNameMatchRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         references: List[Tuple[str, str, object]] = []
         for block in context.lint_tree.find(McpRegistryServerBlock):
-            if block.parse_error or block.raw_data is None:
+            if (
+                block.parse_error
+                or block.raw_data is None
+                or declares_unsupported_schema(block.raw_data)
+            ):
                 continue
             server_name = block.raw_data.get("name")
             packages = block.raw_data.get("packages")
