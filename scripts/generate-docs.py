@@ -149,6 +149,14 @@ RULE_GROUPS = [
         "unrelated files does not activate them.",
     ),
     (
+        "Devin",
+        ["devin-rules-valid", "devin-skill-valid"],
+        "Validates Devin CLI/Desktop workspace rules under `.devin/rules/` "
+        "and legacy `.windsurf/rules/`, plus Devin-native skills whose "
+        "frontmatter is optional and extends the portable Agent Skills "
+        "dialect. Enabled automatically when Devin repository context is present.",
+    ),
+    (
         "OpenCode",
         ["opencode-config-valid"],
         "Validates the OpenCode project config — `opencode.json` or "
@@ -174,8 +182,9 @@ RULE_GROUPS = [
             "claude-md-agents-import",
         ],
         "Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, "
-        "GEMINI.md, QWEN.md) at the repository root. Checks encoding, non-emptiness, "
-        "and that `@import` references resolve to existing files. Enabled automatically when one of those files is present.",
+        "GEMINI.md, QWEN.md, and Devin-compatible alternatives). Checks encoding, "
+        "non-emptiness, and that supported `@import` references resolve to existing "
+        "files. Enabled automatically when one of those files is present.",
     ),
     (
         "Context Budget",

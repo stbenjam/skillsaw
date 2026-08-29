@@ -651,6 +651,69 @@ def test_detected_formats_empty(temp_dir):
     assert context.detected_formats == set()
 
 
+def test_detected_formats_devin_rules_and_instructions(temp_dir):
+    """Both directory spellings and Devin-only instruction names are evidence."""
+    from skillsaw.context import HAS_DEVIN
+
+    (temp_dir / ".devin" / "rules").mkdir(parents=True)
+    assert HAS_DEVIN in RepositoryContext(temp_dir).detected_formats
+
+    (temp_dir / ".devin").rename(temp_dir / ".unused")
+    (temp_dir / "packages" / "api").mkdir(parents=True)
+    (temp_dir / "packages" / "api" / "AGENT.md").write_text("Use the API conventions.\n")
+    assert HAS_DEVIN in RepositoryContext(temp_dir).detected_formats
+
+
+def test_nested_devin_and_windsurf_skills_are_discovered(temp_dir):
+    """The shared scan finds native skill collections in nested workspaces."""
+    from skillsaw.context import HAS_DEVIN, RepositoryType
+
+    expected = []
+    for directory in (".devin", ".windsurf"):
+        skill = temp_dir / "packages" / directory / "skills" / directory.removeprefix(".")
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("# Native skill\n\nRun the requested workflow.\n")
+        expected.append(skill)
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.AGENTSKILLS in context.repo_types
+    assert HAS_DEVIN in context.detected_formats
+    assert set(context.skills) == set(expected)
+
+
+def test_vendored_devin_content_is_not_discovered(temp_dir):
+    """Devin's nested scan honors the existing vendored-tree suppression."""
+    from skillsaw.context import HAS_DEVIN
+
+    vendored = temp_dir / "vendor" / "package" / ".devin"
+    (vendored / "rules").mkdir(parents=True)
+    (vendored / "rules" / "ignored.md").write_text("---\ntrigger: always_on\n---\nIgnore me.\n")
+    (vendored / "skills" / "ignored").mkdir(parents=True)
+    (vendored / "skills" / "ignored" / "SKILL.md").write_text("Ignore me.\n")
+    (vendored.parent / "AGENT.md").write_text("Ignore vendored instructions.\n")
+
+    context = RepositoryContext(temp_dir)
+
+    assert HAS_DEVIN not in context.detected_formats
+    assert context.skills == []
+    assert context.instruction_files == []
+
+
+def test_excluded_devin_tree_does_not_drive_detection_or_attachment(temp_dir):
+    from skillsaw.blocks import DevinRuleBlock
+    from skillsaw.context import HAS_DEVIN
+
+    rule = temp_dir / ".devin" / "rules" / "ignored.md"
+    rule.parent.mkdir(parents=True)
+    rule.write_text("---\ntrigger: always_on\n---\nIgnore this excluded rule.\n")
+
+    context = RepositoryContext(temp_dir, exclude_patterns=[".devin/**"])
+
+    assert HAS_DEVIN not in context.detected_formats
+    assert context.lint_tree.find(DevinRuleBlock) == []
+
+
 def test_detected_formats_cursor_rules_dir(temp_dir):
     """Detect .cursor/rules/ directory"""
     (temp_dir / ".cursor" / "rules").mkdir(parents=True)

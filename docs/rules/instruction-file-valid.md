@@ -3,7 +3,7 @@
 
 # instruction-file-valid
 
-Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) must be valid and non-empty
+Instruction files (AGENTS.md and tool-compatible alternatives) must be valid and non-empty
 
 | | |
 |---|---|
