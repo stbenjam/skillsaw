@@ -17,6 +17,7 @@ import yaml
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import (
     _FRONTMATTER_RE,
+    commented_key_line,
     read_text,
     parse_frontmatter,
     read_frontmatter_commented,
@@ -613,7 +614,6 @@ class CopilotAgentBlock(FrontmatteredBlock):
         mcp_field = self.field("mcp-servers")
         if mcp_field is None:
             return
-        source_line = mcp_field.field_line
         # GitHub cloud loads only ``*.agent.md``; VS Code accepts every
         # Markdown filename in this directory plus legacy chatmodes. Those
         # local-only files ignore this cloud MCP field.
@@ -627,6 +627,16 @@ class CopilotAgentBlock(FrontmatteredBlock):
         # be meaningfully handed to the shared MCP rules; attaching an
         # invalid scalar/list too would duplicate that root diagnostic.
         if isinstance(servers, dict):
+            source_line = mcp_field.field_line
+            if source_line is None:
+                # A merge-inherited root has no local position. Anchor
+                # aggregate policy findings to the first literal server key,
+                # which is still traceable in the source anchor mapping.
+                for server_name in servers:
+                    nested_line = commented_key_line(servers, server_name)
+                    if nested_line is not None:
+                        source_line = nested_line + 1
+                        break
             self.children.append(
                 CopilotAgentMcpBlock(
                     path=self.path,

@@ -258,9 +258,10 @@ validation wherever a tool's own metadata can fail silently — see
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
 
-Discovery and validation are separate layers for Copilot. Every file under
-`.github/agents/` and legacy `.github/chatmodes/` is attached as agent prose,
-so it receives the shared content and security rules.
+Discovery and validation are separate layers for Copilot. Every Markdown file
+under `.github/agents/` and every `*.chatmode.md` file under the legacy
+`.github/chatmodes/` directory is attached as agent prose, so it receives the
+shared content and security rules.
 [`copilot-agent-valid`](rules/copilot-agent-valid.md) additionally validates
 the YAML fields that determine how GitHub cloud and VS Code interpret the
 agent, including their target-specific model, tool, subagent, handoff, MCP,
