@@ -7,6 +7,7 @@ Tests for the performance helpers added with the benchmark framework:
 """
 
 import re
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -182,6 +183,49 @@ class TestPatternsMatchingAnywhere:
         patterns = [(re.compile(r"(?:ab|cd)"), "branchy")]
         assert patterns_matching_anywhere("xxabxx", patterns) == patterns
         assert patterns_matching_anywhere("xxxx", patterns) == []
+
+
+class TestSharedFold:
+    """One whole-body fold per body, not one per pattern group."""
+
+    def test_a_supplied_fold_gives_identical_results(self):
+        from skillsaw.rules.builtin.content_analysis import case_fold
+
+        patterns = [
+            (re.compile(r"\bperhaps\b", re.IGNORECASE), "hedging"),
+            (re.compile(r"\bMISSING\b", re.IGNORECASE), "absent"),
+        ]
+        text = "Perhaps we should\nuse \u017fomething odd\n"
+
+        assert patterns_matching_anywhere(text, patterns, case_fold(text)) == (
+            patterns_matching_anywhere(text, patterns)
+        )
+
+    def test_the_tooling_analyzer_folds_each_body_once(self, tmp_path, monkeypatch):
+        """A repository can carry all three tooling kinds at once.
+
+        EditorConfig, ESLint or Prettier, and TypeScript each drive their
+        own pattern group, and a fold allocates a copy of the whole body —
+        so three groups over one body is two copies nobody reads twice.
+        """
+        import skillsaw.rules.builtin.content_analysis as ca
+
+        (tmp_path / ".editorconfig").write_text("root = true\n")
+        (tmp_path / ".eslintrc.json").write_text("{}\n")
+        (tmp_path / "tsconfig.json").write_text("{}\n")
+
+        calls = []
+        real_fold = ca.case_fold
+        monkeypatch.setattr(ca, "case_fold", lambda text: (calls.append(text), real_fold(text))[1])
+
+        body = "Use 2 spaces for indentation.\nPrefer single quotes.\nAvoid the any type.\n"
+        block = SimpleNamespace(content=body, body=body, file_path=tmp_path / "AGENTS.md")
+        monkeypatch.setattr(ca, "_get_body_from_cf", lambda cf: body)
+
+        ca.RedundancyDetector().analyze(block, tmp_path)
+
+        whole_body = [text for text in calls if text == body]
+        assert len(whole_body) == 1, f"the body was folded {len(whole_body)} times"
 
 
 class TestPatternLiteralCacheBudget:

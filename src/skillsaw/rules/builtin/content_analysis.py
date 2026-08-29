@@ -386,7 +386,9 @@ def _pattern_literals(pattern: re.Pattern) -> Tuple[str, ...]:
     return literals
 
 
-def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tuple]:
+def patterns_matching_anywhere(
+    content: str, patterns: List[tuple], folded: Optional[str] = None
+) -> List[tuple]:
     """Whole-text prefilter for per-line pattern scans.
 
     Returns the subset of ``(compiled_pattern, ...)`` tuples whose pattern
@@ -402,8 +404,14 @@ def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tupl
     folded with :func:`case_fold`, which matches how ``re.IGNORECASE``
     compares — a plain ``lower()`` would reject documents the pattern
     matches.
+
+    *folded* lets a caller running several pattern groups over one body
+    supply ``case_fold(content)`` itself rather than paying a whole-body
+    fold per group. It must be that fold of *content* and nothing else:
+    the gate decides what the real scan never sees.
     """
-    folded = case_fold(content)
+    if folded is None:
+        folded = case_fold(content)
     active = []
     for t in patterns:
         pattern = t[0]
@@ -602,16 +610,22 @@ class RedundancyDetector:
         # Whole-body prefilter before any per-line scan: a pattern that
         # matches some line matches the body, so the groups that miss here
         # cannot produce a result and are dropped for every line at once.
+        # Folded once and shared: a repository carrying EditorConfig,
+        # ESLint or Prettier, and TypeScript runs all three groups, and
+        # each would otherwise allocate its own copy of the whole body.
+        folded = case_fold(content)
         indent_patterns = (
-            patterns_matching_anywhere(content, self._INDENT_PATTERNS) if has_editorconfig else []
+            patterns_matching_anywhere(content, self._INDENT_PATTERNS, folded)
+            if has_editorconfig
+            else []
         )
         style_pattern = None
         if has_eslint or has_prettier:
-            matched = patterns_matching_anywhere(content, self._STYLE_PATTERNS)
+            matched = patterns_matching_anywhere(content, self._STYLE_PATTERNS, folded)
             style_pattern = matched[0][0] if matched else None
         strict_type_pattern = None
         if has_tsconfig:
-            matched = patterns_matching_anywhere(content, self._STRICT_TYPE_PATTERNS)
+            matched = patterns_matching_anywhere(content, self._STRICT_TYPE_PATTERNS, folded)
             strict_type_pattern = matched[0][0] if matched else None
         if not (indent_patterns or style_pattern or strict_type_pattern):
             return []
