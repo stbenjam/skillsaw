@@ -8,6 +8,7 @@ import secrets
 import stat
 import sys
 import threading
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NoReturn, Optional, Set, Tuple
 
@@ -571,7 +572,30 @@ class FileCache:
     #: the repository once per rule.
     DEFAULT_BUDGET = 128 * 1024 * 1024
 
-    def __init__(self, budget: int = DEFAULT_BUDGET):
+    def __init__(self, budget: int = DEFAULT_BUDGET, *, maxsize: Optional[int] = None):
+        """Bound the cache by retained bytes.
+
+        *maxsize* is the superseded entry-count bound, accepted so a
+        caller written against it keeps working: ``skillsaw.utils`` is
+        re-exported wholesale by ``skillsaw.rules.builtin.utils``, whose
+        contract is that a custom rule importing from it keeps working
+        unchanged. A count cannot be honoured here — the whole point of
+        the byte budget is that entries are not the same size — so the
+        value is ignored and the caller is told once.
+
+        Note the positional form cannot be rescued: ``FileCache(2048)``
+        used to mean 2,048 entries and now means 2,048 *bytes*, which is
+        below the cost of a single entry. Distinguishing the two would
+        take a magic threshold on the number, which is worse than the
+        break it papers over. Pass ``budget=`` explicitly.
+        """
+        if maxsize is not None:
+            warnings.warn(
+                "FileCache(maxsize=...) is superseded by a byte budget and is "
+                "ignored; pass budget= in bytes instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self._lock = threading.Lock()
         self._stores: List[Dict[Path, Dict[tuple, Any]]] = []
         self._budget = budget

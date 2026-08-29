@@ -115,3 +115,26 @@ def test_bump_skips_missing_docs(tmp_path):
     result = _run(repo)
     assert result.returncode == 0, result.stderr
     assert f'version = "{NEW}"' in (repo / "pyproject.toml").read_text()
+
+
+def test_the_checked_in_versions_agree():
+    """``_get_version`` reads ``__version__``, not installed metadata.
+
+    The bump script keeps ``pyproject.toml`` and ``__version__`` moving
+    together, and the tests above pin that it does — but on a synthetic
+    repository. Nothing compared the two values this repository actually
+    ships, so a hand-edit to either could desync them and every CLI
+    invocation would report a version the distribution does not carry.
+    """
+    import re
+
+    repo = Path(__file__).resolve().parent.parent
+    pyproject = (repo / "pyproject.toml").read_text(encoding="utf-8")
+    init = (repo / "src" / "skillsaw" / "__init__.py").read_text(encoding="utf-8")
+
+    declared = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE)
+    source = re.search(r'^__version__ = "([^"]+)"', init, re.MULTILINE)
+
+    assert declared is not None, "pyproject.toml has no top-level version"
+    assert source is not None, "__init__.py has no __version__"
+    assert declared.group(1) == source.group(1), (declared.group(1), source.group(1))

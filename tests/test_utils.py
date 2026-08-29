@@ -1380,9 +1380,10 @@ class TestFileCacheBudget:
         CPython stores one, two or four bytes per character (PEP 393), so
         a manifest naming its directories in emoji retains four times
         what a character count charges. This is the same correction the
-        file cache already makes for cached text, and it was missed when
-        the memo's count cap became a byte budget: two paths of equal
-        length and unequal weight were charged the same number.
+        file cache makes for cached text: two paths of equal length and
+        unequal storage width retain different numbers of bytes, so
+        admission has to charge what is retained rather than how many
+        characters were counted.
         """
         from pathlib import Path
 
@@ -1504,11 +1505,10 @@ class TestFileCacheBudget:
         """A string subclass can carry metadata; a plain ``str`` cannot.
 
         ruamel hands back ``ScalarString`` objects holding an ``Anchor``,
-        and an anchor name is authored text of any length. Recognising the
-        object as ``str`` and returning charged the short scalar text and
-        left the name uncounted — the same shape as the ``.ca`` metadata
-        the container branches were fixed for, in the one branch that
-        still returned early.
+        and an anchor name is authored text of any length. Returning as
+        soon as the object is recognised as ``str`` charges the scalar's
+        own text and leaves that name uncounted, so the scalar branch has
+        to walk the object's attributes like every other branch does.
         """
         from skillsaw.utils import _RuamelYAML
 
