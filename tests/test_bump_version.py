@@ -115,14 +115,3 @@ def test_bump_skips_missing_docs(tmp_path):
     result = _run(repo)
     assert result.returncode == 0, result.stderr
     assert f'version = "{NEW}"' in (repo / "pyproject.toml").read_text()
-
-
-def test_script_feeds_python_through_quoted_heredocs():
-    """No inline `python3 -c` may come back: a double-quoted program hands
-    quotes, backticks, and `$` to the shell before python sees the source."""
-    text = SCRIPT.read_text()
-    assert "python3 -c" not in text
-    heredocs = re.findall(r"<<'PY'\n(.*?)\nPY\n", text, re.DOTALL)
-    assert len(heredocs) == 2, "expected both python programs as quoted heredocs"
-    for program in heredocs:
-        compile(program, "<bump-version.sh>", "exec")

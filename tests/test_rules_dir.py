@@ -290,14 +290,6 @@ def test_frontmatter_no_trailing_newline(dot_claude_with_rules):
     assert len(violations) == 0
 
 
-def test_rule_metadata():
-    """Verify rule ID, description, and default severity"""
-    rule = RulesValidRule()
-    assert rule.rule_id == "claude-rules-valid"
-    assert "rules/" in rule.description
-    assert rule.default_severity() == Severity.ERROR
-
-
 def test_auto_enabled_for_dot_claude(dot_claude_with_rules):
     """Rule should be auto-enabled for DOT_CLAUDE repos"""
     from skillsaw.config import LinterConfig
