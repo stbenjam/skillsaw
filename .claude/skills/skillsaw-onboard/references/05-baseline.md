@@ -1,12 +1,6 @@
 # Baseline accepted violations
 
-Offer a baseline only for violations that remain after autofixing and manual
-review. Tell the user:
-
-> There are N remaining violations. I can create
-> `.skillsaw-baseline.json` so they are accepted for now and only new
-> violations fail. You can fix them over time and rerun `skillsaw baseline`
-> to shrink the accepted set.
-
-Run `skillsaw baseline` only if the user agrees. Confirm the file exists and
-include it in the final changed-file list, then return to the router.
+Run `skillsaw baseline` for the reviewed violations the user accepted as current
+debt. Confirm `.skillsaw-baseline.json` exists, report how many violations it
+records, and include it in the final changed-file list. Then return to the
+workflow.

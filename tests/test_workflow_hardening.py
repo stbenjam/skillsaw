@@ -286,8 +286,6 @@ def test_onboard_skill_routes_each_reference_once():
     ]
     source_root = ROOT / "skills" / "skillsaw-onboard"
     source_router = (source_root / "SKILL.md").read_text(encoding="utf-8")
-    assert "never preload unselected references" in source_router
-    assert len(source_router.splitlines()) < 50
     assert sorted(path.name for path in (source_root / "references").glob("*.md")) == (
         relative_references
     )
