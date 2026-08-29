@@ -297,6 +297,44 @@ def test_tree_contains_editor_tool_blocks(temp_dir):
     assert names(InstructionBlock) == {"style.md", "policy.txt"}
 
 
+def test_tree_contains_nested_devin_content_without_duplicates(temp_dir):
+    from skillsaw.blocks import (
+        AgentsMdBlock,
+        DevinGlobalRuleBlock,
+        DevinRuleBlock,
+        DevinSkillBlock,
+        SkillBlock,
+    )
+
+    root_rule = temp_dir / ".devin" / "rules" / "api.md"
+    root_rule.parent.mkdir(parents=True)
+    root_rule.write_text("---\ntrigger: always_on\n---\nUse JSON responses.\n")
+    global_rule = temp_dir / ".devin" / "global_rules.md"
+    global_rule.write_text("Keep changes focused.\n")
+    nested_rule = temp_dir / "apps" / "web" / ".windsurf" / "rules" / "ui.md"
+    nested_rule.parent.mkdir(parents=True)
+    nested_rule.write_text("---\ntrigger: glob\nglobs: src/**/*.tsx\n---\nUse hooks.\n")
+    nested_agents = temp_dir / "apps" / "web" / "agents.md"
+    nested_agents.write_text("Use the package test command.\n")
+    native = temp_dir / "apps" / "web" / ".devin" / "skills" / "team" / "review"
+    native.mkdir(parents=True)
+    (native / "SKILL.md").write_text("Review the current changes.\n")
+    portable = temp_dir / ".agents" / "skills" / "portable"
+    portable.mkdir(parents=True)
+    (portable / "SKILL.md").write_text(
+        "---\nname: portable\ndescription: Run a portable workflow.\n---\nDo the work.\n"
+    )
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    assert {block.path for block in tree.find(DevinRuleBlock)} == {root_rule, nested_rule}
+    assert [block.path for block in tree.find(DevinSkillBlock)] == [native / "SKILL.md"]
+    assert [block.path for block in tree.find(SkillBlock)] == [portable / "SKILL.md"]
+    assert [block.path for block in tree.find(AgentsMdBlock)] == [nested_agents]
+    assert [block.path for block in tree.find(DevinGlobalRuleBlock)] == [global_rule]
+    assert [block.path for block in tree.find(InstructionBlock)].count(global_rule) == 1
+
+
 def test_setext_underline_is_not_read_as_mdc_frontmatter(temp_dir):
     """``----`` opens a heading rule, so the prose under it stays body text.
 

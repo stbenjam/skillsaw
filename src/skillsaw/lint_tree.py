@@ -30,6 +30,9 @@ from .blocks import (
     CursorMcpBlock,
     CursorPromptHookBlock,
     CursorRuleBlock,
+    DevinGlobalRuleBlock,
+    DevinRuleBlock,
+    DevinSkillBlock,
     ExtraBlock,
     GeminiMdBlock,
     HooksBlock,
@@ -57,6 +60,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
+from .formats import devin
 from .utils import has_apm_generated_header, read_text
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
@@ -73,6 +77,7 @@ from .lint_target import (
     CodexMarketplaceConfigNode,
     CodexPluginConfigNode,
     CodexPluginNode,
+    DevinSkillNode,
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
@@ -100,6 +105,8 @@ _EDITOR_GLOBS = (
     (".github", "prompts", "**/*.prompt.md", "CopilotPromptBlock"),
     (".github", "chatmodes", "**/*.chatmode.md", "CopilotAgentBlock"),
     (".clinerules", "workflows", "**/*.md", "ClineWorkflowBlock"),
+    (".devin", "rules", "**/*.md", "DevinRuleBlock"),
+    (".windsurf", "rules", "**/*.md", "DevinRuleBlock"),
     # OpenCode 2.0 renamed each content directory to its plural and still
     # loads the 1.x singular, so both are listed. ``mode``/``modes`` are
     # deliberately absent — see ``_OPENCODE_FLAT_DIRS``.
@@ -149,6 +156,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         "GEMINI.md": GeminiMdBlock,
         "QWEN.md": QwenMdBlock,
     }
+
+    def _instruction_block_type(path: Path) -> type:
+        """Return the semantic block for one discovered instruction file."""
+        if path.name.lower() == "agents.md":
+            return AgentsMdBlock
+        return _INSTRUCTION_FILE_BLOCK_TYPES.get(path.name, InstructionBlock)
 
     root = LintTarget(path=context.root_path)
     repo_root = safe_resolve(context.root_path)
@@ -459,7 +472,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # so its content findings don't double the source's, while the
         # security rules still scan the copy that ships.
         compiled = _is_apm_compiled_github(f.parent)
-        block_cls = _INSTRUCTION_FILE_BLOCK_TYPES.get(f.name, InstructionBlock)
+        block_cls = _instruction_block_type(f)
         _add_block(root, f, block_cls, content_suppressed=compiled)
 
     # --- .claude/settings.json (supply-chain attack surface) ---
@@ -651,6 +664,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 content_suppressed=compiled,
             )
         _add_opencode_config(opencode_dir)
+
+    for dir_name in devin.TOOL_DIR_NAMES:
+        for devin_dir in context.agent_tool_dirs(dir_name):
+            _add_glob(root, devin_dir / "rules", "**/*.md", DevinRuleBlock)
+            _add_block(root, devin_dir / "global_rules.md", DevinGlobalRuleBlock)
 
     kiro_steering = context.root_path / ".kiro" / "steering"
     if kiro_steering.is_dir():
@@ -890,8 +908,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for skill_path in context.skills:
         if _is_in_apm_source(skill_path):
             continue
-        skill_node = SkillNode(path=skill_path)
-        _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
+        native_devin = devin.is_native_skill_dir(skill_path)
+        skill_node = DevinSkillNode(path=skill_path) if native_devin else SkillNode(path=skill_path)
+        block_cls = DevinSkillBlock if native_devin else SkillBlock
+        _add_block(skill_node, skill_path / "SKILL.md", block_cls)
         # Contained against the owning package: rules both read and
         # rewrite these files, so a symlink here is a read *and* a write
         # outside the checkout.

@@ -2448,6 +2448,72 @@ class TestEditorTools:
 
 
 @pytest.mark.integration
+class TestDevin:
+    """Devin CLI/Desktop rules, nested instructions, and native skills."""
+
+    def test_documented_devin_examples_pass_structural_validation(self, tmp_path):
+        repo = copy_fixture("devin/valid", tmp_path)
+
+        result = run_lint(
+            repo,
+            "--rule",
+            "devin-rules-valid",
+            "--rule",
+            "devin-skill-valid",
+        )
+
+        assert result["rc"] == 0
+        assert by_rule(result).get("devin-rules-valid", []) == []
+        assert by_rule(result).get("devin-skill-valid", []) == []
+
+    def test_tree_covers_root_and_nested_devin_inputs(self, tmp_path):
+        repo = copy_fixture("devin/valid", tmp_path)
+
+        result = run_cli(["tree", repo])
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.count("[devin skill]") == 4
+        assert result.stdout.count("[skill]") == 1
+        assert result.stdout.count("SKILL.md (skill)") == 5
+        for instruction in (
+            "AGENT.md (instruction)",
+            "AGENTS.local.md (instruction)",
+            "agents.md (agents-md)",
+            "CLAUDE.md (claude-md)",
+        ):
+            assert instruction in result.stdout
+        assert result.stdout.count(".windsurfrules (instruction)") == 2
+        assert result.stdout.count("global_rules.md (instruction)") == 2
+
+    def test_invalid_native_and_portable_dialects_report_separately(self, tmp_path):
+        repo = copy_fixture("devin/broken", tmp_path)
+
+        grouped = by_rule(run_lint(repo))
+
+        rule_findings = grouped["devin-rules-valid"]
+        assert {(v["file_path"], v["line"]) for v in rule_findings} == {
+            (".devin/rules/trigger.md", 2),
+            (".windsurf/rules/glob.md", 3),
+            ("apps/api/.devin/rules/model.md", 3),
+        }
+
+        native = grouped["devin-skill-valid"]
+        assert {v["file_path"] for v in native} == {".devin/skills/broken/SKILL.md"}
+        assert {v["line"] for v in native} == {2, 3, 6, 8, 10}
+
+        portable = grouped["agentskill-valid"]
+        assert {v["file_path"] for v in portable} == {".agents/skills/portable/SKILL.md"}
+        assert all(".devin/skills/plain" not in v["file_path"] for v in portable)
+
+        assert {v["file_path"] for v in grouped["content-weak-language"]} >= {
+            ".devin/skills/plain/SKILL.md"
+        }
+        assert {v["file_path"] for v in grouped["security-hidden-instructions"]} >= {
+            ".devin/skills/plain/SKILL.md"
+        }
+
+
+@pytest.mark.integration
 class TestOpenCode:
     """OpenCode config, content and the ``.opencode`` / APM disambiguation."""
 
@@ -3771,6 +3837,7 @@ BROKEN_FIXTURES = [
     "cursor-rules/broken-frontmatter",
     "cursor-rules/broken-hooks",
     "cursor-rules/prompt-hooks",
+    "devin/broken",
     "instructions/agents-import/duplicated-pair",
     "opencode/broken",
     "opencode/malformed-shapes",
@@ -3795,6 +3862,7 @@ CLEAN_FIXTURES = [
     "agent-plugins/clean",
     "codex/clean",
     "cursor-rules/clean",
+    "devin/valid",
     "editor-tools/monorepo",
     "instructions/agents-import/import-only",
     "opencode/native-v1",
