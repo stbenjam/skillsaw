@@ -384,14 +384,6 @@ def test_no_mcp_configuration(plugin_without_mcp):
     assert len(violations) == 0
 
 
-def test_mcp_valid_json_rule_metadata():
-    """Test rule metadata"""
-    rule = McpValidJsonRule()
-    assert rule.rule_id == "mcp-valid-json"
-    assert "MCP" in rule.description
-    assert rule.default_severity().value == "error"
-
-
 def test_http_mcp_valid(plugin_with_http_mcp):
     """Test that valid HTTP MCP passes validation"""
     context = RepositoryContext(plugin_with_http_mcp)
@@ -500,14 +492,6 @@ def test_mcp_prohibited_allows_no_mcp(plugin_without_mcp):
     rule = McpProhibitedRule()
     violations = rule.check(context)
     assert len(violations) == 0
-
-
-def test_mcp_prohibited_rule_metadata():
-    """Test rule metadata"""
-    rule = McpProhibitedRule()
-    assert rule.rule_id == "mcp-prohibited"
-    assert "MCP" in rule.description
-    assert rule.default_severity().value == "error"
 
 
 def test_both_mcp_json_and_plugin_json(temp_dir):

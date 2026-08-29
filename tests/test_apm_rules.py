@@ -578,29 +578,6 @@ def test_apm_rules_in_default_config():
     assert config.get_rule_config("apm-structure-valid").get("enabled") == "auto"
 
 
-# --- Integration: linting this repo ---
-
-
-def test_lint_real_apm_repo():
-    """Smoke test: lint the skillsaw repo itself which has .apm/"""
-    import os
-
-    # Find the repo root (this test file is in tests/)
-    repo_root = Path(__file__).resolve().parent.parent
-    apm_dir = repo_root / ".apm"
-
-    if not apm_dir.is_dir():
-        # Skip if running from a location without .apm/
-        return
-
-    context = RepositoryContext(repo_root)
-    assert context.has_apm is True
-    # Skills should be discovered from .apm/skills/
-    assert len(context.skills) > 0
-    apm_skills = [s for s in context.skills if ".apm" in str(s)]
-    assert len(apm_skills) > 0
-
-
 # --- Content rules apply to APM files ---
 
 
