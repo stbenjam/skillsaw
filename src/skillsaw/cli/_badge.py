@@ -87,8 +87,13 @@ def _run_badge(args):
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
 
-    context = RepositoryContext(args.path)
     config, _config_path = load_config(args, args.path)
+    context = RepositoryContext(
+        args.path,
+        exclude_patterns=config.exclude_patterns,
+        content_paths=config.content_paths,
+        lint_external_content=config.lint_external_content,
+    )
 
     try:
         linter = Linter(

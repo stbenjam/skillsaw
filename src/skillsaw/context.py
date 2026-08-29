@@ -1,6 +1,4 @@
-"""
-Repository context detection and management
-"""
+"""Repository context detection and management."""
 
 from __future__ import annotations
 
@@ -27,8 +25,10 @@ from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
+from .repository_external_content import RepositoryExternalContentMixin
 from .repository_mcp_registry import RepositoryMcpRegistryMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
+from .repository_scan import RepositoryScanMixin
 
 if TYPE_CHECKING:
     from .lint_target import LintTarget
@@ -80,6 +80,7 @@ HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
 HAS_CODERABBIT = "HAS_CODERABBIT"
 HAS_OPENCODE = "HAS_OPENCODE"
+HAS_SKILLS_LOCK = "HAS_SKILLS_LOCK"
 # Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE
 # and HAS_OPENCODE are deliberately absent: the instruction-file rules only
 # ever look at AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose
@@ -108,12 +109,13 @@ _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 _UNSET = object()
 
 
-class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
-    """
-    Context information about the repository being linted
-
-    Automatically detects repository type and gathers relevant metadata.
-    """
+class RepositoryContext(
+    RepositoryScanMixin,
+    RepositoryMcpRegistryMixin,
+    RepositoryExternalContentMixin,
+    RepositoryProvenanceMixin,
+):
+    """Detected repository metadata used during linting."""
 
     _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
 
@@ -160,6 +162,7 @@ class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
         repo_types: Optional[Set[RepositoryType]] = None,
         exclude_patterns: Optional[List[str]] = None,
         content_paths: Optional[List[str]] = None,
+        lint_external_content: bool = True,
     ):
         """
         Initialize repository context
@@ -173,9 +176,12 @@ class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
                 mutating the attribute and calling :meth:`apply_excludes`.
             content_paths: Extra content glob patterns (from config) picked up
                 by the lint tree.
+            lint_external_content: Whether externally sourced nodes should be
+                attached to the lint tree.
         """
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
+        self.lint_external_content = lint_external_content
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self.has_apm = detect_discovery.has_apm(self.root_path)
@@ -446,68 +452,9 @@ class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
         self._contained_plugin_roots = self._mcp_registry_paths = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
+        self.reset_external_content_provenance()
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
-
-    def _discover_instruction_files(self) -> List[Path]:
-        """Discover root and nested instruction files read by supported tools.
-
-        Includes root conventions, Copilot ``*.instructions.md`` files, and
-        Devin's documented names at nested project levels. The work shares
-        one filesystem walk with :meth:`agent_tool_dirs`.
-        """
-        return list(self._repository_scan().instruction_files)
-
-    def _repository_scan(self) -> detect_discovery.RepositoryScan:
-        """Return the cached single-pass walk of the repository."""
-        if self._scan is None:
-            self._scan = detect_discovery.scan_repository(
-                self.root_path, self._INSTRUCTION_FILENAMES
-            )
-        return self._scan
-
-    def agent_tool_dirs(self, name: str) -> List[Path]:
-        """Return every non-excluded directory called *name* in the repository.
-
-        Cursor (``.cursor``), Copilot/VS Code (``.github``), Cline
-        (``.clinerules``), Devin (``.devin``/``.windsurf``), and OpenCode
-        (``.opencode``) all read their
-        customizations from the nearest enclosing directory, so a monorepo
-        package may carry its own alongside the repository root's.
-        """
-        return [
-            path
-            for path in self._repository_scan().tool_dirs.get(name, ())
-            if not self.is_path_excluded(path)
-        ]
-
-    def legacy_editor_files(self, name: str) -> List[Path]:
-        """Every non-excluded *name* file in the repository.
-
-        Cursor and Cline read their pre-directory instruction file from the
-        nearest enclosing directory, exactly as they read `.cursor/` and
-        `.clinerules/`, so a monorepo package carries its own. Detection and
-        attachment both read this, so they cannot disagree about a nested one.
-        """
-        return [
-            path
-            for path in self._repository_scan().legacy_editor_files.get(name, ())
-            if not self.is_path_excluded(path)
-        ]
-
-    def _detect_formats(self) -> Set[str]:
-        return detect_discovery.instruction_formats(
-            self.root_path,
-            self.instruction_files,
-            self.is_path_excluded,
-            self._repository_scan().tool_dirs,
-            self._repository_scan().legacy_editor_files,
-        )
-
-    #: Alias for the one definition in discovery. Two copies of "which
-    #: directories does a walk prune" are how a checkout starts being walked
-    #: differently by two callers that both believe they agree.
-    _WALK_SKIP_DIRS = detect_discovery.WALK_SKIP_DIRS
 
     def _detect_types(self) -> Set[RepositoryType]:
         """Detect all applicable repository types.

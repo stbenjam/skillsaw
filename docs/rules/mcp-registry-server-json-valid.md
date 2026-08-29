@@ -51,15 +51,15 @@ version is added, so each document continues to use the schema it declares.
 An unknown future canonical version receives one unsupported-version diagnostic
 and is not interpreted using the newest known schema.
 
-## Registry types
+## Additional Registry types
 
-Self-hosted registries can replace the accepted package vocabulary:
+Self-hosted registries can add to the package vocabulary defined by the
+document's schema version:
 
 ```yaml
 rules:
   mcp-registry-server-json-valid:
     registry-types:
-      - npm
       - company-internal
 ```
 
@@ -111,7 +111,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `registry-types` | Package registryType values accepted in addition to the transport enums fixed by the document's schema version | `["npm", "pypi", "cargo", "oci", "nuget", "mcpb"]` |
+| `registry-types` | Additional package registryType values accepted alongside the vocabulary fixed by the document's schema version | `[]` |
 
 
 *Run `skillsaw explain mcp-registry-server-json-valid` to see this documentation and the rule's effective configuration in your terminal.*

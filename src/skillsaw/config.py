@@ -62,6 +62,9 @@ class LinterConfig:
     custom_rules: List[str] = field(default_factory=list)
     exclude_patterns: List[str] = field(default_factory=list)
     content_paths: List[str] = field(default_factory=list)
+    # Report diagnostics from externally sourced lint-tree nodes. Lock-managed
+    # skills and APM packages produce the tag; autofix always stands down.
+    lint_external_content: bool = True
     strict: bool = False
     # Severity threshold that fails the run: violations at this level or above
     # exit non-zero. ``strict: true`` is sugar for ``fail-on: warning``; the
@@ -93,6 +96,7 @@ class LinterConfig:
             "custom-rules",
             "exclude",
             "content-paths",
+            "lint-external-content",
             "strict",
             "fail-on",
             "plugins",
@@ -260,6 +264,17 @@ class LinterConfig:
                 f"got {type(raw_content_paths).__name__}"
             )
 
+        raw_lint_external_content = data.get("lint-external-content")
+        if raw_lint_external_content is None:
+            lint_external_content = True
+        elif isinstance(raw_lint_external_content, bool):
+            lint_external_content = raw_lint_external_content
+        else:
+            raise ValueError(
+                "'lint-external-content' must be a boolean, "
+                f"got {type(raw_lint_external_content).__name__}"
+            )
+
         if raw_strict is None:
             strict = False
         elif isinstance(raw_strict, bool):
@@ -325,6 +340,7 @@ class LinterConfig:
             custom_rules=custom_rules,
             exclude_patterns=exclude_patterns,
             content_paths=content_paths,
+            lint_external_content=lint_external_content,
             strict=strict,
             fail_on=fail_on,
             plugins_enabled=plugins_enabled,
@@ -558,6 +574,7 @@ class LinterConfig:
         d["fail-on"] = self.fail_on
         if self.content_paths:
             d["content-paths"] = self.content_paths
+        d["lint-external-content"] = self.lint_external_content
         if not self.plugins_enabled or self.disabled_plugins:
             plugins: Dict[str, Any] = {}
             if not self.plugins_enabled:
@@ -641,6 +658,8 @@ class LinterConfig:
                     f.write(f'    # - "{pat}"\n')
             f.write("\n# Additional markdown files to run content rules on (glob format)\n")
             self._write_field(f, "content-paths", self.content_paths)
+            f.write("\n# Report findings in external content (autofix never rewrites it)\n")
+            f.write(f"lint-external-content: {self._yaml_value(self.lint_external_content)}\n")
             f.write("\n# Treat warnings as errors\n")
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
             f.write("\n# Fail on violations at this severity or above: error, warning, info\n")

@@ -474,13 +474,7 @@ rules:
   mcp-registry-server-json-valid:
     enabled: auto
     severity: error
-    # registry-types:
-    #   - npm
-    #   - pypi
-    #   - cargo
-    #   - oci
-    #   - nuget
-    #   - mcpb
+    # registry-types: []
 
   # MCP Registry server versions should use strict Semantic Versioning 2.0.0
   mcp-registry-version-semver:
@@ -550,6 +544,12 @@ rules:
     # allow-bidi-controls: false
     # allowed-codepoints: []
 
+  # skills-lock.json files must be valid and portable project lockfiles
+  skills-lock-valid:
+    enabled: auto
+    severity: error
+    # extra-source-types: []
+
 # Load custom rules from these files
 custom-rules: []
 
@@ -568,6 +568,9 @@ exclude:
 
 # Additional markdown files to run content rules on (glob format)
 content-paths: []
+
+# Report findings in external content (autofix never rewrites it)
+lint-external-content: true
 
 # Treat warnings as errors
 strict: false
