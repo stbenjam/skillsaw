@@ -6,9 +6,11 @@ field in `package.json`. It must exactly match the server `name` in
 ## What is checked
 
 For every `packages[]` entry whose `registryType` is `npm`, the rule looks
-for a local `package.json` whose `name` matches the package `identifier`.
-It supports a package beside `server.json` and packages elsewhere in a
-monorepo. The matching local manifest must:
+for a local `package.json` whose `name` matches the package `identifier`. When
+the Registry entry declares `version`, the local manifest's `version` must
+also match exactly before the rule treats it as that published release. It
+supports a package beside `server.json` and packages elsewhere in a monorepo.
+The matching local manifest must:
 
 - be valid strict JSON;
 - declare a string-valued `mcpName`; and

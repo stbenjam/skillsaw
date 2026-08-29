@@ -135,6 +135,46 @@ class TestMcpRegistrySchemaRule:
 
         assert lint_rules(repo, VALID_RULE) == []
 
+    @pytest.mark.parametrize("src", ["http://example.com/icon.png", "file:/tmp/icon.png"])
+    def test_icon_sources_must_use_https(self, tmp_path, src):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["icons"] = [{"src": src}]
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any(
+            "icons[0].src must use an https uri" in message for message in messages_lower(findings)
+        )
+
+    def test_https_icon_source_passes(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["icons"] = [{"src": "https://example.com/icon.png"}]
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize("subfolder", ["/tmp/server", "../../server", "src//server"])
+    def test_repository_subfolder_must_be_clean_and_relative(self, tmp_path, subfolder):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["repository"]["subfolder"] = subfolder
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("repository.subfolder" in message for message in messages_lower(findings))
+
+    def test_clean_repository_subfolder_passes(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["repository"]["subfolder"] = "packages/weather-server"
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
     @pytest.mark.parametrize(
         "name",
         [
@@ -163,9 +203,21 @@ class TestMcpRegistrySchemaRule:
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
         data["packages"][0]["registryType"] = registry_type
+        if registry_type == "mcpb":
+            data["packages"][0]["fileSha256"] = "0" * 64
         _write_server(path, data)
 
         assert lint_rules(repo, VALID_RULE) == []
+
+    def test_mcpb_package_requires_integrity_hash(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["registryType"] = "mcpb"
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("packages[0].filesha256" in message for message in messages_lower(findings))
 
     def test_unknown_registry_type_is_rejected_but_configurable(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)

@@ -31,6 +31,9 @@ and the Registry's semantic publishing constraints.
   `latest`, a comparator, a wildcard, an OR expression, or a hyphen range.
 - Package transports are `stdio`, `streamable-http`, or `sse`. Remote
   transports are `streamable-http` or `sse`.
+- MCPB packages declare the required `fileSha256` integrity hash.
+- Icon sources use HTTPS, and `repository.subfolder` is a clean relative path
+  without empty, current-directory, or parent-directory segments.
 - `registryType` is one of `npm`, `pypi`, `cargo`, `oci`, `nuget`, or
   `mcpb` by default. These are the package types documented by the
   [official Registry](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/package-types.mdx).
