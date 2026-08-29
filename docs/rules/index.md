@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **84** built-in rules organized into the following categories:
+skillsaw includes **85** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Vercel](vercel.md) (1 rule)
