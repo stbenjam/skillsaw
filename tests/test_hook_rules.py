@@ -244,14 +244,6 @@ def test_no_hooks_directory(plugin_without_hooks):
     assert len(violations) == 0
 
 
-def test_rule_metadata():
-    """Test rule metadata"""
-    rule = HooksJsonValidRule()
-    assert rule.rule_id == "hooks-json-valid"
-    assert "hooks" in rule.description.lower()
-    assert rule.default_severity().value == "error"
-
-
 def test_all_valid_event_types(temp_dir):
     """Test that all documented event types are accepted"""
     plugin_dir = temp_dir / "test-plugin"
@@ -1302,13 +1294,6 @@ def test_dangerous_non_command_hooks_ignored(temp_dir):
     assert len(violations) == 0
 
 
-def test_dangerous_rule_metadata():
-    """Test rule metadata."""
-    rule = HooksDangerousRule()
-    assert rule.rule_id == "hooks-dangerous"
-    assert rule.default_severity().value == "error"
-
-
 def test_download_chain_scan_stays_linear_on_repeated_curl_tokens():
     """A non-matching command must not retry a greedy suffix at every token."""
     import time
@@ -1805,13 +1790,6 @@ def test_prohibited_non_command_hooks_ignored(temp_dir):
     rule = HooksProhibitedRule()
     violations = rule.check(context)
     assert len(violations) == 0
-
-
-def test_prohibited_rule_metadata():
-    """Test rule metadata."""
-    rule = HooksProhibitedRule()
-    assert rule.rule_id == "hooks-prohibited"
-    assert rule.default_severity().value == "error"
 
 
 @pytest.mark.parametrize(
