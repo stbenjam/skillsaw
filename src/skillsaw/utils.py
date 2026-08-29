@@ -670,6 +670,14 @@ class FileCache:
             if cost == UNCACHEABLE_SIZE:
                 # Remember the refusal so the abandoned walk is paid once.
                 marker = _entry_cost(_UNSIZEABLE, resolved, sub_key)
+                if marker == UNCACHEABLE_SIZE:
+                    # The sub-key is what could not be sized, and the
+                    # marker is filed under it — so remembering the
+                    # refusal would retain the very thing the refusal is
+                    # about, charged a negative number that drives the
+                    # total down instead of up. Forget it; the walk is
+                    # paid again, which is the lesser cost.
+                    return result
                 if marker > self._budget:
                     # Same rule as a value too large to admit: eviction
                     # cannot make room, so storing it would leave the

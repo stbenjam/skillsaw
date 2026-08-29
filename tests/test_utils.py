@@ -1747,8 +1747,15 @@ class TestFileCacheBudget:
         assert reader(target, huge) == "value"
 
         assert calls["n"] == 2, "an unsizeable sub-key must be recomputed, not served"
-        # Only the refusal marker, never a partial charge for the sub-key.
-        assert cache._total_bytes < sys.getsizeof(huge)
+
+        # Nothing may be stored: the marker would be filed *under* the
+        # sub-key, retaining the very graph that could not be sized. And
+        # the charge may never go negative — a total below zero is how
+        # that retention hides, since it makes the budget look emptier
+        # the more it holds.
+        assert cache._total_bytes == 0, cache._total_bytes
+        stored = sum(len(bucket) for store in cache._stores for bucket in store.values())
+        assert stored == 0, stored
 
     def test_the_rest_of_the_call_is_charged_too(self, tmp_path):
         """An entry is filed under more than its path.
