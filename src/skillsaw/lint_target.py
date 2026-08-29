@@ -104,12 +104,17 @@ class LintTarget:
         identifies the filter, and callers must make it name everything the
         predicate depends on.
         """
-        cache = self.__dict__.setdefault("_find_cache", {})
         key = (target_type, cache_key)
-        found = cache.get(key)
+        found = self.__dict__.setdefault("_find_cache", {}).get(key)
         if found is None:
             found = [n for n in self.find(target_type) if predicate(n)]
-            cache[key] = found
+            # Re-fetched for the same reason ``find()`` re-fetches: the
+            # walk inside it can parse a block's frontmatter for the first
+            # time, and building that block's children drops the memo on
+            # this node and every ancestor — including the dict a variable
+            # captured before the call would still be holding. Storing
+            # into that detached one leaves the result invisible.
+            self.__dict__.setdefault("_find_cache", {})[key] = found
         return list(found)
 
     def invalidate_find_cache(self) -> None:

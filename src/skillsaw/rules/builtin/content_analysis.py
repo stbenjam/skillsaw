@@ -298,20 +298,18 @@ _MAX_CACHED_PATTERNS = 20_000
 # is not quite it either. Two Turkish dotted-i forms need normalizing on
 # top: U+0131 (dotless i), which casefolds to itself, and U+0130 (capital I
 # with dot above), which casefolds to "i" plus a combining dot.
-# ``re.IGNORECASE`` matches both against "i". With those two rewrites the
-# fold was checked exhaustively over every Unicode codepoint against every
-# ASCII letter: nothing the engine matches is missed.
+# ``re.IGNORECASE`` matches both against "i".
 _DOTTED_I_FORMS = ("\u0131", "i\u0307")
 
 
 def case_fold(text: str) -> str:
     """Fold *text* the way ``re.IGNORECASE`` compares.
 
-    ``str.lower`` leaves U+017F (long s) and U+212A (Kelvin sign) alone,
-    while the regex engine matches them against "s" and "k" — so a
-    lowercase substring gate built on it can reject a document the
-    pattern would have matched. The Turkish dotted-i forms need a rewrite
-    ``casefold`` does not do; see ``_DOTTED_I_FORMS``.
+    ``str.lower`` leaves U+017F (long s) alone, while the regex engine
+    matches it against "s" — so a lowercase substring gate built on it
+    can reject a document the pattern would have matched. The Turkish
+    dotted-i forms need a rewrite ``casefold`` does not do either; see
+    ``_DOTTED_I_FORMS``.
 
     Being *more* permissive than the engine here would be harmless — the
     real pattern still runs on whatever survives the gate — but being less

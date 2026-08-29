@@ -407,6 +407,33 @@ class TestFindCache:
         context.rebuild_lint_tree()
         assert len(context.lint_tree.find(FrontmatterField)) == 2
 
+    def test_find_filtered_stores_into_the_live_cache(self, tmp_path):
+        """Anything that drops the memo mid-call detaches the dict.
+
+        ``find()`` learned this the hard way: its walk can parse a block's
+        frontmatter for the first time, and building that block's children
+        drops ``_find_cache`` from this node and every ancestor, so a dict
+        captured before the walk is orphaned by the time the result is
+        written into it. The tree builder happens to parse every block
+        today, so ``find_filtered`` cannot reach that path through
+        ``find()`` — but it shares the invariant, and the predicate it
+        runs is caller-supplied. Invalidating from the predicate is the
+        direct way to hold it to the contract.
+        """
+        context = self._make_skill_repo(tmp_path)
+        tree = context.lint_tree
+
+        def predicate(field):
+            tree.invalidate_find_cache()
+            return field.name == "name"
+
+        found = tree.find_filtered(FrontmatterField, "named", predicate)
+
+        assert [f.name for f in found] == ["name"]
+        assert (FrontmatterField, "named") in tree.__dict__.get(
+            "_find_cache", {}
+        ), "the result was written into a cache dict already detached from the node"
+
 
 class TestSourceRelativeDirectory:
     """The skill-relative directory of a source, used to build the needles

@@ -8,6 +8,8 @@ from pathlib import Path
 import stat
 import sys
 
+import yaml
+
 import pytest
 
 from skillsaw import utils as skillsaw_utils
@@ -911,14 +913,90 @@ def test_safe_load_yaml_rejects_pathological_nesting():
     """The depth limit is stated, not inherited from CPython's stack.
 
     Which document overflows the interpreter varies by platform, thread
-    stack size, and Python version, and the libyaml parser does not
-    overflow at all — so the reader enforces the bound itself.
+    stack size and Python version, so the reader enforces the bound
+    itself rather than relying on one.
     """
     from skillsaw.utils import _MAX_YAML_DEPTH, safe_load_yaml
 
     depth = _MAX_YAML_DEPTH + 5
     with pytest.raises(RecursionError):
         safe_load_yaml("[" * depth + "0" + "]" * depth)
+
+
+def test_a_document_just_under_the_bound_still_parses():
+    """The bound replaced an incidental limit far above it.
+
+    Only ever testing rejection would let the limit drift down onto
+    documents that parse today, which is the direction that breaks
+    people rather than protects them.
+    """
+    from skillsaw.utils import _MAX_YAML_DEPTH, safe_load_yaml
+
+    depth = _MAX_YAML_DEPTH - 1
+    assert safe_load_yaml("[" * depth + "0" + "]" * depth) is not None
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        # An astral character escaped as a JSON-style surrogate pair, which
+        # is what any ASCII-safe JSON-to-YAML conversion emits — an emoji in
+        # a skill's `description:`, say. libyaml rejects it outright.
+        (r'a: "\uD83D\uDE00"', {"a": "\ud83d\ude00"}),
+        # libyaml refuses directives naming a version it does not implement.
+        ("%YAML 1.0\n---\na: 1\n", {"a": 1}),
+    ],
+)
+def test_documents_only_the_pure_python_loader_accepts_still_parse(source, expected):
+    """The loader swap must not turn a clean file into a parse error.
+
+    These parse on `main`. Left to libyaml alone each becomes an
+    ERROR-severity violation on a file that linted cleanly before, which
+    is a behaviour regression rather than a speed-up.
+    """
+    from skillsaw.utils import safe_load_yaml
+
+    assert safe_load_yaml(source) == expected
+
+
+def test_a_malformed_document_keeps_its_line_number():
+    """Callers report the line a parse failed on, so the retry has to
+    surface a real error object rather than swallow the mark."""
+    from skillsaw.utils import safe_load_yaml
+
+    with pytest.raises(yaml.YAMLError) as caught:
+        safe_load_yaml("a: [1, 2\n")
+
+    assert caught.value.problem_mark is not None
+    assert caught.value.problem_mark.line == 1
+
+
+def test_deep_yaml_does_not_abort_the_process():
+    """libyaml composes nodes by C-stack recursion with no guard.
+
+    Handed a document nested past roughly fifty thousand levels it
+    overruns that stack and the process dies with SIGSEGV, which no
+    ``except`` clause can catch — so a check on the constructed object
+    cannot be the guard, because it runs after the crash. Driven through
+    a subprocess: an in-process fault would take the test worker with it
+    rather than being reported.
+    """
+    import subprocess
+
+    program = (
+        "from skillsaw.utils import safe_load_yaml\n"
+        "d = 200000\n"
+        "try:\n"
+        "    safe_load_yaml('extra: ' + '[' * d + '0' + ']' * d)\n"
+        "except RecursionError:\n"
+        "    print('rejected')\n"
+    )
+    finished = subprocess.run(
+        [sys.executable, "-c", program], capture_output=True, text=True, timeout=120
+    )
+
+    assert finished.returncode == 0, f"crashed with {finished.returncode}"
+    assert finished.stdout.strip() == "rejected"
 
 
 class TestFileCacheBudget:

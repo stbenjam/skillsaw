@@ -334,12 +334,12 @@ UNCACHEABLE_SIZE = -1
 
 #: Charged on top of every entry's value, for the machinery that holds it:
 #: a resolved ``Path`` key and the string inside it, the per-path bucket
-#: dict, the sub-key tuple, and a slot in each of the two dicts. Measured
-#: at 552 bytes for a short path and more for a realistic one, against
-#: which an empty ``read_text`` result charged by its value alone costs
-#: one byte. A repository of many small files is otherwise bounded by
-#: nothing: 20,000 empty entries fit the 64 MiB budget 3,000 times over on
-#: paper while holding 11 MiB.
+#: dict, the sub-key tuple, and a slot in each of the two dicts. That runs
+#: to over 500 bytes even for a short path, against which an empty
+#: ``read_text`` result charged by its value alone costs one byte. Without
+#: it a repository of many small files is bounded by nothing: 20,000 empty
+#: entries charge 20 KB against a budget in the tens of megabytes while
+#: really holding 11 MiB.
 _ENTRY_OVERHEAD_BYTES = 512
 
 
@@ -481,15 +481,12 @@ class FileCache:
     is that bound, measured with :func:`_entry_cost`.
     """
 
-    #: 128 MiB, which is what a large marketplace (~10k documents) has
-    #: always cost here — 90.7 MiB of it, measured. The number read 64
-    #: only because the accounting under-counted by 1.9x: text was charged
-    #: its character count rather than its retained width, and an entry
-    #: was charged nothing for the ``Path`` key, bucket, sub-key and dict
-    #: slots holding it. Correcting both without correcting this would
-    #: have quietly cut the working set by a third and started evicting
-    #: what such a repository needs, so the bound now states what was
-    #: already being held rather than a third of it.
+    #: 128 MiB. A large marketplace (~10k documents) holds ~90 MiB of
+    #: cached text and parsed documents at peak, and the budget has to sit
+    #: above that: every rule sweeps the same files, so a cap the working
+    #: set can cross is a cliff rather than a limit — each sweep evicts
+    #: what the previous one cached and the linter re-reads and re-parses
+    #: the repository once per rule.
     DEFAULT_BUDGET = 128 * 1024 * 1024
 
     def __init__(self, budget: int = DEFAULT_BUDGET):
@@ -1045,14 +1042,81 @@ def _reject_overly_nested(data: Any) -> None:
         heights[node_id] = height
 
 
+#: Event types that open and close a collection in the parse stream.
+_YAML_OPEN_EVENTS = (yaml.SequenceStartEvent, yaml.MappingStartEvent)
+_YAML_CLOSE_EVENTS = (yaml.SequenceEndEvent, yaml.MappingEndEvent)
+
+
+def _reject_deep_before_compose(source: str) -> None:
+    """Bound nesting depth before any composer sees *source*.
+
+    This has to run first, and the reason is the whole point of the
+    function. libyaml composes nodes with mutually recursive **C**
+    functions carrying no recursion guard: handed a document nested past
+    roughly fifty thousand levels it overruns the C stack and the process
+    dies with ``SIGSEGV``. No ``except`` clause can catch that, so a
+    check on the constructed object cannot be the guard — it runs
+    strictly after the crash it is meant to prevent.
+
+    libyaml's *parser* is a different animal: an explicit state machine
+    keeping its stack on the heap, verified here to stream a document a
+    million levels deep without trouble. So depth is counted over the
+    event stream, which also lets the scan stop the moment the bound is
+    crossed rather than reading the rest of a hostile file.
+
+    A malformed document is not this function's problem — the error is
+    swallowed so that ``yaml.load`` below raises the canonical one, with
+    the ``problem_mark`` callers report line numbers from. That is safe
+    because reaching a parse error means the parser got there without
+    exceeding the bound.
+    """
+    depth = 0
+    try:
+        for event in yaml.parse(source, Loader=_SAFE_LOADER):
+            if isinstance(event, _YAML_OPEN_EVENTS):
+                depth += 1
+                if depth > _MAX_YAML_DEPTH:
+                    raise RecursionError(_TOO_DEEP)
+            elif isinstance(event, _YAML_CLOSE_EVENTS):
+                depth -= 1
+    except yaml.YAMLError:
+        return
+
+
 def safe_load_yaml(source: Any) -> Any:
     """``yaml.safe_load``, using the libyaml parser when it is available.
 
     Documents nesting deeper than ``_MAX_YAML_DEPTH`` raise
     ``RecursionError``, which every caller already treats as an
-    unparseable document.
+    unparseable document. The bound is enforced before the document is
+    composed; see :func:`_reject_deep_before_compose` for why it cannot
+    be enforced afterwards.
+
+    libyaml pairs the same ``SafeConstructor`` and ``Resolver`` with its
+    own parser, so a document both loaders accept resolves to the same
+    value. They do not accept quite the same documents, though: libyaml
+    rejects the JSON-style escaped surrogate pair that any ASCII-safe
+    JSON-to-YAML conversion emits for an astral character (an emoji in a
+    ``description:``, say), and rejects ``%YAML`` directives naming a
+    version it does not implement. Rather than turn files that linted
+    cleanly into parse errors, a rejected document is retried on the
+    pure-Python loader, which also restores that loader's message
+    wording and ``problem_mark``. Parse failures are rare, so the happy
+    path pays nothing.
     """
-    data = yaml.load(source, Loader=_SAFE_LOADER)
+    if hasattr(source, "read"):
+        # One caller hands over an open file. Everything below needs the
+        # text more than once, and a stream can only be read out once.
+        source = source.read()
+    _reject_deep_before_compose(source)
+    try:
+        data = yaml.load(source, Loader=_SAFE_LOADER)
+    except yaml.YAMLError:
+        if _SAFE_LOADER is yaml.SafeLoader:
+            raise
+        data = yaml.load(source, Loader=yaml.SafeLoader)
+    # Kept as the backstop the event count cannot be: aliases let a
+    # shallow event stream build a deep object graph.
     _reject_overly_nested(data)
     return data
 
