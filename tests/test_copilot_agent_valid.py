@@ -135,6 +135,34 @@ def test_remaining_scalar_and_model_types_are_validated(tmp_path):
     ]
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("target", "[vscode]", "'target' must be 'vscode' or 'github-copilot', got list"),
+        (
+            "tools",
+            "''",
+            "'tools' string must contain one or more comma-separated tool names",
+        ),
+        ("tools", "42", "'tools' must be a string or list of strings, got int"),
+        ("model", "''", "'model' must be a non-empty string"),
+        ("metadata", "[]", "'metadata' must be a string-to-string mapping, got list"),
+        ("handoffs", "{}", "'handoffs' must be a list, got mapping"),
+        ("mcp-servers", "[]", "'mcp-servers' must be a mapping, got list"),
+        ("hooks", "[]", "'hooks' must be a mapping, got list"),
+    ],
+)
+def test_invalid_top_level_shapes_report_at_the_field(tmp_path, field, value, message):
+    _write_agent(
+        tmp_path,
+        f"description: Valid routing description\n{field}: {value}",
+    )
+
+    found = _check(tmp_path)
+
+    assert [(violation.line, violation.message) for violation in found] == [(3, message)]
+
+
 def test_collection_items_and_handoffs_report_their_own_lines(tmp_path):
     _write_agent(
         tmp_path,
