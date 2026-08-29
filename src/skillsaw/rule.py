@@ -162,21 +162,6 @@ class Rule(ABC):
     # RepositoryContext.in_codex_only_plugin() instead — tightening is
     # their semantic, not a skip.
     provenance_scope: Optional[str] = None
-    # Whether running this rule can make outbound network requests. The
-    # operator's gate reads it: ``--no-network`` / SKILLSAW_NO_NETWORK
-    # drops every rule declaring it, whatever the linted repository's
-    # ``.skillsaw.yaml`` or a ``--rule`` flag asks for. Declarative on
-    # purpose — a rule-id list would need maintaining, and the linted
-    # repo must never be the thing that decides whether skillsaw is
-    # allowed on the network.
-    requires_network: bool = False
-    # Whether a network rule may reach loopback, private and link-local
-    # hosts. The operator sets it (--allow-private-hosts /
-    # SKILLSAW_ALLOW_PRIVATE_HOSTS, pushed on by the linter); a linted
-    # repository must not be able to, because it is a security boundary
-    # rather than a tuning knob — the actor who would disable it is the
-    # one THREAT_MODEL T18 defends against.
-    allow_private_hosts: bool = False
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"
     baseline_mode: Optional[str] = None  # "ceiling" or "floor"

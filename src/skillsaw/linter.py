@@ -9,7 +9,6 @@ import hashlib
 import importlib.util
 import inspect
 import logging
-import os
 import re
 import sys
 import warnings
@@ -145,34 +144,6 @@ def _node_externally_sourced(block) -> bool:
     return bool(getter) if getter is not None else False
 
 
-# Spellings of "no" and "yes" the network environment variables accept.
-# Anything outside both sets is a typo, and the two variables resolve a
-# typo in opposite directions — see below.
-_ENV_OFF_VALUES = frozenset({"", "0", "false", "no", "off"})
-_ENV_ON_VALUES = frozenset({"1", "true", "yes", "on"})
-
-
-def _env_restriction(name: str) -> bool:
-    """Whether the operator asked for the restriction *name* names.
-
-    For a variable that takes capability away (``SKILLSAW_NO_NETWORK``),
-    an unrecognized value means the restriction applies: ``=maybe`` is a
-    typo, and the safe reading of a typo is the more restrictive one.
-    """
-    return os.environ.get(name, "").strip().lower() not in _ENV_OFF_VALUES
-
-
-def _env_permission(name: str) -> bool:
-    """Whether the operator granted the permission *name* names.
-
-    The mirror image of :func:`_env_restriction`. For a variable that
-    hands capability out (``SKILLSAW_ALLOW_PRIVATE_HOSTS``), only an
-    explicit yes counts, so a typo withholds the permission rather than
-    granting it.
-    """
-    return os.environ.get(name, "").strip().lower() in _ENV_ON_VALUES
-
-
 class CustomRuleWarning(UserWarning):
     """Emitted just before skillsaw executes a custom rule file from the repo.
 
@@ -184,41 +155,6 @@ class CustomRuleWarning(UserWarning):
     def __init__(self, path: Path):
         self.path = path
         super().__init__(f"Loading custom rule file: {path} — use --no-custom-rules to skip")
-
-
-class NetworkAccessWarning(UserWarning):
-    """Emitted when a rule that makes outbound requests is about to run.
-
-    The linted repository's own config decides whether such a rule is
-    enabled, so the operator has to be able to see that it happened —
-    the same reason ``CustomRuleWarning`` exists for the other
-    repo-config-activated capability.
-    """
-
-    def __init__(self, rule_ids: List[str]):
-        self.rule_ids = rule_ids
-        super().__init__(
-            f"Network access enabled for: {', '.join(rule_ids)} — use --no-network to skip"
-        )
-
-
-class EmptyNetworkRuleSetError(ValueError):
-    """Every rule ``--rule`` named needs the network, and the network is off.
-
-    A ``ValueError`` like the other construction-time refusals, so a
-    caller that only handles those keeps working. It is a distinct type
-    because the advice differs by caller: on ``lint`` the operator can
-    drop ``--no-network``, while ``fix`` forces the gate on itself and
-    has no flag to drop — see ``cli._fix``.
-    """
-
-    def __init__(self, rule_ids: List[str]):
-        self.rule_ids = rule_ids
-        super().__init__(
-            "--no-network (or SKILLSAW_NO_NETWORK) skipped every rule named "
-            f"by --rule: {', '.join(rule_ids)}. Nothing would be checked — "
-            "drop --no-network, or name a rule that does not need the network."
-        )
 
 
 class Linter:
@@ -235,8 +171,6 @@ class Linter:
         baseline: Optional["BaselineFile"] = None,
         no_custom_rules: bool = False,
         no_plugins: bool = False,
-        no_network: bool = False,
-        allow_private_hosts: bool = False,
     ):
         from .rules.builtin import canonical_rule_id
 
@@ -249,17 +183,6 @@ class Linter:
         self._baseline = baseline
         self._no_custom_rules = no_custom_rules
         self._no_plugins = no_plugins
-        # The environment half of the operator's network controls is read
-        # here, not only in the CLI helper. An operator who exports
-        # SKILLSAW_NO_NETWORK for a whole CI job means it for anything
-        # that constructs a Linter — a future subcommand, an embedder, an
-        # in-process test — not just for the call sites that currently
-        # remember to pass the flag. The gate is one-way: either source
-        # turns it on, and nothing in the repository turns it back off.
-        self._no_network = no_network or _env_restriction("SKILLSAW_NO_NETWORK")
-        self._allow_private_hosts = allow_private_hosts or _env_permission(
-            "SKILLSAW_ALLOW_PRIVATE_HOSTS"
-        )
         self._plugin_load_violations: List[RuleViolation] = []
         self._vendor_managed_cache: Dict[Path, bool] = {}
         self._stale_baseline_entries: List["BaselineEntry"] = []
@@ -282,7 +205,6 @@ class Linter:
             self.context.rebuild_lint_tree()
         self.rules: List[Rule] = []
         self._load_rules()
-        self._apply_network_gate()
         enabled_surfaces = self._enabled_builtin_surfaces()
         for rule in self.rules:
             rule._enabled_surface_rule_ids = enabled_surfaces
@@ -389,48 +311,6 @@ class Linter:
         if not self._no_custom_rules:
             for custom_rule_path in self.config.custom_rules:
                 self._load_custom_rule(custom_rule_path)
-
-    @staticmethod
-    def _is_network_rule(rule) -> bool:
-        # getattr: duck-typed custom rules may not inherit from Rule.
-        return bool(getattr(rule, "requires_network", False))
-
-    def _apply_network_gate(self):
-        """Apply the operator's network decisions to the loaded rules.
-
-        Three things happen here, and here only: rules declaring
-        ``requires_network`` are dropped under ``--no-network``, the
-        operator's ``--allow-private-hosts`` decision is pushed onto the
-        ones that survive, and the run announces itself when the network
-        engages.
-
-        This runs after every loader — builtin, plugin, and custom — so
-        one filter covers all three, and it is deliberately independent
-        of ``--rule``: a linted repository must never be able to decide
-        that skillsaw is allowed on the network, and neither should a
-        flag that only selects *which* rules run.
-        """
-        network_rules = [r for r in self.rules if self._is_network_rule(r)]
-        if not network_rules:
-            return
-        rule_ids = sorted(r.rule_id for r in network_rules)
-        if self._no_network:
-            self.rules = [r for r in self.rules if not self._is_network_rule(r)]
-            for rule_id in rule_ids:
-                logger.info("Rule %-30s skipped (--no-network)", rule_id)
-            if self._rule_ids and self._rule_ids <= set(rule_ids):
-                # Every rule the operator asked for was just dropped, so
-                # the run would exit 0 having checked nothing. That is the
-                # quiet CI false pass REVIEW.md's T4/T12 bullet asks
-                # reviewers to flag — say so rather than looking healthy.
-                raise EmptyNetworkRuleSetError(rule_ids)
-            return
-        # Reaching non-public hosts is an operator decision, never a
-        # repo-config one, so it is pushed onto the rule rather than read
-        # from `.skillsaw.yaml` (see T18).
-        for rule in network_rules:
-            rule.allow_private_hosts = self._allow_private_hosts
-        warnings.warn(NetworkAccessWarning(rule_ids), stacklevel=2)
 
     def _load_builtin_rules(self):
         """Load builtin rules from skillsaw.rules.builtin"""

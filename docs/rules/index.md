@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **88** built-in rules organized into the following categories:
+skillsaw includes **87** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Vercel](vercel.md) (1 rule)
@@ -20,7 +20,7 @@ skillsaw includes **88** built-in rules organized into the following categories:
 - [OpenCode](opencode.md) (1 rule)
 - [Instruction Files](instruction-files.md) (3 rules)
 - [Context Budget](context-budget.md) (1 rule)
-- [Content Intelligence](content-intelligence.md) (25 rules)
+- [Content Intelligence](content-intelligence.md) (24 rules)
 - [CodeRabbit](coderabbit.md) (2 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
@@ -98,7 +98,6 @@ skillsaw includes **88** built-in rules organized into the following categories:
 | [`content-inconsistent-terminology`](content-inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | - | Content Intelligence |
 | [`content-instruction-drift`](content-instruction-drift.md) | Detect near-duplicate sections that have drifted apart across instruction files | info (auto) | - | Content Intelligence |
 | [`content-broken-internal-reference`](content-broken-internal-reference.md) | Detect markdown links where the target file does not exist | warning (auto) | auto | Content Intelligence |
-| [`content-broken-external-reference`](content-broken-external-reference.md) | Detect external http(s) links whose server reports them gone (404/410; opt-in, makes network requests) | warning (disabled) | - | Content Intelligence |
 | [`content-unlinked-internal-reference`](content-unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto | Content Intelligence |
 | [`content-placeholder-text`](content-placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - | Content Intelligence |
 | [`content-unclosed-fence`](content-unclosed-fence.md) | Detect code fences opened but never closed, hiding the rest of the file from content rules | warning (auto) | auto | Content Intelligence |

@@ -201,13 +201,6 @@ def _run_diagnostic_lint(
         "json",
         "--verbose",
         "--no-baseline",
-        # A bundle is a diagnostic snapshot, not a reason to start requesting
-        # every external URL the repository happens to link. The child would
-        # otherwise inherit whatever the repository's own `.skillsaw.yaml`
-        # enables — including a rule that declares `requires_network` — inside
-        # a 120s budget the user did not ask to spend on the network
-        # (THREAT_MODEL T18). Diagnose a network rule with `skillsaw lint`.
-        "--no-network",
     ]
     if config_path is not None:
         command.extend(["--config", str(config_path)])
