@@ -7,59 +7,23 @@ it wanted, and carries on with a default. An MCP server whose `command` was
 written as a string rather than an argv array simply never starts, and
 nothing says so.
 
-OpenCode is mid-rename. Version 2.0 renames a large part of the
-configuration — `agent` becomes `agents`, `command` becomes `commands`,
-`permission` becomes `permissions`, and MCP servers move one level down
-under `mcp.servers` — while continuing to load the 1.x spelling, which it
-normalizes in memory. **Both spellings are valid here.** This rule never
-reports a 1.x key as an error, and a project can migrate on its own
-schedule.
+OpenCode configuration schemas have evolved: 1.x spellings (`agent`, `command`,
+`permission`, flat MCP server declarations) and 2.0 spellings (`agents`, `commands`,
+`permissions`, nested `mcp.servers`) are both supported.
 
-What it does report is a file that declares *both* spellings of one
-setting. The setting then arrives twice and one copy is ignored — and which
-copy that is depends on *where* the pair sits, not on key order.
+However, defining **both** 1.x and 2.0 spellings for the same setting in a single file
+creates ambiguity and should be avoided. Choose one schema version and delete the
+duplicate key.
 
-The finding never names the surviving value. Which copy survives depends on
-the section the pair sits in *and* on the release doing the reading, and the
-file records only the first. A top-level 1.x key makes OpenCode 2.0 read the
-whole document as a 1.x config, so the 2.0 key drops — but `autoshare`/`share`
-and `reference`/`references` are declared on both halves of the 1.x schema, so
-that reasoning does not reach them. Under the 2.0 `agents` section it is the
-*2.0* field that survives. An MCP server's `enabled`/`disabled` resolves one
-way when a 1.x binary lowers a 2.0-shaped file and the other way when a 2.0
-binary reads a nested `mcp.servers` entry.
-
-So the message says only that one of the two values is in effect. Either key
-alone is valid, so keeping one and deleting the other is the fix whichever
-one survives — and saying nothing is better than naming the wrong one, which
-would point you at deleting the value that is live.
-
-The MCP servers in this file also reach [`mcp-prohibited`](mcp-prohibited.md)
-and the rest of the ecosystem-neutral policy rules, in either the 1.x flat
-shape or the 2.0 nested one. [`mcp-valid-json`](mcp-valid-json.md) stands
-aside for OpenCode: its transports are named for where the server runs
-(`local`/`remote`) rather than for the wire protocol, and a Claude-shaped
-check would report a correct OpenCode config as broken.
+The MCP servers declared in OpenCode configuration are also evaluated by policy
+rules such as [`mcp-prohibited`](mcp-prohibited.md).
 
 ## Severity
 
-One finding is an error here: the file parses, but its top level is an array
-or a scalar rather than an object, so OpenCode has no configuration to read.
-
-The other errors an OpenCode config can draw come from
-[`mcp-valid-json`](mcp-valid-json.md) instead, because they hold whatever
-dialect a file is written in. Keeping them there is deliberate: this rule
-carries a `since`, so a project still pinning an older `version:` — the
-ordinary state right after an upgrade — would otherwise have them gated off.
-
-- The file does not parse, so nothing in it is in effect. Comments and a
-  trailing comma are *not* parse errors — OpenCode reads both `.json` and
-  `.jsonc` through a JSONC parser, and so does skillsaw.
-- An MCP server has a committed credential: a `url` carrying user
-  information, as in `https://user:pass@host/mcp`, or a real-looking value in
-  the server's `environment`, `headers` or `oauth` map. The 1.x camelCase
-  OAuth keys are normalized before the credential-name test, so a literal
-  `clientSecret` is recognized as one.
+Errors:
+- The top-level document is not an object.
+- The file contains syntax errors preventing parsing (comments and trailing commas in `.jsonc` are supported).
+- Committed credentials or secrets detected in MCP server URLs, headers, or environment mappings.
 
 Shape problems are warnings, because the rest of the file still loads: a
 missing or unknown `type`, a `command` that is not a non-empty array of

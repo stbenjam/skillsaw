@@ -18,50 +18,16 @@ The rule detects two forms of repetition within a single file:
   approval-related language: "ask first/before", "wait for approval",
   "confirm before", "do not proceed without approval", and similar.
 
-Directives are compared line by line, so bullet-style instructions are
-matched most reliably; a directive buried mid-paragraph is compared
-together with the rest of its wrapped line. Emphasis markers are
-ignored — `- **Always run make test.**` matches its unbolded twin.
-Inline code is part of the comparison — `` Run `make test` `` and
-`` Run `make lint` `` are different directives. Four shapes are
-deliberately excluded: enumeration labels that only look like
-imperatives ("Run 2: Failed tests = […]" is example data, not an
-instruction), similar directives fewer than `min-line-distance` lines
-apart (neighboring bullets that share phrasing are intentional
-parallel structure), colon-terminated captions directly above a code
-fence ("Add to `customizations.vscode.extensions`:" repeated across
-sections is a caption — the code below it is the real, differing
-content), and fenced examples nested inside HTML blocks (the
-`<Bad>…</Bad>` / `<Good>…</Good>` quoting pattern common in
-skill-authoring docs — the quoted example text is illustrative, not a
-live directive).
+Directives are compared line by line across sections within a file. Repeated
+near-duplicate instructions report at **warning**, while phrase cluster restatements
+report at **info** as review prompts.
 
-The two detection forms report differently: repeated/near-duplicate
-directives use the rule severity (warning by default), while cluster
-restatements always report at **info** — in long workflow files,
-matches like "requires confirmation" are often step-scoped ("this step
-requires confirmation" for two different steps) rather than one
-blanket policy stated twice, so they are review prompts, not defects.
-Headings never count as cluster matches: "### Require Explicit
-Approval" names a policy section, it doesn't restate the policy, and
-incidental phrasing like "if you get permission errors" (a
-troubleshooting note, not an approval policy) is excluded from the
-built-in `approval` cluster.
+Intentional parallel structures (such as neighboring list items, parameterized code
+examples, or section captions directly above code blocks) are excluded from comparison.
 
-Two further shapes of intentional repetition are excluded: a
-wholly-emphasized line ending in a colon (`**Build in build.sh:**`) is
-a pseudo-heading labelling the content below, and parallel sections
-repeat it by design; and near-duplicate directives whose only
-difference sits inside code spans (`Only if \`resources\` is
-selected` / `Only if \`network\` is selected`) are a parameterized
-template — the code parameter is the instruction's payload, so these
-state different instructions. Verbatim repeats, including their code
-spans, still fire.
+This differs from neighboring rules: `content-instruction-drift` compares whole sections
+*across* files, whereas this rule compares individual directives *within* one file.
 
-This differs from neighboring rules: `content-instruction-drift`
-compares whole sections *across* files; this rule compares individual
-directives *within* one file. `content-contradiction` flags directives
-that conflict; this rule flags directives that agree too much.
 
 ## Examples
 
@@ -114,14 +80,8 @@ rules:
         - '\b(?:deploy|ship)\s+(?:only|exclusively)\b'
 ```
 
-**Comparison cap.** Near-duplicate detection is quadratic in the number
-of directives per file, so it is bounded by `similarity-max-directives`
-(default 1500 — a realistic 2000-line CLAUDE.md holds ~1150 directives
-and is fully scanned). When a file exceeds the cap, directives beyond
-it skip only the pairwise near-duplicate stage; exact repeats are still
-detected everywhere with a linear scan, and phrase-cluster detection is
-unaffected. Nothing is reported incorrectly past the cap, the rule
-just compares less — raise the cap to fully scan unusually large files.
+`similarity-max-directives` caps the number of directives evaluated per file (default 1500).
+Raise this setting if you maintain exceptionally large instruction files.
 
 Suppress an intentional repeat (e.g. a safety-critical reminder you
 want in both places) with an inline directive:
