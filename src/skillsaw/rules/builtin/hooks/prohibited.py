@@ -77,7 +77,7 @@ class HooksProhibitedRule(Rule):
                                 f"Hook {safe_display(event_type)}: non-allowlisted command — "
                                 f"{safe_display(handler.command)!r}",
                                 file_path=file_path,
-                                line=line,
+                                line=handler.source_line or line,
                             )
                         )
                     else:
@@ -86,7 +86,7 @@ class HooksProhibitedRule(Rule):
                                 f"Hook {safe_display(event_type)}: hooks are prohibited — "
                                 f"{safe_display(handler.command)!r}",
                                 file_path=file_path,
-                                line=line,
+                                line=handler.source_line or line,
                             )
                         )
         return violations
@@ -124,11 +124,7 @@ class HooksProhibitedRule(Rule):
             violations.extend(self._check_events(block.hooks_events, block.path))
 
         # Skill and agent frontmatter can declare hooks with the same schema.
-        frontmatter_blocks = (
-            context.lint_tree.find(SkillBlock)
-            + context.lint_tree.find(AgentBlock)
-            + context.lint_tree.find(CopilotAgentBlock)
-        )
+        frontmatter_blocks = context.lint_tree.find(SkillBlock) + context.lint_tree.find(AgentBlock)
         for block in frontmatter_blocks:
             if block.frontmatter_error:
                 continue
@@ -137,5 +133,15 @@ class HooksProhibitedRule(Rule):
                 violations.extend(
                     self._check_events(events, block.path, line=block.key_line("hooks"))
                 )
+
+        if context.rule_is_active("copilot-agent-valid"):
+            for block in context.lint_tree.find(CopilotAgentBlock):
+                if block.frontmatter_error or block.field_value("target") == "github-copilot":
+                    continue
+                events = block.hooks_events
+                if events:
+                    violations.extend(
+                        self._check_events(events, block.path, line=block.key_line("hooks"))
+                    )
 
         return violations

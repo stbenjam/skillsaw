@@ -587,6 +587,16 @@ class CopilotAgentBlock(FrontmatteredBlock):
 
     category: str = "agent"
 
+    @property
+    def hooks_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Parse embedded hooks while retaining each command's YAML line."""
+        if self.key_line("hooks") is None:
+            return {}
+        frontmatter, error, _error_line = read_frontmatter_commented(self.path)
+        if error or not isinstance(frontmatter, dict):
+            return {}
+        return parse_hooks_events(frontmatter.get("hooks"), line_offset=1)
+
     def _build_children(self) -> None:
         """Attach embedded MCP configuration as a shared lint-tree role."""
         self.children = [

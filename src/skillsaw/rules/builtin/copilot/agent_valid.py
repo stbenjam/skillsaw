@@ -491,7 +491,7 @@ class CopilotAgentValidRule(Rule):
                     self._finding(
                         block,
                         "Each 'metadata' entry must have a string key and string value",
-                        line=_key_line(metadata, key) if isinstance(key, str) else None,
+                        line=_key_line(metadata, key),
                         discriminator=f"metadata:item:{safe_display(key)}",
                     )
                 )

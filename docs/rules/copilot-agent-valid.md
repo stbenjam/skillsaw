@@ -38,10 +38,11 @@ Embedded cloud configuration stays visible to the shared security rules. A
 [`mcp-valid-json`](mcp-valid-json.md) and [`mcp-prohibited`](mcp-prohibited.md)
 validate and police it. GitHub's `local` transport is treated as the compatible spelling of `stdio`, and
 `${{ secrets.NAME }}` / `${{ vars.NAME }}` values are placeholders rather
-than committed credentials. Agent-scoped hooks are scanned by
-[`hooks-dangerous`](hooks-dangerous.md) and
-[`hooks-prohibited`](hooks-prohibited.md) like hooks in standalone config.
-All checks are offline.
+than committed credentials. Hooks in VS Code-capable agents (an omitted
+target, `target: vscode`, or a legacy chatmode) are scanned by
+[`hooks-dangerous`](hooks-dangerous.md) and [`hooks-prohibited`](hooks-prohibited.md)
+like hooks in standalone config; hooks on a cloud-only target are ignored by
+that host and are not scanned. All checks are offline.
 
 Legacy `.github/chatmodes/**/*.chatmode.md` files receive the same validation
 so teams can migrate without losing diagnostics. They are VS Code-only even

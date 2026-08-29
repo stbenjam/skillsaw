@@ -174,7 +174,7 @@ class DescriptionRoutingRule(Rule):
                     continue
                 line = block.key_line("description")
                 description = description_field.value
-                if block_type is CopilotAgentBlock:
+                if block_type is CopilotAgentBlock and not isinstance(description, str):
                     # FrontmatteredBlock's compatibility parser follows YAML
                     # 1.1, where `yes` is boolean. Copilot's schema is YAML
                     # 1.2, so use the same line-preserving parser as its

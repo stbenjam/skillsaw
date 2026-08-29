@@ -57,9 +57,10 @@ class HookHandler:
     status_message: Optional[str] = None
     shell: Optional[str] = None
     allowed_env_vars: Optional[List[str]] = None
+    source_line: Optional[int] = None
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "HookHandler":
+    def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookHandler":
         """Build a handler from raw JSON, dropping values of the wrong type.
 
         The annotations here are a contract the JSON cannot be trusted to
@@ -72,6 +73,7 @@ class HookHandler:
         field falsy, which every consumer already handles, and
         ``hooks-json-valid`` reads the raw document and reports the shape.
         """
+        command_line = commented_key_line(d, "command")
         return cls(
             type=_as_str(d.get("type")) or "",
             command=_as_str(d.get("command")),
@@ -91,6 +93,7 @@ class HookHandler:
             status_message=_as_str(d.get("statusMessage")),
             shell=_as_str(d.get("shell")),
             allowed_env_vars=_as_str_list(d.get("allowedEnvVars")),
+            source_line=command_line + line_offset if command_line is not None else None,
         )
 
 
@@ -102,13 +105,13 @@ class HookEventConfig:
     handlers: List[HookHandler] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "HookEventConfig":
+    def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookEventConfig":
         handlers: List[HookHandler] = []
         raw_hooks = d.get("hooks", [])
         if isinstance(raw_hooks, list):
             for h in raw_hooks:
                 if isinstance(h, dict):
-                    handlers.append(HookHandler.from_dict(h))
+                    handlers.append(HookHandler.from_dict(h, line_offset=line_offset))
         return cls(
             # Coerced like the handler fields: a list-valued matcher reaches
             # every consumer annotated ``str``, and the generated docs page
@@ -121,7 +124,7 @@ class HookEventConfig:
         )
 
 
-def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
+def parse_hooks_events(hooks_obj: Any, *, line_offset: int = 0) -> Dict[str, List[HookEventConfig]]:
     """Parse a ``hooks`` object into event configs.
 
     Supports both the nested (hooks.json / settings.json) format
@@ -140,9 +143,9 @@ def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
             if not isinstance(cfg, dict):
                 continue
             if "hooks" in cfg:
-                entries.append(HookEventConfig.from_dict(cfg))
+                entries.append(HookEventConfig.from_dict(cfg, line_offset=line_offset))
             elif "type" in cfg:
-                handler = HookHandler.from_dict(cfg)
+                handler = HookHandler.from_dict(cfg, line_offset=line_offset)
                 matcher = _as_str(cfg.get("matcher")) or ".*"
                 entries.append(HookEventConfig(matcher=matcher, handlers=[handler]))
         if entries:
