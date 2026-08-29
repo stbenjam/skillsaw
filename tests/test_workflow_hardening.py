@@ -271,16 +271,15 @@ def test_zizmor_workflow_is_pinned_blocking_and_unprivileged():
 
 
 def _lint_step_args_script() -> str:
-    """The ARGS-building prefix of the Action's lint step, made runnable.
+    """The ARGS-building prefix of the shared Action runner, made runnable.
 
     Cut at REPORT_FILE= so the input handling can be exercised without GNU
     mktemp, an installed skillsaw, or a $GITHUB_OUTPUT to append to.
     """
-    steps = _yaml("action.yml")["runs"]["steps"]
-    script = next(step["run"] for step in steps if step.get("id") == "lint")
+    script = _read("scripts/run-action-lint.sh")
     prefix, marker, _rest = script.partition("REPORT_FILE=")
-    assert marker, "action.yml lint step no longer builds REPORT_FILE"
-    return prefix + 'echo "ARGS=$ARGS"\n'
+    assert marker, "shared Action runner no longer builds REPORT_FILE"
+    return prefix + 'echo "ARGS=${ARGS[*]}"\n'
 
 
 def _run_lint_args(**overrides: str) -> subprocess.CompletedProcess:
@@ -312,10 +311,9 @@ def test_action_rule_input_splits_on_lines_and_commas():
 
 
 def test_action_rule_input_admits_only_kebab_case_ids():
-    # ARGS is word-split unquoted into the command line, so a value carrying a
-    # flag, a glob, a path or a separator has to be refused here rather than
-    # expanded. Uppercase is rejected too: the guard runs under LC_ALL=C
-    # because [a-z] collates case-insensitively in most other locales.
+    # Reject anything outside the rule-id grammar before it reaches the CLI.
+    # Uppercase is rejected too: the guard runs under LC_ALL=C because [a-z]
+    # collates case-insensitively in most other locales.
     for hostile in (
         "content-weak-language --allow-private-hosts",
         "*",
@@ -347,6 +345,78 @@ def test_action_rule_input_does_not_itself_grant_network_access():
     assert "--no-network" not in granted.stdout
 
 
+def test_shared_action_runner_installs_lints_and_publishes_outputs(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    action_root = tmp_path / "action source"
+    action_root.mkdir()
+    (action_root / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    captured_args = tmp_path / "skillsaw-args"
+    output_file = tmp_path / "github-output"
+
+    fake_pip = fake_bin / "pip"
+    fake_pip.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_pip.chmod(0o755)
+    fake_skillsaw = fake_bin / "skillsaw"
+    fake_skillsaw.write_text(
+        """#!/usr/bin/env bash
+printf '%s\\n' "$@" > "$CAPTURED_ARGS"
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    report="${2#json:}"
+    printf '%s\\n' '{"summary":{"errors":2,"warnings":3}}' > "$report"
+    break
+  fi
+  shift
+done
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_skillsaw.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "CAPTURED_ARGS": str(captured_args),
+        "GITHUB_OUTPUT": str(output_file),
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "SKILLSAW_ACTION_ROOT": str(action_root),
+        "SKILLSAW_NO_CUSTOM_RULES": "true",
+        "SKILLSAW_NO_NETWORK_INPUT": "false",
+        "SKILLSAW_PATH": "context path",
+        "SKILLSAW_REPORT_DIRECTORY": str(tmp_path),
+        "SKILLSAW_RULE": "content-weak-language,content-tautological",
+        "SKILLSAW_STRICT": "true",
+        "SKILLSAW_VERBOSE": "true",
+    }
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run-action-lint.sh")],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    arguments = captured_args.read_text(encoding="utf-8").splitlines()
+    assert arguments[:9] == [
+        "lint",
+        "--strict",
+        "--rule",
+        "content-weak-language",
+        "--rule",
+        "content-tautological",
+        "-v",
+        "--no-custom-rules",
+        "--format",
+    ]
+    assert "--no-network" not in arguments
+    assert arguments[-1] == "context path"
+    outputs = output_file.read_text(encoding="utf-8")
+    assert "exit-code=1" in outputs
+    assert "errors=2" in outputs
+    assert "warnings=3" in outputs
+
+
 def test_dedicated_link_check_action_owns_safe_configuration_and_issue_reporting():
     action_text = _read("link-check/action.yml")
     action = _yaml("link-check/action.yml")
@@ -365,11 +435,17 @@ def test_dedicated_link_check_action_owns_safe_configuration_and_issue_reporting
     assert inputs["create-issue"]["default"] == "true"
     assert inputs["token"]["default"] == "${{ github.token }}"
     assert inputs["issue-author"]["default"] == "github-actions[bot]"
-    assert "--rule content-broken-external-reference" in lint["run"]
-    assert "--no-custom-rules" in lint["run"]
-    assert "--strict" in lint["run"]
-    assert "--verbose" in lint["run"]
-    assert "--no-network" not in lint["run"]
+    root_lint = next(
+        step for step in _yaml("action.yml")["runs"]["steps"] if step.get("id") == "lint"
+    )
+    assert root_lint["run"].endswith('/scripts/run-action-lint.sh"')
+    assert lint["run"].endswith('/../scripts/run-action-lint.sh"')
+    assert lint["env"]["SKILLSAW_RULE"] == "content-broken-external-reference"
+    assert lint["env"]["SKILLSAW_NO_CUSTOM_RULES"] == "true"
+    assert lint["env"]["SKILLSAW_STRICT"] == "true"
+    assert lint["env"]["SKILLSAW_VERBOSE"] == "true"
+    assert lint["env"]["SKILLSAW_NO_NETWORK_INPUT"] == "false"
+    assert "uses: stbenjam/skillsaw@" not in action_text
     assert "--allow-private-hosts" not in action_text
     assert issue["env"]["GITHUB_TOKEN"] == "${{ inputs.token }}"
     assert "report_issue.py" in issue["run"]

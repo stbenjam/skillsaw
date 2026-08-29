@@ -64,96 +64,24 @@ runs:
       with:
         python-version: '3.11'
 
-    - name: Install skillsaw
-      shell: bash
-      env:
-        SKILLSAW_VERSION: ${{ inputs.version }}
-        ACTION_PATH: ${{ github.action_path }}
-        SKILLSAW_PLUGINS: ${{ inputs.plugins }}
-      run: |
-        if [ -f "$ACTION_PATH/pyproject.toml" ]; then
-          pip install -q "$ACTION_PATH"
-        else
-          pip install -q "skillsaw==$SKILLSAW_VERSION"
-        fi
-        if [ -n "$SKILLSAW_PLUGINS" ]; then
-          reqs=$(mktemp)
-          printf '%s\n' "$SKILLSAW_PLUGINS" > "$reqs"
-          pip install -q -r "$reqs"
-          rm "$reqs"
-        fi
-
     - name: Run skillsaw
       id: lint
       shell: bash
       env:
         # Actions stdout is not a TTY; force ANSI color in the step log.
         FORCE_COLOR: '1'
+        SKILLSAW_ACTION_ROOT: ${{ github.action_path }}
         SKILLSAW_PATH: ${{ inputs.path }}
+        SKILLSAW_PLUGINS: ${{ inputs.plugins }}
+        SKILLSAW_REPORT_DIRECTORY: ${{ runner.temp }}
         SKILLSAW_STRICT: ${{ inputs.strict }}
         SKILLSAW_FAIL_ON: ${{ inputs.fail-on }}
         SKILLSAW_RULE: ${{ inputs.rule }}
         SKILLSAW_VERBOSE: ${{ inputs.verbose }}
         SKILLSAW_NO_CUSTOM_RULES: ${{ inputs.no-custom-rules }}
         SKILLSAW_NO_NETWORK_INPUT: ${{ inputs.no-network }}
-      run: |
-        set +e
-        ARGS=""
-        if [ "$SKILLSAW_STRICT" = "true" ]; then
-          ARGS="$ARGS --strict"
-        fi
-        if [ -n "$SKILLSAW_FAIL_ON" ]; then
-          case "$SKILLSAW_FAIL_ON" in
-            error|warning|info) ARGS="$ARGS --fail-on $SKILLSAW_FAIL_ON" ;;
-            *) echo "Invalid fail-on value: $SKILLSAW_FAIL_ON (expected error, warning, or info)" >&2; exit 1 ;;
-          esac
-        fi
-        if [ -n "$SKILLSAW_RULE" ]; then
-          # Split on newlines and commas, then admit only kebab-case rule
-          # ids. ARGS is word-split unquoted below, so anything outside that
-          # alphabet must be refused here rather than expanded: a value like
-          # "x --allow-private-hosts" or a bare "*" would otherwise hand the
-          # run a capability or a path the workflow never asked for. The
-          # grep is LC_ALL=C because [a-z] collates case-insensitively in
-          # most locales, which would admit "Content-Weak". A well-formed id
-          # naming no rule is the CLI's error to raise, and it does.
-          while IFS= read -r RULE_LINE; do
-            RULE_ID="${RULE_LINE#"${RULE_LINE%%[![:space:]]*}"}"
-            RULE_ID="${RULE_ID%"${RULE_ID##*[![:space:]]}"}"
-            [ -z "$RULE_ID" ] && continue
-            if ! printf '%s' "$RULE_ID" | LC_ALL=C grep -qE '^[a-z0-9][a-z0-9-]*$'; then
-              echo "Invalid rule id: $RULE_ID (expected a kebab-case rule id, e.g. content-weak-language)" >&2
-              exit 1
-            fi
-            ARGS="$ARGS --rule $RULE_ID"
-          done <<< "${SKILLSAW_RULE//,/$'\n'}"
-        fi
-        if [ "$SKILLSAW_VERBOSE" = "true" ]; then
-          ARGS="$ARGS -v"
-        fi
-        if [ "$SKILLSAW_NO_CUSTOM_RULES" = "true" ]; then
-          ARGS="$ARGS --no-custom-rules"
-        fi
-        # Anything but the literal "false" keeps the network off. This
-        # input only takes capability away, so a typo — 'True', 'yes', 1
-        # — must resolve toward the restriction, the same direction the
-        # SKILLSAW_NO_NETWORK environment variable resolves one.
-        if [ "$SKILLSAW_NO_NETWORK_INPUT" != "false" ]; then
-          ARGS="$ARGS --no-network"
-        fi
-
-        REPORT_FILE=$(mktemp --suffix=.json)
-        skillsaw $ARGS --format text --output "$REPORT_FILE" "$SKILLSAW_PATH"
-        EXIT_CODE=$?
-
-        echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
-        echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"
-
-        ERRORS=$(python3 -c "import json; print(json.load(open('$REPORT_FILE'))['summary']['errors'])" 2>/dev/null || echo "0")
-        WARNINGS=$(python3 -c "import json; print(json.load(open('$REPORT_FILE'))['summary']['warnings'])" 2>/dev/null || echo "0")
-        echo "errors=${ERRORS}" >> "$GITHUB_OUTPUT"
-        echo "warnings=${WARNINGS}" >> "$GITHUB_OUTPUT"
-
+        SKILLSAW_VERSION: ${{ inputs.version }}
+      run: bash "${{ github.action_path }}/scripts/run-action-lint.sh"
 
     - name: Upload report artifact
       if: github.event_name == 'pull_request'

@@ -42,35 +42,22 @@ runs:
       with:
         python-version: '3.11'
 
-    - name: Install skillsaw
-      shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-      run: pip install -q "$ACTION_PATH/.."
-
     - name: Check external links
       id: lint
       shell: bash
       env:
         FORCE_COLOR: '1'
-        RUNNER_TEMP_DIR: ${{ runner.temp }}
+        SKILLSAW_ACTION_ROOT: ${{ github.action_path }}/..
+        SKILLSAW_FAIL_ON: ''
+        SKILLSAW_NO_CUSTOM_RULES: 'true'
+        SKILLSAW_NO_NETWORK_INPUT: 'false'
         SKILLSAW_PATH: ${{ inputs.path }}
-      run: |
-        set +e
-        REPORT_FILE=$(mktemp "$RUNNER_TEMP_DIR/skillsaw-link-report.XXXXXX")
-        skillsaw lint \
-          --rule content-broken-external-reference \
-          --no-custom-rules \
-          --strict \
-          --verbose \
-          --format text \
-          --output "json:$REPORT_FILE" \
-          "$SKILLSAW_PATH"
-        EXIT_CODE=$?
-        set -e
-
-        echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
-        echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"
+        SKILLSAW_PLUGINS: ''
+        SKILLSAW_REPORT_DIRECTORY: ${{ runner.temp }}
+        SKILLSAW_RULE: 'content-broken-external-reference'
+        SKILLSAW_STRICT: 'true'
+        SKILLSAW_VERBOSE: 'true'
+      run: bash "${{ github.action_path }}/../scripts/run-action-lint.sh"
 
     - name: Create or update broken-link issue
       shell: bash
