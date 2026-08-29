@@ -1718,6 +1718,36 @@ class TestFileCacheBudget:
         assert result is not skillsaw_utils._UNSIZEABLE
         assert not isinstance(result, skillsaw_utils._Unsizeable)
 
+    def test_the_superseded_maxsize_keyword_still_constructs_a_cache(self):
+        """``skillsaw.utils`` is re-exported wholesale to custom rules.
+
+        ``skillsaw.rules.builtin.utils`` does ``from skillsaw.utils import
+        *`` and promises in its own docstring that a custom rule importing
+        from it keeps working unchanged. There is no ``__all__`` holding
+        anything back, so ``FileCache`` is reachable and its constructor
+        is part of that promise. Renaming the argument turned a working
+        call into a ``TypeError``.
+
+        The count cannot be honoured — the byte budget exists because
+        entries are not the same size — so the value is ignored and the
+        caller is told once.
+        """
+        import warnings as warnings_module
+
+        with warnings_module.catch_warnings(record=True) as caught:
+            warnings_module.simplefilter("always")
+            cache = skillsaw_utils.FileCache(maxsize=2048)
+
+        assert cache._budget == skillsaw_utils.FileCache.DEFAULT_BUDGET
+        assert len(caught) == 1, caught
+        assert issubclass(caught[0].category, DeprecationWarning)
+        assert "budget=" in str(caught[0].message)
+
+        # The same call through the shim a custom rule actually imports.
+        from skillsaw.rules.builtin.utils import FileCache as ShimFileCache
+
+        assert ShimFileCache is skillsaw_utils.FileCache
+
     def test_a_marker_too_large_for_the_budget_is_not_stored(self, tmp_path):
         """The refusal marker obeys the bound it is helping to keep.
 
