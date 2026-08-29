@@ -2,8 +2,8 @@
 # Move the floating major-version tag (e.g. v0) onto a release tag (e.g. v0.17.0).
 #
 # docs/ci.md and docs/getting-started.md tell users to pin CI to
-# stbenjam/skillsaw@v0. Both that action and stbenjam/skillsaw/review@v0
-# resolve through this one tag, and the root action installs skillsaw from the
+# stbenjam/skillsaw@v0. The root, review, and link-check actions all resolve
+# through this one tag, and the runnable actions install skillsaw from the
 # checked-out action source -- so until the floating tag moves, every @v0 user
 # keeps running the previous release.
 set -euo pipefail

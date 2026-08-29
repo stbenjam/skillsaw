@@ -1,0 +1,99 @@
+name: 'skillsaw-link-check'
+description: 'Check agent context for broken external links and maintain one GitHub issue'
+branding:
+  icon: 'link'
+  color: 'orange'
+
+inputs:
+  path:
+    description: 'Path to lint'
+    required: false
+    default: '.'
+  create-issue:
+    description: 'Create or update a managed issue when broken links are confirmed'
+    required: false
+    default: 'true'
+  token:
+    description: 'GitHub token with issues: write permission when create-issue is true'
+    required: false
+    default: ${{ github.token }}
+  issue-title:
+    description: 'Title of the managed issue'
+    required: false
+    default: 'Broken external links detected by skillsaw'
+  issue-author:
+    description: 'Login used by the token; prevents the Action from adopting another author’s issue'
+    required: false
+    default: 'github-actions[bot]'
+
+outputs:
+  exit-code:
+    description: 'skillsaw exit code'
+    value: ${{ steps.lint.outputs.exit-code }}
+  report-file:
+    description: 'Path to the JSON report file'
+    value: ${{ steps.lint.outputs.report-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: '3.11'
+
+    - name: Install skillsaw
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: pip install -q "$ACTION_PATH/.."
+
+    - name: Check external links
+      id: lint
+      shell: bash
+      env:
+        FORCE_COLOR: '1'
+        RUNNER_TEMP_DIR: ${{ runner.temp }}
+        SKILLSAW_PATH: ${{ inputs.path }}
+      run: |
+        set +e
+        REPORT_FILE=$(mktemp "$RUNNER_TEMP_DIR/skillsaw-link-report.XXXXXX")
+        skillsaw lint \
+          --rule content-broken-external-reference \
+          --no-custom-rules \
+          --strict \
+          --verbose \
+          --format text \
+          --output "json:$REPORT_FILE" \
+          "$SKILLSAW_PATH"
+        EXIT_CODE=$?
+        set -e
+
+        echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+        echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"
+
+    - name: Create or update broken-link issue
+      shell: bash
+      env:
+        CREATE_ISSUE: ${{ inputs.create-issue }}
+        GITHUB_API_URL: ${{ github.api_url }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_TOKEN: ${{ inputs.token }}
+        SKILLSAW_ISSUE_AUTHOR: ${{ inputs.issue-author }}
+        SKILLSAW_ISSUE_TITLE: ${{ inputs.issue-title }}
+        SKILLSAW_REPORT_FILE: ${{ steps.lint.outputs.report-file }}
+      run: |
+        case "$CREATE_ISSUE" in
+          true) python3 "${{ github.action_path }}/report_issue.py" ;;
+          false) echo "Issue reporting disabled." ;;
+          *) echo "Invalid create-issue value: $CREATE_ISSUE (expected true or false)" >&2; exit 1 ;;
+        esac
+
+    - name: Exit with skillsaw result
+      shell: bash
+      env:
+        SKILLSAW_EXIT_CODE: ${{ steps.lint.outputs.exit-code }}
+      run: exit "${SKILLSAW_EXIT_CODE}"

@@ -82,7 +82,9 @@ independently; see the [rule reference](https://skillsaw.org/rules/description-r
 Every rule runs offline. The one exception,
 `content-broken-external-reference`, checks whether external `http(s)` links
 are still reachable: it is disabled by default, reports only `404` and `410`,
-and suits a scheduled job rather than a per-PR gate. Because the linted
+and suits a scheduled job rather than a per-PR gate. The dedicated
+`stbenjam/skillsaw/link-check` Action runs that schedule safely and maintains
+one issue with confirmed dead links. Because the linted
 repository's own config decides which rules are enabled, the guarantee that
 skillsaw stays offline belongs to whoever runs it — `--no-network` (or
 `SKILLSAW_NO_NETWORK=1`) refuses network access on `lint`, `fix`, `baseline`,

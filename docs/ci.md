@@ -207,7 +207,10 @@ the ones the server says are gone (`404` and `410` only — never a bot
 wall, a rate limit, or a timeout).
 
 Keep it out of your pull-request job, where a slow origin would block a
-merge, and give it a schedule of its own:
+merge, and give the dedicated link-check Action a schedule of its own. The
+Action owns the rule selection, network grant, strict threshold, report
+parsing, and issue deduplication; the repository only supplies the trigger and
+least-privilege permissions:
 
 ```yaml
 name: link-check
@@ -218,6 +221,11 @@ on:
 
 permissions:
   contents: read
+  issues: write
+
+concurrency:
+  group: skillsaw-link-check
+  cancel-in-progress: false
 
 jobs:
   links:
@@ -226,36 +234,41 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: stbenjam/skillsaw@v0
-        with:
-          rule: content-broken-external-reference
-          no-network: false
-          strict: true
-          verbose: true
+      - uses: stbenjam/skillsaw/link-check@v0
 ```
 
-Both inputs are needed, and they are not the same decision. `rule` chooses
-which rules run; `no-network: false` grants the capability. Naming the rule
-while the gate stays on is an error, not a green run over an empty rule set,
-so a job that forgets the second line fails loudly rather than reporting no
-dead links.
+The Action accepts these optional inputs:
 
-`strict: true` is load-bearing. The rule reports at `warning`, and the
-default threshold is `fail-on: error` — without it the job stays green even
-when it finds dead links, and a scheduled job whose output nobody reads is
-only useful if it can go red. `verbose: true` surfaces the info-level notice
-that says the network budget ran out before every link was checked.
+| Input | Description | Default |
+|-------|-------------|---------|
+| `path` | Repository path to check | `.` |
+| `create-issue` | Maintain an issue for confirmed broken links | `true` |
+| `token` | Token used for issue operations | `github.token` |
+| `issue-title` | Managed issue title | `Broken external links detected by skillsaw` |
+| `issue-author` | Login expected to own the managed issue | `github-actions[bot]` |
 
-Selecting the rule here rather than enabling it in `.skillsaw.yaml` keeps it
-out of every other run, including local ones, and keeps your `skillsaw badge`
-grade independent of whether a third-party URL 404s today.
+When it confirms one or more dead links, the Action creates or updates one
+issue titled **Broken external links detected by skillsaw**, then fails the
+scheduled run. It reopens that managed issue if confirmed findings return and
+does not create a fresh issue every week. Set `create-issue: false` to keep the
+red scheduled run without issue reporting; the workflow can then drop
+`issues: write`.
 
-A clean run is not proof every link resolved: bot walls, rate limits, 5xx
-responses, timeouts and DNS failures are all treated as inconclusive and
-reported nowhere.
+The Action deliberately does not auto-close its issue. A clean-looking run is
+not proof every link resolved: bot walls, rate limits, 5xx responses, timeouts,
+DNS failures, and an exhausted network budget are inconclusive. Close the
+issue after fixing the links or adding intentional exceptions to the rule's
+`ignore` setting. If a closed issue's links are confirmed broken again, the
+Action reopens it.
 
-Pin `stbenjam/skillsaw@v0` to a commit SHA in a real workflow, the same way
-the pull-request job above does.
+The built-in `GITHUB_TOKEN` is sufficient for issue creation when the workflow
+grants `issues: write`. GitHub does not start new workflows for the resulting
+issue event. If issue creation must trigger other automation, pass a GitHub App
+or personal access token as `token` and set `issue-author` to that token's
+login.
+
+Pin `stbenjam/skillsaw/link-check@v0` to a commit SHA in a real workflow, the
+same way the pull-request job above does.
 
 ### Refusing network access outright
 
@@ -269,16 +282,17 @@ to belong to the operator:
       - run: skillsaw lint . --no-network
 ```
 
-The `skillsaw` Action sets it by default (`no-network: 'true'`); pass
+The general `skillsaw` Action sets it by default (`no-network: 'true'`); pass
 `no-network: false` — the literal string, since anything else keeps the
-network off — to opt a scheduled job back in. `fix` never runs a network
-rule whatever the flag says: a dead URL has no mechanical fix, and the
-autofix loop re-runs every rule's `check()` once per pass.
+network off — to opt a custom run back in. The dedicated link-check Action is
+the explicit network grant and needs no such input. `fix` never runs a network
+rule whatever the flag says: a dead URL has no mechanical fix, and the autofix
+loop re-runs every rule's `check()` once per pass.
 
 Naming only network rules while the gate is on — `--rule
 content-broken-external-reference --no-network`, or the Action's `rule`
 input without `no-network: false`, which is also what an org-wide
-`SKILLSAW_NO_NETWORK` export does to the scheduled job above — is an error,
+`SKILLSAW_NO_NETWORK` export does to a link-check job — is an error,
 not a green run over an empty rule set.
 
 The companion control is `--allow-private-hosts`

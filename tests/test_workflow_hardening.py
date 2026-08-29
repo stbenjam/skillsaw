@@ -347,23 +347,76 @@ def test_action_rule_input_does_not_itself_grant_network_access():
     assert "--no-network" not in granted.stdout
 
 
+def test_dedicated_link_check_action_owns_safe_configuration_and_issue_reporting():
+    action_text = _read("link-check/action.yml")
+    action = _yaml("link-check/action.yml")
+    inputs = action["inputs"]
+    steps = action["runs"]["steps"]
+    lint_index = next(index for index, step in enumerate(steps) if step.get("id") == "lint")
+    issue_index = next(
+        index for index, step in enumerate(steps) if step.get("name", "").startswith("Create or")
+    )
+    exit_index = next(
+        index for index, step in enumerate(steps) if step.get("name", "").startswith("Exit with")
+    )
+    lint = steps[lint_index]
+    issue = steps[issue_index]
+
+    assert inputs["create-issue"]["default"] == "true"
+    assert inputs["token"]["default"] == "${{ github.token }}"
+    assert inputs["issue-author"]["default"] == "github-actions[bot]"
+    assert "--rule content-broken-external-reference" in lint["run"]
+    assert "--no-custom-rules" in lint["run"]
+    assert "--strict" in lint["run"]
+    assert "--verbose" in lint["run"]
+    assert "--no-network" not in lint["run"]
+    assert "--allow-private-hosts" not in action_text
+    assert issue["env"]["GITHUB_TOKEN"] == "${{ inputs.token }}"
+    assert "report_issue.py" in issue["run"]
+    # Lint records its exit status, reporting still runs, then the Action turns
+    # the confirmed warning into a failed scheduled job.
+    assert lint_index < issue_index < exit_index
+
+
 def test_scheduled_link_check_recipe_matches_the_onboard_skill():
-    # The docs recipe and the workflow the onboard skill offers must not
-    # drift: both need `rule` to select the check and `no-network: false` to
-    # grant it the network, and either one alone is a job that cannot work.
-    # Both sides are scoped to the section under test: the skill's own
-    # pull-request workflow already carries `strict: true`, so reading the
-    # whole file would satisfy that assertion without the new block.
+    # The docs recipe and the workflow the onboard skill offers must both use
+    # the packaged Action rather than reimplementing its security-sensitive
+    # network and issue-reporting configuration in every consumer repository.
     recipe = _read("docs/ci.md").split("## Scheduled external link checking", 1)[1]
     recipe = recipe.split("### Refusing network access", 1)[0]
-    skill = _read("skills/skillsaw-onboard/SKILL.md")
-    skill = skill.split("weekly external dead-link check", 1)[1].split("### GitLab CI", 1)[0]
+    skill = _read("skills/skillsaw-onboard/references/07-ci.md")
+    skill = skill.split("Offer the dedicated weekly dead-link check", 1)[1]
+    skill = skill.split("## GitLab CI", 1)[0]
 
     for source in (recipe, skill):
-        assert "rule: content-broken-external-reference" in source
-        assert "no-network: false" in source
-        assert "strict: true" in source
-        assert "verbose: true" in source
-        # Not `Lint`: lint-review.yml triggers on a workflow by that name.
+        assert "stbenjam/skillsaw/link-check@" in source
+        assert "issues: write" in source
+        assert "skillsaw-link-check" in source
         assert "name: link-check" in source
-    assert "pipx install skillsaw" not in recipe
+        assert "rule: content-broken-external-reference" not in source
+        assert "no-network: false" not in source
+        assert "strict: true" not in source
+    assert "create-issue: false" in recipe
+
+
+def test_onboard_skill_discloses_exactly_one_reference_per_step():
+    relative_references = [
+        "01-install.md",
+        "02-initial-scan.md",
+        "03-autofix.md",
+        "04-manual-fixes.md",
+        "05-baseline.md",
+        "06-configuration.md",
+        "07-ci.md",
+        "08-makefile.md",
+        "09-badge.md",
+        "10-verify.md",
+    ]
+    for root in ("skills", ".agents/skills", ".claude/skills"):
+        skill_root = ROOT / root / "skillsaw-onboard"
+        router = (skill_root / "SKILL.md").read_text(encoding="utf-8")
+        assert "Read only the\ncurrent step's reference; do not preload later references" in router
+        assert len(router.splitlines()) < 40
+        for reference in relative_references:
+            assert f"references/{reference}" in router
+            assert (skill_root / "references" / reference).is_file()

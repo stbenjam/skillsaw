@@ -287,5 +287,6 @@ either bound.
 Run it on a schedule rather than on every pull request, so a flaky origin
 can never block a merge. The workflow to copy is in the
 [CI guide](https://skillsaw.org/ci/#scheduled-external-link-checking) —
-there is one copy of it, because a recipe that omits `--strict` produces a
-job that stays green while reporting dead links.
+it uses the dedicated `stbenjam/skillsaw/link-check` Action, which owns the
+network grant, strict threshold, and deduplicated issue reporting. The
+repository's workflow supplies only the schedule and permissions.
