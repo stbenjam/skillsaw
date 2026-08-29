@@ -517,6 +517,12 @@ rules:
     # allow-bidi-controls: false
     # allowed-codepoints: []
 
+  # skills-lock.json files must be valid and portable project lockfiles
+  skills-lock-valid:
+    enabled: auto
+    severity: error
+    # extra-source-types: []
+
 # Load custom rules from these files
 custom-rules: []
 

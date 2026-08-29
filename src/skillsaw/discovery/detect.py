@@ -47,6 +47,7 @@ class RepositoryScan:
     instruction_files: Tuple[Path, ...]
     tool_dirs: Dict[str, Tuple[Path, ...]]
     legacy_editor_files: Dict[str, Tuple[Path, ...]]
+    skills_lock_files: Tuple[Path, ...]
 
 
 #: Pre-directory instruction files, read from the nearest enclosing directory
@@ -63,11 +64,14 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     found = [root / name for name in root_names if (root / name).exists()]
     tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
     legacy_editor: Dict[str, List[Path]] = {name: [] for name in LEGACY_EDITOR_FILES}
+    skills_locks: List[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
         found.extend(here / name for name in filenames if name.endswith(".instructions.md"))
         vendored = bool(VENDOR_DIR_NAMES.intersection(here.relative_to(root).parts))
+        if "skills-lock.json" in filenames and not vendored:
+            skills_locks.append(here / "skills-lock.json")
         # The root copy has always been attached; a nested one is a new
         # claim, so it follows the tool-directory rule rather than the
         # instruction-file one and stays out of vendored trees.
@@ -84,6 +88,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
         instruction_files=tuple(sorted(found)),
         tool_dirs={name: tuple(sorted(paths)) for name, paths in tool_dirs.items()},
         legacy_editor_files={name: tuple(sorted(paths)) for name, paths in legacy_editor.items()},
+        skills_lock_files=tuple(sorted(skills_locks)),
     )
 
 
@@ -154,6 +159,7 @@ def instruction_formats(
     is_excluded: Callable[[Path], bool],
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
     legacy_editor_files: Optional[Mapping[str, Iterable[Path]]] = None,
+    skills_lock_files: Optional[Iterable[Path]] = None,
 ) -> Set[str]:
     """Return instruction-format evidence labels from non-excluded markers.
 
@@ -231,6 +237,10 @@ def instruction_formats(
         ("HAS_KIRO", marker(".kiro", is_dir=True)),
         ("HAS_CLAUDE_MD", marker("CLAUDE.md")),
         ("HAS_CODERABBIT", marker(".coderabbit.yaml")),
+        (
+            "HAS_SKILLS_LOCK",
+            any(not is_excluded(path) for path in (skills_lock_files or ())),
+        ),
     )
     found.update(label for label, present in checks if present)
     return found

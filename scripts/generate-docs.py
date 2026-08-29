@@ -36,6 +36,15 @@ RULE_GROUPS = [
         "Plugin packages.",
     ),
     (
+        "Skill Lockfiles",
+        ["skills-lock-valid"],
+        "Validates every `skills-lock.json` written by the "
+        "[Vercel skills CLI](https://github.com/vercel-labs/skills): strict JSON, "
+        "the versioned project-lock shape, required source metadata, digest syntax, "
+        "and paths that remain portable across machines. Lockfiles are discovered "
+        "recursively for monorepos and the rule auto-enables when one is present.",
+    ),
+    (
         "Agent Plugins",
         ["agent-plugin-json-valid", "agent-plugin-mcp-valid", "agent-plugin-required"],
         "Validates portable plugin packages against the "

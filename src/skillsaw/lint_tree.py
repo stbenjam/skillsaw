@@ -48,6 +48,7 @@ from .blocks import (
     SettingsBlock,
     SkillBlock,
     SkillRefBlock,
+    SkillsLockBlock,
     VsCodeMcpBlock,
 )
 from .formats.codex import (
@@ -602,6 +603,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     for vscode_dir in context.agent_tool_dirs(".vscode"):
         _add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
+
+    # The skills CLI writes one project lockfile at each project root. A
+    # monorepo may therefore have several, all found by the shared walk.
+    for lockfile in context.skills_lock_files():
+        _add_parser_block(root, lockfile, SkillsLockBlock)
 
     def _add_opencode_config(directory: Path) -> None:
         """Attach every ``opencode.json`` and ``opencode.jsonc`` in *directory*.

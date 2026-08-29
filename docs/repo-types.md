@@ -225,6 +225,12 @@ does not look at on-demand commands, prompts, agents or workflows. The JSON
 configuration files — `mcp.json`, `hooks.json` — are machine config, never
 linted as prose; they get the MCP and hook rules instead.
 
+The same separation applies to the Vercel skills CLI's project
+`skills-lock.json`: it is generated machine state, so only
+[`skills-lock-valid`](rules/skills-lock-valid.md) checks it. The rule validates
+the structure and portability metadata the CLI reads; it does not pass the
+generated JSON through content-quality rules.
+
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
 — Cursor, Copilot, Cline, OpenCode and Codex all read it, and one well-linted
 AGENTS.md beats five per-vendor copies that drift apart. skillsaw does not
@@ -238,6 +244,7 @@ validation wherever a tool's own metadata can fail silently — see
 | Tool | Files linted |
 | --- | --- |
 | **Portable** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
+| **Vercel skills CLI** | Every `skills-lock.json`, at the root or in a monorepo subproject |
 | **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
 | **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
 | **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
@@ -261,6 +268,11 @@ root and merges every `.opencode/` it passes, so a nested one is read as
 well as the root's. skillsaw lints every nested tool directory either way —
 committed instructions are worth checking wherever a teammate might open
 them, and a rule that turns out not to load is worth knowing about too.
+
+`skills-lock.json` is recursive for a different reason: each project that
+runs the skills CLI owns its own lockfile, so a monorepo can legitimately
+commit several. Exact-name lockfiles are discovered throughout the checkout;
+vendored directories and configured `exclude` paths stay out of scope.
 
 Two things are the exception, and both are root-only today.
 

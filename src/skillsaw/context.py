@@ -76,6 +76,7 @@ HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
 HAS_CODERABBIT = "HAS_CODERABBIT"
 HAS_OPENCODE = "HAS_OPENCODE"
+HAS_SKILLS_LOCK = "HAS_SKILLS_LOCK"
 # Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE
 # and HAS_OPENCODE are deliberately absent: the instruction-file rules only
 # ever look at AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose
@@ -490,6 +491,11 @@ class RepositoryContext(RepositoryProvenanceMixin):
             if not self.is_path_excluded(path)
         ]
 
+    def skills_lock_files(self) -> List[Path]:
+        """Return every non-excluded project ``skills-lock.json``."""
+        lockfiles = self._repository_scan().skills_lock_files
+        return [path for path in lockfiles if not self.is_path_excluded(path)]
+
     def _detect_formats(self) -> Set[str]:
         return detect_discovery.instruction_formats(
             self.root_path,
@@ -497,6 +503,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
             self.is_path_excluded,
             self._repository_scan().tool_dirs,
             self._repository_scan().legacy_editor_files,
+            self._repository_scan().skills_lock_files,
         )
 
     #: Alias for the one definition in discovery. Two copies of "which
