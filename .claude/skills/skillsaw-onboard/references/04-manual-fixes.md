@@ -1,4 +1,4 @@
-# Step 4: Fix remaining violations
+# Fix remaining violations
 
 Handle each remaining violation directly:
 
@@ -13,5 +13,4 @@ fields; and repair structural names or missing files. Do not rewrite whole
 files to clear localized findings.
 
 Report how many violations you fixed manually. List any finding that needs a
-user decision and explain what must change. If violations remain, return to
-the router and read Step 5. Otherwise read Step 6.
+user decision and explain what must change, then return to the router.

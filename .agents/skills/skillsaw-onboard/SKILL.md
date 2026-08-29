@@ -10,21 +10,23 @@ metadata:
 
 # skillsaw Onboard
 
-Onboard this repo to **skillsaw**, a linter for agentic
+Onboard this repository to **skillsaw**, a linter for agentic
 contextual building blocks (CLAUDE.md, skills, plugins, agents, hooks, etc.).
 
-Complete the steps in order and report progress after each one. Read only the
-current step's reference; do not preload later references. Carry forward the
-chosen command prefix, violation counts, user choices, and changed-file list.
-When a step directs you to skip ahead, continue at the named step.
+## Router
 
-1. [Install skillsaw](references/01-install.md)
-2. [Run the initial scan](references/02-initial-scan.md)
-3. [Run deterministic autofixes](references/03-autofix.md)
-4. [Fix remaining violations](references/04-manual-fixes.md)
-5. [Baseline accepted violations](references/05-baseline.md)
-6. [Create configuration](references/06-configuration.md)
-7. [Set up CI](references/07-ci.md)
-8. [Add Makefile targets](references/08-makefile.md)
-9. [Add a README badge](references/09-badge.md)
-10. [Run final verification](references/10-verify.md)
+Make each decision only when reached. Read only the selected reference, return
+here afterward, and never preload unselected references. Carry forward the
+command prefix, violation counts, user choices, and changed-file list.
+
+1. If no working skillsaw command is known, read [install](references/01-install.md).
+2. To establish the repository state, read [initial scan](references/02-initial-scan.md).
+3. If safe fixes are available, ask permission; if accepted, read [autofix](references/03-autofix.md).
+4. If violations remain, ask whether to edit them; if accepted, read [manual fixes](references/04-manual-fixes.md).
+5. If accepted violations remain, ask whether to baseline them; if accepted, read [baseline](references/05-baseline.md).
+6. Ask whether to create missing configuration; if accepted, read [configuration](references/06-configuration.md).
+7. Ask whether to set up skillsaw CI; if accepted, read [CI](references/07-ci.md).
+8. Ask separately whether to schedule external link checks; if accepted, read [external links](references/08-external-links.md).
+9. Ask whether to add local lint targets; if accepted, read [Makefile](references/09-makefile.md).
+10. Ask whether to add a grade badge; if accepted, read [badge](references/10-badge.md).
+11. After the selected changes, always read [verification](references/11-verify.md).

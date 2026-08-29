@@ -1,6 +1,6 @@
-# Step 1: Install skillsaw
+# Install skillsaw
 
-Run `skillsaw --version`. If it works, continue to Step 2.
+Run `skillsaw --version`. If it works, retain that command prefix.
 
 Otherwise choose the first available approach and retain its command prefix
 for later steps:
@@ -18,5 +18,4 @@ for later steps:
    Mount the repository at `/workspace`; `:Z` provides the SELinux relabel.
    Append later subcommands after the image name.
 
-Verify the chosen command with `--version`, then return to the router and read
-Step 2 only.
+Verify the chosen command with `--version`, then return to the router.

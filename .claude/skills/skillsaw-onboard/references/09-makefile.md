@@ -1,7 +1,4 @@
-# Step 8: Add Makefile targets
-
-Ask whether to add local skillsaw targets. If declined, return to the router
-and read Step 9.
+# Add Makefile targets
 
 Resolve the latest version to pin:
 
@@ -46,4 +43,4 @@ lint-fix:
 
 Append to an existing `Makefile` or create one. Never overwrite existing
 `lint` or `lint-fix` targets; ask the user for alternate names when they
-collide. Record the chosen targets, then return to the router and read Step 9.
+collide. Record the chosen targets, then return to the router.

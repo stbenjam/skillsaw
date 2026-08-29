@@ -270,7 +270,7 @@ def test_zizmor_workflow_is_pinned_blocking_and_unprivileged():
     }
 
 
-def test_onboard_skill_discloses_exactly_one_reference_per_step():
+def test_onboard_skill_routes_each_reference_once():
     relative_references = [
         "01-install.md",
         "02-initial-scan.md",
@@ -279,22 +279,27 @@ def test_onboard_skill_discloses_exactly_one_reference_per_step():
         "05-baseline.md",
         "06-configuration.md",
         "07-ci.md",
-        "08-makefile.md",
-        "09-badge.md",
-        "10-verify.md",
+        "08-external-links.md",
+        "09-makefile.md",
+        "10-badge.md",
+        "11-verify.md",
     ]
     source_root = ROOT / "skills" / "skillsaw-onboard"
     source_router = (source_root / "SKILL.md").read_text(encoding="utf-8")
-    assert (
-        "Read only the\ncurrent step's reference; do not preload later references" in source_router
+    assert "never preload unselected references" in source_router
+    assert len(source_router.splitlines()) < 50
+    assert sorted(path.name for path in (source_root / "references").glob("*.md")) == (
+        relative_references
     )
-    assert len(source_router.splitlines()) < 40
 
     for root in ("skills", ".agents/skills", ".claude/skills"):
         skill_root = ROOT / root / "skillsaw-onboard"
         router = (skill_root / "SKILL.md").read_text(encoding="utf-8")
         assert router == source_router
+        assert sorted(path.name for path in (skill_root / "references").glob("*.md")) == (
+            relative_references
+        )
         for reference in relative_references:
-            assert f"references/{reference}" in router
+            assert router.count(f"references/{reference}") == 1
             expected = (source_root / "references" / reference).read_text(encoding="utf-8")
             assert (skill_root / "references" / reference).read_text(encoding="utf-8") == expected
