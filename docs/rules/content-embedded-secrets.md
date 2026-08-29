@@ -24,15 +24,24 @@ even after removal and may be harvested by automated scanners.
 Two classes of match are handled differently:
 
 - **Structured token formats** (`AKIA…`, `ghp_…`, `sk-ant-…`, private-key
-  blocks, JWTs, …) are high-confidence and always reported.
+  blocks, JWTs, …) are high-confidence and reported unless the complete
+  candidate is an exact, audited documentation literal. The canonical AWS
+  documentation access-key ID and a standalone `-----BEGIN RSA PRIVATE KEY-----`
+  header are permitted; close variants and standard PEM blocks with inline or
+  nearby key material still report. The context scan is bounded by physical
+  lines and characters so hostile files cannot force unbounded repeated work.
 - **Generic credential assignments** (`password = "…"`, `api_key: "…"`,
   `secret_key`, `access_token`) are gated to avoid flagging documentation
   examples:
-    - *Placeholder allowlist*: values containing obvious placeholder
-      markers (`example`, `placeholder`, `dummy`, `changeme`, `your-…`,
-      `hunter2`, …), template syntax (`<your-key>`, `${VAR}`,
-      `{{ var }}`), or a single repeated character are skipped. Extend
-      the list with `additional-placeholders`.
+    - *Placeholder allowlist*: values containing obvious substring markers
+      (`example`, `placeholder`, `dummy`, `changeme`, `your-…`, …), template
+      syntax (`<your-key>`, `${VAR}`, `{{ var }}`), or a single repeated
+      character are skipped. Extend the substring list with
+      `additional-placeholders`.
+    - *Audited examples*: exact values (`hunter2`, `sk_live_abc123xyz789`,
+      `sk_live_abc123def456`, and the literal three-dot value
+      `django-insecure-...`) are skipped after trimming surrounding whitespace
+      and comparing case-insensitively. Close variants remain reportable.
     - *Entropy gating*: the value's Shannon entropy must reach
       `entropy-threshold` (default 3.5 bits/char). Real random secrets
       pass; English-ish placeholder strings do not. Values shorter than
@@ -76,7 +85,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `entropy-threshold` | Minimum Shannon entropy (bits/char) a generic key = "value" match must reach to be reported; structured tokens (AKIA…, ghp_…, private keys) are always reported | `3.5` |
+| `entropy-threshold` | Minimum Shannon entropy (bits/char) a generic key = "value" match must reach to be reported; structured tokens (AKIA…, ghp_…, private keys) remain reportable except for exact audited documentation literals | `3.5` |
 | `additional-placeholders` | Extra case-insensitive substrings that mark a generic credential value as a placeholder (suppressing the violation) | `[]` |
 
 ## Research Basis
