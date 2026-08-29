@@ -1718,6 +1718,38 @@ class TestFileCacheBudget:
         assert result is not skillsaw_utils._UNSIZEABLE
         assert not isinstance(result, skillsaw_utils._Unsizeable)
 
+    def test_a_sub_key_too_large_to_size_refuses_the_entry(self, tmp_path):
+        """The sub-key gets the value's treatment, not a partial charge.
+
+        A sub-key is arbitrary caller data — a tuple argument can be as
+        large as the caller likes. If the walk gives up on it, charging
+        whatever it had counted so far is the accounting error the byte
+        budget exists to prevent, so the entry is refused exactly as an
+        unsizeable value is.
+        """
+        target = tmp_path / "doc.md"
+        target.write_text("body", encoding="utf-8")
+
+        cache = skillsaw_utils.FileCache(budget=1 << 30)
+        calls = {"n": 0}
+
+        @cache.cached
+        def reader(path, spec):
+            calls["n"] += 1
+            return "value"
+
+        huge = tuple(range(skillsaw_utils._SIZE_WALK_LIMIT + 10))
+        assert (
+            skillsaw_utils._approximate_size(huge) == skillsaw_utils.UNCACHEABLE_SIZE
+        ), "the fixture must actually defeat the walk"
+
+        assert reader(target, huge) == "value"
+        assert reader(target, huge) == "value"
+
+        assert calls["n"] == 2, "an unsizeable sub-key must be recomputed, not served"
+        # Only the refusal marker, never a partial charge for the sub-key.
+        assert cache._total_bytes < sys.getsizeof(huge)
+
     def test_the_rest_of_the_call_is_charged_too(self, tmp_path):
         """An entry is filed under more than its path.
 
