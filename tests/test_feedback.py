@@ -331,6 +331,146 @@ def test_feedback_refuses_an_ignored_config(tmp_path):
     assert "ignore file already excludes" in result.stderr
 
 
+def test_feedback_honors_root_anchored_ignore_patterns(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".gitignore").write_text("/private.txt\n/.skillsaw.yaml\n")
+    private = repo / "private.txt"
+    private.write_text("must stay local\n")
+    config = repo / ".skillsaw.yaml"
+    config.write_text("version: 0.20.0\n")
+
+    include_result = _run_feedback(
+        repo, "--include", "private.txt", "--output", str(tmp_path / "include.zip")
+    )
+    config_result = _run_feedback(
+        repo, "--config", str(config), "--output", str(tmp_path / "config.zip")
+    )
+
+    assert include_result.returncode == 1
+    assert "ignore file already excludes" in include_result.stderr
+    assert config_result.returncode == 1
+    assert "ignore file already excludes" in config_result.stderr
+
+
+def test_feedback_root_anchored_ignore_does_not_match_nested_file(tmp_path):
+    repo = tmp_path / "repo"
+    nested = repo / "nested"
+    nested.mkdir(parents=True)
+    (repo / ".gitignore").write_text("/private.txt\n")
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    (nested / "private.txt").write_text("reviewed reproducer\n")
+
+    result = _run_feedback(
+        repo,
+        "--include",
+        "nested/private.txt",
+        "--output",
+        str(tmp_path / "nested.zip"),
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_feedback_honors_zero_directory_double_star_in_anchored_pattern(tmp_path):
+    repo = tmp_path / "repo"
+    target_dir = repo / "abc"
+    target_dir.mkdir(parents=True)
+    (repo / ".gitignore").write_text("/abc/**/def\n/abc/**/config.yml\n")
+    (target_dir / "def").write_text("must stay local\n")
+    config = target_dir / "config.yml"
+    config.write_text("version: 0.20.0\n")
+
+    include_result = _run_feedback(
+        repo, "--include", "abc/def", "--output", str(tmp_path / "include.zip")
+    )
+    config_result = _run_feedback(
+        repo, "--config", str(config), "--output", str(tmp_path / "config.zip")
+    )
+
+    assert include_result.returncode == 1
+    assert "ignore file already excludes" in include_result.stderr
+    assert config_result.returncode == 1
+    assert "ignore file already excludes" in config_result.stderr
+
+
+def test_feedback_keeps_directory_only_and_segment_wildcard_semantics(tmp_path):
+    repo = tmp_path / "repo"
+    nested = repo / "cache" / "sub"
+    nested.mkdir(parents=True)
+    (repo / ".gitignore").write_text("/private/\n/cache/*.txt\n")
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    (repo / "private").write_text("regular file\n")
+    (nested / "a.txt").write_text("reviewed reproducer\n")
+
+    for index, target in enumerate(("private", "cache/sub/a.txt")):
+        result = _run_feedback(
+            repo, "--include", target, "--output", str(tmp_path / f"allowed-{index}.zip")
+        )
+        assert result.returncode == 0, (target, result.stderr)
+
+    (repo / "private").unlink()
+    (repo / "private").mkdir()
+    (repo / "private" / "secret.txt").write_text("must stay local\n")
+    refused = _run_feedback(
+        repo,
+        "--include",
+        "private/secret.txt",
+        "--output",
+        str(tmp_path / "refused.zip"),
+    )
+    assert refused.returncode == 1
+    assert "ignore file already excludes" in refused.stderr
+
+
+def test_feedback_honors_git_case_insensitive_ignore_policy(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "core.ignoreCase", "true"], check=True)
+    (repo / ".gitignore").write_text("PRIVATE.md\n")
+    (repo / "private.md").write_text("must stay local\n")
+
+    result = _run_feedback(
+        repo, "--include", "private.md", "--output", str(tmp_path / "report.zip")
+    )
+
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+    assert not (tmp_path / "report.zip").exists()
+
+
+@pytest.mark.parametrize(
+    ("ignored_name", "included_name"),
+    (("Ä.txt", "ä.txt"), ("STRASSE.txt", "straße.txt")),
+)
+def test_feedback_git_ignore_case_does_not_overfold_unicode(tmp_path, ignored_name, included_name):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "core.ignoreCase", "true"], check=True)
+    (repo / ".gitignore").write_text(f"{ignored_name}\n")
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    (repo / included_name).write_text("reviewed reproducer\n")
+
+    git_result = subprocess.run(
+        ["git", "-C", str(repo), "check-ignore", "--no-index", included_name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    result = _run_feedback(
+        repo,
+        "--include",
+        included_name,
+        "--output",
+        str(tmp_path / f"{included_name}.zip"),
+    )
+
+    assert git_result.returncode == 1
+    assert result.returncode == 0, result.stderr
+
+
 def test_feedback_allows_a_file_a_negation_re_includes_nothing_about(tmp_path):
     """A '!' line must never turn the guardrail into a grant."""
     repo = tmp_path / "repo"
@@ -599,4 +739,4 @@ def test_ignore_patterns_survive_a_byte_order_mark(tmp_path):
 
     patterns = _feedback._ignore_patterns(tmp_path)
 
-    assert "scratch.md" in patterns
+    assert [pattern.value for pattern in patterns] == ["scratch.md"]

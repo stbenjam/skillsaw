@@ -10,6 +10,7 @@ an ignore file already excludes cannot be bundled at all."""
 from __future__ import annotations
 
 import errno
+import fnmatch
 import hashlib
 import io
 import json
@@ -24,13 +25,14 @@ import sysconfig
 import tempfile
 import time
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
 from ..config import find_config
-from ..discovery.excludes import path_matches_patterns
 from ..paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from ..utils import mkdir_parents_anchored, read_text, write_bytes_atomic
 from ._config import _get_version
@@ -41,6 +43,7 @@ _GPG_KEY_URL = "https://github.com/stbenjam.gpg"
 _BUNDLE_SCHEMA_VERSION = 1
 _LINT_TIMEOUT_SECONDS = 120
 _TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 
 
 def _neutralize_terminal_control(text: str) -> str:
@@ -140,9 +143,36 @@ def _is_secret_filename(name: str) -> bool:
     return lowered.startswith(".env.")
 
 
-def _ignore_patterns(root: Path) -> list[str]:
+@dataclass(frozen=True)
+class _IgnorePattern:
+    value: str
+    anchored: bool
+    directory_only: bool
+    ignore_case: bool
+
+
+def _git_ignore_case(root: Path) -> bool:
+    """Return Git's case-folding policy without requiring the repository API."""
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "config", "--bool", "core.ignoreCase"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return os.path.normcase("A") == os.path.normcase("a")
+    if completed.returncode == 0:
+        return completed.stdout.strip().lower() == "true"
+    return os.path.normcase("A") == os.path.normcase("a")
+
+
+def _ignore_patterns(root: Path) -> list[_IgnorePattern]:
     """Patterns from the repository's ignore files, comments and negations dropped."""
-    patterns: list[str] = []
+    patterns: list[_IgnorePattern] = []
     for name in _IGNORE_FILES:
         ignore_file = root / name
         if not safe_is_file(ignore_file):
@@ -150,23 +180,77 @@ def _ignore_patterns(root: Path) -> list[str]:
         content = read_text(ignore_file)
         if content is None:
             continue
+        ignore_case = _git_ignore_case(root) if name == ".gitignore" else os.name == "nt"
         for line in content.splitlines():
             entry = line.strip()
             # A negation re-includes a path; skipping it keeps this a guardrail
             # that only ever refuses, never grants.
             if not entry or entry.startswith(("#", "!")):
                 continue
+            directory_only = entry.endswith("/")
             entry = entry.rstrip("/")
             if entry:
-                patterns.extend((entry, f"{entry}/*", f"**/{entry}", f"**/{entry}/*"))
+                anchored = entry.startswith("/") or "/" in entry
+                value = entry.lstrip("/")
+                if value:
+                    patterns.append(_IgnorePattern(value, anchored, directory_only, ignore_case))
     return patterns
 
 
-def _is_ignored(resolved: Path, root: Path, patterns: list[str]) -> bool:
-    return path_matches_patterns(resolved, root, patterns)
+def _path_pattern_matches(path_parts: tuple[str, ...], pattern_parts: tuple[str, ...]) -> bool:
+    """Match a gitignore path pattern without allowing ``*`` to cross ``/``."""
+
+    @lru_cache(maxsize=None)
+    def match(pattern_index: int, path_index: int) -> bool:
+        if pattern_index == len(pattern_parts):
+            return path_index == len(path_parts)
+        pattern = pattern_parts[pattern_index]
+        if pattern == "**":
+            if pattern_index == len(pattern_parts) - 1:
+                # A trailing '/**' means contents of the directory, not the
+                # directory entry (or an identically named regular file).
+                return path_index < len(path_parts)
+            return match(pattern_index + 1, path_index) or (
+                path_index < len(path_parts) and match(pattern_index, path_index + 1)
+            )
+        return (
+            path_index < len(path_parts)
+            and fnmatch.fnmatchcase(path_parts[path_index], pattern)
+            and match(pattern_index + 1, path_index + 1)
+        )
+
+    return match(0, 0)
 
 
-def _included_file(root: Path, raw_path: str, patterns: list[str]) -> tuple[Path, Path]:
+def _ignore_pattern_matches(path_parts: tuple[str, ...], pattern: _IgnorePattern) -> bool:
+    pattern_value = pattern.value.translate(_ASCII_LOWER) if pattern.ignore_case else pattern.value
+    comparable_parts = (
+        tuple(part.translate(_ASCII_LOWER) for part in path_parts)
+        if pattern.ignore_case
+        else path_parts
+    )
+    eligible_parts = path_parts[:-1] if pattern.directory_only else path_parts
+    comparable_eligible_parts = (
+        comparable_parts[:-1] if pattern.directory_only else comparable_parts
+    )
+    pattern_parts = tuple(pattern_value.split("/"))
+    if not pattern.anchored:
+        return any(fnmatch.fnmatchcase(part, pattern_value) for part in comparable_eligible_parts)
+    return any(
+        _path_pattern_matches(comparable_parts[:end], pattern_parts)
+        for end in range(1, len(eligible_parts) + 1)
+    )
+
+
+def _is_ignored(resolved: Path, root: Path, patterns: list[_IgnorePattern]) -> bool:
+    try:
+        path_parts = resolved.relative_to(root).parts
+    except ValueError:
+        return False
+    return any(_ignore_pattern_matches(path_parts, pattern) for pattern in patterns)
+
+
+def _included_file(root: Path, raw_path: str, patterns: list[_IgnorePattern]) -> tuple[Path, Path]:
     candidate = Path(raw_path)
     if not candidate.is_absolute():
         candidate = root / candidate
