@@ -494,6 +494,11 @@ class FileCache:
         self._stores: List[Dict[Path, Dict[tuple, Any]]] = []
         self._budget = budget
         self._total_bytes = 0
+        # Bumped by every invalidation. A reader computes outside the lock,
+        # so an invalidation can land between the read and the insert — and
+        # without this the pre-change value is written in *after* the drop
+        # meant to remove it, and served from then on.
+        self._generation = 0
 
     def cached(self, func: Callable) -> Callable:
         """Decorator -- equivalent to ``@lru_cache`` but with per-key eviction."""
@@ -519,6 +524,9 @@ class FileCache:
                 if bucket is not None and sub_key in bucket:
                     return bucket[sub_key][1]
             # Compute outside the lock to avoid holding it during I/O.
+            # The generation is read first so the insert below can tell
+            # whether the filesystem was declared changed meanwhile.
+            generation = self._generation
             result = func(*args, **kwargs)
             cost = _entry_cost(result)
             if cost == UNCACHEABLE_SIZE or cost > self._budget:
@@ -530,6 +538,14 @@ class FileCache:
                 # uncached; the reader recomputes it next time.
                 return result
             with self._lock:
+                if self._generation != generation:
+                    # Invalidated while this read was in flight, so the
+                    # value describes the filesystem from before the
+                    # change. Hand it to this caller — it is the answer
+                    # they asked for — but do not let it back into the
+                    # cache, where it would outlive the drop meant to
+                    # remove it.
+                    return result
                 bucket = store.get(resolved)
                 if bucket is not None and sub_key in bucket:
                     # Another caller computed this key while we were
@@ -551,6 +567,7 @@ class FileCache:
 
         def _clear():
             with self._lock:
+                self._generation += 1
                 freed = sum(cost for bucket in store.values() for cost, _ in bucket.values())
                 store.clear()
                 self._total_bytes -= freed
@@ -601,6 +618,7 @@ class FileCache:
         cleared (equivalent to the old ``invalidate_read_caches()``).
         """
         with self._lock:
+            self._generation += 1
             if file_path is None:
                 for store in self._stores:
                     store.clear()

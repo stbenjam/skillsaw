@@ -1204,6 +1204,37 @@ class TestFileCacheBudget:
         cache.invalidate(tmp_path / "b.yaml")
         assert cache._total_bytes == 0
 
+    def test_an_invalidation_during_a_read_is_not_undone_by_it(self, tmp_path):
+        """A reader computes outside the lock, so a drop can land mid-read.
+
+        Autofix invalidates after writing. If the pre-change value is
+        inserted after the drop meant to remove it, the cache serves
+        content from before the write for the rest of the pass — the one
+        thing invalidation exists to prevent.
+        """
+        import threading
+
+        cache = skillsaw_utils.FileCache(budget=1_000_000)
+        reading = threading.Event()
+        values = iter(["before the write", "after the write"])
+
+        @cache.cached
+        def reader(path):
+            value = next(values)
+            if value == "before the write":
+                reading.set()
+                threading.Event().wait(0.2)
+            return value
+
+        target = tmp_path / "rewritten.md"
+        in_flight = threading.Thread(target=lambda: reader(target))
+        in_flight.start()
+        assert reading.wait(5)
+        cache.invalidate(target)
+        in_flight.join(10)
+
+        assert reader(target) == "after the write"
+
     def test_racing_readers_agree_on_one_value_and_one_charge(self, tmp_path):
         """Two threads missing the same key both compute outside the lock.
 
