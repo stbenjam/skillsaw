@@ -98,16 +98,6 @@ from the markdown-it-py AST — read it via `block.markdown` (a
   Never force-enable a new rule that could break existing users.
 - **Use the lint tree for discovery** — call `context.lint_tree.find(NodeType)`.
 
-### Network-touching rules
-
-`content-broken-external-reference` is the only rule allowed to open a
-connection (THREAT_MODEL T18); a second needs security review and must
-declare `requires_network = True` — that attribute alone drives the gate
-(`--no-network`, the Action, `changed-rules.py`), never a rule-id list.
-Read `broken_external_reference.py`'s module docstring and rule doc
-first: opt-in only, definitive evidence only, hostile input throughout,
-tests against a local `http.server`.
-
 ### Line numbers and the parse tree
 
 - **Always report line numbers** on every violation traceable to a specific line, except whole-file violations.

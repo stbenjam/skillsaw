@@ -6,7 +6,7 @@ import difflib
 import sys
 
 from ..context import RepositoryContext
-from ..linter import EmptyNetworkRuleSetError, Linter
+from ..linter import Linter
 from ..rule import AutofixConfidence
 from ._config import load_config
 from ._helpers import (
@@ -61,30 +61,8 @@ def _run_fix(args):
                 rule_ids=rule_ids,
                 skip_rule_ids=skip_rule_ids,
                 no_custom_rules=args.no_custom_rules,
-                # ``fix`` never goes on the network, whatever the flags or
-                # the repository's config say. ``Linter.fix()`` calls
-                # ``check()`` on every loaded rule, fixable or not, and
-                # ``fix_and_apply()`` runs that up to ``max_passes`` times,
-                # so a rule declaring ``requires_network`` would re-probe
-                # the whole URL set once per pass — each pass opening a
-                # fresh budget window, and every result discarded, because
-                # ``fix`` displays fixes and a dead URL has no mechanical
-                # one. Same reasoning as the ``--no-network`` that
-                # ``feedback`` forces on its child; diagnose a network rule
-                # with ``skillsaw lint``.
-                no_network=True,
                 no_plugins=args.no_plugins,
             )
-        except EmptyNetworkRuleSetError as e:
-            # The gate's own advice is "drop --no-network", which is
-            # right on `lint` and impossible here: `fix` sets it above,
-            # and no flag the user passed or can pass turns it back off.
-            print(
-                f"Error: fix never runs network rules: {', '.join(e.rule_ids)}. "
-                f"Run skillsaw lint --rule {' --rule '.join(e.rule_ids)} to check them.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -109,7 +87,6 @@ def _run_fix(args):
                 rule_ids=rule_ids,
                 skip_rule_ids=skip_rule_ids,
                 no_custom_rules=args.no_custom_rules,
-                no_network=True,  # as above: fix is offline, both Linters
                 no_plugins=args.no_plugins,
             )
             rename_applied, rename_suggested = linter.fix_and_apply(confidence)

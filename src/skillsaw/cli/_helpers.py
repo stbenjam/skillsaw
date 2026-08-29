@@ -208,26 +208,6 @@ def color_enabled(stream, color: bool | None = None) -> bool:
         return False
 
 
-def no_network_requested(args) -> bool:
-    """Whether the operator refused network access for this run.
-
-    Only the flag is read here — ``Linter`` reads SKILLSAW_NO_NETWORK
-    itself, so the environment half of the gate holds for every caller
-    rather than only for the subcommands that remember to ask.
-    """
-    return bool(getattr(args, "no_network", False))
-
-
-def allow_private_hosts_requested(args) -> bool:
-    """Whether the operator allowed network rules onto non-public hosts.
-
-    Same split as above: the flag here, the environment variable inside
-    ``Linter``. Never read from ``.skillsaw.yaml`` — the linted
-    repository is the actor this control defends against (T18).
-    """
-    return bool(getattr(args, "allow_private_hosts", False))
-
-
 def hyperlinks_enabled(stream, color: bool) -> bool:
     """Whether OSC 8 terminal hyperlinks should be emitted on ``stream``.
 
@@ -268,7 +248,7 @@ def install_warning_display() -> None:
     Skillsaw warning categories get a compact colored line instead; every
     other warning keeps the default rendering.
     """
-    from ..linter import CustomRuleWarning, NetworkAccessWarning
+    from ..linter import CustomRuleWarning
 
     default_showwarning = warnings.showwarning
 
@@ -280,15 +260,6 @@ def install_warning_display() -> None:
                 f"{c['yellow']}⚠ Loading custom rule file:{c['reset']} "
                 f"{c['bold']}{message.path}{c['reset']} "
                 f"{c['dim']}(use --no-custom-rules to skip){c['reset']}",
-                file=out,
-            )
-        elif isinstance(message, NetworkAccessWarning):
-            out = sys.stderr if file is None else file
-            c = _ansi_colors(color_enabled(out))
-            print(
-                f"{c['yellow']}⚠ Network access enabled for:{c['reset']} "
-                f"{c['bold']}{', '.join(message.rule_ids)}{c['reset']} "
-                f"{c['dim']}(use --no-network to skip){c['reset']}",
                 file=out,
             )
         else:

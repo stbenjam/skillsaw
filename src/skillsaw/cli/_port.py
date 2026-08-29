@@ -139,7 +139,6 @@ def _run_port(args):
                 rule_ids=verify_rules,
                 no_plugins=True,
                 no_custom_rules=True,
-                no_network=True,
             )
             for violation in linter.run():
                 if violation.rule_id in verify_rules:
@@ -189,7 +188,6 @@ def _run_port(args):
                 rule_ids={"codex-marketplace-json-valid"},
                 no_plugins=True,
                 no_custom_rules=True,
-                no_network=True,
             )
             from ..rule import Severity
 

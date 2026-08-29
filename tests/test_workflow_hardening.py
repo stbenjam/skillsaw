@@ -270,100 +270,31 @@ def test_zizmor_workflow_is_pinned_blocking_and_unprivileged():
     }
 
 
-def _lint_step_args_script() -> str:
-    """The ARGS-building prefix of the Action's lint step, made runnable.
-
-    Cut at REPORT_FILE= so the input handling can be exercised without GNU
-    mktemp, an installed skillsaw, or a $GITHUB_OUTPUT to append to.
-    """
-    steps = _yaml("action.yml")["runs"]["steps"]
-    script = next(step["run"] for step in steps if step.get("id") == "lint")
-    prefix, marker, _rest = script.partition("REPORT_FILE=")
-    assert marker, "action.yml lint step no longer builds REPORT_FILE"
-    return prefix + 'echo "ARGS=$ARGS"\n'
-
-
-def _run_lint_args(**overrides: str) -> subprocess.CompletedProcess:
-    env = {
-        "PATH": os.environ["PATH"],
-        "SKILLSAW_STRICT": "false",
-        "SKILLSAW_FAIL_ON": "",
-        "SKILLSAW_RULE": "",
-        "SKILLSAW_VERBOSE": "false",
-        "SKILLSAW_NO_CUSTOM_RULES": "true",
-        "SKILLSAW_NO_NETWORK_INPUT": "true",
-    }
-    env.update(overrides)
-    return subprocess.run(
-        ["bash", "--noprofile", "--norc", "-c", _lint_step_args_script()],
-        env=env,
-        capture_output=True,
-        text=True,
+def test_onboard_skill_discloses_exactly_one_reference_per_step():
+    relative_references = [
+        "01-install.md",
+        "02-initial-scan.md",
+        "03-autofix.md",
+        "04-manual-fixes.md",
+        "05-baseline.md",
+        "06-configuration.md",
+        "07-ci.md",
+        "08-makefile.md",
+        "09-badge.md",
+        "10-verify.md",
+    ]
+    source_root = ROOT / "skills" / "skillsaw-onboard"
+    source_router = (source_root / "SKILL.md").read_text(encoding="utf-8")
+    assert (
+        "Read only the\ncurrent step's reference; do not preload later references" in source_router
     )
+    assert len(source_router.splitlines()) < 40
 
-
-def test_action_rule_input_splits_on_lines_and_commas():
-    newlines = _run_lint_args(SKILLSAW_RULE="content-weak-language\ncontent-tautological\n")
-    commas = _run_lint_args(SKILLSAW_RULE="content-weak-language, content-tautological")
-
-    for result in (newlines, commas):
-        assert result.returncode == 0, result.stderr
-        assert "--rule content-weak-language --rule content-tautological" in result.stdout
-
-
-def test_action_rule_input_admits_only_kebab_case_ids():
-    # ARGS is word-split unquoted into the command line, so a value carrying a
-    # flag, a glob, a path or a separator has to be refused here rather than
-    # expanded. Uppercase is rejected too: the guard runs under LC_ALL=C
-    # because [a-z] collates case-insensitively in most other locales.
-    for hostile in (
-        "content-weak-language --allow-private-hosts",
-        "*",
-        "../../etc/passwd",
-        "Content-Weak-Language",
-        "content_weak_language",
-        "content-weak-language;id",
-    ):
-        for locale in ("C", "en_US.UTF-8"):
-            result = _run_lint_args(SKILLSAW_RULE=hostile, LC_ALL=locale)
-            assert result.returncode == 1, (hostile, locale, result.stdout)
-            assert "Invalid rule id" in result.stderr, (hostile, locale)
-            assert "--rule" not in result.stdout, (hostile, locale)
-
-
-def test_action_rule_input_does_not_itself_grant_network_access():
-    # Selecting a rule is not permission to run it: the network gate is a
-    # separate input, so naming a network rule leaves --no-network in place
-    # and the CLI refuses the combination rather than reporting no dead links.
-    selected = _run_lint_args(SKILLSAW_RULE="content-broken-external-reference")
-    assert "--rule content-broken-external-reference" in selected.stdout
-    assert "--no-network" in selected.stdout
-
-    granted = _run_lint_args(
-        SKILLSAW_RULE="content-broken-external-reference",
-        SKILLSAW_NO_NETWORK_INPUT="false",
-    )
-    assert "--rule content-broken-external-reference" in granted.stdout
-    assert "--no-network" not in granted.stdout
-
-
-def test_scheduled_link_check_recipe_matches_the_onboard_skill():
-    # The docs recipe and the workflow the onboard skill offers must not
-    # drift: both need `rule` to select the check and `no-network: false` to
-    # grant it the network, and either one alone is a job that cannot work.
-    # Both sides are scoped to the section under test: the skill's own
-    # pull-request workflow already carries `strict: true`, so reading the
-    # whole file would satisfy that assertion without the new block.
-    recipe = _read("docs/ci.md").split("## Scheduled external link checking", 1)[1]
-    recipe = recipe.split("### Refusing network access", 1)[0]
-    skill = _read("skills/skillsaw-onboard/SKILL.md")
-    skill = skill.split("weekly external dead-link check", 1)[1].split("### GitLab CI", 1)[0]
-
-    for source in (recipe, skill):
-        assert "rule: content-broken-external-reference" in source
-        assert "no-network: false" in source
-        assert "strict: true" in source
-        assert "verbose: true" in source
-        # Not `Lint`: lint-review.yml triggers on a workflow by that name.
-        assert "name: link-check" in source
-    assert "pipx install skillsaw" not in recipe
+    for root in ("skills", ".agents/skills", ".claude/skills"):
+        skill_root = ROOT / root / "skillsaw-onboard"
+        router = (skill_root / "SKILL.md").read_text(encoding="utf-8")
+        assert router == source_router
+        for reference in relative_references:
+            assert f"references/{reference}" in router
+            expected = (source_root / "references" / reference).read_text(encoding="utf-8")
+            assert (skill_root / "references" / reference).read_text(encoding="utf-8") == expected
