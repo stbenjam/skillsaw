@@ -37,6 +37,31 @@ def test_valid_devin_rule_activation_modes(tmp_path):
     assert DevinRulesValidRule().check(RepositoryContext(tmp_path)) == []
 
 
+def test_devin_documented_unquoted_glob_scalar_is_valid(tmp_path):
+    _devin_rule(
+        tmp_path,
+        "documented-glob.md",
+        "---\ntrigger: glob\nglobs: **/*.test.ts # documented syntax\n---\nUse test helpers.\n",
+    )
+
+    assert DevinRulesValidRule().check(RepositoryContext(tmp_path)) == []
+
+
+def test_devin_glob_fallback_does_not_hide_unrelated_malformed_yaml(tmp_path):
+    malformed = _devin_rule(
+        tmp_path,
+        "malformed-after-glob.md",
+        "---\ntrigger: [unterminated\nglobs: **/*.test.ts\n---\nRule body.\n",
+    )
+
+    found = DevinRulesValidRule().check(RepositoryContext(tmp_path))
+
+    assert len(found) == 1
+    assert found[0].file_path == malformed
+    assert found[0].line == 3
+    assert "Invalid frontmatter" in found[0].message
+
+
 def test_devin_rule_activation_errors_have_field_lines(tmp_path):
     _devin_rule(tmp_path, "trigger.md", "---\ntrigger: sometimes\n---\nRule body.\n")
     _devin_rule(
