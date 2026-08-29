@@ -17,8 +17,10 @@ import yaml
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import (
     _FRONTMATTER_RE,
+    commented_key_line,
     read_text,
     parse_frontmatter,
+    read_frontmatter_commented,
     extract_section,
     frontmatter_key_line as _frontmatter_key_line,
     _extract_frontmatter_text,
@@ -26,7 +28,7 @@ from skillsaw.utils import (
 )
 
 from .base import ContentBlock
-from .json_config import HookEventConfig, parse_hooks_events
+from .json_config import CopilotAgentMcpBlock, HookEventConfig, parse_hooks_events
 
 
 def _parse_file_frontmatter(
@@ -585,6 +587,64 @@ class CopilotAgentBlock(FrontmatteredBlock):
     """.github/agents/**/*.agent.md and legacy .github/chatmodes/**/*.chatmode.md."""
 
     category: str = "agent"
+
+    @property
+    def hooks_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Parse embedded hooks while retaining each command's YAML line."""
+        # A top-level YAML merge can supply ``hooks`` without giving the
+        # merged key its own source line. The compatibility parse has already
+        # resolved merges into FrontmatterField children, so it is the cheap,
+        # merge-aware presence check; the ruamel parse below retains the
+        # anchor's nested command lines for security findings.
+        if self.field("hooks") is None:
+            return {}
+        frontmatter, error, _error_line = read_frontmatter_commented(self.path)
+        if error or not isinstance(frontmatter, dict):
+            return {}
+        return parse_hooks_events(frontmatter.get("hooks"), line_offset=1)
+
+    def _build_children(self) -> None:
+        """Attach embedded MCP configuration as a shared lint-tree role."""
+        self.children = [
+            child for child in self.children if not isinstance(child, CopilotAgentMcpBlock)
+        ]
+        super()._build_children()
+        # YAML merges do not give the merged root key its own source line, but
+        # the resolved field still carries source lines for nested entries.
+        mcp_field = self.field("mcp-servers")
+        if mcp_field is None:
+            return
+        # GitHub cloud loads only ``*.agent.md``; VS Code accepts every
+        # Markdown filename in this directory plus legacy chatmodes. Those
+        # local-only files ignore this cloud MCP field.
+        if not self.path.name.endswith(".agent.md") or self.field_value("target") == "vscode":
+            return
+        frontmatter, error, _error_line = read_frontmatter_commented(self.path)
+        if error or not isinstance(frontmatter, dict):
+            return
+        servers = frontmatter.get("mcp-servers")
+        # The format rule owns the top-level type error. Only a mapping can
+        # be meaningfully handed to the shared MCP rules; attaching an
+        # invalid scalar/list too would duplicate that root diagnostic.
+        if isinstance(servers, dict):
+            source_line = mcp_field.field_line
+            if source_line is None:
+                # A merge-inherited root has no local position. Anchor
+                # aggregate policy findings to the first literal server key,
+                # which is still traceable in the source anchor mapping.
+                for server_name in servers:
+                    nested_line = commented_key_line(servers, server_name)
+                    if nested_line is not None:
+                        source_line = nested_line + 1
+                        break
+            self.children.append(
+                CopilotAgentMcpBlock(
+                    path=self.path,
+                    inline_data={"mcpServers": servers},
+                    source_line=source_line,
+                    parent=self,
+                )
+            )
 
 
 @dataclass(eq=False)

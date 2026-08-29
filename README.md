@@ -28,9 +28,9 @@ It understands Agent Skills,
 [Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
 plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
 GEMINI.md, QWEN.md, Cursor, Copilot, Cline, Devin, Kiro, OpenCode, hooks, agent
-configuration, Vercel skills CLI lockfiles, and evals. Safe structural fixes
-can be applied automatically; everything else comes with precise,
-agent-friendly guidance.
+configuration, MCP Registry `server.json` publisher metadata, Vercel skills CLI
+lockfiles, and evals. Safe structural fixes can be applied automatically;
+everything else comes with precise, agent-friendly guidance.
 
 Content installed under APM's `apm_modules/` and skills installed from
 external `skills-lock.json` sources are tracked as external in the lint tree.
@@ -85,6 +85,12 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 The `description-routing` rule checks when-to-use phrasing and descriptions that
 only repeat a skill, agent, or command name. Both checks can be configured
 independently; see the [rule reference](https://skillsaw.org/rules/description-routing/).
+
+Copilot and VS Code custom agents under `.github/agents/` (plus legacy
+`.github/chatmodes/`) also receive target-aware structural validation through
+`copilot-agent-valid`. Their prose keeps the shared content checks, while
+frontmatter fields, handoffs, embedded MCP servers, and agent-scoped hooks are
+checked against the consumer that will load them.
 
 skillsaw detects the repository type automatically and can lint multiple types
 in the same project. See [supported repository

@@ -12,6 +12,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
+    CopilotAgentBlock,
     CursorHooksBlock,
     DevinSkillBlock,
     HookEventConfig,
@@ -25,6 +26,7 @@ class HooksProhibitedRule(Rule):
     """Check that projects do not define non-allowlisted hooks."""
 
     default_enabled = False
+    surface_dependencies = ("copilot-agent-valid",)
 
     since = "0.12.0"
 
@@ -77,7 +79,7 @@ class HooksProhibitedRule(Rule):
                                 f"Hook {safe_display(event_type)}: non-allowlisted command — "
                                 f"{safe_display(handler.command)!r}",
                                 file_path=file_path,
-                                line=line,
+                                line=handler.source_line or line,
                             )
                         )
                     else:
@@ -86,7 +88,7 @@ class HooksProhibitedRule(Rule):
                                 f"Hook {safe_display(event_type)}: hooks are prohibited — "
                                 f"{safe_display(handler.command)!r}",
                                 file_path=file_path,
-                                line=line,
+                                line=handler.source_line or line,
                             )
                         )
         return violations
@@ -136,5 +138,15 @@ class HooksProhibitedRule(Rule):
                 violations.extend(
                     self._check_events(events, block.path, line=block.key_line("hooks"))
                 )
+
+        if self.surface_rule_enabled("copilot-agent-valid"):
+            for block in context.lint_tree.find(CopilotAgentBlock):
+                if block.frontmatter_error or block.field_value("target") == "github-copilot":
+                    continue
+                events = block.hooks_events
+                if events:
+                    violations.extend(
+                        self._check_events(events, block.path, line=block.key_line("hooks"))
+                    )
 
         return violations

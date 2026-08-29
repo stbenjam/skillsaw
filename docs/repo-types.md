@@ -85,6 +85,32 @@ may contain root `plugin.json`, `.claude-plugin/plugin.json`, and
 matching repository type and applies its rule family independently. One
 format's manifest does not substitute for another's.
 
+## MCP Registry publisher metadata
+
+Publisher repositories for the
+[official MCP Registry](https://github.com/modelcontextprotocol/registry)
+can keep one or more `server.json` documents at the repository root or inside
+monorepo packages:
+
+```text
+weather-server/
+├── server.json           # Registry publisher metadata
+└── package.json          # npm ownership metadata, when locally available
+```
+
+Automatic detection requires either the canonical MCP Registry `$schema` URL
+or the Registry's distinctive server identity plus package/remote shape. This
+keeps unrelated application files named `server.json` out of scope. Use
+`--type mcp-registry` when an intended Registry document is too malformed to
+provide detection evidence.
+
+The Registry rules validate strict JSON against the bundled immutable
+2025-12-11 schema, enforce the reverse-DNS server namespace and current
+transport/registry type vocabulary, reject version ranges, recommend strict
+Semantic Versioning, and compare a local npm package's `mcpName` with the
+`server.json` `name`. The npm check never queries a package registry; an
+external package with no matching local `package.json` is left alone.
+
 ## Single Plugin
 
 ```
@@ -252,7 +278,8 @@ reimplement a per-vendor instruction format on top of it; what it adds is
 coverage of the prose each tool keeps in its own directory, plus structural
 validation wherever a tool's own metadata can fail silently — see
 [`cursor-rules-valid`](rules/cursor-rules-valid.md),
-[`cursor-hooks-valid`](rules/cursor-hooks-valid.md) and
+[`cursor-hooks-valid`](rules/cursor-hooks-valid.md),
+[`copilot-agent-valid`](rules/copilot-agent-valid.md), and
 [`opencode-config-valid`](rules/opencode-config-valid.md).
 
 | Tool | Files linted |
@@ -266,6 +293,16 @@ validation wherever a tool's own metadata can fail silently — see
 | **Devin CLI / Desktop** | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/` equivalents and `.windsurfrules` |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
+
+Discovery and validation are separate layers for Copilot. Every Markdown file
+under `.github/agents/` and every `*.chatmode.md` file under the legacy
+`.github/chatmodes/` directory is attached as agent prose, so it receives the
+shared content and security rules.
+[`copilot-agent-valid`](rules/copilot-agent-valid.md) additionally validates
+the YAML fields that determine how GitHub cloud and VS Code interpret the
+agent, including their target-specific model, tool, subagent, handoff, MCP,
+metadata, and hook behavior. Unknown tool names remain valid, matching both
+consumers' forward-compatible behavior.
 
 skillsaw finds `.cursor/`, `.github/`, `.clinerules/`, `.opencode/`, `.devin/`
 and `.windsurf/`
@@ -314,7 +351,8 @@ so a newly added Devin field does not break existing repositories.
 MCP configuration is read for its servers wherever it lives, so
 `mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json`,
 `.vscode/mcp.json` and the `mcp` section of an `opencode.json` or
-`opencode.jsonc` as well as
+`opencode.jsonc`, plus `mcp-servers` embedded in Copilot custom-agent
+frontmatter, as well as
 `.mcp.json`. VS Code spells the server map `servers` and adds a sibling
 `inputs` array for prompted variables; skillsaw reads the former and ignores
 the latter.

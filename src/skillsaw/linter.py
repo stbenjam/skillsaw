@@ -205,6 +205,9 @@ class Linter:
             self.context.rebuild_lint_tree()
         self.rules: List[Rule] = []
         self._load_rules()
+        enabled_surfaces = self._enabled_builtin_surfaces()
+        for rule in self.rules:
+            rule._enabled_surface_rule_ids = enabled_surfaces
 
         if self._rule_ids:
             unknown = self._rule_ids - self._known_rule_ids
@@ -218,6 +221,74 @@ class Linter:
             if unknown:
                 formatted = ", ".join(sorted(unknown))
                 raise ValueError(f"Unknown rule(s) in --skip-rule: {formatted}")
+
+    def _enabled_builtin_surfaces(self) -> frozenset:
+        """Builtin format surfaces available independently of CLI selection.
+
+        ``--rule`` narrows which checks execute, not which repository syntax
+        those checks may inspect. Version/config/skip gates still preserve the
+        rule surface users opted into; explicitly targeting the owning rule
+        bypasses normal enablement just as it does during rule loading.
+        """
+        from .rules.builtin import BUILTIN_RULE_REGISTRY
+
+        enabled = set()
+        known_surfaces = set(BUILTIN_RULE_REGISTRY)
+        requested = set()
+        retained_rules = []
+        for rule in self.rules:
+            try:
+                dependencies = rule.surface_dependencies
+                if isinstance(dependencies, str) or not isinstance(
+                    dependencies, (tuple, list, set, frozenset)
+                ):
+                    raise TypeError("surface_dependencies must be a collection of rule IDs")
+                if not all(isinstance(dependency, str) for dependency in dependencies):
+                    raise TypeError("surface_dependencies must contain only string rule IDs")
+                unknown = set(dependencies) - known_surfaces
+                if unknown:
+                    raise ValueError(
+                        "unknown builtin surface dependency: " + ", ".join(sorted(unknown))
+                    )
+            except Exception as error:
+                source = getattr(rule, "_source", "builtin")
+                if not source.startswith("plugin:"):
+                    raise ValueError(
+                        f"Rule '{rule.rule_id}' has invalid surface_dependencies: {error}"
+                    ) from error
+                plugin_name = source.removeprefix("plugin:")
+                self._plugin_load_violations.append(
+                    RuleViolation(
+                        rule_id="plugin-load-error",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"Plugin '{plugin_name}': rule '{rule.rule_id}' has invalid "
+                            f"surface dependencies and was skipped: {error}"
+                        ),
+                    )
+                )
+                continue
+            retained_rules.append(rule)
+            requested.update(dependencies)
+        self.rules = retained_rules
+        for rule_id in requested:
+            rule_class = BUILTIN_RULE_REGISTRY[rule_id]
+            instance = rule_class()
+            if rule_id in self._skip_rule_ids:
+                continue
+            if self._rule_ids and rule_id in self._rule_ids:
+                enabled.add(rule_id)
+                continue
+            if self.config.is_rule_enabled(
+                rule_id,
+                self.context,
+                instance.repo_types,
+                instance.formats,
+                since_version=instance.since,
+                deprecated=instance.deprecated,
+            ):
+                enabled.add(rule_id)
+        return frozenset(enabled)
 
     def _load_rules(self):
         """Load all enabled rules"""

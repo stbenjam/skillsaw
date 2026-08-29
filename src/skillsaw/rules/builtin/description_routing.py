@@ -13,6 +13,7 @@ from skillsaw.rules.builtin.content_analysis import (
     OpenCodeAgentBlock,
     SkillBlock,
 )
+from skillsaw.rules.builtin.utils import read_frontmatter_commented
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 _ACTIVE_USE_TRIGGER_RE = re.compile(
@@ -54,6 +55,7 @@ class DescriptionRoutingRule(Rule):
     """Check whether descriptions provide useful routing or purpose signals."""
 
     since = "0.18.0"
+    surface_dependencies = ("copilot-agent-valid",)
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
@@ -173,7 +175,34 @@ class DescriptionRoutingRule(Rule):
                     continue
                 line = block.key_line("description")
                 description = description_field.value
-                if not isinstance(description, str) or not description.strip():
+                if block_type is CopilotAgentBlock and not isinstance(description, str):
+                    # FrontmatteredBlock's compatibility parser follows YAML
+                    # 1.1, where `yes` is boolean. Copilot's schema is YAML
+                    # 1.2, so use the same line-preserving parser as its
+                    # dedicated rule before making content judgments.
+                    parsed, error, _error_line = read_frontmatter_commented(block.path)
+                    if error is None and isinstance(parsed, dict) and "description" in parsed:
+                        description = parsed["description"]
+                if not isinstance(description, str):
+                    # Copilot's dedicated schema rule owns wrong-typed
+                    # descriptions. Treating the same value as an empty
+                    # content description here would emit two diagnoses for
+                    # one defect. Other formats have no schema owner and keep
+                    # the established routing finding.
+                    if block_type is CopilotAgentBlock and self.surface_rule_enabled(
+                        "copilot-agent-valid"
+                    ):
+                        continue
+                    violations.append(
+                        self.violation(
+                            "Description is empty; explain what the building block does",
+                            block=block,
+                            line=line,
+                            fingerprint_discriminator="empty-description",
+                        )
+                    )
+                    continue
+                if not description.strip():
                     violations.append(
                         self.violation(
                             "Description is empty; explain what the building block does",
