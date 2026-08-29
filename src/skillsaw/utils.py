@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import stat
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NoReturn, Optional, Set, Tuple
@@ -331,6 +332,16 @@ _SIZE_WALK_LIMIT = 20_000
 #: above it, and then charged wrongly for as long as it stayed.
 UNCACHEABLE_SIZE = -1
 
+#: Charged on top of every entry's value, for the machinery that holds it:
+#: a resolved ``Path`` key and the string inside it, the per-path bucket
+#: dict, the sub-key tuple, and a slot in each of the two dicts. Measured
+#: at 552 bytes for a short path and more for a realistic one, against
+#: which an empty ``read_text`` result charged by its value alone costs
+#: one byte. A repository of many small files is otherwise bounded by
+#: nothing: 20,000 empty entries fit the 64 MiB budget 3,000 times over on
+#: paper while holding 11 MiB.
+_ENTRY_OVERHEAD_BYTES = 512
+
 
 def _approximate_size(value: Any) -> int:
     """Roughly how many bytes *value* keeps alive, for cache accounting.
@@ -352,11 +363,13 @@ def _approximate_size(value: Any) -> int:
         walked += 1
         if walked > _SIZE_WALK_LIMIT:
             return UNCACHEABLE_SIZE
-        if isinstance(node, str):
-            total += len(node)
-            continue
-        if isinstance(node, (bytes, bytearray)):
-            total += len(node)
+        if isinstance(node, (str, bytes, bytearray)):
+            # Not ``len``. CPython stores a string at one, two or four
+            # bytes per character depending on the widest codepoint in it
+            # (PEP 393), so a document of emoji retains four times the
+            # length the budget would have been shown. ``getsizeof``
+            # reports what the object actually holds, header included.
+            total += sys.getsizeof(node)
             continue
         node_id = id(node)
         if isinstance(node, dict):
@@ -380,6 +393,18 @@ def _approximate_size(value: Any) -> int:
     return total or 1
 
 
+def _entry_cost(value: Any) -> int:
+    """What one cache entry costs — its value plus the entry holding it.
+
+    Every accounting site goes through here, so what admission charges and
+    what eviction credits back cannot drift apart.
+    """
+    size = _approximate_size(value)
+    if size == UNCACHEABLE_SIZE:
+        return UNCACHEABLE_SIZE
+    return size + _ENTRY_OVERHEAD_BYTES
+
+
 class FileCache:
     """Thread-safe cache that supports per-file invalidation.
 
@@ -397,13 +422,19 @@ class FileCache:
     enough to be safe for the second is a cliff for the first — every rule
     sweeping the repository evicts what the previous rule cached, and the
     linter re-reads and re-parses every file for every rule. ``budget``
-    is that bound, measured with :func:`_approximate_size`.
+    is that bound, measured with :func:`_entry_cost`.
     """
 
-    #: 64 MiB holds every file of a large marketplace (~10k documents)
-    #: while staying a small fraction of what the lint tree itself costs
-    #: for such a repository.
-    DEFAULT_BUDGET = 64 * 1024 * 1024
+    #: 128 MiB, which is what a large marketplace (~10k documents) has
+    #: always cost here — 90.7 MiB of it, measured. The number read 64
+    #: only because the accounting under-counted by 1.9x: text was charged
+    #: its character count rather than its retained width, and an entry
+    #: was charged nothing for the ``Path`` key, bucket, sub-key and dict
+    #: slots holding it. Correcting both without correcting this would
+    #: have quietly cut the working set by a third and started evicting
+    #: what such a repository needs, so the bound now states what was
+    #: already being held rather than a third of it.
+    DEFAULT_BUDGET = 128 * 1024 * 1024
 
     def __init__(self, budget: int = DEFAULT_BUDGET):
         self._lock = threading.Lock()
@@ -436,7 +467,7 @@ class FileCache:
                     return bucket[sub_key]
             # Compute outside the lock to avoid holding it during I/O.
             result = func(*args, **kwargs)
-            cost = _approximate_size(result)
+            cost = _entry_cost(result)
             if cost == UNCACHEABLE_SIZE or cost > self._budget:
                 # Either the value is too large for eviction to ever make
                 # room, or it is too large to have been sized at all. Both
@@ -459,9 +490,7 @@ class FileCache:
         def _clear():
             with self._lock:
                 freed = sum(
-                    _approximate_size(value)
-                    for bucket in store.values()
-                    for value in bucket.values()
+                    _entry_cost(value) for bucket in store.values() for value in bucket.values()
                 )
                 store.clear()
                 self._total_bytes -= freed
@@ -496,7 +525,7 @@ class FileCache:
                 bucket = store.pop(path, None)
                 if bucket is None:
                     continue
-                freed += sum(_approximate_size(value) for value in bucket.values())
+                freed += sum(_entry_cost(value) for value in bucket.values())
                 if freed >= target:
                     break
         self._total_bytes -= freed
@@ -521,9 +550,7 @@ class FileCache:
                 for store in self._stores:
                     bucket = store.pop(resolved, None)
                     if bucket is not None:
-                        self._total_bytes -= sum(
-                            _approximate_size(value) for value in bucket.values()
-                        )
+                        self._total_bytes -= sum(_entry_cost(value) for value in bucket.values())
 
 
 # Singleton cache used by all utility functions.

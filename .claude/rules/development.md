@@ -72,6 +72,13 @@ the lint tree, or `utils.py` read paths, save a baseline on main and compare on 
   enough to be safe for large files is a cliff for many small ones: past
   it, every rule evicts what the previous rule cached. `FileCache` takes a
   byte `budget`, and never caches a value larger than it.
+- **Charge an entry what it retains, through `_entry_cost` alone.** `len(text)`
+  is not bytes — CPython stores one, two or four per character (PEP 393), so
+  emoji retain 4x what `len` reports; use `sys.getsizeof`. And an entry is more
+  than its value: the `Path` key, bucket, sub-key and dict slots cost ~512 bytes,
+  which is the whole cost for a repository of tiny files. Route every
+  accounting site through one helper — admission, both evictions *and*
+  `invalidate` — or the total drifts and the cache evicts forever.
 - **`safe_resolve` is memoized for the lifetime of a pass**, cleared by
   `invalidate_read_caches()`. A test that makes the filesystem start
   failing mid-run must drop the memo (`clear_resolve_cache()`).

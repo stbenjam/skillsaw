@@ -6,6 +6,7 @@ and centralized YAML line number functions).
 import os
 from pathlib import Path
 import stat
+import sys
 
 import pytest
 
@@ -1008,6 +1009,43 @@ class TestFileCacheBudget:
         assert reader(target) == huge
 
         assert calls["n"] == 2, "an unsized value must be recomputed, not served"
+        assert cache._total_bytes == 0
+
+    def test_text_is_charged_by_what_it_retains_not_its_length(self):
+        """CPython stores a string at one, two or four bytes per character
+        (PEP 393), so a document of emoji retains four times the length a
+        ``len``-based estimate would have shown the budget."""
+        astral = "\U0001f600" * 100_000
+
+        charged = skillsaw_utils._approximate_size(astral)
+
+        assert charged >= sys.getsizeof(astral) - skillsaw_utils._NODE_OVERHEAD_BYTES
+        assert charged > 2 * len(astral), "a 4-byte-per-char string charged as 1 byte per char"
+
+    def test_an_entry_is_charged_for_the_machinery_holding_it(self, tmp_path):
+        """A cache entry is not only its value.
+
+        It also retains the resolved ``Path`` key, the per-path bucket, the
+        sub-key tuple and a slot in each dict. Charged by value alone, an
+        empty read costs one byte against several hundred really held, and
+        a repository of many small files is bounded by nothing.
+        """
+        cache, reader, _ = self._cache(1_000_000)
+        for i in range(500):
+            reader(tmp_path / f"empty{i}.md", "")
+
+        assert cache._total_bytes >= 500 * skillsaw_utils._ENTRY_OVERHEAD_BYTES
+
+    def test_invalidating_credits_back_exactly_what_admission_charged(self, tmp_path):
+        """Otherwise the total drifts up on every write-invalidate cycle
+        until the cache evicts everything on every insertion."""
+        cache, reader, _ = self._cache(1_000_000)
+        target = tmp_path / "a.md"
+
+        for _ in range(20):
+            reader(target, "some body text")
+            cache.invalidate(target)
+
         assert cache._total_bytes == 0
 
 
