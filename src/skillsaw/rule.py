@@ -140,6 +140,11 @@ class Rule(ABC):
     # whose diagnostics are deliberately owned by another rule; ordinary
     # config-driven enablement remains independent.
     target_dependencies: tuple[str, ...] = ()
+    # Format-owner rule IDs whose syntax this rule consumes indirectly. The
+    # linter evaluates these independently of ``--rule`` selection so a
+    # targeted shared security rule still sees current-format surfaces while
+    # version/config/skip gates preserve older result sets.
+    surface_dependencies: tuple[str, ...] = ()
     # Default activation when the user config doesn't mention the rule:
     # True (always on), False (opt-in), or "auto" (on when repo_types /
     # formats match the repository). ``LinterConfig.default()`` is generated
@@ -175,6 +180,11 @@ class Rule(ABC):
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"
     baseline_mode: Optional[str] = None  # "ceiling" or "floor"
+    # Populated on each loaded rule instance by Linter. This is deliberately
+    # rule-local rather than RepositoryContext state: one context may back
+    # several independently configured linters. ``None`` keeps focused unit
+    # calls to ``Rule.check(context)`` self-contained.
+    _enabled_surface_rule_ids: Optional[frozenset] = None
 
     def __init__(self, config: Dict[str, Any] = None):
         """
@@ -199,6 +209,10 @@ class Rule(ABC):
                     f"Invalid severity '{severity_str}' for rule '{self.rule_id}'. "
                     f"Valid values: {valid}"
                 ) from err
+
+    def surface_rule_enabled(self, rule_id: str) -> bool:
+        """Whether the format surface introduced by *rule_id* is active."""
+        return self._enabled_surface_rule_ids is None or rule_id in self._enabled_surface_rule_ids
 
     def setting(self, name: str) -> Any:
         """Resolve a config option: the user's override, else the schema default.

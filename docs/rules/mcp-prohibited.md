@@ -23,8 +23,9 @@ vector analogous to malicious npm lifecycle scripts.
 The conventional MCP files are inventoried wherever the host that reads
 them keeps one: `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, the
 `mcp` section of an `opencode.json` or `opencode.jsonc`, and a plugin's
-`mcp.json`. Servers
-written inline in a manifest are covered too. OpenCode is inventoried in
+`mcp.json`. Cloud or shared GitHub Copilot agents are inventoried from the
+`mcp-servers` YAML mapping in `.github/agents/**/*.agent.md`. Servers written
+inline in a manifest are covered too. OpenCode is inventoried in
 both of its layouts — the 1.x map directly under `mcp` and the 2.0 one
 under `mcp.servers` — including a file carrying both at once, since a
 config could otherwise hide a server behind whichever layout went unread.
@@ -62,9 +63,10 @@ rules:
 
 Review the flagged MCP server. If it is trusted, add its name to the
 `allowlist` in your skillsaw config. Allowlist entries match by server
-name — the key in the server map, which is `mcpServers` in `.mcp.json`,
-`.cursor/mcp.json` and plugin manifests, and `servers` in
-`.vscode/mcp.json`. This rule is disabled by default — enable it for
+name — the key in the server map. Its wrapper is `mcpServers` in `.mcp.json`,
+`.cursor/mcp.json` and plugin manifests; `servers` in `.vscode/mcp.json`;
+`mcp` or `mcp.servers` in OpenCode; and `mcp-servers` in cloud or shared
+GitHub Copilot agent YAML. This rule is disabled by default — enable it for
 supply-chain-sensitive repositories.
 
 ## Configuration

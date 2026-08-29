@@ -3,16 +3,20 @@ Rule: mcp-valid-json
 """
 
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from pathlib import Path
 
-from skillsaw.blocks import AgentPluginMcpBlock, OpenCodeMcpBlock
+from skillsaw.blocks import (
+    AgentPluginMcpBlock,
+    CopilotAgentMcpBlock,
+    McpConfigRole,
+    OpenCodeMcpBlock,
+)
 from skillsaw.context import HAS_OPENCODE, RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.utils import is_finite_number
 from skillsaw.lint_target import PluginNode
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.secret_detection import (
     mapped_secret_description,
     placeholder_markers,
@@ -24,6 +28,15 @@ from skillsaw.rules.builtin.utils import read_json
 def _is_usable(value: Any) -> bool:
     """Whether a required connection field names something spawnable."""
     return isinstance(value, str) and bool(value.strip())
+
+
+def _yaml_type_name(value: Any) -> str:
+    """Stable schema type name without rendering a composite YAML value."""
+    if isinstance(value, list):
+        return "list"
+    if isinstance(value, dict):
+        return "mapping"
+    return type(value).__name__
 
 
 #: How a per-server credential map is named in a finding, keyed by the map's
@@ -58,6 +71,7 @@ class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
     default_enabled = True
+    surface_dependencies = ("copilot-agent-valid",)
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a
     # project that allowlisted its own placeholder convention must not be told
@@ -104,7 +118,7 @@ class McpValidJsonRule(Rule):
 
     @property
     def description(self) -> str:
-        return "MCP configuration must be valid JSON with proper mcpServers structure"
+        return "MCP configuration must use valid syntax and a host-readable server structure"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -112,7 +126,15 @@ class McpValidJsonRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for block in context.lint_tree.find(McpBlock):
+        for block in context.lint_tree.find(McpConfigRole):
+            # This tree role exists so the format rule and shared MCP rules
+            # can read one parsed payload. When a version pin disables the
+            # format rule that introduced the surface, keep the established
+            # rule set unchanged rather than leaking a new MCP diagnostic.
+            if isinstance(block, CopilotAgentMcpBlock) and not self.surface_rule_enabled(
+                "copilot-agent-valid"
+            ):
+                continue
             # Agent Plugins uses a closed, versioned schema with different
             # defaults and failure boundaries. Its dedicated rule validates
             # this block; running the permissive Claude/Codex shape check too
@@ -240,6 +262,9 @@ class McpValidJsonRule(Rule):
                     require_usable=require_usable,
                     servers_key=servers_key,
                     check_reserved=block.claude_builtins_reserved,
+                    type_aliases=block.type_aliases,
+                    line=getattr(block, "source_line", None),
+                    line_for=getattr(block, "source_line_for", None),
                 )
             )
 
@@ -251,7 +276,7 @@ class McpValidJsonRule(Rule):
 
         return violations
 
-    def _dialect_neutral_violations(self, block: McpBlock) -> List[RuleViolation]:
+    def _dialect_neutral_violations(self, block: McpConfigRole) -> List[RuleViolation]:
         """The checks this rule keeps for a block whose *shape* it defers.
 
         Not the whole rule, and not one check either: what stays is
@@ -338,30 +363,33 @@ class McpValidJsonRule(Rule):
         require_usable: bool = False,
         servers_key: str = "mcpServers",
         check_reserved: bool = True,
+        type_aliases: Mapping[str, str] = MappingProxyType({}),
+        line: Optional[int] = None,
+        line_for: Optional[Callable[[Any, Any], Optional[int]]] = None,
     ) -> List[RuleViolation]:
         """Validate MCP configuration structure"""
         violations = []
 
-        if not isinstance(data, dict):
-            violations.append(
-                self.violation("MCP configuration must be a JSON object", file_path=file_path)
+        def report(
+            message: str, *, node: Any = None, key: Any = None, **kwargs: Any
+        ) -> RuleViolation:
+            """Create a finding at the embedded field when one exists."""
+            resolved_line = (
+                line_for(node, key) if line_for is not None and node is not None else line
             )
+            return self.violation(message, file_path=file_path, line=resolved_line, **kwargs)
+
+        if not isinstance(data, dict):
+            violations.append(report("MCP configuration must be a JSON object"))
             return violations
 
         if "mcpServers" not in data:
-            violations.append(
-                self.violation(
-                    f"MCP configuration must contain '{servers_key}' key",
-                    file_path=file_path,
-                )
-            )
+            violations.append(report(f"MCP configuration must contain '{servers_key}' key"))
             return violations
 
         mcp_servers = data["mcpServers"]
         if not isinstance(mcp_servers, dict):
-            violations.append(
-                self.violation(f"'{servers_key}' must be a JSON object", file_path=file_path)
-            )
+            violations.append(report(f"'{servers_key}' must be a JSON object"))
             return violations
 
         for server_name, server_config in mcp_servers.items():
@@ -371,22 +399,36 @@ class McpValidJsonRule(Rule):
             # manifest value: userinfo redacted, control characters and lone
             # surrogates replaced. Bound at the top of the loop rather than
             # per message so a diagnostic added later cannot forget it.
-            shown = safe_display(server_name)
+            shown = safe_display(str(server_name))
+            if not isinstance(server_name, str):
+                violations.append(
+                    report(
+                        f"MCP server name '{shown}' must be a string",
+                        node=mcp_servers,
+                        key=server_name,
+                    )
+                )
             if not isinstance(server_config, dict):
                 violations.append(
-                    self.violation(
+                    report(
                         f"MCP server '{shown}' configuration must be an object",
-                        file_path=file_path,
+                        node=mcp_servers,
+                        key=server_name,
                     )
                 )
                 continue
 
-            if check_reserved and server_name in self.RESERVED_SERVER_NAMES:
+            if (
+                check_reserved
+                and isinstance(server_name, str)
+                and server_name in self.RESERVED_SERVER_NAMES
+            ):
                 violations.append(
-                    self.violation(
+                    report(
                         f"MCP server name '{shown}' is reserved "
                         f"for a Claude Code built-in server",
-                        file_path=file_path,
+                        node=mcp_servers,
+                        key=server_name,
                         severity=Severity.WARNING,
                     )
                 )
@@ -405,20 +447,40 @@ class McpValidJsonRule(Rule):
             else:
                 server_type = server_config["type"]
 
-            if server_type not in self.VALID_MCP_TYPES:
+            normalized_type = (
+                type_aliases.get(server_type, server_type)
+                if isinstance(server_type, str)
+                else server_type
+            )
+            valid_type_names = (*self.VALID_MCP_TYPES, *type_aliases)
+            if normalized_type not in self.VALID_MCP_TYPES:
+                # Embedded YAML can put an exponentially expanding alias graph
+                # here. Never materialize a non-string merely to truncate the
+                # result; its Python/YAML shape is the actionable diagnosis.
+                shown_type = (
+                    safe_display(server_type)
+                    if isinstance(server_type, str)
+                    else _yaml_type_name(server_type)
+                )
                 violations.append(
-                    self.violation(
-                        f"MCP server '{shown}' has invalid type '{safe_display(server_type)}'. Must be one of: {', '.join(self.VALID_MCP_TYPES)}",
-                        file_path=file_path,
+                    report(
+                        f"MCP server '{shown}' has invalid type "
+                        f"'{shown_type}'. Must be one of: "
+                        f"{', '.join(valid_type_names)}",
+                        node=server_config,
+                        key="type",
                     )
                 )
             else:
-                required_field = self.REQUIRED_FIELDS_BY_TYPE[server_type]
+                required_field = self.REQUIRED_FIELDS_BY_TYPE[normalized_type]
                 if required_field not in server_config:
                     violations.append(
-                        self.violation(
-                            f"MCP server '{shown}' with type '{safe_display(server_type)}' must have a '{required_field}' field",
-                            file_path=file_path,
+                        report(
+                            f"MCP server '{shown}' with type "
+                            f"'{safe_display(server_type)}' must have a "
+                            f"'{required_field}' field",
+                            node=mcp_servers,
+                            key=server_name,
                         )
                     )
                 # Present is not the same as usable: ``"command": []`` and
@@ -432,26 +494,29 @@ class McpValidJsonRule(Rule):
                     and not (required_field == "url" and not isinstance(server_config["url"], str))
                 ):
                     violations.append(
-                        self.violation(
+                        report(
                             f"MCP server '{shown}' '{required_field}' "
                             "must be a non-empty string",
-                            file_path=file_path,
+                            node=server_config,
+                            key=required_field,
                         )
                     )
 
             if "args" in server_config and not isinstance(server_config["args"], list):
                 violations.append(
-                    self.violation(
+                    report(
                         f"MCP server '{shown}' 'args' must be an array",
-                        file_path=file_path,
+                        node=server_config,
+                        key="args",
                     )
                 )
 
             if "env" in server_config and not isinstance(server_config["env"], dict):
                 violations.append(
-                    self.violation(
+                    report(
                         f"MCP server '{shown}' 'env' must be an object",
-                        file_path=file_path,
+                        node=server_config,
+                        key="env",
                     )
                 )
             elif isinstance(server_config.get("env"), dict):
@@ -461,38 +526,44 @@ class McpValidJsonRule(Rule):
                         server_name=shown,
                         file_path=file_path,
                         header=False,
+                        line=line,
+                        line_for=line_for,
                     )
                 )
 
             if "cwd" in server_config and not isinstance(server_config["cwd"], str):
                 violations.append(
-                    self.violation(
+                    report(
                         f"MCP server '{shown}' 'cwd' must be a string",
-                        file_path=file_path,
+                        node=server_config,
+                        key="cwd",
                     )
                 )
 
             if "url" in server_config and not isinstance(server_config["url"], str):
                 violations.append(
-                    self.violation(
+                    report(
                         f"MCP server '{shown}' 'url' must be a string",
-                        file_path=file_path,
+                        node=server_config,
+                        key="url",
                     )
                 )
             elif isinstance(server_config.get("url"), str):
                 if url_has_userinfo(server_config["url"]):
                     violations.append(
-                        self.violation(
+                        report(
                             f"MCP server '{shown}' 'url' must not contain user information",
-                            file_path=file_path,
+                            node=server_config,
+                            key="url",
                         )
                     )
 
             if "headers" in server_config and not isinstance(server_config["headers"], dict):
                 violations.append(
-                    self.violation(
+                    report(
                         f"MCP server '{shown}' 'headers' must be an object",
-                        file_path=file_path,
+                        node=server_config,
+                        key="headers",
                     )
                 )
             elif isinstance(server_config.get("headers"), dict):
@@ -502,6 +573,8 @@ class McpValidJsonRule(Rule):
                         server_name=shown,
                         file_path=file_path,
                         header=True,
+                        line=line,
+                        line_for=line_for,
                     )
                 )
 
@@ -515,9 +588,10 @@ class McpValidJsonRule(Rule):
                     is_valid_number = is_finite_number(val)
                     if not is_valid_number:
                         violations.append(
-                            self.violation(
+                            report(
                                 f"MCP server '{shown}' '{timeout_field}' must be a number",
-                                file_path=file_path,
+                                node=server_config,
+                                key=timeout_field,
                             )
                         )
 
@@ -525,9 +599,10 @@ class McpValidJsonRule(Rule):
                 server_config["headersHelper"], str
             ):
                 violations.append(
-                    self.violation(
+                    report(
                         f"MCP server '{shown}' 'headersHelper' must be a string",
-                        file_path=file_path,
+                        node=server_config,
+                        key="headersHelper",
                     )
                 )
 
@@ -535,9 +610,10 @@ class McpValidJsonRule(Rule):
                 val = server_config["alwaysLoad"]
                 if not isinstance(val, bool):
                     violations.append(
-                        self.violation(
+                        report(
                             f"MCP server '{shown}' 'alwaysLoad' must be a boolean",
-                            file_path=file_path,
+                            node=server_config,
+                            key="alwaysLoad",
                         )
                     )
 
@@ -545,9 +621,10 @@ class McpValidJsonRule(Rule):
                 oauth = server_config["oauth"]
                 if not isinstance(oauth, dict):
                     violations.append(
-                        self.violation(
+                        report(
                             f"MCP server '{shown}' 'oauth' must be an object",
-                            file_path=file_path,
+                            node=server_config,
+                            key="oauth",
                         )
                     )
 
@@ -566,6 +643,8 @@ class McpValidJsonRule(Rule):
         header: bool,
         aliases: Mapping[str, str] = MappingProxyType({}),
         location: str = "",
+        line: Optional[int] = None,
+        line_for: Optional[Callable[[Any, Any], Optional[int]]] = None,
     ) -> List[RuleViolation]:
         """Report structured credentials without copying their values.
 
@@ -596,6 +675,7 @@ class McpValidJsonRule(Rule):
                     f"'{safe_display(name)}' embeds {description}; use a placeholder "
                     "or environment substitution instead of a credential value",
                     file_path=file_path,
+                    line=line_for(values, name) if line_for is not None else line,
                 )
             )
         return violations

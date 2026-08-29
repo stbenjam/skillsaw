@@ -1,8 +1,10 @@
 ## Why
 
-MCP (Model Context Protocol) configuration files must be valid JSON with a
-server map the host can actually read. Invalid JSON or the wrong structure
-means no MCP servers load, and tools that depend on them silently fail.
+MCP (Model Context Protocol) configuration must use syntax and a server map
+the host can actually read. Standalone files and manifests use JSON; GitHub
+Copilot custom agents embed the same server shape in YAML frontmatter. Invalid
+syntax or the wrong structure means no MCP servers load, and tools that depend
+on them silently fail.
 
 ## Which key, which file
 
@@ -15,12 +17,18 @@ The server map has two spellings, and each host reads exactly one:
 | `.cursor/mcp.json` | `mcpServers` | Yes |
 | `.vscode/mcp.json` | `servers` | Yes |
 | `opencode.json`, `opencode.jsonc` | `mcp`, or `mcp.servers` in 2.0 | Yes |
+| `.github/agents/**/*.agent.md` (cloud or shared) | `mcp-servers` | Yes, in YAML frontmatter |
 
 A file using the other host's key is reported as such — the servers are
 present but will not load. VS Code's documented siblings `inputs` and
 `sandbox` are not servers and are left alone. OpenCode accepts both of its
 own layouts at once and this rule reads both, but the *shape* of an OpenCode
 server is checked elsewhere — see below.
+
+GitHub Copilot custom-agent YAML accepts `type: local` as the local-process
+spelling of `stdio`; both require a non-empty string `command`. The embedded
+surface is checked only for `target: github-copilot` or an omitted target.
+VS Code and legacy `.chatmode.md` files do not consume `mcp-servers`.
 
 ## Two files this rule does not shape-check
 
@@ -73,6 +81,7 @@ manifest data that neither the host nor this rule reads as servers.
 Transport is inferred when a server does not declare `type`: a `command`
 means stdio, and a bare `url` means a remote server. Declaring `type`
 explicitly overrides the inference, and an unknown value is reported.
+GitHub Copilot agent YAML may spell the local transport `local` instead.
 
 Credential values do not belong in committed MCP configuration. The rule
 reports structured secrets in `env` and `headers` mappings and rejects URL
@@ -106,11 +115,24 @@ value to name something spawnable — a non-empty `command` string or `url`.
 }
 ```
 
+**Good in a GitHub Copilot custom agent:**
+
+```yaml
+---
+description: Reviews changes using repository metadata
+mcp-servers:
+  repository:
+    type: local
+    command: node
+    args: [scripts/repository-server.js]
+---
+```
+
 ## How to fix
 
-Fix the JSON syntax error, or move the servers under the key this file's
-host reads (see the table above). Each stdio server needs a `command` and
-each remote server a `url`; when `type` is declared, the field must match
+Fix the JSON or YAML syntax error, or move the servers under the key this
+host reads (see the table above). Each stdio/local server needs a `command`
+and each remote server a `url`; when `type` is declared, the field must match
 it.
 
 Inside an OpenAI Codex-only plugin (Codex-claimed, with neither a

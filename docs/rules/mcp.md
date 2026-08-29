@@ -7,7 +7,7 @@ Validates both MCP client configuration and MCP Registry publisher metadata. Reg
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - |
+| [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must use valid syntax and a host-readable server structure | error | - |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - |
 | [`mcp-registry-server-json-valid`](mcp-registry-server-json-valid.md) | MCP Registry server.json must conform to a supported schema and its enums | error (auto) | - |
 | [`mcp-registry-version-semver`](mcp-registry-version-semver.md) | MCP Registry server versions should use strict Semantic Versioning 2.0.0 | warning (auto) | - |
