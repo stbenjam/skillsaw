@@ -59,8 +59,9 @@ with `plugins/note-taker/.codex-plugin/plugin.json` on disk and no
 Register the plugin, or repair the entry that does not resolve.
 
 Plugins are registered across catalogs in `.agents/plugins/`. Local entries
-register the directory their `path` resolves to. If a plugin's directory is not
-reached by any entry path, update the `path` field in the catalog.
+register the directory their `path` resolves to, while remote entries register by `name`.
+If a local plugin's directory is not reached by any entry path, update the `path` field in the catalog.
+
 
 Entry names that disagree with the plugin manifest's `name` are reported as warnings.
 
