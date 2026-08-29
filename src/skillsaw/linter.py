@@ -14,7 +14,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
-from skillsaw.paths import safe_is_symlink, safe_resolve
+from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,12 @@ def _node_content_suppressed(block) -> bool:
     return False
 
 
+def _node_externally_sourced(block) -> bool:
+    """Whether *block* or any ancestor is externally sourced."""
+    getter = getattr(block, "in_external_source", None)
+    return bool(getter) if getter is not None else False
+
+
 class CustomRuleWarning(UserWarning):
     """Emitted just before skillsaw executes a custom rule file from the repo.
 
@@ -194,6 +200,9 @@ class Linter:
             self.context.content_paths = self.config.content_paths
             self.context.exclude_patterns = self.config.exclude_patterns
             self.context.apply_excludes()
+        if self.context.lint_external_content != self.config.lint_external_content:
+            self.context.lint_external_content = self.config.lint_external_content
+            self.context.rebuild_lint_tree()
         self.rules: List[Rule] = []
         self._load_rules()
 
@@ -957,6 +966,36 @@ class Linter:
         resolved = safe_resolve(path) or path
         return resolved in self._compiled_copy_paths()
 
+    def _is_external_source_path(self, path: Optional[Path]) -> bool:
+        """Whether *path* sits inside an externally sourced tree root."""
+        if path is None:
+            return False
+        if not path.is_absolute():
+            path = self.context.root_path / path
+        resolved = safe_resolve(path) or path
+        return path_within_roots(
+            resolved, self._external_source_roots()
+        ) or self.context.is_externally_sourced(resolved)
+
+    def _external_source_roots(self) -> Set[Path]:
+        """External roots from repository provenance and contributed tree tags."""
+        cached = getattr(self, "_external_source_root_cache", None)
+        if cached is None:
+            cached = set(self.context.externally_sourced_roots())
+            cached.update(
+                node.resolved_path
+                for node in self.context.lint_tree.walk()
+                if node.externally_sourced
+            )
+            self._external_source_root_cache = cached
+        return cached
+
+    def _is_on_external_source(self, violation: RuleViolation) -> bool:
+        """Whether *violation* belongs to externally sourced content."""
+        if violation.block is not None and _node_externally_sourced(violation.block):
+            return True
+        return self._is_external_source_path(violation.file_path)
+
     def _is_vendor_managed(self, file_path: Optional[Path]) -> bool:
         """Whether *file_path* belongs to a plugin installed into this checkout.
 
@@ -1007,6 +1046,12 @@ class Linter:
                     v.file_path or "(no file)",
                     v.file_line or "?",
                 )
+            elif not self.config.lint_external_content and self._is_on_external_source(v):
+                logger.info(
+                    "Suppressed %-30s %s (externally sourced content)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
+                )
             elif _is_prose_duplicate_rule(v.rule_id) and self._is_on_compiled_copy(v):
                 # A compiled copy of a source read elsewhere: its prose-quality
                 # and budget findings would double the source's, so drop them.
@@ -1019,10 +1064,12 @@ class Linter:
                     v.rule_id,
                     v.file_path or "(no file)",
                 )
-            elif self._is_vendor_managed(v.file_path) or (
-                v.block is not None and v.block.diagnostic_only
+            elif (
+                self._is_on_external_source(v)
+                or self._is_vendor_managed(v.file_path)
+                or (v.block is not None and v.block.diagnostic_only)
             ):
-                # Still reported — a hostile third-party skill is worth
+                # Still reported — hostile third-party content is worth
                 # knowing about — but never advertised as fixable, because
                 # fix() is about to stand down on it. Confidence goes with
                 # fixability, or JSON/SARIF would still claim SAFE/SUGGEST.
@@ -1165,13 +1212,23 @@ class Linter:
             # ``fix()`` does not read it, so handing the violation over would
             # still invite a rewrite of text that has no honest span in the
             # file that holds it (a prompt decoded out of JSON, say).
-            fixable_input = [v for v in visible if v.block is None or not v.block.diagnostic_only]
+            fixable_input = [
+                v
+                for v in visible
+                if (v.block is None or not v.block.diagnostic_only)
+                and not self._is_on_external_source(v)
+            ]
             if fixable_input and rule.supports_autofix:
                 try:
                     fixes = [
                         f
                         for f in rule.fix(self.context, fixable_input)
                         if not self._is_vendor_managed(f.file_path)
+                        and not self._is_external_source_path(f.file_path)
+                        and (
+                            f.rename_from is None
+                            or not self._is_external_source_path(f.rename_from)
+                        )
                     ]
                     all_fixes.extend(fixes)
                     fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
@@ -1295,6 +1352,8 @@ class Linter:
             self.context.rebuild_lint_tree()
             if hasattr(self, "_suppression_cache"):
                 self._suppression_cache.clear()
+            if hasattr(self, "_external_source_root_cache"):
+                del self._external_source_root_cache
 
         return all_applied, all_suggested
 

@@ -10,7 +10,7 @@ manifest-supplied paths without aborting the lint.
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Optional
+from typing import AbstractSet, Optional
 
 
 def is_absolute_path(path: str) -> bool:
@@ -39,6 +39,11 @@ def is_absolute_path(path: str) -> bool:
 def has_parent_traversal(path: str) -> bool:
     """True when the path contains a '..' component."""
     return ".." in path.replace("\\", "/").split("/")
+
+
+def path_within_roots(path: Path, roots: AbstractSet[Path]) -> bool:
+    """Whether resolved *path* equals or descends from an indexed root."""
+    return path in roots or any(parent in roots for parent in path.parents)
 
 
 def safe_resolve(path: Path) -> Optional[Path]:

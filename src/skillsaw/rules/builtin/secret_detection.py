@@ -76,7 +76,6 @@ DEFAULT_PLACEHOLDER_MARKERS = (
     "change_me",
     "your-",
     "your_",
-    "hunter2",
     "password",
     "token",
     "test",
@@ -87,6 +86,15 @@ DEFAULT_PLACEHOLDER_MARKERS = (
     "todo",
     "fixme",
     "xxx",
+)
+
+# Exact, well-known documentation/example values, compared case-insensitively
+# after trimming surrounding whitespace. Keep these separate from the
+# substring markers above: a credential merely containing one of these
+# literals can still be real and must not inherit an allowlist exemption.
+KNOWN_SECRET_EXAMPLE_VALUES = frozenset({"hunter2"})
+_KNOWN_SECRET_EXAMPLE_VALUE_CASEFOLDS = frozenset(
+    value.casefold() for value in KNOWN_SECRET_EXAMPLE_VALUES
 )
 
 # Template/variable syntax anywhere in the value marks it as a placeholder:
@@ -135,6 +143,8 @@ def placeholder_markers(extra: Any) -> Tuple[str, ...]:
 def is_secret_placeholder(value: str, markers: Sequence[str] = DEFAULT_PLACEHOLDER_MARKERS) -> bool:
     """Whether *value* is clearly a placeholder rather than a credential."""
     if not value.strip():
+        return True
+    if value.strip().casefold() in _KNOWN_SECRET_EXAMPLE_VALUE_CASEFOLDS:
         return True
     if len(set(value)) <= 1:
         return True

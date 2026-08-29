@@ -149,6 +149,19 @@ def test_find_parent_skips_non_ancestors():
     assert parent is p2
 
 
+def test_external_source_provenance_is_inherited():
+    root = LintTarget(path=Path("/root"))
+    external = SkillNode(path=Path("/root/external"), externally_sourced=True)
+    leaf = LintTarget(path=Path("/root/external/SKILL.md"))
+    external.children = [leaf]
+    root.children = [external]
+    root.set_parents()
+
+    assert not root.in_external_source
+    assert external.in_external_source
+    assert leaf.in_external_source
+
+
 # --- Tree labels ---
 
 

@@ -8,6 +8,7 @@ import pytest
 
 from skillsaw.rules.builtin.secret_detection import (
     DEFAULT_PLACEHOLDER_MARKERS,
+    KNOWN_SECRET_EXAMPLE_VALUES,
     is_secret_placeholder,
     mapped_secret_description,
     placeholder_markers,
@@ -101,6 +102,16 @@ class TestMappedSecretDescription:
         assert description is not None
         assert OPAQUE not in description
 
+    @pytest.mark.parametrize("value", ["hunter2", "Hunter2", " HUNTER2 "])
+    def test_hunter2_exact_examples_remain_compatible(self, value):
+        assert mapped_secret_description("SERVICE_PASSWORD", value, header=False) is None
+
+    def test_hunter2_containing_value_is_not_suppressed(self):
+        assert (
+            mapped_secret_description("SERVICE_PASSWORD", "hunter2x", header=False)
+            == ENV_CREDENTIAL
+        )
+
 
 class TestOpenCodeSubstitutionSyntax:
     """`{env:VAR}` and `{file:./path}` are how OpenCode keeps a token out of a config."""
@@ -154,3 +165,9 @@ class TestPlaceholderMarkers:
 
     def test_markers_are_lowercased_for_the_case_insensitive_match(self):
         assert "corpfixture" in placeholder_markers(["CorpFixture"])
+
+    def test_hunter2_is_an_exact_example_not_a_substring_marker(self):
+        assert "hunter2" in KNOWN_SECRET_EXAMPLE_VALUES
+        assert "hunter2" not in DEFAULT_PLACEHOLDER_MARKERS
+        assert is_secret_placeholder(" Hunter2 ")
+        assert not is_secret_placeholder("hunter2x")

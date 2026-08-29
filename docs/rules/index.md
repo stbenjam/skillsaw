@@ -3,9 +3,10 @@
 
 # Rules Reference
 
-skillsaw includes **82** built-in rules organized into the following categories:
+skillsaw includes **83** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
+- [Vercel](vercel.md) (1 rule)
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [Claude Code](claude.md) (13 rules)
 - [OpenAI Codex](codex.md) (5 rules)
@@ -36,6 +37,7 @@ skillsaw includes **82** built-in rules organized into the following categories:
 | [`agentskill-evals`](agentskill-evals.md) | Validate evals/evals.json format when present | warning (auto) | - | agentskills.io |
 | [`agentskill-evals-required`](agentskill-evals-required.md) | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - | agentskills.io |
 | [`agentskill-unreferenced-files`](agentskill-unreferenced-files.md) | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - | agentskills.io |
+| [`skills-lock-valid`](skills-lock-valid.md) | skills-lock.json files must be valid and portable project lockfiles | error (auto) | - | Vercel |
 | [`agent-plugin-json-valid`](agent-plugin-json-valid.md) | Agent Plugins plugin.json and skills location must conform to a supported schema | error (auto) | - | Agent Plugins |
 | [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md) | Agent Plugins mcp.json must conform to a supported schema and semantics | error (auto) | - | Agent Plugins |
 | [`agent-plugin-required`](agent-plugin-required.md) | Plugins must also be available as vendor-neutral Agent Plugins v1 packages, with shared manifest metadata in sync | warning (disabled) | auto | Agent Plugins |
