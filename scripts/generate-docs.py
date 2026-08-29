@@ -28,14 +28,17 @@ RULE_GROUPS = [
             "agentskill-evals",
             "agentskill-evals-required",
             "agentskill-unreferenced-files",
-            "skills-lock-valid",
         ],
-        "The Agent Skill rules validate skills against the [agentskills.io specification]"
+        "These rules validate skills against the [agentskills.io specification]"
         "(https://agentskills.io/specification). They auto-enable wherever skills "
         "are detected — agentskills repos, single plugins, marketplaces, "
         "`.claude/` directories, Codex plugins and marketplaces, and Agent "
-        "Plugin packages. `skills-lock-valid` additionally validates every "
-        "`skills-lock.json` written by the "
+        "Plugin packages.",
+    ),
+    (
+        "Vercel Skills",
+        ["skills-lock-valid"],
+        "Validates every `skills-lock.json` written by the "
         "[Vercel skills CLI](https://github.com/vercel-labs/skills): strict JSON, "
         "the versioned project-lock shape, required source metadata, digest syntax, "
         "and paths that remain portable across machines. Lockfiles are discovered "

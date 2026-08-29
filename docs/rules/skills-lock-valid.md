@@ -10,7 +10,7 @@ skills-lock.json files must be valid and portable project lockfiles
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.20.0 |
-| **Category** | [agentskills.io](agentskills.md) |
+| **Category** | [Vercel Skills](vercel-skills.md) |
 
 ## Why
 
