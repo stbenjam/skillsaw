@@ -14,7 +14,7 @@ from typing import Callable, Dict, Iterable, Iterator, List, Mapping, Optional, 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.formats import devin
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
 WALK_SKIP_DIRS = frozenset(
@@ -307,21 +307,29 @@ def has_skill_md_recursive(
     root: Path,
     should_skip: Callable[[Path], bool],
     _visited: Optional[Set[Path]] = None,
+    _boundary: Optional[Path] = None,
 ) -> bool:
-    """Return whether a recursive, guarded walk finds an Agent Skill."""
+    """Return whether a contained recursive walk finds an Agent Skill."""
     if _visited is None:
         _visited = set()
     resolved_root = safe_resolve(root)
-    if resolved_root is None or resolved_root in _visited:
+    if resolved_root is None:
+        return False
+    if _boundary is None:
+        _boundary = resolved_root
+    if not resolved_root.is_relative_to(_boundary) or resolved_root in _visited:
         return False
     _visited.add(resolved_root)
+    if (
+        exact_name_exists(root, "SKILL.md")
+        and contained_resolve(root / "SKILL.md", _boundary) is not None
+    ):
+        return True
     try:
         for item in root.iterdir():
             if should_skip(item):
                 continue
-            if exact_name_exists(item, "SKILL.md"):
-                return True
-            if item.is_dir() and has_skill_md_recursive(item, should_skip, _visited):
+            if item.is_dir() and has_skill_md_recursive(item, should_skip, _visited, _boundary):
                 return True
     except OSError:
         pass
@@ -334,16 +342,30 @@ def is_agentskills_repo(
     extra_skill_roots: Iterable[Path] = (),
 ) -> bool:
     """Return whether the repository contains an Agent Skill entrypoint."""
-    if exact_name_exists(root, "SKILL.md"):
+    resolved_root = safe_resolve(root)
+    if resolved_root is None:
+        return False
+    if (
+        exact_name_exists(root, "SKILL.md")
+        and contained_resolve(root / "SKILL.md", resolved_root) is not None
+    ):
         return True
     for rel in CONVENTIONAL_SKILL_DIRS:
         path = root / rel
-        if path.is_dir() and has_skill_md_recursive(path, should_skip):
+        if (
+            contained_resolve(path, resolved_root) is not None
+            and path.is_dir()
+            and has_skill_md_recursive(path, should_skip, _boundary=resolved_root)
+        ):
             return True
     for path in extra_skill_roots:
-        if path.is_dir() and has_skill_md_recursive(path, should_skip):
+        if (
+            contained_resolve(path, resolved_root) is not None
+            and path.is_dir()
+            and has_skill_md_recursive(path, should_skip, _boundary=resolved_root)
+        ):
             return True
-    return has_skill_md_recursive(root, should_skip)
+    return has_skill_md_recursive(root, should_skip, _boundary=resolved_root)
 
 
 def is_dot_claude(root: Path, apm: bool) -> bool:

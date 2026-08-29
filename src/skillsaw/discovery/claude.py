@@ -234,6 +234,7 @@ def discover_skills(
         for plugin in recursive_agent_plugins
         if (resolved := safe_resolve(plugin)) is not None
     }
+    repo_root = safe_resolve(root)
     agent_plugin_immediate_only = agent_plugin_roots - recursive_agent_plugin_roots
 
     def walk(
@@ -296,18 +297,32 @@ def discover_skills(
             return
 
     if agentskills:
-        if exact_name_exists(root, "SKILL.md"):
+        if (
+            repo_root is not None
+            and exact_name_exists(root, "SKILL.md")
+            and contained_resolve(root / "SKILL.md", repo_root) is not None
+        ):
             skills.append(root)
             discovered.add(root)
-        else:
-            walk(root)
+        elif repo_root is not None:
+            walk(root, repo_root)
         for rel in CONVENTIONAL_SKILL_DIRS:
             path = root / rel
-            if path.is_dir() and not in_apm_compiled_dir(path):
-                walk(path)
+            if (
+                repo_root is not None
+                and contained_resolve(path, repo_root) is not None
+                and path.is_dir()
+                and not in_apm_compiled_dir(path)
+            ):
+                walk(path, repo_root)
         for path in additional_skill_dirs:
-            if path.is_dir() and not in_apm_compiled_dir(path):
-                walk(path, safe_resolve(root) or root)
+            if (
+                repo_root is not None
+                and contained_resolve(path, repo_root) is not None
+                and path.is_dir()
+                and not in_apm_compiled_dir(path)
+            ):
+                walk(path, repo_root)
     for plugin in plugins:
         path = plugin / "skills"
         if path.is_dir():
