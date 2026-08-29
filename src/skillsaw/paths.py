@@ -9,7 +9,9 @@ manifest-supplied paths without aborting the lint.
 
 from __future__ import annotations
 
+import os
 import sys
+import threading
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Dict, Optional
 
@@ -63,11 +65,27 @@ _RESOLVE_CACHE: Dict[Path, Optional[Path]] = {}
 #: table carries between resizes.
 _RESOLVE_ENTRY_OVERHEAD_BYTES = 256
 
+#: Charged per path component. ``sys.getsizeof`` on a ``Path`` is shallow:
+#: the object keeps its components in ``__slots__`` — the parts tuple, and
+#: a second cased copy once anything compares paths — so the string is not
+#: the whole of what an entry holds. Measured against real RSS over 40,000
+#: ordinary repository paths and 2,000 of 200 distinct components each,
+#: the shortfall is ~19 bytes per component in both shapes; 32 leaves room
+#: for the layout differing across the Python versions this supports.
+_RESOLVE_COMPONENT_BYTES = 32
+
+#: Serializes admission only. Lookups stay lock-free, so the hit path — the
+#: whole point of the memo — is untouched; two threads missing the same
+#: path would otherwise both insert one dict entry and both charge for it,
+#: and a counter that over-reports has the memo stop accepting early and
+#: quietly give back the speed it exists for.
+_resolve_lock = threading.Lock()
+
 #: What the memo may retain. A count cap cannot express this bound, because
 #: a ``Path`` is not fixed-small: manifests supply path strings, and at the
 #: 4 KB a filesystem permits, a quarter-million of them measured 2.1 GB
 #: resident. The budget has to sit well above what a real repository needs —
-#: a large skill marketplace resolves ~20.5k distinct paths for ~17.3 MB
+#: a large skill marketplace holds ~18.3k distinct paths for ~29.7 MB
 #: charged here — because every rule sweeps the same set, so a bound the
 #: repository can cross is a cliff rather than a limit.
 _RESOLVE_CACHE_BUDGET_BYTES = 64 * 1024 * 1024
@@ -80,15 +98,25 @@ _resolve_cache_bytes = 0
 
 
 def _path_cost(path: Path) -> int:
-    """Bytes *path* retains: its string, plus the ``Path`` holding it.
+    """Bytes *path* retains: its string, the ``Path``, and its components.
 
     ``len()`` is a character count, not a byte count. CPython stores one,
     two or four bytes per character (PEP 393), so a path of emoji retains
     four times what ``len`` reports and one of CJK twice — and a manifest
     chooses those characters, not this repository. The same correction the
     file cache makes for cached text, for the same reason.
+
+    ``getsizeof`` on the ``Path`` is not the rest of it, either: it reports
+    the object's own struct and not the components hanging off its slots.
+    They are counted rather than walked — a separator count is a C-speed
+    scan of a string already built, where a walk down every entry would
+    cost more than the resolution it is accounting for.
     """
-    return sys.getsizeof(str(path)) + sys.getsizeof(path)
+    text = str(path)
+    components = text.count(os.sep) + 1
+    if os.altsep:
+        components += text.count(os.altsep)
+    return sys.getsizeof(text) + sys.getsizeof(path) + components * _RESOLVE_COMPONENT_BYTES
 
 
 def clear_resolve_cache() -> None:
@@ -99,8 +127,9 @@ def clear_resolve_cache() -> None:
     neither may answer from the pre-fix filesystem.
     """
     global _resolve_cache_bytes
-    _RESOLVE_CACHE.clear()
-    _resolve_cache_bytes = 0
+    with _resolve_lock:
+        _RESOLVE_CACHE.clear()
+        _resolve_cache_bytes = 0
 
 
 def safe_resolve(path: Path) -> Optional[Path]:
@@ -129,9 +158,16 @@ def safe_resolve(path: Path) -> Optional[Path]:
     cost = _RESOLVE_ENTRY_OVERHEAD_BYTES + _path_cost(path)
     if resolved is not None:
         cost += _path_cost(resolved)
-    if _resolve_cache_bytes + cost <= _RESOLVE_CACHE_BUDGET_BYTES:
-        _RESOLVE_CACHE[path] = resolved
-        _resolve_cache_bytes += cost
+    with _resolve_lock:
+        # Rechecked under the lock: another caller may have resolved the
+        # same path while this one was in ``Path.resolve()``, and the
+        # entry it inserted is already charged. Charging again would bill
+        # one dict entry twice.
+        if path not in _RESOLVE_CACHE and (
+            _resolve_cache_bytes + cost <= _RESOLVE_CACHE_BUDGET_BYTES
+        ):
+            _RESOLVE_CACHE[path] = resolved
+            _resolve_cache_bytes += cost
     return resolved
 
 

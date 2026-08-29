@@ -76,11 +76,14 @@ the lint tree, or `utils.py` read paths, save a baseline on main and compare on 
   count low enough to be safe for large files is a cliff for many small
   ones: past it, every rule evicts what the previous rule cached.
   `FileCache` takes a byte `budget`, and never caches a value larger than
-  it. A count cap is fine for fixed-small entries (`_RESOLVE_CACHE_MAX`,
-  `_MAX_CACHED_PATTERNS`) when it sits well above the largest realistic
-  workload — size it so no workload reaches it. A `Path` is not fixed-small:
-  manifests supply the strings, so `_RESOLVE_CACHE` is byte-budgeted too —
-  and by `sys.getsizeof`, on the rule below, not by `len`.
+  it. A count cap is fine for fixed-small entries (`_MAX_CACHED_PATTERNS`)
+  when it sits well above the largest realistic workload — size it so no
+  workload reaches it. A `Path` is not fixed-small: manifests supply the
+  strings, so `_RESOLVE_CACHE` is byte-budgeted too — and by
+  `sys.getsizeof` plus a per-component term, on the rule below, not by
+  `len`. `getsizeof` on a container is shallow: a `Path` keeps its
+  components in `__slots__`, so the string is not the whole of what the
+  entry holds.
 - **Charge a cache entry once, at admission, and credit back the stored
   number.** `len(text)` is not bytes — CPython stores one, two or four per
   character (PEP 393), so emoji retain 4x what `len` reports; use
