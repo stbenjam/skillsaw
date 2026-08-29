@@ -29,10 +29,13 @@ environments and accepts the documented union. Other Markdown files under
 `.github/agents/` are VS Code-only, as are legacy chatmodes. Unknown tool
 names remain valid because both consumers ignore tools they do not provide.
 
-Embedded `mcp-servers` configurations and lifecycle hooks are automatically
-scanned by the shared [`mcp-valid-json`](mcp-valid-json.md), [`mcp-prohibited`](mcp-prohibited.md),
-and [`hooks-dangerous`](hooks-dangerous.md) rules. GitHub template variables
-(`${{ secrets.NAME }}` and `${{ vars.NAME }}`) are recognized as valid placeholders.
+Embedded `mcp-servers` configurations in cloud or shared `*.agent.md` files
+are scanned by the shared [`mcp-valid-json`](mcp-valid-json.md) and
+[`mcp-prohibited`](mcp-prohibited.md) rules. Lifecycle hooks in VS Code-capable
+agent files are scanned by [`hooks-dangerous`](hooks-dangerous.md). GitHub
+template variables (`${{ secrets.NAME }}` and `${{ vars.NAME }}`) are recognized
+as valid placeholders.
+
 
 Legacy `.github/chatmodes/**/*.chatmode.md` files and non-`*.agent.md` files under
 `.github/agents/` are also validated under VS Code conventions to assist migration.

@@ -59,7 +59,9 @@ encoded text payload regardless of entropy. Random hex (commit SHAs,
 sha256/sha512 digests, packed binary) decodes to mostly non-printable bytes
 and is never rescued this way.
 
-Multiline wrapped blobs (such as PEM files) are not scanned; the encoded run must be on a single line.
+Scanning is line-by-line: encoded runs are evaluated on each individual line
+and are not concatenated across line breaks.
+
 
 ## Examples
 

@@ -20,12 +20,13 @@ field in `package.json`. It must exactly match the server `name` in
 
 ## What is checked
 
-For every `packages[]` entry whose `registryType` is `npm`, the rule locates
-matching local `package.json` files (either adjacent to `server.json` or within
-a monorepo workspace) and verifies that:
+For every `packages[]` entry whose `registryType` is `npm`, the rule matches local
+`package.json` files by package `identifier` (and matching `version` when declared)
+and verifies that:
 
 - `package.json` declares a string-valued `mcpName`; and
 - `mcpName` matches the exact `server.json` `name`, including case.
+
 
 This check operates entirely offline on local files; external or remote dependencies
 without local manifests are not flagged.

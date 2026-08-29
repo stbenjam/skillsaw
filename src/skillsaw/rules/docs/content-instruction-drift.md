@@ -54,9 +54,11 @@ Compare the two sections named in the violation and reconcile them:
 1. Decide which copy is current (usually the most recently edited one).
 2. Update the stale copy to match exactly, or rewrite both if neither
    is fully right.
-3. Better: keep one source of truth. Generate the copies with a
-   compiler (files with generated-file markers are automatically skipped), or
-   replace the duplicated section with a short pointer to a single shared file.
+3. Better: keep one source of truth. Generate the copies with a compiler
+   (files with generated-file markers are skipped when `ignore-generated: true`,
+   the default), or replace the duplicated section with a short pointer to a
+   single shared file.
+
 
 
 **Intentional harness-specific divergence.** Sometimes two copies are
