@@ -1408,6 +1408,49 @@ class TestFileCacheBudget:
         assert skillsaw_utils.read_text._store.get(bystander.resolve()) is not None
         skillsaw_utils.invalidate_read_caches()
 
+    def test_a_value_too_large_to_size_is_walked_once_not_every_call(self, tmp_path):
+        """Refusing to cache must not mean re-deciding on every call.
+
+        Past ``_SIZE_WALK_LIMIT`` the value cannot be admitted — the
+        budget would record a number that is not what the entry holds.
+        Forgetting *that* costs the whole abandoned walk again on every
+        later call, on top of the recompute, which is worse than the
+        unbounded cache the budget replaced. The verdict is remembered;
+        the value still is not.
+        """
+        cache = skillsaw_utils.FileCache(budget=100_000_000)
+        walks = []
+        real_size = skillsaw_utils._approximate_size
+
+        def counting_size(value):
+            walks.append(1)
+            return real_size(value)
+
+        oversize = list(range(skillsaw_utils._SIZE_WALK_LIMIT + 10))
+
+        @cache.cached
+        def reader(path):
+            return list(oversize)
+
+        target = tmp_path / "big.json"
+        target.write_text("{}", encoding="utf-8")
+
+        skillsaw_utils._approximate_size = counting_size
+        try:
+            first = reader(target)
+            walked_once = len(walks)
+            for _ in range(3):
+                assert reader(target) == first
+            walked_after = len(walks)
+        finally:
+            skillsaw_utils._approximate_size = real_size
+
+        # The value is still correct and still not cached...
+        assert first == oversize
+        # ...but the walk is not repeated. Without the marker this grows
+        # by one full abandoned walk per call.
+        assert walked_after == walked_once, (walked_once, walked_after)
+
     def test_a_clear_during_a_resolution_is_not_undone_by_it(self, tmp_path):
         """The sibling of the ``FileCache`` generation check.
 
@@ -1476,7 +1519,9 @@ class TestFileCacheBudget:
         the default one: a concrete number is admitted by any cache
         configured above it, and then charged at whatever the walk had
         counted so far, which is exactly the accounting the byte budget
-        exists to keep honest.
+        exists to keep honest. The refusal itself is remembered, so the
+        budget carries a marker entry -- bounded, and unrelated to how
+        large the value it stands in for was.
         """
         huge = list(range(skillsaw_utils._SIZE_WALK_LIMIT + 10))
         assert skillsaw_utils._approximate_size(huge) == skillsaw_utils.UNCACHEABLE_SIZE
@@ -1495,7 +1540,11 @@ class TestFileCacheBudget:
         assert reader(target) == huge
 
         assert calls["n"] == 2, "an unsized value must be recomputed, not served"
-        assert cache._total_bytes == 0
+
+        resolved = skillsaw_utils.safe_resolve(target) or target
+        marker = skillsaw_utils._entry_cost(skillsaw_utils._UNSIZEABLE, resolved)
+        assert cache._total_bytes == marker, "only the refusal is charged"
+        assert cache._total_bytes < sys.getsizeof(huge), "never the value itself"
 
     def test_a_scalar_is_charged_by_what_it_retains(self):
         """A scalar is not always small.

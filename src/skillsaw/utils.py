@@ -338,9 +338,8 @@ UNCACHEABLE_SIZE = -1
 #: bounded by nothing — 20,000 empty ``read_text`` results charge 20 KB
 #: against a budget in the tens of megabytes while really holding 11 MiB.
 #:
-#: The key is measured rather than folded in here. This constant used to
-#: stand in for it too, at a value tuned to an ordinary repository path;
-#: but manifests supply the strings, and by this branch's own rule a
+#: The key is measured separately rather than folded in here, because a
+#: constant cannot stand for it: manifests supply the strings, so a
 #: ``Path`` is not fixed-small. A 4 KB path retains 12x this, and one of
 #: 400 short components 29x.
 _ENTRY_OVERHEAD_BYTES = 512
@@ -364,7 +363,7 @@ def _slot_names(klass: type) -> Tuple[str, ...]:
             # ``__slots__ = "_yaml_anchor"`` is legal and means one slot of
             # that name. Iterating the string yields its characters, so a
             # class declaring it this way — every ruamel ``ScalarString``
-            # does — silently contributed no slots at all.
+            # does — would otherwise contribute no slots at all.
             if isinstance(declared, str):
                 declared = (declared,)
             names.extend(declared)
@@ -378,11 +377,10 @@ def _push_attributes(node: Any, stack: List[Any]) -> None:
 
     This is where ruamel keeps the half of a commented document that has
     no key or value to be found under: comment tokens hang off ``.ca``,
-    beside the mapping rather than inside it, and a comment-heavy config
-    retained three times what it was charged. Both storage forms are
-    needed — ruamel's containers put ``.ca`` in a ``__slots__`` entry and
-    their line info in ``__dict__`` — but neither is named here, so this
-    stays a fact about Python objects rather than about ruamel.
+    beside the mapping rather than inside it, so a comment-heavy config
+    can retain several times what its visible keys and values measure.
+    Both storage forms are needed: ruamel's containers put ``.ca`` in a
+    ``__slots__`` entry and their line info in ``__dict__``.
 
     A ``CommentedMap`` is a ``dict``, so the container branches have to
     ask as well; reaching this only from the scalar tail would walk right
@@ -400,7 +398,7 @@ def _push_attributes(node: Any, stack: List[Any]) -> None:
 #: Above this, a scalar is charged once per object rather than once per
 #: reference. An alias is one object however many times the document names
 #: it, so counting references is counting memory that is not there: a 2 MiB
-#: anchored string used 64 times charged 128.0 MiB against the 2.0 MiB it
+#: anchored string used 64 times measures 128.0 MiB against the 2.0 MiB it
 #: holds, which refuses the entry and has every rule reparse the file. The
 #: dedup is not applied below this size because identity bookkeeping on
 #: every short string would cost more across a whole document than the
@@ -519,6 +517,27 @@ def _entry_cost(value: Any, key: Any = None) -> int:
     return cost
 
 
+class _Unsizeable:
+    """Marker stored in place of a value the walk could not size.
+
+    A value past ``_SIZE_WALK_LIMIT`` cannot be admitted — the budget
+    would be recording a number that is not what the entry holds. But
+    forgetting *that* costs the full abandoned walk again on every later
+    call, on top of the recompute, which is strictly worse than the
+    unbounded cache this budget replaced. Remembering the verdict keeps
+    the refusal and drops the re-walk.
+
+    It lives in the store rather than beside it so every existing teardown
+    path — eviction, ``invalidate``, ``cache_clear`` — already handles it,
+    and it is charged the entry overhead it genuinely occupies.
+    """
+
+    __slots__ = ()
+
+
+_UNSIZEABLE = _Unsizeable()
+
+
 class FileCache:
     """Thread-safe cache that supports per-file invalidation.
 
@@ -583,22 +602,41 @@ class FileCache:
                 # unresolved path — that only loses alias deduplication.
                 resolved = file_path
             sub_key = (args[1:], tuple(sorted(kwargs.items())))
+            known_unsizeable = False
             with self._lock:
                 bucket = store.get(resolved)
                 if bucket is not None and sub_key in bucket:
-                    return bucket[sub_key][1]
+                    cached = bucket[sub_key][1]
+                    if cached is not _UNSIZEABLE:
+                        return cached
+                    # Sized once, found unsizeable. Recompute the value —
+                    # it cannot be cached — but do not pay the walk again.
+                    known_unsizeable = True
             # Compute outside the lock to avoid holding it during I/O;
             # the generation captured at entry tells the insert below
             # whether the filesystem was declared changed meanwhile.
             result = func(*args, **kwargs)
+            if known_unsizeable:
+                return result
             cost = _entry_cost(result, resolved)
-            if cost == UNCACHEABLE_SIZE or cost > self._budget:
-                # Either the value is too large for eviction to ever make
-                # room, or it is too large to have been sized at all. Both
-                # would put the cache permanently over the bound it exists
-                # to hold — and the second would do it invisibly, charged
-                # at whatever the walk stopped counting. Hand it back
-                # uncached; the reader recomputes it next time.
+            if cost == UNCACHEABLE_SIZE:
+                # Remember the refusal so the abandoned walk is paid once.
+                marker = _entry_cost(_UNSIZEABLE, resolved)
+                with self._lock:
+                    if self._generation == generation:
+                        bucket = store.get(resolved)
+                        if bucket is None or sub_key not in bucket:
+                            if self._total_bytes + marker > self._budget:
+                                self._evict(marker)
+                            store.setdefault(resolved, {})[sub_key] = (marker, _UNSIZEABLE)
+                            self._total_bytes += marker
+                return result
+            if cost > self._budget:
+                # Too large for eviction to ever make room, so admitting
+                # it would put the cache permanently over the bound it
+                # exists to hold. Hand it back uncached; the reader
+                # recomputes it next time. No marker here — this verdict
+                # cost one bounded walk, not an abandoned one.
                 return result
             with self._lock:
                 if self._generation != generation:
@@ -1286,9 +1324,10 @@ def read_yaml_commented(
     after. ruamel is pure Python, so it raises rather than faulting — but
     it raises wherever the interpreter's own stack happens to give out,
     which is the incidental limit ``_MAX_YAML_DEPTH`` exists to replace.
-    Without both checks the two readers disagree about the same file: a
-    document a hundred levels deep was rejected by ``read_yaml`` and
-    accepted here, and an alias-built graph slipped past the prescan.
+    Both checks are needed for the readers to agree about a file: without
+    the prescan a document a hundred levels deep is rejected by
+    ``read_yaml`` and accepted here, and without the graph measurement an
+    alias-built graph passes the prescan.
     """
     content = read_text(file_path)
     if content is None:
