@@ -113,6 +113,28 @@ def _is_known_example_value(value: str) -> bool:
     return normalized.startswith(prefix) and normalized[len(prefix) :] == remainder.casefold()
 
 
+def _pem_payload_chars(candidate: str) -> Optional[int]:
+    """Count a credible base64 payload line after normalizing whitespace."""
+    groups = candidate.split()
+    if not groups or any(_PEM_BASE64_LINE.fullmatch(group) is None for group in groups):
+        return None
+    compact = "".join(groups)
+    if _PEM_BASE64_LINE.fullmatch(compact) is None:
+        return None
+    if len(groups) > 1:
+        group_width = len(groups[0])
+        regularly_grouped = (
+            all(len(group) == group_width for group in groups[:-1])
+            and len(groups[-1]) <= group_width
+        )
+        # Unencrypted PKCS#1 RSA DER begins with ``MI`` in base64. Otherwise,
+        # require regular grouping so variable-length prose words cannot be
+        # concatenated into an apparent payload.
+        if not compact.startswith("MI") and not regularly_grouped:
+            return None
+    return len(compact.rstrip("="))
+
+
 def _pem_context_segments(candidate: str) -> Tuple[List[Optional[int]], bool]:
     """Classify one bounded physical PEM-context line.
 
@@ -134,10 +156,11 @@ def _pem_context_segments(candidate: str) -> Tuple[List[Optional[int]], bool]:
         undecorated = without_metadata.strip(_PEM_LINE_DECORATION)
         if not undecorated:
             continue
-        if _PEM_BASE64_LINE.fullmatch(undecorated) is None:
+        payload_chars = _pem_payload_chars(undecorated)
+        if payload_chars is None:
             segments.append(None)
             continue
-        segments.append(len(undecorated.rstrip("=")))
+        segments.append(payload_chars)
     return segments, reached_end_marker
 
 

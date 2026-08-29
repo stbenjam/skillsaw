@@ -791,6 +791,20 @@ class TestContentEmbeddedSecretsRule:
                 f'private_key = "{_RSA_HEADER}\\n<!-- leaked key -->'
                 f'\\n{_PEM_MATERIAL}\\n-----END RSA PRIVATE KEY-----"\n'
             ),
+            (
+                f"{_RSA_HEADER}\n"
+                + " ".join(
+                    _PEM_MATERIAL[index : index + 3] for index in range(0, len(_PEM_MATERIAL), 3)
+                )
+                + "\n-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\n'
+                + " ".join(
+                    _PEM_MATERIAL[index : index + 3] for index in range(0, len(_PEM_MATERIAL), 3)
+                )
+                + '\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
         ],
         ids=[
             "encrypted-metadata",
@@ -805,6 +819,8 @@ class TestContentEmbeddedSecretsRule:
             "escaped-encrypted-metadata",
             "markdown-comment-before-material",
             "escaped-comment-before-material",
+            "intraline-whitespace",
+            "escaped-intraline-whitespace",
         ],
     )
     def test_pem_block_with_key_material_still_fires(self, temp_dir, content):
