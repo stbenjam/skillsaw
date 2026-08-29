@@ -9,7 +9,7 @@ from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
 from skillsaw.rules.builtin.content_analysis import InstructionBlock
 from skillsaw.rules.builtin.utils import read_text
 
-from ._helpers import INSTRUCTION_FILES
+from ._helpers import is_instruction_filename
 
 
 class InstructionFileValidRule(Rule):
@@ -24,7 +24,7 @@ class InstructionFileValidRule(Rule):
     @property
     def description(self) -> str:
         return (
-            "Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) "
+            "Instruction files (AGENTS.md and tool-compatible alternatives) "
             "must be valid and non-empty"
         )
 
@@ -35,7 +35,7 @@ class InstructionFileValidRule(Rule):
         violations = []
 
         for block in context.lint_tree.find(InstructionBlock):
-            if block.path.name not in INSTRUCTION_FILES:
+            if not is_instruction_filename(block.path.name):
                 continue
 
             content = read_text(block.path)

@@ -584,16 +584,8 @@ class TestClaudeMdAgentsImportRule:
         (temp_dir / "CLAUDE.md").symlink_to("AGENTS.md")
         assert self._check(temp_dir) == []
 
-    def test_pairing_follows_root_scoped_instruction_discovery(self, temp_dir):
-        """Instruction-file discovery is root-scoped, so pairing is too.
-
-        ``scan_repository`` collects AGENTS.md/CLAUDE.md at the repository
-        root only (unlike ``.cursor/`` directories, which are walked), so a
-        subpackage pair is invisible to every instruction rule — this one
-        included. The rule pairs on the resolved parent directory rather
-        than assuming the root, so it reports subpackage pairs unchanged
-        the day discovery starts walking; this test pins today's scope.
-        """
+    def test_pairing_follows_nested_devin_instruction_discovery(self, temp_dir):
+        """Devin-supported nested instruction pairs are checked in place."""
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
         (temp_dir / "CLAUDE.md").write_text("@AGENTS.md\n")
         nested = temp_dir / "packages" / "api"
@@ -601,8 +593,13 @@ class TestClaudeMdAgentsImportRule:
         (nested / "AGENTS.md").write_text(AGENTS_BODY)
         (nested / "CLAUDE.md").write_text(AGENTS_BODY)
         context = RepositoryContext(temp_dir)
-        assert [b.path for b in context.lint_tree.find(ClaudeMdBlock)] == [temp_dir / "CLAUDE.md"]
-        assert ClaudeMdAgentsImportRule().check(context) == []
+        assert {b.path for b in context.lint_tree.find(ClaudeMdBlock)} == {
+            temp_dir / "CLAUDE.md",
+            nested / "CLAUDE.md",
+        }
+        violations = ClaudeMdAgentsImportRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].file_path == nested / "CLAUDE.md"
 
     # -- firing ------------------------------------------------------
 
