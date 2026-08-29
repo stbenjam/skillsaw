@@ -5,6 +5,6 @@
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - |
+| [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must use valid syntax and a host-readable server structure | error | - |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - |
 

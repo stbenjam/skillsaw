@@ -135,6 +135,7 @@ nav:
     - MCP: rules/mcp.md
     - OpenClaw: rules/openclaw.md
     - Cursor: rules/cursor.md
+    - Copilot / VS Code: rules/copilot.md
     - OpenCode: rules/opencode.md
     - Instruction Files: rules/instruction-files.md
     - Context Budget: rules/context-budget.md

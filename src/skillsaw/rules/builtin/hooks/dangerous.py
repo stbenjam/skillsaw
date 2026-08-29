@@ -15,6 +15,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
+    CopilotAgentBlock,
     CursorHooksBlock,
     DevinSkillBlock,
     HookEventConfig,
@@ -499,6 +500,7 @@ class HooksDangerousRule(Rule):
     """Flag hook commands matching dangerous patterns."""
 
     since = "0.12.0"
+    surface_dependencies = ("copilot-agent-valid",)
 
     config_schema = {
         "allowlist": {
@@ -552,7 +554,7 @@ class HooksDangerousRule(Rule):
                                 f"Hook {safe_display(event_type)}: {message} — "
                                 f"command: {safe_display(command)!r}",
                                 file_path=file_path,
-                                line=line,
+                                line=handler.source_line or line,
                             )
                         )
         return violations
@@ -586,5 +588,15 @@ class HooksDangerousRule(Rule):
                 violations.extend(
                     self._check_events(events, block.path, line=block.key_line("hooks"))
                 )
+
+        if self.surface_rule_enabled("copilot-agent-valid"):
+            for block in context.lint_tree.find(CopilotAgentBlock):
+                if block.frontmatter_error or block.field_value("target") == "github-copilot":
+                    continue
+                events = block.hooks_events
+                if events:
+                    violations.extend(
+                        self._check_events(events, block.path, line=block.key_line("hooks"))
+                    )
 
         return violations

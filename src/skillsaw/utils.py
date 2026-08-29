@@ -804,7 +804,41 @@ def read_yaml_commented(
         return None, _TOO_DEEP, None
 
 
-def commented_key_line(node: Any, key: str) -> Optional[int]:
+@_file_cache.cached
+def read_frontmatter_commented(
+    file_path: Path,
+) -> Tuple[Any, Optional[str], Optional[int]]:
+    """Read Markdown frontmatter as line-preserving YAML.
+
+    Returns the same ``(data, error, error_line)`` contract as
+    :func:`read_yaml_commented`, but parses only the YAML between the opening
+    and closing ``---`` delimiters. Reported parse-error lines are translated
+    to file-absolute lines; successful ruamel nodes retain frontmatter-relative
+    positions, so callers add the opening-delimiter offset when using
+    :func:`commented_key_line` or :func:`commented_item_line`.
+    """
+    content = read_text(file_path)
+    if content is None:
+        return None, f"Failed to read {file_path.name}", None
+    frontmatter, offset = _extract_frontmatter_text(content)
+    if frontmatter is None:
+        return None, None, None
+    ry = _RuamelYAML()
+    ry.preserve_quotes = True
+    try:
+        return ry.load(frontmatter), None, None
+    except _RuamelYAMLError as error:
+        line = None
+        if hasattr(error, "problem_mark") and error.problem_mark is not None:
+            line = error.problem_mark.line + 1 + offset
+        return None, str(error), line
+    except ValueError as error:
+        return None, str(error), None
+    except RecursionError:
+        return None, _TOO_DEEP, None
+
+
+def commented_key_line(node: Any, key: Any) -> Optional[int]:
     """Get the 1-based line number of *key* in a ruamel ``CommentedMap``."""
     if isinstance(node, CommentedMap) and key in node:
         try:
@@ -906,7 +940,16 @@ def frontmatter_line_map_top_level(file_path: Path) -> Dict[str, int]:
     data = _ruamel_load(fm_text)
     if not isinstance(data, CommentedMap):
         return {}
-    return {key: data.lc.key(key)[0] + 1 + offset for key in data}
+    lines = {}
+    for key in data:
+        # A merge-resolved key is visible while iterating the map but has no
+        # position at this level. Keep the field in the parsed tree and omit
+        # only its line; the anchor's nested nodes still retain their own
+        # source positions for rules that inspect the value.
+        line = commented_key_line(data, key)
+        if line is not None:
+            lines[key] = line + offset
+    return lines
 
 
 def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:

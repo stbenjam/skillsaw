@@ -410,6 +410,12 @@ rules:
     #     warn: 200
     #     error: 500
 
+  # Copilot and VS Code custom agents must use target-compatible frontmatter
+  copilot-agent-valid:
+    enabled: auto
+    severity: error
+    # report-unknown-fields: false
+
   # .cursor/hooks.json must declare version 1 and known hook events with commands
   cursor-hooks-valid:
     enabled: auto
@@ -465,7 +471,7 @@ rules:
     severity: error
     # allowlist: []
 
-  # MCP configuration must be valid JSON with proper mcpServers structure
+  # MCP configuration must use valid syntax and a host-readable server structure
   mcp-valid-json:
     enabled: true
     severity: error
