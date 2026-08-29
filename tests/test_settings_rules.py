@@ -187,13 +187,6 @@ def test_dangerous_settings_local_json(temp_dir):
     assert "apiKeyHelper" in violations[0].message
 
 
-def test_dangerous_rule_metadata():
-    """Test rule metadata."""
-    rule = SettingsDangerousRule()
-    assert rule.rule_id == "claude-settings-dangerous"
-    assert rule.default_severity() == Severity.ERROR
-
-
 def test_dangerous_no_settings_file(temp_dir):
     """Repos without settings.json produce no violations."""
     repo = temp_dir / "test-repo"

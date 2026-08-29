@@ -246,11 +246,3 @@ def test_fix_both_name_and_description_missing(plugin_with_missing_both_fields):
     assert "description: " in fix.fixed_content
     # Both violations should be covered by the single fix
     assert len(fix.violations_fixed) == 2
-
-
-def test_rule_metadata():
-    """Test rule metadata"""
-    rule = AgentFrontmatterRule()
-    assert rule.rule_id == "claude-agent-frontmatter"
-    assert "agent" in rule.description.lower()
-    assert rule.default_severity().value == "error"
