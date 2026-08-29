@@ -1314,7 +1314,16 @@ def safe_load_yaml(source: Any) -> Any:
         # One caller hands over an open file. Everything below needs the
         # text more than once, and a stream can only be read out once.
         source = source.read()
-    _reject_deep_before_compose(source)
+    if _SAFE_LOADER is not yaml.SafeLoader:
+        # Only libyaml needs the bound enforced *before* composition,
+        # and only because its composer is recursive C with no guard.
+        # PyYAML's own composer is Python: it raises where the stack
+        # gives out, and ``_reject_overly_nested`` below reaches the
+        # same verdict deterministically on the loaded graph. Running
+        # the prescan there anyway would parse every document twice —
+        # measured at 1.9x a plain load — to reach an answer the
+        # backstop already gives.
+        _reject_deep_before_compose(source)
     try:
         data = yaml.load(source, Loader=_SAFE_LOADER)
     except yaml.YAMLError:
@@ -1475,10 +1484,20 @@ def _fast_top_level_key_nodes(
     behavior: parse errors, non-string keys, or duplicate keys (which
     ruamel rejects).
     """
-    loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
     try:
-        node = yaml.compose(text, Loader=loader)
+        # The composer this calls is the same recursive C code every
+        # other reader is guarded against: handed a deeply nested
+        # document it overruns the C stack and the process dies with
+        # SIGSEGV, which no ``except`` can catch. Every caller today
+        # runs after the block's frontmatter parsed through a bounded
+        # reader, so nothing this deep should reach here — but "should"
+        # is what the guard is for, and a reader without it is what the
+        # next person will copy.
+        _reject_deep_before_compose(text)
+        node = yaml.compose(text, Loader=_SAFE_LOADER)
     except yaml.YAMLError:
+        return None
+    except RecursionError:
         return None
     if node is None or not isinstance(node, yaml.MappingNode):
         return {}
@@ -1752,12 +1771,25 @@ def _ruamel_load(text: str) -> Any:
 
     Returns the parsed data (CommentedMap/CommentedSeq) preserving line
     numbers, or ``None`` on parse failure.
+
+    Carries the same depth bound as every other reader. ruamel is pure
+    Python, so a deep document raises rather than faulting — but it
+    raises wherever the interpreter's stack happens to give out, which
+    is the incidental limit ``_MAX_YAML_DEPTH`` exists to replace, and
+    an escaping ``RecursionError`` becomes an unbaselinable
+    rule-execution error rather than a parse failure the caller handles.
     """
+    try:
+        _reject_deep_before_compose(text)
+    except RecursionError:
+        return None
     ry = _RuamelYAML()
     ry.preserve_quotes = True
     try:
-        return ry.load(text)
-    except _RuamelYAMLError:
+        data = ry.load(text)
+        _reject_overly_nested(data)
+        return data
+    except (_RuamelYAMLError, RecursionError):
         return None
 
 
