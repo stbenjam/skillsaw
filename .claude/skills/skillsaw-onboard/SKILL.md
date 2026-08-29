@@ -90,11 +90,13 @@ If yes, read [CI](references/07-ci.md), using the named CI system.
 
 If GitHub Actions is available, ask separately:
 
-> I can add a separate weekly Lychee workflow that makes network requests to
-> find broken external links. It runs only on schedule or manually—not on pull
-> requests and not as a merge gate—to avoid third-party outages. This adds
-> `.github/workflows/link-check.yml` and another pinned Action to maintain.
-> Should I add it?
+> External links decay over time and need recurring audits, but checking them
+> during every skillsaw lint would add network access, latency, and failures
+> caused by third-party outages. We recommend a dedicated link checker such as
+> Lychee for this job. I can add a weekly GitHub Actions workflow that runs
+> Lychee on a schedule or manually, outside your pull-request merge gate. This
+> adds `.github/workflows/link-check.yml` and a pinned third-party Action to
+> maintain. Would you like me to set that up?
 
 If yes, read [external links](references/08-external-links.md).
 
