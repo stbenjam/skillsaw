@@ -804,6 +804,40 @@ def read_yaml_commented(
         return None, _TOO_DEEP, None
 
 
+@_file_cache.cached
+def read_frontmatter_commented(
+    file_path: Path,
+) -> Tuple[Any, Optional[str], Optional[int]]:
+    """Read Markdown frontmatter as line-preserving YAML.
+
+    Returns the same ``(data, error, error_line)`` contract as
+    :func:`read_yaml_commented`, but parses only the YAML between the opening
+    and closing ``---`` delimiters. Reported parse-error lines are translated
+    to file-absolute lines; successful ruamel nodes retain frontmatter-relative
+    positions, so callers add the opening-delimiter offset when using
+    :func:`commented_key_line` or :func:`commented_item_line`.
+    """
+    content = read_text(file_path)
+    if content is None:
+        return None, f"Failed to read {file_path.name}", None
+    frontmatter, offset = _extract_frontmatter_text(content)
+    if frontmatter is None:
+        return None, None, None
+    ry = _RuamelYAML()
+    ry.preserve_quotes = True
+    try:
+        return ry.load(frontmatter), None, None
+    except _RuamelYAMLError as error:
+        line = None
+        if hasattr(error, "problem_mark") and error.problem_mark is not None:
+            line = error.problem_mark.line + 1 + offset
+        return None, str(error), line
+    except ValueError as error:
+        return None, str(error), None
+    except RecursionError:
+        return None, _TOO_DEEP, None
+
+
 def commented_key_line(node: Any, key: str) -> Optional[int]:
     """Get the 1-based line number of *key* in a ruamel ``CommentedMap``."""
     if isinstance(node, CommentedMap) and key in node:

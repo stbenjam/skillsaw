@@ -19,6 +19,7 @@ from skillsaw.utils import (
     _FRONTMATTER_RE,
     read_text,
     parse_frontmatter,
+    read_frontmatter_commented,
     extract_section,
     frontmatter_key_line as _frontmatter_key_line,
     _extract_frontmatter_text,
@@ -26,7 +27,7 @@ from skillsaw.utils import (
 )
 
 from .base import ContentBlock
-from .json_config import HookEventConfig, parse_hooks_events
+from .json_config import CopilotAgentMcpBlock, HookEventConfig, parse_hooks_events
 
 
 def _parse_file_frontmatter(
@@ -585,6 +586,29 @@ class CopilotAgentBlock(FrontmatteredBlock):
     """.github/agents/**/*.agent.md and legacy .github/chatmodes/**/*.chatmode.md."""
 
     category: str = "agent"
+
+    def _build_children(self) -> None:
+        """Attach embedded MCP configuration as a shared lint-tree role."""
+        self.children = [
+            child for child in self.children if not isinstance(child, CopilotAgentMcpBlock)
+        ]
+        super()._build_children()
+        frontmatter, error, _error_line = read_frontmatter_commented(self.path)
+        if error or not isinstance(frontmatter, dict):
+            return
+        servers = frontmatter.get("mcp-servers")
+        # The format rule owns the top-level type error. Only a mapping can
+        # be meaningfully handed to the shared MCP rules; attaching an
+        # invalid scalar/list too would duplicate that root diagnostic.
+        if isinstance(servers, dict):
+            self.children.append(
+                CopilotAgentMcpBlock(
+                    path=self.path,
+                    inline_data={"mcpServers": servers},
+                    source_line=self.key_line("mcp-servers"),
+                    parent=self,
+                )
+            )
 
 
 @dataclass(eq=False)

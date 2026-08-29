@@ -15,6 +15,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
+    CopilotAgentBlock,
     CursorHooksBlock,
     HookEventConfig,
     HooksBlock,
@@ -572,7 +573,12 @@ class HooksDangerousRule(Rule):
 
         # Skill and agent frontmatter can declare hooks with the same schema —
         # a checked-in, shareable command-execution vector.
-        for block in context.lint_tree.find(SkillBlock) + context.lint_tree.find(AgentBlock):
+        frontmatter_blocks = (
+            context.lint_tree.find(SkillBlock)
+            + context.lint_tree.find(AgentBlock)
+            + context.lint_tree.find(CopilotAgentBlock)
+        )
+        for block in frontmatter_blocks:
             if block.frontmatter_error:
                 continue
             events = block.hooks_events

@@ -1228,6 +1228,47 @@ class TestFixMultiplePaths:
         assert (repo / "CLAUDE.md").read_text() == before
 
 
+# ── Copilot / VS Code custom agents ──────────────────────────────
+
+
+@pytest.mark.integration
+class TestCopilotAgentValidation:
+
+    def test_official_style_examples_and_legacy_chatmode_are_clean(self, tmp_path):
+        repo = copy_fixture("copilot-agents-clean", tmp_path)
+
+        grouped = by_rule(run_lint(repo, "--no-network"))
+
+        assert grouped.get("copilot-agent-valid", []) == []
+        assert grouped.get("mcp-valid-json", []) == []
+        assert grouped.get("hooks-dangerous", []) == []
+
+    def test_rule_auto_enables_and_shared_hook_security_scans_agent_yaml(self, tmp_path):
+        repo = copy_fixture("copilot-agents-invalid", tmp_path)
+
+        grouped = by_rule(run_lint(repo, "--no-network"))
+
+        schema = grouped["copilot-agent-valid"]
+        assert {v["line"] for v in schema} == {3, 4, 5, 6, 8, 10, 11, 12}
+        assert any("Invalid target 'github'" in v["message"] for v in schema)
+        assert any("'mcp-servers' must be a mapping" in v["message"] for v in schema)
+        dangerous = grouped["hooks-dangerous"]
+        assert len(dangerous) == 1
+        assert dangerous[0]["line"] == 13
+        assert "downloads and executes remote code" in dangerous[0]["message"]
+
+    def test_malformed_yaml_has_one_root_schema_finding(self, tmp_path):
+        agent = tmp_path / ".github" / "agents" / "broken.agent.md"
+        agent.parent.mkdir(parents=True)
+        agent.write_text("---\ndescription: [broken\ntools: 42\n---\nBody\n")
+
+        found = by_rule(run_lint(tmp_path))["copilot-agent-valid"]
+
+        assert len(found) == 1
+        assert found[0]["line"] == 3
+        assert "Invalid frontmatter" in found[0]["message"]
+
+
 # ── Dot-Claude ───────────────────────────────────────────────────
 
 
@@ -3771,6 +3812,7 @@ BROKEN_FIXTURES = [
     "cursor-rules/broken-frontmatter",
     "cursor-rules/broken-hooks",
     "cursor-rules/prompt-hooks",
+    "copilot-agents-invalid",
     "instructions/agents-import/duplicated-pair",
     "opencode/broken",
     "opencode/malformed-shapes",
@@ -3794,6 +3836,7 @@ CLEAN_FIXTURES = [
     "agent-plugins/clean",
     "codex/clean",
     "cursor-rules/clean",
+    "copilot-agents-clean",
     "editor-tools/monorepo",
     "instructions/agents-import/import-only",
     "opencode/native-v1",

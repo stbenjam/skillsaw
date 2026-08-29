@@ -79,6 +79,12 @@ The `description-routing` rule checks when-to-use phrasing and descriptions that
 only repeat a skill, agent, or command name. Both checks can be configured
 independently; see the [rule reference](https://skillsaw.org/rules/description-routing/).
 
+Copilot and VS Code custom agents under `.github/agents/` (plus legacy
+`.github/chatmodes/`) also receive target-aware structural validation through
+`copilot-agent-valid`. Their prose keeps the shared content checks, while
+frontmatter fields, handoffs, embedded MCP servers, and agent-scoped hooks are
+checked against the consumer that will load them.
+
 Every rule runs offline. The one exception,
 `content-broken-external-reference`, checks whether external `http(s)` links
 are still reachable: it is disabled by default, reports only `404` and `410`,

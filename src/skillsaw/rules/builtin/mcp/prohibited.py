@@ -55,11 +55,13 @@ class McpProhibitedRule(Rule):
             prohibited = block.server_names - allowlist if allowlist else block.server_names
             if not prohibited:
                 continue
+            source_line = getattr(block, "source_line", None)
             if allowlist:
                 violations.append(
                     self.violation(
                         f"non-allowlisted MCP servers defined: {self._named(prohibited)}",
                         file_path=block.path,
+                        line=source_line,
                     )
                 )
             else:
@@ -67,6 +69,7 @@ class McpProhibitedRule(Rule):
                     self.violation(
                         f"MCP servers defined in {block.path.name}",
                         file_path=block.path,
+                        line=source_line,
                     )
                 )
 

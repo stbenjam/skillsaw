@@ -467,6 +467,12 @@ class McpBlock(JsonConfigBlock):
     #: 1.x ``clientSecret`` against its 2.0 ``client_secret``). Findings
     #: always name the key as the author wrote it.
     credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({})
+    #: Host-specific transport spellings normalized before the shared shape
+    #: validator chooses the required connection field. GitHub Copilot calls
+    #: a process-backed server ``local``; the portable MCP spelling is
+    #: ``stdio``. Keeping the alias on the block lets the shared validator
+    #: remain host-neutral.
+    type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({})
 
     def server_entries(self) -> List[Tuple[str, Any]]:
         """Every declared server as ``(name, value)``, in document order.
@@ -509,7 +515,11 @@ class McpBlock(JsonConfigBlock):
 
     @property
     def server_names(self) -> Set[str]:
-        return {s.name for s in self.servers}
+        # JSON object keys are always strings, but inline YAML-backed MCP
+        # roles can carry a malformed scalar key. Policy rules sort this set,
+        # so normalize defensively after the shape rule has reported the
+        # non-string name rather than letting mixed key types crash a scan.
+        return {str(s.name) for s in self.servers}
 
 
 @dataclass(eq=False)
@@ -705,6 +715,27 @@ class CodexInlineMcpBlock(_InlineJsonPayload, McpBlock):
 
     def tree_label(self) -> str:
         return f"{self.path.name} (inline mcpServers)"
+
+
+@dataclass(eq=False)
+class CopilotAgentMcpBlock(_InlineJsonPayload, McpBlock):
+    """``mcp-servers`` embedded in Copilot custom-agent frontmatter.
+
+    The payload is YAML rather than JSON, but after parsing it has the same
+    server shape and security surface as a standalone MCP document. Exposing
+    it as an ``McpBlock`` child makes the existing MCP validation and policy
+    rules discover it normally.
+    """
+
+    inline_data: Optional[Dict[str, Any]] = None
+    source_line: Optional[int] = None
+    allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({"local": "stdio"})
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (agent mcp-servers)"
 
 
 @dataclass(eq=False)

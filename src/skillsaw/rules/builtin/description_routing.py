@@ -173,7 +173,24 @@ class DescriptionRoutingRule(Rule):
                     continue
                 line = block.key_line("description")
                 description = description_field.value
-                if not isinstance(description, str) or not description.strip():
+                if not isinstance(description, str):
+                    # Copilot's dedicated schema rule owns wrong-typed
+                    # descriptions. Treating the same value as an empty
+                    # content description here would emit two diagnoses for
+                    # one defect. Other formats have no schema owner and keep
+                    # the established routing finding.
+                    if block_type is CopilotAgentBlock:
+                        continue
+                    violations.append(
+                        self.violation(
+                            "Description is empty; explain what the building block does",
+                            block=block,
+                            line=line,
+                            fingerprint_discriminator="empty-description",
+                        )
+                    )
+                    continue
+                if not description.strip():
                     violations.append(
                         self.violation(
                             "Description is empty; explain what the building block does",

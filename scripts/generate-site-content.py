@@ -137,7 +137,7 @@ RULE_GROUPS = [
         ],
         "Validates hook configuration. The security rules scan hooks in "
         "`hooks.json`, `.cursor/hooks.json`, `.claude/settings*.json`, and "
-        "skill/agent frontmatter (`hooks:` key) for supply-chain "
+        "skill, Claude-agent, and Copilot-agent frontmatter (`hooks:` key) for supply-chain "
         "attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
@@ -187,6 +187,17 @@ RULE_GROUPS = [
         "`.cursor/` directory holds Cursor content — `rules/`, `commands/`, "
         "`skills/`, `mcp.json` or `hooks.json`. A `.cursor/` holding only "
         "unrelated files does not activate them.",
+    ),
+    (
+        "Copilot / VS Code",
+        "copilot",
+        ["copilot-agent-valid"],
+        "Validates target-aware YAML frontmatter in `.github/agents/**/*.md` "
+        "and legacy `.github/chatmodes/**/*.chatmode.md`: shared fields, real "
+        "booleans, tools and model collections, subagents, handoffs, cloud MCP "
+        "servers, metadata, and preview hooks. Embedded MCP and hooks also reach "
+        "the shared security and policy rules. Enabled automatically wherever "
+        "Copilot or VS Code repository content is detected.",
     ),
     (
         "OpenCode",
