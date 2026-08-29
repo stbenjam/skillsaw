@@ -1523,6 +1523,31 @@ class TestFileCacheBudget:
         # And the recorded refusal still does its job after the eviction.
         assert len(unsizeable(target)) == skillsaw_utils._SIZE_WALK_LIMIT + 10
 
+    def test_a_marker_too_large_for_the_budget_is_not_stored(self, tmp_path):
+        """The refusal marker obeys the bound it is helping to keep.
+
+        It is small, but a budget can be smaller. Eviction cannot make
+        room for an entry larger than the whole budget, so admitting one
+        would leave the cache permanently over the bound — the same rule
+        the value path follows. The refusal is simply not remembered
+        there, which costs the walk again and breaks nothing.
+        """
+        target = tmp_path / "huge.json"
+        resolved = skillsaw_utils.safe_resolve(target) or target
+        marker = skillsaw_utils._entry_cost(skillsaw_utils._UNSIZEABLE, resolved)
+        cache = skillsaw_utils.FileCache(budget=marker - 1)
+
+        @cache.cached
+        def unsizeable(path):
+            return list(range(skillsaw_utils._SIZE_WALK_LIMIT + 10))
+
+        assert len(unsizeable(target)) == skillsaw_utils._SIZE_WALK_LIMIT + 10
+        assert cache._total_bytes == 0, "nothing may be stored over the bound"
+        assert cache._total_bytes <= cache._budget
+
+        # Still returns the right answer, just without remembering.
+        assert len(unsizeable(target)) == skillsaw_utils._SIZE_WALK_LIMIT + 10
+
     def test_an_aliased_graph_is_sized_by_its_objects_not_its_references(self):
         """The walk limit bounds distinct objects, not names for them.
 

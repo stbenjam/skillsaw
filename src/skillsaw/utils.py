@@ -406,19 +406,16 @@ def _push_attributes(node: Any, stack: List[Any]) -> None:
 _DEDUPE_SCALAR_BYTES = 4096
 
 
-def _charge_once(node: Any, visited: Set[int], alive: List[Any]) -> bool:
-    """True the first time *node* is seen, False for a later reference.
+def _remember(node: Any, visited: Set[int], alive: List[Any]) -> None:
+    """Record *node* so a later reference to it is skipped.
 
     *alive* holds a reference to everything measured, so no ``id()`` can
     be reused for a different object while it is a key in *visited* —
-    the same guard the container branches rely on.
+    without it a freed object's address could be recycled and a distinct
+    object charged nothing.
     """
-    node_id = id(node)
-    if node_id in visited:
-        return False
-    visited.add(node_id)
+    visited.add(id(node))
     alive.append(node)
-    return True
 
 
 def _approximate_size(value: Any) -> int:
@@ -438,14 +435,17 @@ def _approximate_size(value: Any) -> int:
     walked = 0
     while stack:
         node = stack.pop()
-        if id(node) in visited:
-            # A second reference to something already measured. The
-            # branches below each re-check this, but the limit has to be
-            # charged for distinct objects rather than references: an
-            # alias is ordinary in YAML and one anchor may be named tens
-            # of thousands of times, which would abandon the walk over a
-            # graph holding three objects — and an abandoned walk costs
-            # every rule a reparse of the file, far more than finishing.
+        node_id = id(node)
+        if node_id in visited:
+            # A second reference to something already measured. This is
+            # the walk's one dedup point, and it sits above the counter
+            # deliberately: the limit bounds distinct objects, not names
+            # for them. An alias is ordinary in YAML and one anchor may
+            # be named tens of thousands of times, which would abandon
+            # the walk over a graph holding three objects — and an
+            # abandoned walk costs every rule a reparse of the file, far
+            # more than finishing it. It also terminates cycles, which
+            # the limit alone used to do.
             continue
         walked += 1
         if walked > _SIZE_WALK_LIMIT:
@@ -457,8 +457,11 @@ def _approximate_size(value: Any) -> int:
             # length the budget would have been shown. ``getsizeof``
             # reports what the object actually holds, header included.
             size = sys.getsizeof(node)
-            if size >= _DEDUPE_SCALAR_BYTES and not _charge_once(node, visited, alive):
-                continue
+            if size >= _DEDUPE_SCALAR_BYTES:
+                # Only large scalars are registered: identity bookkeeping
+                # on every short string costs more across a document than
+                # the double-count it would save.
+                _remember(node, visited, alive)
             total += size
             # Not an unconditional ``continue``: ruamel returns
             # ``ScalarString`` subclasses that carry an ``Anchor`` in a
@@ -467,22 +470,15 @@ def _approximate_size(value: Any) -> int:
             # lookup for the common case.
             _push_attributes(node, stack)
             continue
-        node_id = id(node)
         if isinstance(node, dict):
-            if node_id in visited:
-                continue
-            visited.add(node_id)
-            alive.append(node)
+            _remember(node, visited, alive)
             total += _NODE_OVERHEAD_BYTES * len(node)
             stack.extend(node.keys())
             stack.extend(node.values())
             _push_attributes(node, stack)
             continue
         if isinstance(node, (list, tuple, set, frozenset)):
-            if node_id in visited:
-                continue
-            visited.add(node_id)
-            alive.append(node)
+            _remember(node, visited, alive)
             total += _NODE_OVERHEAD_BYTES * len(node)
             stack.extend(node)
             _push_attributes(node, stack)
@@ -497,8 +493,9 @@ def _approximate_size(value: Any) -> int:
             # An exotic ``__sizeof__``. Aborting a lint from inside cache
             # accounting would be worse than charging the flat estimate.
             size = _NODE_OVERHEAD_BYTES
-        if size < _DEDUPE_SCALAR_BYTES or _charge_once(node, visited, alive):
-            total += size
+        if size >= _DEDUPE_SCALAR_BYTES:
+            _remember(node, visited, alive)
+        total += size
         _push_attributes(node, stack)
     return total or 1
 
