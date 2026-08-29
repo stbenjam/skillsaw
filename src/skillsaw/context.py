@@ -148,6 +148,10 @@ class RepositoryContext(RepositoryProvenanceMixin):
     }
     APM_COMPILED_DIRS = frozenset(APM_COMPILED_DIR_TARGETS)
 
+    def rule_is_active(self, rule_id: str) -> bool:
+        """Whether *rule_id* survived this run's activation filters."""
+        return self.active_rule_ids is None or rule_id in self.active_rule_ids
+
     def __init__(
         self,
         root_path: Path,
@@ -171,6 +175,10 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
+        # Filled by Linter after version/config/CLI filtering. A bare context
+        # used by a focused rule test has no filter and therefore treats every
+        # directly invoked rule as active.
+        self.active_rule_ids: Optional[frozenset] = None
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self.has_apm = self._detect_apm()
         self._scan: Optional[detect_discovery.RepositoryScan] = None

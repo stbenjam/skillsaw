@@ -3,10 +3,10 @@ Rule: mcp-valid-json
 """
 
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from pathlib import Path
 
-from skillsaw.blocks import AgentPluginMcpBlock, OpenCodeMcpBlock
+from skillsaw.blocks import AgentPluginMcpBlock, CopilotAgentMcpBlock, OpenCodeMcpBlock
 from skillsaw.context import HAS_OPENCODE, RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.utils import is_finite_number
@@ -104,7 +104,7 @@ class McpValidJsonRule(Rule):
 
     @property
     def description(self) -> str:
-        return "MCP configuration must be valid JSON with proper mcpServers structure"
+        return "MCP configuration must use valid syntax and a host-readable server structure"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -113,6 +113,14 @@ class McpValidJsonRule(Rule):
         violations = []
 
         for block in context.lint_tree.find(McpBlock):
+            # This tree role exists so the format rule and shared MCP rules
+            # can read one parsed payload. When a version pin disables the
+            # format rule that introduced the surface, keep the established
+            # rule set unchanged rather than leaking a new MCP diagnostic.
+            if isinstance(block, CopilotAgentMcpBlock) and not context.rule_is_active(
+                "copilot-agent-valid"
+            ):
+                continue
             # Agent Plugins uses a closed, versioned schema with different
             # defaults and failure boundaries. Its dedicated rule validates
             # this block; running the permissive Claude/Codex shape check too
@@ -242,6 +250,7 @@ class McpValidJsonRule(Rule):
                     check_reserved=block.claude_builtins_reserved,
                     type_aliases=block.type_aliases,
                     line=getattr(block, "source_line", None),
+                    line_for=getattr(block, "source_line_for", None),
                 )
             )
 
@@ -342,13 +351,19 @@ class McpValidJsonRule(Rule):
         check_reserved: bool = True,
         type_aliases: Mapping[str, str] = MappingProxyType({}),
         line: Optional[int] = None,
+        line_for: Optional[Callable[[Any, Any], Optional[int]]] = None,
     ) -> List[RuleViolation]:
         """Validate MCP configuration structure"""
         violations = []
 
-        def report(message: str, **kwargs: Any) -> RuleViolation:
+        def report(
+            message: str, *, node: Any = None, key: Any = None, **kwargs: Any
+        ) -> RuleViolation:
             """Create a finding at the embedded field when one exists."""
-            return self.violation(message, file_path=file_path, line=line, **kwargs)
+            resolved_line = (
+                line_for(node, key) if line_for is not None and node is not None else line
+            )
+            return self.violation(message, file_path=file_path, line=resolved_line, **kwargs)
 
         if not isinstance(data, dict):
             violations.append(report("MCP configuration must be a JSON object"))
@@ -372,9 +387,21 @@ class McpValidJsonRule(Rule):
             # per message so a diagnostic added later cannot forget it.
             shown = safe_display(str(server_name))
             if not isinstance(server_name, str):
-                violations.append(report(f"MCP server name '{shown}' must be a string"))
+                violations.append(
+                    report(
+                        f"MCP server name '{shown}' must be a string",
+                        node=mcp_servers,
+                        key=server_name,
+                    )
+                )
             if not isinstance(server_config, dict):
-                violations.append(report(f"MCP server '{shown}' configuration must be an object"))
+                violations.append(
+                    report(
+                        f"MCP server '{shown}' configuration must be an object",
+                        node=mcp_servers,
+                        key=server_name,
+                    )
+                )
                 continue
 
             if (
@@ -386,6 +413,8 @@ class McpValidJsonRule(Rule):
                     report(
                         f"MCP server name '{shown}' is reserved "
                         f"for a Claude Code built-in server",
+                        node=mcp_servers,
+                        key=server_name,
                         severity=Severity.WARNING,
                     )
                 )
@@ -416,6 +445,8 @@ class McpValidJsonRule(Rule):
                         f"MCP server '{shown}' has invalid type "
                         f"'{safe_display(server_type)}'. Must be one of: "
                         f"{', '.join(valid_type_names)}",
+                        node=server_config,
+                        key="type",
                     )
                 )
             else:
@@ -426,6 +457,8 @@ class McpValidJsonRule(Rule):
                             f"MCP server '{shown}' with type "
                             f"'{safe_display(server_type)}' must have a "
                             f"'{required_field}' field",
+                            node=mcp_servers,
+                            key=server_name,
                         )
                     )
                 # Present is not the same as usable: ``"command": []`` and
@@ -442,14 +475,28 @@ class McpValidJsonRule(Rule):
                         report(
                             f"MCP server '{shown}' '{required_field}' "
                             "must be a non-empty string",
+                            node=server_config,
+                            key=required_field,
                         )
                     )
 
             if "args" in server_config and not isinstance(server_config["args"], list):
-                violations.append(report(f"MCP server '{shown}' 'args' must be an array"))
+                violations.append(
+                    report(
+                        f"MCP server '{shown}' 'args' must be an array",
+                        node=server_config,
+                        key="args",
+                    )
+                )
 
             if "env" in server_config and not isinstance(server_config["env"], dict):
-                violations.append(report(f"MCP server '{shown}' 'env' must be an object"))
+                violations.append(
+                    report(
+                        f"MCP server '{shown}' 'env' must be an object",
+                        node=server_config,
+                        key="env",
+                    )
+                )
             elif isinstance(server_config.get("env"), dict):
                 violations.extend(
                     self._mapped_secret_violations(
@@ -458,22 +505,45 @@ class McpValidJsonRule(Rule):
                         file_path=file_path,
                         header=False,
                         line=line,
+                        line_for=line_for,
                     )
                 )
 
             if "cwd" in server_config and not isinstance(server_config["cwd"], str):
-                violations.append(report(f"MCP server '{shown}' 'cwd' must be a string"))
+                violations.append(
+                    report(
+                        f"MCP server '{shown}' 'cwd' must be a string",
+                        node=server_config,
+                        key="cwd",
+                    )
+                )
 
             if "url" in server_config and not isinstance(server_config["url"], str):
-                violations.append(report(f"MCP server '{shown}' 'url' must be a string"))
+                violations.append(
+                    report(
+                        f"MCP server '{shown}' 'url' must be a string",
+                        node=server_config,
+                        key="url",
+                    )
+                )
             elif isinstance(server_config.get("url"), str):
                 if url_has_userinfo(server_config["url"]):
                     violations.append(
-                        report(f"MCP server '{shown}' 'url' must not contain user information")
+                        report(
+                            f"MCP server '{shown}' 'url' must not contain user information",
+                            node=server_config,
+                            key="url",
+                        )
                     )
 
             if "headers" in server_config and not isinstance(server_config["headers"], dict):
-                violations.append(report(f"MCP server '{shown}' 'headers' must be an object"))
+                violations.append(
+                    report(
+                        f"MCP server '{shown}' 'headers' must be an object",
+                        node=server_config,
+                        key="headers",
+                    )
+                )
             elif isinstance(server_config.get("headers"), dict):
                 violations.extend(
                     self._mapped_secret_violations(
@@ -482,6 +552,7 @@ class McpValidJsonRule(Rule):
                         file_path=file_path,
                         header=True,
                         line=line,
+                        line_for=line_for,
                     )
                 )
 
@@ -495,25 +566,45 @@ class McpValidJsonRule(Rule):
                     is_valid_number = is_finite_number(val)
                     if not is_valid_number:
                         violations.append(
-                            report(f"MCP server '{shown}' '{timeout_field}' must be a number")
+                            report(
+                                f"MCP server '{shown}' '{timeout_field}' must be a number",
+                                node=server_config,
+                                key=timeout_field,
+                            )
                         )
 
             if "headersHelper" in server_config and not isinstance(
                 server_config["headersHelper"], str
             ):
-                violations.append(report(f"MCP server '{shown}' 'headersHelper' must be a string"))
+                violations.append(
+                    report(
+                        f"MCP server '{shown}' 'headersHelper' must be a string",
+                        node=server_config,
+                        key="headersHelper",
+                    )
+                )
 
             if "alwaysLoad" in server_config:
                 val = server_config["alwaysLoad"]
                 if not isinstance(val, bool):
                     violations.append(
-                        report(f"MCP server '{shown}' 'alwaysLoad' must be a boolean")
+                        report(
+                            f"MCP server '{shown}' 'alwaysLoad' must be a boolean",
+                            node=server_config,
+                            key="alwaysLoad",
+                        )
                     )
 
             if "oauth" in server_config:
                 oauth = server_config["oauth"]
                 if not isinstance(oauth, dict):
-                    violations.append(report(f"MCP server '{shown}' 'oauth' must be an object"))
+                    violations.append(
+                        report(
+                            f"MCP server '{shown}' 'oauth' must be an object",
+                            node=server_config,
+                            key="oauth",
+                        )
+                    )
 
         return violations
 
@@ -531,6 +622,7 @@ class McpValidJsonRule(Rule):
         aliases: Mapping[str, str] = MappingProxyType({}),
         location: str = "",
         line: Optional[int] = None,
+        line_for: Optional[Callable[[Any, Any], Optional[int]]] = None,
     ) -> List[RuleViolation]:
         """Report structured credentials without copying their values.
 
@@ -561,7 +653,7 @@ class McpValidJsonRule(Rule):
                     f"'{safe_display(name)}' embeds {description}; use a placeholder "
                     "or environment substitution instead of a credential value",
                     file_path=file_path,
-                    line=line,
+                    line=line_for(values, name) if line_for is not None else line,
                 )
             )
         return violations

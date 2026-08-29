@@ -167,7 +167,8 @@ class CopilotAgentValidRule(Rule):
 
         violations: List[RuleViolation] = []
         target = self._check_target(block, data, violations)
-
+        if target is None and block.path.name.endswith(".chatmode.md"):
+            target = "vscode"
         self._check_scalar(block, data, "name", violations)
         self._check_description(block, data, violations)
         argument_hint_valid = self._check_scalar(block, data, "argument-hint", violations)
@@ -199,7 +200,7 @@ class CopilotAgentValidRule(Rule):
         mcp_valid = self._check_mapping_field(block, data, "mcp-servers", violations)
         hooks_valid = self._check_hooks(block, data, violations)
 
-        supports_agents = "target" not in data or target == "vscode"
+        supports_agents = target != "github-copilot"
         if supports_agents and agents_valid and agent_names and "tools" in data and tools_valid:
             restricted = "*" not in tool_names
             if restricted and not (_AGENT_TOOL_ALIASES & {name.casefold() for name in tool_names}):
@@ -230,7 +231,7 @@ class CopilotAgentValidRule(Rule):
             tools_is_string=tools_is_string,
         )
 
-        includes_cloud = "target" not in data or target == "github-copilot"
+        includes_cloud = target != "vscode"
         if includes_cloud and len(block.body_text) > 30_000:
             violations.append(
                 self._finding(

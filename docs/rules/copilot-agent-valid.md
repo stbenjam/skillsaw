@@ -33,10 +33,10 @@ Missing or weak descriptions remain owned by
 only reports `description` when its YAML value is not a string, avoiding two
 findings for one missing or empty description.
 
-Embedded configuration stays visible to the shared security rules. A
-`mcp-servers` mapping becomes an MCP node, so [`mcp-valid-json`](mcp-valid-json.md)
-and [`mcp-prohibited`](mcp-prohibited.md) validate and police it. GitHub's
-`local` transport is treated as the compatible spelling of `stdio`, and
+Embedded cloud configuration stays visible to the shared security rules. A
+`mcp-servers` mapping in a cloud or shared agent becomes an MCP node, so
+[`mcp-valid-json`](mcp-valid-json.md) and [`mcp-prohibited`](mcp-prohibited.md)
+validate and police it. GitHub's `local` transport is treated as the compatible spelling of `stdio`, and
 `${{ secrets.NAME }}` / `${{ vars.NAME }}` values are placeholders rather
 than committed credentials. Agent-scoped hooks are scanned by
 [`hooks-dangerous`](hooks-dangerous.md) and
@@ -44,7 +44,9 @@ than committed credentials. Agent-scoped hooks are scanned by
 All checks are offline.
 
 Legacy `.github/chatmodes/**/*.chatmode.md` files receive the same validation
-so teams can migrate without losing diagnostics.
+so teams can migrate without losing diagnostics. They are VS Code-only even
+when `target` is omitted, so the cloud prompt limit and cloud-only embedded
+MCP checks do not apply.
 
 ## Severity
 

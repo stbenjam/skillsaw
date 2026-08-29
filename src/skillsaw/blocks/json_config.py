@@ -16,7 +16,7 @@ from typing import Any, ClassVar, Dict, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
-from skillsaw.utils import read_text, read_json, read_json_strict, read_jsonc
+from skillsaw.utils import commented_key_line, read_text, read_json, read_json_strict, read_jsonc
 
 
 def _as_str(value: Any) -> Optional[str]:
@@ -260,7 +260,14 @@ class _InlineJsonPayload:
             self._parsed = (self.inline_data, None)
 
     def estimate_tokens(self) -> int:
-        return len(json.dumps(self.inline_data or {})) // 4
+        try:
+            rendered = json.dumps(self.inline_data or {})
+        except (TypeError, ValueError, RecursionError):
+            # YAML can produce timestamps and recursive aliases that JSON
+            # cannot encode. Token estimates are advisory; their repr is a
+            # stable, cycle-safe fallback and must never abort tree building.
+            rendered = repr(self.inline_data or {})
+        return len(rendered) // 4
 
     # LintTarget compares by (type, resolved path), which assumes the path
     # identifies the config. It does not here: a manifest can declare an
@@ -733,6 +740,11 @@ class CopilotAgentMcpBlock(_InlineJsonPayload, McpBlock):
     claude_builtins_reserved: ClassVar[bool] = False
     require_usable_connection: ClassVar[bool] = True
     type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({"local": "stdio"})
+
+    def source_line_for(self, node: Any, key: Any) -> Optional[int]:
+        """Translate a nested frontmatter key to its file-absolute line."""
+        nested = commented_key_line(node, key)
+        return nested + 1 if nested is not None else self.source_line
 
     def tree_label(self) -> str:
         return f"{self.path.name} (agent mcp-servers)"

@@ -593,6 +593,14 @@ class CopilotAgentBlock(FrontmatteredBlock):
             child for child in self.children if not isinstance(child, CopilotAgentMcpBlock)
         ]
         super()._build_children()
+        source_line = self.key_line("mcp-servers")
+        if source_line is None:
+            return
+        # Legacy chatmodes and explicit VS Code agents are local-only. VS
+        # Code ignores this GitHub Copilot field, so shared MCP rules must not
+        # diagnose configuration that the host never reads.
+        if self.path.name.endswith(".chatmode.md") or self.field_value("target") == "vscode":
+            return
         frontmatter, error, _error_line = read_frontmatter_commented(self.path)
         if error or not isinstance(frontmatter, dict):
             return
@@ -605,7 +613,7 @@ class CopilotAgentBlock(FrontmatteredBlock):
                 CopilotAgentMcpBlock(
                     path=self.path,
                     inline_data={"mcpServers": servers},
-                    source_line=self.key_line("mcp-servers"),
+                    source_line=source_line,
                     parent=self,
                 )
             )

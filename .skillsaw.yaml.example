@@ -460,7 +460,7 @@ rules:
     severity: error
     # allowlist: []
 
-  # MCP configuration must be valid JSON with proper mcpServers structure
+  # MCP configuration must use valid syntax and a host-readable server structure
   mcp-valid-json:
     enabled: true
     severity: error

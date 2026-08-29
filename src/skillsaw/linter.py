@@ -274,6 +274,7 @@ class Linter:
         self.rules: List[Rule] = []
         self._load_rules()
         self._apply_network_gate()
+        self.context.active_rule_ids = frozenset(rule.rule_id for rule in self.rules)
 
         if self._rule_ids:
             unknown = self._rule_ids - self._known_rule_ids

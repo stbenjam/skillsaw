@@ -1268,6 +1268,28 @@ class TestCopilotAgentValidation:
         assert found[0]["line"] == 3
         assert "Invalid frontmatter" in found[0]["message"]
 
+    def test_version_pin_keeps_new_schema_and_shared_mcp_findings_disabled(self, tmp_path):
+        agent = tmp_path / ".github" / "agents" / "pinned.agent.md"
+        agent.parent.mkdir(parents=True)
+        agent.write_text(
+            "---\n"
+            "description: [not, text]\n"
+            "mcp-servers:\n"
+            "  broken:\n"
+            "    type: local\n"
+            "    command: ''\n"
+            "---\n"
+            "Review the requested changes.\n"
+        )
+        config = tmp_path / ".skillsaw.yaml"
+        config.write_text('version: "0.19.0"\n')
+
+        grouped = by_rule(run_lint(tmp_path, config=config))
+
+        assert grouped.get("copilot-agent-valid", []) == []
+        assert grouped.get("mcp-valid-json", []) == []
+        assert [v["line"] for v in grouped["content-description-routing"]] == [2]
+
 
 # ── Dot-Claude ───────────────────────────────────────────────────
 

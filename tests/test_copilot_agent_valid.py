@@ -93,6 +93,26 @@ def test_description_ownership_avoids_duplicate_findings(tmp_path):
     assert {v.file_path.name for v in routing} == {"reviewer.agent.md", "empty.agent.md"}
 
 
+def test_description_routing_uses_copilot_yaml_12_scalars(tmp_path):
+    _write_agent(
+        tmp_path,
+        "description: yes",
+        relative=".github/agents/yes.agent.md",
+    )
+    context = RepositoryContext(tmp_path)
+
+    assert CopilotAgentValidRule().check(context) == []
+    found = DescriptionRoutingRule().check(context)
+
+    assert [(v.line, v.message) for v in found] == [
+        (
+            2,
+            "Description only restates the name or generic category; explain what the "
+            "building block does",
+        )
+    ]
+
+
 def test_target_booleans_and_retired_infer_are_line_aware(tmp_path):
     _write_agent(
         tmp_path,
@@ -290,6 +310,7 @@ def test_vscode_target_warns_for_cloud_fields_and_string_tools(tmp_path):
     assert len(found) == 3
     assert all(v.severity is Severity.WARNING for v in found)
     assert {v.line for v in found} == {4, 5, 7}
+    assert RepositoryContext(tmp_path).lint_tree.find(CopilotAgentMcpBlock) == []
 
 
 def test_unknown_fields_are_tolerant_by_default_and_configurable(tmp_path):
@@ -311,6 +332,12 @@ def test_cloud_prompt_limit_does_not_apply_to_vscode_only_agents(tmp_path):
         "description: Local agent\ntarget: vscode",
         body=body,
         relative=".github/agents/local.agent.md",
+    )
+    _write_agent(
+        tmp_path,
+        "description: Legacy local agent",
+        body=body,
+        relative=".github/chatmodes/legacy.chatmode.md",
     )
 
     found = _check(tmp_path)
@@ -348,8 +375,58 @@ def test_embedded_mcp_reuses_shape_secret_and_policy_rules(tmp_path):
     assert any("non-empty string" in v.message for v in shape)
     assert any("GitHub personal access token" in v.message for v in shape)
     assert any("server name '42' must be a string" in v.message for v in shape)
-    assert {v.line for v in shape} == {3}
+    assert {
+        next(
+            fragment
+            for fragment in ("non-empty string", "personal access token", "name '42'")
+            if fragment in v.message
+        ): v.line
+        for v in shape
+    } == {
+        "non-empty string": 11,
+        "personal access token": 13,
+        "name '42'": 14,
+    }
     assert prohibited[0].line == 3
+
+
+def test_mcp_role_parsing_is_prefiltered_by_the_top_level_key(tmp_path, monkeypatch):
+    _write_agent(tmp_path, "description: Has no MCP configuration")
+
+    def fail_if_called(_path):
+        raise AssertionError("line-preserving YAML parser should not run without mcp-servers")
+
+    monkeypatch.setattr(
+        "skillsaw.blocks.frontmatter.read_frontmatter_commented",
+        fail_if_called,
+    )
+
+    assert RepositoryContext(tmp_path).lint_tree.find(CopilotAgentMcpBlock) == []
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "      RELEASE_DATE: 2026-08-29",
+        "      SELF: *server",
+    ],
+)
+def test_embedded_yaml_payload_token_estimate_tolerates_non_json_values(tmp_path, extra):
+    anchor = " &server" if "*server" in extra else ""
+    _write_agent(
+        tmp_path,
+        "description: Uses YAML-specific values\n"
+        "mcp-servers:\n"
+        f"  local:{anchor}\n"
+        "    command: node\n"
+        "    env:\n"
+        f"{extra}",
+    )
+
+    embedded = RepositoryContext(tmp_path).lint_tree.find(CopilotAgentMcpBlock)
+
+    assert len(embedded) == 1
+    assert embedded[0].estimate_tokens() > 0
 
 
 def test_hook_shape_and_dangerous_command_logic_are_shared(tmp_path):

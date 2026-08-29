@@ -838,7 +838,7 @@ def read_frontmatter_commented(
         return None, _TOO_DEEP, None
 
 
-def commented_key_line(node: Any, key: str) -> Optional[int]:
+def commented_key_line(node: Any, key: Any) -> Optional[int]:
     """Get the 1-based line number of *key* in a ruamel ``CommentedMap``."""
     if isinstance(node, CommentedMap) and key in node:
         try:
