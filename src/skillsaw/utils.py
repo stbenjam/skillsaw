@@ -662,7 +662,21 @@ class FileCache:
         a worker thread without disturbing other threads' cached results.
 
         If *file_path* is ``None`` every entry in every registered store is
-        cleared (equivalent to the old ``invalidate_read_caches()``).
+        cleared.
+
+        **This is not the whole invalidation contract.** Entries are keyed
+        by resolved path, and path resolution is memoized separately, in
+        ``skillsaw.paths``. Dropping only this cache leaves that memo
+        answering from the pre-change filesystem, so a link retargeted
+        since then resolves to its old target and the new target's content
+        is filed under it. :func:`invalidate_read_caches` is the entry
+        point that clears both, in the order that makes the pair safe;
+        call it, not this, whenever the filesystem may have moved.
+
+        This method deliberately does not clear the memo itself: a
+        ``FileCache`` is an ordinary object that callers construct, and one
+        instance reaching out to a process-global memo would be a side
+        effect no caller of a private cache could expect.
         """
         with self._lock:
             self._generation += 1
