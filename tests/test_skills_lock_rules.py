@@ -11,9 +11,12 @@ import pytest
 from skillsaw.blocks import SkillsLockBlock
 from skillsaw.config import LinterConfig
 from skillsaw.context import HAS_SKILLS_LOCK, RepositoryContext
+from skillsaw.formats import skills_lock
+from skillsaw.lint_target import SkillNode
 from skillsaw.linter import Linter
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.skills_lock import SkillsLockValidRule
+from tests.cli_runner import run_cli
 
 FIXTURES = Path(__file__).parent / "fixtures"
 HASH = "0123456789abcdef" * 4
@@ -219,3 +222,182 @@ def test_optional_fields_accept_empty_subagent_name_but_not_empty_strings(
     assert any("sourceUrl" in message for message in messages)
     assert any("wellKnownDigest" in message for message in messages)
     assert any("subagents" in message for message in messages)
+
+
+def test_external_lock_entries_tag_installed_skill_tree(tmp_path: Path) -> None:
+    repo = _copy_fixture("skills-lock/external", tmp_path)
+    context = RepositoryContext(repo)
+    nodes = {node.path.name: node for node in context.lint_tree.find(SkillNode)}
+
+    external = nodes["external-dep"]
+    assert external.externally_sourced
+    assert external.in_external_source
+    assert all(block.in_external_source for block in external.children)
+
+    assert not nodes["local-copy"].externally_sourced
+    assert not nodes["local-source"].externally_sourced
+    assert not nodes["authored-skill"].externally_sourced
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("My Skill", "my-skill"),
+        ("../", "unnamed-skill"),
+        ("A" * 300, "a" * 255),
+    ],
+)
+def test_install_name_sanitization_matches_skills_cli(name: str, expected: str) -> None:
+    assert skills_lock.sanitize_install_name(name) == expected
+
+
+def test_local_source_externality_uses_repository_containment(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    assert not skills_lock.entry_is_external(
+        {"sourceType": "local", "source": "./skills/source"},
+        lock_root=repo,
+        repository_root=repo,
+    )
+    assert skills_lock.entry_is_external(
+        {"sourceType": "local", "source": "../outside"},
+        lock_root=repo,
+        repository_root=repo,
+    )
+    assert skills_lock.entry_is_external(
+        {"sourceType": "local", "source": "C:\\outside\\skill"},
+        lock_root=repo,
+        repository_root=repo,
+    )
+    assert skills_lock.entry_is_external(
+        {"sourceType": "github", "source": "example/skills"},
+        lock_root=repo,
+        repository_root=repo,
+    )
+    assert skills_lock.entry_is_external(
+        {"sourceType": "local"},
+        lock_root=repo,
+        repository_root=repo,
+    )
+
+
+def test_copy_target_is_external_even_when_lockfile_diagnostics_are_excluded(
+    tmp_path: Path,
+) -> None:
+    _write_lock(
+        tmp_path / "skills-lock.json",
+        {"version": 1, "skills": {"Remote Skill": _entry()}},
+    )
+    # Copy-mode targets need not use a conventional dot-directory. Eve's
+    # project path is one real Vercel target that skillsaw discovers.
+    skill = tmp_path / "agent" / "skills" / "remote-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: remote-skill\ndescription: Use when testing a copied target.\n---\n"
+    )
+    context = RepositoryContext(
+        tmp_path,
+        exclude_patterns=["skills-lock.json"],
+        lint_external_content=False,
+    )
+
+    assert context.skills_lock_files() == []
+    assert context.is_externally_sourced_skill(skill)
+    assert context.externally_sourced_skill_roots() == {skill.resolve()}
+    assert context.lint_tree.find(SkillsLockBlock) == []
+    assert context.lint_tree.find(SkillNode) == []
+
+
+def test_external_matching_uses_nearest_nested_lock(tmp_path: Path) -> None:
+    _write_lock(
+        tmp_path / "skills-lock.json",
+        {"version": 1, "skills": {"shared": _entry()}},
+    )
+    nested = tmp_path / "packages" / "web"
+    _write_lock(nested / "skills-lock.json", {"version": 1, "skills": {}})
+    # Use a non-hidden Vercel target so recursive discovery reaches it; an
+    # unknown hidden directory would be intentionally skipped and make this
+    # precedence assertion vacuous.
+    skill = nested / "agent" / "skills" / "shared"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: shared\ndescription: Use when testing a nested project.\n---\n"
+    )
+
+    context = RepositoryContext(tmp_path)
+
+    assert skill in context.skills
+    assert not context.is_externally_sourced_skill(skill)
+
+
+def test_malformed_lock_fails_open_for_skill_linting(tmp_path: Path) -> None:
+    (tmp_path / "skills-lock.json").write_text("{broken")
+    skill = tmp_path / ".agents" / "skills" / "external-dep"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: external-dep\ndescription: Use when testing malformed provenance.\n---\n"
+    )
+
+    context = RepositoryContext(tmp_path, lint_external_content=False)
+
+    assert [node.path for node in context.lint_tree.find(SkillNode)] == [skill]
+    assert not context.is_externally_sourced_skill(skill)
+
+
+def test_cli_reports_external_findings_but_never_advertises_a_fix(tmp_path: Path) -> None:
+    repo = _copy_fixture("skills-lock/external", tmp_path)
+
+    result = run_cli(
+        ["lint", repo, "--rule", "agentskill-name", "--format", "json", "--no-progress"]
+    )
+    report = json.loads(result.stdout)
+    by_path = {Path(v["file_path"]): v for v in report["violations"]}
+
+    external = Path(".agents/skills/external-dep/SKILL.md")
+    local_copy = Path(".agents/skills/local-copy/SKILL.md")
+    authored = Path("skills/authored-skill/SKILL.md")
+    assert external in by_path
+    assert by_path[external]["fixable"] is False
+    assert by_path[local_copy]["fixable"] is True
+    assert by_path[authored]["fixable"] is True
+
+
+def test_cli_can_lint_only_repository_controlled_skills(tmp_path: Path) -> None:
+    repo = _copy_fixture("skills-lock/external", tmp_path)
+    config = repo / ".skillsaw.yaml"
+    config.write_text('version: "0.20.0"\nlint-external-content: false\n')
+
+    result = run_cli(
+        [
+            "lint",
+            repo,
+            "--config",
+            config,
+            "--rule",
+            "agentskill-name",
+            "--format",
+            "json",
+            "--no-progress",
+        ]
+    )
+    paths = {Path(v["file_path"]) for v in json.loads(result.stdout)["violations"]}
+
+    assert Path(".agents/skills/external-dep/SKILL.md") not in paths
+    assert Path(".agents/skills/local-copy/SKILL.md") in paths
+    assert Path("skills/authored-skill/SKILL.md") in paths
+
+
+def test_fix_never_rewrites_an_external_lock_managed_skill(tmp_path: Path) -> None:
+    repo = _copy_fixture("skills-lock/external", tmp_path)
+    external = repo / ".agents" / "skills" / "external-dep" / "SKILL.md"
+    local_copy = repo / ".agents" / "skills" / "local-copy" / "SKILL.md"
+    authored = repo / "skills" / "authored-skill" / "SKILL.md"
+    original = external.read_text()
+
+    result = run_cli(["fix", repo, "--rule", "agentskill-name", "--no-progress"])
+
+    assert result.returncode == 0
+    assert external.read_text() == original
+    assert "name: local-copy" in local_copy.read_text()
+    assert "name: authored-skill" in authored.read_text()

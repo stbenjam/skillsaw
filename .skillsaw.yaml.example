@@ -542,6 +542,9 @@ exclude:
 # Additional markdown files to run content rules on (glob format)
 content-paths: []
 
+# Report findings in external content (autofix never rewrites it)
+lint-external-content: true
+
 # Treat warnings as errors
 strict: false
 

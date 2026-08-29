@@ -59,6 +59,7 @@ exclude:
 content-paths:
   - "docs/runbooks/*.md"
 
+lint-external-content: true
 strict: false
 fail-on: error
 ```
@@ -355,6 +356,32 @@ content-paths:
 ```
 
 Matched files are analyzed by all `content-*` rules.
+
+## External Content
+
+`lint-external-content` is the repository-wide policy for lint-tree nodes
+whose provenance is outside the repository's authorship boundary. The first
+supported producer is the Vercel skills CLI: skillsaw tags a matching installed
+skill as external when its `skills-lock.json` entry is remote,
+package-managed, unknown, or a `local` source that resolves outside the
+repository being linted. Repository-contained `local` sources remain
+repository-owned. APM packages installed under `apm_modules/` carry the same
+external tag. Other managed formats can adopt it without adding another
+configuration key.
+
+External content is linted by default, so malformed or unsafe dependency
+content remains visible, but its findings are diagnostic-only:
+`skillsaw fix` never rewrites an externally sourced node. To omit external
+payloads from rule discovery entirely, while continuing to validate manifests
+and lockfiles owned by the repository itself, set:
+
+```yaml
+lint-external-content: false
+```
+
+This is useful when CI should enforce only content the repository's authors
+can change directly. The default is `true` for backward compatibility and for
+teams that want dependency diagnostics.
 
 ## Rule Plugins
 

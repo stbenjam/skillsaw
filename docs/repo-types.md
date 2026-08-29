@@ -210,7 +210,7 @@ Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files 
 
 ## APM (Agent Package Manager)
 
-Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output.
+Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output. Package content under `apm_modules/` is externally sourced: it is linted but never autofixed by default, and `lint-external-content: false` omits it from the lint tree.
 
 ## Editor and CLI tool files
 
@@ -229,7 +229,10 @@ The same separation applies to the Vercel skills CLI's project
 `skills-lock.json`: it is generated machine state, so only
 [`skills-lock-valid`](rules/skills-lock-valid.md) checks it. The rule validates
 the structure and portability metadata the CLI reads; it does not pass the
-generated JSON through content-quality rules.
+generated JSON through content-quality rules. Installed skill directories
+named by remote lock entries are tagged as externally sourced. They remain
+visible to rules by default but are never autofixed; see
+[`lint-external-content`](configuration.md#external-content) for the opt-out.
 
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
 — Cursor, Copilot, Cline, OpenCode and Codex all read it, and one well-linted
@@ -244,7 +247,7 @@ validation wherever a tool's own metadata can fail silently — see
 | Tool | Files linted |
 | --- | --- |
 | **Portable** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
-| **Vercel skills CLI** | Every `skills-lock.json`, at the root or in a monorepo subproject |
+| **Vercel skills CLI** | Every `skills-lock.json`, plus matching installed skill payloads unless `lint-external-content: false` |
 | **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
 | **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
 | **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
@@ -273,6 +276,9 @@ them, and a rule that turns out not to load is worth knowing about too.
 runs the skills CLI owns its own lockfile, so a monorepo can legitimately
 commit several. Exact-name lockfiles are discovered throughout the checkout;
 vendored directories and configured `exclude` paths stay out of scope.
+Lockfiles still contribute external-source provenance when the lockfile path
+itself is excluded: an `exclude` must not make autofix reinterpret a managed
+dependency as authored content.
 
 Two things are the exception, and both are root-only today.
 

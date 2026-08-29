@@ -48,6 +48,14 @@ The rule auto-enables whenever at least one non-excluded project lockfile is
 present. A lockfile is structured JSON rather than agent prose, so content
 rules never read it.
 
+skillsaw also uses valid lock entries as provenance for installed skill
+directories. A remote, package-managed, unknown, or repository-external
+`local` source marks the matching installed skill as externally sourced.
+Those payloads are linted by default, but `skillsaw fix` never rewrites them.
+Set the top-level `lint-external-content: false` configuration key to omit them
+from rule discovery while continuing to validate `skills-lock.json` itself.
+A `local` source that resolves inside the lint root remains repository-owned.
+
 ## Severity
 
 Errors identify data the CLI cannot reliably interpret: invalid or non-strict

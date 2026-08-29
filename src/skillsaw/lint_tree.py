@@ -1096,6 +1096,34 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             )
             continue
 
+    external_roots = context.externally_sourced_roots()
+
+    def _path_is_external(path: Path) -> bool:
+        if not external_roots:
+            return False
+        resolved = safe_resolve(path)
+        return resolved is not None and any(
+            resolved == external or resolved.is_relative_to(external) for external in external_roots
+        )
+
+    def _tag_and_prune_external(parent: LintTarget) -> None:
+        """Apply the repository's external-content boundary to every node.
+
+        Centralizing this after builtin and plugin contributors finish means
+        a new content type only needs to carry a path (or set the generic tag
+        itself). It cannot accidentally bypass reporting policy or autofix by
+        forgetting a type-specific guard in its attachment loop.
+        """
+        kept: list[LintTarget] = []
+        for child in parent.children:
+            child.externally_sourced = child.externally_sourced or _path_is_external(child.path)
+            if child.externally_sourced and not context.lint_external_content:
+                continue
+            _tag_and_prune_external(child)
+            kept.append(child)
+        parent.children = kept
+
+    _tag_and_prune_external(root)
     root.set_parents()
     nodes = list(root.walk())
     logger.info("Built lint tree: %d nodes", len(nodes))

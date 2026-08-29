@@ -26,6 +26,7 @@ from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
+from .repository_external_content import RepositoryExternalContentMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 
 if TYPE_CHECKING:
@@ -104,7 +105,7 @@ _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 _UNSET = object()
 
 
-class RepositoryContext(RepositoryProvenanceMixin):
+class RepositoryContext(RepositoryExternalContentMixin, RepositoryProvenanceMixin):
     """
     Context information about the repository being linted
 
@@ -155,6 +156,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         repo_types: Optional[Set[RepositoryType]] = None,
         exclude_patterns: Optional[List[str]] = None,
         content_paths: Optional[List[str]] = None,
+        lint_external_content: bool = True,
     ):
         """
         Initialize repository context
@@ -168,9 +170,12 @@ class RepositoryContext(RepositoryProvenanceMixin):
                 mutating the attribute and calling :meth:`apply_excludes`.
             content_paths: Extra content glob patterns (from config) picked up
                 by the lint tree.
+            lint_external_content: Whether externally sourced nodes should be
+                attached to the lint tree.
         """
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
+        self.lint_external_content = lint_external_content
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self.has_apm = self._detect_apm()
@@ -440,6 +445,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self._contained_plugin_roots = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
+        self.reset_external_content_provenance()
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
 
@@ -490,11 +496,6 @@ class RepositoryContext(RepositoryProvenanceMixin):
             for path in self._repository_scan().legacy_editor_files.get(name, ())
             if not self.is_path_excluded(path)
         ]
-
-    def skills_lock_files(self) -> List[Path]:
-        """Return every non-excluded project ``skills-lock.json``."""
-        lockfiles = self._repository_scan().skills_lock_files
-        return [path for path in lockfiles if not self.is_path_excluded(path)]
 
     def _detect_formats(self) -> Set[str]:
         return detect_discovery.instruction_formats(
