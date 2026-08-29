@@ -1,0 +1,12 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.example.weather/service",
+  "description": "Valid Registry metadata with an exact non-semantic version.",
+  "version": "2025-12-11",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://weather.example.com/mcp"
+    }
+  ]
+}

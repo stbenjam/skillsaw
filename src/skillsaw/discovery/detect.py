@@ -47,6 +47,8 @@ class RepositoryScan:
     instruction_files: Tuple[Path, ...]
     tool_dirs: Dict[str, Tuple[Path, ...]]
     legacy_editor_files: Dict[str, Tuple[Path, ...]]
+    mcp_registry_files: Tuple[Path, ...]
+    package_json_files: Tuple[Path, ...]
 
 
 #: Pre-directory instruction files, read from the nearest enclosing directory
@@ -63,11 +65,18 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     found = [root / name for name in root_names if (root / name).exists()]
     tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
     legacy_editor: Dict[str, List[Path]] = {name: [] for name in LEGACY_EDITOR_FILES}
+    mcp_registry_files: List[Path] = []
+    package_json_files: List[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
         found.extend(here / name for name in filenames if name.endswith(".instructions.md"))
         vendored = bool(VENDOR_DIR_NAMES.intersection(here.relative_to(root).parts))
+        if not vendored:
+            if "server.json" in filenames:
+                mcp_registry_files.append(here / "server.json")
+            if "package.json" in filenames:
+                package_json_files.append(here / "package.json")
         # The root copy has always been attached; a nested one is a new
         # claim, so it follows the tool-directory rule rather than the
         # instruction-file one and stays out of vendored trees.
@@ -84,6 +93,8 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
         instruction_files=tuple(sorted(found)),
         tool_dirs={name: tuple(sorted(paths)) for name, paths in tool_dirs.items()},
         legacy_editor_files={name: tuple(sorted(paths)) for name, paths in legacy_editor.items()},
+        mcp_registry_files=tuple(sorted(mcp_registry_files)),
+        package_json_files=tuple(sorted(package_json_files)),
     )
 
 

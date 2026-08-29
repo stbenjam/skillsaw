@@ -26,6 +26,7 @@ from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
+from .repository_mcp_registry import RepositoryMcpRegistryMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 
 if TYPE_CHECKING:
@@ -47,6 +48,7 @@ class RepositoryType(Enum):
     CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
     CODEX_MARKETPLACE = "codex-marketplace"  # .agents/plugins/marketplace.json
     AGENT_PLUGIN = "agent-plugin"  # Portable Agent Plugins plugin.json
+    MCP_REGISTRY = "mcp-registry"  # MCP Registry server.json publisher metadata
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -103,7 +105,7 @@ _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 _UNSET = object()
 
 
-class RepositoryContext(RepositoryProvenanceMixin):
+class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
     """
     Context information about the repository being linted
 
@@ -125,6 +127,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         RepositoryType.CODEX_PLUGIN,
         RepositoryType.AGENT_PLUGIN,
         RepositoryType.AGENTSKILLS,
+        RepositoryType.MCP_REGISTRY,
         RepositoryType.CODERABBIT,
         RepositoryType.PROMPTFOO,
     ]
@@ -184,6 +187,8 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self._agent_plugin_roots: Optional[Set[Path]] = None
         self._contained_plugin_roots: Optional[Set[Path]] = None
         self._agent_plugin_claims: Optional[Set[Path]] = None
+        self._mcp_registry_paths: Optional[List[Path]] = None
+        self._mcp_registry_forced = RepositoryType.MCP_REGISTRY in (repo_types or set())
         self._provenance_cache: Dict[Path, PluginProvenance] = {}
         # Views over _provenance_cache, invalidated with it: keeping them
         # beside it is what makes their lifetimes match the records they
@@ -437,6 +442,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self._agent_plugin_claims = None
         self._agent_plugin_roots = None
         self._contained_plugin_roots = None
+        self._mcp_registry_paths = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
         self.detected_formats = self._detect_formats()
@@ -543,6 +549,8 @@ class RepositoryContext(RepositoryProvenanceMixin):
             types.add(RepositoryType.CODEX_PLUGIN)
         if self.agent_plugins:
             types.add(RepositoryType.AGENT_PLUGIN)
+        if self.mcp_registry_server_paths():
+            types.add(RepositoryType.MCP_REGISTRY)
 
         if not types:
             types.add(RepositoryType.UNKNOWN)

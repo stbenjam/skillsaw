@@ -35,6 +35,7 @@ from .blocks import (
     HooksBlock,
     InstructionBlock,
     McpBlock,
+    McpRegistryServerBlock,
     OpenAIMetadataBlock,
     OpenCodeAgentBlock,
     OpenCodeCommandBlock,
@@ -475,6 +476,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     root_native_mcp = context.root_path / ".mcp.json"
     if not _shadowed_by_agent_plugin_mcp(root_native_mcp, root_agent_plugin_mcp):
         _add_block(root, root_native_mcp, McpBlock)
+
+    # --- MCP Registry publisher metadata ---
+    # server.json is not an MCP client configuration file: it describes one
+    # published server, so it gets its own structured parser role and never
+    # reaches content-quality rules as prose.
+    for server_json in context.mcp_registry_server_paths():
+        _add_block(root, server_json, McpRegistryServerBlock)
 
     # --- Editor-owned content directories (Cursor, Copilot/VS Code, Cline) ---
     # These tools read AGENTS.md for portable instructions — already attached

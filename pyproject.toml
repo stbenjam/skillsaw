@@ -82,6 +82,7 @@ package-dir = {"" = "src"}
 "skillsaw.rules" = ["docs/*.md"]
 "skillsaw.schemas.agent_plugins.v1_0_0" = ["*.json", "SCHEMA-SOURCE.md"]
 "skillsaw.schemas.agent_plugins.v1_1_0" = ["*.json", "SCHEMA-SOURCE.md"]
+"skillsaw.schemas.mcp_registry.v2025_12_11" = ["*.json", "SCHEMA-SOURCE.md"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

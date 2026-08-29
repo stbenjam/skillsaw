@@ -1,0 +1,26 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.example/weather",
+  "description": "Weather observations and forecasts for coding assistants.",
+  "version": "1.2.3-beta.1+build.4",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@example/weather-mcp",
+      "version": "1.2.3",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://weather.example.com/mcp"
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/example/weather-mcp",
+    "source": "github"
+  }
+}

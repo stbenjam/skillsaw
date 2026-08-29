@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **81** built-in rules organized into the following categories:
+skillsaw includes **84** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Agent Plugins](agent-plugins.md) (3 rules)
@@ -11,7 +11,7 @@ skillsaw includes **81** built-in rules organized into the following categories:
 - [OpenAI Codex](codex.md) (5 rules)
 - [Hooks](hooks.md) (3 rules)
 - [Security](security.md) (4 rules)
-- [MCP (Model Context Protocol)](mcp.md) (2 rules)
+- [MCP (Model Context Protocol)](mcp.md) (5 rules)
 - [OpenClaw](openclaw.md) (1 rule)
 - [Cursor](cursor.md) (2 rules)
 - [OpenCode](opencode.md) (1 rule)
@@ -65,6 +65,9 @@ skillsaw includes **81** built-in rules organized into the following categories:
 | [`security-dynamic-context`](security-dynamic-context.md) | Require an allowlist for dynamic context commands that execute shell code while loading agent context | warning (auto) | - | Security |
 | [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
+| [`mcp-registry-server-json-valid`](mcp-registry-server-json-valid.md) | MCP Registry server.json must conform to schema 2025-12-11 and its enums | error (auto) | - | MCP (Model Context Protocol) |
+| [`mcp-registry-version-semver`](mcp-registry-version-semver.md) | MCP Registry server versions should use strict Semantic Versioning 2.0.0 | warning (auto) | - | MCP (Model Context Protocol) |
+| [`mcp-registry-npm-name-match`](mcp-registry-npm-name-match.md) | Local npm package.json mcpName must match MCP Registry server.json name | error (auto) | - | MCP (Model Context Protocol) |
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
 | [`cursor-rules-valid`](cursor-rules-valid.md) | Cursor .mdc rules must have frontmatter that lets the rule activate | error (auto) | auto | Cursor |
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
