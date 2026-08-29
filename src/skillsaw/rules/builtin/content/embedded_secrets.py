@@ -12,6 +12,7 @@ from skillsaw.rules.builtin.content_analysis import (
     FrontmatterField,
 )
 from skillsaw.rules.builtin.secret_detection import (
+    KNOWN_SECRET_EXAMPLE_VALUES,
     STRUCTURED_SECRET_PATTERNS,
     is_secret_placeholder,
     placeholder_markers,
@@ -30,6 +31,26 @@ _DEFAULT_ENTROPY_THRESHOLD = 3.5
 # than 16 chars are normalized to this 16-char reference (log2(16) = 4.0
 # bits) so the threshold discriminates uniformly across lengths.
 _REFERENCE_MAX_BITS = 4.0
+
+# Audited fragments of the canonical AWS documentation ID.  Comparing the
+# fixed prefix and remainder keeps the exception exact without adding another
+# contiguous access-key-shaped value that repository push protection rejects.
+_AWS_DOCUMENTATION_ACCESS_KEY_ID_PARTS = ("AKIAIOSF", "ODNN7EXAMPLE")
+
+# Exact literals audited from public documentation corpora.  These are values,
+# not substring markers: extending or changing one character must keep the
+# candidate reportable.  The RSA header has an additional context check below
+# so a PEM block carrying key material is never exempted.
+_KNOWN_EXAMPLE_VALUES = KNOWN_SECRET_EXAMPLE_VALUES | frozenset(
+    {
+        "sk_live_abc123xyz789",
+        "sk_live_abc123def456",
+        "django-insecure-...",
+        "-----BEGIN RSA PRIVATE KEY-----",
+    }
+)
+_RSA_PRIVATE_KEY_HEADER = "-----BEGIN RSA PRIVATE KEY-----"
+_PEM_KEY_MATERIAL = re.compile(r"[A-Za-z0-9+/]{32,}={0,2}")
 
 
 def _shannon_entropy(value: str) -> float:
@@ -59,6 +80,14 @@ def _length_adjusted_entropy(value: str) -> float:
     if max_bits >= _REFERENCE_MAX_BITS:
         return raw
     return raw * (_REFERENCE_MAX_BITS / max_bits)
+
+
+def _is_known_example_value(value: str) -> bool:
+    """Whether *value* exactly matches one audited documentation literal."""
+    if value in _KNOWN_EXAMPLE_VALUES:
+        return True
+    prefix, remainder = _AWS_DOCUMENTATION_ACCESS_KEY_ID_PARTS
+    return value.startswith(prefix) and value[len(prefix) :] == remainder
 
 
 class ContentEmbeddedSecretsRule(Rule):
@@ -133,7 +162,44 @@ class ContentEmbeddedSecretsRule(Rule):
     @staticmethod
     def _is_placeholder(value: str, markers: Tuple[str, ...]) -> bool:
         """True when *value* is clearly a placeholder, not a real secret."""
+        if _is_known_example_value(value):
+            return True
         return is_secret_placeholder(value, markers)
+
+    @staticmethod
+    def _pem_key_material_follows(lines: List[str], line_index: int, match: re.Match) -> bool:
+        """Whether an RSA header introduces key material instead of teaching text."""
+        remainder = lines[line_index][match.end() :]
+        if remainder.startswith("\\n") and _PEM_KEY_MATERIAL.match(remainder[2:]):
+            return True
+        for following in lines[line_index + 1 :]:
+            candidate = following.strip()
+            if not candidate:
+                continue
+            return _PEM_KEY_MATERIAL.fullmatch(candidate) is not None
+        return False
+
+    @classmethod
+    def _structured_match_reportable(
+        cls, lines: List[str], line_index: int, match: re.Match
+    ) -> bool:
+        """Keep structured-token exceptions exact and PEM-material aware."""
+        value = match.group(0)
+        if not _is_known_example_value(value):
+            return True
+
+        prefix = lines[line_index][: match.start()]
+        remainder = lines[line_index][match.end() :]
+        token_chars = "_+/=-"
+        if (prefix and (prefix[-1].isalnum() or prefix[-1] in token_chars)) or (
+            remainder and (remainder[0].isalnum() or remainder[0] in token_chars)
+        ):
+            # The regex matched a known example only as the prefix of a longer
+            # candidate.  That close variant has no exemption.
+            return True
+        if value == _RSA_PRIVATE_KEY_HEADER:
+            return cls._pem_key_material_follows(lines, line_index, match)
+        return False
 
     def _generic_match_reportable(
         self, value: Optional[str], threshold: float, markers: Tuple[str, ...]
@@ -156,10 +222,15 @@ class ContentEmbeddedSecretsRule(Rule):
         # so those extra splits would misattribute a match to the wrong line
         # (a payload could plant a U+2028 to point the finding elsewhere).
         # read_body() has already normalized CRLF.
-        for line_num, line in enumerate(text.split("\n"), 1):
+        lines = text.split("\n")
+        for line_index, line in enumerate(lines):
+            line_num = line_index + 1
             for pattern, desc, is_generic in active:
                 if not is_generic:
-                    if pattern.search(line):
+                    if any(
+                        self._structured_match_reportable(lines, line_index, match)
+                        for match in pattern.finditer(line)
+                    ):
                         yield line_num, desc
                         break
                     continue

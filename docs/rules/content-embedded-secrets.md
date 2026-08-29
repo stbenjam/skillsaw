@@ -24,15 +24,20 @@ even after removal and may be harvested by automated scanners.
 Two classes of match are handled differently:
 
 - **Structured token formats** (`AKIA…`, `ghp_…`, `sk-ant-…`, private-key
-  blocks, JWTs, …) are high-confidence and always reported.
+  blocks, JWTs, …) are high-confidence and reported unless the complete
+  candidate is an exact, audited documentation literal. The canonical AWS
+  documentation access-key ID and a standalone `-----BEGIN RSA PRIVATE KEY-----`
+  header are permitted; close variants and PEM blocks followed by key material
+  still report.
 - **Generic credential assignments** (`password = "…"`, `api_key: "…"`,
   `secret_key`, `access_token`) are gated to avoid flagging documentation
   examples:
     - *Placeholder allowlist*: values containing obvious placeholder
-      markers (`example`, `placeholder`, `dummy`, `changeme`, `your-…`,
-      `hunter2`, …), template syntax (`<your-key>`, `${VAR}`,
-      `{{ var }}`), or a single repeated character are skipped. Extend
-      the list with `additional-placeholders`.
+      markers (`example`, `placeholder`, `dummy`, `changeme`, `your-…`, …),
+      exact audited examples (`hunter2`, `sk_live_abc123xyz789`,
+      `sk_live_abc123def456`, `django-insecure-...`), template syntax
+      (`<your-key>`, `${VAR}`, `{{ var }}`), or a single repeated character
+      are skipped. Extend the list with `additional-placeholders`.
     - *Entropy gating*: the value's Shannon entropy must reach
       `entropy-threshold` (default 3.5 bits/char). Real random secrets
       pass; English-ish placeholder strings do not. Values shorter than

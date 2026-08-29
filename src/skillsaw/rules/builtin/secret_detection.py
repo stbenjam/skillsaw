@@ -76,7 +76,6 @@ DEFAULT_PLACEHOLDER_MARKERS = (
     "change_me",
     "your-",
     "your_",
-    "hunter2",
     "password",
     "token",
     "test",
@@ -88,6 +87,11 @@ DEFAULT_PLACEHOLDER_MARKERS = (
     "fixme",
     "xxx",
 )
+
+# Exact, well-known documentation/example values.  Keep these separate from
+# the substring markers above: a credential merely containing one of these
+# literals can still be real and must not inherit an allowlist exemption.
+KNOWN_SECRET_EXAMPLE_VALUES = frozenset({"hunter2"})
 
 # Template/variable syntax anywhere in the value marks it as a placeholder:
 # <your-key>, ${API_KEY}, {{ secrets.KEY }}, and OpenCode's {env:API_KEY} /
@@ -135,6 +139,8 @@ def placeholder_markers(extra: Any) -> Tuple[str, ...]:
 def is_secret_placeholder(value: str, markers: Sequence[str] = DEFAULT_PLACEHOLDER_MARKERS) -> bool:
     """Whether *value* is clearly a placeholder rather than a credential."""
     if not value.strip():
+        return True
+    if value in KNOWN_SECRET_EXAMPLE_VALUES:
         return True
     if len(set(value)) <= 1:
         return True

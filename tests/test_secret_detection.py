@@ -8,6 +8,7 @@ import pytest
 
 from skillsaw.rules.builtin.secret_detection import (
     DEFAULT_PLACEHOLDER_MARKERS,
+    KNOWN_SECRET_EXAMPLE_VALUES,
     is_secret_placeholder,
     mapped_secret_description,
     placeholder_markers,
@@ -154,3 +155,9 @@ class TestPlaceholderMarkers:
 
     def test_markers_are_lowercased_for_the_case_insensitive_match(self):
         assert "corpfixture" in placeholder_markers(["CorpFixture"])
+
+    def test_hunter2_is_an_exact_example_not_a_substring_marker(self):
+        assert "hunter2" in KNOWN_SECRET_EXAMPLE_VALUES
+        assert "hunter2" not in DEFAULT_PLACEHOLDER_MARKERS
+        assert is_secret_placeholder("hunter2")
+        assert not is_secret_placeholder("hunter2x")

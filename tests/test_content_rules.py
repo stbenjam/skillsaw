@@ -654,11 +654,79 @@ class TestContentEmbeddedSecretsRule:
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
 
-    def test_detects_aws_key(self, temp_dir):
+    def test_canonical_aws_documentation_key_is_exempt(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAIOSFODNN7EXAMPLE\n")  # notsecret
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
-        assert len(violations) >= 1
+        assert violations == []
+
+    def test_detects_aws_key(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAZZZZZZZZZZZZZZZZ\n")  # notsecret
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            'password = "hunter2"',
+            'const API_KEY = "sk_live_abc123xyz789";',
+            "const API_KEY = 'sk_live_abc123def456';",
+            "SECRET_KEY = 'django-insecure-...'",
+            'private_key = "-----BEGIN RSA PRIVATE KEY-----"',
+        ],
+        ids=[
+            "hunter2",
+            "stripe-xyz789",
+            "stripe-def456",
+            "django-insecure",
+            "rsa-header-only",
+        ],
+    )
+    def test_known_documentation_examples_are_exempt(self, temp_dir, line):
+        """Exact literals audited from issue #532's pinned corpus are not leaks."""
+        (temp_dir / "CLAUDE.md").write_text(f"{line}\n")
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    @pytest.mark.parametrize(
+        "line,expected_desc",
+        [
+            ('password = "hunter2x"', "Hardcoded password"),
+            ('const API_KEY = "sk_live_abc123xyz790";', "Hardcoded API key"),
+            ("const API_KEY = 'sk_live_abc123def457';", "Hardcoded API key"),
+            ("SECRET_KEY = 'django-insecure-..x'", "Hardcoded secret key"),
+            ('private_key = "-----BEGIN RSA PRIVATE KEY-----X"', "Private key"),
+        ],
+        ids=[
+            "hunter2-near-miss",
+            "stripe-xyz789-near-miss",
+            "stripe-def456-near-miss",
+            "django-insecure-near-miss",
+            "rsa-header-near-miss",
+        ],
+    )
+    def test_known_example_close_variants_still_fire(self, temp_dir, line, expected_desc):
+        (temp_dir / "CLAUDE.md").write_text(f"{line}\n")
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert expected_desc in violations[0].message
+
+    def test_aws_documentation_key_close_variant_still_fires(self, temp_dir):
+        # Keep the synthetic provider-shaped near miss out of push protection.
+        near_miss = "".join(("AKIAIOSF", "ODNN7EXAMPLF"))
+        (temp_dir / "CLAUDE.md").write_text(f'AWS key: "{near_miss}"\n')
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "AWS access key ID" in violations[0].message
+
+    def test_pem_block_with_key_material_still_fires(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "-----BEGIN RSA PRIVATE KEY-----\n"
+            "MIIEowIBAAKCAQEA7vYp3uF6hQ9wK2mN5rT8xZ1cV4bG0sLd\n"
+            "-----END RSA PRIVATE KEY-----\n"
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "Private key" in violations[0].message
 
     def test_clean_file_passes(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
@@ -698,7 +766,6 @@ class TestContentEmbeddedSecretsRule:
                 "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456",  # notsecret
                 "JSON Web Token",
             ),
-            ("-----BEGIN RSA PRIVATE KEY-----", "Private key"),
             ("-----BEGIN OPENSSH PRIVATE KEY-----", "Private key"),
             ("secret_key = 'abcdefghijklmnopqrstuvwxyz'", "Hardcoded secret key"),
             ("access_token = 'abcdefghijklmnopqrstuvwxyz'", "Hardcoded access token"),
@@ -717,7 +784,6 @@ class TestContentEmbeddedSecretsRule:
             "npm",
             "pypi",
             "jwt",
-            "rsa-private-key",
             "openssh-private-key",
             "generic-secret-key",
             "generic-access-token",
