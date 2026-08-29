@@ -1,0 +1,7 @@
+name: external-content-boundary
+version: 1.0.0
+description: Exercises repository-owned and package-installed APM content
+targets: []
+dependencies:
+  apm:
+    - example/vendor-package

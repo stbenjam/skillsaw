@@ -31,6 +31,7 @@ def _run_tree(args):
         args.path,
         exclude_patterns=config.exclude_patterns,
         content_paths=config.content_paths,
+        lint_external_content=config.lint_external_content,
     )
     _apply_plugin_extensions(context, config)
 

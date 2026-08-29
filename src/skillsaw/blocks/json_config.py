@@ -608,6 +608,17 @@ class OpenCodeConfigBlock(JsonConfigBlock):
 
 
 @dataclass(eq=False)
+class SkillsLockBlock(JsonConfigBlock):
+    """A project ``skills-lock.json`` written by Vercel's skills CLI."""
+
+    category: str = "skills-lock"
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return "skills-lock.json (skills lockfile)"
+
+
+@dataclass(eq=False)
 class OpenCodeMcpBlock(McpBlock):
     """The ``mcp`` section of an OpenCode project config.
 
