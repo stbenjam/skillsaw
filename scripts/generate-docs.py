@@ -36,7 +36,7 @@ RULE_GROUPS = [
         "Plugin packages.",
     ),
     (
-        "Vercel Skills",
+        "Vercel",
         ["skills-lock-valid"],
         "Validates every `skills-lock.json` written by the "
         "[Vercel skills CLI](https://github.com/vercel-labs/skills): strict JSON, "
