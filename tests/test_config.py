@@ -23,6 +23,7 @@ def test_default_config():
     assert "claude-plugin-json-required" in config.rules
     assert config.rules["claude-plugin-json-required"]["enabled"] == "auto"
     assert config.rules["claude-plugin-json-required"]["severity"] == "error"
+    assert config.lint_external_content is True
 
 
 def test_deeply_nested_config_raises_value_error(tmp_path):
@@ -1168,6 +1169,24 @@ def test_content_paths_string_raises_valueerror(tmp_path):
 def test_content_paths_list_of_strings_ok(tmp_path):
     config = LinterConfig.from_file(_write(tmp_path, 'content-paths:\n  - "docs/*.md"\n'))
     assert config.content_paths == ["docs/*.md"]
+
+
+def test_lint_external_content_defaults_true_and_accepts_false(tmp_path):
+    default = LinterConfig.from_file(_write(tmp_path, 'version: "0.20.0"\n'))
+    assert default.lint_external_content is True
+
+    configured = LinterConfig.from_file(
+        _write(tmp_path, 'version: "0.20.0"\nlint-external-content: false\n')
+    )
+    assert configured.lint_external_content is False
+    assert configured.to_dict()["lint-external-content"] is False
+
+
+def test_lint_external_content_requires_boolean(tmp_path):
+    with pytest.raises(ValueError, match="'lint-external-content' must be a boolean"):
+        LinterConfig.from_file(
+            _write(tmp_path, 'version: "0.20.0"\nlint-external-content: remote-only\n')
+        )
 
 
 def test_exclude_non_string_items_raises_valueerror(tmp_path):

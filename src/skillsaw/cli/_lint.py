@@ -155,6 +155,7 @@ def _run_lint(args):
             repo_types=override_types,
             exclude_patterns=config.exclude_patterns,
             content_paths=config.content_paths,
+            lint_external_content=config.lint_external_content,
         )
         contexts.append(context)
 

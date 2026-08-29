@@ -73,6 +73,7 @@ from .json_config import (
     OpenCodeConfigBlock,
     OpenCodeMcpBlock,
     SettingsBlock,
+    SkillsLockBlock,
     VsCodeMcpBlock,
     _parse_json_file,
     parse_hooks_events,
@@ -150,6 +151,7 @@ __all__ = [
     "OpenCodeConfigBlock",
     "OpenCodeMcpBlock",
     "SettingsBlock",
+    "SkillsLockBlock",
     "_parse_json_file",
     "parse_hooks_events",
     # coderabbit
