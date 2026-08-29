@@ -45,7 +45,7 @@ _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 def is_version_range(value: str) -> bool:
     """Whether value uses a range/tag form forbidden by the Registry."""
     stripped = value.strip()
-    if stripped == "latest":
+    if stripped == "latest" or stripped in {"*", "x", "X"}:
         return True
     if any(
         pattern.fullmatch(stripped) is not None
@@ -67,7 +67,11 @@ def _is_uri(value: object) -> bool:
     """
     if not isinstance(value, str):
         return True
-    if _URI.fullmatch(value) is None or _INVALID_PERCENT_ESCAPE.search(value) is not None:
+    if (
+        _URI.fullmatch(value) is None
+        or _INVALID_PERCENT_ESCAPE.search(value) is not None
+        or value.count("#") > 1
+    ):
         return False
     try:
         parsed = urlsplit(value)

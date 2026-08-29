@@ -49,7 +49,16 @@ class McpRegistryNpmNameMatchRule(Rule):
                 identifier = package.get("identifier")
                 if not isinstance(identifier, str):
                     continue
-                candidates = list(by_name.get(identifier, ()))
+                package_version = package.get("version")
+                candidates = [
+                    manifest
+                    for manifest in by_name.get(identifier, ())
+                    if not isinstance(package_version, str)
+                    or (
+                        isinstance(manifest.raw_data, dict)
+                        and manifest.raw_data.get("version") == package_version
+                    )
+                ]
                 adjacent = by_directory.get(block.path.parent)
                 if (
                     not candidates

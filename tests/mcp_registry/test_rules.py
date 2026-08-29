@@ -114,6 +114,18 @@ class TestMcpRegistrySchemaRule:
         assert "repository.url" in combined
         assert "valid uri" in combined
 
+    def test_repeated_uri_fragment_delimiter_is_reported(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["websiteUrl"] = "https://example.com/#first#second"
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+        combined = "\n".join(messages_lower(findings))
+
+        assert "websiteurl" in combined
+        assert "valid uri" in combined
+
     def test_ipv6_and_opaque_uris_pass(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
@@ -249,6 +261,7 @@ class TestMcpRegistrySchemaRule:
             "1.2 || 1.3",
             ">=1.0.0 <2.0.0",
             "^1.0.0 || ^2.0.0",
+            "*",
         ],
     )
     def test_top_level_version_ranges_are_errors(self, tmp_path, version):
@@ -302,7 +315,7 @@ class TestMcpRegistrySchemaRule:
         assert "$.packages[4]" not in summary
         assert "and 6 more schema errors" in summary
 
-    @pytest.mark.parametrize("version", [">=1.0.0 <2.0.0", "^1.0.0 || ^2.0.0"])
+    @pytest.mark.parametrize("version", [">=1.0.0 <2.0.0", "^1.0.0 || ^2.0.0", "*"])
     def test_package_compound_comparator_range_is_an_error(self, tmp_path, version):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
@@ -390,6 +403,16 @@ class TestMcpRegistryNpmNameRule:
 
     def test_matching_workspace_package_passes(self, tmp_path):
         repo = copy_fixture("mcp-registry/monorepo", tmp_path)
+
+        assert lint_rules(repo, NPM_NAME_RULE) == []
+
+    def test_different_local_package_version_is_not_treated_as_referenced_release(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        package_path = repo / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package["version"] = "2.0.0"
+        package.pop("mcpName")
+        package_path.write_text(json.dumps(package), encoding="utf-8")
 
         assert lint_rules(repo, NPM_NAME_RULE) == []
 
