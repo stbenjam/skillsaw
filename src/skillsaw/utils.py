@@ -387,6 +387,32 @@ def _push_attributes(node: Any, stack: List[Any]) -> None:
             stack.append(held)
 
 
+#: Above this, a scalar is charged once per object rather than once per
+#: reference. An alias is one object however many times the document names
+#: it, so counting references is counting memory that is not there: a 2 MiB
+#: anchored string used 64 times charged 128.0 MiB against the 2.0 MiB it
+#: holds, which refuses the entry and has every rule reparse the file. The
+#: dedup is not applied below this size because identity bookkeeping on
+#: every short string would cost more across a whole document than the
+#: over-count it prevents, and a small scalar counted twice is noise.
+_DEDUPE_SCALAR_BYTES = 4096
+
+
+def _charge_once(node: Any, visited: Set[int], alive: List[Any]) -> bool:
+    """True the first time *node* is seen, False for a later reference.
+
+    *alive* holds a reference to everything measured, so no ``id()`` can
+    be reused for a different object while it is a key in *visited* —
+    the same guard the container branches rely on.
+    """
+    node_id = id(node)
+    if node_id in visited:
+        return False
+    visited.add(node_id)
+    alive.append(node)
+    return True
+
+
 def _approximate_size(value: Any) -> int:
     """Roughly how many bytes *value* keeps alive, for cache accounting.
 
@@ -413,7 +439,10 @@ def _approximate_size(value: Any) -> int:
             # (PEP 393), so a document of emoji retains four times the
             # length the budget would have been shown. ``getsizeof``
             # reports what the object actually holds, header included.
-            total += sys.getsizeof(node)
+            size = sys.getsizeof(node)
+            if size >= _DEDUPE_SCALAR_BYTES and not _charge_once(node, visited, alive):
+                continue
+            total += size
             continue
         node_id = id(node)
         if isinstance(node, dict):
@@ -440,11 +469,13 @@ def _approximate_size(value: Any) -> int:
         # hex path has no digit limit to stop it. Charge what the object
         # holds, floored at the overhead a slot costs regardless.
         try:
-            total += max(sys.getsizeof(node), _NODE_OVERHEAD_BYTES)
+            size = max(sys.getsizeof(node), _NODE_OVERHEAD_BYTES)
         except TypeError:
             # An exotic ``__sizeof__``. Aborting a lint from inside cache
             # accounting would be worse than charging the flat estimate.
-            total += _NODE_OVERHEAD_BYTES
+            size = _NODE_OVERHEAD_BYTES
+        if size < _DEDUPE_SCALAR_BYTES or _charge_once(node, visited, alive):
+            total += size
         _push_attributes(node, stack)
     return total or 1
 
@@ -672,12 +703,20 @@ def invalidate_read_caches(file_path: Optional[Path] = None):
         decorators) are always fully cleared regardless of *file_path*,
         as ``lru_cache`` does not support per-key eviction.
     """
-    _file_cache.invalidate(file_path)
     # Path resolution is memoized for the same reason and over the same
     # lifetime as the read caches (see ``paths._RESOLVE_CACHE``), so it is
     # dropped here too. There is no per-key eviction: a single rename can
     # change what any number of other paths resolve to.
+    #
+    # Resolution goes first, and the order is the whole safety of it. A
+    # reader captures the cache generation before it resolves, so anything
+    # that resolved from the stale memo captured a generation from before
+    # the invalidation below and is refused at admission. Clearing the file
+    # cache first leaves a window where a reader captures the *new*
+    # generation and still resolves an old target, then files the new
+    # target's bytes under it.
     clear_resolve_cache()
+    _file_cache.invalidate(file_path)
     # lru_cache functions registered via register_cache do not support
     # per-key eviction, so we must clear them entirely in both cases.
     for cache in _extra_caches:
@@ -1239,12 +1278,14 @@ def roundtrip_yaml(source: str) -> Tuple[Any, Any]:
     ``RecursionError`` on a document past ``_MAX_YAML_DEPTH``, like
     every other reader here.
 
-    A write path cannot use :func:`read_yaml_commented`: that reader is
-    cached, and mutating what it returns corrupts the document every
-    later reader is handed. So a caller intending to edit and write back
-    has to load its own — which is exactly how two of them ended up
-    constructing a bare ``YAML()`` and taking untrusted nesting with
-    neither half of the bound. This is that caller's entry point.
+    Every YAML write path must come through here. :func:`read_yaml_commented`
+    is not an option for one: that reader is cached, and mutating what it
+    returns corrupts the document every later reader is handed — so a
+    caller intending to edit and write back has to load its own copy. A
+    bare ``ruamel.yaml.YAML()`` is the wrong way to get one, because it
+    carries neither half of the nesting bound, and a write path reads the
+    file again rather than the tree's cached copy, so it is its own way in
+    for untrusted content.
     """
     _reject_deep_before_compose(source)
     yaml_rt = _RuamelYAML()

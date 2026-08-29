@@ -1247,6 +1247,57 @@ class TestFileCacheBudget:
         # And a keyless call still charges value plus machinery.
         assert skillsaw_utils._entry_cost(value) < short_cost
 
+    def test_an_aliased_scalar_is_charged_once_not_once_per_use(self):
+        """An anchor is one object however many times a document names it.
+
+        Counting references is counting memory that is not there: a 2 MiB
+        anchored string used 64 times charged 128.0 MiB against the 2.0
+        MiB it holds — over the default budget, so the entry is refused
+        and every rule reparses the file the accounting was meant to keep
+        cached.
+        """
+        shared = "x" * (2 * 1024 * 1024)
+        document = {"anchor": shared, "uses": [shared] * 63}
+
+        charged = skillsaw_utils._approximate_size(document)
+
+        assert charged < 3 * 1024 * 1024, charged
+        assert charged <= skillsaw_utils.FileCache.DEFAULT_BUDGET
+
+        # Distinct scalars of the same size must still be charged apiece,
+        # or the dedup has traded one wrong number for another.
+        distinct = {"a": "y" * 5000, "b": "z" * 5000}
+        assert skillsaw_utils._approximate_size(distinct) > 10_000
+
+    def test_resolution_is_dropped_before_the_reads_keyed_on_it(self, tmp_path):
+        """Two caches, one invalidation, and the order is the safety.
+
+        A reader captures the cache generation before it resolves. Clear
+        the file cache first and there is a window where a reader
+        captures the *new* generation and still resolves an old target
+        from the memo, then files the new target's bytes under it.
+        """
+        import inspect
+
+        import skillsaw.paths as paths
+
+        source = inspect.getsource(skillsaw_utils.invalidate_read_caches)
+        clears_memo = source.index("clear_resolve_cache()")
+        clears_files = source.index("_file_cache.invalidate(")
+        assert clears_memo < clears_files, "resolution must be dropped first"
+
+        # And both actually happen.
+        target = tmp_path / "a.md"
+        target.write_text("hello", encoding="utf-8")
+        skillsaw_utils.read_text(target)
+        paths.safe_resolve(target)
+        assert paths._resolve_cache_bytes > 0
+
+        skillsaw_utils.invalidate_read_caches()
+
+        assert paths._resolve_cache_bytes == 0
+        assert skillsaw_utils._file_cache._total_bytes == 0
+
     def test_a_clear_during_a_resolution_is_not_undone_by_it(self, tmp_path):
         """The sibling of the ``FileCache`` generation check.
 

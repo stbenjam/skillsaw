@@ -31,7 +31,7 @@ This skill produces **analysis, not code**. Write the output as a GitHub issue w
 Before looking outward, read the repo to establish what skillsaw does today:
 
 - Read `src/skillsaw/rules/builtin/__init__.py` for the full list of builtin rules
-- Read `src/skillsaw/context.py` for the supported repo types
+- Read `src/skillsaw/repo_type.py` for the supported repo types
 - Read `README.md` for the feature set (linting, scaffolding, doc generation, CI action)
 - Read `.skillsaw.yaml.example` for the full config surface
 - Read `src/skillsaw/marketplace/cli.py` and `src/skillsaw/marketplace/add.py` for scaffolding capabilities
@@ -146,7 +146,7 @@ Review opportunities by likely impact on open-source adoption, and check each fa
 - **User base size** — how many developers use this tool? Rules for tools used by millions have more reach than niche tools.
 - **Format stability** — is the format stable enough to write durable rules? Unstable formats mean maintenance burden.
 - **Competitive gap** — check whether skillsaw is the only linter that could serve this format; being first matters.
-- **Implementation effort** — how much work? A new `RepositoryType` in `src/skillsaw/context.py` and rule set vs. a single new rule.
+- **Implementation effort** — how much work? A new `RepositoryType` in `src/skillsaw/repo_type.py` and rule set vs. a single new rule.
 - **Cross-format synergy** — check whether supporting this format also benefits existing users; many repos keep both `.cursor/rules/` and `.claude/rules/`.
 
 Build a ranked list of recommended actions, each with:
