@@ -26,6 +26,11 @@ class InstructionBlock(FileContentBlock):
 
 
 @dataclass(eq=False)
+class DevinGlobalRuleBlock(InstructionBlock):
+    """A Devin or legacy Windsurf ``global_rules.md`` instruction file."""
+
+
+@dataclass(eq=False)
 class ClaudeMdBlock(InstructionBlock):
     """CLAUDE.md instruction file."""
 

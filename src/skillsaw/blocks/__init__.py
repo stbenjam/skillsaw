@@ -30,6 +30,7 @@ from .content import (
     ClineWorkflowBlock,
     ContextFileBlock,
     CursorPromptHookBlock,
+    DevinGlobalRuleBlock,
     ExtraBlock,
     GeminiMdBlock,
     InstructionBlock,
@@ -102,6 +103,7 @@ __all__ = [
     "ContentFile",
     # content
     "InstructionBlock",
+    "DevinGlobalRuleBlock",
     "ClaudeMdBlock",
     "AgentsMdBlock",
     "GeminiMdBlock",

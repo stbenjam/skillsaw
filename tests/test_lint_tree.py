@@ -285,7 +285,13 @@ def test_tree_contains_editor_tool_blocks(temp_dir):
 
 
 def test_tree_contains_nested_devin_content_without_duplicates(temp_dir):
-    from skillsaw.blocks import AgentsMdBlock, DevinRuleBlock, DevinSkillBlock, SkillBlock
+    from skillsaw.blocks import (
+        AgentsMdBlock,
+        DevinGlobalRuleBlock,
+        DevinRuleBlock,
+        DevinSkillBlock,
+        SkillBlock,
+    )
 
     root_rule = temp_dir / ".devin" / "rules" / "api.md"
     root_rule.parent.mkdir(parents=True)
@@ -312,6 +318,7 @@ def test_tree_contains_nested_devin_content_without_duplicates(temp_dir):
     assert [block.path for block in tree.find(DevinSkillBlock)] == [native / "SKILL.md"]
     assert [block.path for block in tree.find(SkillBlock)] == [portable / "SKILL.md"]
     assert [block.path for block in tree.find(AgentsMdBlock)] == [nested_agents]
+    assert [block.path for block in tree.find(DevinGlobalRuleBlock)] == [global_rule]
     assert [block.path for block in tree.find(InstructionBlock)].count(global_rule) == 1
 
 

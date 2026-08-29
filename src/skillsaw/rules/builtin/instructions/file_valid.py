@@ -6,7 +6,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
-from skillsaw.rules.builtin.content_analysis import InstructionBlock
+from skillsaw.rules.builtin.content_analysis import DevinGlobalRuleBlock, InstructionBlock
 from skillsaw.rules.builtin.utils import read_text
 
 from ._helpers import is_instruction_filename
@@ -35,7 +35,9 @@ class InstructionFileValidRule(Rule):
         violations = []
 
         for block in context.lint_tree.find(InstructionBlock):
-            if not is_instruction_filename(block.path.name):
+            if not isinstance(block, DevinGlobalRuleBlock) and not is_instruction_filename(
+                block.path.name
+            ):
                 continue
 
             content = read_text(block.path)

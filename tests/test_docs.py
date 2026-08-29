@@ -141,6 +141,25 @@ class TestExtractor:
         assert plugin.rules[0].name == "style"
         assert plugin.rules[0].globs == ["src/**/*.py"]
 
+    def test_extract_standalone_devin_skills_with_optional_frontmatter(self, temp_dir):
+        plain = temp_dir / ".devin" / "skills" / "review"
+        plain.mkdir(parents=True)
+        (plain / "SKILL.md").write_text("# Review\n\nReview the current changes.\n")
+        configured = temp_dir / ".windsurf" / "skills" / "deploy"
+        configured.mkdir(parents=True)
+        (configured / "SKILL.md").write_text(
+            "---\nname: deploy-prod\ndescription: Deploy a reviewed release.\n---\n"
+            "# Deploy\n\nDeploy safely.\n"
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        by_name = {s.name: s for s in docs.skills}
+        assert set(by_name) == {"deploy-prod", "review"}
+        assert by_name["review"].description == ""
+        assert by_name["review"].body == "# Review\n\nReview the current changes."
+        assert by_name["deploy-prod"].description == "Deploy a reviewed release."
+
     def test_extract_flat_marketplace(self, flat_structure_marketplace):
         ctx = RepositoryContext(flat_structure_marketplace)
         docs = extract_docs(ctx)
@@ -458,6 +477,17 @@ class TestAgentPluginExtractor:
         assert [s.name for s in plugin.skills] == ["demo"]
         assert [c.name for c in plugin.commands] == ["audit"]
         # The package's skills belong to it, not to the repository at large.
+        assert docs.skills == []
+
+    def test_package_owns_nested_devin_skill(self, temp_dir):
+        write_agent_plugin(temp_dir, "acme.release-tools")
+        native = temp_dir / ".devin" / "skills" / "release-review"
+        native.mkdir(parents=True)
+        (native / "SKILL.md").write_text("Review the release evidence.\n")
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert [s.name for s in docs.plugins[0].skills] == ["demo", "release-review"]
         assert docs.skills == []
 
     def test_root_package_mcp_servers(self, temp_dir):

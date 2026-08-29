@@ -44,6 +44,7 @@ from skillsaw.blocks import (  # noqa: F401
     CursorMcpBlock,
     CursorPromptHookBlock,
     CursorRuleBlock,
+    DevinGlobalRuleBlock,
     DevinRuleBlock,
     DevinSkillBlock,
     ExtraBlock,

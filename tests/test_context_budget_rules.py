@@ -229,6 +229,18 @@ class TestContextBudgetRule:
         assert len(desc_violations) == 1
         assert desc_violations[0].severity == Severity.WARNING
 
+    def test_devin_skill_description_over_warn(self, temp_dir):
+        skill_dir = temp_dir / ".devin" / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        long_desc = "x" * (201 * 4)
+        (skill_dir / "SKILL.md").write_text(f'---\ndescription: "{long_desc}"\n---\n')
+
+        violations = ContextBudgetRule().check(RepositoryContext(temp_dir))
+        desc_violations = [v for v in violations if v.metric == "skill-description"]
+
+        assert len(desc_violations) == 1
+        assert desc_violations[0].severity == Severity.WARNING
+
     def test_skill_description_over_error(self, temp_dir):
         skill_dir = temp_dir / ".claude" / "skills" / "my-skill"
         skill_dir.mkdir(parents=True)

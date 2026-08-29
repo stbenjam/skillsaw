@@ -101,6 +101,26 @@ class TestInstructionFileValidRule:
             "read" in violations[0].message.lower() or "encoding" in violations[0].message.lower()
         )
 
+    def test_empty_devin_global_rules_fails(self, temp_dir):
+        rules = temp_dir / ".devin" / "global_rules.md"
+        rules.parent.mkdir()
+        rules.write_text("")
+
+        violations = InstructionFileValidRule().check(RepositoryContext(temp_dir))
+
+        assert len(violations) == 1
+        assert "global_rules.md is empty" in violations[0].message
+
+    def test_invalid_windsurf_global_rules_encoding_fails(self, temp_dir):
+        rules = temp_dir / ".windsurf" / "global_rules.md"
+        rules.parent.mkdir()
+        rules.write_bytes(b"\x80\x81\x82\x83")
+
+        violations = InstructionFileValidRule().check(RepositoryContext(temp_dir))
+
+        assert len(violations) == 1
+        assert "invalid encoding" in violations[0].message
+
 
 class TestInstructionImportsValidRule:
     def test_rule_metadata(self):

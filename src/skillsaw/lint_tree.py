@@ -30,6 +30,7 @@ from .blocks import (
     CursorMcpBlock,
     CursorPromptHookBlock,
     CursorRuleBlock,
+    DevinGlobalRuleBlock,
     DevinRuleBlock,
     DevinSkillBlock,
     ExtraBlock,
@@ -661,7 +662,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for dir_name in devin.TOOL_DIR_NAMES:
         for devin_dir in context.agent_tool_dirs(dir_name):
             _add_glob(root, devin_dir / "rules", "**/*.md", DevinRuleBlock)
-            _add_block(root, devin_dir / "global_rules.md", InstructionBlock)
+            _add_block(root, devin_dir / "global_rules.md", DevinGlobalRuleBlock)
 
     kiro_steering = context.root_path / ".kiro" / "steering"
     if kiro_steering.is_dir():
