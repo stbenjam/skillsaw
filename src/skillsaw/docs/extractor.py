@@ -32,6 +32,7 @@ from skillsaw.docs.models import (
 from skillsaw.blocks import (
     AgentBlock,
     CommandBlock,
+    DevinSkillBlock,
     HooksBlock,
     McpBlock,
     PluginRuleBlock,
@@ -41,10 +42,16 @@ from skillsaw.blocks import (
 from skillsaw.lint_target import (
     AgentPluginConfigNode,
     CodexPluginConfigNode,
+    DevinSkillNode,
     LintTarget,
     PluginNode,
     SkillNode,
 )
+
+
+def _skill_nodes(root: LintTarget) -> List[LintTarget]:
+    """Return portable Agent Skills and Devin-native skills below *root*."""
+    return root.find(SkillNode) + root.find(DevinSkillNode)
 
 
 def extract_docs(
@@ -105,7 +112,7 @@ def extract_docs(
             for p in context.codex_plugins
             if context.is_codex_installed_plugin(p) and (r := safe_resolve(p)) is not None
         ]
-        for skill_node in context.lint_tree.find(SkillNode):
+        for skill_node in _skill_nodes(context.lint_tree):
             resolved = safe_resolve(skill_node.path)
             if resolved is None or resolved in plugin_skill_paths:
                 continue
@@ -549,7 +556,7 @@ def _extract_owned_skills(context: RepositoryContext, plugin_resolved: Path) -> 
     membership is a read, not a path match.
     """
     docs = []
-    for skill_node in context.lint_tree.find(SkillNode):
+    for skill_node in _skill_nodes(context.lint_tree):
         if skill_node.plugin_owner != plugin_resolved:
             continue
         doc = _extract_skill(skill_node)
@@ -632,15 +639,15 @@ def _command_docs(blocks) -> List[CommandDoc]:
 
 def _extract_skills(plugin_node: PluginNode) -> List[SkillDoc]:
     docs = []
-    for skill_node in plugin_node.find(SkillNode):
+    for skill_node in _skill_nodes(plugin_node):
         doc = _extract_skill(skill_node)
         if doc:
             docs.append(doc)
     return sorted(docs, key=lambda d: name_str(d.name))
 
 
-def _extract_skill(skill_node: SkillNode) -> Optional[SkillDoc]:
-    blocks = skill_node.find(SkillBlock)
+def _extract_skill(skill_node: LintTarget) -> Optional[SkillDoc]:
+    blocks = skill_node.find(SkillBlock) + skill_node.find(DevinSkillBlock)
     if not blocks:
         return None
     block = blocks[0]

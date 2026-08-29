@@ -276,6 +276,39 @@ jobs:
           print('Official Agent Plugins v1 example: detected, one skill discovered, both rules clean')
           "
 
+      - name: Test Automattic/build-with-wordpress (Devin rules gate)
+        run: |
+          # Pinned: upstream churn must not turn an unrelated Skillsaw change
+          # red. Bump deliberately after reviewing its Devin corpus changes.
+          git init --quiet /tmp/build-with-wordpress
+          git -C /tmp/build-with-wordpress remote add origin https://github.com/Automattic/build-with-wordpress.git
+          git -C /tmp/build-with-wordpress fetch --quiet --depth 1 origin b4fc8b710d1dd845c480771575c7f38f36c0f62c
+          git -C /tmp/build-with-wordpress checkout --quiet FETCH_HEAD
+
+          # This repo ships separate Devin CLI and Devin Desktop outputs. Keep
+          # the gate scoped to Devin's two structural validators; unrelated
+          # plugin and prose rules do not own this third-party corpus.
+          python3 -c "
+          from pathlib import Path
+          from skillsaw.blocks import DevinRuleBlock, DevinSkillBlock
+          from skillsaw.context import HAS_DEVIN, RepositoryContext
+          context = RepositoryContext(Path('/tmp/build-with-wordpress'))
+          assert HAS_DEVIN in context.detected_formats, 'Devin format not detected'
+          assert len(context.lint_tree.find(DevinRuleBlock)) == 2, 'expected 2 Devin rules'
+          assert len(context.lint_tree.find(DevinSkillBlock)) == 16, 'expected 16 Devin skills'
+          "
+
+          skillsaw lint --format json --no-custom-rules \
+            --rule devin-rules-valid \
+            --rule devin-skill-valid \
+            /tmp/build-with-wordpress | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          assert r['stats']['rules_run'] == 2, f\"expected the 2 Devin rules, ran {r['stats']['rules_run']}\"
+          assert r['violations'] == [], f\"Devin rules regressed: {[(v['rule_id'], v['message']) for v in r['violations'][:5]]}\"
+          print('Automattic/build-with-wordpress: 2 rules, 16 skills, both Devin validators clean')
+          "
+
       - name: Test auth0/agent-skills
         run: |
           git clone --depth 1 https://github.com/auth0/agent-skills.git /tmp/agent-skills

@@ -656,6 +656,20 @@ class SkillBlock(FrontmatteredBlock):
 
 
 @dataclass(eq=False)
+class DevinRuleBlock(FrontmatteredBlock):
+    """A rule under ``.devin/rules`` or legacy ``.windsurf/rules``."""
+
+    category: str = "instruction"
+
+
+@dataclass(eq=False)
+class DevinSkillBlock(FrontmatteredBlock):
+    """A Devin-native SKILL.md whose frontmatter is optional."""
+
+    category: str = "skill"
+
+
+@dataclass(eq=False)
 class PluginRuleBlock(FrontmatteredBlock):
     """rules/*.md in plugins."""
 
