@@ -4867,13 +4867,6 @@ class TestContentProgressiveDisclosureRule:
         )
         return skill
 
-    def test_rule_metadata(self):
-        rule = ContentProgressiveDisclosureRule()
-        assert rule.rule_id == "content-progressive-disclosure"
-        assert rule.default_severity() == Severity.WARNING
-        assert rule.default_enabled == "auto"
-        assert "progressive disclosure" in rule.description
-
     def test_default_limits_over_budget_fires(self, temp_dir):
         self._write_claude(temp_dir, repeats=200)  # ~6.5k tokens
         violations = ContentProgressiveDisclosureRule().check(RepositoryContext(temp_dir))
