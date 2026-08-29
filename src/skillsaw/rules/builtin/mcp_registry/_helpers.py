@@ -6,6 +6,7 @@ import hashlib
 import re
 from functools import lru_cache
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryType
 from skillsaw.diagnostics import safe_display
@@ -27,17 +28,11 @@ SEMVER = re.compile(
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\Z"
 )
 
-_COMPARATOR_RANGE = re.compile(
-    r"\A\s*(?:\^|~|>=|<=|>|<|=)\s*v?[0-9]+" r"(?:\.[0-9]+){0,3}(?:-[0-9A-Za-z.-]+)?\s*\Z"
-)
-_HYPHEN_RANGE = re.compile(
-    r"\A\s*v?[0-9]+(?:\.[0-9]+){0,3}(?:-[0-9A-Za-z.-]+)?\s-\s"
-    r"v?[0-9]+(?:\.[0-9]+){0,3}(?:-[0-9A-Za-z.-]+)?\s*\Z"
-)
-_OR_RANGE = re.compile(
-    r"\A\s*(?:v?[0-9]+(?:\.[0-9]+){0,3}(?:-[0-9A-Za-z.-]+)?\s*)"
-    r"(?:\|\|\s*v?[0-9]+(?:\.[0-9]+){0,3}(?:-[0-9A-Za-z.-]+)?\s*)+\Z"
-)
+_VERSION_ATOM = r"v?[0-9]+(?:\.[0-9]+){0,3}(?:-[0-9A-Za-z.-]+)?"
+_COMPARATOR = rf"(?:\^|~|>=|<=|>|<|=)\s*{_VERSION_ATOM}"
+_COMPARATOR_RANGE = re.compile(rf"\A\s*{_COMPARATOR}(?:\s+{_COMPARATOR})*\s*\Z")
+_HYPHEN_RANGE = re.compile(rf"\A\s*{_VERSION_ATOM}\s-\s{_VERSION_ATOM}\s*\Z")
+_OR_RANGE = re.compile(rf"\A\s*{_VERSION_ATOM}\s*(?:\|\|\s*{_VERSION_ATOM}\s*)+\Z")
 _DOTTED_VERSION = re.compile(
     r"\A\s*(?:v?[0-9]+|[xX*])(?:\.(?:[0-9]+|[xX*])){1,2}" r"(?:-[0-9A-Za-z.-]+)?\s*\Z"
 )
@@ -70,7 +65,20 @@ def _is_uri(value: object) -> bool:
     """
     if not isinstance(value, str):
         return True
-    return _URI.fullmatch(value) is not None and _INVALID_PERCENT_ESCAPE.search(value) is None
+    if _URI.fullmatch(value) is None or _INVALID_PERCENT_ESCAPE.search(value) is not None:
+        return False
+    try:
+        parsed = urlsplit(value)
+        # Accessing hostname and port performs structural validation that the
+        # permissive splitter defers, including balanced IPv6 brackets and a
+        # numeric, in-range port. Opaque URIs have no authority and remain
+        # valid RFC 3986 references.
+        if parsed.netloc:
+            parsed.hostname
+            parsed.port
+    except ValueError:
+        return False
+    return True
 
 
 # Importing jsonschema and compiling the validator costs measurable startup

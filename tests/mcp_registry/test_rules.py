@@ -100,6 +100,27 @@ class TestMcpRegistrySchemaRule:
         assert "repository.url" in combined
         assert "not a uri" not in combined
 
+    def test_malformed_uri_authority_is_reported(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["repository"]["url"] = "https://["
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+        combined = "\n".join(messages_lower(findings))
+
+        assert "repository.url" in combined
+        assert "valid uri" in combined
+
+    def test_ipv6_and_opaque_uris_pass(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["repository"]["url"] = "https://[2001:db8::1]/weather"
+        data["websiteUrl"] = "urn:example:weather"
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
     @pytest.mark.parametrize(
         "name",
         [
@@ -204,6 +225,7 @@ class TestMcpRegistrySchemaRule:
             "1.2.*",
             "1.0 - 2.0",
             "1.2 || 1.3",
+            ">=1.0.0 <2.0.0",
         ],
     )
     def test_top_level_version_ranges_are_errors(self, tmp_path, version):
@@ -232,6 +254,16 @@ class TestMcpRegistrySchemaRule:
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
         data["packages"][0]["version"] = "1.x"
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("packages[0].version" in message for message in messages_lower(findings))
+
+    def test_package_compound_comparator_range_is_an_error(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["version"] = ">=1.0.0 <2.0.0"
         _write_server(path, data)
 
         findings = lint_rules(repo, VALID_RULE)
