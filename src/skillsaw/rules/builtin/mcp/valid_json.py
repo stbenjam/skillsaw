@@ -3,7 +3,7 @@ Rule: mcp-valid-json
 """
 
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 from pathlib import Path
 
 from skillsaw.blocks import AgentPluginMcpBlock, OpenCodeMcpBlock
@@ -341,7 +341,7 @@ class McpValidJsonRule(Rule):
         servers_key: str = "mcpServers",
         check_reserved: bool = True,
         type_aliases: Mapping[str, str] = MappingProxyType({}),
-        line: int | None = None,
+        line: Optional[int] = None,
     ) -> List[RuleViolation]:
         """Validate MCP configuration structure"""
         violations = []
@@ -530,7 +530,7 @@ class McpValidJsonRule(Rule):
         header: bool,
         aliases: Mapping[str, str] = MappingProxyType({}),
         location: str = "",
-        line: int | None = None,
+        line: Optional[int] = None,
     ) -> List[RuleViolation]:
         """Report structured credentials without copying their values.
 
