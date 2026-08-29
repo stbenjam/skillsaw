@@ -13,6 +13,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
     CursorHooksBlock,
+    DevinSkillBlock,
     HookEventConfig,
     HooksBlock,
     SettingsBlock,
@@ -123,7 +124,11 @@ class HooksProhibitedRule(Rule):
             violations.extend(self._check_events(block.hooks_events, block.path))
 
         # Skill and agent frontmatter can declare hooks with the same schema.
-        for block in context.lint_tree.find(SkillBlock) + context.lint_tree.find(AgentBlock):
+        for block in (
+            context.lint_tree.find(SkillBlock)
+            + context.lint_tree.find(DevinSkillBlock)
+            + context.lint_tree.find(AgentBlock)
+        ):
             if block.frontmatter_error:
                 continue
             events = block.hooks_events

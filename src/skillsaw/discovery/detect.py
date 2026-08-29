@@ -13,6 +13,7 @@ from typing import Callable, Dict, Iterable, Iterator, List, Mapping, Optional, 
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
+from skillsaw.formats import devin
 from skillsaw.paths import safe_resolve
 from skillsaw.utils import read_yaml
 
@@ -29,10 +30,12 @@ VENDOR_DIR_NAMES = frozenset(
 )
 
 # Editor-owned directories whose contents ship in a repository. Cursor,
-# Copilot/VS Code, Cline and OpenCode all read these from the nearest
-# enclosing folder as well as the repository root, so a monorepo package
-# can carry its own set — hence a walk rather than a root-anchored lookup.
-AGENT_TOOL_DIR_NAMES = frozenset({".cursor", ".clinerules", ".github", ".vscode", ".opencode"})
+# Copilot/VS Code, Cline, Devin and OpenCode all read these from the nearest
+# enclosing folder as well as the repository root, so a monorepo package can
+# carry its own set — hence a walk rather than a root-anchored lookup.
+AGENT_TOOL_DIR_NAMES = frozenset(
+    {".cursor", ".clinerules", ".github", ".vscode", ".opencode", *devin.TOOL_DIR_NAMES}
+)
 
 
 @dataclass
@@ -60,14 +63,16 @@ LEGACY_EDITOR_FILES = (".cursorrules", ".clinerules")
 
 def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     """Walk *root* once, collecting instruction files and editor directories."""
-    found = [root / name for name in root_names if (root / name).exists()]
+    found = {root / name for name in root_names if (root / name).exists()}
     tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
     legacy_editor: Dict[str, List[Path]] = {name: [] for name in LEGACY_EDITOR_FILES}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
-        found.extend(here / name for name in filenames if name.endswith(".instructions.md"))
         vendored = bool(VENDOR_DIR_NAMES.intersection(here.relative_to(root).parts))
+        found.update(here / name for name in filenames if name.endswith(".instructions.md"))
+        if not vendored:
+            found.update(here / name for name in filenames if devin.is_instruction_filename(name))
         # The root copy has always been attached; a nested one is a new
         # claim, so it follows the tool-directory rule rather than the
         # instruction-file one and stays out of vendored trees.
@@ -208,6 +213,33 @@ def instruction_formats(
             return True
         return any(not is_excluded(path) for path in (dirs.get(".clinerules") or ()))
 
+    def devin_marker() -> bool:
+        """Whether Devin-specific rules, skills, or instructions are present."""
+        resolved_root = safe_resolve(root)
+        for dir_name in devin.TOOL_DIR_NAMES:
+            candidates = list(dirs.get(dir_name) or ())
+            if not candidates:
+                candidates = [root / dir_name]
+            for base in candidates:
+                resolved_base = safe_resolve(base)
+                if (
+                    is_excluded(base)
+                    or resolved_root is None
+                    or resolved_base is None
+                    or not resolved_base.is_relative_to(resolved_root)
+                ):
+                    continue
+                for name, is_dir in (("rules", True), ("skills", True), ("global_rules.md", False)):
+                    path = base / name
+                    if is_excluded(path):
+                        continue
+                    if path.is_dir() if is_dir else path.exists():
+                        return True
+        return any(
+            devin.is_devin_only_instruction_filename(path.name) and not is_excluded(path)
+            for path in files
+        )
+
     found: Set[str] = set()
     checks = (
         ("HAS_CURSOR", editor_marker("HAS_CURSOR") or legacy_cursor()),
@@ -217,6 +249,7 @@ def instruction_formats(
             or any(path.name.endswith(".instructions.md") for path in files),
         ),
         ("HAS_CLINE", cline_marker()),
+        ("HAS_DEVIN", devin_marker()),
         (
             "HAS_OPENCODE",
             editor_marker("HAS_OPENCODE")
@@ -227,9 +260,15 @@ def instruction_formats(
         ),
         ("HAS_GEMINI", marker("GEMINI.md")),
         ("HAS_QWEN", marker("QWEN.md")),
-        ("HAS_AGENTS_MD", marker("AGENTS.md")),
+        (
+            "HAS_AGENTS_MD",
+            any(path.name.lower() == "agents.md" and not is_excluded(path) for path in files),
+        ),
         ("HAS_KIRO", marker(".kiro", is_dir=True)),
-        ("HAS_CLAUDE_MD", marker("CLAUDE.md")),
+        (
+            "HAS_CLAUDE_MD",
+            any(path.name == "CLAUDE.md" and not is_excluded(path) for path in files),
+        ),
         ("HAS_CODERABBIT", marker(".coderabbit.yaml")),
     )
     found.update(label for label, present in checks if present)
@@ -279,12 +318,19 @@ def has_skill_md_recursive(
     return False
 
 
-def is_agentskills_repo(root: Path, should_skip: Callable[[Path], bool]) -> bool:
+def is_agentskills_repo(
+    root: Path,
+    should_skip: Callable[[Path], bool],
+    extra_skill_roots: Iterable[Path] = (),
+) -> bool:
     """Return whether the repository contains an Agent Skill entrypoint."""
     if exact_name_exists(root, "SKILL.md"):
         return True
     for rel in CONVENTIONAL_SKILL_DIRS:
         path = root / rel
+        if path.is_dir() and has_skill_md_recursive(path, should_skip):
+            return True
+    for path in extra_skill_roots:
         if path.is_dir() and has_skill_md_recursive(path, should_skip):
             return True
     return has_skill_md_recursive(root, should_skip)
@@ -325,10 +371,22 @@ def marker_types(
     apm: bool,
     should_skip: Callable[[Path], bool],
     walk_files: Callable[[Path], object],
+    tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
 ) -> Set[str]:
     """Return independently detectable type labels (excluding ecosystems)."""
     found: Set[str] = set()
-    if is_agentskills_repo(root, should_skip):
+    resolved_root = safe_resolve(root)
+    devin_skill_roots: List[Path] = []
+    if resolved_root is not None:
+        for name in devin.TOOL_DIR_NAMES:
+            for directory in (tool_dirs or {}).get(name, ()):
+                skill_root = directory / "skills"
+                resolved_skill_root = safe_resolve(skill_root)
+                if resolved_skill_root is not None and resolved_skill_root.is_relative_to(
+                    resolved_root
+                ):
+                    devin_skill_roots.append(skill_root)
+    if is_agentskills_repo(root, should_skip, devin_skill_roots):
         found.add("agentskills")
     if (root / ".coderabbit.yaml").exists():
         found.add("coderabbit")
