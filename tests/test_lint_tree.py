@@ -303,7 +303,7 @@ def test_tree_contains_nested_devin_content_without_duplicates(temp_dir):
     nested_rule.write_text("---\ntrigger: glob\nglobs: src/**/*.tsx\n---\nUse hooks.\n")
     nested_agents = temp_dir / "apps" / "web" / "agents.md"
     nested_agents.write_text("Use the package test command.\n")
-    native = temp_dir / "apps" / "web" / ".devin" / "skills" / "review"
+    native = temp_dir / "apps" / "web" / ".devin" / "skills" / "team" / "review"
     native.mkdir(parents=True)
     (native / "SKILL.md").write_text("Review the current changes.\n")
     portable = temp_dir / ".agents" / "skills" / "portable"

@@ -56,6 +56,7 @@ def is_devin_only_instruction_filename(name: str) -> bool:
 
 
 def is_native_skill_dir(path: Path) -> bool:
-    """Whether *path* is a skill under ``.devin/skills`` or ``.windsurf/skills``."""
-    parent = path.parent
-    return parent.name == "skills" and parent.parent.name in TOOL_DIR_NAMES
+    """Whether *path* descends from a Devin or Windsurf skill collection."""
+    return any(
+        parent.name == "skills" and parent.parent.name in TOOL_DIR_NAMES for parent in path.parents
+    )
