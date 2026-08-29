@@ -5,11 +5,13 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from skillsaw import repository_external_content
 from skillsaw.blocks import PromptfooPromptBlock
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.linter import Linter
+from skillsaw.rule import RuleViolation, Severity
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -53,6 +55,49 @@ def test_lint_external_content_false_prunes_apm_modules(tmp_path: Path) -> None:
         not block.path.is_relative_to(repo / "apm_modules")
         for block in context.lint_tree.content_blocks()
     )
+
+
+def test_linter_rebuild_and_path_fallback_enforce_external_opt_out(tmp_path: Path) -> None:
+    """Programmatic callers and path-only rules cannot bypass the boundary."""
+    repo = _copy_apm_fixture(tmp_path)
+    config = LinterConfig.default()
+    config.lint_external_content = False
+    # Deliberately construct the context with its default policy. Linter must
+    # apply the config and rebuild a tree that may already have been read.
+    context = RepositoryContext(repo)
+    assert context.lint_tree.find(SkillNode)
+
+    linter = Linter(context, config)
+    relative_external_path = Path("apm_modules/example/vendor-package/promptfooconfig-vendor.yaml")
+    path_only = RuleViolation(
+        rule_id="synthetic-external-path",
+        severity=Severity.WARNING,
+        message="external path fallback",
+        file_path=relative_external_path,
+    )
+
+    assert not context.lint_tree.find(SkillNode)
+    assert linter._filter_violations([path_only]) == []
+
+
+def test_unresolvable_paths_fail_open_without_aborting_provenance(
+    tmp_path: Path, monkeypatch
+) -> None:
+    unresolved = tmp_path / "unresolved"
+    context = RepositoryContext(tmp_path)
+    context.skills = [unresolved]
+    context.reset_external_content_provenance()
+    real_safe_resolve = repository_external_content.safe_resolve
+
+    def fail_selected_path(path: Path):
+        if path == unresolved:
+            return None
+        return real_safe_resolve(path)
+
+    monkeypatch.setattr(repository_external_content, "safe_resolve", fail_selected_path)
+
+    assert context.externally_sourced_skill_roots() == set()
+    assert not context.is_externally_sourced(unresolved)
 
 
 def test_fix_never_rewrites_external_apm_content(tmp_path: Path) -> None:
