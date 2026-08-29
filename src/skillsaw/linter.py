@@ -302,11 +302,44 @@ class Linter:
         from .rules.builtin import BUILTIN_RULE_REGISTRY
 
         enabled = set()
-        requested = {
-            dependency
-            for rule in self.rules
-            for dependency in getattr(rule, "surface_dependencies", ())
-        }
+        known_surfaces = set(BUILTIN_RULE_REGISTRY)
+        requested = set()
+        retained_rules = []
+        for rule in self.rules:
+            try:
+                dependencies = rule.surface_dependencies
+                if isinstance(dependencies, str) or not isinstance(
+                    dependencies, (tuple, list, set, frozenset)
+                ):
+                    raise TypeError("surface_dependencies must be a collection of rule IDs")
+                if not all(isinstance(dependency, str) for dependency in dependencies):
+                    raise TypeError("surface_dependencies must contain only string rule IDs")
+                unknown = set(dependencies) - known_surfaces
+                if unknown:
+                    raise ValueError(
+                        "unknown builtin surface dependency: " + ", ".join(sorted(unknown))
+                    )
+            except Exception as error:
+                source = getattr(rule, "_source", "builtin")
+                if not source.startswith("plugin:"):
+                    raise ValueError(
+                        f"Rule '{rule.rule_id}' has invalid surface_dependencies: {error}"
+                    ) from error
+                plugin_name = source.removeprefix("plugin:")
+                self._plugin_load_violations.append(
+                    RuleViolation(
+                        rule_id="plugin-load-error",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"Plugin '{plugin_name}': rule '{rule.rule_id}' has invalid "
+                            f"surface dependencies and was skipped: {error}"
+                        ),
+                    )
+                )
+                continue
+            retained_rules.append(rule)
+            requested.update(dependencies)
+        self.rules = retained_rules
         for rule_id in requested:
             rule_class = BUILTIN_RULE_REGISTRY[rule_id]
             instance = rule_class()

@@ -30,6 +30,15 @@ def _is_usable(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _yaml_type_name(value: Any) -> str:
+    """Stable schema type name without rendering a composite YAML value."""
+    if isinstance(value, list):
+        return "list"
+    if isinstance(value, dict):
+        return "mapping"
+    return type(value).__name__
+
+
 #: How a per-server credential map is named in a finding, keyed by the map's
 #: own key so each host's spelling reads naturally. The fallback covers the
 #: two maps this rule reads directly.
@@ -445,10 +454,18 @@ class McpValidJsonRule(Rule):
             )
             valid_type_names = (*self.VALID_MCP_TYPES, *type_aliases)
             if normalized_type not in self.VALID_MCP_TYPES:
+                # Embedded YAML can put an exponentially expanding alias graph
+                # here. Never materialize a non-string merely to truncate the
+                # result; its Python/YAML shape is the actionable diagnosis.
+                shown_type = (
+                    safe_display(server_type)
+                    if isinstance(server_type, str)
+                    else _yaml_type_name(server_type)
+                )
                 violations.append(
                     report(
                         f"MCP server '{shown}' has invalid type "
-                        f"'{safe_display(server_type)}'. Must be one of: "
+                        f"'{shown_type}'. Must be one of: "
                         f"{', '.join(valid_type_names)}",
                         node=server_config,
                         key="type",

@@ -940,7 +940,16 @@ def frontmatter_line_map_top_level(file_path: Path) -> Dict[str, int]:
     data = _ruamel_load(fm_text)
     if not isinstance(data, CommentedMap):
         return {}
-    return {key: data.lc.key(key)[0] + 1 + offset for key in data}
+    lines = {}
+    for key in data:
+        # A merge-resolved key is visible while iterating the map but has no
+        # position at this level. Keep the field in the parsed tree and omit
+        # only its line; the anchor's nested nodes still retain their own
+        # source positions for rules that inspect the value.
+        line = commented_key_line(data, key)
+        if line is not None:
+            lines[key] = line + offset
+    return lines
 
 
 def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:

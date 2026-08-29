@@ -55,6 +55,14 @@ class QuietRule(Rule):
         return []
 
 
+class InvalidSurfaceDependencyRule(AlwaysFiresRule):
+    surface_dependencies = ("plugin-owned-surface",)
+
+    @property
+    def rule_id(self) -> str:
+        return "plugin-invalid-surface-dependency"
+
+
 class AbstractIntermediate(Rule):
     """Abstract on purpose: must be skipped by module scanning."""
 
@@ -286,6 +294,22 @@ def test_plugin_rule_runs_and_sets_source(fake_plugin, repo):
     fired = [v for v in violations if v.rule_id == "plugin-always-fires"]
     assert len(fired) == 1
     assert fired[0].source == "plugin:testplug"
+
+
+def test_plugin_rule_with_invalid_surface_dependency_is_isolated(fake_plugin, repo):
+    fake_plugin(
+        "fake_invalid_surface",
+        module_attrs={"SKILLSAW_RULES": [InvalidSurfaceDependencyRule, QuietRule]},
+    )
+
+    linter, violations = _lint(repo)
+
+    assert "plugin-invalid-surface-dependency" not in {rule.rule_id for rule in linter.rules}
+    assert "plugin-quiet" in {rule.rule_id for rule in linter.rules}
+    errors = [violation for violation in violations if violation.rule_id == "plugin-load-error"]
+    assert len(errors) == 1
+    assert errors[0].severity is Severity.ERROR
+    assert "plugin-owned-surface" in errors[0].message
 
 
 def test_no_plugins_flag_skips_loading(fake_plugin, repo):

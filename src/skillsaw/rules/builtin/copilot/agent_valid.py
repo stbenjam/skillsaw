@@ -738,10 +738,16 @@ class CopilotAgentValidRule(Rule):
             return False
         hook_type = handler.get("type")
         if not isinstance(hook_type, str) or hook_type not in _VALID_HOOK_TYPES:
+            # YAML aliases can build an exponentially expanding acyclic list.
+            # Rendering a non-string value before truncating it is therefore
+            # not work-bounded; its type is the useful schema diagnostic.
+            shown_type = (
+                safe_display(hook_type) if isinstance(hook_type, str) else _type_name(hook_type)
+            )
             violations.append(
                 self._finding(
                     block,
-                    f"Hook '{path}' has invalid type '{safe_display(hook_type)}'",
+                    f"Hook '{path}' has invalid type '{shown_type}'",
                     line=_key_line(handler, "type") or line,
                     discriminator=f"hooks:{path}:handler-type",
                 )

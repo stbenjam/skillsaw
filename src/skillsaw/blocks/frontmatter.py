@@ -590,7 +590,12 @@ class CopilotAgentBlock(FrontmatteredBlock):
     @property
     def hooks_events(self) -> Dict[str, List[HookEventConfig]]:
         """Parse embedded hooks while retaining each command's YAML line."""
-        if self.key_line("hooks") is None:
+        # A top-level YAML merge can supply ``hooks`` without giving the
+        # merged key its own source line. The compatibility parse has already
+        # resolved merges into FrontmatterField children, so it is the cheap,
+        # merge-aware presence check; the ruamel parse below retains the
+        # anchor's nested command lines for security findings.
+        if self.field("hooks") is None:
             return {}
         frontmatter, error, _error_line = read_frontmatter_commented(self.path)
         if error or not isinstance(frontmatter, dict):
@@ -603,9 +608,12 @@ class CopilotAgentBlock(FrontmatteredBlock):
             child for child in self.children if not isinstance(child, CopilotAgentMcpBlock)
         ]
         super()._build_children()
-        source_line = self.key_line("mcp-servers")
-        if source_line is None:
+        # YAML merges do not give the merged root key its own source line, but
+        # the resolved field still carries source lines for nested entries.
+        mcp_field = self.field("mcp-servers")
+        if mcp_field is None:
             return
+        source_line = mcp_field.field_line
         # GitHub cloud loads only ``*.agent.md``; VS Code accepts every
         # Markdown filename in this directory plus legacy chatmodes. Those
         # local-only files ignore this cloud MCP field.
