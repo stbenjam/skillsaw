@@ -1303,9 +1303,10 @@ class TestFileCacheBudget:
 
         ``_ENTRY_OVERHEAD_BYTES`` was tuned against an ordinary repository
         path, where it is almost exactly right. Manifests supply the
-        strings, though, and a 4 KB path retains twelve times it — the
-        same "a ``Path`` is not fixed-small" rule this branch wrote for
-        the resolution memo, applied to the cache beside it.
+        strings, though, and a 4 KB path retains twelve times it. A
+        ``Path`` key is variable-sized, so the file cache measures it the
+        same way the resolution memo does rather than folding it into a
+        constant.
         """
         short = tmp_path / "a.md"
         long = tmp_path / ("/".join("d" * 60 for _ in range(60)) + "/a.md")
@@ -1521,6 +1522,50 @@ class TestFileCacheBudget:
 
         # And the recorded refusal still does its job after the eviction.
         assert len(unsizeable(target)) == skillsaw_utils._SIZE_WALK_LIMIT + 10
+
+    def test_an_aliased_graph_is_sized_by_its_objects_not_its_references(self):
+        """The walk limit bounds distinct objects, not names for them.
+
+        An alias is ordinary in YAML and a document may name one anchor
+        tens of thousands of times. Charging the limit per reference
+        abandons the walk over a graph holding three objects, and an
+        abandoned walk is not free: the value cannot be cached, so every
+        rule reparses the file — far more expensive than finishing.
+        """
+        count = skillsaw_utils._SIZE_WALK_LIMIT + 5_000
+        source = "anchor: &x {k: v}\nitems:\n" + "".join("  - *x\n" for _ in range(count))
+        data = skillsaw_utils.safe_load_yaml(source)
+
+        assert len({id(item) for item in data["items"]}) == 1, "one object, many names"
+
+        size = skillsaw_utils._approximate_size(data)
+        assert size != skillsaw_utils.UNCACHEABLE_SIZE
+        assert size > 0
+
+    def test_the_walk_limit_still_rejects_a_genuinely_large_graph(self):
+        """Counting distinct objects must not disarm the bound.
+
+        The limit exists so cache accounting cannot run unbounded on a
+        hostile document. Deduplicating references must not turn it off
+        for a graph that really does hold that many objects.
+        """
+        huge = list(range(skillsaw_utils._SIZE_WALK_LIMIT + 10_000))
+        assert skillsaw_utils._approximate_size(huge) == skillsaw_utils.UNCACHEABLE_SIZE
+
+    def test_a_cycle_terminates_the_walk(self):
+        """Aliases and cycles are both ordinary in YAML.
+
+        The limit used to be what stopped a cycle. Now that a repeated
+        reference is skipped before it is counted, the identity check is
+        what terminates it, so pin that it does.
+        """
+        looping_list = []
+        looping_list.append(looping_list)
+        assert skillsaw_utils._approximate_size(looping_list) > 0
+
+        looping_map = {}
+        looping_map["self"] = looping_map
+        assert skillsaw_utils._approximate_size(looping_map) > 0
 
     def test_a_value_too_large_to_size_is_walked_once_not_every_call(self, tmp_path):
         """Refusing to cache must not mean re-deciding on every call.

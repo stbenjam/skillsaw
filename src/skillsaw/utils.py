@@ -438,6 +438,15 @@ def _approximate_size(value: Any) -> int:
     walked = 0
     while stack:
         node = stack.pop()
+        if id(node) in visited:
+            # A second reference to something already measured. The
+            # branches below each re-check this, but the limit has to be
+            # charged for distinct objects rather than references: an
+            # alias is ordinary in YAML and one anchor may be named tens
+            # of thousands of times, which would abandon the walk over a
+            # graph holding three objects — and an abandoned walk costs
+            # every rule a reparse of the file, far more than finishing.
+            continue
         walked += 1
         if walked > _SIZE_WALK_LIMIT:
             return UNCACHEABLE_SIZE
@@ -622,6 +631,13 @@ class FileCache:
             if cost == UNCACHEABLE_SIZE:
                 # Remember the refusal so the abandoned walk is paid once.
                 marker = _entry_cost(_UNSIZEABLE, resolved)
+                if marker > self._budget:
+                    # Same rule as a value too large to admit: eviction
+                    # cannot make room, so storing it would leave the
+                    # cache over the bound it exists to hold. Only a
+                    # caller configuring a sub-kilobyte budget reaches
+                    # this; the refusal is simply not remembered there.
+                    return result
                 with self._lock:
                     if self._generation == generation:
                         bucket = store.get(resolved)

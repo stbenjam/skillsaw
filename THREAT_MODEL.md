@@ -51,7 +51,7 @@ boundary.
 | entry_point | description | trust_boundary | reachable_assets |
 |---|---|---|---|
 | target_repo_files | Markdown, YAML, JSON files in the linted repository | untrusted repo content → parser/rule engine | repository_files, ci_gate_integrity |
-| skillsaw_yaml_config | `.skillsaw.yaml` configuration loaded from the target repo | untrusted repo content → config loader (yaml.safe_load) | ci_gate_integrity, repository_files |
+| skillsaw_yaml_config | `.skillsaw.yaml` configuration loaded from the target repo | untrusted repo content → config loader (`safe_load_yaml`, the shared bounded reader) | ci_gate_integrity, repository_files |
 | custom_rule_files | Python files loaded via `custom-rules` config directive | untrusted repo content → Python exec_module (arbitrary code execution by design) | developer_workstation, repository_files |
 | cli_arguments | Command-line arguments (--path, --config) | local user → CLI parser | repository_files, developer_workstation |
 | pypi_supply_chain | Package installation from PyPI | PyPI → developer workstation | developer_workstation, pypi_package |

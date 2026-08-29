@@ -410,10 +410,10 @@ class TestFindCache:
     def test_rebuild_lint_tree_drops_stale_path_resolutions(self, tmp_path):
         """A rebuild is the declared "the filesystem may have moved" seam.
 
-        It clears the Promptfoo walk for that reason. Before this branch a
-        rebuild also re-ran every ``Path.resolve()``; memoizing them
-        without clearing here means a caller who retargets a symlink and
-        rebuilds gets containment and discovery answers from the old tree.
+        It clears the Promptfoo walk for that reason, and it has to clear
+        the resolution memo for the same one: a caller who retargets a
+        symlink and rebuilds would otherwise get containment and
+        discovery answers keyed on the old target.
         """
         import skillsaw.paths as paths
 
