@@ -430,6 +430,14 @@ class TestTextSegments:
         body = "[myref]: docs/ref.md\n"
         assert _doc(body).text_segments() == []
 
+    def test_ordered_list_content_lines_strip_ast_container_prefixes(self):
+        body = "> 7. first\n" "> 18. second\n" ">     continued\n" "\n" "outside\n"
+        assert _doc(body).ordered_list_content_lines() == [
+            (1, "first"),
+            (2, "second"),
+            (3, "continued"),
+        ]
+
 
 class TestSplice:
     def test_single_edit(self):

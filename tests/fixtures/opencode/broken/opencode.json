@@ -23,7 +23,7 @@
       "type": "local",
       "command": [],
       "environment": {
-        "LINEAR_API_KEY": "lin_api_9RtQwErTyUiOpAsDfGhJkLzXcVbN"
+        "LINEAR_API_KEY": "lin_api_9RtQwErTyUiOpAsDfGhJkLzXcVbN" // notsecret
       },
       "enabled": true,
       "disabled": false,
@@ -31,7 +31,7 @@
     },
     "grafana": {
       "type": "remote",
-      "url": "https://admin:hunter2@grafana.internal/mcp"
+      "url": "https://admin:hunter2@grafana.internal/mcp" // notsecret
     },
     "typo": {
       "typ": "local"
