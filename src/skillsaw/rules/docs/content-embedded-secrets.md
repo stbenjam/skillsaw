@@ -13,8 +13,9 @@ Two classes of match are handled differently:
   blocks, JWTs, …) are high-confidence and reported unless the complete
   candidate is an exact, audited documentation literal. The canonical AWS
   documentation access-key ID and a standalone `-----BEGIN RSA PRIVATE KEY-----`
-  header are permitted; close variants and PEM blocks followed by key material
-  still report.
+  header are permitted; close variants and standard PEM blocks with inline or
+  nearby key material still report. The context scan is bounded by physical
+  lines and characters so hostile files cannot force unbounded repeated work.
 - **Generic credential assignments** (`password = "…"`, `api_key: "…"`,
   `secret_key`, `access_token`) are gated to avoid flagging documentation
   examples:

@@ -2,10 +2,12 @@
 
 import json
 import os
-import pytest
-from pathlib import Path
-import tempfile
+import re
 import shutil
+import tempfile
+from pathlib import Path
+
+import pytest
 
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext
@@ -39,12 +41,14 @@ from skillsaw.rules.builtin.content import (
     ContentInlineToolExamplesRule,
     ContentProgressiveDisclosureRule,
 )
+import skillsaw.rules.builtin.content.embedded_secrets as embedded_secrets_module
 
 # Stripe test keys built from parts to avoid triggering GitHub push protection
 _STRIPE_SK = "sk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
 _STRIPE_RK = "rk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
 _RSA_HEADER = "-----BEGIN RSA PRIVATE KEY-----"
 _PEM_MATERIAL = "MIIEowIBAAKCAQEA7vYp3uF6hQ9wK2mN5rT8xZ1cV4bG0sLd"
+_PEM_IV = "0123456789ABCDEF0123456789ABCDEF"
 
 
 @pytest.fixture
@@ -738,7 +742,7 @@ class TestContentEmbeddedSecretsRule:
             (
                 f"{_RSA_HEADER}\n"
                 "Proc-Type: 4,ENCRYPTED\n"
-                "DEK-Info: AES-256-CBC,0123456789ABCDEF0123456789ABCDEF\n\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
                 f"{_PEM_MATERIAL}\n"
                 "-----END RSA PRIVATE KEY-----\n"
             ),
@@ -755,6 +759,16 @@ class TestContentEmbeddedSecretsRule:
             f'private_key = "{_RSA_HEADER}\\n{_PEM_MATERIAL}\\n-----END RSA PRIVATE KEY-----"\n',
             f'private_key = "{_RSA_HEADER}\\\\n{_PEM_MATERIAL}\\\\n-----END RSA PRIVATE KEY-----"\n',
             f'private_key = "{_RSA_HEADER}\\r\\n{_PEM_MATERIAL}\\r\\n-----END RSA PRIVATE KEY-----"\n',
+            (
+                f"{_RSA_HEADER} Proc-Type: 4,ENCRYPTED "
+                f"DEK-Info: AES-256-CBC,{_PEM_IV} {_PEM_MATERIAL} "
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\nProc-Type: 4,ENCRYPTED'
+                f"\\nDEK-Info: AES-256-CBC,{_PEM_IV}\\n{_PEM_MATERIAL}"
+                '\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
         ],
         ids=[
             "encrypted-metadata",
@@ -765,6 +779,8 @@ class TestContentEmbeddedSecretsRule:
             "escaped-newline",
             "double-escaped-newline",
             "escaped-crlf",
+            "same-line-encrypted-metadata",
+            "escaped-encrypted-metadata",
         ],
     )
     def test_pem_block_with_key_material_still_fires(self, temp_dir, content):
@@ -773,14 +789,50 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) == 1
         assert "Private key" in violations[0].message
 
-    def test_pem_metadata_without_key_material_is_exempt(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text(
-            f"{_RSA_HEADER}\n"
-            "Proc-Type: 4,ENCRYPTED\n"
-            "DEK-Info: AES-256-CBC,0123456789ABCDEF0123456789ABCDEF\n"
-            "-----END RSA PRIVATE KEY-----\n"
-        )
+    @pytest.mark.parametrize(
+        "content",
+        [
+            (
+                f"{_RSA_HEADER}\n"
+                "Proc-Type: 4,ENCRYPTED\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f"{_RSA_HEADER} Proc-Type: 4,ENCRYPTED "
+                f"DEK-Info: AES-256-CBC,{_PEM_IV} "
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\nProc-Type: 4,ENCRYPTED'
+                f"\\nDEK-Info: AES-256-CBC,{_PEM_IV}"
+                '\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\\\nProc-Type: 4,ENCRYPTED'
+                f"\\\\nDEK-Info: AES-256-CBC,{_PEM_IV}"
+                '\\\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
+        ],
+        ids=["multiline", "same-line", "escaped", "double-escaped"],
+    )
+    def test_pem_metadata_without_key_material_is_exempt(self, temp_dir, content):
+        (temp_dir / "CLAUDE.md").write_text(content)
         assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_pem_lookahead_is_bounded_by_physical_lines(self):
+        max_index = embedded_secrets_module._PEM_LOOKAHEAD_PHYSICAL_LINES
+
+        class GuardedLines(list):
+            def __getitem__(self, index):
+                if isinstance(index, int) and index > max_index:
+                    raise AssertionError("PEM lookahead exceeded its physical-line bound")
+                return super().__getitem__(index)
+
+        lines = GuardedLines([_RSA_HEADER, *([""] * (max_index + 10))])
+        match = re.search(re.escape(_RSA_HEADER), lines[0])
+        assert match is not None
+        assert not ContentEmbeddedSecretsRule._pem_key_material_follows(lines, 0, match)
 
     def test_clean_file_passes(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(

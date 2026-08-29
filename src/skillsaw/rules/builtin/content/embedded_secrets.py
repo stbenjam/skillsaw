@@ -53,8 +53,14 @@ _KNOWN_EXAMPLE_VALUES = KNOWN_SECRET_EXAMPLE_VALUES | frozenset(
 )
 _KNOWN_EXAMPLE_VALUE_CASEFOLDS = frozenset(value.casefold() for value in _KNOWN_EXAMPLE_VALUES)
 _PEM_KEY_MATERIAL = re.compile(r"[A-Za-z0-9+/]{32,}={0,2}")
-_PEM_METADATA_LINE = re.compile(r"(?:Proc-Type|DEK-Info)\s*:")
-_PEM_LOOKAHEAD_NONBLANK_LINES = 8
+_PEM_METADATA_FIELD = re.compile(
+    r"(?:Proc-Type\s*:\s*4\s*,\s*ENCRYPTED|"
+    r"DEK-Info\s*:\s*[A-Za-z0-9-]+\s*,\s*[0-9A-Fa-f]{16,32}"
+    r"(?![0-9A-Fa-f]))",
+    re.IGNORECASE,
+)
+_PEM_LOOKAHEAD_PHYSICAL_LINES = 8
+_PEM_LOOKAHEAD_CHARS_PER_LINE = 4096
 
 
 def _shannon_entropy(value: str) -> float:
@@ -94,6 +100,13 @@ def _is_known_example_value(value: str) -> bool:
     prefix, remainder = _AWS_DOCUMENTATION_ACCESS_KEY_ID_PARTS
     prefix = prefix.casefold()
     return normalized.startswith(prefix) and normalized[len(prefix) :] == remainder.casefold()
+
+
+def _contains_pem_key_material(candidate: str) -> bool:
+    """Detect a bounded PEM payload without treating encryption metadata as one."""
+    bounded = candidate[:_PEM_LOOKAHEAD_CHARS_PER_LINE]
+    without_metadata = _PEM_METADATA_FIELD.sub("", bounded)
+    return _PEM_KEY_MATERIAL.search(without_metadata) is not None
 
 
 class ContentEmbeddedSecretsRule(Rule):
@@ -176,29 +189,22 @@ class ContentEmbeddedSecretsRule(Rule):
     @staticmethod
     def _pem_key_material_follows(lines: List[str], line_index: int, match: re.Match) -> bool:
         """Whether an RSA header introduces key material instead of teaching text."""
-        remainder = lines[line_index][match.end() :]
-        if _PEM_KEY_MATERIAL.search(remainder):
+        remainder = lines[line_index][match.end() : match.end() + _PEM_LOOKAHEAD_CHARS_PER_LINE]
+        if _contains_pem_key_material(remainder):
             return True
 
-        nonblank_seen = 0
-        # Traditional encrypted PEM has two metadata lines. Eight nonblank
-        # lines leave room for serialized formatting while bounding work on
-        # adversary-controlled content.
-        for following_index in range(line_index + 1, len(lines)):
-            candidate = lines[following_index].strip()
+        # Traditional encrypted PEM has two metadata lines. Eight physical
+        # lines leave room for serialized formatting while bounding both blank
+        # input and long lines for every header in adversary-controlled text.
+        lookahead_end = min(len(lines), line_index + 1 + _PEM_LOOKAHEAD_PHYSICAL_LINES)
+        for following_index in range(line_index + 1, lookahead_end):
+            candidate = lines[following_index][:_PEM_LOOKAHEAD_CHARS_PER_LINE].strip()
             if not candidate:
                 continue
-            nonblank_seen += 1
-            if _PEM_METADATA_LINE.search(candidate):
-                if nonblank_seen >= _PEM_LOOKAHEAD_NONBLANK_LINES:
-                    break
-                continue
-            if _PEM_KEY_MATERIAL.search(candidate):
+            if _contains_pem_key_material(candidate):
                 return True
             if "-----END RSA PRIVATE KEY-----" in candidate:
                 return False
-            if nonblank_seen >= _PEM_LOOKAHEAD_NONBLANK_LINES:
-                break
         return False
 
     @classmethod
@@ -210,10 +216,11 @@ class ContentEmbeddedSecretsRule(Rule):
         if not _is_known_example_value(value):
             return True
 
-        remainder = lines[line_index][match.end() :]
+        line = lines[line_index]
+        previous_char = line[match.start() - 1 : match.start()]
+        next_char = line[match.end() : match.end() + 1]
         if value == _RSA_PRIVATE_KEY_HEADER:
-            prefix = lines[line_index][: match.start()]
-            if (prefix and prefix[-1].isalnum()) or (remainder and remainder[0].isalnum()):
+            if previous_char.isalnum() or next_char.isalnum():
                 # The header is embedded in a larger token, not standalone.
                 return True
             return cls._pem_key_material_follows(lines, line_index, match)
@@ -221,7 +228,7 @@ class ContentEmbeddedSecretsRule(Rule):
         # AWS access-key IDs contain only uppercase letters and digits. Syntax
         # such as '=' or quotes delimits the known documentation value, while
         # another format-valid character makes it a longer reportable token.
-        if remainder and remainder[0] in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789":
+        if next_char and next_char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789":
             return True
         return False
 
