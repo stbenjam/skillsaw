@@ -5525,6 +5525,35 @@ class TestContentMcpToolNameRule:
         )
         assert self._check(temp_dir) == []
 
+    def test_selector_wildcard_and_path_continuation_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Load `select:mcp__playwright__browser_navigate` with ToolSearch.\n"
+            "Allow `select:mcp__server__memory_*` for the memory tools.\n"
+            "Read `mcp__jira__getIssue/examples/output.txt` as fixture data.\n"
+            "Keep `mcp__jira__getIssue\\examples\\output.txt` on Windows.\n"
+            "Read `mcp__jira__getIssue`/examples/output.txt across markup.\n"
+            "Read `mcp__jira__getIssue`.json across markup.\n"
+            "Read ` mcp__jira__getIssue `/examples/output.txt with padding.\n"
+            "Match *mcp__server__tool or [ab]mcp__server__tool patterns.\n"
+            "Match mcp__server__tool@(One|Two) as an extended glob.\n"
+        )
+
+        assert self._check(temp_dir) == []
+
+    def test_question_and_markdown_emphasis_remain_prose(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Can we call mcp__server__tool?\n"
+            "Can we call `mcp__server__tool`?\n"
+            "Call *mcp__server__tool* now.\n"
+        )
+
+        violations = self._check(temp_dir)
+
+        assert len(violations) == 3
+        assert all("'tool'" in violation.message for violation in violations)
+
     def test_link_text_not_flagged(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             "# Rules\n\nSee [mcp__jira__getIssue](https://example.com/schema) for details.\n"
@@ -5700,6 +5729,33 @@ class TestContentMcpToolNameAutofix:
         fixes = self._fix(temp_dir)
         assert len(fixes) == 1
 
+        (temp_dir / "CLAUDE.md").write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert ContentMcpToolNameRule().check(RepositoryContext(temp_dir)) == []
+        assert self._fix(temp_dir) == []
+
+    def test_fix_preserves_selectors_wildcards_and_paths_byte_for_byte(self, temp_dir):
+        from skillsaw.utils import invalidate_read_caches
+
+        content = (
+            "# Rules\n\n"
+            "Call mcp__jira__getIssue in prose.\n"
+            "Load `select:mcp__playwright__browser_navigate` with ToolSearch.\n"
+            "Allow `select:mcp__server__memory_*` for the memory tools.\n"
+            "Read `mcp__jira__getIssue/examples/output.txt` as fixture data.\n"
+            "Read `mcp__jira__getIssue`/examples/output.txt across markup.\n"
+            "Read `mcp__jira__getIssue`.json across markup.\n"
+            "Read ` mcp__jira__getIssue `/examples/output.txt with padding.\n"
+            "Match *mcp__server__tool or [ab]mcp__server__tool patterns.\n"
+            "Match mcp__server__tool@(One|Two) as an extended glob.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+
+        fixes = self._fix(temp_dir)
+
+        assert len(fixes) == 1
+        expected = content.replace("Call mcp__jira__getIssue", "Call getIssue")
+        assert fixes[0].fixed_content == expected
         (temp_dir / "CLAUDE.md").write_text(fixes[0].fixed_content)
         invalidate_read_caches()
         assert ContentMcpToolNameRule().check(RepositoryContext(temp_dir)) == []

@@ -91,7 +91,7 @@ class ContentMcpToolNameRule(Rule):
         """
         results: List[Tuple[int, int, str, str]] = []
 
-        def collect(body_line: int, base_col: int, text: str) -> None:
+        def collect(body_line: int, base_col: int, text: str, markup: str = "") -> None:
             if "mcp__" not in text:
                 return
             raw_line = doc.line(body_line)
@@ -113,13 +113,36 @@ class ContentMcpToolNameRule(Rule):
                 # code, never as a lookaround on the quantifier (issue
                 # #321).
                 before = raw_line[:col]
-                if before and before[-1] in "/.\\":
+                adjacent_before = before
+                if markup and not text[: match.start()].strip():
+                    adjacent_before = raw_line[: base_col - len(markup)]
+                after = raw_line[col + len(token) :]
+                adjacent_after = after
+                if markup and not text[match.end() :].strip():
+                    closing_markup = base_col + len(text)
+                    adjacent_after = raw_line[closing_markup + len(markup) :]
+
+                if adjacent_before and adjacent_before[-1] in "/.\\:":
                     continue
                 chunk_start = max(before.rfind(" "), before.rfind("\t")) + 1
                 if "://" in before[chunk_start:]:
                     continue
-                after = raw_line[col + len(token) :]
-                if after[:1] == "." and after[1:2].isalnum():
+                paired_emphasis = (
+                    not markup and adjacent_before.endswith("*") and adjacent_after.startswith("*")
+                )
+                if adjacent_before.endswith(("]", "}")) or (
+                    adjacent_before.endswith(("*", "?")) and not paired_emphasis
+                ):
+                    continue
+                if adjacent_after.startswith(("/", "\\", "[", "{")):
+                    continue
+                if adjacent_after.startswith(("@(", "+(", "!(", "?(", "*(")):
+                    continue
+                if adjacent_after.startswith("*") and not paired_emphasis:
+                    continue
+                if markup and match.end() < len(text) and after.startswith("?"):
+                    continue
+                if adjacent_after[:1] == "." and adjacent_after[1:2].isalnum():
                     continue
                 results.append((body_line, col, token, short))
 
@@ -137,7 +160,7 @@ class ContentMcpToolNameRule(Rule):
             inner_start = span.col_start + len(span.markup)
             inner_end = span.col_end - len(span.markup)
             raw_inner = doc.line(span.body_line)[inner_start:inner_end]
-            collect(span.body_line, inner_start, raw_inner)
+            collect(span.body_line, inner_start, raw_inner, span.markup)
 
         results.sort(key=lambda r: (r[0], r[1]))
         return results
