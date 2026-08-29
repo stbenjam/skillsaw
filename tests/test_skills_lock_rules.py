@@ -61,6 +61,7 @@ def test_valid_root_and_nested_lockfiles_pass(tmp_path: Path) -> None:
         Path("packages/web/skills-lock.json"),
         Path("skills-lock.json"),
     ]
+    assert blocks[0].tree_label() == "skills-lock.json (skills lockfile)"
     assert SkillsLockValidRule().check(context) == []
 
 
@@ -191,6 +192,12 @@ def test_unknown_source_type_can_be_allowlisted(tmp_path: Path) -> None:
     configured = {"extra-source-types": ["registry"]}
     assert SkillsLockValidRule(configured).check(RepositoryContext(tmp_path)) == []
 
+    # Config validation normally rejects this shape before a rule runs. The
+    # rule still stands down safely when instantiated directly by an API user.
+    malformed = {"extra-source-types": "registry"}
+    violations = SkillsLockValidRule(malformed).check(RepositoryContext(tmp_path))
+    assert len(violations) == 1
+
 
 def test_optional_fields_accept_empty_subagent_name_but_not_empty_strings(
     tmp_path: Path,
@@ -201,13 +208,14 @@ def test_optional_fields_accept_empty_subagent_name_but_not_empty_strings(
             "version": 1,
             "skills": {
                 "valid": _entry(subagents=[""], skillPath="SKILL.md"),
-                "invalid": _entry(sourceUrl=" ", wellKnownDigest=" "),
+                "invalid": _entry(sourceUrl=" ", wellKnownDigest=" ", subagents="reviewer"),
             },
         },
     )
 
     messages = _messages(tmp_path)
 
-    assert len(messages) == 2
+    assert len(messages) == 3
     assert any("sourceUrl" in message for message in messages)
     assert any("wellKnownDigest" in message for message in messages)
+    assert any("subagents" in message for message in messages)
