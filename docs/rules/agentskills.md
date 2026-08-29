@@ -3,7 +3,7 @@
 
 # agentskills.io
 
-These rules validate skills against the [agentskills.io specification](https://agentskills.io/specification). They auto-enable wherever skills are detected — agentskills repos, single plugins, marketplaces, `.claude/` directories, Codex plugins and marketplaces, and Agent Plugin packages.
+The Agent Skill rules validate skills against the [agentskills.io specification](https://agentskills.io/specification). They auto-enable wherever skills are detected — agentskills repos, single plugins, marketplaces, `.claude/` directories, Codex plugins and marketplaces, and Agent Plugin packages. `skills-lock-valid` additionally validates every `skills-lock.json` written by the [Vercel skills CLI](https://github.com/vercel-labs/skills): strict JSON, the versioned project-lock shape, required source metadata, digest syntax, and paths that remain portable across machines. Lockfiles are discovered recursively for monorepos and the rule auto-enables when one is present.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
@@ -15,4 +15,5 @@ These rules validate skills against the [agentskills.io specification](https://a
 | [`agentskill-evals`](agentskill-evals.md) | Validate evals/evals.json format when present | warning (auto) | - |
 | [`agentskill-evals-required`](agentskill-evals-required.md) | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - |
 | [`agentskill-unreferenced-files`](agentskill-unreferenced-files.md) | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - |
+| [`skills-lock-valid`](skills-lock-valid.md) | skills-lock.json files must be valid and portable project lockfiles | error (auto) | - |
 
