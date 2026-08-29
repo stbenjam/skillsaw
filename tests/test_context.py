@@ -45,6 +45,27 @@ def test_agentskill_marker_scan_terminates_on_symlink_fanout(tmp_path):
     assert not has_skill_md_recursive(base, lambda _path: False)
 
 
+@pytest.mark.parametrize("tool_dir", (".devin", ".windsurf"))
+def test_conventional_devin_skill_root_symlink_stays_inside_repository(tmp_path, tool_dir):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside_skill = tmp_path / "outside" / "borrowed"
+    outside_skill.mkdir(parents=True)
+    (outside_skill / "SKILL.md").write_text(
+        "---\nname: borrowed\ndescription: Outside the repository.\n---\n"
+    )
+    native_root = repo / tool_dir
+    native_root.mkdir()
+    (native_root / "skills").symlink_to(outside_skill.parent, target_is_directory=True)
+
+    detected = RepositoryContext(repo)
+    forced = RepositoryContext(repo, repo_types={RepositoryType.AGENTSKILLS})
+
+    assert RepositoryType.AGENTSKILLS not in detected.repo_types
+    assert detected.skills == []
+    assert forced.skills == []
+
+
 def test_lint_tree_failure_is_cached_and_reported(tmp_path, monkeypatch):
     context = RepositoryContext(tmp_path, repo_types=set())
     calls = 0
