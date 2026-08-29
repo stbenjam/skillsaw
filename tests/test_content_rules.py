@@ -2,10 +2,12 @@
 
 import json
 import os
-import pytest
-from pathlib import Path
-import tempfile
+import re
 import shutil
+import tempfile
+from pathlib import Path
+
+import pytest
 
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext
@@ -39,10 +41,15 @@ from skillsaw.rules.builtin.content import (
     ContentInlineToolExamplesRule,
     ContentProgressiveDisclosureRule,
 )
+import skillsaw.rules.builtin.content.embedded_secrets as embedded_secrets_module
 
 # Stripe test keys built from parts to avoid triggering GitHub push protection
 _STRIPE_SK = "sk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
 _STRIPE_RK = "rk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
+_RSA_HEADER = "-----BEGIN RSA PRIVATE KEY-----"
+_PEM_MATERIAL = "MIIEowIBAAKCAQEA7vYp3uF6hQ9wK2mN5rT8xZ1cV4bG0sLd"
+_PEM_ENCRYPTED_MATERIAL = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8w"
+_PEM_IV = "0123456789ABCDEF0123456789ABCDEF"
 
 
 @pytest.fixture
@@ -654,11 +661,377 @@ class TestContentEmbeddedSecretsRule:
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
 
-    def test_detects_aws_key(self, temp_dir):
+    def test_canonical_aws_documentation_key_is_exempt(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAIOSFODNN7EXAMPLE\n")  # notsecret
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
-        assert len(violations) >= 1
+        assert violations == []
+
+    def test_detects_aws_key(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAZZZZZZZZZZZZZZZZ\n")  # notsecret
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
+    def test_canonical_aws_documentation_key_allows_assignment_delimiter(self, temp_dir):
+        documentation_key = "".join(("AKIAIOSF", "ODNN7EXAMPLE"))
+        (temp_dir / "CLAUDE.md").write_text(f"AWS_ACCESS_KEY_ID={documentation_key}\n")
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_extended_aws_documentation_key_still_fires(self, temp_dir):
+        extended_key = "".join(("AKIAIOSF", "ODNN7EXAMPLE", "1"))
+        (temp_dir / "CLAUDE.md").write_text(f"AWS key: {extended_key}\n")
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "AWS access key ID" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            'password = " hunter2"',
+            'const API_KEY = "sk_live_abc123xyz789";',
+            "const API_KEY = 'sk_live_abc123def456';",
+            "SECRET_KEY = 'django-insecure-...'",
+            f'private_key = "{_RSA_HEADER}"',
+            f"|{_RSA_HEADER}|",
+            f"~~{_RSA_HEADER}~~",
+        ],
+        ids=[
+            "hunter2-trimmed",
+            "stripe-xyz789",
+            "stripe-def456",
+            "django-insecure",
+            "rsa-header-only",
+            "rsa-header-table-cell",
+            "rsa-header-strikethrough",
+        ],
+    )
+    def test_known_documentation_examples_are_exempt(self, temp_dir, line):
+        """Exact literals audited from issue #532's pinned corpus are not leaks."""
+        (temp_dir / "CLAUDE.md").write_text(f"{line}\n")
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    @pytest.mark.parametrize(
+        "line,expected_desc",
+        [
+            ('password = "hunter2x"', "Hardcoded password"),
+            ('const API_KEY = "sk_live_abc123xyz790";', "Hardcoded API key"),
+            ("const API_KEY = 'sk_live_abc123def457';", "Hardcoded API key"),
+            ("SECRET_KEY = 'django-insecure-..x'", "Hardcoded secret key"),
+            ('private_key = "-----BEGIN RSA PRIVATE KEY-----X"', "Private key"),
+            (f'private_key = "{_RSA_HEADER}-"', "Private key"),
+            (f'private_key = "-{_RSA_HEADER}"', "Private key"),
+            (f'private_key = "{_RSA_HEADER}_"', "Private key"),
+            (f'private_key = "_{_RSA_HEADER}"', "Private key"),
+        ],
+        ids=[
+            "hunter2-near-miss",
+            "stripe-xyz789-near-miss",
+            "stripe-def456-near-miss",
+            "django-insecure-near-miss",
+            "rsa-header-near-miss",
+            "rsa-extra-trailing-hyphen",
+            "rsa-extra-leading-hyphen",
+            "rsa-trailing-underscore",
+            "rsa-leading-underscore",
+        ],
+    )
+    def test_known_example_close_variants_still_fire(self, temp_dir, line, expected_desc):
+        (temp_dir / "CLAUDE.md").write_text(f"{line}\n")
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert expected_desc in violations[0].message
+
+    def test_aws_documentation_key_close_variant_still_fires(self, temp_dir):
+        # Keep the synthetic provider-shaped near miss out of push protection.
+        near_miss = "".join(("AKIAIOSF", "ODNN7EXAMPLF"))
+        (temp_dir / "CLAUDE.md").write_text(f'AWS key: "{near_miss}"\n')
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "AWS access key ID" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            (
+                f"{_RSA_HEADER}\n"
+                "Proc-Type: 4,ENCRYPTED\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
+                f"{_PEM_MATERIAL}\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                "Proc-Type: 4,ENCRYPTED\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
+                f"{_PEM_ENCRYPTED_MATERIAL}\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                "private_key: [\n"
+                f'  "{_RSA_HEADER}",\n'
+                f'  "{_PEM_MATERIAL}",\n'
+                '  "-----END RSA PRIVATE KEY-----"\n'
+                "]\n"
+            ),
+            f"> {_RSA_HEADER}\n> {_PEM_MATERIAL}\n> -----END RSA PRIVATE KEY-----\n",
+            f"- {_RSA_HEADER}\n  {_PEM_MATERIAL}\n  -----END RSA PRIVATE KEY-----\n",
+            f"{_RSA_HEADER} {_PEM_MATERIAL} -----END RSA PRIVATE KEY-----\n",
+            f'private_key = "{_RSA_HEADER}\\n{_PEM_MATERIAL}\\n-----END RSA PRIVATE KEY-----"\n',
+            f'private_key = "{_RSA_HEADER}\\\\n{_PEM_MATERIAL}\\\\n-----END RSA PRIVATE KEY-----"\n',
+            f'private_key = "{_RSA_HEADER}\\r\\n{_PEM_MATERIAL}\\r\\n-----END RSA PRIVATE KEY-----"\n',
+            f'private_key = "{_RSA_HEADER}\\u000a{_PEM_MATERIAL}\\u000a'
+            '-----END RSA PRIVATE KEY-----"\n',
+            (
+                f"{_RSA_HEADER} Proc-Type: 4,ENCRYPTED "
+                f"DEK-Info: AES-256-CBC,{_PEM_IV} {_PEM_MATERIAL} "
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\nProc-Type: 4,ENCRYPTED'
+                f"\\nDEK-Info: AES-256-CBC,{_PEM_IV}\\n{_PEM_MATERIAL}"
+                '\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                "<!-- leaked key -->\n"
+                f"{_PEM_MATERIAL}\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\n<!-- leaked key -->'
+                f'\\n{_PEM_MATERIAL}\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                + " ".join(
+                    _PEM_MATERIAL[index : index + 3] for index in range(0, len(_PEM_MATERIAL), 3)
+                )
+                + "\n-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\n'
+                + " ".join(
+                    _PEM_MATERIAL[index : index + 3] for index in range(0, len(_PEM_MATERIAL), 3)
+                )
+                + '\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                "M\n"
+                "II EowI BAAK CAQEA7 vYp3uF6h Q9wK2mN5rT8xZ1cV4bG0sLd\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                + (" " * 200).join(_PEM_MATERIAL)
+                + "\n-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f"{_RSA_HEADER} "
+                + (" " * 200).join(_PEM_MATERIAL)
+                + " -----END RSA PRIVATE KEY-----\n"
+            ),
+            (f"7. {_RSA_HEADER}\n" f"18. {_PEM_MATERIAL}\n" "302. -----END RSA PRIVATE KEY-----\n"),
+        ],
+        ids=[
+            "encrypted-metadata",
+            "encrypted-ciphertext",
+            "quoted-array",
+            "blockquoted",
+            "list-item",
+            "same-line",
+            "escaped-newline",
+            "double-escaped-newline",
+            "escaped-crlf",
+            "unicode-escaped-newline",
+            "same-line-encrypted-metadata",
+            "escaped-encrypted-metadata",
+            "markdown-comment-before-material",
+            "escaped-comment-before-material",
+            "intraline-whitespace",
+            "escaped-intraline-whitespace",
+            "irregular-whitespace-after-one-char-prefix",
+            "truncated-whitespace-heavy-line",
+            "truncated-whitespace-heavy-remainder",
+            "ordered-list",
+        ],
+    )
+    def test_pem_block_with_key_material_still_fires(self, temp_dir, content):
+        (temp_dir / "CLAUDE.md").write_text(content)
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "Private key" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "serialized_material",
+        [
+            _PEM_MATERIAL[:24] + r"\/" + _PEM_MATERIAL[25:],
+            _PEM_MATERIAL[:24] + r"\u002f" + _PEM_MATERIAL[25:],
+            _PEM_MATERIAL[:24] + r"\t" + _PEM_MATERIAL[24:],
+            _PEM_MATERIAL[:24] + r"\u0020" + _PEM_MATERIAL[24:],
+        ],
+        ids=["solidus", "unicode-solidus", "tab", "unicode-space"],
+    )
+    def test_serialized_pem_payload_escapes_still_fire(self, temp_dir, serialized_material):
+        (temp_dir / "CLAUDE.md").write_text(
+            f'private_key = "{_RSA_HEADER}\\n{serialized_material}'
+            '\\n-----END RSA PRIVATE KEY-----"\n'
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "Private key" in violations[0].message
+
+    @pytest.mark.parametrize("width", [15, 12, 8, 4, 3, 2, 1])
+    def test_pem_short_wrapped_key_material_still_fires(self, temp_dir, width):
+        wrapped_material = "\n".join(
+            _PEM_MATERIAL[index : index + width] for index in range(0, len(_PEM_MATERIAL), width)
+        )
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{_RSA_HEADER}\n{wrapped_material}\n-----END RSA PRIVATE KEY-----\n"
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "Private key" in violations[0].message
+
+    def test_encrypted_pem_one_char_wrapping_still_fires(self, temp_dir):
+        wrapped_material = "\n".join(_PEM_ENCRYPTED_MATERIAL)
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{_RSA_HEADER}\n"
+            "Proc-Type: 4,ENCRYPTED\n"
+            f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
+            f"{wrapped_material}\n"
+            "-----END RSA PRIVATE KEY-----\n"
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "Private key" in violations[0].message
+
+    def test_prose_after_pem_teaching_header_is_exempt(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{_RSA_HEADER}\n"
+            "See PrivateKeyDocumentation and EncryptionTroubleshooting for details\n"
+            "-----END RSA PRIVATE KEY-----\n"
+        )
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_standalone_headings_after_pem_teaching_header_are_exempt(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{_RSA_HEADER}\nConfiguration\nDocumentation\nTroubleshooting\n"
+        )
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_ordered_list_pem_in_frontmatter_still_fires(self, temp_dir):
+        (temp_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: pem-example\n"
+            "description: |\n"
+            f"  7. {_RSA_HEADER}\n"
+            f"  18. {_PEM_MATERIAL}\n"
+            "  302. -----END RSA PRIVATE KEY-----\n"
+            "---\n"
+            "# PEM example\n"
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "frontmatter field 'description': Private key" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            (
+                f'private_key = "{_RSA_HEADER}\\n-----END RSA PRIVATE KEY-----'
+                '\\napplicationConfigurationDocumentation"\n'
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                "-----END RSA PRIVATE KEY-----\n"
+                "applicationConfigurationDocumentation\n"
+            ),
+        ],
+        ids=["serialized", "physical"],
+    )
+    def test_text_after_pem_end_marker_is_not_key_material(self, temp_dir, content):
+        (temp_dir / "CLAUDE.md").write_text(content)
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            (
+                f"{_RSA_HEADER}\n"
+                "Proc-Type: 4,ENCRYPTED\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f"{_RSA_HEADER} Proc-Type: 4,ENCRYPTED "
+                f"DEK-Info: AES-256-CBC,{_PEM_IV} "
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\nProc-Type: 4,ENCRYPTED'
+                f"\\nDEK-Info: AES-256-CBC,{_PEM_IV}"
+                '\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
+            (
+                f'private_key = "{_RSA_HEADER}\\\\nProc-Type: 4,ENCRYPTED'
+                f"\\\\nDEK-Info: AES-256-CBC,{_PEM_IV}"
+                '\\\\n-----END RSA PRIVATE KEY-----"\n'
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                "Proc-Type: 4,ENCRYPTED\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
+                "Configuration\nDocumentation\nTroubleshooting\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                "Proc-Type: 4,ENCRYPTED\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
+                "Configuration\nDocumentation\nTroubleshooting\n"
+                "Configuration\nDocumentation\nTroubleshooting\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+        ],
+        ids=[
+            "multiline",
+            "same-line",
+            "escaped",
+            "double-escaped",
+            "standalone-headings",
+            "repeated-standalone-headings",
+        ],
+    )
+    def test_pem_metadata_without_key_material_is_exempt(self, temp_dir, content):
+        (temp_dir / "CLAUDE.md").write_text(content)
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_pem_lookahead_is_bounded_by_physical_lines(self):
+        max_index = embedded_secrets_module._PEM_LOOKAHEAD_PHYSICAL_LINES
+
+        class GuardedLines(list):
+            def __getitem__(self, index):
+                if isinstance(index, int) and index > max_index:
+                    raise AssertionError("PEM lookahead exceeded its physical-line bound")
+                return super().__getitem__(index)
+
+        lines = GuardedLines([_RSA_HEADER, *([""] * (max_index + 10))])
+        match = re.search(re.escape(_RSA_HEADER), lines[0])
+        assert match is not None
+        assert not ContentEmbeddedSecretsRule._pem_key_material_follows(lines, 0, match)
+
+    def test_pem_scan_budget_is_shared_and_fails_secure(self, monkeypatch):
+        monkeypatch.setattr(embedded_secrets_module, "_PEM_SCAN_MAX_CHARS_PER_BLOB", 192)
+        rule = ContentEmbeddedSecretsRule()
+        findings = list(
+            rule._scan_text(
+                f"{_RSA_HEADER}\n{_RSA_HEADER}\n",
+                rule._entropy_threshold(),
+                rule._placeholder_markers(),
+            )
+        )
+        assert findings == [(2, "Private key")]
 
     def test_clean_file_passes(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
@@ -698,7 +1071,9 @@ class TestContentEmbeddedSecretsRule:
                 "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456",  # notsecret
                 "JSON Web Token",
             ),
-            ("-----BEGIN RSA PRIVATE KEY-----", "Private key"),
+            ("-----BEGIN PRIVATE KEY-----", "Private key"),
+            ("-----BEGIN EC PRIVATE KEY-----", "Private key"),
+            ("-----BEGIN DSA PRIVATE KEY-----", "Private key"),
             ("-----BEGIN OPENSSH PRIVATE KEY-----", "Private key"),
             ("secret_key = 'abcdefghijklmnopqrstuvwxyz'", "Hardcoded secret key"),
             ("access_token = 'abcdefghijklmnopqrstuvwxyz'", "Hardcoded access token"),
@@ -717,7 +1092,9 @@ class TestContentEmbeddedSecretsRule:
             "npm",
             "pypi",
             "jwt",
-            "rsa-private-key",
+            "pkcs8-private-key",
+            "ec-private-key",
+            "dsa-private-key",
             "openssh-private-key",
             "generic-secret-key",
             "generic-access-token",

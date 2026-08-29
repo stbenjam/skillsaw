@@ -931,6 +931,30 @@ class MarkdownDoc:
         self._ensure_walked()
         return list(self._segments)
 
+    def ordered_list_content_lines(self) -> List[Tuple[int, str]]:
+        """AST-normalized ``(body_line, text)`` pairs inside ordered lists.
+
+        Markdown-it removes container prefixes from inline token content. The
+        returned text therefore excludes ordered-list markers and any outer
+        blockquote/list indentation without guessing at source punctuation.
+        """
+        result: List[Tuple[int, str]] = []
+        ordered_list_depth = 0
+        for token in self._tokens:
+            if token.type == "ordered_list_open":
+                ordered_list_depth += 1
+                continue
+            if token.type == "ordered_list_close":
+                ordered_list_depth = max(0, ordered_list_depth - 1)
+                continue
+            if token.type != "inline" or ordered_list_depth == 0 or not token.map:
+                continue
+            start, end = token.map
+            content_lines = token.content.split("\n")
+            for offset, content_line in enumerate(content_lines[: end - start]):
+                result.append((start + offset + 1, content_line))
+        return result
+
     def fences(self) -> List[MarkdownFence]:
         """Fenced and indented code blocks (line ranges include delimiters)."""
         result: List[MarkdownFence] = []
