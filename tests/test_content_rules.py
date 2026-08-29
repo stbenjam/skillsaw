@@ -1813,6 +1813,8 @@ class TestContentUnlinkedInternalReferenceRule:
         assert rule.default_severity() == Severity.INFO
 
     def test_bare_path_violation(self, temp_dir):
+        (temp_dir / "src" / "config").mkdir(parents=True)
+        (temp_dir / "src" / "config" / "settings.yaml").write_text("theme: dark\n")
         (temp_dir / "CLAUDE.md").write_text(
             "Check the file at src/config/settings.yaml for defaults.\n"
         )
@@ -1830,14 +1832,16 @@ class TestContentUnlinkedInternalReferenceRule:
         assert len(violations) == 0
 
     def test_dot_slash_path(self, temp_dir):
+        (temp_dir / "scripts").mkdir()
+        (temp_dir / "scripts" / "build.sh").write_text("#!/bin/sh\n")
         (temp_dir / "CLAUDE.md").write_text("Run ./scripts/build.sh to build.\n")
         context = RepositoryContext(temp_dir)
         violations = ContentUnlinkedInternalReferenceRule().check(context)
         assert len(violations) == 1
         assert "./scripts/build.sh" in violations[0].message
 
-    def test_resolution_failure_is_not_autofixable(self, temp_dir, monkeypatch):
-        """An unresolvable bare path must not be statted or offered for autofix."""
+    def test_resolution_failure_is_not_reported(self, temp_dir, monkeypatch):
+        """An unresolvable bare path must not be statted or reported."""
         from skillsaw.rules.builtin.content import unlinked_internal_reference as rule_module
 
         (temp_dir / "CLAUDE.md").write_text("See docs/hostile.md for details.\n")
@@ -1862,8 +1866,18 @@ class TestContentUnlinkedInternalReferenceRule:
         monkeypatch.setattr(Path, "exists", hostile_exists)
 
         violations = ContentUnlinkedInternalReferenceRule().check(context)
-        assert len(violations) == 1
-        assert violations[0].fixable is False
+        assert violations == []
+
+    def test_nonexistent_path_shaped_prose_not_reported(self, temp_dir):
+        """Technology names and illustrative paths are not actionable local links."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use JavaScript/Node.js for the worker.\n"
+            "Examples may refer to examples/service/config.yaml.\n"
+        )
+
+        violations = ContentUnlinkedInternalReferenceRule().check(RepositoryContext(temp_dir))
+
+        assert violations == []
 
     def test_path_abutting_close_paren_not_flagged(self, temp_dir):
         """Regression for #321: `scripts/test.pyc)` must not backtrack to a
@@ -1888,6 +1902,8 @@ class TestContentUnlinkedInternalReferenceRule:
     def test_dot_slash_path_does_not_swallow_sentence_period(self, temp_dir):
         """Regression for #321: `./docs/guide.md.` at the end of a sentence
         must match `./docs/guide.md`, not include the period."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "guide.md").write_text("# Guide\n")
         (temp_dir / "CLAUDE.md").write_text("See ./docs/guide.md. Then continue.\n")
         context = RepositoryContext(temp_dir)
         violations = ContentUnlinkedInternalReferenceRule().check(context)
@@ -1911,6 +1927,10 @@ class TestContentUnlinkedInternalReferenceRule:
 
     def test_custom_patterns_config(self, temp_dir):
         """Test that custom patterns config filters which paths are flagged."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "guide.md").write_text("# Guide\n")
+        (temp_dir / "src" / "config").mkdir(parents=True)
+        (temp_dir / "src" / "config" / "settings.yaml").write_text("theme: dark\n")
         (temp_dir / "CLAUDE.md").write_text(
             "See docs/guide.md for info.\nAlso check src/config/settings.yaml.\n"
         )
@@ -1937,6 +1957,8 @@ class TestContentUnlinkedInternalReferenceRule:
         assert len(violations) == 0
 
     def test_reports_line_number(self, temp_dir):
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "guide.md").write_text("# Guide\n")
         content = "Line 1\nLine 2\nSee docs/guide.md for info.\nLine 4\n"
         (temp_dir / "CLAUDE.md").write_text(content)
         context = RepositoryContext(temp_dir)
@@ -1962,6 +1984,8 @@ class TestContentUnlinkedInternalReferenceRule:
 
     def test_double_backtick_exact_path_flagged(self, temp_dir):
         """A path that is the entire content of a double-backtick span should still be flagged."""
+        (temp_dir / "prompts").mkdir()
+        (temp_dir / "prompts" / "analyze-skill.md").write_text("# Analysis prompt\n")
         (temp_dir / "CLAUDE.md").write_text(
             "You can also reference ``prompts/analyze-skill.md`` with double backticks.\n"
         )
@@ -2169,16 +2193,15 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert "run [scripts/test.py](scripts/test.py) to validate" in fixed
         assert len(fixed.splitlines()) == 2
 
-    def test_no_autofix_for_nonexistent_path(self, temp_dir):
-        """Bare paths to nonexistent files should not be autofixed."""
+    def test_no_violation_or_autofix_for_nonexistent_path(self, temp_dir):
+        """Bare paths to nonexistent files are neither reported nor autofixed."""
         (temp_dir / "CLAUDE.md").write_text("See docs/guide.md for info.\n")
         context = RepositoryContext(temp_dir)
         rule = ContentUnlinkedInternalReferenceRule()
         violations = rule.check(context)
-        assert len(violations) == 1
-        assert "autofixable" not in violations[0].message
+        assert violations == []
         fixes = rule.fix(context, violations)
-        assert len(fixes) == 0
+        assert fixes == []
 
     def test_autofix_duplicate_paths_no_double_wrap(self, temp_dir):
         """When the same path appears multiple times, each should be wrapped independently."""
@@ -2244,7 +2267,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert fixed.count("[[") == 0
 
     def test_autofix_mixed_autofixable_and_nonexistent(self, temp_dir):
-        """Only existing paths should be fixed; nonexistent paths left alone."""
+        """Only existing paths should be reported and fixed."""
         (temp_dir / "src").mkdir()
         (temp_dir / "src" / "real.py").write_text("# real\n")
         (temp_dir / "CLAUDE.md").write_text(
@@ -2253,9 +2276,9 @@ class TestContentUnlinkedInternalReferenceAutofix:
         context = RepositoryContext(temp_dir)
         rule = ContentUnlinkedInternalReferenceRule()
         violations = rule.check(context)
-        assert len(violations) == 2
-        autofixable = [v for v in violations if "autofixable" in v.message]
-        assert len(autofixable) == 1
+        assert len(violations) == 1
+        assert "src/real.py" in violations[0].message
+        assert "autofixable" in violations[0].message
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
         fixed = fixes[0].fixed_content

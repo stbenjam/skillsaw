@@ -17,7 +17,9 @@ Detect bare path-like strings not wrapped in markdown link syntax
 A bare path like `src/config.ts` in prose is not clickable and not
 machine-navigable. Wrapping it in markdown link syntax
 (`[src/config.ts](src/config.ts)`) makes it a navigable reference
-that tools and agents can follow to read the file's contents.
+that tools and agents can follow to read the file's contents. The rule only
+reports paths that resolve to an existing target inside the repository, so
+technology names and illustrative paths do not create unactionable findings.
 
 ## Examples
 
@@ -37,8 +39,7 @@ See [src/config.ts](src/config.ts) for the shared configuration.
 
 Wrap the bare path in markdown link syntax: `[path](path)`. When the
 violation message says "file exists, autofixable", `skillsaw fix` can
-wrap it automatically. For paths that do not exist, verify the path
-is correct before linking.
+wrap it automatically. Paths without a resolvable local target are ignored.
 
 ## Configuration
 
@@ -59,19 +60,21 @@ rules:
 (e.g., `src/config.yaml` mentioned in prose but not linked as
 `[src/config.yaml](src/config.yaml)`).
 
-Bare path references are a maintenance hazard. When a path is mentioned in
-prose without link syntax, there is no tooling (including
-`content-broken-internal-reference`) that can verify the referenced file still
-exists. The path silently rots as the repository evolves.
+Bare path references to existing local targets are a maintenance hazard. When
+a real repository path is mentioned in prose without link syntax, there is no
+tooling (including `content-broken-internal-reference`) that can verify it after
+the target is renamed or deleted. The path silently rots as the repository
+evolves.
 
 Wrapping paths in link syntax provides two benefits: (1) link checkers and
 linters can detect when the target is renamed or deleted, and (2) in rendered
 markdown environments (GitHub, IDEs), the reference becomes navigable. Both
 benefits improve the reliability of instruction files as executable context.
 
-The rule is configurable via `patterns` — a list of glob patterns that control
-which path-like strings are flagged. This avoids false positives on paths that
-are illustrative examples rather than real file references.
+The rule requires a resolvable in-repository target and is configurable via
+`patterns` — a list of glob patterns that further controls which path-like
+strings are flagged. The existence check avoids false positives on technology
+names and illustrative paths that cannot be turned into working local links.
 
 **References:**
 
