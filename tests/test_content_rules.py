@@ -805,6 +805,7 @@ class TestContentEmbeddedSecretsRule:
                 )
                 + '\\n-----END RSA PRIVATE KEY-----"\n'
             ),
+            (f"7. {_RSA_HEADER}\n" f"18. {_PEM_MATERIAL}\n" "302. -----END RSA PRIVATE KEY-----\n"),
         ],
         ids=[
             "encrypted-metadata",
@@ -821,6 +822,7 @@ class TestContentEmbeddedSecretsRule:
             "escaped-comment-before-material",
             "intraline-whitespace",
             "escaped-intraline-whitespace",
+            "ordered-list",
         ],
     )
     def test_pem_block_with_key_material_still_fires(self, temp_dir, content):

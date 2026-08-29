@@ -2,7 +2,7 @@
 
 import math
 import re
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -325,7 +325,13 @@ class ContentEmbeddedSecretsRule(Rule):
             return False
         return _length_adjusted_entropy(value) >= threshold
 
-    def _scan_text(self, text: str, threshold: float, markers: Tuple[str, ...]):
+    def _scan_text(
+        self,
+        text: str,
+        threshold: float,
+        markers: Tuple[str, ...],
+        line_overrides: Optional[Dict[int, str]] = None,
+    ):
         """Yield ``(line_num, desc)`` for at most one violation per line."""
         active = patterns_matching_anywhere(text, self._PATTERNS)
         if not active:
@@ -336,6 +342,9 @@ class ContentEmbeddedSecretsRule(Rule):
         # (a payload could plant a U+2028 to point the finding elsewhere).
         # read_body() has already normalized CRLF.
         lines = text.split("\n")
+        for body_line, normalized_line in (line_overrides or {}).items():
+            if 1 <= body_line <= len(lines):
+                lines[body_line - 1] = normalized_line
         for line_index, line in enumerate(lines):
             line_num = line_index + 1
             for pattern, desc, is_generic in active:
@@ -362,7 +371,12 @@ class ContentEmbeddedSecretsRule(Rule):
             body = cf.read_body(strip_code_blocks=False)
             if not body:
                 continue
-            for line_num, desc in self._scan_text(body, threshold, markers):
+            ordered_list_lines = (
+                dict(cf.markdown.ordered_list_content_lines())
+                if _RSA_PRIVATE_KEY_HEADER in body
+                else None
+            )
+            for line_num, desc in self._scan_text(body, threshold, markers, ordered_list_lines):
                 violations.append(
                     self.violation(
                         f"Potential secret detected: {desc}",
