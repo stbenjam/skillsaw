@@ -523,9 +523,9 @@ class _Unsizeable:
     A value past ``_SIZE_WALK_LIMIT`` cannot be admitted — the budget
     would be recording a number that is not what the entry holds. But
     forgetting *that* costs the full abandoned walk again on every later
-    call, on top of the recompute, which is strictly worse than the
-    unbounded cache this budget replaced. Remembering the verdict keeps
-    the refusal and drops the re-walk.
+    call, on top of the recompute, which is strictly worse than doing no
+    accounting at all. Remembering the verdict keeps the refusal and
+    drops the re-walk.
 
     It lives in the store rather than beside it so every existing teardown
     path — eviction, ``invalidate``, ``cache_clear`` — already handles it,
@@ -655,7 +655,13 @@ class FileCache:
                     # cache holding one value and the budget recording the
                     # cost of a different one, and a later invalidation
                     # would subtract a charge that was never added.
-                    return bucket[sub_key][1]
+                    #
+                    # The sentinel is checked here as well as on the fast
+                    # path: this is the store's other value-returning
+                    # exit, and the racing caller may have found the file
+                    # unsizeable while this read was in flight.
+                    cached = bucket[sub_key][1]
+                    return result if cached is _UNSIZEABLE else cached
                 if self._total_bytes + cost > self._budget:
                     self._evict(cost)
                 # Fetched after eviction, which may have dropped this
@@ -1261,15 +1267,32 @@ def safe_load_yaml(source: Any) -> Any:
 
     libyaml pairs the same ``SafeConstructor`` and ``Resolver`` with its
     own parser, so a document both loaders accept resolves to the same
-    value. They do not accept quite the same documents, though: libyaml
-    rejects the JSON-style escaped surrogate pair that any ASCII-safe
-    JSON-to-YAML conversion emits for an astral character (an emoji in a
-    ``description:``, say), and rejects ``%YAML`` directives naming a
-    version it does not implement. Rather than turn files that linted
-    cleanly into parse errors, a rejected document is retried on the
-    pure-Python loader, which also restores that loader's message
-    wording and ``problem_mark``. Parse failures are rare, so the happy
-    path pays nothing.
+    value. They do not accept quite the same documents, and the
+    difference runs in both directions.
+
+    **libyaml rejects, PyYAML accepts.** The JSON-style escaped
+    surrogate pair that any ASCII-safe JSON-to-YAML conversion emits for
+    an astral character (an emoji in a ``description:``, say), and
+    ``%YAML`` directives naming a version libyaml does not implement.
+    Rather than turn files that linted cleanly into parse errors, a
+    rejected document is retried on the pure-Python loader, which also
+    restores that loader's message wording and ``problem_mark``. Parse
+    failures are rare, so the happy path pays nothing.
+
+    **libyaml accepts, PyYAML rejects** — and this direction cannot be
+    retried, because a document libyaml accepts never reaches the
+    retry. A tab used as a token separator (``name:\tvalue``, a trailing
+    tab, a tab before a ``#`` comment, a tab between a key and its
+    ``:``) is a ``ScannerError`` on PyYAML's own scanner and parses
+    cleanly here. Both YAML 1.1 and 1.2 permit it outside indentation,
+    so libyaml is right and PyYAML is the stricter-than-spec outlier —
+    but it means such a file stops reporting a parse error and starts
+    being linted, which can surface violations a baseline does not
+    carry. A tab used as *indentation* stays an error in both.
+
+    Note ruamel still rejects the tab class, so ``read_yaml`` and
+    ``read_yaml_commented`` disagree about it. That is a real exception
+    to the reader-agreement invariant, confined to this one shape.
     """
     if hasattr(source, "read"):
         # One caller hands over an open file. Everything below needs the

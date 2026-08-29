@@ -1058,6 +1058,52 @@ def test_documents_only_the_pure_python_loader_accepts_still_parse(source, expec
     assert safe_load_yaml(source) == expected
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "name:\tvalue\n",  # tab separating a key from its value
+        "name: value\t\n",  # trailing tab
+        "name: value\t# comment\n",  # tab before a comment
+        "name\t: value\n",  # tab between a key and its colon
+        "name: \tvalue\n",  # space then tab
+        "a:\n  b:\tvalue\n",  # nested
+    ],
+)
+def test_documents_only_libyaml_accepts_now_parse(source):
+    """The other direction of the accepted-document set, which the
+    retry cannot cover.
+
+    A rejected document is retried on the pure-Python loader, so
+    anything PyYAML alone accepts still parses. Nothing symmetrical
+    happens when libyaml *accepts* — ``yaml.load`` returns and no retry
+    runs — so this class changes behaviour on upgrade: a tab used as a
+    token separator is a ``ScannerError`` on PyYAML's own scanner and
+    parses here. Both YAML 1.1 and 1.2 permit it outside indentation.
+
+    Pinned so the accepted set is characterized in both directions
+    rather than asserted in one.
+    """
+    from skillsaw.utils import safe_load_yaml
+
+    with pytest.raises(yaml.YAMLError):
+        yaml.load(source, Loader=yaml.SafeLoader)
+
+    assert safe_load_yaml(source) is not None
+
+
+def test_a_tab_used_as_indentation_is_still_an_error():
+    """The tab that changed behaviour is the separator, not indentation.
+
+    Indentation by tab is illegal in every YAML version and both
+    scanners reject it. Pinned beside the case above so the widening is
+    bounded to the shape actually measured.
+    """
+    from skillsaw.utils import safe_load_yaml
+
+    with pytest.raises(yaml.YAMLError):
+        safe_load_yaml("a:\n\tb: value\n")
+
+
 def test_a_malformed_document_keeps_its_line_number():
     """Callers report the line a parse failed on, so the retry has to
     surface a real error object rather than swallow the mark."""
@@ -1126,13 +1172,39 @@ class TestFileCacheBudget:
 
     def test_the_budget_holds_after_a_large_insertion(self, tmp_path):
         """Freeing a fixed half-budget is not enough when the arriving
-        entry is itself more than half."""
-        cache, reader, _ = self._cache(1000)
-        for i in range(6):
-            reader(tmp_path / f"small{i}.txt", "y" * 100)
-        reader(tmp_path / "large.txt", "z" * 600)
+        entry is itself more than half.
 
-        assert cache._total_bytes <= 1000
+        Sized from what the entries actually cost. A hardcoded budget
+        silently stops admitting anything at all once the charge grows —
+        the key is charged too, so the cost tracks ``tmp_path`` — and
+        then every insert takes the too-large-to-cache exit, nothing is
+        stored, and the assertion below passes against an empty cache.
+        """
+        small = "y" * 100
+        small_cost = skillsaw_utils._entry_cost(small, tmp_path / "small0.txt")
+        # Sized so the arriving entry is about three quarters of a
+        # four-entry budget: comfortably over half, so freeing a fixed
+        # half leaves it still not fitting, and under the whole, so it
+        # is admissible at all. The payload is derived from the measured
+        # cost because the key is charged too — most of a small entry is
+        # overhead, not its 100 bytes.
+        large = "z" * (2 * small_cost)
+        large_cost = skillsaw_utils._entry_cost(large, tmp_path / "large.txt")
+        budget = small_cost * 4
+        cache, reader, _ = self._cache(budget)
+
+        assert large_cost <= budget, "the large entry must be admissible at all"
+        assert large_cost > budget // 2, "or a fixed half-budget would suffice"
+
+        for i in range(4):
+            reader(tmp_path / f"small{i}.txt", small)
+        assert cache._total_bytes > 0, "the fill must actually cache something"
+        assert cache._total_bytes + large_cost > budget, "the insert must evict"
+
+        reader(tmp_path / "large.txt", large)
+
+        assert cache._total_bytes <= budget
+        assert cache._total_bytes > 0, "the large entry must have been admitted"
 
     def test_eviction_does_not_drain_one_store_first(self, tmp_path):
         """Stores are drained in step.
@@ -1456,9 +1528,9 @@ class TestFileCacheBudget:
         Past ``_SIZE_WALK_LIMIT`` the value cannot be admitted — the
         budget would record a number that is not what the entry holds.
         Forgetting *that* costs the whole abandoned walk again on every
-        later call, on top of the recompute, which is worse than the
-        unbounded cache the budget replaced. The verdict is remembered;
-        the value still is not.
+        later call, on top of the recompute, which is worse than doing
+        no accounting at all. The verdict is remembered; the value still
+        is not.
         """
         cache = skillsaw_utils.FileCache(budget=100_000_000)
         walks = []

@@ -83,6 +83,22 @@ Baseline: 3 stale entries (violations resolved since baseline was set)
 Run `skillsaw baseline` again to regenerate the file without the
 resolved violations.
 
+## Upgrading
+
+A skillsaw upgrade can change which files parse, and a file that starts
+parsing starts being linted. YAML parsing moved to libyaml, which accepts
+a tab used as a token separator in frontmatter (`name:<TAB>value`, a
+trailing tab, a tab before a `#` comment) where the previous parser
+reported an error. Both YAML 1.1 and 1.2 permit it, so
+the new behaviour is the correct one — but a file whose frontmatter
+previously failed to parse now has its fields checked, and any violation
+that surfaces is not in your baseline.
+
+If your baseline predates the upgrade and CI fails on violations you did
+not introduce, re-run `skillsaw baseline` to take them up, then fix them
+on your own schedule. A tab used as *indentation* is still an error, as
+it is in every YAML version.
+
 ## Baseline and Fix
 
 The `skillsaw fix` command operates on all violations regardless of the
