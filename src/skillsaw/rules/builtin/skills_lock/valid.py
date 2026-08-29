@@ -330,7 +330,7 @@ class SkillsLockValidRule(Rule):
                     fingerprint_discriminator=f"{discriminator}:skillPath-containment",
                 )
             )
-        if not skill_path.replace("\\", "/").endswith("SKILL.md"):
+        if skill_path.replace("\\", "/").split("/")[-1] != "SKILL.md":
             violations.append(
                 self.violation(
                     f"Skill '{shown_name}' field 'skillPath' must end with 'SKILL.md'",

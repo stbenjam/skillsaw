@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Mapping
 
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import is_absolute_path, safe_resolve
 
 CURRENT_VERSION = 1
 
@@ -27,14 +27,8 @@ SOURCE_TYPES = frozenset(
 
 COMPUTED_HASH_RE = re.compile(r"^[a-f0-9]{64}$")
 WELL_KNOWN_DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
-WINDOWS_ABSOLUTE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 UNSAFE_INSTALL_NAME_RE = re.compile(r"[^a-z0-9._]+")
 INSTALL_NAME_EDGE_RE = re.compile(r"^[.\-]+|[.\-]+$")
-
-
-def is_absolute_path(value: str) -> bool:
-    """Whether *value* is absolute in POSIX, Windows drive, or UNC syntax."""
-    return value.startswith(("/", "\\\\", "//")) or bool(WINDOWS_ABSOLUTE_RE.match(value))
 
 
 def has_parent_segment(value: str) -> bool:
@@ -89,7 +83,7 @@ def entry_is_external(
     # A Windows absolute path cannot resolve meaningfully on POSIX. It is
     # external either way; POSIX absolute paths can still point inside the
     # lint root and are checked normally below.
-    if WINDOWS_ABSOLUTE_RE.match(source) or source.startswith(("\\\\", "//")):
+    if is_absolute_path(source) and not (source.startswith("/") and not source.startswith("//")):
         return True
     normalized = source.replace("\\", "/")
     candidate = Path(normalized)

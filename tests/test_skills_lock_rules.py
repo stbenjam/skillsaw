@@ -178,6 +178,36 @@ def test_git_restore_and_local_portability_warnings(tmp_path: Path) -> None:
     assert all(v.severity == Severity.WARNING for v in violations)
 
 
+@pytest.mark.parametrize(
+    "skill_path",
+    [
+        "C:skills/SKILL.md",
+        "\\skills\\demo\\SKILL.md",
+    ],
+)
+def test_skill_path_rejects_windows_root_and_drive_relative_forms(
+    tmp_path: Path, skill_path: str
+) -> None:
+    _write_lock(
+        tmp_path / "skills-lock.json",
+        {"version": 1, "skills": {"unsafe": _entry(skillPath=skill_path)}},
+    )
+
+    assert any("stay relative" in message for message in _messages(tmp_path))
+
+
+def test_skill_path_requires_skill_md_as_final_component(tmp_path: Path) -> None:
+    _write_lock(
+        tmp_path / "skills-lock.json",
+        {
+            "version": 1,
+            "skills": {"lookalike": _entry(skillPath="skills/demo/NOTSKILL.md")},
+        },
+    )
+
+    assert any("must end with 'SKILL.md'" in message for message in _messages(tmp_path))
+
+
 def test_unknown_source_type_can_be_allowlisted(tmp_path: Path) -> None:
     _write_lock(
         tmp_path / "skills-lock.json",
