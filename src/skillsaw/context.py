@@ -178,7 +178,7 @@ class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
         self.content_paths: List[str] = list(content_paths) if content_paths else []
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
-        self.has_apm = self._detect_apm()
+        self.has_apm = detect_discovery.has_apm(self.root_path)
         self._scan: Optional[detect_discovery.RepositoryScan] = None
         self._apm_compiled_roots: Optional[Set[Path]] = None
         self._apm_targets: Any = _UNSET  # frozenset once read; None = unknown
@@ -190,8 +190,7 @@ class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
         self._agent_plugin_roots: Optional[Set[Path]] = None
         self._contained_plugin_roots: Optional[Set[Path]] = None
         self._agent_plugin_claims: Optional[Set[Path]] = None
-        self._mcp_registry_paths: Optional[List[Path]] = None
-        self._mcp_registry_forced = RepositoryType.MCP_REGISTRY in (repo_types or set())
+        self._init_mcp_registry(RepositoryType.MCP_REGISTRY in (repo_types or set()))
         self._provenance_cache: Dict[Path, PluginProvenance] = {}
         # Views over _provenance_cache, invalidated with it: keeping them
         # beside it is what makes their lifetimes match the records they
@@ -444,8 +443,7 @@ class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
         self._codex_evidence = None
         self._agent_plugin_claims = None
         self._agent_plugin_roots = None
-        self._contained_plugin_roots = None
-        self._mcp_registry_paths = None
+        self._contained_plugin_roots = self._mcp_registry_paths = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
         self.detected_formats = self._detect_formats()
@@ -510,10 +508,6 @@ class RepositoryContext(RepositoryMcpRegistryMixin, RepositoryProvenanceMixin):
     #: directories does a walk prune" are how a checkout starts being walked
     #: differently by two callers that both believe they agree.
     _WALK_SKIP_DIRS = detect_discovery.WALK_SKIP_DIRS
-
-    def _detect_apm(self) -> bool:
-        """Check if this repository uses the APM (Agent Package Manager) format"""
-        return detect_discovery.has_apm(self.root_path)
 
     def _detect_types(self) -> Set[RepositoryType]:
         """Detect all applicable repository types.

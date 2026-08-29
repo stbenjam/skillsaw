@@ -30,6 +30,11 @@ class RepositoryMcpRegistryMixin:
 
         def is_path_excluded(self, path: Path) -> bool: ...
 
+    def _init_mcp_registry(self, forced: bool) -> None:
+        """Initialize Registry state without growing the context orchestrator."""
+        self._mcp_registry_paths = None
+        self._mcp_registry_forced = forced
+
     def mcp_registry_server_paths(self) -> List[Path]:
         """Return high-confidence, contained Registry server.json documents.
 
