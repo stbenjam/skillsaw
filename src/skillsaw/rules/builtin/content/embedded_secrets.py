@@ -52,20 +52,26 @@ _KNOWN_EXAMPLE_VALUES = KNOWN_SECRET_EXAMPLE_VALUES | frozenset(
     }
 )
 _KNOWN_EXAMPLE_VALUE_CASEFOLDS = frozenset(value.casefold() for value in _KNOWN_EXAMPLE_VALUES)
-_PEM_KEY_MATERIAL_FRAGMENT = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
+_PEM_BASE64_LINE = re.compile(r"[A-Za-z0-9+/]{4,}={0,2}")
 _PEM_KEY_MATERIAL_MIN_CHARS = 32
+_PEM_END_MARKER = "-----END RSA PRIVATE KEY-----"
 _PEM_METADATA_FIELD = re.compile(
     r"(?:Proc-Type\s*:\s*4\s*,\s*ENCRYPTED|"
     r"DEK-Info\s*:\s*[A-Za-z0-9-]+\s*,\s*[0-9A-Fa-f]{16,32}"
     r"(?![0-9A-Fa-f]))",
     re.IGNORECASE,
 )
+_PEM_SERIALIZED_LINE_BREAK = re.compile(r"(?:\\+r)?\\+n")
 _PEM_LOOKAHEAD_PHYSICAL_LINES = 8
 _PEM_LOOKAHEAD_CHARS_PER_LINE = 4096
-# Syntax that can surround a standalone teaching literal. Token-extending
-# punctuation such as hyphens and underscores is deliberately absent.
-_RSA_HEADER_LEFT_DELIMITERS = frozenset("\"'`([{<>=:,>*")
-_RSA_HEADER_RIGHT_DELIMITERS = frozenset("\"'`)]}>:,;.!?\\*")
+# Punctuation that can decorate a complete logical line in Markdown, YAML,
+# JSON, or shell examples. Base64 characters (+, /, =) are deliberately not
+# stripped. Payload recognition below still requires the entire undecorated
+# logical line to be base64-shaped.
+_PEM_LINE_DECORATION = " \t\r\"'`,;:.!?()[]{}<>|~*_-#\\"
+# Alphanumeric characters and these two punctuation marks can extend the
+# header into a larger token. Every other character is a syntax delimiter.
+_RSA_HEADER_TOKEN_EXTENDERS = frozenset("-_")
 
 
 def _shannon_entropy(value: str) -> float:
@@ -107,13 +113,37 @@ def _is_known_example_value(value: str) -> bool:
     return normalized.startswith(prefix) and normalized[len(prefix) :] == remainder.casefold()
 
 
-def _pem_key_material_chars(candidate: str) -> int:
-    """Count bounded PEM payload fragments, excluding encryption metadata."""
+def _pem_context_piece(candidate: str) -> Tuple[int, bool, bool]:
+    """Classify one bounded physical PEM-context line.
+
+    Returns ``(payload_chars, reached_end_marker, structurally_valid)``.
+    Literal serialized line breaks are treated as logical lines. Each
+    non-empty logical line must consist entirely of base64 payload after
+    removing exact PEM encryption metadata and surrounding syntax; prose is
+    invalid instead of contributing base64-looking words to the aggregate.
+    """
     bounded = candidate[:_PEM_LOOKAHEAD_CHARS_PER_LINE]
-    without_metadata = _PEM_METADATA_FIELD.sub("", bounded)
-    return sum(
-        len(match.group(0).rstrip("="))
-        for match in _PEM_KEY_MATERIAL_FRAGMENT.finditer(without_metadata)
+    marker_index = bounded.find(_PEM_END_MARKER)
+    reached_end_marker = marker_index >= 0
+    if reached_end_marker:
+        bounded = bounded[:marker_index]
+
+    payload_chars = 0
+    for logical_line in _PEM_SERIALIZED_LINE_BREAK.split(bounded):
+        without_metadata = _PEM_METADATA_FIELD.sub("", logical_line)
+        undecorated = without_metadata.strip(_PEM_LINE_DECORATION)
+        if not undecorated:
+            continue
+        if _PEM_BASE64_LINE.fullmatch(undecorated) is None:
+            return 0, reached_end_marker, False
+        payload_chars += len(undecorated.rstrip("="))
+    return payload_chars, reached_end_marker, True
+
+
+def _is_rsa_header_delimiter(character: str) -> bool:
+    """Whether *character* delimits rather than extends the header token."""
+    return not character or (
+        not character.isalnum() and character not in _RSA_HEADER_TOKEN_EXTENDERS
     )
 
 
@@ -198,22 +228,27 @@ class ContentEmbeddedSecretsRule(Rule):
     def _pem_key_material_follows(lines: List[str], line_index: int, match: re.Match) -> bool:
         """Whether an RSA header introduces key material instead of teaching text."""
         remainder = lines[line_index][match.end() : match.end() + _PEM_LOOKAHEAD_CHARS_PER_LINE]
-        material_chars = _pem_key_material_chars(remainder)
+        material_chars, reached_end_marker, structurally_valid = _pem_context_piece(remainder)
+        if not structurally_valid:
+            return False
         if material_chars >= _PEM_KEY_MATERIAL_MIN_CHARS:
             return True
+        if reached_end_marker:
+            return False
 
         # Traditional encrypted PEM has two metadata lines. Eight physical
         # lines leave room for serialized formatting while bounding both blank
         # input and long lines for every header in adversary-controlled text.
         lookahead_end = min(len(lines), line_index + 1 + _PEM_LOOKAHEAD_PHYSICAL_LINES)
         for following_index in range(line_index + 1, lookahead_end):
-            candidate = lines[following_index][:_PEM_LOOKAHEAD_CHARS_PER_LINE].strip()
-            if not candidate:
-                continue
-            material_chars += _pem_key_material_chars(candidate)
+            candidate = lines[following_index][:_PEM_LOOKAHEAD_CHARS_PER_LINE]
+            chars, reached_end_marker, structurally_valid = _pem_context_piece(candidate)
+            if not structurally_valid:
+                return False
+            material_chars += chars
             if material_chars >= _PEM_KEY_MATERIAL_MIN_CHARS:
                 return True
-            if "-----END RSA PRIVATE KEY-----" in candidate:
+            if reached_end_marker:
                 return False
         return False
 
@@ -230,15 +265,9 @@ class ContentEmbeddedSecretsRule(Rule):
         previous_char = line[match.start() - 1 : match.start()]
         next_char = line[match.end() : match.end() + 1]
         if value == _RSA_PRIVATE_KEY_HEADER:
-            left_delimited = (
-                not previous_char
-                or previous_char.isspace()
-                or previous_char in _RSA_HEADER_LEFT_DELIMITERS
-            )
-            right_delimited = (
-                not next_char or next_char.isspace() or next_char in _RSA_HEADER_RIGHT_DELIMITERS
-            )
-            if not left_delimited or not right_delimited:
+            if not _is_rsa_header_delimiter(previous_char) or not _is_rsa_header_delimiter(
+                next_char
+            ):
                 # The header is embedded in a larger token, not standalone.
                 return True
             return cls._pem_key_material_follows(lines, line_index, match)

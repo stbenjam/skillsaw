@@ -691,6 +691,8 @@ class TestContentEmbeddedSecretsRule:
             "const API_KEY = 'sk_live_abc123def456';",
             "SECRET_KEY = 'django-insecure-...'",
             f'private_key = "{_RSA_HEADER}"',
+            f"|{_RSA_HEADER}|",
+            f"~~{_RSA_HEADER}~~",
         ],
         ids=[
             "hunter2-trimmed",
@@ -698,6 +700,8 @@ class TestContentEmbeddedSecretsRule:
             "stripe-def456",
             "django-insecure",
             "rsa-header-only",
+            "rsa-header-table-cell",
+            "rsa-header-strikethrough",
         ],
     )
     def test_known_documentation_examples_are_exempt(self, temp_dir, line):
@@ -797,9 +801,10 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) == 1
         assert "Private key" in violations[0].message
 
-    def test_pem_short_wrapped_key_material_still_fires(self, temp_dir):
+    @pytest.mark.parametrize("width", [15, 12, 8, 4])
+    def test_pem_short_wrapped_key_material_still_fires(self, temp_dir, width):
         wrapped_material = "\n".join(
-            _PEM_MATERIAL[index : index + 16] for index in range(0, len(_PEM_MATERIAL), 16)
+            _PEM_MATERIAL[index : index + width] for index in range(0, len(_PEM_MATERIAL), width)
         )
         (temp_dir / "CLAUDE.md").write_text(
             f"{_RSA_HEADER}\n{wrapped_material}\n-----END RSA PRIVATE KEY-----\n"
@@ -808,10 +813,31 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) == 1
         assert "Private key" in violations[0].message
 
-    def test_single_short_pem_like_teaching_token_is_exempt(self, temp_dir):
+    def test_prose_after_pem_teaching_header_is_exempt(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
-            f"{_RSA_HEADER}\nabcdefghijklmnop\n-----END RSA PRIVATE KEY-----\n"
+            f"{_RSA_HEADER}\n"
+            "See PrivateKeyDocumentation and EncryptionTroubleshooting for details\n"
+            "-----END RSA PRIVATE KEY-----\n"
         )
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            (
+                f'private_key = "{_RSA_HEADER}\\n-----END RSA PRIVATE KEY-----'
+                '\\napplicationConfigurationDocumentation"\n'
+            ),
+            (
+                f"{_RSA_HEADER}\n"
+                "-----END RSA PRIVATE KEY-----\n"
+                "applicationConfigurationDocumentation\n"
+            ),
+        ],
+        ids=["serialized", "physical"],
+    )
+    def test_text_after_pem_end_marker_is_not_key_material(self, temp_dir, content):
+        (temp_dir / "CLAUDE.md").write_text(content)
         assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
 
     @pytest.mark.parametrize(
