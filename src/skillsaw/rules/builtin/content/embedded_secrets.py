@@ -1,9 +1,13 @@
 """Content embedded secrets rule"""
 
+import base64
+import binascii
 import math
 import re
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
@@ -61,9 +65,11 @@ _PEM_METADATA_FIELD = re.compile(
     r"(?![0-9A-Fa-f]))",
     re.IGNORECASE,
 )
-_PEM_SERIALIZED_LINE_BREAK = re.compile(r"(?:\\+r)?\\+n")
+_PEM_SERIALIZED_LINE_BREAK = re.compile(r"(?:\\+r)?\\+n|(?:\\+u000[dD])?\\+u000[aA]")
 _PEM_LOOKAHEAD_PHYSICAL_LINES = 40
 _PEM_LOOKAHEAD_CHARS_PER_LINE = 4096
+_PEM_SCAN_MAX_CHARS_PER_BLOB = 1024 * 1024
+_PEM_SCAN_MIN_CANDIDATE_COST = 64
 # Punctuation that can decorate a complete logical line in Markdown, YAML,
 # JSON, or shell examples. Base64 characters (+, /, =) are deliberately not
 # stripped. Payload recognition below still requires the entire undecorated
@@ -72,6 +78,31 @@ _PEM_LINE_DECORATION = " \t\r\"'`,;:.!?()[]{}<>|~*_-#\\"
 # Alphanumeric characters and these two punctuation marks can extend the
 # header into a larger token. Every other character is a syntax delimiter.
 _RSA_HEADER_TOKEN_EXTENDERS = frozenset("-_")
+
+
+@dataclass
+class _PemMaterialState:
+    """Bounded evidence accumulated after one standalone RSA header."""
+
+    material: str = ""
+    encrypted: bool = False
+
+
+@dataclass
+class _PemScanBudget:
+    """Cap aggregate PEM lookahead work across one scanned content blob."""
+
+    remaining_chars: int
+
+    def claim(self, candidate: str) -> bool:
+        # Charge a small fixed floor so many empty/short lines cannot evade a
+        # character-only budget. Exhaustion reports the header (fails secure).
+        cost = max(_PEM_SCAN_MIN_CANDIDATE_COST, len(candidate))
+        if cost > self.remaining_chars:
+            self.remaining_chars = 0
+            return False
+        self.remaining_chars -= cost
+        return True
 
 
 def _shannon_entropy(value: str) -> float:
@@ -113,36 +144,92 @@ def _is_known_example_value(value: str) -> bool:
     return normalized.startswith(prefix) and normalized[len(prefix) :] == remainder.casefold()
 
 
-def _pem_payload_chars(candidate: str) -> Optional[int]:
-    """Count a credible base64 payload line after normalizing whitespace."""
+def _pem_payload_text(candidate: str) -> Optional[str]:
+    """Normalize a wholly base64-shaped payload line's whitespace."""
     groups = candidate.split()
     if not groups or any(_PEM_BASE64_LINE.fullmatch(group) is None for group in groups):
         return None
     compact = "".join(groups)
     if _PEM_BASE64_LINE.fullmatch(compact) is None:
         return None
-    if len(groups) > 1:
-        group_width = len(groups[0])
-        regularly_grouped = (
-            all(len(group) == group_width for group in groups[:-1])
-            and len(groups[-1]) <= group_width
-        )
-        # Unencrypted PKCS#1 RSA DER begins with ``MI`` in base64. Otherwise,
-        # require regular grouping so variable-length prose words cannot be
-        # concatenated into an apparent payload.
-        if not compact.startswith("MI") and not regularly_grouped:
-            return None
-    return len(compact.rstrip("="))
+    return compact
 
 
-def _pem_context_segments(candidate: str) -> Tuple[List[Optional[int]], bool]:
+def _decoded_base64_prefix(material: str) -> Optional[bytes]:
+    """Decode every complete base64 quantum available in *material*."""
+    remainder = len(material) % 4
+    if len(material) < 4:
+        if len(material) == 1:
+            return b"" if material == "M" else None
+        encoded = material + "=" * (4 - len(material))
+    elif remainder == 1:
+        encoded = material[:-1]
+    else:
+        encoded = material + "=" * ((4 - remainder) % 4)
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+
+
+def _rsa_private_key_der_prefix_status(material: str) -> Tuple[bool, bool]:
+    """Return whether *material* can be, and confirms, PKCS#1 RSA DER.
+
+    Traditional unencrypted RSA PEM contains a DER SEQUENCE whose first child
+    is the version INTEGER 0 or 1. Checking that prefix keeps arbitrary
+    base64-shaped prose from becoming key evidence while accepting whitespace
+    and physical-line wrapping anywhere in the encoded stream.
+    """
+    decoded = _decoded_base64_prefix(material)
+    if decoded is None:
+        return False, False
+    if not decoded:
+        return material == "M", False
+    if decoded[0] != 0x30:
+        return False, False
+    if len(decoded) == 1:
+        return True, False
+
+    length_byte = decoded[1]
+    if length_byte < 0x80:
+        content_offset = 2
+        content_length = length_byte
+    else:
+        length_octets = length_byte & 0x7F
+        if length_octets == 0 or length_octets > 4:
+            return False, False
+        length_end = 2 + length_octets
+        if len(decoded) < length_end:
+            return True, False
+        length_bytes = decoded[2:length_end]
+        if length_bytes[0] == 0:
+            return False, False
+        content_length = int.from_bytes(length_bytes, "big")
+        if content_length < 0x80:
+            return False, False
+        content_offset = length_end
+
+    if content_length < 3:
+        return False, False
+    expected_integer = b"\x02\x01"
+    available_integer = decoded[content_offset : content_offset + len(expected_integer)]
+    if not expected_integer.startswith(available_integer):
+        return False, False
+    version_offset = content_offset + len(expected_integer)
+    if len(decoded) <= version_offset:
+        return True, False
+    if decoded[version_offset] not in (0, 1):
+        return False, False
+    return True, True
+
+
+def _pem_context_segments(candidate: str) -> Tuple[List[Optional[str]], bool, bool]:
     """Classify one bounded physical PEM-context line.
 
-    Returns payload character counts for base64-shaped logical lines, ``None``
-    for non-payload logical lines, and whether the RSA end marker was reached.
-    Empty lines and exact encryption metadata are neutral. This lets callers
-    continue a bounded search past Markdown labels without letting prose
-    contribute base64-looking words to the payload aggregate.
+    Returns normalized base64-shaped logical lines, ``None`` for non-payload
+    logical lines, whether the RSA end marker was reached, and whether legacy
+    PEM encryption metadata was present. Empty lines and exact metadata are
+    neutral.
     """
     bounded = candidate[:_PEM_LOOKAHEAD_CHARS_PER_LINE]
     marker_index = bounded.find(_PEM_END_MARKER)
@@ -150,31 +237,56 @@ def _pem_context_segments(candidate: str) -> Tuple[List[Optional[int]], bool]:
     if reached_end_marker:
         bounded = bounded[:marker_index]
 
-    segments: List[Optional[int]] = []
+    segments: List[Optional[str]] = []
+    saw_encryption_metadata = False
     for logical_line in _PEM_SERIALIZED_LINE_BREAK.split(bounded):
+        if _PEM_METADATA_FIELD.search(logical_line):
+            saw_encryption_metadata = True
         without_metadata = _PEM_METADATA_FIELD.sub("", logical_line)
         undecorated = without_metadata.strip(_PEM_LINE_DECORATION)
         if not undecorated:
             continue
-        payload_chars = _pem_payload_chars(undecorated)
-        if payload_chars is None:
+        payload = _pem_payload_text(undecorated)
+        if payload is None:
             segments.append(None)
             continue
-        segments.append(payload_chars)
-    return segments, reached_end_marker
+        segments.append(payload)
+    return segments, reached_end_marker, saw_encryption_metadata
 
 
-def _pem_material_progress(material_chars: int, candidate: str) -> Tuple[int, bool, bool]:
+def _unencrypted_material_with_segment(material: str, segment: str) -> str:
+    """Append *segment* when the aggregate remains a possible RSA DER prefix."""
+    combined = material + segment
+    if _PEM_BASE64_LINE.fullmatch(combined):
+        possible, _confirmed = _rsa_private_key_der_prefix_status(combined)
+        if possible:
+            return combined
+    if material and _PEM_BASE64_LINE.fullmatch(segment):
+        possible, _confirmed = _rsa_private_key_der_prefix_status(segment)
+        if possible:
+            return segment
+    return ""
+
+
+def _pem_material_progress(state: _PemMaterialState, candidate: str) -> Tuple[bool, bool]:
     """Advance one bounded candidate, resetting at non-payload segments."""
-    segments, reached_end_marker = _pem_context_segments(candidate)
-    for segment_chars in segments:
-        if segment_chars is None:
-            material_chars = 0
+    segments, reached_end_marker, saw_encryption_metadata = _pem_context_segments(candidate)
+    state.encrypted = state.encrypted or saw_encryption_metadata
+    for segment in segments:
+        if segment is None:
+            state.material = ""
             continue
-        material_chars += segment_chars
-        if material_chars >= _PEM_KEY_MATERIAL_MIN_CHARS:
-            return material_chars, reached_end_marker, True
-    return material_chars, reached_end_marker, False
+        if state.encrypted:
+            combined = state.material + segment
+            state.material = combined if _PEM_BASE64_LINE.fullmatch(combined) else segment
+            detected = len(state.material.rstrip("=")) >= _PEM_KEY_MATERIAL_MIN_CHARS
+        else:
+            state.material = _unencrypted_material_with_segment(state.material, segment)
+            _possible, confirmed = _rsa_private_key_der_prefix_status(state.material)
+            detected = len(state.material.rstrip("=")) >= _PEM_KEY_MATERIAL_MIN_CHARS and confirmed
+        if detected:
+            return reached_end_marker, True
+    return reached_end_marker, False
 
 
 def _is_rsa_header_delimiter(character: str) -> bool:
@@ -262,10 +374,20 @@ class ContentEmbeddedSecretsRule(Rule):
         return is_secret_placeholder(value, markers)
 
     @staticmethod
-    def _pem_key_material_follows(lines: List[str], line_index: int, match: re.Match) -> bool:
+    def _pem_key_material_follows(
+        lines: List[str],
+        line_index: int,
+        match: re.Match,
+        budget: Optional[_PemScanBudget] = None,
+    ) -> bool:
         """Whether an RSA header introduces key material instead of teaching text."""
+        if budget is None:
+            budget = _PemScanBudget(_PEM_SCAN_MAX_CHARS_PER_BLOB)
+        state = _PemMaterialState()
         remainder = lines[line_index][match.end() : match.end() + _PEM_LOOKAHEAD_CHARS_PER_LINE]
-        material_chars, reached_end_marker, detected = _pem_material_progress(0, remainder)
+        if not budget.claim(remainder):
+            return True
+        reached_end_marker, detected = _pem_material_progress(state, remainder)
         if detected:
             return True
         if reached_end_marker:
@@ -278,9 +400,9 @@ class ContentEmbeddedSecretsRule(Rule):
         lookahead_end = min(len(lines), line_index + 1 + _PEM_LOOKAHEAD_PHYSICAL_LINES)
         for following_index in range(line_index + 1, lookahead_end):
             candidate = lines[following_index][:_PEM_LOOKAHEAD_CHARS_PER_LINE]
-            material_chars, reached_end_marker, detected = _pem_material_progress(
-                material_chars, candidate
-            )
+            if not budget.claim(candidate):
+                return True
+            reached_end_marker, detected = _pem_material_progress(state, candidate)
             if detected:
                 return True
             if reached_end_marker:
@@ -289,7 +411,11 @@ class ContentEmbeddedSecretsRule(Rule):
 
     @classmethod
     def _structured_match_reportable(
-        cls, lines: List[str], line_index: int, match: re.Match
+        cls,
+        lines: List[str],
+        line_index: int,
+        match: re.Match,
+        pem_budget: Optional[_PemScanBudget] = None,
     ) -> bool:
         """Keep structured-token exceptions exact and PEM-material aware."""
         value = match.group(0)
@@ -305,7 +431,7 @@ class ContentEmbeddedSecretsRule(Rule):
             ):
                 # The header is embedded in a larger token, not standalone.
                 return True
-            return cls._pem_key_material_follows(lines, line_index, match)
+            return cls._pem_key_material_follows(lines, line_index, match, pem_budget)
 
         # AWS access-key IDs contain only uppercase letters and digits. Syntax
         # such as '=' or quotes delimits the known documentation value, while
@@ -342,6 +468,7 @@ class ContentEmbeddedSecretsRule(Rule):
         # (a payload could plant a U+2028 to point the finding elsewhere).
         # read_body() has already normalized CRLF.
         lines = text.split("\n")
+        pem_budget = _PemScanBudget(_PEM_SCAN_MAX_CHARS_PER_BLOB)
         for body_line, normalized_line in (line_overrides or {}).items():
             if 1 <= body_line <= len(lines):
                 lines[body_line - 1] = normalized_line
@@ -350,7 +477,7 @@ class ContentEmbeddedSecretsRule(Rule):
             for pattern, desc, is_generic in active:
                 if not is_generic:
                     if any(
-                        self._structured_match_reportable(lines, line_index, match)
+                        self._structured_match_reportable(lines, line_index, match, pem_budget)
                         for match in pattern.finditer(line)
                     ):
                         yield line_num, desc
@@ -388,7 +515,12 @@ class ContentEmbeddedSecretsRule(Rule):
             text = str(fld.value) if fld.value is not None else ""
             if not text:
                 continue
-            for _line_num, desc in self._scan_text(text, threshold, markers):
+            ordered_list_lines = (
+                dict(MarkdownDoc(text).ordered_list_content_lines())
+                if _RSA_PRIVATE_KEY_HEADER in text
+                else None
+            )
+            for _line_num, desc in self._scan_text(text, threshold, markers, ordered_list_lines):
                 violations.append(
                     self.violation(
                         f"Potential secret detected in frontmatter " f"field '{fld.name}': {desc}",

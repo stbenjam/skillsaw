@@ -48,6 +48,7 @@ _STRIPE_SK = "sk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
 _STRIPE_RK = "rk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
 _RSA_HEADER = "-----BEGIN RSA PRIVATE KEY-----"
 _PEM_MATERIAL = "MIIEowIBAAKCAQEA7vYp3uF6hQ9wK2mN5rT8xZ1cV4bG0sLd"
+_PEM_ENCRYPTED_MATERIAL = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8w"
 _PEM_IV = "0123456789ABCDEF0123456789ABCDEF"
 
 
@@ -759,6 +760,13 @@ class TestContentEmbeddedSecretsRule:
                 "-----END RSA PRIVATE KEY-----\n"
             ),
             (
+                f"{_RSA_HEADER}\n"
+                "Proc-Type: 4,ENCRYPTED\n"
+                f"DEK-Info: AES-256-CBC,{_PEM_IV}\n\n"
+                f"{_PEM_ENCRYPTED_MATERIAL}\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
+            (
                 "private_key: [\n"
                 f'  "{_RSA_HEADER}",\n'
                 f'  "{_PEM_MATERIAL}",\n'
@@ -771,6 +779,8 @@ class TestContentEmbeddedSecretsRule:
             f'private_key = "{_RSA_HEADER}\\n{_PEM_MATERIAL}\\n-----END RSA PRIVATE KEY-----"\n',
             f'private_key = "{_RSA_HEADER}\\\\n{_PEM_MATERIAL}\\\\n-----END RSA PRIVATE KEY-----"\n',
             f'private_key = "{_RSA_HEADER}\\r\\n{_PEM_MATERIAL}\\r\\n-----END RSA PRIVATE KEY-----"\n',
+            f'private_key = "{_RSA_HEADER}\\u000a{_PEM_MATERIAL}\\u000a'
+            '-----END RSA PRIVATE KEY-----"\n',
             (
                 f"{_RSA_HEADER} Proc-Type: 4,ENCRYPTED "
                 f"DEK-Info: AES-256-CBC,{_PEM_IV} {_PEM_MATERIAL} "
@@ -805,10 +815,17 @@ class TestContentEmbeddedSecretsRule:
                 )
                 + '\\n-----END RSA PRIVATE KEY-----"\n'
             ),
+            (
+                f"{_RSA_HEADER}\n"
+                "M\n"
+                "II EowI BAAK CAQEA7 vYp3uF6h Q9wK2mN5rT8xZ1cV4bG0sLd\n"
+                "-----END RSA PRIVATE KEY-----\n"
+            ),
             (f"7. {_RSA_HEADER}\n" f"18. {_PEM_MATERIAL}\n" "302. -----END RSA PRIVATE KEY-----\n"),
         ],
         ids=[
             "encrypted-metadata",
+            "encrypted-ciphertext",
             "quoted-array",
             "blockquoted",
             "list-item",
@@ -816,12 +833,14 @@ class TestContentEmbeddedSecretsRule:
             "escaped-newline",
             "double-escaped-newline",
             "escaped-crlf",
+            "unicode-escaped-newline",
             "same-line-encrypted-metadata",
             "escaped-encrypted-metadata",
             "markdown-comment-before-material",
             "escaped-comment-before-material",
             "intraline-whitespace",
             "escaped-intraline-whitespace",
+            "irregular-whitespace-after-one-char-prefix",
             "ordered-list",
         ],
     )
@@ -850,6 +869,27 @@ class TestContentEmbeddedSecretsRule:
             "-----END RSA PRIVATE KEY-----\n"
         )
         assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_standalone_headings_after_pem_teaching_header_are_exempt(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{_RSA_HEADER}\nConfiguration\nDocumentation\nTroubleshooting\n"
+        )
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_ordered_list_pem_in_frontmatter_still_fires(self, temp_dir):
+        (temp_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: pem-example\n"
+            "description: |\n"
+            f"  7. {_RSA_HEADER}\n"
+            f"  18. {_PEM_MATERIAL}\n"
+            "  302. -----END RSA PRIVATE KEY-----\n"
+            "---\n"
+            "# PEM example\n"
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "frontmatter field 'description': Private key" in violations[0].message
 
     @pytest.mark.parametrize(
         "content",
@@ -914,6 +954,18 @@ class TestContentEmbeddedSecretsRule:
         match = re.search(re.escape(_RSA_HEADER), lines[0])
         assert match is not None
         assert not ContentEmbeddedSecretsRule._pem_key_material_follows(lines, 0, match)
+
+    def test_pem_scan_budget_is_shared_and_fails_secure(self, monkeypatch):
+        monkeypatch.setattr(embedded_secrets_module, "_PEM_SCAN_MAX_CHARS_PER_BLOB", 192)
+        rule = ContentEmbeddedSecretsRule()
+        findings = list(
+            rule._scan_text(
+                f"{_RSA_HEADER}\n{_RSA_HEADER}\n",
+                rule._entropy_threshold(),
+                rule._placeholder_markers(),
+            )
+        )
+        assert findings == [(2, "Private key")]
 
     def test_clean_file_passes(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
