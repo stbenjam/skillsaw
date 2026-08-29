@@ -244,6 +244,17 @@ class HooksBlock(JsonConfigBlock):
         return result
 
 
+def _inline_payload_token_count(data: Any) -> int:
+    """Estimate tokens for an inline payload without trusting its value types."""
+    try:
+        rendered = json.dumps(data or {})
+    except (TypeError, ValueError, RecursionError):
+        # YAML can produce timestamps and recursive aliases that JSON cannot
+        # encode. Token estimates are advisory; repr is cycle-safe.
+        rendered = repr(data or {})
+    return len(rendered) // 4
+
+
 class _InlineJsonPayload:
     """Config that arrived by value in a manifest field, not in a file.
 
@@ -263,14 +274,7 @@ class _InlineJsonPayload:
             self._parsed = (self.inline_data, None)
 
     def estimate_tokens(self) -> int:
-        try:
-            rendered = json.dumps(self.inline_data or {})
-        except (TypeError, ValueError, RecursionError):
-            # YAML can produce timestamps and recursive aliases that JSON
-            # cannot encode. Token estimates are advisory; their repr is a
-            # stable, cycle-safe fallback and must never abort tree building.
-            rendered = repr(self.inline_data or {})
-        return len(rendered) // 4
+        return _inline_payload_token_count(self.inline_data)
 
     # LintTarget compares by (type, resolved path), which assumes the path
     # identifies the config. It does not here: a manifest can declare an
@@ -424,11 +428,8 @@ class McpServerConfig:
         )
 
 
-@dataclass(eq=False)
-class McpBlock(JsonConfigBlock):
-    """.mcp.json at the project root, inside a plugin, or in ``.cursor/``."""
-
-    category: str = "mcp"
+class McpConfigRole:
+    """Host-neutral interface shared by JSON and embedded-YAML MCP nodes."""
 
     #: Top-level key holding the server map. Every host but VS Code spells
     #: it ``mcpServers``; see :class:`VsCodeMcpBlock`.
@@ -525,11 +526,17 @@ class McpBlock(JsonConfigBlock):
 
     @property
     def server_names(self) -> Set[str]:
-        # JSON object keys are always strings, but inline YAML-backed MCP
-        # roles can carry a malformed scalar key. Policy rules sort this set,
-        # so normalize defensively after the shape rule has reported the
-        # non-string name rather than letting mixed key types crash a scan.
+        # JSON object keys are always strings, but YAML-backed roles can carry
+        # a malformed scalar key. Policy rules sort this set, so normalize
+        # defensively after the shape rule reports the non-string name.
         return {str(s.name) for s in self.servers}
+
+
+@dataclass(eq=False)
+class McpBlock(JsonConfigBlock, McpConfigRole):
+    """JSON MCP configuration at a host-owned path or inline manifest field."""
+
+    category: str = "mcp"
 
 
 @dataclass(eq=False)
@@ -728,21 +735,32 @@ class CodexInlineMcpBlock(_InlineJsonPayload, McpBlock):
 
 
 @dataclass(eq=False)
-class CopilotAgentMcpBlock(_InlineJsonPayload, McpBlock):
+class CopilotAgentMcpBlock(McpConfigRole, LintTarget):
     """``mcp-servers`` embedded in Copilot custom-agent frontmatter.
 
-    The payload is YAML rather than JSON, but after parsing it has the same
-    server shape and security surface as a standalone MCP document. Exposing
-    it as an ``McpBlock`` child makes the existing MCP validation and policy
-    rules discover it normally.
+    This is a direct lint-tree target rather than a ``JsonConfigBlock``: its
+    payload is line-preserving YAML, while :class:`McpConfigRole` supplies the
+    host-neutral interface shared MCP rules consume.
     """
 
+    category: str = "mcp"
     inline_data: Optional[Dict[str, Any]] = None
     source_line: Optional[int] = None
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
     require_usable_connection: ClassVar[bool] = True
     type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({"local": "stdio"})
+
+    @property
+    def parse_error(self) -> None:
+        return None
+
+    @property
+    def raw_data(self) -> Optional[Dict[str, Any]]:
+        return self.inline_data if isinstance(self.inline_data, dict) else None
+
+    def estimate_tokens(self) -> int:
+        return _inline_payload_token_count(self.inline_data)
 
     def source_line_for(self, node: Any, key: Any) -> Optional[int]:
         """Translate a nested frontmatter key to its file-absolute line."""

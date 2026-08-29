@@ -55,6 +55,7 @@ class DescriptionRoutingRule(Rule):
     """Check whether descriptions provide useful routing or purpose signals."""
 
     since = "0.18.0"
+    surface_dependencies = ("copilot-agent-valid",)
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
@@ -188,7 +189,7 @@ class DescriptionRoutingRule(Rule):
                     # content description here would emit two diagnoses for
                     # one defect. Other formats have no schema owner and keep
                     # the established routing finding.
-                    if block_type is CopilotAgentBlock and context.rule_is_active(
+                    if block_type is CopilotAgentBlock and self.surface_rule_enabled(
                         "copilot-agent-valid"
                     ):
                         continue

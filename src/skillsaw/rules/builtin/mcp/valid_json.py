@@ -6,13 +6,17 @@ from types import MappingProxyType
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from pathlib import Path
 
-from skillsaw.blocks import AgentPluginMcpBlock, CopilotAgentMcpBlock, OpenCodeMcpBlock
+from skillsaw.blocks import (
+    AgentPluginMcpBlock,
+    CopilotAgentMcpBlock,
+    McpConfigRole,
+    OpenCodeMcpBlock,
+)
 from skillsaw.context import HAS_OPENCODE, RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.utils import is_finite_number
 from skillsaw.lint_target import PluginNode
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.secret_detection import (
     mapped_secret_description,
     placeholder_markers,
@@ -58,6 +62,7 @@ class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
     default_enabled = True
+    surface_dependencies = ("copilot-agent-valid",)
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a
     # project that allowlisted its own placeholder convention must not be told
@@ -112,12 +117,12 @@ class McpValidJsonRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for block in context.lint_tree.find(McpBlock):
+        for block in context.lint_tree.find(McpConfigRole):
             # This tree role exists so the format rule and shared MCP rules
             # can read one parsed payload. When a version pin disables the
             # format rule that introduced the surface, keep the established
             # rule set unchanged rather than leaking a new MCP diagnostic.
-            if isinstance(block, CopilotAgentMcpBlock) and not context.rule_is_active(
+            if isinstance(block, CopilotAgentMcpBlock) and not self.surface_rule_enabled(
                 "copilot-agent-valid"
             ):
                 continue
@@ -262,7 +267,7 @@ class McpValidJsonRule(Rule):
 
         return violations
 
-    def _dialect_neutral_violations(self, block: McpBlock) -> List[RuleViolation]:
+    def _dialect_neutral_violations(self, block: McpConfigRole) -> List[RuleViolation]:
         """The checks this rule keeps for a block whose *shape* it defers.
 
         Not the whole rule, and not one check either: what stays is

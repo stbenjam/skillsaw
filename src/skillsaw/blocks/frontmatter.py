@@ -606,10 +606,10 @@ class CopilotAgentBlock(FrontmatteredBlock):
         source_line = self.key_line("mcp-servers")
         if source_line is None:
             return
-        # Legacy chatmodes and explicit VS Code agents are local-only. VS
-        # Code ignores this GitHub Copilot field, so shared MCP rules must not
-        # diagnose configuration that the host never reads.
-        if self.path.name.endswith(".chatmode.md") or self.field_value("target") == "vscode":
+        # GitHub cloud loads only ``*.agent.md``; VS Code accepts every
+        # Markdown filename in this directory plus legacy chatmodes. Those
+        # local-only files ignore this cloud MCP field.
+        if not self.path.name.endswith(".agent.md") or self.field_value("target") == "vscode":
             return
         frontmatter, error, _error_line = read_frontmatter_commented(self.path)
         if error or not isinstance(frontmatter, dict):

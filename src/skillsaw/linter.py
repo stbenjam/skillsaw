@@ -274,7 +274,9 @@ class Linter:
         self.rules: List[Rule] = []
         self._load_rules()
         self._apply_network_gate()
-        self.context.active_rule_ids = frozenset(rule.rule_id for rule in self.rules)
+        enabled_surfaces = self._enabled_builtin_surfaces()
+        for rule in self.rules:
+            rule._enabled_surface_rule_ids = enabled_surfaces
 
         if self._rule_ids:
             unknown = self._rule_ids - self._known_rule_ids
@@ -288,6 +290,41 @@ class Linter:
             if unknown:
                 formatted = ", ".join(sorted(unknown))
                 raise ValueError(f"Unknown rule(s) in --skip-rule: {formatted}")
+
+    def _enabled_builtin_surfaces(self) -> frozenset:
+        """Builtin format surfaces available independently of CLI selection.
+
+        ``--rule`` narrows which checks execute, not which repository syntax
+        those checks may inspect. Version/config/skip gates still preserve the
+        rule surface users opted into; explicitly targeting the owning rule
+        bypasses normal enablement just as it does during rule loading.
+        """
+        from .rules.builtin import BUILTIN_RULE_REGISTRY
+
+        enabled = set()
+        requested = {
+            dependency
+            for rule in self.rules
+            for dependency in getattr(rule, "surface_dependencies", ())
+        }
+        for rule_id in requested:
+            rule_class = BUILTIN_RULE_REGISTRY[rule_id]
+            instance = rule_class()
+            if rule_id in self._skip_rule_ids:
+                continue
+            if self._rule_ids and rule_id in self._rule_ids:
+                enabled.add(rule_id)
+                continue
+            if self.config.is_rule_enabled(
+                rule_id,
+                self.context,
+                instance.repo_types,
+                instance.formats,
+                since_version=instance.since,
+                deprecated=instance.deprecated,
+            ):
+                enabled.add(rule_id)
+        return frozenset(enabled)
 
     def _load_rules(self):
         """Load all enabled rules"""

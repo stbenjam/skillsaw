@@ -498,6 +498,7 @@ class HooksDangerousRule(Rule):
     """Flag hook commands matching dangerous patterns."""
 
     since = "0.12.0"
+    surface_dependencies = ("copilot-agent-valid",)
 
     config_schema = {
         "allowlist": {
@@ -583,7 +584,7 @@ class HooksDangerousRule(Rule):
                     self._check_events(events, block.path, line=block.key_line("hooks"))
                 )
 
-        if context.rule_is_active("copilot-agent-valid"):
+        if self.surface_rule_enabled("copilot-agent-valid"):
             for block in context.lint_tree.find(CopilotAgentBlock):
                 if block.frontmatter_error or block.field_value("target") == "github-copilot":
                     continue

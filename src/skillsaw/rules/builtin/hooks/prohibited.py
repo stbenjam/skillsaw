@@ -25,6 +25,7 @@ class HooksProhibitedRule(Rule):
     """Check that projects do not define non-allowlisted hooks."""
 
     default_enabled = False
+    surface_dependencies = ("copilot-agent-valid",)
 
     since = "0.12.0"
 
@@ -134,7 +135,7 @@ class HooksProhibitedRule(Rule):
                     self._check_events(events, block.path, line=block.key_line("hooks"))
                 )
 
-        if context.rule_is_active("copilot-agent-valid"):
+        if self.surface_rule_enabled("copilot-agent-valid"):
             for block in context.lint_tree.find(CopilotAgentBlock):
                 if block.frontmatter_error or block.field_value("target") == "github-copilot":
                     continue

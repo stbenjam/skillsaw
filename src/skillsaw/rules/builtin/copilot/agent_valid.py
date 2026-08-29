@@ -83,6 +83,7 @@ class CopilotAgentValidRule(Rule):
 
     since = "0.20.0"
     formats = frozenset({HAS_COPILOT})
+    target_dependencies = ("content-description-routing",)
 
     config_schema = {
         "report-unknown-fields": {
@@ -167,7 +168,7 @@ class CopilotAgentValidRule(Rule):
 
         violations: List[RuleViolation] = []
         target = self._check_target(block, data, violations)
-        if target is None and block.path.name.endswith(".chatmode.md"):
+        if not block.path.name.endswith(".agent.md"):
             target = "vscode"
         self._check_scalar(block, data, "name", violations)
         self._check_description(block, data, violations)
@@ -621,7 +622,7 @@ class CopilotAgentValidRule(Rule):
             return False
         valid = True
         for event, configs in hooks.items():
-            event_line = _key_line(hooks, event) if isinstance(event, str) else None
+            event_line = _key_line(hooks, event)
             shown_event = safe_display(event)
             if not isinstance(event, str) or event not in _VALID_HOOK_EVENTS:
                 violations.append(
@@ -668,6 +669,7 @@ class CopilotAgentValidRule(Rule):
                     )
                     valid = False
                 if "hooks" in config:
+                    flat_config = False
                     handlers = config["hooks"]
                     if not isinstance(handlers, list):
                         violations.append(
@@ -681,6 +683,7 @@ class CopilotAgentValidRule(Rule):
                         valid = False
                         continue
                 elif "type" in config:
+                    flat_config = True
                     handlers = [config]
                 else:
                     violations.append(
@@ -697,7 +700,7 @@ class CopilotAgentValidRule(Rule):
                 for handler_index, handler in enumerate(handlers):
                     handler_line = (
                         config_line
-                        if handlers == [config]
+                        if flat_config
                         else _item_line(handlers, handler_index) or config_line
                     )
                     if not self._check_hook_handler(

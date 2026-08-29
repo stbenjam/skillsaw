@@ -6,9 +6,9 @@ from typing import List
 
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.blocks import CopilotAgentMcpBlock, McpConfigRole
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import PluginNode
-from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.utils import read_json
 
 
@@ -16,6 +16,7 @@ class McpProhibitedRule(Rule):
     """Check that the repository does not enable non-allowlisted MCP servers"""
 
     default_enabled = False
+    surface_dependencies = ("copilot-agent-valid",)
 
     config_schema = {
         "allowlist": {
@@ -51,7 +52,11 @@ class McpProhibitedRule(Rule):
         violations = []
         allowlist = set(self.config.get("allowlist", []))
 
-        for block in context.lint_tree.find(McpBlock):
+        for block in context.lint_tree.find(McpConfigRole):
+            if isinstance(block, CopilotAgentMcpBlock) and not self.surface_rule_enabled(
+                "copilot-agent-valid"
+            ):
+                continue
             prohibited = block.server_names - allowlist if allowlist else block.server_names
             if not prohibited:
                 continue
