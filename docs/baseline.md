@@ -93,10 +93,18 @@ Measured so far: a tab used as a token separator (`name:<TAB>value`, a
 trailing tab, a tab before a `#` comment), a `?` inside a flow
 collection (`globs: [tests/?_*.py]`), and a block-scalar header followed
 by `#`. That list is what has been measured, not a boundary — if a file
-of yours stopped reporting a parse error, this is why. The spec permits
-all of them, so the new behaviour is the correct one, but a file whose
-frontmatter previously failed to parse now has its fields checked, and
-any violation that surfaces is not in your baseline.
+of yours stopped reporting a parse error, this is why.
+
+The spec permits the first two, so for those the new behaviour is the
+correct one and the file is fine as written. The third is the other way
+round: a comment must be preceded by whitespace, so `a: |#` is malformed
+YAML that libyaml accepts anyway. If that is your file, **fix it**
+(`a: | #`) rather than baselining what it now reports — another parser
+may still reject it.
+
+Either way, a file whose frontmatter previously failed to parse now has
+its fields checked, and any violation that surfaces is not in your
+baseline.
 
 If your baseline predates the upgrade and CI fails on violations you did
 not introduce, re-run `skillsaw baseline` to take them up, then fix them
