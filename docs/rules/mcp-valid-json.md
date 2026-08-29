@@ -47,7 +47,6 @@ Ecosystem-specific MCP schemas are validated by their dedicated rules:
 - OpenCode `opencode.json` configuration is validated by [`opencode-config-valid`](opencode-config-valid.md).
 
 
-
 A standalone `.mcp.json` accepts a **wrapperless** map as well: a file
 whose top level is the server map itself, with no `mcpServers` key, is
 valid and is not reported. Everywhere else the wrapper is the only form.

@@ -58,23 +58,12 @@ with `plugins/note-taker/.codex-plugin/plugin.json` on disk and no
 
 Register the plugin, or repair the entry that does not resolve.
 
-Every catalog in `.agents/plugins/` counts, which is how a repository
-can split its plugins across `marketplace.json` and a second catalog.
-Within a catalog, what registers a plugin depends on the entry's source.
-A `local` entry registers the directory its `path` resolves to — never
-its `name`. Remote entries (`url`, `git-subdir`, `npm`) register by
-`name`, because they name no directory in this repository to resolve.
-Crediting a local entry's name independently of its path would let a
-crossed pair — one plugin's name over another plugin's path — silently
-cover both while one of them is not installable at all.
+Plugins are registered across catalogs in `.agents/plugins/`. Local entries
+register the directory their `path` resolves to. If a plugin's directory is not
+reached by any entry path, update the `path` field in the catalog.
 
-So this violation can fire even when the catalog spells the plugin's
-name: it means no entry's `path` actually reaches the plugin's
-directory. Fix the entry's `path` rather than adding a second entry —
-the companion dangling-entry check reports the entry whose path does
-not resolve. Entry names that disagree with the plugin manifest's own
-`name` are reported as warnings — Codex keys installs off the catalog
-name, so the mismatch is confusing rather than fatal.
+Entry names that disagree with the plugin manifest's `name` are reported as warnings.
+
 
 `skillsaw fix --suggest` adds a complete entry — `name`, a `local`
 source, `policy`, and `category` — for each unregistered plugin. It
