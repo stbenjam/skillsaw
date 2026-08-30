@@ -463,14 +463,16 @@ class RepositoryContext(
         that also has a .coderabbit.yaml).  SINGLE_PLUGIN and MARKETPLACE are
         mutually exclusive (elif chain), but everything else is independent.
         """
+        scan = self._repository_scan()
         types = {
             RepositoryType(label)
             for label in detect_discovery.marker_types(
                 self.root_path,
                 apm=self.has_apm,
                 should_skip=self._should_skip_dir,
-                walk_files=self._walk_files,
-                tool_dirs=self._repository_scan().tool_dirs,
+                promptfoo_named_files=scan.promptfoo_named_files,
+                promptfoo_eval_files=scan.promptfoo_eval_files,
+                tool_dirs=scan.tool_dirs,
             )
         }
 
@@ -536,9 +538,8 @@ class RepositoryContext(
             for item in children
         )
 
-    #: Both walks live in discovery, which is where filesystem traversal
-    #: belongs; the context keeps the names its callers use.
-    _walk_files = staticmethod(detect_discovery.walk_files)
+    #: Filesystem traversal policy lives in discovery; context keeps the
+    #: predicate name used by its stateful orchestration.
     _should_skip_dir = staticmethod(detect_discovery.should_skip_dir)
 
     def has_marketplace(self) -> bool:

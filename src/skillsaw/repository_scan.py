@@ -62,6 +62,14 @@ class RepositoryScanMixin:
             if not self.is_path_excluded(path)
         ]
 
+    def promptfoo_named_files(self) -> List[Path]:
+        """Promptfoo conventionally named files from the shared repository walk."""
+        return list(self._repository_scan().promptfoo_named_files)
+
+    def promptfoo_eval_files(self, evals_dir: Path) -> List[Path]:
+        """YAML candidates beneath one lexical ``evals/`` directory."""
+        return list(self._repository_scan().promptfoo_eval_files.get(evals_dir, ()))
+
     def _detect_formats(self) -> set[str]:
         return detect_discovery.instruction_formats(
             self.root_path,

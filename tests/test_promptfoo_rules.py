@@ -9,6 +9,7 @@ import yaml
 
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.discovery import detect as detect_discovery
 from skillsaw.lint_target import PromptfooConfigNode
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.promptfoo import (
@@ -288,6 +289,66 @@ def test_non_promptfoo_yaml_in_evals_not_detected(temp_dir):
     _write_yaml(evals / "unrelated.yaml", {"name": "not-promptfoo", "version": "1.0"})
     context = RepositoryContext(temp_dir)
     assert RepositoryType.PROMPTFOO not in context.repo_types
+
+
+def test_promptfoo_discovery_reuses_the_repository_walk(temp_dir, monkeypatch):
+    """Type detection and tree attachment share one pruned filesystem walk."""
+    _write_yaml(temp_dir / "nested" / "promptfooconfig.yaml", {"tests": []})
+    _write_yaml(
+        temp_dir / "evals" / "smoke.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"description": "smoke"}]},
+    )
+    ignored = temp_dir / "evals" / "node_modules" / "dep" / "ignored.yaml"
+    _write_yaml(ignored, {"providers": [{"id": "dependency"}], "tests": []})
+    walked = []
+    real_walk = detect_discovery.os.walk
+
+    def recording_walk(top, *args, **kwargs):
+        walked.append(Path(top).resolve())
+        return real_walk(top, *args, **kwargs)
+
+    monkeypatch.setattr(detect_discovery.os, "walk", recording_walk)
+
+    context = RepositoryContext(temp_dir)
+    paths = {
+        node.path.relative_to(temp_dir).as_posix()
+        for node in context.lint_tree.find(PromptfooConfigNode)
+    }
+
+    assert paths == {"evals/smoke.yaml", "nested/promptfooconfig.yaml"}
+    assert walked == [temp_dir.resolve()]
+
+
+def test_arbitrary_nested_evals_do_not_expand_promptfoo_scope(temp_dir):
+    """Only root, plugin, and skill evals are supported discovery surfaces."""
+    _write_yaml(
+        temp_dir / "package" / "evals" / "smoke.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"description": "smoke"}]},
+    )
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.PROMPTFOO not in context.repo_types
+    assert context.lint_tree.find(PromptfooConfigNode) == []
+
+
+def test_tree_keeps_platform_native_promptfoo_glob_matching(temp_dir, monkeypatch):
+    """The candidate cache stays as broad as native globs on case-insensitive hosts."""
+    _write_yaml(temp_dir / "PromptfooConfig.YAML", {"tests": []})
+    _write_yaml(
+        temp_dir / "evals" / "SMOKE.YAML",
+        {"providers": [{"id": "test"}], "tests": [{"description": "smoke"}]},
+    )
+    monkeypatch.setattr(detect_discovery.os.path, "normcase", lambda value: str(value).lower())
+
+    context = RepositoryContext(temp_dir)
+    paths = {
+        node.path.relative_to(temp_dir).as_posix()
+        for node in context.lint_tree.find(PromptfooConfigNode)
+    }
+
+    assert RepositoryType.PROMPTFOO not in context.repo_types
+    assert paths == {"PromptfooConfig.YAML", "evals/SMOKE.YAML"}
 
 
 # ---------------------------------------------------------------------------
