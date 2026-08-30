@@ -23,6 +23,9 @@ class McpRegistryVersionSemverRule(Rule):
     repo_types = MCP_REGISTRY_REPO_TYPES
     since = "0.20.0"
     target_dependencies = ("mcp-registry-server-json-valid",)
+    target_dependency_scopes = {
+        "mcp-registry-server-json-valid": (McpRegistryServerBlock,),
+    }
 
     @property
     def rule_id(self) -> str:

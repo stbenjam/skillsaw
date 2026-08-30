@@ -146,7 +146,7 @@ class DescriptionRoutingRule(Rule):
             CommandBlock,
             OpenCodeCommandBlock,
         ):
-            for block in context.lint_tree.find(block_type):
+            for block in self.dependency_scoped_find(context, block_type):
                 if block.frontmatter_error:
                     continue
                 if (

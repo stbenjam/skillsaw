@@ -85,6 +85,9 @@ class CopilotAgentValidRule(Rule):
     since = "0.20.0"
     formats = frozenset({HAS_COPILOT})
     target_dependencies = ("content-description-routing",)
+    target_dependency_scopes = {
+        "content-description-routing": (CopilotAgentBlock,),
+    }
 
     config_schema = {
         "report-unknown-fields": {

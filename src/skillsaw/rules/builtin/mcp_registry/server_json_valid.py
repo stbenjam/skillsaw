@@ -388,7 +388,7 @@ class McpRegistryServerJsonValidRule(Rule):
             if isinstance(value, str)
         )
         violations: List[RuleViolation] = []
-        for block in context.lint_tree.find(McpRegistryServerBlock):
+        for block in self.dependency_scoped_find(context, McpRegistryServerBlock):
             violations.extend(self._check_block(block, additional_registry_types))
         return violations
 

@@ -1417,11 +1417,16 @@ class TestCopilotAgentValidation:
         agent = tmp_path / ".github" / "agents" / "missing.agent.md"
         agent.parent.mkdir(parents=True)
         agent.write_text("---\ntarget: github-copilot\n---\nReview changes.\n")
+        unrelated = tmp_path / ".opencode" / "commands" / "missing.md"
+        unrelated.parent.mkdir(parents=True)
+        unrelated.write_text("Review changes.\n")
 
         grouped = by_rule(run_lint(tmp_path, "--rule", "copilot-agent-valid"))
 
         assert grouped.get("copilot-agent-valid", []) == []
-        assert len(grouped["content-description-routing"]) == 1
+        assert [v["file_path"] for v in grouped["content-description-routing"]] == [
+            ".github/agents/missing.agent.md"
+        ]
 
 
 # ── Dot-Claude ───────────────────────────────────────────────────
@@ -2829,6 +2834,7 @@ class TestOpenCode:
     def test_targeting_config_validation_also_runs_its_parse_validation(self, tmp_path):
         """A focused config check must not pass a file OpenCode cannot read."""
         repo = copy_fixture("opencode/unparseable", tmp_path)
+        (repo / ".mcp.json").write_text("{")
         r = run_lint(repo, "--rule", "opencode-config-valid")
 
         assert r["rc"] == 1
@@ -2839,6 +2845,31 @@ class TestOpenCode:
             "mcp-valid-json",
             "opencode-config-valid",
         }
+
+        explicitly_selected = by_rule(
+            run_lint(
+                repo,
+                "--rule",
+                "opencode-config-valid",
+                "--rule",
+                "mcp-valid-json",
+            )
+        )
+        assert sorted(v["file_path"] for v in explicitly_selected["mcp-valid-json"]) == [
+            ".mcp.json",
+            "opencode.jsonc",
+        ]
+
+    def test_targeted_config_parse_dependency_covers_nested_opencode_config(self, tmp_path):
+        repo = tmp_path / "nested-parse"
+        config = repo / ".opencode" / "opencode.jsonc"
+        config.parent.mkdir(parents=True)
+        config.write_text("{")
+
+        found = by_rule(run_lint(repo, "--rule", "opencode-config-valid"))
+
+        assert [v["file_path"] for v in found["mcp-valid-json"]] == [".opencode/opencode.jsonc"]
+        assert found.get("opencode-config-valid", []) == []
 
     def test_a_version_pinned_project_still_learns_the_config_is_unreadable(self, tmp_path):
         """The `since` gate, exercised as itself rather than as `enabled: false`.

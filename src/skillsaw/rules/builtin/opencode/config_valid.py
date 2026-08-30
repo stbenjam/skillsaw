@@ -133,6 +133,7 @@ class OpenCodeConfigValidRule(Rule):
 
     since = "0.20.0"
     target_dependencies = ("mcp-valid-json",)
+    target_dependency_scopes = {"mcp-valid-json": (OpenCodeMcpBlock,)}
 
     formats = frozenset({HAS_OPENCODE})
 
