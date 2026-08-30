@@ -23,7 +23,7 @@ combination as invalid.
 
 ```markdown
 ---
-allowed-tools: read
+allowed-tools: 4
 permissions:
   allow: Read(src/**)
 triggers:
@@ -37,9 +37,7 @@ triggers:
 ---
 argument-hint: "[path]"
 model: sonnet
-allowed-tools:
-  - read
-  - grep
+allowed-tools: Bash(openspec:*)
 permissions:
   allow:
     - Read(src/**)
@@ -57,7 +55,7 @@ A native skill with no frontmatter is also valid.
 
 - Use strings for `name`, `description`, `argument-hint`, `model`, and
   `agent`, and a boolean for `subagent`.
-- Make `allowed-tools` a list of strings.
+- Make `allowed-tools` a string or a list of strings.
 - Make `permissions` an object; its `allow`, `deny`, and `ask` values must be
   lists of strings.
 - Make `triggers` a non-empty list containing only `user` and/or `model`.

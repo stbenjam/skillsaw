@@ -50,7 +50,9 @@ class DevinSkillValidRule(Rule):
             for key in ("name", "description", "argument-hint", "model", "agent"):
                 violations.extend(self._check_string(block, key))
             violations.extend(self._check_bool(block, "subagent"))
-            violations.extend(self._check_string_list(block, "allowed-tools", line_for))
+            violations.extend(
+                self._check_string_list(block, "allowed-tools", line_for, allow_scalar=True)
+            )
             violations.extend(self._check_permissions(block, line_for))
             violations.extend(self._check_triggers(block, line_for))
 
@@ -111,6 +113,7 @@ class DevinSkillValidRule(Rule):
         line_for,
         *,
         path_prefix: Optional[str] = None,
+        allow_scalar: bool = False,
     ) -> List[RuleViolation]:
         field = block.field(key) if path_prefix is None else None
         value: Any
@@ -128,10 +131,13 @@ class DevinSkillValidRule(Rule):
             value = permissions[key]
             line = line_for(path_prefix)
 
+        if allow_scalar and isinstance(value, str):
+            return []
         if not isinstance(value, list):
+            expected = "a string or a list of strings" if allow_scalar else "a list of strings"
             return [
                 self.violation(
-                    f"'{display}' must be a list of strings",
+                    f"'{display}' must be {expected}",
                     file_path=block.path,
                     line=line,
                     block=block,
