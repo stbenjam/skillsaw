@@ -22,6 +22,12 @@ formulate the question. After completing it, return here. If the answer is no,
 continue to the next checkpoint without reading it. Carry forward the command
 prefix, counts, choices, and changed-file list.
 
+Resolve every `references/...` path relative to the directory containing this
+`SKILL.md`, never relative to the target repository or the process's current
+working directory. If this file was fetched from the web, resolve each
+reference against the parent URL of this file and fetch it from that sibling
+location.
+
 Replace brace-delimited fields below with facts from the repository or scan;
 never show placeholders to the user, and render singular or plural wording
 naturally.
@@ -45,14 +51,22 @@ If yes, read [autofix](references/03-autofix.md). If no, preserve the count.
 
 ### 3. Make judgment-based fixes
 
-If violations remain, ask:
+If violations remain, offer manual fixes and a baseline as alternatives. A
+baseline is especially useful when hundreds of findings would otherwise block
+adoption or the user wants to move forward from a clean starting point. Ask:
 
 > {count} violations remain and need judgment rather than a mechanical fix. I
-> can inspect each affected file, consult the rule guidance, make targeted
-> wording or structure changes, and lint again. Should I fix them now?
+> can inspect and fix them now, or review them as accepted existing debt and
+> baseline them in the next step so onboarding can move forward while CI catches
+> new findings. Which path would you prefer?
 
-If yes, read [manual fixes](references/04-manual-fixes.md). If no, preserve the
-violations for the baseline decision.
+If the user chooses fixes, read [manual fixes](references/04-manual-fixes.md).
+If the user chooses a baseline, review the remaining findings by rule, severity,
+and affected paths. The baseline command records every eligible finding that
+remains, so fix, suppress, or otherwise remove anything the user does not
+accept before continuing; pause onboarding if that cannot be done safely. Then
+preserve the accepted remaining set for the baseline decision. Do not require
+accepted findings to be fixed first.
 
 ### 4. Baseline accepted violations
 
