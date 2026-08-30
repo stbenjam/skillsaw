@@ -35,11 +35,12 @@ def test_deeply_nested_config_raises_value_error(tmp_path):
 
 
 def test_default_exclude_patterns():
-    """Test that default config includes sensible exclude patterns for templates"""
+    """Default config excludes templates and generated Python cache files."""
     config = LinterConfig.default()
     assert "**/template/**" in config.exclude_patterns
     assert "**/templates/**" in config.exclude_patterns
     assert "**/_template/**" in config.exclude_patterns
+    assert "**/__pycache__/**" in config.exclude_patterns
 
 
 def test_default_exclude_patterns_not_empty():
@@ -66,6 +67,7 @@ def test_for_init_includes_default_excludes():
     config = LinterConfig.for_init()
     assert "**/template/**" in config.exclude_patterns
     assert "**/templates/**" in config.exclude_patterns
+    assert "**/__pycache__/**" in config.exclude_patterns
 
 
 def test_from_file_applies_default_excludes(temp_dir):
@@ -76,6 +78,7 @@ def test_from_file_applies_default_excludes(temp_dir):
     assert "**/template/**" in config.exclude_patterns
     assert "**/templates/**" in config.exclude_patterns
     assert "**/_template/**" in config.exclude_patterns
+    assert "**/__pycache__/**" in config.exclude_patterns
 
 
 def test_empty_exclude_disables_all_defaults(temp_dir):

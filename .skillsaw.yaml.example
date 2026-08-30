@@ -562,6 +562,7 @@ exclude:
     # - "**/template/**"
     # - "**/templates/**"
     # - "**/_template/**"
+    # - "**/__pycache__/**"
 
 # Additional markdown files to run content rules on (glob format)
 content-paths: []
