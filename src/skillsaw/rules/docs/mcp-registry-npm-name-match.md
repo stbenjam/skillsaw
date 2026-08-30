@@ -5,24 +5,17 @@ field in `package.json`. It must exactly match the server `name` in
 
 ## What is checked
 
-For every `packages[]` entry whose `registryType` is `npm`, the rule looks
-for a local `package.json` whose `name` matches the package `identifier`. When
-the Registry entry declares a string `version`, the local manifest's `version`
-must also match exactly before the rule treats it as that published release.
-Malformed declared versions remain owned by schema validation because they
-cannot identify a local release. It
-supports a package beside `server.json` and packages elsewhere in a monorepo.
-Only a valid JSON-object manifest can supply package name/version identity;
-adjacency alone is not enough, so a malformed or non-object `package.json`
-whose identity cannot be established remains out of scope. The matching local
-manifest must:
+For every `packages[]` entry whose `registryType` is `npm`, the rule matches local
+`package.json` files by package `identifier` (and matching `version` when declared)
+and verifies that:
 
-- declare a string-valued `mcpName`; and
-- set `mcpName` to the exact `server.json` `name`, including case.
+- `package.json` declares a string-valued `mcpName`; and
+- `mcpName` matches the exact `server.json` `name`, including case.
 
-The check is intentionally local-only. A published npm dependency may live in
-another repository, so the absence of a matching local `package.json` is not
-a violation. Skillsaw never downloads npm metadata.
+
+This check operates entirely offline on local files; external or remote dependencies
+without local manifests are not flagged.
+
 
 ## How to fix
 

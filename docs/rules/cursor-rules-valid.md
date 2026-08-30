@@ -34,28 +34,13 @@ activation modes:
 Manual is legitimate, so a rule with none of the three is reported at `info`,
 not as an error.
 
-This rule also flags a `.cursorrules` file that survives beside a
-`.cursor/rules/` in the same workspace — at the repository root, or in a
-monorepo package that carries its own pair (Cursor resolves both from the
-directory opened as the workspace). Cursor no longer documents `.cursorrules` at all, and
-community reports disagree on how the two interact — which is the point:
-you cannot tell from the repository which instructions the agent is
-following.
+This rule flags legacy `.cursorrules` files that coexist with `.cursor/rules/`
+in the same workspace.
 
-Cursor's `.mdc` reader is not a YAML parser, and its documentation ships
-frontmatter that strict YAML rejects — `globs: **/*.ts` opens with the YAML
-alias indicator, and an unquoted `description` often contains a bare colon.
-skillsaw reads those the way Cursor does rather than calling them malformed;
-only frontmatter with no closing `---` is unreadable. `globs` may be a
-comma-separated string (Cursor's documented multi-pattern form) or a YAML
-list.
+Cursor accepts comma-separated strings or YAML lists for `globs`. Globs must be
+non-empty, relative patterns. `description` must be a string, and `alwaysApply` must
+be a valid boolean.
 
-Whether a `globs` pattern *matches* anything is deliberately not checked: it
-would cost a repository walk per pattern, and a rule written for files that
-do not exist yet is a reasonable thing to commit. `cursor-rules-valid`
-validates the shape of the declaration, the same scope `claude-rules-valid`
-applies to `paths`. It also rejects an empty pattern and an absolute one
-(`globs` are repository-relative), and requires `description` to be a string.
 
 ## Severity
 
