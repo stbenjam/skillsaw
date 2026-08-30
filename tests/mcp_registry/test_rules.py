@@ -362,11 +362,13 @@ class TestMcpRegistrySchemaRule:
         assert "websiteurl" in combined
         assert "valid uri" in combined
 
-    def test_ipv6_and_opaque_uris_pass(self, tmp_path):
+    @pytest.mark.parametrize(
+        "website_url", ["https://[2001:db8::1]/weather", "urn:example:weather"]
+    )
+    def test_ipv6_and_opaque_website_uris_pass(self, tmp_path, website_url):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
-        data["repository"]["url"] = "https://[2001:db8::1]/weather"
-        data["websiteUrl"] = "urn:example:weather"
+        data["websiteUrl"] = website_url
         _write_server(path, data)
 
         assert lint_rules(repo, VALID_RULE) == []
@@ -577,7 +579,7 @@ class TestMcpRegistrySchemaRule:
         assert "packages[0].transport.url" in combined
         assert "remotes[0].url" in combined
 
-    def test_package_and_remote_url_templates_allow_variables(self, tmp_path):
+    def test_package_and_remote_url_templates_allow_declared_variables(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
         template = "https://{host}:{port}/mcp/{path}?token={token}"
@@ -585,10 +587,229 @@ class TestMcpRegistrySchemaRule:
             "type": "streamable-http",
             "url": template,
         }
-        data["remotes"][0]["url"] = template
+        data["packages"][0]["environmentVariables"] = [
+            {"name": variable} for variable in ("host", "port", "path", "token")
+        ]
+        data["remotes"][0].update(
+            {
+                "url": template,
+                "variables": {variable: {} for variable in ("host", "port", "path", "token")},
+            }
+        )
         _write_server(path, data)
 
         assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize("suffix", ["?mode=test", "#fragment"])
+    def test_port_placeholder_before_query_or_fragment_is_valid(self, tmp_path, suffix):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        url = f"https://example.com:{{port}}{suffix}"
+        data["packages"][0]["transport"] = {"type": "streamable-http", "url": url}
+        data["packages"][0]["environmentVariables"] = [{"name": "port"}]
+        data["remotes"][0].update({"url": url, "variables": {"port": {}}})
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize(
+        ("field", "argument", "variable"),
+        [
+            ("environmentVariables", {"name": "host"}, "host"),
+            ("runtimeArguments", {"type": "named", "name": "--port"}, "--port"),
+            ("runtimeArguments", {"type": "positional", "valueHint": "path"}, "path"),
+            ("packageArguments", {"type": "named", "name": "--tenant"}, "--tenant"),
+            ("packageArguments", {"type": "positional", "valueHint": "tenant"}, "tenant"),
+        ],
+    )
+    def test_package_url_variables_use_official_declaration_fields(
+        self, tmp_path, field, argument, variable
+    ):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["transport"] = {
+            "type": "streamable-http",
+            "url": f"https://example.com/{{{variable}}}",
+        }
+        package[field] = [argument]
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    def test_initial_schema_uses_snake_case_package_variable_fields(self, tmp_path):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-07-09", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["transport"] = {
+            "type": "streamable-http",
+            "url": "https://{host}:{--port}/{path}",
+        }
+        package["environment_variables"] = [{"name": "host"}]
+        package["runtime_arguments"] = [{"type": "named", "name": "--port"}]
+        package["package_arguments"] = [{"type": "positional", "value_hint": "path"}]
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    def test_undefined_package_and_remote_url_variables_are_reported(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["transport"] = {
+            "type": "streamable-http",
+            "url": "https://{host}/{missing}",
+        }
+        data["packages"][0]["environmentVariables"] = [{"name": "host"}]
+        data["remotes"][0].update(
+            {
+                "url": "https://{host}/{missing}",
+                "variables": {"host": {}},
+            }
+        )
+        _write_server(path, data)
+
+        combined = "\n".join(messages_lower(lint_rules(repo, VALID_RULE)))
+
+        assert "packages[0].transport.url" in combined
+        assert "declared package" in combined
+        assert "remotes[0].url" in combined
+        assert "remote variables" in combined
+
+    def test_unrelated_nested_variables_do_not_satisfy_package_url(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["transport"] = {
+            "type": "streamable-http",
+            "url": "https://{host}/mcp",
+            "variables": {"host": {}},
+            "headers": [{"name": "host", "value": "example.com"}],
+        }
+        package["packageArguments"] = [
+            {"type": "positional", "value": "{host}", "variables": {"host": {}}}
+        ]
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("declared package" in message for message in messages_lower(findings))
+
+    def test_remote_variables_extension_is_honored_for_older_schema(self, tmp_path):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-10-17", tmp_path)
+        path, data = _load_server(repo)
+        data["remotes"] = [
+            {
+                "type": "streamable-http",
+                "url": "https://dev.azure.com/{organization}/mcp",
+                "variables": {"organization": {"description": "Azure organization"}},
+            }
+        ]
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://example.com/mcp",
+            "https://localhost/mcp",
+            "https://LOCALHOST./mcp",
+            "https://tenant.localhost/mcp",
+            "https://127.0.0.2/mcp",
+            "https://[::1]/mcp",
+        ],
+    )
+    def test_remote_urls_require_https_and_reject_loopback(self, tmp_path, url):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["remotes"][0]["url"] = url
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("remotes[0].url" in message for message in messages_lower(findings))
+
+    def test_private_package_and_remote_urls_remain_allowed(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["transport"] = {
+            "type": "streamable-http",
+            "url": "http://localhost:3000/mcp",
+        }
+        data["remotes"][0]["url"] = "https://10.0.0.1/mcp"
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize(
+        ("url", "invalid"),
+        [
+            (None, False),
+            ("", False),
+            ("https://example.com/mcp", True),
+            (42, True),
+            (False, True),
+            ([], True),
+            ({}, True),
+        ],
+    )
+    def test_stdio_transport_url_must_be_null_or_empty(self, tmp_path, url, invalid):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["transport"]["url"] = url
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        if invalid:
+            assert any("stdio" in message for message in messages_lower(findings))
+        else:
+            assert findings == []
+
+    @pytest.mark.parametrize("version", sorted(MCP_REGISTRY_SCHEMA_VERSIONS))
+    def test_supported_repository_shape_is_checked_for_every_schema(self, tmp_path, version):
+        repo = copy_fixture(f"mcp-registry/schema-versions/{version}", tmp_path)
+        path, data = _load_server(repo)
+        data["repository"] = {
+            "source": "github",
+            "url": "http://www.github.com/example/weather.git/",
+        }
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize(
+        ("source", "url"),
+        [
+            ("github", "https://gitlab.com/example/weather"),
+            ("gitlab", "https://github.com/example/weather"),
+            ("bitbucket", "https://bitbucket.org/example/weather"),
+            ("gitlab", "https://gitlab.com/group/subgroup/weather"),
+            ("github", "https://github.com/example/weather/issues"),
+            ("github", "https://github.com/example/weather?tab=readme"),
+        ],
+    )
+    def test_repository_source_and_url_must_match_publisher_shape(self, tmp_path, source, url):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["repository"] = {"source": source, "url": url}
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("repository.url" in message for message in messages_lower(findings))
+
+    def test_malformed_repository_url_does_not_get_duplicate_semantic_error(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["repository"] = {"source": "github", "url": "https://["}
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+        combined = "\n".join(messages_lower(findings))
+
+        assert "repository.url" in combined
+        assert "must match its supported" not in combined
 
     @pytest.mark.parametrize(
         "version",

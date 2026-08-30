@@ -17,6 +17,10 @@ class McpRegistrySchemaProfile:
     package: str
     registry_type_field: str = "registryType"
     file_sha256_field: str = "fileSha256"
+    environment_variables_field: str = "environmentVariables"
+    runtime_arguments_field: str = "runtimeArguments"
+    package_arguments_field: str = "packageArguments"
+    value_hint_field: str = "valueHint"
 
 
 MCP_REGISTRY_SCHEMA_PROFILES: Mapping[str, McpRegistrySchemaProfile] = MappingProxyType(
@@ -25,6 +29,10 @@ MCP_REGISTRY_SCHEMA_PROFILES: Mapping[str, McpRegistrySchemaProfile] = MappingPr
             package="skillsaw.schemas.mcp_registry.v2025_07_09",
             registry_type_field="registry_type",
             file_sha256_field="file_sha256",
+            environment_variables_field="environment_variables",
+            runtime_arguments_field="runtime_arguments",
+            package_arguments_field="package_arguments",
+            value_hint_field="value_hint",
         ),
         "2025-09-16": McpRegistrySchemaProfile(
             package="skillsaw.schemas.mcp_registry.v2025_09_16",

@@ -24,12 +24,16 @@ publishing constraints. Skillsaw supports every released server schema from
   also omits MCPB `version`; `2025-10-17` and later make it optional.
 - Publisher `status` and official Registry metadata are rejected after the
   releases that defined them because the Registry now manages those fields.
-- Package transports are `stdio`, `streamable-http`, or `sse`. Remote
-  transports are `streamable-http` or `sse`; their HTTP URL templates remain
-  structurally valid after supported `{variable}` placeholders are substituted.
+- Package transports are `stdio`, `streamable-http`, or `sse`. A `stdio`
+  transport has no URL. Package URL placeholders name an environment variable
+  or argument declared by that package. Remote URLs use HTTPS with a
+  non-loopback host, and their placeholders name keys in the remote `variables`
+  object.
 - MCPB packages declare the required `fileSha256` integrity hash.
 - Icon sources use HTTPS, and `repository.subfolder` is a clean relative path
   without empty, current-directory, or parent-directory segments.
+- Repository URLs use the supported GitHub or GitLab shape and agree with the
+  declared `repository.source`.
 - `registryType` is one of `npm`, `pypi`, `cargo`, `oci`, `nuget`, or
   `mcpb` by default. These are the package types documented by the
   [official Registry](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/package-types.mdx).

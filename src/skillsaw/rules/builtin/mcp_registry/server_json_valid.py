@@ -24,10 +24,12 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from ._helpers import (
     MCP_REGISTRY_REPO_TYPES,
     SEMVER,
+    analyze_http_url_template,
     is_clean_repository_subfolder,
-    is_http_url_template,
+    is_loopback_hostname,
     is_package_version_range,
     is_release_source_placeholder,
+    is_uri,
     is_version_range,
     registry_validator,
     schema_error_summary,
@@ -45,6 +47,14 @@ _PLACEHOLDER_IDENTIFIERS: Mapping[str, str] = MappingProxyType(
         "nuget": "Example.Server",
         "oci": "docker.io/example/server:1.0.0",
         "mcpb": "https://example.com/server.mcpb",
+    }
+)
+_REPOSITORY_URLS: Mapping[str, re.Pattern] = MappingProxyType(
+    {
+        source: re.compile(
+            rf"\Ahttps?://(?:www\.)?{source}\.com/" r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?\Z"
+        )
+        for source in ("github", "gitlab")
     }
 )
 
@@ -192,6 +202,55 @@ def _schema_checked_document(
     if changed:
         checked["packages"] = checked_packages
     return checked
+
+
+def _package_template_variables(
+    package: dict,
+    schema_profile: McpRegistrySchemaProfile,
+) -> frozenset[str]:
+    """Collect URL variables from the package fields the publisher resolves."""
+    variables = set()
+    environment = package.get(schema_profile.environment_variables_field)
+    if isinstance(environment, list):
+        for item in environment:
+            name = item.get("name") if isinstance(item, dict) else None
+            if isinstance(name, str) and name:
+                variables.add(name)
+    for field in (
+        schema_profile.runtime_arguments_field,
+        schema_profile.package_arguments_field,
+    ):
+        arguments = package.get(field)
+        if not isinstance(arguments, list):
+            continue
+        for argument in arguments:
+            if not isinstance(argument, dict):
+                continue
+            for key in ("name", schema_profile.value_hint_field):
+                value = argument.get(key)
+                if isinstance(value, str) and value:
+                    variables.add(value)
+    return frozenset(variables)
+
+
+def _remote_template_variables(remote: dict) -> frozenset[str]:
+    """Collect URL variables from the current remote extension vocabulary."""
+    variables = remote.get("variables")
+    if not isinstance(variables, dict):
+        return frozenset()
+    return frozenset(key for key in variables if isinstance(key, str) and key)
+
+
+def _repository_url_is_official_shape(repository: object) -> bool:
+    """Whether source and URL use the publisher's supported forge shape."""
+    if not isinstance(repository, dict):
+        return True
+    source = repository.get("source")
+    url = repository.get("url")
+    if not isinstance(source, str) or not isinstance(url, str) or not is_uri(url):
+        return True
+    pattern = _REPOSITORY_URLS.get(source)
+    return pattern is not None and pattern.fullmatch(url) is not None
 
 
 def _schema_error_is_owned(
@@ -420,11 +479,14 @@ class McpRegistryServerJsonValidRule(Rule):
             "registry-type": 0,
             "package-transport": 0,
             "package-url": 0,
+            "package-stdio-url": 0,
+            "package-url-variable": 0,
             "package-version": 0,
             "package-version-forbidden": 0,
             "mcpb-hash": 0,
             "remote-transport": 0,
             "remote-url": 0,
+            "remote-url-variable": 0,
             "icon-src": 0,
         }
         semantic_indices = {key: [] for key in semantic_counts}
@@ -451,12 +513,33 @@ class McpRegistryServerJsonValidRule(Rule):
                     record_semantic("package-transport", index)
                 transport_url = transport.get("url") if isinstance(transport, dict) else None
                 if (
+                    transport_type == "stdio"
+                    and isinstance(transport, dict)
+                    and "url" in transport
+                    and transport_url is not None
+                    and transport_url != ""
+                ):
+                    record_semantic("package-stdio-url", index)
+                package_url = (
+                    analyze_http_url_template(transport_url)
+                    if isinstance(transport_url, str)
+                    else None
+                )
+                if (
                     semantic_policy.http_url_templates
                     and transport_type in semantic_policy.remote_transports
                     and isinstance(transport_url, str)
-                    and not is_http_url_template(transport_url)
+                    and package_url is None
                 ):
                     record_semantic("package-url", index)
+                if (
+                    semantic_policy.http_url_templates
+                    and transport_type in semantic_policy.remote_transports
+                    and package_url is not None
+                    and not package_url.variables
+                    <= _package_template_variables(package, schema_profile)
+                ):
+                    record_semantic("package-url-variable", index)
                 package_version = package.get("version")
                 if semantic_policy.exact_versions and (
                     (
@@ -499,12 +582,25 @@ class McpRegistryServerJsonValidRule(Rule):
                 ):
                     record_semantic("remote-transport", index)
                 remote_url = remote.get("url")
+                analyzed_remote_url = (
+                    analyze_http_url_template(remote_url) if isinstance(remote_url, str) else None
+                )
                 if (
                     semantic_policy.http_url_templates
                     and isinstance(remote_url, str)
-                    and not is_http_url_template(remote_url)
+                    and (
+                        analyzed_remote_url is None
+                        or analyzed_remote_url.scheme != "https"
+                        or is_loopback_hostname(analyzed_remote_url.hostname)
+                    )
                 ):
                     record_semantic("remote-url", index)
+                if (
+                    semantic_policy.http_url_templates
+                    and analyzed_remote_url is not None
+                    and not analyzed_remote_url.variables <= _remote_template_variables(remote)
+                ):
+                    record_semantic("remote-url-variable", index)
 
         icons = data.get("icons")
         if isinstance(icons, list):
@@ -514,6 +610,14 @@ class McpRegistryServerJsonValidRule(Rule):
                     record_semantic("icon-src", index)
 
         repository = data.get("repository")
+        if not _repository_url_is_official_shape(repository):
+            violations.append(
+                self.violation(
+                    "repository.url must match its supported github or gitlab source",
+                    file_path=block.path,
+                    fingerprint_discriminator="semantic:repository-url",
+                )
+            )
         subfolder = repository.get("subfolder") if isinstance(repository, dict) else None
         if (
             semantic_policy.clean_repository_subfolder
@@ -548,6 +652,18 @@ class McpRegistryServerJsonValidRule(Rule):
                 "must be a structurally valid HTTP(S) URL template",
             ),
             (
+                "package-stdio-url",
+                "packages",
+                ".transport.url",
+                "must be empty or omitted for stdio transport",
+            ),
+            (
+                "package-url-variable",
+                "packages",
+                ".transport.url",
+                "must reference only declared package arguments or environment variables",
+            ),
+            (
                 "package-version",
                 "packages",
                 ".version",
@@ -577,7 +693,13 @@ class McpRegistryServerJsonValidRule(Rule):
                 "remote-url",
                 "remotes",
                 ".url",
-                "must be a structurally valid HTTP(S) URL template",
+                "must be a structurally valid HTTPS URL template using a non-loopback host",
+            ),
+            (
+                "remote-url-variable",
+                "remotes",
+                ".url",
+                "must reference only keys declared in the remote variables object",
             ),
             (
                 "icon-src",

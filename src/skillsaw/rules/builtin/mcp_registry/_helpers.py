@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
+from dataclasses import dataclass
 from functools import lru_cache
-from typing import Iterable, TYPE_CHECKING
+from typing import FrozenSet, Iterable, Optional, TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryType
@@ -42,7 +44,7 @@ _DOTTED_VERSION_ATOM = r"(?:v?[0-9]+|[xX*])(?:\.(?:[0-9]+|[xX*])){1,2}" r"(?:-[0
 _DOTTED_VERSION = re.compile(rf"\A\s*{_DOTTED_VERSION_ATOM}\s*\Z")
 _PYPI_SPECIFIER = re.compile(r"\A\s*(?:~=|==|!=|<=|>=|<|>|===)")
 _NUGET_RANGE = re.compile(r"\A\s*[\[(].*[\])]\s*\Z")
-_URL_TEMPLATE_VARIABLE = re.compile(r"\{[^{}\s]+\}")
+_URL_TEMPLATE_VARIABLE = re.compile(r"\{([^{}\s]+)\}")
 _URI = re.compile(r"\A[A-Za-z][A-Za-z0-9+.-]*:" r"[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*\Z")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _CLEAN_SUBFOLDER = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
@@ -127,14 +129,71 @@ def _is_uri(value: object) -> bool:
     return True
 
 
-def is_http_url_template(value: str) -> bool:
-    """Validate an HTTP URL after safely standing in for template variables."""
-    substituted = _URL_TEMPLATE_VARIABLE.sub("1", value)
+def is_uri(value: object) -> bool:
+    """Expose the Registry validator's URI syntax check to semantic rules."""
+    return _is_uri(value)
+
+
+@dataclass(frozen=True)
+class HttpUrlTemplate:
+    """Parsed properties of one structurally valid HTTP URL template."""
+
+    scheme: str
+    hostname: str
+    variables: FrozenSet[str]
+
+
+def analyze_http_url_template(value: str) -> Optional[HttpUrlTemplate]:
+    """Parse an HTTP URL after safely standing in for template variables."""
+    matches = tuple(_URL_TEMPLATE_VARIABLE.finditer(value))
+
+    def replacement(match: re.Match) -> str:
+        variable = match.group(1)
+        if variable in {"protocol", "scheme"}:
+            return "http"
+        suffix = value[match.end() : match.end() + 1]
+        if (
+            match.start() > 0
+            and value[match.start() - 1] == ":"
+            and suffix
+            in {
+                "",
+                "/",
+                "?",
+                "#",
+            }
+        ):
+            return "8080"
+        return "placeholder"
+
+    substituted = _URL_TEMPLATE_VARIABLE.sub(replacement, value)
     if "{" in substituted or "}" in substituted or not _is_uri(substituted):
-        return False
+        return None
     try:
         parsed = urlsplit(substituted)
-        return parsed.scheme.lower() in {"http", "https"} and parsed.hostname is not None
+        if parsed.scheme.lower() not in {"http", "https"} or parsed.hostname is None:
+            return None
+        return HttpUrlTemplate(
+            scheme=parsed.scheme.lower(),
+            hostname=parsed.hostname,
+            variables=frozenset(match.group(1) for match in matches),
+        )
+    except ValueError:
+        return None
+
+
+def is_http_url_template(value: str) -> bool:
+    """Validate an HTTP URL after safely standing in for template variables."""
+    return analyze_http_url_template(value) is not None
+
+
+def is_loopback_hostname(hostname: str) -> bool:
+    """Recognize localhost names and loopback IP literals without DNS."""
+    normalized = hostname.rstrip(".").lower()
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
     except ValueError:
         return False
 
