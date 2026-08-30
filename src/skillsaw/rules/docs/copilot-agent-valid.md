@@ -10,23 +10,17 @@ which leaves a shared agent only partly configured.
 This rule validates the common scalar fields, real YAML booleans, tool and
 model collections, subagent/tool coordination, metadata, handoffs, hook
 shape, the two documented `target` values, and GitHub's 30,000-character
-prompt limit. In an `*.agent.md` file, omitted `target` means both
-environments and accepts the documented union. Other Markdown files under
-`.github/agents/` and legacy chatmodes default to VS Code-only when `target`
-is omitted. A valid explicit `target` always takes precedence over the file
-suffix. Unknown tool names remain valid because both consumers ignore tools
-they do not provide.
+prompt limit. Files under `.github/agents/` target both environments when
+`target` is omitted and accept the documented union. Legacy chatmodes default
+to VS Code. A valid explicit `target` always wins. Unknown tool names remain
+valid because both consumers ignore tools they do not provide.
 
-Embedded `mcp-servers` configurations in cloud or shared `*.agent.md` files
+Embedded `mcp-servers` configurations in cloud or shared agent files
 are scanned by the shared [`mcp-valid-json`](mcp-valid-json.md) and
 [`mcp-prohibited`](mcp-prohibited.md) rules. Lifecycle hooks in VS Code-capable
 agent files are scanned by [`hooks-dangerous`](hooks-dangerous.md). GitHub
 template variables (`${{ secrets.NAME }}` and `${{ vars.NAME }}`) are recognized
 as valid placeholders.
-
-Legacy `.github/chatmodes/**/*.chatmode.md` files and non-`*.agent.md` files under
-`.github/agents/` default to VS Code when `target` is omitted. A valid explicit
-target always wins over the filename default.
 
 GitHub's `local` MCP transport is accepted as the cloud spelling of `stdio`.
 VS Code command hooks may use `command`, `windows`, `linux`, and `osx`; every

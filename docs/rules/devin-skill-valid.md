@@ -14,9 +14,9 @@ Devin-native SKILL.md frontmatter must use Devin's documented field shapes
 
 ## Why
 
-Skills in `.devin/skills/` and `.windsurf/skills/` use Devin's native
-dialect. Unlike portable Agent Skills under `.agents/skills/`, their
-frontmatter is optional and the directory name supplies the default name.
+Skills in `.devin/skills/` use Devin's native dialect. Unlike portable Agent
+Skills under `.agents/skills/` and `.windsurf/skills/`, their frontmatter is
+optional and the directory name supplies the default name.
 When frontmatter is present, however, values with the wrong shape can keep
 tools, permissions, activation, or delegation settings from taking effect.
 

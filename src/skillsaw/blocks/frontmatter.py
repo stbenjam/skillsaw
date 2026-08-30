@@ -585,22 +585,29 @@ class CopilotPromptBlock(FrontmatteredBlock):
 
 @dataclass(eq=False)
 class CopilotAgentBlock(FrontmatteredBlock):
-    """.github/agents/**/*.agent.md and legacy .github/chatmodes/**/*.chatmode.md."""
+    """.github/agents/**/*.md and legacy .github/chatmodes/**/*.chatmode.md."""
 
     category: str = "agent"
 
     @property
     def effective_target(self) -> Optional[str]:
-        """Return the declared target, or the filename-based default.
+        """Return the declared target, or the legacy chatmode default.
 
-        The suffix only supplies the legacy VS Code default; an explicit,
-        valid target always wins.
+        Current ``.github/agents/**/*.md`` files target both environments
+        when the field is omitted. Only legacy VS Code chatmodes have a
+        single-environment default; an explicit valid target always wins.
         """
         declared = self.field_value("target")
         if declared in ("vscode", "github-copilot"):
             return declared
-        if not self.path.name.endswith(".agent.md"):
-            return "vscode"
+        parts = self.path.parts
+        for index in range(len(parts) - 2, -1, -1):
+            if parts[index] != ".github":
+                continue
+            if parts[index + 1] == "chatmodes":
+                return "vscode"
+            if parts[index + 1] == "agents":
+                return None
         return None
 
     @property

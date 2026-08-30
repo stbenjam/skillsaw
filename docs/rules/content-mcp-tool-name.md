@@ -79,6 +79,11 @@ split across a multi-line code span. Only the `mcp__<server>__` prefix is
 ever stripped, so a tool whose own name contains `__` keeps every segment
 of its name.
 
+ToolSearch selectors such as `select:mcp__server__tool`, wildcard grants
+such as `mcp__server__memory_*`, and path continuations are also left
+unchanged. They are executable selector or path syntax rather than portable
+prose names.
+
 For anything else that must keep its prefix, list the full identifier under
 the `allow` option:
 
