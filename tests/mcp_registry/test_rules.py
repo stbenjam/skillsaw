@@ -465,6 +465,16 @@ class TestMcpRegistrySchemaRule:
 
         assert any("packages[0].version" in message for message in messages_lower(findings))
 
+    def test_npm_package_requires_a_version(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        del data["packages"][0]["version"]
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("packages[0].version" in message for message in messages_lower(findings))
+
     def test_non_npm_package_may_use_a_format_specific_exact_version(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
@@ -609,6 +619,127 @@ class TestMcpRegistryNpmNameRule:
 
         assert lint_rules(repo, NPM_NAME_RULE) == []
 
+    def test_same_coordinates_outside_package_scope_are_ignored(self, tmp_path):
+        repo = copy_fixture("mcp-registry/locality", tmp_path)
+
+        assert lint_rules(repo, NPM_NAME_RULE) == []
+
+    def test_repository_subfolder_selects_nested_package_over_private_root(self, tmp_path):
+        root_package = {"name": "private-workspace", "version": "0.0.0", "private": True}
+        (tmp_path / "package.json").write_text(json.dumps(root_package), encoding="utf-8")
+        package_dir = tmp_path / "engine" / "packages" / "mcp-server"
+        package_dir.mkdir(parents=True)
+        package = {"name": "midplane", "version": "0.20.0"}
+        package_path = package_dir / "package.json"
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+        stale_dir = tmp_path / "fixtures" / "old-midplane"
+        stale_dir.mkdir(parents=True)
+        stale_package = {
+            "name": "midplane",
+            "version": "0.20.0",
+            "mcpName": "ai.midplane/old",
+        }
+        (stale_dir / "package.json").write_text(json.dumps(stale_package), encoding="utf-8")
+        server = {
+            "$schema": MCP_REGISTRY_SCHEMA_ID,
+            "name": "ai.midplane/midplane",
+            "description": "A server published from one monorepo package.",
+            "version": "0.20.0",
+            "repository": {
+                "url": "https://github.com/midplaneai/midplane",
+                "source": "github",
+                "subfolder": "engine/packages/mcp-server",
+            },
+            "packages": [
+                {
+                    "registryType": "npm",
+                    "identifier": "midplane",
+                    "version": "0.20.0",
+                    "transport": {"type": "stdio"},
+                }
+            ],
+        }
+        _write_server(tmp_path / "server.json", server)
+
+        findings = _for_rule(lint_rules(tmp_path, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == package_path
+
+    def test_two_sided_repository_location_selects_nested_package(self, tmp_path):
+        package_dir = tmp_path / "packages" / "soma-rmcp"
+        package_dir.mkdir(parents=True)
+        package = {
+            "name": "@dinglebear/soma",
+            "version": "0.10.0",
+            "repository": {
+                "url": "git+https://github.com/dinglebear-ai/soma.git",
+                "directory": "packages/soma-rmcp",
+            },
+        }
+        package_path = package_dir / "package.json"
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+        unrelated = tmp_path / "examples" / "copy"
+        unrelated.mkdir(parents=True)
+        (unrelated / "package.json").write_text(
+            json.dumps({"name": "@dinglebear/soma", "version": "0.10.0"}),
+            encoding="utf-8",
+        )
+        server = {
+            "$schema": MCP_REGISTRY_SCHEMA_ID,
+            "name": "ai.dinglebear/soma",
+            "description": "A server published from a self-described workspace package.",
+            "version": "0.10.0",
+            "repository": {
+                "url": "https://github.com/dinglebear-ai/soma",
+                "source": "github",
+            },
+            "packages": [
+                {
+                    "registryType": "npm",
+                    "identifier": "@dinglebear/soma",
+                    "version": "0.10.0",
+                    "transport": {"type": "stdio"},
+                }
+            ],
+        }
+        _write_server(tmp_path / "server.json", server)
+
+        findings = _for_rule(lint_rules(tmp_path, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == package_path
+
+    def test_ambiguous_corroborated_packages_are_ignored(self, tmp_path):
+        repository_url = "https://github.com/example/publisher"
+        for directory in ("packages/one", "packages/two"):
+            package_dir = tmp_path / directory
+            package_dir.mkdir(parents=True)
+            package = {
+                "name": "@example/server",
+                "version": "1.0.0",
+                "repository": {"url": repository_url, "directory": directory},
+            }
+            (package_dir / "package.json").write_text(json.dumps(package), encoding="utf-8")
+        server = {
+            "$schema": MCP_REGISTRY_SCHEMA_ID,
+            "name": "com.example/server",
+            "description": "Ambiguous source packages for one published coordinate.",
+            "version": "1.0.0",
+            "repository": {"url": repository_url, "source": "github"},
+            "packages": [
+                {
+                    "registryType": "npm",
+                    "identifier": "@example/server",
+                    "version": "1.0.0",
+                    "transport": {"type": "stdio"},
+                }
+            ],
+        }
+        _write_server(tmp_path / "server.json", server)
+
+        assert lint_rules(tmp_path, NPM_NAME_RULE) == []
+
     def test_different_local_package_version_is_not_treated_as_referenced_release(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         package_path = repo / "package.json"
@@ -618,6 +749,38 @@ class TestMcpRegistryNpmNameRule:
         package_path.write_text(json.dumps(package), encoding="utf-8")
 
         assert lint_rules(repo, NPM_NAME_RULE) == []
+
+    def test_versionless_reference_is_reported_by_schema_dependency(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        del data["packages"][0]["version"]
+        _write_server(path, data)
+        package_path = repo / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package.pop("mcpName")
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+
+        findings = lint_rules(repo, NPM_NAME_RULE)
+
+        assert _for_rule(findings, NPM_NAME_RULE) == []
+        assert any("packages[0].version" in message for message in messages_lower(findings))
+
+    def test_contained_symlinked_nearest_package_is_checked(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        package_path = repo / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package.pop("mcpName")
+        metadata = repo / "metadata"
+        metadata.mkdir()
+        target = metadata / "npm-manifest.json"
+        target.write_text(json.dumps(package), encoding="utf-8")
+        package_path.unlink()
+        package_path.symlink_to(target.relative_to(repo))
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == package_path
 
     def test_shared_package_is_checked_for_each_server_identity(self, tmp_path):
         package = {
@@ -692,6 +855,7 @@ class TestMcpRegistryNpmNameRule:
                 {
                     "registryType": "npm",
                     "identifier": "@external/weather-mcp",
+                    "version": "1.0.0",
                     "transport": {"type": "stdio"},
                 }
             ],
@@ -709,7 +873,7 @@ class TestMcpRegistryNpmNameRule:
 
         assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
 
-    def test_non_npm_server_does_not_build_package_index(self, tmp_path, monkeypatch):
+    def test_non_npm_server_does_not_build_package_candidates(self, tmp_path, monkeypatch):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
         data["packages"][0]["registryType"] = "pypi"
@@ -720,7 +884,7 @@ class TestMcpRegistryNpmNameRule:
 
         monkeypatch.setattr(
             McpRegistryNpmNameMatchRule,
-            "_package_index",
+            "_package_candidates",
             staticmethod(unexpected_index),
         )
 

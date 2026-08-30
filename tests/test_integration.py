@@ -373,6 +373,13 @@ class TestMcpRegistry:
         assert "mcp-registry-version-semver" not in rule_ids(r)
         assert "mcp-registry-npm-name-match" not in rule_ids(r)
 
+    def test_unrelated_same_coordinate_package_is_not_cross_matched(self, tmp_path):
+        repo = copy_fixture("mcp-registry/locality", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 0, violations(r)
+        assert "mcp-registry-npm-name-match" not in rule_ids(r)
+
     def test_broken_server_json_reports_all_registry_rule_families(self, tmp_path):
         repo = copy_fixture("mcp-registry/broken", tmp_path)
         r = run_lint(repo)

@@ -45,6 +45,7 @@ _NUGET_RANGE = re.compile(r"\A\s*[\[(].*[\])]\s*\Z")
 _URL_TEMPLATE_VARIABLE = re.compile(r"\{[^{}\s]+\}")
 _URI = re.compile(r"\A[A-Za-z][A-Za-z0-9+.-]*:" r"[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*\Z")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+_CLEAN_SUBFOLDER = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
 
 
 def is_version_range(value: str) -> bool:
@@ -126,6 +127,15 @@ def is_http_url_template(value: str) -> bool:
         return parsed.scheme.lower() in {"http", "https"} and parsed.hostname is not None
     except ValueError:
         return False
+
+
+def is_clean_repository_subfolder(value: str) -> bool:
+    """Match the Registry's filesystem-free subfolder shape validation."""
+    if not value:
+        return True
+    if value.startswith("/") or value.endswith("/") or _CLEAN_SUBFOLDER.fullmatch(value) is None:
+        return False
+    return all(segment not in {"", ".", ".."} for segment in value.split("/"))
 
 
 def declares_unsupported_schema(data: object) -> bool:

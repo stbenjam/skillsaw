@@ -22,6 +22,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from ._helpers import (
     MCP_REGISTRY_REPO_TYPES,
     SEMVER,
+    is_clean_repository_subfolder,
     is_http_url_template,
     is_package_version_range,
     is_version_range,
@@ -31,7 +32,6 @@ from ._helpers import (
 
 _DNS_LABEL = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
 _SERVER_NAME = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z")
-_CLEAN_SUBFOLDER = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
 _SEMANTIC_SAMPLE_LIMIT = 4
 
 
@@ -78,15 +78,6 @@ def _name_problem(value: object) -> Optional[str]:
             "underscores, and hyphens, with a letter or digit at each end"
         )
     return None
-
-
-def _is_clean_relative_subfolder(value: str) -> bool:
-    """Match the Registry's filesystem-free subfolder shape validation."""
-    if not value:
-        return True
-    if value.startswith("/") or value.endswith("/") or _CLEAN_SUBFOLDER.fullmatch(value) is None:
-        return False
-    return all(segment not in {"", ".", ".."} for segment in value.split("/"))
 
 
 def _is_https_url(value: str) -> bool:
@@ -338,12 +329,16 @@ class McpRegistryServerJsonValidRule(Rule):
                 ):
                     record_semantic("package-url", index)
                 package_version = package.get("version")
-                if (
-                    semantic_policy.exact_versions
-                    and isinstance(package_version, str)
-                    and (
-                        is_package_version_range(registry_type, package_version)
-                        or (registry_type == "npm" and SEMVER.fullmatch(package_version) is None)
+                if semantic_policy.exact_versions and (
+                    (registry_type == "npm" and "version" not in package)
+                    or (
+                        isinstance(package_version, str)
+                        and (
+                            is_package_version_range(registry_type, package_version)
+                            or (
+                                registry_type == "npm" and SEMVER.fullmatch(package_version) is None
+                            )
+                        )
                     )
                 ):
                     record_semantic("package-version", index)
@@ -385,7 +380,7 @@ class McpRegistryServerJsonValidRule(Rule):
         if (
             semantic_policy.clean_repository_subfolder
             and isinstance(subfolder, str)
-            and not _is_clean_relative_subfolder(subfolder)
+            and not is_clean_repository_subfolder(subfolder)
         ):
             violations.append(
                 self.violation(

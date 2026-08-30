@@ -6,12 +6,21 @@ field in `package.json`. It must exactly match the server `name` in
 ## What is checked
 
 For every `packages[]` entry whose `registryType` is `npm`, the rule looks
-for a local `package.json` whose `name` matches the package `identifier`. When
-the Registry entry declares a string `version`, the local manifest's `version`
-must also match exactly before the rule treats it as that published release.
-Malformed declared versions remain owned by schema validation because they
-cannot identify a local release. It
-supports a package beside `server.json` and packages elsewhere in a monorepo.
+for a local `package.json` whose `name` matches the package `identifier` and
+whose `version` exactly matches the Registry entry. A missing or malformed
+declared version cannot identify the published local release, so the ownership
+check stays quiet and leaves malformed values to schema validation. The rule
+supports a package beside `server.json` and evidence-backed packages elsewhere
+in a monorepo.
+
+Local association is deliberately conservative. The rule checks the nearest
+enclosing package boundary, an exact `repository.subfolder` package, or one
+uniquely corroborated monorepo package whose own repository URL and
+`repository.directory` agree with `server.json`. It does not join publisher
+metadata to same-named packages elsewhere in the checkout. Ambiguous matches
+remain quiet because Registry ownership is ultimately checked against the
+published npm artifact, not the source tree.
+
 Only a valid JSON-object manifest can supply package name/version identity;
 adjacency alone is not enough, so a malformed or non-object `package.json`
 whose identity cannot be established remains out of scope. The matching local

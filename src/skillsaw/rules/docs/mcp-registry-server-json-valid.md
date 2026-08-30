@@ -17,8 +17,8 @@ and the Registry's semantic publishing constraints.
   `latest`, a comparator, a wildcard, an OR expression, or a hyphen range.
   Package checks also recognize registry-native requirement syntax such as
   PyPI specifier lists, Cargo comma-joined requirements, and NuGet intervals.
-- npm package versions use strict SemVer; other package registries may use
-  their own format-specific exact-version syntax.
+- npm packages require a version, and that version uses strict SemVer; other
+  package registries may use their own format-specific exact-version syntax.
 - Package transports are `stdio`, `streamable-http`, or `sse`. Remote
   transports are `streamable-http` or `sse`; their HTTP URL templates remain
   structurally valid after supported `{variable}` placeholders are substituted.
