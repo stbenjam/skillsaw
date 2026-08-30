@@ -769,11 +769,11 @@ def test_feedback_uses_but_does_not_bundle_ignored_auto_config(tmp_path, monkeyp
         ),
         (
             "sk-live-FIX24-KEY-abcdefghijklmnopqrstuvwxyz",
-            "version: 0.20.0\nstrict: true\nrules:\n  {secret}: {{}}\n",
+            "version: 0.20.0\nstrict: true\n{secret}: true\n",
             0,
         ),
     ],
-    ids=["invalid-value", "unknown-key"],
+    ids=["invalid-value", "unknown-top-level-key"],
 )
 def test_feedback_withholds_diagnostics_from_ignored_auto_config(
     tmp_path, json_output, secret, config_body, expected_lint_exit
