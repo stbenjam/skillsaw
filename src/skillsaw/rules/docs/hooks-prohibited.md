@@ -39,11 +39,10 @@ rules:
 ## How to fix
 
 Review the flagged hook command and, if it is safe, add it to the
-`allowlist` in your skillsaw config. Allowlist entries are exact-match,
-so a modified version of the command will still be flagged. This rule
-is disabled by default — enable it for supply-chain-sensitive
-repositories.
+`allowlist` in your skillsaw config. Entries match the command spelling
+shown in the diagnostic. This rule is disabled by default — enable it for
+supply-chain-sensitive repositories.
 
-For an exec-form hook with separate `command` and `args`, the allowlist
-matches the complete invocation shown in the diagnostic. Allowlisting only
-the executable does not permit arbitrary arguments passed to it.
+For an exec-form hook, the diagnostic spelling joins `command` and `args`
+with spaces; it does not preserve argument boundaries. Allowlisting only the
+executable does not permit arbitrary arguments passed to it.

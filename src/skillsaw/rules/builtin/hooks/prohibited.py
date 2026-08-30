@@ -34,7 +34,7 @@ class HooksProhibitedRule(Rule):
         "allowlist": {
             "type": "list",
             "default": [],
-            "description": "Hook commands to permit (exact match)",
+            "description": "Hook command spellings to permit (exact diagnostic match)",
         },
     }
 
