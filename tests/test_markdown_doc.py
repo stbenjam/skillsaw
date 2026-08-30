@@ -697,6 +697,43 @@ class TestParseCacheBudget:
             _PARSE_CACHE._budget = budget
             self._reset()
 
+    def test_a_tree_too_large_to_size_is_never_stored(self):
+        """A refusal must not become a small positive charge.
+
+        ``_approximate_size`` returns ``UNCACHEABLE_SIZE`` (-1) once a tree
+        exceeds its node limit, which a structurally dense document reaches
+        at about 24 KB — one of the 416 Markdown files in ai-helpers does.
+        Charging the key separately and adding turned that -1 into roughly
+        the size of the source, so the memo stored a tree nobody could
+        measure and charged almost nothing for it, which is how a 256 MB
+        budget is exceeded without ever appearing to be.
+        """
+        from skillsaw.utils import UNCACHEABLE_SIZE, _approximate_size
+
+        from skillsaw.markdown_doc import _PARSE_CACHE, _PARSER, _parse_cached
+
+        self._reset()
+        try:
+            body = "# doc\n\n" + "- alpha\n- beta\n- gamma\n  - nested\n\n" * 700
+            env: dict = {}
+            parsed = (
+                _PARSER.parse(body, env),
+                env.get("references", {}),
+                env.get("duplicate_refs", []),
+            )
+            assert (
+                _approximate_size(parsed) == UNCACHEABLE_SIZE
+            ), "fixture no longer exceeds the walk limit; grow it"
+
+            tokens, _refs, _dupes = _parse_cached(body)
+
+            assert tokens, "a refused document must still parse"
+            assert body not in _PARSE_CACHE.values
+            assert _PARSE_CACHE.total_bytes == 0
+            assert not _PARSE_CACHE.charged
+        finally:
+            self._reset()
+
     def test_an_entry_larger_than_the_budget_still_parses(self):
         """Refusing to remember must not change the answer."""
         from skillsaw.markdown_doc import _PARSE_CACHE, _parse_cached

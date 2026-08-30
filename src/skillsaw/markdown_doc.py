@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import bisect
 import re
-import sys
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -134,9 +133,16 @@ def _parse_cached(body: str):
     # Measured, not estimated. The walk costs about 7% of the parse it
     # follows and runs once per distinct document, where getting the
     # charge wrong makes the budget unenforceable for every later entry.
-    # The body is charged too: the memo is keyed by it, so it is what
-    # keeps that string alive once the caller is done with it.
-    _PARSE_CACHE.put(body, parsed, _approximate_size(parsed) + sys.getsizeof(body))
+    #
+    # Key and value are walked *together*, in one call, rather than
+    # charged separately and added: ``_approximate_size`` returns
+    # ``UNCACHEABLE_SIZE`` when a tree exceeds its node limit, and adding
+    # anything to that sentinel turns a refusal into a small positive
+    # cost — which ``put`` then accepts, storing a tree nobody could
+    # size. One walk has no arithmetic to get wrong. It is also the more
+    # accurate charge: the walk dedups by identity, so the body counted
+    # here is the one object the memo's key keeps alive.
+    _PARSE_CACHE.put(body, parsed, _approximate_size((body, parsed)))
     return parsed
 
 
