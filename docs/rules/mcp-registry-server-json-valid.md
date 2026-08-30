@@ -13,11 +13,10 @@ MCP Registry server.json must conform to a supported schema and its enums
 | **Repo Types** | mcp-registry |
 | **Category** | [MCP (Model Context Protocol)](mcp.md) |
 
-MCP Registry publishers describe a server in `server.json`. This rule
-validates that document against the exact supported schema version it declares,
-including the official
-[2025-12-11 schema](https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json),
-and the Registry's semantic publishing constraints.
+MCP Registry publishers describe a server in `server.json`. This rule validates
+the document against the released schema it declares and the Registry's
+publishing constraints. Skillsaw supports every released server schema from
+`2025-07-09` through `2025-12-11`.
 
 ## What is checked
 
@@ -25,6 +24,8 @@ and the Registry's semantic publishing constraints.
 - `$schema` is the canonical identifier for a bundled, supported schema version.
 - Required fields and nested objects conform to the bundled released schema,
   including URI, length, hash, argument, and transport shapes.
+- The initial `2025-07-09` schema keeps its snake_case package fields; later
+  releases use their camelCase vocabulary.
 - `name` contains exactly one slash. Its namespace is a true reverse-DNS
   sequence of valid labels, and its server portion starts and ends with an
   ASCII letter or digit.
@@ -32,24 +33,40 @@ and the Registry's semantic publishing constraints.
   `latest`, a comparator, a wildcard, an OR expression, or a hyphen range.
   Package checks also recognize registry-native requirement syntax such as
   PyPI specifier lists, Cargo comma-joined requirements, and NuGet intervals.
-- npm package versions use strict SemVer; other package registries may use
-  their own format-specific exact-version syntax.
-- Package transports are `stdio`, `streamable-http`, or `sse`. Remote
-  transports are `streamable-http` or `sse`; their HTTP URL templates remain
-  structurally valid after supported `{variable}` placeholders are substituted.
+- npm, PyPI, Cargo, and NuGet packages require a version. npm uses strict
+  SemVer; the others use their own exact-version syntax.
+- OCI packages keep their release in `identifier`. The `2025-10-11` format
+  also omits MCPB `version`; `2025-10-17` and later make it optional.
+- Publisher `status` and official Registry metadata are rejected after the
+  releases that defined them because the Registry now manages those fields.
+- Package transports are `stdio`, `streamable-http`, or `sse`. A `stdio`
+  transport has no URL. Package URL placeholders name an environment variable
+  or argument declared by that package. Remote URLs use HTTPS with a
+  non-loopback host, and their placeholders name keys in the remote `variables`
+  object.
 - MCPB packages declare the required `fileSha256` integrity hash.
+- Explicit npm, PyPI, NuGet, and Cargo registry base URLs use the official
+  public endpoint. From `2025-10-11` onward, OCI and MCPB packages omit that
+  field, and file hashes are reserved for MCPB packages.
+- MCPB identifiers are HTTPS URLs containing `mcp`; exact release-source
+  placeholders remain valid until publishing renders them.
 - Icon sources use HTTPS, and `repository.subfolder` is a clean relative path
   without empty, current-directory, or parent-directory segments.
+- Repository URLs use the supported GitHub or GitLab shape and agree with the
+  declared `repository.source`.
 - `registryType` is one of `npm`, `pypi`, `cargo`, `oci`, `nuget`, or
   `mcpb` by default. These are the package types documented by the
   [official Registry](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/package-types.mdx).
 
-Each supported schema is bundled from a pinned revision of the official
-static-assets repository. Validation is fully offline and never follows a
-repository-owned schema URL. Older bundles remain available when a newer
-version is added, so each document continues to use the schema it declares.
-An unknown future canonical version receives one unsupported-version diagnostic
-and is not interpreted using the newest known schema.
+Each schema is bundled from a pinned revision of the
+[official static-assets repository](https://github.com/modelcontextprotocol/static/tree/a9ba437d9fbbe92076a24b20d56449ac7c7786ac/schemas).
+Validation is offline. An unknown future version receives one diagnostic and
+is not interpreted using a different schema.
+
+Source files may use an exact publish-time placeholder such as `${VERSION}`,
+`{{VERSION}}`, or `<<Version>>` in release fields. Skillsaw accepts those
+forms while continuing to validate all other fields; rendered publisher
+metadata must contain the concrete value required by the schema.
 
 ## Additional Registry types
 

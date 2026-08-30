@@ -18,16 +18,16 @@ from skillsaw.rule import (
 )
 from skillsaw.utils import has_generated_marker, read_text
 
-from ._helpers import IMPORT_RE
+from ._helpers import iter_instruction_imports, iter_markdown_instruction_imports
 
 
 @dataclass
 class _BodyShape:
     """What a CLAUDE.md body holds once blank lines and comments are ignored.
 
-    ``import_lines`` are body lines that are nothing but an ``@`` import of
-    the sibling AGENTS.md; ``extra_lines`` are body lines carrying anything
-    else — prose, headings, code fences, other imports.
+    ``import_lines`` contain a prose ``@`` import of the sibling AGENTS.md;
+    ``extra_lines`` carry anything beyond a standalone import — prose,
+    headings, code fences, or other imports.
     """
 
     import_lines: List[int] = field(default_factory=list)
@@ -35,18 +35,18 @@ class _BodyShape:
 
 
 class ClaudeMdAgentsImportRule(Rule):
-    """Recommend that a CLAUDE.md sitting next to an AGENTS.md be the import.
+    """Recommend that a CLAUDE.md sitting next to an AGENTS.md import it.
 
     Claude Code reads CLAUDE.md; almost every other agent reads AGENTS.md.
     Teams that keep both end up maintaining two copies of the same
     instructions, and the copies drift (which is what
     ``content-instruction-drift`` reports once it has happened). Claude
     Code's ``@path`` import syntax removes the duplication instead of
-    policing it: a CLAUDE.md whose whole body is ``@AGENTS.md`` gives one
-    source of truth that every assistant reads.
+    policing it. Claude-specific instructions may follow the import without
+    duplicating the shared guidance.
 
-    Deliberately INFO: keeping Claude-specific extras is a legitimate
-    choice, not a defect.
+    Deliberately INFO: importing shared guidance is a maintainability
+    recommendation, not a correctness requirement.
     """
 
     formats = frozenset({HAS_CLAUDE_MD, HAS_AGENTS_MD})
@@ -58,11 +58,10 @@ class ClaudeMdAgentsImportRule(Rule):
     config_schema = {
         "allow-extra": {
             "type": "bool",
-            "default": False,
+            "default": True,
             "description": (
-                "Accept a CLAUDE.md that imports the sibling AGENTS.md but also "
-                "carries its own Claude-specific content; only a CLAUDE.md with "
-                "no import at all is then reported"
+                "Allow Claude-specific content in CLAUDE.md when it also imports "
+                "the sibling AGENTS.md"
             ),
         },
         "ignore-generated": {
@@ -83,8 +82,8 @@ class ClaudeMdAgentsImportRule(Rule):
     @property
     def description(self) -> str:
         return (
-            "CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' "
-            "so both assistants read one source of truth"
+            "CLAUDE.md next to an AGENTS.md should import it so both assistants "
+            "read one source of truth"
         )
 
     def default_severity(self) -> Severity:
@@ -134,17 +133,14 @@ class ClaudeMdAgentsImportRule(Rule):
     # -- body shape ------------------------------------------------------
 
     @staticmethod
-    def _is_sibling_import(line: str, base: Path, agents_resolved: Optional[Path]) -> bool:
-        """Whether *line* is nothing but an ``@`` import of the paired AGENTS.md."""
+    def _is_sibling_import(
+        target: str,
+        base: Path,
+        agents_resolved: Optional[Path],
+    ) -> bool:
+        """Whether *target* resolves to the paired sibling AGENTS.md."""
         if agents_resolved is None:
             return False
-        matches = list(IMPORT_RE.finditer(line))
-        if len(matches) != 1:
-            return False
-        match = matches[0]
-        if line[: match.start()].strip() or line[match.end() :].strip():
-            return False
-        target = match.group(1).rstrip(".!?")
         # ``@~/...`` is Claude Code's machine-local memory syntax — it can
         # never name a file inside this repository.
         if not target or target.startswith("~"):
@@ -153,14 +149,13 @@ class ClaudeMdAgentsImportRule(Rule):
         return resolved is not None and resolved == agents_resolved
 
     def _shape(self, block: ClaudeMdBlock, agents_resolved: Optional[Path]) -> _BodyShape:
-        """Classify each body line of *block* as import, extra, or ignorable.
+        """Record sibling imports and strict-mode extras in *block*.
 
-        Tolerance, stated once: blank lines and HTML comments never count as
-        content, everything else does — headings, prose, code fences, an
-        indented code block, a second import. Comment spans come from the
-        markdown AST (``prose_lines()`` blanks them column-for-column while
-        preserving the line count), so a suppression directive or a licence
-        banner above the import keeps the file "import-only".
+        Blank lines and HTML comments never count as content. In strict mode,
+        everything else beyond a standalone import does — headings, prose,
+        code fences, indented code, wrappers, and a second import. Import
+        recognition uses prose from the Markdown AST, so examples in code or
+        comments cannot satisfy the rule.
         """
         body = block.read_body(strip_code_blocks=False) or ""
         raw = body.splitlines()
@@ -175,6 +170,11 @@ class ClaudeMdAgentsImportRule(Rule):
 
         base = block.path.parent
         shape = _BodyShape()
+        sibling_import_lines = {
+            import_ref.body_line
+            for import_ref in iter_markdown_instruction_imports(doc)
+            if self._is_sibling_import(import_ref.path, base, agents_resolved)
+        }
         for index, line in enumerate(raw):
             if not line.strip():
                 continue
@@ -182,9 +182,19 @@ class ClaudeMdAgentsImportRule(Rule):
             blanked = index < len(prose) and not prose[index].strip()
             if blanked and body_line in comment_lines:
                 continue
-            if self._is_sibling_import(line, base, agents_resolved):
+            sibling_import = body_line in sibling_import_lines
+            if sibling_import:
                 shape.import_lines.append(body_line)
-            else:
+
+            raw_imports = list(iter_instruction_imports(line))
+            import_only = (
+                len(raw_imports) == 1
+                and sibling_import
+                and self._is_sibling_import(raw_imports[0][0], base, agents_resolved)
+                and not line[: raw_imports[0][1]].strip()
+                and not line[raw_imports[0][2] :].strip()
+            )
+            if not import_only:
                 shape.extra_lines.append(body_line)
         return shape
 
@@ -228,25 +238,39 @@ class ClaudeMdAgentsImportRule(Rule):
             if allow_extra and shape.import_lines:
                 continue
 
+            is_duplicate = self._is_duplicate(
+                body,
+                agents.read_body(strip_code_blocks=False),
+            )
             if shape.import_lines:
                 message = (
                     "CLAUDE.md imports AGENTS.md but also carries its own "
                     "instructions — move them into AGENTS.md so the import is the "
                     "whole file and both assistants read one source of truth"
                 )
+            elif is_duplicate:
+                message = (
+                    "CLAUDE.md duplicates its sibling AGENTS.md — replace its contents "
+                    "with '@AGENTS.md' so both assistants read one source of truth"
+                )
+            elif allow_extra:
+                message = (
+                    "CLAUDE.md does not import its sibling AGENTS.md — add '@AGENTS.md', "
+                    "remove any duplicated shared guidance, and keep Claude-specific "
+                    "instructions below the import"
+                )
             else:
                 message = (
-                    "CLAUDE.md duplicates instructions kept alongside AGENTS.md — "
-                    "replace its contents with the single line '@AGENTS.md' so "
-                    "Claude Code imports the shared file instead of a second copy "
-                    "that can drift"
+                    "CLAUDE.md does not import its sibling AGENTS.md — move any "
+                    "instructions that must be kept into AGENTS.md, then make CLAUDE.md "
+                    "the single line '@AGENTS.md'"
                 )
             violations.append(
                 self.violation(
                     message,
                     block=claude,
                     line=shape.extra_lines[0],
-                    fixable=self._is_duplicate(body, agents.read_body(strip_code_blocks=False)),
+                    fixable=is_duplicate,
                 )
             )
         return violations

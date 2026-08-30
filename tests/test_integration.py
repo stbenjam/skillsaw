@@ -373,6 +373,13 @@ class TestMcpRegistry:
         assert "mcp-registry-version-semver" not in rule_ids(r)
         assert "mcp-registry-npm-name-match" not in rule_ids(r)
 
+    def test_unrelated_same_coordinate_package_is_not_cross_matched(self, tmp_path):
+        repo = copy_fixture("mcp-registry/locality", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 0, violations(r)
+        assert "mcp-registry-npm-name-match" not in rule_ids(r)
+
     def test_broken_server_json_reports_all_registry_rule_families(self, tmp_path):
         repo = copy_fixture("mcp-registry/broken", tmp_path)
         r = run_lint(repo)
@@ -399,6 +406,23 @@ class TestMcpRegistry:
         assert r["rc"] == 1
         assert "mcp-registry-server-json-valid" in rule_ids(r)
         assert any("Invalid JSON" in item["message"] for item in violations(r))
+
+    def test_explicit_type_reports_duplicate_server_json_key(self, tmp_path):
+        (tmp_path / "server.json").write_text(
+            '{"name": "io.example/first", "name": "io.example/second"}',
+            encoding="utf-8",
+        )
+        r = run_lint(
+            tmp_path,
+            "--type",
+            "mcp-registry",
+            "--rule",
+            "mcp-registry-server-json-valid",
+        )
+
+        found = by_rule(r)["mcp-registry-server-json-valid"]
+        assert len(found) == 1
+        assert "duplicate JSON object key" in found[0]["message"]
 
     def test_unrelated_server_json_does_not_activate_registry_rules(self, tmp_path):
         repo = copy_fixture("mcp-registry/unrelated", tmp_path)
@@ -2644,8 +2668,8 @@ class TestDevin:
         result = run_cli(["tree", repo])
 
         assert result.returncode == 0, result.stderr
-        assert result.stdout.count("[devin skill]") == 4
-        assert result.stdout.count("[skill]") == 1
+        assert result.stdout.count("[devin skill]") == 3
+        assert result.stdout.count("[skill]") == 2
         assert result.stdout.count("SKILL.md (skill)") == 5
         for instruction in (
             "AGENT.md (instruction)",
@@ -2674,7 +2698,10 @@ class TestDevin:
         assert {v["line"] for v in native} == {2, 3, 6, 8, 10}
 
         portable = grouped["agentskill-valid"]
-        assert {v["file_path"] for v in portable} == {".agents/skills/portable/SKILL.md"}
+        assert {v["file_path"] for v in portable} == {
+            ".agents/skills/portable/SKILL.md",
+            ".windsurf/skills/missing/SKILL.md",
+        }
         assert all(".devin/skills/plain" not in v["file_path"] for v in portable)
 
         assert {v["file_path"] for v in grouped["content-weak-language"]} >= {
@@ -2739,6 +2766,20 @@ class TestOpenCode:
         ]
         assert found[0]["message"].startswith("Invalid JSON:")
         assert by_rule(r).get("opencode-config-valid", []) == []
+
+    def test_duplicate_config_key_is_a_parse_error(self, tmp_path):
+        repo = self._opencode_repo(
+            tmp_path,
+            "duplicate-key",
+            '{"model": "anthropic/first", "model": "anthropic/second"}',
+        )
+
+        grouped = by_rule(run_lint(repo))
+
+        found = grouped["mcp-valid-json"]
+        assert len(found) == 1
+        assert "duplicate JSON object key" in found[0]["message"]
+        assert grouped.get("opencode-config-valid", []) == []
 
     def test_targeting_config_validation_also_runs_its_parse_validation(self, tmp_path):
         """A focused config check must not pass a file OpenCode cannot read."""
@@ -2806,14 +2847,13 @@ class TestOpenCode:
         assert [v["severity"] for v in unknown] == ["info"]
         assert "'modle'" in unknown[0]["message"]
 
-    def test_both_spellings_of_one_setting_are_reported_not_the_older_one(self, tmp_path):
-        """Either vocabulary alone is valid; carrying both is the finding."""
+    def test_only_conflicting_spellings_are_reported(self, tmp_path):
+        """Disjoint collection sections merge; one-to-one field aliases do not."""
         repo = copy_fixture("opencode/broken", tmp_path)
         messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
 
-        assert any(
-            "declares both 'agent' and 'agents'" in m for m in messages
-        ), "the top-level rename table must drive this"
+        assert not any("'agent.reviewer' and 'agents.planner'" in m for m in messages)
+        assert not any("declares both 'agent' and 'agents'" in m for m in messages)
         assert any("declares both 'prompt' and 'system'" in m for m in messages)
         assert any(
             "declares both 'enabled' and 'disabled'" in m and "sense inverted" in m
@@ -2825,16 +2865,6 @@ class TestOpenCode:
     @pytest.mark.parametrize(
         "config,expected",
         [
-            # A *top-level* rename to a name the 1.x schema does not know
-            # resolves in favour of the 1.x key under a 2.0 reader, and the
-            # finding still declines to say so: the fix is the same whichever
-            # value survives, and a wrong name costs the author the live one.
-            (
-                {"agent": {}, "agents": {}},
-                "declares both 'agent' and 'agents' — they are the 1.x and 2.0 "
-                "spellings of one setting, and only one of the two values is in "
-                "effect; keep one",
-            ),
             # The 1.x schema declares both halves of these two, so even that
             # reasoning does not reach them.
             (
@@ -2905,6 +2935,167 @@ class TestOpenCode:
 
         messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
         assert any(expected in m for m in messages), messages
+
+    @pytest.mark.parametrize(
+        "v1_key,v2_key,shared_entry",
+        [
+            ("agent", "agents", {"description": "Shared", "prompt": "Review."}),
+            ("command", "commands", {"template": "Review."}),
+        ],
+    )
+    def test_collection_aliases_merge_disjoint_and_identical_entries(
+        self, tmp_path, v1_key, v2_key, shared_entry
+    ):
+        config = {
+            v1_key: {"legacy": shared_entry, "shared": shared_entry},
+            v2_key: {"native": shared_entry, "shared": shared_entry},
+        }
+        repo = self._opencode_repo(tmp_path, "merged-collections", json.dumps(config))
+
+        grouped = by_rule(run_lint(repo))
+        messages = [violation["message"] for violation in grouped.get("opencode-config-valid", [])]
+
+        assert grouped.get("rule-execution-error", []) == []
+        assert not any("define the same entry differently" in message for message in messages)
+        assert not any(
+            f"declares both '{v1_key}' and '{v2_key}'" in message for message in messages
+        )
+
+    @pytest.mark.parametrize(
+        "v1_key,v2_key,v1_entry,v2_entry",
+        [
+            (
+                "agent",
+                "agents",
+                {"prompt": "Legacy prompt"},
+                {"system": "Native prompt"},
+            ),
+            (
+                "command",
+                "commands",
+                {"template": "Legacy prompt"},
+                {"template": "Native prompt"},
+            ),
+        ],
+    )
+    def test_collection_aliases_report_only_conflicting_entry_names(
+        self, tmp_path, v1_key, v2_key, v1_entry, v2_entry
+    ):
+        config = {v1_key: {"review": v1_entry}, v2_key: {"review": v2_entry}}
+        repo = self._opencode_repo(tmp_path, "conflicting-collections", json.dumps(config))
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert messages == [
+            f"'{v1_key}.review' and '{v2_key}.review' define the same entry "
+            f"differently — OpenCode merges these sections and keeps "
+            f"'{v1_key}.review' when names overlap; keep one definition"
+        ]
+
+    @pytest.mark.parametrize(
+        ("right_leaf", "expected_conflict"),
+        [("0", False), ("1", True)],
+        ids=["equal", "different"],
+    )
+    def test_deep_collection_alias_values_do_not_exhaust_python_stack(
+        self, tmp_path, right_leaf, expected_conflict
+    ):
+        depth = 500
+        left_value = "[" * depth + "0" + "]" * depth
+        right_value = "[" * depth + right_leaf + "]" * depth
+        content = (
+            '{"agent":{"review":{"provider-option":'
+            + left_value
+            + '}},"agents":{"review":{"provider-option":'
+            + right_value
+            + "}}}"
+        )
+        repo = self._opencode_repo(tmp_path, "deep-collection-values", content)
+
+        grouped = by_rule(run_lint(repo))
+
+        assert grouped.get("rule-execution-error", []) == []
+        conflicts = [
+            violation
+            for violation in grouped.get("opencode-config-valid", [])
+            if "define the same entry differently" in violation["message"]
+        ]
+        assert bool(conflicts) is expected_conflict
+
+    def test_native_command_model_is_lowered_before_overlap_comparison(self, tmp_path):
+        config = {
+            "command": {
+                "review": {
+                    "template": "Review.",
+                    "model": "anthropic/claude-sonnet",
+                    "variant": "thinking",
+                }
+            },
+            "commands": {
+                "review": {
+                    "template": "Review.",
+                    "model": {
+                        "providerID": "anthropic",
+                        "model": "claude-sonnet",
+                        "variant": "thinking",
+                    },
+                }
+            },
+        }
+        repo = self._opencode_repo(tmp_path, "equivalent-models", json.dumps(config))
+
+        assert by_rule(run_lint(repo)).get("opencode-config-valid", []) == []
+
+    def test_collection_overlap_uses_json_type_equality(self, tmp_path):
+        config = {
+            "agent": {"review": {"provider-option": True}},
+            "agents": {"review": {"provider-option": 1}},
+        }
+        repo = self._opencode_repo(tmp_path, "strict-json-equality", json.dumps(config))
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert messages == [
+            "'agent.review' and 'agents.review' define the same entry differently — "
+            "OpenCode merges these sections and keeps 'agent.review' when names "
+            "overlap; keep one definition"
+        ]
+
+    def test_malformed_native_command_uses_shape_diagnostic_not_overlap(self, tmp_path):
+        config = {
+            "command": {"review": {"template": "Review.", "model": 42}},
+            "commands": {"review": {"template": "Review.", "model": 42}},
+        }
+        repo = self._opencode_repo(tmp_path, "malformed-native-command", json.dumps(config))
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert messages == [
+            "'commands.review.model' must be a provider/model string or a model " "selection object"
+        ]
+
+    @pytest.mark.parametrize("variant", [None, "", "bad#variant", 4])
+    def test_native_command_rejects_present_invalid_model_variant(self, tmp_path, variant):
+        config = {
+            "commands": {
+                "review": {
+                    "template": "Review.",
+                    "model": {
+                        "providerID": "anthropic",
+                        "model": "claude-sonnet",
+                        "variant": variant,
+                        "future-field": "ignored",
+                    },
+                }
+            }
+        }
+        repo = self._opencode_repo(tmp_path, "invalid-model-variant", json.dumps(config))
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert messages == [
+            "'commands.review.model' must be a provider/model string or a model " "selection object"
+        ]
 
     def test_a_primary_agent_is_not_asked_for_trigger_phrasing(self, tmp_path):
         """`mode: primary` is picked by a person, not routed to by description.
@@ -5112,6 +5303,14 @@ class TestContentMcpToolNameSuggestGate:
 
     FIXTURE = "content/mcp-tool-name"
 
+    def test_rule_is_opt_in(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "CLAUDE.md").write_text(
+            "# Instructions\n\nCall mcp__jira__getJiraIssue for the active ticket.\n"
+        )
+        assert "content-mcp-tool-name" not in rule_ids(run_lint(repo))
+
     def test_plain_fix_applies_nothing(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         before = _snapshot_contents(repo)
@@ -5145,9 +5344,8 @@ class TestClaudeMdAgentsImport:
 
     The four fixtures are the four states a CLAUDE.md/AGENTS.md pair can be
     in: an exact duplicate (fires, SUGGEST-fixable), a diverged copy (fires
-    and so does ``content-instruction-drift``, not fixable), the recommended
-    import-only end state (silent under every rule), and the import plus
-    Claude-specific extras (fires, and is accepted under ``allow-extra``).
+    and so does ``content-instruction-drift``, not fixable), the import-only
+    end state, and the documented import plus Claude-specific instructions.
     """
 
     FIXTURES = "instructions/agents-import"
@@ -5188,22 +5386,22 @@ class TestClaudeMdAgentsImport:
         assert violations(r) == []
         assert r["rc"] == 0
 
-    def test_import_plus_extras_reports_the_first_extra_line(self, tmp_path):
+    def test_import_plus_extras_is_clean_by_default(self, tmp_path):
         repo = copy_fixture(f"{self.FIXTURES}/import-plus-extras", tmp_path)
         r = run_lint(repo)
+        assert "claude-md-agents-import" not in rule_ids(r)
+
+    def test_strict_mode_reports_the_first_extra_line(self, tmp_path):
+        repo = copy_fixture(f"{self.FIXTURES}/import-plus-extras", tmp_path)
+        config = tmp_path / "strict-import.yaml"
+        config.write_text(
+            'version: "99.0.0"\nrules:\n  claude-md-agents-import:\n    allow-extra: false\n'
+        )
+        r = run_lint(repo, config=config)
         ours = [v for v in violations(r) if v["rule_id"] == "claude-md-agents-import"]
         assert len(ours) == 1
         assert ours[0]["line"] == 4  # the '## Claude Code specifics' heading
         assert ours[0]["fixable"] is False
-
-    def test_allow_extra_accepts_the_import_plus_extras(self, tmp_path):
-        repo = copy_fixture(f"{self.FIXTURES}/import-plus-extras", tmp_path)
-        config = tmp_path / "allow-extra.yaml"
-        config.write_text(
-            'version: "99.0.0"\nrules:\n  claude-md-agents-import:\n    allow-extra: true\n'
-        )
-        r = run_lint(repo, config=config)
-        assert "claude-md-agents-import" not in rule_ids(r)
 
     def test_plain_fix_leaves_the_duplicate_alone(self, tmp_path):
         """Replacing a file's contents is SUGGEST-only."""

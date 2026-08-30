@@ -611,9 +611,33 @@ def _reject_non_finite(token: str) -> NoReturn:
     raise ValueError(f"{token} is not valid JSON")
 
 
+def _bounded_json_string(value: str, max_length: int = 120) -> str:
+    """Render a complete, ASCII-safe JSON string within *max_length*."""
+    fragments: List[str] = []
+    rendered_length = 2  # Opening and closing quotes.
+    for index, character in enumerate(value):
+        fragment = json.dumps(character, ensure_ascii=True)[1:-1]
+        suffix_length = 3 if index < len(value) - 1 else 0
+        if rendered_length + len(fragment) + suffix_length > max_length:
+            return f'"{"".join(fragments)}..."'
+        fragments.append(fragment)
+        rendered_length += len(fragment)
+    return f'"{"".join(fragments)}"'
+
+
+def reject_duplicate_json_keys(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
+    """Build a JSON object while rejecting keys a normal decoder collapses."""
+    result: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {_bounded_json_string(key)}")
+        result[key] = value
+    return result
+
+
 @_file_cache.cached
 def read_json_strict(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
-    """Like :func:`read_json`, but rejecting Python's non-finite extension.
+    """Like :func:`read_json`, but rejecting duplicate keys and non-finite numbers.
 
     ``json.loads`` accepts the bare tokens ``NaN``, ``Infinity`` and
     ``-Infinity`` anywhere a number is allowed. No JSON host does: Node
@@ -631,7 +655,14 @@ def read_json_strict(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     if content is None:
         return None, f"Failed to read {file_path.name}"
     try:
-        return json.loads(content, parse_constant=_reject_non_finite), None
+        return (
+            json.loads(
+                content,
+                parse_constant=_reject_non_finite,
+                object_pairs_hook=reject_duplicate_json_keys,
+            ),
+            None,
+        )
     except ValueError as e:
         # Same rationale as read_json: bare ValueError, not just the
         # JSONDecodeError subclass.
@@ -721,7 +752,7 @@ def strip_jsonc(content: str) -> str:
 def read_jsonc(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     """Read a JSON file that may carry comments and trailing commas.
 
-    Always strict about the non-finite tokens, for the reason
+    Always strict about duplicate keys and non-finite tokens, for the reason
     :func:`read_json_strict` gives: the locations that opt into JSONC are new
     surfaces with no shipped results a tightened parser would change.
 
@@ -740,13 +771,27 @@ def read_jsonc(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     if content is None:
         return None, f"Failed to read {file_path.name}"
     try:
-        return json.loads(content, parse_constant=_reject_non_finite), None
+        return (
+            json.loads(
+                content,
+                parse_constant=_reject_non_finite,
+                object_pairs_hook=reject_duplicate_json_keys,
+            ),
+            None,
+        )
     except RecursionError:
         return None, _TOO_DEEP
     except ValueError:
         pass  # May be JSONC. Fall through to the stripped parse.
     try:
-        return json.loads(strip_jsonc(content), parse_constant=_reject_non_finite), None
+        return (
+            json.loads(
+                strip_jsonc(content),
+                parse_constant=_reject_non_finite,
+                object_pairs_hook=reject_duplicate_json_keys,
+            ),
+            None,
+        )
     except ValueError as e:
         # Same rationale as read_json: bare ValueError, not just the
         # JSONDecodeError subclass.
@@ -1179,7 +1224,7 @@ def _ruamel_load(text: str) -> Any:
     ry.preserve_quotes = True
     try:
         return ry.load(text)
-    except _RuamelYAMLError:
+    except (_RuamelYAMLError, ValueError, RecursionError):
         return None
 
 

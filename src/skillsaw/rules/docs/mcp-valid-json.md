@@ -17,7 +17,7 @@ The server map has two spellings, and each host reads exactly one:
 | `.cursor/mcp.json` | `mcpServers` | Yes |
 | `.vscode/mcp.json` | `servers` | Yes |
 | `opencode.json`, `opencode.jsonc` | `mcp`, or `mcp.servers` in 2.0 | Yes |
-| `.github/agents/**/*.agent.md` (cloud or shared) | `mcp-servers` | Yes, in YAML frontmatter |
+| `.github/agents/**/*.md` (cloud or shared) | `mcp-servers` | Yes, in YAML frontmatter |
 
 A file using the other host's key is reported as such — the servers are
 present but will not load. VS Code's documented siblings `inputs` and

@@ -1,0 +1,9 @@
+{
+  "name": "xactions",
+  "version": "3.5.0",
+  "mcpName": "wrong/name",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nirholas/xactions.git"
+  }
+}

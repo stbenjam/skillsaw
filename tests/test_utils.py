@@ -3,6 +3,7 @@ Tests for builtin rule utilities (read_text, read_json, frontmatter_key_line, he
 and centralized YAML line number functions).
 """
 
+import json
 import os
 from pathlib import Path
 import stat
@@ -798,6 +799,31 @@ def test_yaml_path_line_lookup_invalid_yaml():
     assert lookup("bad") is None
 
 
+def test_yaml_path_line_lookup_deep_nesting_does_not_crash():
+    depth = 250
+    text = "root:\n" + "".join("  " * (index + 1) + "nested:\n" for index in range(depth))
+    text += "  " * (depth + 1) + "value\n"
+
+    lookup = yaml_path_line_lookup(text)
+
+    assert lookup("root") is None
+
+
+@pytest.mark.parametrize("error_type", [ValueError, RecursionError])
+def test_yaml_path_line_lookup_handles_ruamel_runtime_errors(monkeypatch, error_type):
+    class BrokenYaml:
+        preserve_quotes = False
+
+        def load(self, _text):
+            raise error_type("parser failed")
+
+    monkeypatch.setattr(skillsaw_utils, "_RuamelYAML", BrokenYaml)
+
+    lookup = yaml_path_line_lookup("name: test\n")
+
+    assert lookup("name") is None
+
+
 # ---------------------------------------------------------------------------
 # yaml_key_line_after
 # ---------------------------------------------------------------------------
@@ -1206,6 +1232,74 @@ class TestStripJsonc:
         data, error = read_jsonc(path)
         assert data is None
         assert "NaN" in error
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            '{"name": "first", "name": "second"}',
+            '{// comment\n"nested": {"name": 1, "name": 2},}',
+        ],
+    )
+    def test_read_jsonc_rejects_duplicate_object_keys(self, tmp_path, content):
+        from skillsaw.utils import read_jsonc
+
+        path = tmp_path / "opencode.jsonc"
+        path.write_text(content)
+
+        data, error = read_jsonc(path)
+
+        assert data is None
+        assert 'duplicate JSON object key: "name"' in error
+
+
+def test_read_json_strict_rejects_duplicate_object_keys(tmp_path):
+    from skillsaw.utils import read_json_strict
+
+    path = tmp_path / "skills-lock.json"
+    path.write_text('{"skills": {"demo": {"source": "one", "source": "two"}}}')
+
+    data, error = read_json_strict(path)
+
+    assert data is None
+    assert 'duplicate JSON object key: "source"' in error
+
+
+def test_rule_strict_json_rejects_duplicate_object_keys(tmp_path):
+    from skillsaw.rules.builtin.utils import strict_json
+
+    path = tmp_path / "plugin.json"
+    path.write_text('{"name": "first", "name": "second"}')
+
+    data, error = strict_json(path)
+
+    assert data is None
+    assert 'duplicate JSON object key: "name"' in error
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "\x1b]0;unsafe\x07" + "x" * 1000,
+        "😀" * 100,
+        "é" * 100,
+        "\x00" * 100,
+        "\u202e" * 100,
+        "\ud800" * 100,
+    ],
+    ids=["terminal-control", "emoji", "non-ascii", "nul", "bidi", "lone-surrogate"],
+)
+def test_duplicate_json_key_diagnostic_is_bounded_and_control_safe(tmp_path, key):
+    from skillsaw.utils import read_json_strict
+
+    path = tmp_path / "server.json"
+    path.write_text(json.dumps({key: 1})[:-1] + "," + json.dumps(key) + ":2}")
+
+    data, error = read_json_strict(path)
+
+    assert data is None
+    assert "\x1b" not in error
+    assert len(error) < 200
+    error.encode("utf-8")
 
 
 class TestOpenCodeTimeout:

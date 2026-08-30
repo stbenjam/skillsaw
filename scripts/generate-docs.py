@@ -133,7 +133,7 @@ RULE_GROUPS = [
             "mcp-registry-npm-name-match",
         ],
         "Validates both MCP client configuration and MCP Registry publisher "
-        "metadata. Registry rules use the bundled 2025-12-11 schema and local "
+        "metadata. Registry rules use every released schema and local "
         "package metadata; they never query a package registry.",
     ),
     (
@@ -171,9 +171,10 @@ RULE_GROUPS = [
         "Devin",
         ["devin-rules-valid", "devin-skill-valid"],
         "Validates Devin CLI/Desktop workspace rules under `.devin/rules/` "
-        "and legacy `.windsurf/rules/`, plus Devin-native skills whose "
-        "frontmatter is optional and extends the portable Agent Skills "
-        "dialect. Enabled automatically when Devin repository context is present.",
+        "and legacy `.windsurf/rules/`, plus Devin-native `.devin/skills` whose "
+        "frontmatter is optional and extends the portable Agent Skills dialect. "
+        "Windsurf `.windsurf/skills` use portable Agent Skills validation. Enabled "
+        "automatically when Devin repository context is present.",
     ),
     (
         "OpenCode",
@@ -183,8 +184,9 @@ RULE_GROUPS = [
         "repository root or under any `.opencode/` directory — where a "
         "misspelled key is read, ignored and never reported. OpenCode 2.0 "
         "renames much of the schema while still loading the 1.x spelling, so "
-        "**both vocabularies are accepted**; what is reported is a file that "
-        "declares both spellings of one setting. Comments and trailing commas "
+        "**both vocabularies are accepted**. OpenCode merges `agent`/`agents` "
+        "and `command`/`commands` by entry name; only conflicting definitions "
+        "of one name are reported. Comments and trailing commas "
         "are fine — OpenCode reads `.json` through a JSONC parser. OpenCode "
         "reads AGENTS.md for portable instructions, so no OpenCode-specific "
         "instruction format is validated, and its commands, agents and skills "

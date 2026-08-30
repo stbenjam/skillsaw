@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ChromeDevTools/chrome-devtools-mcp",
+  "description": "Chrome DevTools MCP server",
+  "repository": {
+    "source": "github",
+    "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp"
+  },
+  "version": "1.8.0",
+  "packages": [
+    {
+      "identifier": "chrome-devtools-mcp",
+      "registryType": "npm",
+      "version": "1.8.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

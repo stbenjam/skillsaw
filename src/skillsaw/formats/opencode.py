@@ -57,10 +57,9 @@ TUI_SCHEMA_URL = "https://opencode.ai/tui.json"
 #: Only renames belong here, because this table also drives the
 #: "declares both spellings" diagnostic: for a rename, the two keys are the
 #: same setting written twice and one of them is inert. That claim is false
-#: for a merge, so merges live in :data:`TOP_LEVEL_MERGED_INTO` instead.
+#: for collection merges in :data:`TOP_LEVEL_COLLECTION_MERGES` and fold-in
+#: merges in :data:`TOP_LEVEL_MERGED_INTO`.
 TOP_LEVEL_V1_TO_V2: Mapping[str, str] = {
-    "agent": "agents",
-    "command": "commands",
     "permission": "permissions",
     "provider": "providers",
     "plugin": "plugins",
@@ -68,6 +67,14 @@ TOP_LEVEL_V1_TO_V2: Mapping[str, str] = {
     "attachment": "media",
     "reference": "references",
     "autoshare": "share",
+}
+
+#: v1 collection -> v2 collection for sections OpenCode merges by entry name.
+#: Unlike one-to-one renames, both sections may be useful in one file. Only a
+#: name defined differently in both places is a conflict.
+TOP_LEVEL_COLLECTION_MERGES: Mapping[str, str] = {
+    "agent": "agents",
+    "command": "commands",
 }
 
 #: v1 key -> the v2 key it folds *into*, rather than is renamed to. v1
@@ -139,6 +146,8 @@ TOP_LEVEL_KEYS = frozenset(
         *SHARED_TOP_LEVEL_KEYS,
         *TOP_LEVEL_V1_TO_V2,
         *TOP_LEVEL_V1_TO_V2.values(),
+        *TOP_LEVEL_COLLECTION_MERGES,
+        *TOP_LEVEL_COLLECTION_MERGES.values(),
         *TOP_LEVEL_MERGED_INTO,
         *TOP_LEVEL_MERGED_INTO.values(),
     )

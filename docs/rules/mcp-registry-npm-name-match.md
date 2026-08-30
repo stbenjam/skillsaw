@@ -20,17 +20,25 @@ field in `package.json`. It must exactly match the server `name` in
 
 ## What is checked
 
-For every `packages[]` entry whose `registryType` is `npm`, the rule matches local
-`package.json` files by package `identifier` (and matching `version` when declared)
-and verifies that:
+For each npm package with an exact version, the rule selects a local
+`package.json` from deterministic evidence: the nearest package boundary or one
+corroborated package `repository.url` and `repository.directory` match. With no
+conflicting package boundary, one unique local package with the exact published
+name, version, and repository is also checked. A private root package may act as
+a workspace container, while a declared package directory must match the
+package's path. The server's `repository.subfolder` describes source location,
+not package location. Ambiguous and external packages stay quiet; missing npm
+versions are reported by
+`mcp-registry-server-json-valid`.
+
+For the selected package, the rule verifies that:
 
 - `package.json` declares a string-valued `mcpName`; and
 - `mcpName` matches the exact `server.json` `name`, including case.
 
-
-This check operates entirely offline on local files; external or remote dependencies
-without local manifests are not flagged.
-
+This check is entirely offline and never downloads npm metadata.
+Exact publish-time placeholders are skipped until the server and package
+coordinates have been rendered.
 
 ## How to fix
 

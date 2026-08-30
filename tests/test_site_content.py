@@ -3,9 +3,11 @@
 import importlib.util
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).parent.parent
 DOCS_DIR = REPO_ROOT / "docs"
@@ -166,6 +168,26 @@ def test_fence_state_tracking_with_nested_unclosed_fence():
 
 def test_guides_cover_the_real_docs_tree():
     assert site_content.guides_coverage_errors(DOCS_DIR) == []
+
+
+def test_rules_nav_lists_every_generated_group_once():
+    config = yaml.load(
+        (REPO_ROOT / "mkdocs.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    rules_nav = next(item["Rules"] for item in config["nav"] if "Rules" in item)
+    actual_paths = []
+    for item in rules_nav:
+        if isinstance(item, str):
+            actual_paths.append(item)
+        else:
+            actual_paths.extend(item.values())
+
+    expected_paths = ["rules/index.md"] + [
+        f"rules/{slug}.md" for _, slug, _, _ in site_content.RULE_GROUPS
+    ]
+
+    assert Counter(actual_paths) == Counter(expected_paths)
 
 
 def test_guides_coverage_flags_unlisted_page(tmp_path):

@@ -11,9 +11,10 @@ OpenCode configuration schemas have evolved: 1.x spellings (`agent`, `command`,
 `permission`, flat MCP server declarations) and 2.0 spellings (`agents`, `commands`,
 `permissions`, nested `mcp.servers`) are both supported.
 
-However, defining **both** 1.x and 2.0 spellings for the same setting in a single file
-creates ambiguity and should be avoided. Choose one schema version and delete the
-duplicate key.
+OpenCode merges `agent`/`agents` and `command`/`commands` by entry name.
+Different names may appear in both sections; only conflicting definitions of
+the same name are reported. One-to-one renamed settings still accept either
+spelling but report when both are present.
 
 The MCP servers declared in OpenCode configuration are also evaluated by policy
 rules such as [`mcp-prohibited`](mcp-prohibited.md).
@@ -71,8 +72,9 @@ declares one setting twice:
 ```
 
 `type: "stdio"` is not a transport OpenCode knows, `command` must be the
-argv array, there is no `args` key, and `agent`/`agents` both define
-`reviewer`. The unknown transport is reported first and on its own: the rest
+argv array, there is no `args` key, and `agent`/`agents` define `reviewer`
+differently. OpenCode merges those sections and keeps the `agent` entry when
+names overlap. The unknown transport is reported first and on its own: the rest
 of a server's shape depends on which transport it is, so those checks resume
 once `type` is fixed and the file is linted again.
 
@@ -129,10 +131,12 @@ once `type` is fixed and the file is linted again.
 - Give every MCP server a `type` of `local` or `remote`. A `local` server
   needs `command` as a non-empty array of strings; a `remote` server needs a
   `url`.
-- Pick one spelling per setting. Keep `agent` or `agents`, `prompt` or
-  `system`, `enabled` or `disabled` — never both. `enabled` and `disabled`
-  are the same switch with the sense inverted, so a server carrying both is
-  saying two different things.
+- Entries with different names may be split between `agent`/`agents` or
+  `command`/`commands`; OpenCode merges them. Keep only one definition when
+  the same name occurs in both sections. For one-to-one settings, keep one
+  spelling: `prompt` or `system`, `enabled` or `disabled`. `enabled` and
+  `disabled` are the same switch with the sense inverted, so a server carrying
+  both is saying two different things.
 - Replace a committed credential with OpenCode's substitution syntax:
 
   ```json

@@ -7,6 +7,7 @@ key is exposed as a :class:`FrontmatterField` child.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -319,7 +320,7 @@ ParsedFrontmatterBlock = FrontmatteredBlock
 # unvalidated whenever Cursor-valid syntax like ``globs: **/*.ts`` forces
 # that path — while ``_replace_key_line`` accepts the quoted form, and the
 # reader and the fixer must agree on what declares a key.
-_MDC_KEY_RE = re.compile(r"""^["']?([A-Za-z][A-Za-z0-9_-]*)["']?:[ \t]*(.*)$""")
+_SIMPLE_FRONTMATTER_KEY_RE = re.compile(r"""^["']?([A-Za-z][A-Za-z0-9_-]*)["']?:[ \t]*(.*)$""")
 _MDC_LIST_ITEM_RE = re.compile(r"^[ \t]*-[ \t]+(.*)$")
 
 
@@ -414,7 +415,7 @@ def _parse_mdc_frontmatter(
             else:
                 data[pending_list_key] = [value]
             continue
-        match = _MDC_KEY_RE.match(raw_line)
+        match = _SIMPLE_FRONTMATTER_KEY_RE.match(raw_line)
         if match is None:
             continue
         key, rest = match.group(1), match.group(2)
@@ -584,13 +585,44 @@ class CopilotPromptBlock(FrontmatteredBlock):
 
 @dataclass(eq=False)
 class CopilotAgentBlock(FrontmatteredBlock):
-    """.github/agents/**/*.agent.md and legacy .github/chatmodes/**/*.chatmode.md."""
+    """.github/agents/**/*.md and legacy .github/chatmodes/**/*.chatmode.md."""
 
     category: str = "agent"
 
     @property
+    def effective_target(self) -> Optional[str]:
+        """Return the declared target, or the legacy chatmode default.
+
+        Current ``.github/agents/**/*.md`` files target both environments
+        when the field is omitted. Only legacy VS Code chatmodes have a
+        single-environment default; an explicit valid target always wins.
+        """
+        declared = self.field_value("target")
+        if declared in ("vscode", "github-copilot"):
+            return declared
+        parts = self.path.parts
+        for index in range(len(parts) - 2, -1, -1):
+            if parts[index] != ".github":
+                continue
+            if parts[index + 1] == "chatmodes":
+                return "vscode"
+            if parts[index + 1] == "agents":
+                return None
+        return None
+
+    @property
+    def supports_vscode(self) -> bool:
+        return self.effective_target != "github-copilot"
+
+    @property
+    def supports_github_copilot(self) -> bool:
+        return self.effective_target != "vscode"
+
+    @property
     def hooks_events(self) -> Dict[str, List[HookEventConfig]]:
         """Parse embedded hooks while retaining each command's YAML line."""
+        if not self.supports_vscode:
+            return {}
         # A top-level YAML merge can supply ``hooks`` without giving the
         # merged key its own source line. The compatibility parse has already
         # resolved merges into FrontmatterField children, so it is the cheap,
@@ -614,10 +646,7 @@ class CopilotAgentBlock(FrontmatteredBlock):
         mcp_field = self.field("mcp-servers")
         if mcp_field is None:
             return
-        # GitHub cloud loads only ``*.agent.md``; VS Code accepts every
-        # Markdown filename in this directory plus legacy chatmodes. Those
-        # local-only files ignore this cloud MCP field.
-        if not self.path.name.endswith(".agent.md") or self.field_value("target") == "vscode":
+        if not self.supports_github_copilot:
             return
         frontmatter, error, _error_line = read_frontmatter_commented(self.path)
         if error or not isinstance(frontmatter, dict):
@@ -720,6 +749,73 @@ class DevinRuleBlock(FrontmatteredBlock):
     """A rule under ``.devin/rules`` or legacy ``.windsurf/rules``."""
 
     category: str = "instruction"
+    _devin_key_lines: Optional[Dict[str, int]] = field(default=None, repr=False)
+
+    @staticmethod
+    def _quote_plain_glob_scalars(text: str) -> Tuple[str, bool]:
+        """Quote Devin's documented bare ``*`` glob scalar for YAML parsing.
+
+        Devin documents ``globs: **/*.test.ts``, while YAML reserves a leading
+        ``*`` for aliases. Only that top-level field is rewritten, and only in
+        the in-memory parse source, so unrelated malformed YAML still fails.
+        """
+        changed = False
+        lines = text.splitlines()
+        for index, raw_line in enumerate(lines):
+            match = _SIMPLE_FRONTMATTER_KEY_RE.match(raw_line)
+            if match is None or match.group(1) != "globs":
+                continue
+            rest = match.group(2)
+            uncommented = _strip_inline_comment(rest)
+            value = uncommented.strip()
+            if not value.startswith("*"):
+                continue
+            value_end = len(uncommented.rstrip())
+            lines[index] = raw_line[: match.start(2)] + json.dumps(value) + rest[value_end:]
+            changed = True
+        return "\n".join(lines), changed
+
+    def _parse_frontmatter_file(
+        self,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+        parsed = _parse_file_frontmatter(self.path)
+        if parsed[0] is not None or parsed[1] is None:
+            return parsed
+
+        content = read_text(self.path)
+        if content is None:
+            return parsed
+        split = _split_mdc_frontmatter(content)
+        if split is None:
+            return parsed
+        fm_text, body = split
+        parse_text, changed = self._quote_plain_glob_scalars(fm_text)
+        if not changed:
+            return parsed
+
+        frontmatter, parsed_body, error_line = parse_frontmatter(f"---\n{parse_text}\n---\n{body}")
+        if frontmatter is None:
+            return (
+                None,
+                "Invalid frontmatter (malformed YAML or missing closing ---)",
+                error_line,
+                parsed_body,
+                0,
+            )
+
+        self._devin_key_lines = {}
+        for index, line in enumerate(fm_text.splitlines(), start=2):
+            match = _SIMPLE_FRONTMATTER_KEY_RE.match(line)
+            if match is not None:
+                self._devin_key_lines[match.group(1)] = index
+        fm_line_count = content[: len(content) - len(body)].count("\n")
+        return frontmatter, None, None, body, fm_line_count
+
+    def key_line(self, key: str) -> Optional[int]:
+        self._ensure_parsed()
+        if self._devin_key_lines is not None:
+            return self._devin_key_lines.get(key)
+        return super().key_line(key)
 
 
 @dataclass(eq=False)

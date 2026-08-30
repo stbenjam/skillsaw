@@ -58,6 +58,8 @@ class HookHandler:
     shell: Optional[str] = None
     allowed_env_vars: Optional[List[str]] = None
     source_line: Optional[int] = None
+    # Keep new fields at the end to preserve positional construction.
+    command_variants: List[Tuple[str, Optional[int]]] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookHandler":
@@ -74,9 +76,19 @@ class HookHandler:
         ``hooks-json-valid`` reads the raw document and reports the shape.
         """
         command_line = commented_key_line(d, "command")
+        command_variants: List[Tuple[str, Optional[int]]] = []
+        for key in ("command", "windows", "linux", "osx"):
+            value = _as_str(d.get(key))
+            if value is None:
+                continue
+            variant_line = commented_key_line(d, key)
+            command_variants.append(
+                (value, variant_line + line_offset if variant_line is not None else None)
+            )
         return cls(
             type=_as_str(d.get("type")) or "",
             command=_as_str(d.get("command")),
+            command_variants=command_variants,
             args=_as_str_list(d.get("args")),
             url=_as_str(d.get("url")),
             headers=d.get("headers"),

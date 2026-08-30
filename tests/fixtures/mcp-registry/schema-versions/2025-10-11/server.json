@@ -1,0 +1,15 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-11/server.schema.json",
+  "name": "io.github.example/container-weather",
+  "description": "Weather data distributed as a versioned container image.",
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/example/weather:v1.0.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

@@ -26,6 +26,11 @@ Devin Desktop limits a workspace rule to 12,000 characters. Unknown
 frontmatter keys are accepted so a new upstream field does not make an
 otherwise valid rule fail.
 
+Devin's documented bare glob scalar, such as `globs: **/*.test.ts`, is
+accepted even though strict YAML reserves a leading `*` for aliases. This
+exception applies only to the top-level `globs` value; unrelated malformed
+YAML is still reported.
+
 ## Severity
 
 Malformed YAML, a missing or unsupported trigger, invalid activation data,

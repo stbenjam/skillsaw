@@ -4,7 +4,7 @@ Rule: instruction-imports-valid
 
 from pathlib import Path
 import re
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
@@ -17,11 +17,10 @@ from skillsaw.rules.builtin.content_analysis import (
 )
 from skillsaw.rules.builtin.utils import read_text
 
-from ._helpers import IMPORT_RE
+from ._helpers import iter_markdown_instruction_imports
 from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
 
 _MAX_IMPORT_HOPS = 4
-_LINE_START_IMPORT_PREFIX_RE = re.compile(r"^\s*(?:(?:>\s*)|(?:[-*+]\s+)|(?:\d+[.)]\s+))*$")
 _GITHUB_TEAM_MENTION_RE = re.compile(
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?/"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?"
@@ -39,6 +38,7 @@ _IMPORT_FILE_EXTENSIONS = {
     "yaml",
     "yml",
 }
+_OPTIONAL_LOCAL_IMPORT_NAMES = frozenset({"AGENTS.local.md", "CLAUDE.local.md"})
 
 
 class InstructionImportsValidRule(Rule):
@@ -114,84 +114,77 @@ class InstructionImportsValidRule(Rule):
         first_visit = prev_depth is None
         seen[resolved_file] = depth
 
-        for line_num, line in markdown.prose_lines():
-            if "@" not in line:
+        for import_ref in iter_markdown_instruction_imports(markdown):
+            import_path_str = import_ref.path
+            line_start_import = import_ref.line_start
+            # Home-directory imports (Claude Code's ``@~/.claude/...``
+            # memory syntax) reference machine-local files that are not
+            # part of the repository. They're environment-specific, so
+            # existence checking is always noise in CI — skip them.
+            if import_path_str.startswith("~"):
                 continue
-            for import_path_str, line_start_import in _iter_import_paths(line):
-                # Home-directory imports (Claude Code's ``@~/.claude/...``
-                # memory syntax) reference machine-local files that are not
-                # part of the repository. They're environment-specific, so
-                # existence checking is always noise in CI — skip them.
-                if import_path_str.startswith("~"):
-                    continue
 
-                unresolved_target = resolved_file.parent / import_path_str
-                target = safe_resolve(unresolved_target)
-                if target is None:
-                    if first_visit and _should_report_missing(
-                        import_path_str, line_start_import, unresolved_target
-                    ):
-                        violations.append(
-                            self.violation(
-                                f"Import '@{import_path_str}' references non-existent path",
-                                file_path=file_path,
-                                line=line_num,
-                            )
+            unresolved_target = resolved_file.parent / import_path_str
+            target = safe_resolve(unresolved_target)
+            if target is None:
+                if first_visit and _should_report_missing(
+                    import_path_str, line_start_import, unresolved_target
+                ):
+                    violations.append(
+                        self.violation(
+                            f"Import '@{import_path_str}' references non-existent path",
+                            file_path=file_path,
+                            line=import_ref.file_line,
                         )
-                    continue
+                    )
+                continue
 
-                try:
-                    target.relative_to(root_path)
-                except ValueError:
-                    if first_visit:
-                        violations.append(
-                            self.violation(
-                                f"Import '@{import_path_str}' escapes repository root",
-                                file_path=file_path,
-                                line=line_num,
-                            )
+            try:
+                target.relative_to(root_path)
+            except ValueError:
+                if first_visit:
+                    violations.append(
+                        self.violation(
+                            f"Import '@{import_path_str}' escapes repository root",
+                            file_path=file_path,
+                            line=import_ref.file_line,
                         )
-                    continue
+                    )
+                continue
 
-                if not safe_exists(target):
-                    if first_visit and _should_report_missing(
-                        import_path_str, line_start_import, target
-                    ):
-                        violations.append(
-                            self.violation(
-                                f"Import '@{import_path_str}' references non-existent path",
-                                file_path=file_path,
-                                line=line_num,
-                            )
+            if not safe_exists(target):
+                # Teams commonly commit this import while gitignoring the
+                # machine-local override. Its absence is intentional; if the
+                # file exists, the normal recursive validation below applies.
+                if target.name in _OPTIONAL_LOCAL_IMPORT_NAMES:
+                    continue
+                if first_visit and _should_report_missing(
+                    import_path_str, line_start_import, target
+                ):
+                    violations.append(
+                        self.violation(
+                            f"Import '@{import_path_str}' references non-existent path",
+                            file_path=file_path,
+                            line=import_ref.file_line,
                         )
-                    continue
+                    )
+                continue
 
-                if depth >= _MAX_IMPORT_HOPS or not safe_is_file(target):
-                    continue
+            if depth >= _MAX_IMPORT_HOPS or not safe_is_file(target):
+                continue
 
-                content = read_text(target)
-                if content is None:
-                    continue
+            content = read_text(target)
+            if content is None:
+                continue
 
-                self._check_imports_in_doc(
-                    MarkdownDoc(content),
-                    target,
-                    root_path,
-                    violations,
-                    seen,
-                    depth=depth + 1,
-                )
-
-
-def _iter_import_paths(line: str) -> Iterable[Tuple[str, bool]]:
-    for match in IMPORT_RE.finditer(line):
-        import_path = match.group(1).rstrip(".!?")
-        if not import_path:
-            continue
-
-        line_start_import = bool(_LINE_START_IMPORT_PREFIX_RE.fullmatch(line[: match.start()]))
-
-        yield import_path, line_start_import
+            self._check_imports_in_doc(
+                MarkdownDoc(content),
+                target,
+                root_path,
+                violations,
+                seen,
+                depth=depth + 1,
+            )
 
 
 def _should_report_missing(import_path: str, line_start_import: bool, target: Path) -> bool:

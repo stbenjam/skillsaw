@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.example/weather",
+  "description": "A server published from one nested npm package.",
+  "version": "1.2.3",
+  "repository": {
+    "url": "https://github.com/example/weather",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@example/weather-mcp",
+      "version": "1.2.3",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

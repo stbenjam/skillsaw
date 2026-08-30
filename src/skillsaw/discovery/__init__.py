@@ -31,7 +31,7 @@ CONVENTIONAL_SKILL_DIRS = (
     ".opencode/skills",  # OpenCode 2.0
     ".opencode/skill",  # OpenCode 1.x — still loaded by 2.0
     ".devin/skills",  # Devin CLI / Desktop, preferred spelling
-    ".windsurf/skills",  # Devin CLI / Desktop, legacy spelling
+    ".windsurf/skills",  # Windsurf Cascade (portable Agent Skills dialect)
 )
 
 

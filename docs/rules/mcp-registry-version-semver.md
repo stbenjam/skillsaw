@@ -13,8 +13,8 @@ MCP Registry server versions should use strict Semantic Versioning 2.0.0
 | **Repo Types** | mcp-registry |
 | **Category** | [MCP (Model Context Protocol)](mcp.md) |
 
-The MCP Registry's 2025-12-11 schema permits non-semantic server versions, but
-warns that they may not sort predictably. This rule recommends strict
+Released MCP Registry schemas permit non-semantic server versions, but warn
+that they may not sort predictably. This rule recommends strict
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) for the
 top-level `server.json` `version`.
 
@@ -36,6 +36,10 @@ leading zeroes. Optional prerelease and build identifiers follow SemVer 2.0.0:
 
 Versions such as `v1.2.3`, `1.2`, `2025-12-11`, and `1.2.3-01` trigger the
 recommendation.
+
+An exact publish-time placeholder such as `${VERSION}`, `{{VERSION}}`, or
+`<<Version>>` is ignored in source metadata. Its rendered value should be
+SemVer.
 
 ## How to fix
 

@@ -1,8 +1,10 @@
 """Devin CLI and Devin Desktop repository-context vocabulary.
 
-Devin reads both its preferred ``.devin`` directory and the legacy
-``.windsurf`` spelling.  Keep the shared names here so discovery, lint-tree
-attachment, and structural validation cannot drift apart.
+Devin rules read both their preferred ``.devin`` directory and the legacy
+``.windsurf`` spelling. Windsurf's current ``.windsurf/skills`` format is a
+portable Agent Skill, while Devin's ``.devin/skills`` format remains a native
+dialect. Keep that boundary explicit so discovery can share locations without
+making the two skill schemas interchangeable.
 
 Sources:
 
@@ -19,6 +21,7 @@ from pathlib import Path
 # Preferred spelling first so tree attachment and diagnostics remain
 # deterministic when a repository carries both forms.
 TOOL_DIR_NAMES = (".devin", ".windsurf")
+DEVIN_SKILL_DIR_NAME = ".devin"
 
 # The CLI documents these exact spellings.  Desktop additionally treats
 # AGENTS.md case-insensitively, handled by ``is_instruction_filename``.
@@ -55,8 +58,11 @@ def is_devin_only_instruction_filename(name: str) -> bool:
     )
 
 
-def is_native_skill_dir(path: Path) -> bool:
-    """Whether *path* descends from a Devin or Windsurf skill collection."""
-    return any(
-        parent.name == "skills" and parent.parent.name in TOOL_DIR_NAMES for parent in path.parents
-    )
+def is_devin_native_skill_dir(path: Path) -> bool:
+    """Whether *path* descends from a Devin-native skill collection."""
+    for parent in path.parents:
+        if parent.name == "skills" and parent.parent.name in TOOL_DIR_NAMES:
+            # Parents are nearest-first. A nested collection belongs to its
+            # closest declared tool root, not an unrelated outer package.
+            return parent.parent.name == DEVIN_SKILL_DIR_NAME
+    return False

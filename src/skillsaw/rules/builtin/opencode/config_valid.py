@@ -2,8 +2,10 @@
 Rule: opencode-config-valid
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, List, Mapping, Set, Tuple
+from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Set, Tuple
 
 from skillsaw.blocks import OpenCodeConfigBlock, OpenCodeMcpBlock
 from skillsaw.context import HAS_OPENCODE, RepositoryContext
@@ -15,6 +17,115 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 #: bool}`` toggling a server inherited from a remote organization config.
 #: v2 ignores it, but v1 reads it, so it is not a missing ``type``.
 _TOGGLE_ONLY_KEYS = frozenset({"enabled", "disabled"})
+
+
+def _mapping_value_pairs(
+    left: Mapping[str, Any], right: Mapping[str, Any]
+) -> Iterator[Tuple[Any, Any]]:
+    """Yield pairs without retaining work proportional to mapping width."""
+    for key in left:
+        yield left[key], right[key]
+
+
+def _json_values_equal(left: Any, right: Any) -> bool:
+    """JSON equality matching JavaScript's deep-strict value semantics."""
+    comparisons: List[Iterator[Tuple[Any, Any]]] = [iter(((left, right),))]
+    while comparisons:
+        try:
+            left_value, right_value = next(comparisons[-1])
+        except StopIteration:
+            comparisons.pop()
+            continue
+        if isinstance(left_value, bool) or isinstance(right_value, bool):
+            if not (
+                type(left_value) is bool and type(right_value) is bool and left_value is right_value
+            ):
+                return False
+            continue
+        if isinstance(left_value, (int, float)) and isinstance(right_value, (int, float)):
+            if left_value != right_value:
+                return False
+            continue
+        if type(left_value) is not type(right_value):
+            return False
+        if isinstance(left_value, dict):
+            if left_value.keys() != right_value.keys():
+                return False
+            comparisons.append(_mapping_value_pairs(left_value, right_value))
+            continue
+        if isinstance(left_value, list):
+            if len(left_value) != len(right_value):
+                return False
+            comparisons.append(iter(zip(left_value, right_value)))
+            continue
+        if left_value != right_value:
+            return False
+    return True
+
+
+def _lower_model_selection(value: Any) -> Dict[str, str] | None:
+    """Lower one valid OpenCode 2.0 model selection to its 1.x fields."""
+    if isinstance(value, str):
+        if "/" not in value:
+            return None
+        provider, selected = value.split("/", 1)
+        if not provider or "#" in provider or not selected or selected.count("#") > 1:
+            return None
+        if "#" not in selected:
+            return {"model": value}
+        model, variant = selected.split("#", 1)
+        if not model or not variant:
+            return None
+        return {"model": f"{provider}/{model}", "variant": variant}
+
+    if not isinstance(value, dict):
+        return None
+    provider = value.get("providerID")
+    model = value.get("model")
+    if (
+        not isinstance(provider, str)
+        or not provider
+        or "/" in provider
+        or "#" in provider
+        or not isinstance(model, str)
+        or not model
+        or "#" in model
+    ):
+        return None
+    lowered = {"model": f"{provider}/{model}"}
+    if "variant" in value:
+        variant = value["variant"]
+        if not isinstance(variant, str) or not variant or "#" in variant:
+            return None
+        lowered["variant"] = variant
+    return lowered
+
+
+def _lower_native_command(entry: Any) -> Dict[str, Any] | None:
+    """Decode and lower the OpenCode 2.0 command fields used for precedence."""
+    if not isinstance(entry, dict):
+        return None
+    template = entry.get("template")
+    if not isinstance(template, str) or not template.strip():
+        return None
+
+    lowered: Dict[str, Any] = {"template": template}
+    for key in ("description", "agent"):
+        if key not in entry:
+            continue
+        if not isinstance(entry[key], str):
+            return None
+        lowered[key] = entry[key]
+    if "subtask" in entry:
+        if not isinstance(entry["subtask"], bool):
+            return None
+        lowered["subtask"] = entry["subtask"]
+    if "model" in entry:
+        model = _lower_model_selection(entry["model"])
+        if model is None:
+            return None
+        lowered.update(model)
+    return lowered
 
 
 class OpenCodeConfigValidRule(Rule):
@@ -82,6 +193,11 @@ class OpenCodeConfigValidRule(Rule):
             violations.extend(self._check_schema(data, block.path))
             violations.extend(self._check_top_level_keys(data, block.path))
             violations.extend(self._mixed_spellings(data, oc.TOP_LEVEL_V1_TO_V2, block.path))
+            violations.extend(
+                self._conflicting_collection_entries(
+                    data, oc.TOP_LEVEL_COLLECTION_MERGES, block.path
+                )
+            )
             violations.extend(self._check_agents(data, block.path))
             violations.extend(self._check_commands(data, block.path))
             mcp_block = mcp_blocks.get(block.resolved_path)
@@ -214,6 +330,41 @@ class OpenCodeConfigValidRule(Rule):
             )
         return violations
 
+    def _conflicting_collection_entries(
+        self,
+        data: Mapping[str, Any],
+        aliases: Mapping[str, str],
+        path: Path,
+    ) -> List[RuleViolation]:
+        """Report only conflicting names in collection sections OpenCode merges."""
+        violations: List[RuleViolation] = []
+        for v1_key, v2_key in aliases.items():
+            v1_entries = data.get(v1_key)
+            v2_entries = data.get(v2_key)
+            if not isinstance(v1_entries, dict) or not isinstance(v2_entries, dict):
+                continue
+            for name in sorted(v1_entries.keys() & v2_entries.keys()):
+                v1_entry = v1_entries[name]
+                v2_entry = v2_entries[name]
+                if v1_key == "command":
+                    v2_entry = _lower_native_command(v2_entry)
+                    if v2_entry is None:
+                        continue
+                if _json_values_equal(v1_entry, v2_entry):
+                    continue
+                shown = safe_display(str(name))
+                violations.append(
+                    self.violation(
+                        f"'{v1_key}.{shown}' and '{v2_key}.{shown}' define the same "
+                        f"entry differently — OpenCode merges these sections and "
+                        f"keeps '{v1_key}.{shown}' when names overlap; keep one "
+                        "definition",
+                        file_path=path,
+                        severity=Severity.WARNING,
+                    )
+                )
+        return violations
+
     # -- agents and commands ----------------------------------------------
 
     @staticmethod
@@ -330,6 +481,33 @@ class OpenCodeConfigValidRule(Rule):
                         severity=Severity.WARNING,
                     )
                 )
+            if section == "commands":
+                for key in ("description", "agent"):
+                    if key in entry and not isinstance(entry[key], str):
+                        violations.append(
+                            self.violation(
+                                f"'{where}.{key}' must be a string",
+                                file_path=path,
+                                severity=Severity.WARNING,
+                            )
+                        )
+                if "subtask" in entry and not isinstance(entry["subtask"], bool):
+                    violations.append(
+                        self.violation(
+                            f"'{where}.subtask' must be a boolean",
+                            file_path=path,
+                            severity=Severity.WARNING,
+                        )
+                    )
+                if "model" in entry and _lower_model_selection(entry["model"]) is None:
+                    violations.append(
+                        self.violation(
+                            f"'{where}.model' must be a provider/model string or a "
+                            "model selection object",
+                            file_path=path,
+                            severity=Severity.WARNING,
+                        )
+                    )
         return violations
 
     # -- MCP ---------------------------------------------------------------

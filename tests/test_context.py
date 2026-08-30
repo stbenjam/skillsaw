@@ -686,7 +686,7 @@ def test_detected_formats_devin_rules_and_instructions(temp_dir):
 
 
 def test_nested_devin_and_windsurf_skills_are_discovered(temp_dir):
-    """The shared scan finds native skill collections in nested workspaces."""
+    """The shared scan finds both skill dialects in nested workspaces."""
     from skillsaw.context import HAS_DEVIN, RepositoryType
 
     expected = []

@@ -68,29 +68,33 @@ class HooksProhibitedRule(Rule):
         for event_type, configs in events.items():
             for cfg in configs:
                 for handler in cfg.handlers:
-                    if handler.type != "command" or not handler.command:
+                    if handler.type != "command":
                         continue
-                    if self._is_allowed(handler.command):
-                        continue
+                    commands = handler.command_variants
+                    if not commands and handler.command:
+                        commands = [(handler.command, handler.source_line)]
+                    for command, source_line in commands:
+                        if not command or self._is_allowed(command):
+                            continue
 
-                    if allowlist:
-                        violations.append(
-                            self.violation(
-                                f"Hook {safe_display(event_type)}: non-allowlisted command — "
-                                f"{safe_display(handler.command)!r}",
-                                file_path=file_path,
-                                line=handler.source_line or line,
+                        if allowlist:
+                            violations.append(
+                                self.violation(
+                                    f"Hook {safe_display(event_type)}: "
+                                    f"non-allowlisted command — {safe_display(command)!r}",
+                                    file_path=file_path,
+                                    line=source_line or line,
+                                )
                             )
-                        )
-                    else:
-                        violations.append(
-                            self.violation(
-                                f"Hook {safe_display(event_type)}: hooks are prohibited — "
-                                f"{safe_display(handler.command)!r}",
-                                file_path=file_path,
-                                line=handler.source_line or line,
+                        else:
+                            violations.append(
+                                self.violation(
+                                    f"Hook {safe_display(event_type)}: hooks are prohibited — "
+                                    f"{safe_display(command)!r}",
+                                    file_path=file_path,
+                                    line=source_line or line,
+                                )
                             )
-                        )
         return violations
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -141,7 +145,7 @@ class HooksProhibitedRule(Rule):
 
         if self.surface_rule_enabled("copilot-agent-valid"):
             for block in context.lint_tree.find(CopilotAgentBlock):
-                if block.frontmatter_error or block.field_value("target") == "github-copilot":
+                if block.frontmatter_error:
                     continue
                 events = block.hooks_events
                 if events:
