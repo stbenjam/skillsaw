@@ -1464,6 +1464,27 @@ def _reject_deep_before_compose(source: str, loader: Any = None) -> None:
     document arrives there precisely because libyaml stopped early on
     syntax it rejects, so a prescan using libyaml would return at that
     same point and see none of the nesting the retry is about to compose.
+
+    **For the ruamel readers this scan is the belt and not the braces,
+    and it cannot be made otherwise.** They prescan with libyaml and then
+    compose with ruamel, which accepts documents libyaml does not — a
+    JSON-style escaped surrogate pair, for one — so on such a file the
+    scan stops at the syntax error, swallows it, and sees none of the
+    nesting that follows. The obvious repair, prescanning with a parser
+    that accepts everything ruamel accepts, has no implementation: the
+    only parser that agrees with ruamel is ruamel, and running it here
+    would parse every document twice to reach a verdict already reached.
+
+    What holds instead is the second half. ruamel is pure Python, so past
+    the interpreter's limit it *raises* where libyaml would fault, and
+    every ruamel reader turns that into the same ``_TOO_DEEP`` its
+    ``_reject_overly_nested`` backstop reports. Verified: a document
+    carrying a surrogate-pair escape ahead of 60,000 levels of flow
+    nesting — past where libyaml segfaults — comes back from
+    ``read_yaml_commented`` as ``_TOO_DEEP`` with the process intact.
+    The prescan is what keeps a *libyaml* composer off a hostile file;
+    for ruamel it is an early exit, and losing it costs a message, not
+    the bound.
     """
     depth = 0
     try:

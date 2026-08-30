@@ -95,13 +95,20 @@ def _html_comment_spans(text: str):
 
 #: Parsed trees, bounded by what they retain rather than by a count.
 #:
-#: A token tree is not a fixed-small entry: measured across document
-#: shapes it retains between 2.7x and 90x its source, because the ratio
-#: follows structure rather than length — a file of list items builds far
-#: more tokens per byte than one of fenced code. A count cap could not
-#: express a memory bound at that spread: at 90x, the 128-entry
-#: ``lru_cache`` this replaces admitted 406 MB of repository-controlled
-#: content, which is the T11 surface exactly.
+#: A token tree is not a fixed-small entry: what it retains follows
+#: structure rather than length — a file of list items builds far more
+#: tokens per byte than one of fenced code — and the spread is wide, with
+#: the shapes measured below reaching 294x. The durable point is the
+#: spread itself, not any one figure: no count of entries can express a
+#: memory bound across it. The 128-entry ``lru_cache`` this replaces held
+#: 128 parsed trees whatever they weighed, which for 134 KB documents is
+#: 406 MB of repository-controlled content — the T11 surface exactly.
+#:
+#: Ratios belong to the measurement block below, which states the
+#: interpreter they were taken on. Quoting one up here is how this
+#: comment came to carry a "2.7x to 90x" range and an inference drawn
+#: from its top end, thirty lines above the 112x and 294x that had
+#: replaced it.
 #:
 #: The charge is ``getsizeof(body) * _RETENTION_RATIO``, not a walk of the
 #: tree. Walking is the accurate measurement and it was the first thing

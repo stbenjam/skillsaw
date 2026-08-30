@@ -1322,3 +1322,33 @@ class TestNonStringPluginName:
         # Non-string names are excluded from duplicate comparison — no
         # duplicate report should mention 123.
         assert not any("duplicate" in m and "123" in m for m in messages), messages
+
+
+class TestResolutionPassInvalidation:
+    """A marketplace pass moves both counters, not just the memo."""
+
+    def test_starting_a_pass_bumps_the_file_cache_generation(self):
+        """``_start_resolution_pass`` goes through ``invalidate_path_identity``.
+
+        Dropping the resolution memo is only half of starting a pass.
+        ``FileCache`` is *keyed* by resolved paths, so a reader that
+        resolved from the memo just dropped is still in flight and will
+        file the new target's bytes under the old target's key unless the
+        cache's generation moves too. That is the failure
+        ``invalidate_path_identity`` exists to close, and it was closed at
+        two other call sites before this one was written — so this pins the
+        marketplace entry point to the helper rather than to
+        ``clear_resolve_cache()`` alone, which satisfies only the memo half.
+        """
+        import skillsaw.paths as paths
+        import skillsaw.utils as skillsaw_utils
+        from skillsaw.marketplace._pass import _start_resolution_pass
+
+        before = skillsaw_utils._file_cache._generation
+        _start_resolution_pass()
+
+        assert skillsaw_utils._file_cache._generation > before, (
+            "starting a pass left the file cache's generation untouched, so a "
+            "read already resolved against the dropped memo can still be admitted"
+        )
+        assert not paths._RESOLVE_CACHE, "the resolution memo was not dropped"
