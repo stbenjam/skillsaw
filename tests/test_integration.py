@@ -2816,14 +2816,13 @@ class TestOpenCode:
         assert [v["severity"] for v in unknown] == ["info"]
         assert "'modle'" in unknown[0]["message"]
 
-    def test_both_spellings_of_one_setting_are_reported_not_the_older_one(self, tmp_path):
-        """Either vocabulary alone is valid; carrying both is the finding."""
+    def test_only_conflicting_spellings_are_reported(self, tmp_path):
+        """Disjoint collection sections merge; one-to-one field aliases do not."""
         repo = copy_fixture("opencode/broken", tmp_path)
         messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
 
-        assert any(
-            "declares both 'agent' and 'agents'" in m for m in messages
-        ), "the top-level rename table must drive this"
+        assert not any("'agent.reviewer' and 'agents.planner'" in m for m in messages)
+        assert not any("declares both 'agent' and 'agents'" in m for m in messages)
         assert any("declares both 'prompt' and 'system'" in m for m in messages)
         assert any(
             "declares both 'enabled' and 'disabled'" in m and "sense inverted" in m
@@ -2835,16 +2834,6 @@ class TestOpenCode:
     @pytest.mark.parametrize(
         "config,expected",
         [
-            # A *top-level* rename to a name the 1.x schema does not know
-            # resolves in favour of the 1.x key under a 2.0 reader, and the
-            # finding still declines to say so: the fix is the same whichever
-            # value survives, and a wrong name costs the author the live one.
-            (
-                {"agent": {}, "agents": {}},
-                "declares both 'agent' and 'agents' — they are the 1.x and 2.0 "
-                "spellings of one setting, and only one of the two values is in "
-                "effect; keep one",
-            ),
             # The 1.x schema declares both halves of these two, so even that
             # reasoning does not reach them.
             (
@@ -2915,6 +2904,138 @@ class TestOpenCode:
 
         messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
         assert any(expected in m for m in messages), messages
+
+    @pytest.mark.parametrize(
+        "v1_key,v2_key,shared_entry",
+        [
+            ("agent", "agents", {"description": "Shared", "prompt": "Review."}),
+            ("command", "commands", {"template": "Review."}),
+        ],
+    )
+    def test_collection_aliases_merge_disjoint_and_identical_entries(
+        self, tmp_path, v1_key, v2_key, shared_entry
+    ):
+        config = {
+            v1_key: {"legacy": shared_entry, "shared": shared_entry},
+            v2_key: {"native": shared_entry, "shared": shared_entry},
+        }
+        repo = self._opencode_repo(tmp_path, "merged-collections", json.dumps(config))
+
+        messages = [
+            violation["message"]
+            for violation in by_rule(run_lint(repo)).get("opencode-config-valid", [])
+        ]
+
+        assert not any("define the same entry differently" in message for message in messages)
+        assert not any(
+            f"declares both '{v1_key}' and '{v2_key}'" in message for message in messages
+        )
+
+    @pytest.mark.parametrize(
+        "v1_key,v2_key,v1_entry,v2_entry",
+        [
+            (
+                "agent",
+                "agents",
+                {"prompt": "Legacy prompt"},
+                {"system": "Native prompt"},
+            ),
+            (
+                "command",
+                "commands",
+                {"template": "Legacy prompt"},
+                {"template": "Native prompt"},
+            ),
+        ],
+    )
+    def test_collection_aliases_report_only_conflicting_entry_names(
+        self, tmp_path, v1_key, v2_key, v1_entry, v2_entry
+    ):
+        config = {v1_key: {"review": v1_entry}, v2_key: {"review": v2_entry}}
+        repo = self._opencode_repo(tmp_path, "conflicting-collections", json.dumps(config))
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert messages == [
+            f"'{v1_key}.review' and '{v2_key}.review' define the same entry "
+            f"differently — OpenCode merges these sections and keeps "
+            f"'{v1_key}.review' when names overlap; keep one definition"
+        ]
+
+    def test_native_command_model_is_lowered_before_overlap_comparison(self, tmp_path):
+        config = {
+            "command": {
+                "review": {
+                    "template": "Review.",
+                    "model": "anthropic/claude-sonnet",
+                    "variant": "thinking",
+                }
+            },
+            "commands": {
+                "review": {
+                    "template": "Review.",
+                    "model": {
+                        "providerID": "anthropic",
+                        "model": "claude-sonnet",
+                        "variant": "thinking",
+                    },
+                }
+            },
+        }
+        repo = self._opencode_repo(tmp_path, "equivalent-models", json.dumps(config))
+
+        assert by_rule(run_lint(repo)).get("opencode-config-valid", []) == []
+
+    def test_collection_overlap_uses_json_type_equality(self, tmp_path):
+        config = {
+            "agent": {"review": {"provider-option": True}},
+            "agents": {"review": {"provider-option": 1}},
+        }
+        repo = self._opencode_repo(tmp_path, "strict-json-equality", json.dumps(config))
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert messages == [
+            "'agent.review' and 'agents.review' define the same entry differently — "
+            "OpenCode merges these sections and keeps 'agent.review' when names "
+            "overlap; keep one definition"
+        ]
+
+    def test_malformed_native_command_uses_shape_diagnostic_not_overlap(self, tmp_path):
+        config = {
+            "command": {"review": {"template": "Review.", "model": 42}},
+            "commands": {"review": {"template": "Review.", "model": 42}},
+        }
+        repo = self._opencode_repo(tmp_path, "malformed-native-command", json.dumps(config))
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert messages == [
+            "'commands.review.model' must be a provider/model string or a model " "selection object"
+        ]
+
+    @pytest.mark.parametrize("variant", [None, "", "bad#variant", 4])
+    def test_native_command_rejects_present_invalid_model_variant(self, tmp_path, variant):
+        config = {
+            "commands": {
+                "review": {
+                    "template": "Review.",
+                    "model": {
+                        "providerID": "anthropic",
+                        "model": "claude-sonnet",
+                        "variant": variant,
+                        "future-field": "ignored",
+                    },
+                }
+            }
+        }
+        repo = self._opencode_repo(tmp_path, "invalid-model-variant", json.dumps(config))
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
+
+        assert messages == [
+            "'commands.review.model' must be a provider/model string or a model " "selection object"
+        ]
 
     def test_a_primary_agent_is_not_asked_for_trigger_phrasing(self, tmp_path):
         """`mode: primary` is picked by a person, not routed to by description.
