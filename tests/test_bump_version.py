@@ -7,6 +7,7 @@ silently dead at exit 0. These tests run the script end-to-end against a
 tmp copy of every pinned file so a rewrite cannot go quietly inert.
 """
 
+import os
 import re
 import shutil
 import subprocess
@@ -51,11 +52,30 @@ def _make_repo(tmp_path: Path) -> Path:
     return repo
 
 
+def _child_env() -> dict:
+    """The ambient environment minus the coverage subprocess bootstrap.
+
+    These tests assert the script writes *nothing* to stderr, because a
+    shell quoting break shows up there while the script still exits 0.
+    Under ``make test-coverage`` the parent exports the coverage
+    subprocess bootstrap, and the venv is on PATH, so the ``python3`` the
+    script calls starts coverage through ``a1_coverage.pth`` — and on an
+    interpreter without ``sys.monitoring`` (before 3.12) that prints a
+    CoverageWarning to stderr, failing the assertion on a script that
+    behaved correctly. The whole ``COVERAGE_`` family goes, not just the
+    variable that happens to gate the hook today: the subject here is a
+    bash program, not instrumented Python, so none of it belongs in the
+    child.
+    """
+    return {name: value for name, value in os.environ.items() if not name.startswith("COVERAGE_")}
+
+
 def _run(repo: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["bash", str(repo / "scripts" / "bump-version.sh"), NEW],
         capture_output=True,
         text=True,
+        env=_child_env(),
     )
 
 
@@ -102,6 +122,7 @@ def test_bump_defaults_to_patch_increment(tmp_path):
         ["bash", str(repo / "scripts" / "bump-version.sh")],
         capture_output=True,
         text=True,
+        env=_child_env(),
     )
     assert result.returncode == 0, result.stderr
     assert 'version = "1.2.4"' in (repo / "pyproject.toml").read_text()
