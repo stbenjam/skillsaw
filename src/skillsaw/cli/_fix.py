@@ -142,7 +142,10 @@ def _run_fix(args):
                         print(f"      {line}")
                 print(f"      {c['dim']}{'─' * 40}{c['reset']}")
     else:
-        print("No auto-fixable violations found.")
+        if suggested:
+            print("No safe fixes found.")
+        else:
+            print("No auto-fixable violations found.")
 
     if suggested:
         print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
