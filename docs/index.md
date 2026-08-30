@@ -68,14 +68,15 @@ dead zones, and structural issues with more than 60 rules, then auto-fixes them.
 
     ---
 
-    `skillsaw add` generates plugins, skills, commands, agents, and hooks with best-practice
-    structure.
+    **Deprecated in 0.20.0.** `skillsaw add` remains available for now but
+    will be removed in an upcoming release.
 
 -   :memo:{ .lg .middle } **Documentation**
 
     ---
 
-    `skillsaw docs` generates HTML or Markdown documentation for your plugins and marketplaces.
+    **Deprecated in 0.20.0.** `skillsaw docs` remains available for now but
+    will be removed in an upcoming release.
 
 </div>
 

@@ -31,8 +31,8 @@ my-plugin/
 ## How to fix
 
 Create a `.claude-plugin/plugin.json` file with the required fields
-(`name`, `description`, `version`). Use `skillsaw add plugin` to
-scaffold a new plugin with the correct structure.
+(`name`, `description`, `version`). Put commands, agents, skills, and other
+plugin content beside the `.claude-plugin/` directory.
 
 ## Codex plugins
 
