@@ -65,20 +65,16 @@ nonexistent endpoint or asking the user to fill in information that should
 already be present.
 
 This is standard software engineering hygiene applied to a new file type.
-`TODO` and `FIXME` markers have been tracked by linters (ESLint's `no-warning-comments`,
-SonarQube's "Track uses of 'TODO' tags") for decades because they
-indicate incomplete implementation. The same principle applies to instruction
-files: if the content isn't ready, it shouldn't be in the agent's context.
+`TODO` and `FIXME` markers have been tracked by linters such as ESLint's
+`no-warning-comments` for decades because they indicate incomplete
+implementation. The same principle applies to instruction files: if the
+content isn't ready, it shouldn't be in the agent's context.
 
 **References:**
 
 - [ESLint: no-warning-comments](https://eslint.org/docs/latest/rules/no-warning-comments)
   — Tracks TODO/FIXME as code quality signals; the same pattern applies to
   instruction files
-- [SonarSource: Track uses of "TODO"
-  tags](https://rules.sonarsource.com/python/RSPEC-1135/) — "TODO tags are
-  commonly used to mark places where some more code is required, but which the
-  developer wants to implement later"
 - [Anthropic: Effective Context
   Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
   — "Keep your context informative, yet tight" — placeholder text is

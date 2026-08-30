@@ -78,9 +78,9 @@ names and illustrative paths that cannot be turned into working local links.
 
 **References:**
 
-- [Google Technical Writing: Links](https://developers.google.com/tech-writing/two/links)
-  — "Use meaningful link text" — paths mentioned without links are
-  un-navigable and un-verifiable
+- [Google style guide: Cross-references and
+  linking](https://developers.google.com/style/cross-references) — Use
+  descriptive link text so readers can navigate to related material
 - [Microsoft Writing Style Guide: Links](https://learn.microsoft.com/en-us/style-guide/urls-web-addresses)
   — Bare URLs and paths should be formatted as actionable links
 
