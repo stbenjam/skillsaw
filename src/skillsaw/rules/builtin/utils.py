@@ -22,6 +22,7 @@ from skillsaw.utils import (  # noqa: F401  — underscore names ``*`` does not 
     _FRONTMATTER_RE,
     _extract_frontmatter_text,
     _fast_top_level_key_lines,
+    reject_duplicate_json_keys,
 )
 from skillsaw.utils import read_text
 
@@ -42,7 +43,14 @@ def strict_json(path: Path) -> Tuple[Optional[Any], Optional[str]]:
     if content is None:
         return None, "could not read file"
     try:
-        return json.loads(content, parse_constant=reject_nonfinite_json_number), None
+        return (
+            json.loads(
+                content,
+                parse_constant=reject_nonfinite_json_number,
+                object_pairs_hook=reject_duplicate_json_keys,
+            ),
+            None,
+        )
     except json.JSONDecodeError as error:
         return None, f"{error.msg} at line {error.lineno}, column {error.colno}"
     except ValueError as error:

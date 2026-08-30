@@ -118,6 +118,21 @@ class TestManifestSchema:
         assert len(findings) == 1
         assert "json" in findings[0].message.lower()
 
+    def test_duplicate_json_object_key_is_reported(self, tmp_path):
+        (tmp_path / "plugin.json").write_text(
+            '{"name": "first", "name": "second"}',
+            encoding="utf-8",
+        )
+
+        findings = lint_rules(
+            tmp_path,
+            PLUGIN_JSON_RULE,
+            repo_types={RepositoryType.AGENT_PLUGIN},
+        )
+
+        assert len(findings) == 1
+        assert "duplicate json object key" in findings[0].message.lower()
+
     def test_unsupported_canonical_schema_version_is_reported(self, tmp_path):
         repo = copy_fixture("agent-plugins/unsupported-schema", tmp_path)
         findings = lint_rules(repo, PLUGIN_JSON_RULE)

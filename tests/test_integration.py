@@ -407,6 +407,23 @@ class TestMcpRegistry:
         assert "mcp-registry-server-json-valid" in rule_ids(r)
         assert any("Invalid JSON" in item["message"] for item in violations(r))
 
+    def test_explicit_type_reports_duplicate_server_json_key(self, tmp_path):
+        (tmp_path / "server.json").write_text(
+            '{"name": "io.example/first", "name": "io.example/second"}',
+            encoding="utf-8",
+        )
+        r = run_lint(
+            tmp_path,
+            "--type",
+            "mcp-registry",
+            "--rule",
+            "mcp-registry-server-json-valid",
+        )
+
+        found = by_rule(r)["mcp-registry-server-json-valid"]
+        assert len(found) == 1
+        assert "duplicate JSON object key" in found[0]["message"]
+
     def test_unrelated_server_json_does_not_activate_registry_rules(self, tmp_path):
         repo = copy_fixture("mcp-registry/unrelated", tmp_path)
         r = run_lint(repo)
@@ -2749,6 +2766,20 @@ class TestOpenCode:
         ]
         assert found[0]["message"].startswith("Invalid JSON:")
         assert by_rule(r).get("opencode-config-valid", []) == []
+
+    def test_duplicate_config_key_is_a_parse_error(self, tmp_path):
+        repo = self._opencode_repo(
+            tmp_path,
+            "duplicate-key",
+            '{"model": "anthropic/first", "model": "anthropic/second"}',
+        )
+
+        grouped = by_rule(run_lint(repo))
+
+        found = grouped["mcp-valid-json"]
+        assert len(found) == 1
+        assert "duplicate JSON object key" in found[0]["message"]
+        assert grouped.get("opencode-config-valid", []) == []
 
     def test_targeting_config_validation_also_runs_its_parse_validation(self, tmp_path):
         """A focused config check must not pass a file OpenCode cannot read."""
