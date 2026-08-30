@@ -1,20 +1,11 @@
 ## Why
 
-Anthropic's [The new rules of context engineering for Claude 5
-generation models](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models)
-recommends moving from example-driven prompting to interface design:
-"Giving examples actually constrains them to a certain exploration
-space" — prefer expressive tool parameters, enumerations, and
-constraints. (Anthropic's earlier, pre-Claude-5 [context-engineering
-guidance](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
-recommended curated, diverse canonical examples; the shift away from
-them is specific to Claude 5 generation models.) A wall of
-near-identical example invocations teaches the model three points in an
-argument space and implicitly discourages everything in between; a
-description of the tool's parameters, types, and constraints covers the
-whole space in fewer tokens. Claude 5 generation models infer usage
-from an interface — they don't need the same call demonstrated with
-three different query strings.
+Modern context engineering recommends prioritizing clear interface definitions
+over repetitive example-driven prompting. A wall of near-identical example invocations
+consumes context tokens and implicitly over-constrains model exploration; a clear
+description of the tool's parameters, types, and constraints covers the full capability
+space in far fewer tokens.
+
 
 The rule looks at fenced (and indented) code blocks whose content is
 call-syntax invocations of a single tool or function — `search(...)`,

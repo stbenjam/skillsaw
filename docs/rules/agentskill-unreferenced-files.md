@@ -20,61 +20,25 @@ SKILL.md. An unreferenced file is dead weight in the skill package —
 it ships to every consumer, inflates installs, and rots silently
 because nothing points at it.
 
-It is also a security smell: research on malicious skills found that
-most hide their behavior in bundled files SKILL.md never mentions
-(shadow functionality — OWASP Agentic Skills Top 10, AST01). A script
-that no instruction references has no legitimate reason to be in the
-package, and reviewers routinely skip files the skill text never asks
-an agent to open or run.
+It is also a security risk: unreferenced files can bundle hidden or untrusted
+functionality that reviewers skip because the skill instructions never ask
+an agent to open or run them.
 
 ## What counts as a reference
 
-A file is referenced when its path or filename is mentioned in
-SKILL.md **or transitively** in any local file reachable from SKILL.md
-(SKILL.md → `references/a.md` → `references/b.md` counts). Every
-referenced file — scripts and data files included, not just markdown —
-becomes a reference source: a data file read by a script that SKILL.md
-documents (SKILL.md → `check.py` → `allowed-repos.txt`) is covered,
-because the whole chain is reviewable. Non-markdown sources contribute
-plain-text mentions only (link syntax is resolved only in markdown);
-binary files and files over 1 MiB never become sources. A skill-root
-README.md and the skill's `agents/openai.yaml` metadata file also
-count as reference roots — a file documented in the skill's README, or
-an icon the OpenAI metadata points at, is neither dead weight nor
-hidden from review.
+A file is referenced when its path or filename is mentioned in SKILL.md **or
+transitively** in any local file reachable from SKILL.md (e.g. SKILL.md →
+`references/a.md` → `references/b.md`). A skill-root `README.md` and
+`agents/openai.yaml` also count as reference roots.
 
-Mentions are detected in markdown links, inline code spans, fenced
-code blocks (`python scripts/run.py`), and plain prose:
+Mentions are detected in markdown links, inline code spans, fenced code blocks,
+and plain prose:
 
-- Relative paths count: `scripts/run.py`, `./scripts/run.py`, or
-  `img/logo.png` from a file in the same directory.
-- Matching is case-insensitive: SKILL.md saying `FORMS.md` covers a
-  `forms.md` on disk — such references work on case-insensitive
-  filesystems.
-- Bare filenames count: a mention of `run.py` anywhere marks
-  `scripts/run.py` as referenced. Skills routinely refer to bundled
-  scripts by name alone, so requiring full paths would flag
-  heavily-referenced files.
-- Directory mentions cover their contents (configurable): "read the
-  files in `references/`" marks everything under `references/` as
-  referenced. Prose and code mentions must be path-ish — a trailing
-  slash (`references/`), a `./` prefix (`./canvas-fonts`), or an
-  interior `/` (`assets/fonts`); the slash-less forms only count when
-  the directory actually exists in the skill, and a bare word with no
-  path markers never covers anything. Links may target the bare
-  directory.
-- Python imports are followed: when a reachable file is a `.py` file,
-  its imports are resolved within the skill (relative to the skill
-  root and to the importing file's directory, including relative
-  imports), so SKILL.md → `scripts/recalc.py` → `from office.soffice
-  import ...` covers `scripts/office/soffice.py`. Imported modules
-  join the traversal, so files they mention (a schema referenced from
-  a docstring) are covered too. `from a.b import c` covers `a/b/c.py`
-  when it exists, otherwise the `a.b` module; package `__init__.py`
-  files along the path are covered as well. Imports shown inside
-  python-labeled (or unlabeled) fenced code blocks of reachable
-  markdown count the same way: a SKILL.md fence teaching `from
-  core.gif_builder import GIFBuilder` covers `core/gif_builder.py`.
+- Relative paths and bare filenames (`scripts/run.py` or `run.py`)
+- Case-insensitive filename matches
+- Directory mentions covering their contents (`references/` or `./assets`)
+- Python imports resolved within the skill package
+
 
 Never flagged: SKILL.md itself, README.md, CHANGELOG.md, LICENSE* and
 NOTICE* files (any suffix, e.g. `LICENSE-MIT`), files under `evals/`
