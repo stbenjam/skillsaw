@@ -847,6 +847,74 @@ class TestContentBlockReadWrite:
         result = f.read_text(encoding="utf-8")
         assert result == "---\ndescription: A test rule\nglobs: '*.py'\n---\nNew body content\n"
 
+    @pytest.mark.parametrize(
+        ("original", "expected"),
+        [
+            (
+                b"---\ndescription: Old\n---\nBody\n",
+                b"---\ndescription: New\n---\nBody\n",
+            ),
+            (
+                b"---\ndescription: Old\n---\n\nBody\n",
+                b"---\ndescription: New\n---\n\nBody\n",
+            ),
+            (b"Body\n", b"---\ndescription: New\n---\nBody\n"),
+            (b"", b"---\ndescription: New\n---\n"),
+            (
+                b"---\ndescription: Old\nBody\n",
+                b"---\ndescription: New\n---\ndescription: Old\nBody\n",
+            ),
+        ],
+        ids=("replace", "body-leading-blank", "prepend", "empty", "missing-close"),
+    )
+    def test_write_frontmatter_text_preserves_existing_byte_contract(
+        self, temp_dir, monkeypatch, original, expected
+    ):
+        f = temp_dir / "test.mdc"
+        f.write_bytes(original)
+        block = CursorRuleBlock(path=f)
+        original_write_text = Path.write_text
+        writes = 0
+
+        def tracked_write_text(path, *args, **kwargs):
+            nonlocal writes
+            writes += 1
+            return original_write_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", tracked_write_text)
+
+        block.write_frontmatter_text("description: New\n")
+
+        assert writes == 1
+        assert f.read_bytes() == expected
+
+    @pytest.mark.parametrize(
+        ("new_frontmatter", "error"),
+        [
+            ("description: [broken", "Invalid YAML"),
+            ("- description: New\n", "Frontmatter must be a YAML mapping"),
+        ],
+    )
+    def test_write_frontmatter_text_validation_never_writes(
+        self, temp_dir, monkeypatch, new_frontmatter, error
+    ):
+        f = temp_dir / "test.mdc"
+        original = b"---\ndescription: Old\n---\nBody\n"
+        f.write_bytes(original)
+        block = CursorRuleBlock(path=f)
+        assert block.field_value("description") == "Old"
+
+        def fail_write_text(*_args, **_kwargs):
+            pytest.fail("validation error must not write")
+
+        monkeypatch.setattr(Path, "write_text", fail_write_text)
+
+        with pytest.raises(ValueError, match=error):
+            block.write_frontmatter_text(new_frontmatter)
+
+        assert f.read_bytes() == original
+        assert block.field_value("description") == "Old"
+
     def test_frontmattered_block_no_frontmatter(self, temp_dir):
         """FrontmatteredBlock without frontmatter has BodyContent with full content."""
         f = temp_dir / "test.mdc"
