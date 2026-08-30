@@ -414,6 +414,31 @@ def _remember(node: Any, visited: Set[int], alive: List[Any]) -> None:
     alive.append(node)
 
 
+def _sizeof_or_estimate(node: Any) -> int:
+    """``sys.getsizeof(node)``, or the flat estimate if it will not answer.
+
+    ``__sizeof__`` is ordinary Python on a custom class, so it can raise
+    anything a method can raise, and a custom rule may put such an object
+    into a cached read. Whatever it raises arrives here *after* the wrapped
+    helper returned successfully — so letting it out converts a valid read
+    into a ``rule-execution-error`` and discards findings the rule already
+    produced. Aborting a lint from inside cache accounting is worse than
+    charging an estimate, so the estimate wins for every ordinary failure.
+
+    ``Exception`` and not ``BaseException``: a ``KeyboardInterrupt`` or a
+    ``SystemExit`` crossing this frame is someone asking the process to
+    stop, and swallowing it to finish costing a cache entry would be the
+    same mistake in the other direction.
+
+    Applies to the ``str`` branch as much as the scalar one: ``str`` can be
+    subclassed, and this walk is handed whatever a custom rule cached.
+    """
+    try:
+        return sys.getsizeof(node)
+    except Exception:
+        return _NODE_OVERHEAD_BYTES
+
+
 def _approximate_size(value: Any) -> int:
     """Roughly how many bytes *value* keeps alive, for cache accounting.
 
@@ -461,7 +486,7 @@ def _approximate_size(value: Any) -> int:
             # (PEP 393), so a document of emoji retains four times the
             # length the budget would have been shown. ``getsizeof``
             # reports what the object actually holds, header included.
-            size = sys.getsizeof(node)
+            size = _sizeof_or_estimate(node)
             _remember(node, visited, alive)
             total += size
             # Not an unconditional ``continue``: ruamel returns
@@ -488,12 +513,7 @@ def _approximate_size(value: Any) -> int:
         # a few million hex digits into a multi-megabyte ``int``, and the
         # hex path has no digit limit to stop it. Charge what the object
         # holds, floored at the overhead a slot costs regardless.
-        try:
-            size = max(sys.getsizeof(node), _NODE_OVERHEAD_BYTES)
-        except TypeError:
-            # An exotic ``__sizeof__``. Aborting a lint from inside cache
-            # accounting would be worse than charging the flat estimate.
-            size = _NODE_OVERHEAD_BYTES
+        size = max(_sizeof_or_estimate(node), _NODE_OVERHEAD_BYTES)
         _remember(node, visited, alive)
         total += size
         _push_attributes(node, stack)

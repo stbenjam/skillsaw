@@ -2994,3 +2994,42 @@ class TestDepthWalkCoversMappingKeys:
         for source in ("? [[1]]\n: v\n", "? [{a: 1}]\n: v\n"):
             with pytest.raises(TypeError):
                 YAML().load(source)
+
+
+class TestSizeWalkSurvivesAHostileSizeof:
+    """Cache accounting must not abort a lint that already succeeded."""
+
+    def test_an_exception_from_sizeof_is_charged_the_flat_estimate(self):
+        """``__sizeof__`` is ordinary Python and can raise anything.
+
+        A custom rule may put such an object into a cached read, and the
+        walk runs *after* the wrapped helper returned successfully — so an
+        escaping exception converts a valid read into a
+        ``rule-execution-error`` and discards findings the rule already
+        produced. Covers the ``str`` branch too: ``str`` is subclassable,
+        and this walk is handed whatever was cached.
+        """
+        from skillsaw.utils import _approximate_size
+
+        class HostileStr(str):
+            def __sizeof__(self):
+                raise RuntimeError("hostile __sizeof__")
+
+        class HostileObject:
+            def __sizeof__(self):
+                raise ValueError("hostile __sizeof__")
+
+        assert _approximate_size({"a": HostileStr("x")}) > 0
+        assert _approximate_size({"a": HostileObject()}) > 0
+
+    def test_a_baseexception_from_sizeof_still_propagates(self):
+        """Swallowing an interrupt to finish costing a cache entry is the
+        same mistake in the other direction."""
+        from skillsaw.utils import _approximate_size
+
+        class Interrupting:
+            def __sizeof__(self):
+                raise KeyboardInterrupt
+
+        with pytest.raises(KeyboardInterrupt):
+            _approximate_size({"a": Interrupting()})
