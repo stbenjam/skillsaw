@@ -18,6 +18,17 @@ TOC_END = "<!-- END GENERATED TOC -->"
 
 RULE_GROUPS = [
     (
+        "Agent Plugins",
+        ["agent-plugin-json-valid", "agent-plugin-mcp-valid", "agent-plugin-required"],
+        "Validates portable plugin packages against the "
+        "[Agent Plugins v1 specification]"
+        "(https://agent-plugins.org/specification). The manifest rule checks "
+        "the required root `plugin.json`; the MCP rule checks optional root "
+        "`mcp.json`. Auto-enabled when a root or immediate `plugins/*` "
+        "manifest declares a canonical Agent Plugins schema; use "
+        "`--type agent-plugin` to force validation.",
+    ),
+    (
         "agentskills.io",
         [
             "agentskill-valid",
@@ -36,24 +47,10 @@ RULE_GROUPS = [
         "Plugin packages.",
     ),
     (
-        "Vercel",
-        ["skills-lock-valid"],
-        "Validates every `skills-lock.json` written by the "
-        "[Vercel skills CLI](https://github.com/vercel-labs/skills): strict JSON, "
-        "the versioned project-lock shape, required source metadata, digest syntax, "
-        "and paths that remain portable across machines. Lockfiles are discovered "
-        "recursively for monorepos and the rule auto-enables when one is present.",
-    ),
-    (
-        "Agent Plugins",
-        ["agent-plugin-json-valid", "agent-plugin-mcp-valid", "agent-plugin-required"],
-        "Validates portable plugin packages against the "
-        "[Agent Plugins v1 specification]"
-        "(https://agent-plugins.org/specification). The manifest rule checks "
-        "the required root `plugin.json`; the MCP rule checks optional root "
-        "`mcp.json`. Auto-enabled when a root or immediate `plugins/*` "
-        "manifest declares a canonical Agent Plugins schema; use "
-        "`--type agent-plugin` to force validation.",
+        "APM (Agent Package Manager)",
+        ["apm-yaml-valid", "apm-structure-valid"],
+        "Validates repositories using the [APM](https://github.com/microsoft/apm) "
+        "directory layout (`.apm/`). Auto-enables when `.apm/` is detected.",
     ),
     (
         "Claude Code",
@@ -80,140 +77,13 @@ RULE_GROUPS = [
         "legacy aliases everywhere a rule is named.",
     ),
     (
-        "OpenAI Codex",
-        [
-            "codex-openai-metadata",
-            "codex-plugin-json-valid",
-            "codex-plugin-structure",
-            "codex-marketplace-json-valid",
-            "codex-marketplace-registration",
-        ],
-        "Validates OpenAI's optional "
-        "[skill metadata](https://learn.chatgpt.com/docs/build-skills#optional-metadata) "
-        "in `agents/openai.yaml`, plus Codex plugins and marketplaces against "
-        "the [Codex plugin specification]"
-        "(https://developers.openai.com/plugins/build/plugins). The metadata "
-        "rule auto-enables for Agent Skills; the plugin and marketplace rules "
-        "auto-enable only when their Codex manifests are present.",
-    ),
-    (
-        "Hooks",
-        [
-            "hooks-json-valid",
-            "hooks-dangerous",
-            "hooks-prohibited",
-        ],
-        "Validates hook configuration. The security rules scan hooks in "
-        "`hooks.json`, `.cursor/hooks.json`, `.claude/settings*.json`, and "
-        "skill, Claude-agent, and Copilot-agent frontmatter (`hooks:` key) for supply-chain "
-        "attack patterns (inspired by the "
-        "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
-    ),
-    (
-        "Security",
-        [
-            "security-invisible-unicode",
-            "security-hidden-instructions",
-            "security-encoded-payload",
-            "security-dynamic-context",
-        ],
-        "Content-validation rules that catch payloads and instructions "
-        "invisible to human review: invisible/bidi unicode smuggling, agent "
-        "directives hidden in HTML comments or Markdown link labels, and "
-        "long high-entropy base64/hex blobs or unallowlisted dynamic-context "
-        "commands in agent content that can smuggle or execute payloads.",
-    ),
-    (
-        "MCP (Model Context Protocol)",
-        [
-            "mcp-valid-json",
-            "mcp-prohibited",
-            "mcp-registry-server-json-valid",
-            "mcp-registry-version-semver",
-            "mcp-registry-npm-name-match",
-        ],
-        "Validates both MCP client configuration and MCP Registry publisher "
-        "metadata. Registry rules use every released schema and local "
-        "package metadata; they never query a package registry.",
-    ),
-    (
-        "OpenClaw",
-        ["openclaw-metadata"],
-        "Validates `metadata.openclaw` in SKILL.md frontmatter against the "
-        "[OpenClaw spec](https://docs.openclaw.ai/tools/skills). Only fires "
-        "when `metadata.openclaw` is present.",
-    ),
-    (
-        "Cursor",
-        ["cursor-rules-valid", "cursor-hooks-valid"],
-        "Validates Cursor's repository-shipped configuration under every `.cursor/` "
-        "directory in the repository, the root one and any in a monorepo "
-        "subpackage: `rules/**/*.mdc` "
-        "frontmatter (the fields that decide whether a rule ever activates) and "
-        "`.cursor/hooks.json` structure. Cursor reads AGENTS.md for portable "
-        "instructions, so no Cursor-specific instruction format is validated. "
-        "Enabled automatically wherever a `.cursorrules` file exists, or a "
-        "`.cursor/` directory holds Cursor content — `rules/`, `commands/`, "
-        "`skills/`, `mcp.json` or `hooks.json`. A `.cursor/` holding only "
-        "unrelated files does not activate them.",
-    ),
-    (
-        "Copilot / VS Code",
-        ["copilot-agent-valid"],
-        "Validates target-aware YAML frontmatter in `.github/agents/**/*.md` "
-        "and legacy `.github/chatmodes/**/*.chatmode.md`: shared fields, real "
-        "booleans, tools and model collections, subagents, handoffs, cloud MCP "
-        "servers, metadata, and preview hooks. Embedded MCP and hooks also reach "
-        "the shared security and policy rules. Enabled automatically wherever "
-        "Copilot or VS Code repository content is detected.",
-    ),
-    (
-        "Devin",
-        ["devin-rules-valid", "devin-skill-valid"],
-        "Validates Devin CLI/Desktop workspace rules under `.devin/rules/` "
-        "and legacy `.windsurf/rules/`, plus Devin-native `.devin/skills` whose "
-        "frontmatter is optional and extends the portable Agent Skills dialect. "
-        "Windsurf `.windsurf/skills` use portable Agent Skills validation. Enabled "
-        "automatically when Devin repository context is present.",
-    ),
-    (
-        "OpenCode",
-        ["opencode-config-valid"],
-        "Validates the OpenCode project config — `opencode.json` or "
-        "`opencode.jsonc`, at the "
-        "repository root or under any `.opencode/` directory — where a "
-        "misspelled key is read, ignored and never reported. OpenCode 2.0 "
-        "renames much of the schema while still loading the 1.x spelling, so "
-        "**both vocabularies are accepted**. OpenCode merges `agent`/`agents` "
-        "and `command`/`commands` by entry name; only conflicting definitions "
-        "of one name are reported. Comments and trailing commas "
-        "are fine — OpenCode reads `.json` through a JSONC parser. OpenCode "
-        "reads AGENTS.md for portable instructions, so no OpenCode-specific "
-        "instruction format is validated. Its commands, agents, skills and "
-        "repository-local files matched by `instructions` paths or globs get the shared content "
-        "rules; remote URLs are not fetched. Enabled automatically wherever an "
-        "`opencode.json` or `opencode.jsonc` exists, or a `.opencode/` "
-        "directory holds OpenCode "
-        "content.",
-    ),
-    (
-        "Instruction Files",
-        [
-            "instruction-file-valid",
-            "instruction-imports-valid",
-            "claude-md-agents-import",
-        ],
-        "Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, "
-        "GEMINI.md, QWEN.md, and Devin-compatible alternatives). Checks encoding, "
-        "non-emptiness, and that supported `@import` references resolve to existing "
-        "files. Enabled automatically when one of those files is present.",
-    ),
-    (
-        "Context Budget",
-        ["context-budget"],
-        "Warns when instruction and configuration files exceed recommended "
-        "token limits. Uses a `len(text) / 4` approximation for token counting. "
-        "Supports per-category `warn` and `error` thresholds. Disabled by default.",
+        "CodeRabbit",
+        ["coderabbit-yaml-valid", "coderabbit-schema-valid"],
+        "Validates `.coderabbit.yaml` config files for YAML syntax. "
+        "Instruction text fields (`reviews.instructions`, per-path "
+        "instructions, per-tool instructions, `chat.instructions`) are "
+        "automatically checked by the content-* rules above. Auto-enabled "
+        "when `.coderabbit.yaml` is detected.",
     ),
     (
         "Content Intelligence",
@@ -252,13 +122,126 @@ RULE_GROUPS = [
         "for the full research basis behind each rule.",
     ),
     (
-        "CodeRabbit",
-        ["coderabbit-yaml-valid", "coderabbit-schema-valid"],
-        "Validates `.coderabbit.yaml` config files for YAML syntax. "
-        "Instruction text fields (`reviews.instructions`, per-path "
-        "instructions, per-tool instructions, `chat.instructions`) are "
-        "automatically checked by the content-* rules above. Auto-enabled "
-        "when `.coderabbit.yaml` is detected.",
+        "Context Budget",
+        ["context-budget"],
+        "Warns when instruction and configuration files exceed recommended "
+        "token limits. Uses a `len(text) / 4` approximation for token counting. "
+        "Supports per-category `warn` and `error` thresholds. Disabled by default.",
+    ),
+    (
+        "Copilot / VS Code",
+        ["copilot-agent-valid"],
+        "Validates target-aware YAML frontmatter in `.github/agents/**/*.md` "
+        "and legacy `.github/chatmodes/**/*.chatmode.md`: shared fields, real "
+        "booleans, tools and model collections, subagents, handoffs, cloud MCP "
+        "servers, metadata, and preview hooks. Embedded MCP and hooks also reach "
+        "the shared security and policy rules. Enabled automatically wherever "
+        "Copilot or VS Code repository content is detected.",
+    ),
+    (
+        "Cursor",
+        ["cursor-rules-valid", "cursor-hooks-valid"],
+        "Validates Cursor's repository-shipped configuration under every `.cursor/` "
+        "directory in the repository, the root one and any in a monorepo "
+        "subpackage: `rules/**/*.mdc` "
+        "frontmatter (the fields that decide whether a rule ever activates) and "
+        "`.cursor/hooks.json` structure. Cursor reads AGENTS.md for portable "
+        "instructions, so no Cursor-specific instruction format is validated. "
+        "Enabled automatically wherever a `.cursorrules` file exists, or a "
+        "`.cursor/` directory holds Cursor content — `rules/`, `commands/`, "
+        "`skills/`, `mcp.json` or `hooks.json`. A `.cursor/` holding only "
+        "unrelated files does not activate them.",
+    ),
+    (
+        "Devin",
+        ["devin-rules-valid", "devin-skill-valid"],
+        "Validates Devin CLI/Desktop workspace rules under `.devin/rules/` "
+        "and legacy `.windsurf/rules/`, plus Devin-native `.devin/skills` whose "
+        "frontmatter is optional and extends the portable Agent Skills dialect. "
+        "Windsurf `.windsurf/skills` use portable Agent Skills validation. Enabled "
+        "automatically when Devin repository context is present.",
+    ),
+    (
+        "Hooks",
+        [
+            "hooks-json-valid",
+            "hooks-dangerous",
+            "hooks-prohibited",
+        ],
+        "Validates hook configuration. The security rules scan hooks in "
+        "`hooks.json`, `.cursor/hooks.json`, `.claude/settings*.json`, and "
+        "skill, Claude-agent, and Copilot-agent frontmatter (`hooks:` key) for supply-chain "
+        "attack patterns (inspired by the "
+        "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
+    ),
+    (
+        "Instruction Files",
+        [
+            "instruction-file-valid",
+            "instruction-imports-valid",
+            "claude-md-agents-import",
+        ],
+        "Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, "
+        "GEMINI.md, QWEN.md, and Devin-compatible alternatives). Checks encoding, "
+        "non-emptiness, and that supported `@import` references resolve to existing "
+        "files. Enabled automatically when one of those files is present.",
+    ),
+    (
+        "MCP (Model Context Protocol)",
+        [
+            "mcp-valid-json",
+            "mcp-prohibited",
+            "mcp-registry-server-json-valid",
+            "mcp-registry-version-semver",
+            "mcp-registry-npm-name-match",
+        ],
+        "Validates both MCP client configuration and MCP Registry publisher "
+        "metadata. Registry rules use every released schema and local "
+        "package metadata; they never query a package registry.",
+    ),
+    (
+        "OpenAI Codex",
+        [
+            "codex-openai-metadata",
+            "codex-plugin-json-valid",
+            "codex-plugin-structure",
+            "codex-marketplace-json-valid",
+            "codex-marketplace-registration",
+        ],
+        "Validates OpenAI's optional "
+        "[skill metadata](https://learn.chatgpt.com/docs/build-skills#optional-metadata) "
+        "in `agents/openai.yaml`, plus Codex plugins and marketplaces against "
+        "the [Codex plugin specification]"
+        "(https://developers.openai.com/plugins/build/plugins). The metadata "
+        "rule auto-enables for Agent Skills; the plugin and marketplace rules "
+        "auto-enable only when their Codex manifests are present.",
+    ),
+    (
+        "OpenClaw",
+        ["openclaw-metadata"],
+        "Validates `metadata.openclaw` in SKILL.md frontmatter against the "
+        "[OpenClaw spec](https://docs.openclaw.ai/tools/skills). Only fires "
+        "when `metadata.openclaw` is present.",
+    ),
+    (
+        "OpenCode",
+        ["opencode-config-valid"],
+        "Validates the OpenCode project config — `opencode.json` or "
+        "`opencode.jsonc`, at the "
+        "repository root or under any `.opencode/` directory — where a "
+        "misspelled key is read, ignored and never reported. OpenCode 2.0 "
+        "renames much of the schema while still loading the 1.x spelling, so "
+        "**both vocabularies are accepted**. OpenCode merges `agent`/`agents` "
+        "and `command`/`commands` by entry name; only conflicting definitions "
+        "of one name are reported. Comments and trailing commas "
+        "are fine — OpenCode reads `.json` through a JSONC parser. OpenCode "
+        "reads AGENTS.md for portable instructions, so no OpenCode-specific "
+        "instruction format is validated. Its commands, agents, skills and "
+        "repository-local files matched by `instructions` paths or globs get the shared content "
+        "rules; remote URLs are not fetched. Enabled automatically wherever an "
+        "`opencode.json` or `opencode.jsonc` exists, or a `.opencode/` "
+        "directory holds OpenCode "
+        "content.",
     ),
     (
         "Promptfoo Evals",
@@ -269,10 +252,27 @@ RULE_GROUPS = [
         "`promptfoo-assertions` and `promptfoo-metadata` are opt-in policy rules.",
     ),
     (
-        "APM (Agent Package Manager)",
-        ["apm-yaml-valid", "apm-structure-valid"],
-        "Validates repositories using the [APM](https://github.com/microsoft/apm) "
-        "directory layout (`.apm/`). Auto-enables when `.apm/` is detected.",
+        "Security",
+        [
+            "security-invisible-unicode",
+            "security-hidden-instructions",
+            "security-encoded-payload",
+            "security-dynamic-context",
+        ],
+        "Content-validation rules that catch payloads and instructions "
+        "invisible to human review: invisible/bidi unicode smuggling, agent "
+        "directives hidden in HTML comments or Markdown link labels, and "
+        "long high-entropy base64/hex blobs or unallowlisted dynamic-context "
+        "commands in agent content that can smuggle or execute payloads.",
+    ),
+    (
+        "Vercel",
+        ["skills-lock-valid"],
+        "Validates every `skills-lock.json` written by the "
+        "[Vercel skills CLI](https://github.com/vercel-labs/skills): strict JSON, "
+        "the versioned project-lock shape, required source metadata, digest syntax, "
+        "and paths that remain portable across machines. Lockfiles are discovered "
+        "recursively for monorepos and the rule auto-enables when one is present.",
     ),
     (
         "Deprecated",
