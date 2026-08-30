@@ -51,8 +51,9 @@ class RuleViolation:
     # unknown — e.g. synthetic violations constructed outside
     # ``Rule.violation()``.
     fixable: Optional[bool] = None
-    # Confidence of the fix when ``fixable``: SAFE fixes apply with plain
-    # ``skillsaw fix``, SUGGEST fixes require ``--suggest``.
+    # Confidence of the fix when ``fixable``: SAFE fixes need no confidence
+    # opt-in; SUGGEST fixes require ``--suggest``. Severity scope is separate
+    # and follows the effective severity threshold.
     fix_confidence: Optional["AutofixConfidence"] = None
     # Stable suffix for external and baseline identities when a rule emits
     # sibling findings at the same path and line. Rules should set this from

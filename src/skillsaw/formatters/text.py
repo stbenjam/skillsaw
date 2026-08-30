@@ -162,24 +162,35 @@ def format_text(
     # Legend for the [*]/[?] markers and the lint-to-fix hint. Counts are
     # over the violations shown above, so marked lines and counts agree
     # (`skillsaw fix` groups per-file fixes and may report different totals).
-    safe_fixable = sum(1 for v in shown if v.fixable and v.fix_confidence == AutofixConfidence.SAFE)
-    suggest_fixable = sum(
-        1 for v in shown if v.fixable and v.fix_confidence != AutofixConfidence.SAFE
-    )
-    if safe_fixable and suggest_fixable:
-        output.append(
-            f"  {green}[*] {safe_fixable} violation(s) fixable with `skillsaw fix`"
-            f" ([?] {suggest_fixable} more with `skillsaw fix --suggest`){reset}"
+    def append_fixable_summary(severity: Severity) -> None:
+        scoped = [v for v in shown if v.severity == severity]
+        safe_count = sum(
+            1 for v in scoped if v.fixable and v.fix_confidence == AutofixConfidence.SAFE
         )
-    elif safe_fixable:
-        output.append(
-            f"  {green}[*] {safe_fixable} violation(s) fixable with `skillsaw fix`{reset}"
+        suggest_count = sum(
+            1 for v in scoped if v.fixable and v.fix_confidence != AutofixConfidence.SAFE
         )
-    elif suggest_fixable:
-        output.append(
-            f"  {green}[?] {suggest_fixable} violation(s) fixable with"
-            f" `skillsaw fix --suggest`{reset}"
-        )
+        command = "skillsaw fix"
+        if severity != Severity.ERROR:
+            command += f" --severity-threshold {severity.value}"
+        if safe_count and suggest_count:
+            output.append(
+                f"  {green}[*] {safe_count} {severity.value} violation(s) fixable with"
+                f" `{command}` ([?] {suggest_count} more with `{command} --suggest`){reset}"
+            )
+        elif safe_count:
+            output.append(
+                f"  {green}[*] {safe_count} {severity.value} violation(s) fixable with"
+                f" `{command}`{reset}"
+            )
+        elif suggest_count:
+            output.append(
+                f"  {green}[?] {suggest_count} {severity.value} violation(s) fixable with"
+                f" `{command} --suggest`{reset}"
+            )
+
+    for severity in Severity:
+        append_fixable_summary(severity)
 
     if errors == 0 and warnings == 0 and (fail_level != "info" or info == 0):
         output.append(f"\n{green}{bold}✓ All checks passed!{reset}")

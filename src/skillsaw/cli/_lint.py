@@ -10,7 +10,7 @@ from pathlib import Path
 from ..context import RepositoryContext, RepositoryType
 from ..formatters import format_report, get_counts, parse_output_spec
 from ..linter import Linter
-from ._config import _get_version, load_config
+from ._config import _get_version, load_config, resolve_fail_level
 from ._helpers import (
     _RuleProgress,
     _build_merged_context,
@@ -110,14 +110,7 @@ def _run_lint(args):
     if config_path and args.verbose and args.fmt == "text":
         print(f"Using config: {config_path}\n")
 
-    # CLI flags override the config file's strict/fail-on settings; the config
-    # values only apply when neither flag is given.
-    if args.fail_on:
-        fail_level = args.fail_on
-    elif args.strict:
-        fail_level = "warning"
-    else:
-        fail_level = config.effective_fail_level()
+    fail_level = resolve_fail_level(args, config)
 
     baseline = None
     if not args.no_baseline:

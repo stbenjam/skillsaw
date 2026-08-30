@@ -1260,7 +1260,7 @@ class TestFixMultiplePaths:
     """
 
     def _run_fix(self, *cli_args):
-        return run_cli(["fix", *cli_args])
+        return run_cli(["fix", "--severity-threshold", "info", *cli_args])
 
     def test_fix_two_repos_fixes_both(self, tmp_path):
         """Every path passed to fix gets fixed, not just the last one."""
@@ -5245,11 +5245,95 @@ class TestUnlinkedInternalReferenceSignal:
         assert found[0]["fixable"] is True
 
 
+@pytest.mark.integration
+class TestInfoAutofixOptIn:
+    """Info-level fixes must require an explicit CLI opt-in."""
+
+    def test_default_fix_leaves_hidden_info_violation_unchanged(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
+
+        result = run_cli(["fix", repo])
+
+        assert result.returncode == 0
+        assert skill.read_text() == before
+        assert "No auto-fixable violations found" in result.stdout
+
+    def test_suggest_does_not_imply_info_opt_in(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
+
+        result = run_cli(["fix", "--suggest", repo])
+
+        assert result.returncode == 0
+        assert skill.read_text() == before
+
+    def test_rule_selection_does_not_override_severity_threshold(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
+
+        result = run_cli(["fix", "--rule", "content-unlinked-internal-reference", repo])
+
+        assert result.returncode == 0
+        assert skill.read_text() == before
+
+    def test_info_threshold_applies_hidden_info_fix(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+
+        result = run_cli(["fix", "--severity-threshold", "info", repo])
+
+        assert result.returncode == 0
+        assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
+
+    def test_fail_on_alias_applies_info_fix(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+
+        result = run_cli(["fix", "--fail-on", "info", repo])
+
+        assert result.returncode == 0
+        assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
+
+    def test_configured_info_threshold_applies_info_fix(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        (repo / ".skillsaw.yaml").write_text('version: "0.20.0"\nfail-on: info\n')
+
+        result = run_cli(["fix", repo])
+
+        assert result.returncode == 0
+        assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
+
+    def test_cli_threshold_overrides_config(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
+        (repo / ".skillsaw.yaml").write_text('version: "0.20.0"\nfail-on: info\n')
+
+        result = run_cli(["fix", "--severity-threshold", "error", repo])
+
+        assert result.returncode == 0
+        assert skill.read_text() == before
+
+    def test_info_threshold_dry_run_previews_without_writing(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
+
+        result = run_cli(["fix", "--severity-threshold", "info", "--dry-run", repo])
+
+        assert result.returncode == 0
+        assert skill.read_text() == before
+        assert "Would fix 1 issue(s)" in result.stdout
+        assert "+Read [references/guide.md](references/guide.md)" in result.stdout
+
+
 class TestUnlinkedInternalReferenceAutofix:
     """Integration tests for content-unlinked-internal-reference autofix via CLI."""
 
     def _run_fix(self, path, *extra_args):
-        return run_cli(["fix", *extra_args, path])
+        return run_cli(["fix", "--severity-threshold", "info", *extra_args, path])
 
     def test_fix_duplicate_paths_via_cli(self, tmp_path):
         """CLI fix wraps duplicate bare paths without double-wrapping."""
@@ -5611,7 +5695,7 @@ class TestClaudeMdAgentsImport:
         repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
         agents_before = (repo / "AGENTS.md").read_text()
 
-        _run_fix(repo, "--suggest")
+        _run_fix(repo, "--severity-threshold", "info", "--suggest")
 
         # A file-restructuring fix, not a splice: the line count collapsing
         # from the whole duplicated body to one import line is the point,
@@ -5624,9 +5708,9 @@ class TestClaudeMdAgentsImport:
 
     def test_suggest_fix_is_idempotent(self, tmp_path):
         repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
-        _run_fix(repo, "--suggest")
+        _run_fix(repo, "--severity-threshold", "info", "--suggest")
         first = _snapshot_contents(repo)
-        _run_fix(repo, "--suggest")
+        _run_fix(repo, "--severity-threshold", "info", "--suggest")
         assert _snapshot_contents(repo) == first
 
     def test_suggest_fix_declines_the_diverged_pair(self, tmp_path):
@@ -5717,7 +5801,7 @@ class TestEncodingPreservingAutofix:
             b"Also see docs/setup.md for details.\r\n"
         )
 
-        _run_fix(repo)
+        _run_fix(repo, "--severity-threshold", "info")
 
         raw = target.read_bytes()
         # The fix fired (paths are now wrapped in link syntax) ...
@@ -5734,9 +5818,9 @@ class TestEncodingPreservingAutofix:
         target = repo / "CLAUDE.md"
         target.write_bytes(b"See scripts/build.sh here.\r\n")
 
-        _run_fix(repo)
+        _run_fix(repo, "--severity-threshold", "info")
         first = target.read_bytes()
-        _run_fix(repo)
+        _run_fix(repo, "--severity-threshold", "info")
         second = target.read_bytes()
         assert first == second
         assert b"\r\n" in first
@@ -5854,6 +5938,10 @@ class TestSafeAutofixIdempotency:
         "cursor-rules-valid": 3,
     }
 
+    @staticmethod
+    def _run_fix(repo):
+        return _run_fix(repo, "--severity-threshold", "info")
+
     def test_fixture_violation_counts(self, tmp_path):
         """Fixture must produce the exact expected SAFE violation counts."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
@@ -5884,11 +5972,11 @@ class TestSafeAutofixIdempotency:
     def test_fix_is_idempotent(self, tmp_path):
         """Running fix 11 times must produce byte-identical content after the first."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        _run_fix(repo)
+        self._run_fix(repo)
         baseline = _snapshot_contents(repo)
 
         for i in range(10):
-            _run_fix(repo)
+            self._run_fix(repo)
             current = _snapshot_contents(repo)
             all_files = set(baseline.keys()) | set(current.keys())
             changed = {f for f in all_files if baseline.get(f) != current.get(f)}
@@ -5906,7 +5994,7 @@ class TestSafeAutofixIdempotency:
         repo = copy_fixture(self.FIXTURE, tmp_path)
         before = _snapshot_line_counts(repo)
 
-        _run_fix(repo)
+        self._run_fix(repo)
         after = _snapshot_line_counts(repo)
 
         # Only check files that should NOT have line-count changes.
@@ -5946,11 +6034,11 @@ class TestSafeAutofixIdempotency:
         Verify the end result is clean and idempotent after convergence.
         """
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        _run_fix(repo)
+        self._run_fix(repo)
         after_first = _snapshot_contents(repo)
 
         # Second fix should find nothing — proving convergence
-        result = _run_fix(repo)
+        result = self._run_fix(repo)
         after_second = _snapshot_contents(repo)
 
         assert (
@@ -5977,7 +6065,7 @@ class TestSafeAutofixIdempotency:
             if v["rule_id"] in safe_rules
         }
 
-        _run_fix(repo)
+        self._run_fix(repo)
 
         r_after = run_lint(repo)
         after_keys = {
@@ -5996,7 +6084,7 @@ class TestSafeAutofixIdempotency:
     def test_no_double_wrapping(self, tmp_path):
         """Fix must not double-wrap already-linked paths (regression for #173)."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        _run_fix(repo)
+        self._run_fix(repo)
 
         for md_file in repo.rglob("*.md"):
             content = md_file.read_text(encoding="utf-8")
@@ -6085,7 +6173,10 @@ class TestLintFixLoop:
         repo = copy_fixture(self.FIXTURE, tmp_path)
         r = run_lint(repo, fmt="text", verbose=False)
 
-        m = re.search(r"\[\*\] (\d+) violation\(s\) fixable with `skillsaw fix`", r["stdout"])
+        m = re.search(
+            r"\[\*\] (\d+) error violation\(s\) fixable with `skillsaw fix`",
+            r["stdout"],
+        )
         assert m, f"missing fixable summary line in:\n{r['stdout']}"
         # The count matches the [*]-marked violation lines above it.
         assert int(m.group(1)) == r["stdout"].count("[*]") - 1
@@ -6745,17 +6836,17 @@ class TestMarkdownAstRegressions:
     def test_substring_corruption_fix_targets_exact_span(self, tmp_path):
         """A path that is a substring of another token must not be corrupted."""
         repo = copy_fixture("regression/markdown-ast-substring", tmp_path)
-        _run_fix(repo)
+        _run_fix(repo, "--severity-threshold", "info")
         fixed = (repo / "AGENTS.md").read_text()
         assert "Backup docs/setup.md.bak and [docs/setup.md](docs/setup.md) too." in fixed
         # Second run must be byte-identical (idempotent).
-        _run_fix(repo)
+        _run_fix(repo, "--severity-threshold", "info")
         assert (repo / "AGENTS.md").read_text() == fixed
 
     def test_substring_fix_preserves_line_count(self, tmp_path):
         repo = copy_fixture("regression/markdown-ast-substring", tmp_path)
         before = len((repo / "AGENTS.md").read_text().splitlines())
-        _run_fix(repo)
+        _run_fix(repo, "--severity-threshold", "info")
         assert len((repo / "AGENTS.md").read_text().splitlines()) == before
 
     def test_cross_paragraph_stray_backticks_do_not_hide_broken_link(self, tmp_path):
@@ -6920,7 +7011,7 @@ class TestRenameRefsAutofix:
 
         assert "No safe fixes found." in result.stdout
         assert "Suggested fixes" in result.stdout
-        assert "skillsaw fix --suggest" in result.stdout
+        assert "skillsaw fix --severity-threshold warning --suggest" in result.stdout
         assert "No auto-fixable violations found." not in result.stdout
 
     def test_substring_matches_not_corrupted(self, tmp_path):

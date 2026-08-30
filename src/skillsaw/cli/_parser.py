@@ -80,6 +80,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "overrides the config file's strict/fail-on settings)",
     )
     lint_parser.add_argument(
+        "--severity-threshold",
         "--fail-on",
         dest="fail_on",
         choices=list(_FAIL_ON_LEVELS),
@@ -191,6 +192,15 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "--suggest",
         action="store_true",
         help="Also apply suggested fixes (not just safe ones)",
+    )
+    fix_parser.add_argument(
+        "--severity-threshold",
+        "--fail-on",
+        dest="fail_on",
+        choices=list(_FAIL_ON_LEVELS),
+        default=None,
+        help="Fix violations at this severity or above. Overrides the config "
+        "file's strict/fail-on settings.",
     )
     fix_parser.add_argument(
         "--rule",

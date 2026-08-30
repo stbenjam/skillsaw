@@ -47,3 +47,19 @@ def load_config(args, start_path: Path) -> tuple[LinterConfig, Path | None]:
     else:
         config = LinterConfig.default()
     return config, config_path
+
+
+def resolve_fail_level(args, config: LinterConfig) -> str:
+    """Apply the shared CLI-over-config failure-threshold precedence."""
+    if getattr(args, "fail_on", None):
+        return args.fail_on
+    if getattr(args, "strict", False):
+        return "warning"
+    return config.effective_fail_level()
+
+
+def resolve_fix_level(args, config: LinterConfig) -> str:
+    """Resolve fix scope while preserving the error+warning default."""
+    if getattr(args, "fail_on", None):
+        return args.fail_on
+    return "info" if config.effective_fail_level() == "info" else "warning"

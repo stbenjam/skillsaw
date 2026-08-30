@@ -1264,7 +1264,9 @@ class Linter:
         )
 
     def fix(
-        self, progress: Optional[Callable[[int, int, str], None]] = None
+        self,
+        progress: Optional[Callable[[int, int, str], None]] = None,
+        severity_threshold: Optional[str] = None,
     ) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
         Run all enabled rules and attempt to fix violations.
@@ -1272,6 +1274,10 @@ class Linter:
         Args:
             progress: Optional callback invoked before each rule check with
                 ``(rule_number, total_rules, rule_id)``.
+            severity_threshold: Generate fixes at this severity or above.
+                ``None`` preserves the historical library behavior of
+                generating fixes at every severity; the CLI always passes
+                its resolved threshold explicitly.
 
         Returns:
             Tuple of (remaining violations, autofix results)
@@ -1284,6 +1290,14 @@ class Linter:
         all_violations = self._filter_violations(config_violations, record_baseline=False)
         all_fixes: List[AutofixResult] = []
         checked: List[RuleViolation] = list(config_violations)
+        threshold = severity_threshold or "info"
+        allowed_severities = {
+            "error": {Severity.ERROR},
+            "warning": {Severity.ERROR, Severity.WARNING},
+            "info": set(Severity),
+        }
+        if threshold not in allowed_severities:
+            raise ValueError(f"Unknown severity threshold: {threshold}")
 
         total = len(self.rules)
         for index, rule in enumerate(self.rules, 1):
@@ -1309,6 +1323,7 @@ class Linter:
                 for v in visible
                 if (v.block is None or not v.block.diagnostic_only)
                 and not self._is_on_external_source(v)
+                and v.severity in allowed_severities[threshold]
             ]
             if fixable_input and rule.supports_autofix:
                 try:
@@ -1376,6 +1391,7 @@ class Linter:
         max_passes: int = 10,
         dry_run: bool = False,
         progress: Optional[Callable[[int, int, str], None]] = None,
+        severity_threshold: Optional[str] = None,
     ) -> tuple[List[AutofixResult], List[AutofixResult]]:
         """Fixed-point iteration over autofix passes with snapshot isolation.
 
@@ -1395,6 +1411,12 @@ class Linter:
         Args:
             confidence: Minimum confidence level to apply.
             max_passes: Safety cap on iterations.
+            dry_run: Return the first independent set without writing it.
+            progress: Optional callback passed to each rule check.
+            severity_threshold: Generate fixes at this severity or above.
+                ``None`` preserves the historical library behavior of
+                generating fixes at every severity; the CLI always passes
+                its resolved threshold explicitly.
 
         Returns:
             Tuple of (applied fixes, suggested-but-not-applied fixes).
@@ -1409,7 +1431,7 @@ class Linter:
             allowed.add(AutofixConfidence.SUGGEST)
 
         for _ in range(max_passes):
-            _violations, fixes = self.fix(progress=progress)
+            _violations, fixes = self.fix(progress=progress, severity_threshold=severity_threshold)
             if not fixes:
                 break
 

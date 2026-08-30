@@ -16,7 +16,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover from the first path) |  |
 | `-v`, `--verbose` | Show info-level messages |  |
 | `--strict` | Treat warnings as errors (equivalent to --fail-on warning; overrides the config file's strict/fail-on settings) |  |
-| `--fail-on` | Fail on violations at this severity or above (default: error; --strict is equivalent to --fail-on warning). Overrides the config file's strict/fail-on settings. (choices: error, warning, info) |  |
+| `--severity-threshold`, `--fail-on` | Fail on violations at this severity or above (default: error; --strict is equivalent to --fail-on warning). Overrides the config file's strict/fail-on settings. (choices: error, warning, info) |  |
 | `--format` | Output format for stdout (default: text) (choices: text, json, sarif, html, code-climate, gitlab) | `text` |
 | `--output` | Write output to FILE. Format is inferred from extension (.htm, .html, .json, .sarif, .txt) or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). Use the prefix when an extension is ambiguous (e.g. .json could be json or gitlab/code-climate). Can be specified multiple times. |  |
 | `--type` | Override auto-detected repository type (repeatable). Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit, apm, promptfoo, codex-plugin, codex-marketplace, agent-plugin, mcp-registry. |  |
@@ -46,6 +46,7 @@ Automatically fix lint violations
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover from the first path) |  |
 | `--dry-run` | Preview fixes without writing changes |  |
 | `--suggest` | Also apply suggested fixes (not just safe ones) |  |
+| `--severity-threshold`, `--fail-on` | Fix violations at this severity or above. Overrides the config file's strict/fail-on settings. (choices: error, warning, info) |  |
 | `--rule` | Only run these rules and their validation dependencies (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |

@@ -1247,9 +1247,10 @@ def test_text_fixable_summary_splits_safe_and_suggest(valid_plugin):
     context = RepositoryContext(valid_plugin)
     output = format_text(_make_fixable_violations(), context, [], "0.0.0")
 
+    assert "[*] 2 error violation(s) fixable with `skillsaw fix`" in output
     assert (
-        "[*] 2 violation(s) fixable with `skillsaw fix`"
-        " ([?] 1 more with `skillsaw fix --suggest`)" in output
+        "[?] 1 warning violation(s) fixable with "
+        "`skillsaw fix --severity-threshold warning --suggest`" in output
     )
 
 
@@ -1260,7 +1261,7 @@ def test_text_fixable_summary_safe_only(valid_plugin):
     ]
     output = format_text(violations, context, [], "0.0.0")
 
-    assert "[*] 2 violation(s) fixable with `skillsaw fix`" in output
+    assert "[*] 2 error violation(s) fixable with `skillsaw fix`" in output
     assert "--suggest" not in output
 
 
@@ -1271,7 +1272,10 @@ def test_text_fixable_summary_suggest_only(valid_plugin):
     ]
     output = format_text(violations, context, [], "0.0.0")
 
-    assert "[?] 1 violation(s) fixable with `skillsaw fix --suggest`" in output
+    assert (
+        "[?] 1 warning violation(s) fixable with "
+        "`skillsaw fix --severity-threshold warning --suggest`" in output
+    )
     assert "[*]" not in output
 
 
@@ -1295,7 +1299,9 @@ def test_text_fixable_summary_counts_only_shown_violations(valid_plugin):
     assert "fixable with" not in hidden
 
     shown = format_text(violations, context, [], "0.0.0", verbose=True)
-    assert "[*] 1 violation(s) fixable with `skillsaw fix`" in shown
+    assert (
+        "[*] 1 info violation(s) fixable with " "`skillsaw fix --severity-threshold info`" in shown
+    )
 
 
 def test_json_fixable_true_includes_confidence(valid_plugin):
@@ -1339,7 +1345,23 @@ def test_html_fixable_marker(valid_plugin):
     output = format_html(_make_fixable_violations(), context, [], "1.0.0")
 
     assert 'title="fixable with skillsaw fix"' in output
-    assert 'title="fixable with skillsaw fix --suggest"' in output
+    assert 'title="fixable with skillsaw fix --severity-threshold warning --suggest"' in output
+
+
+def test_html_info_fixable_marker_requires_opt_in(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violation = RuleViolation(
+        rule_id="content-unlinked-internal-reference",
+        severity=Severity.INFO,
+        message="Unlinked path reference",
+        file_path=Path("SKILL.md"),
+        fixable=True,
+        fix_confidence=AutofixConfidence.SAFE,
+    )
+
+    output = format_html([violation], context, [], "1.0.0", verbose=True)
+
+    assert 'title="fixable with skillsaw fix --severity-threshold info"' in output
 
 
 def test_html_no_fixable_marker_when_unknown(valid_plugin):

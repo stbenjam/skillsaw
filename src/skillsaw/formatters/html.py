@@ -50,11 +50,12 @@ def format_html(
     def fix_marker(v: RuleViolation) -> str:
         if not v.fixable:
             return ""
-        cmd = (
-            "skillsaw fix"
-            if v.fix_confidence == AutofixConfidence.SAFE
-            else "skillsaw fix --suggest"
-        )
+        flags = []
+        if v.severity != Severity.ERROR:
+            flags.extend(("--severity-threshold", v.severity.value))
+        if v.fix_confidence != AutofixConfidence.SAFE:
+            flags.append("--suggest")
+        cmd = "skillsaw fix" + (f" {' '.join(flags)}" if flags else "")
         return f' <span class="fixable" title="fixable with {cmd}">*</span>'
 
     rows = ""

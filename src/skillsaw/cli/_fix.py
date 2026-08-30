@@ -8,7 +8,7 @@ import sys
 from ..context import RepositoryContext
 from ..linter import Linter
 from ..rule import AutofixConfidence
-from ._config import load_config
+from ._config import load_config, resolve_fix_level
 from ._helpers import (
     _RuleProgress,
     _ansi_colors,
@@ -35,6 +35,7 @@ def _run_fix(args):
     paths = _resolve_lint_paths(args.path)
 
     config, _config_path = load_config(args, paths[0])
+    severity_threshold = resolve_fix_level(args, config)
 
     rule_ids = set(args.rule_ids) if args.rule_ids else None
     skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
@@ -71,7 +72,10 @@ def _run_fix(args):
         rule_progress = _RuleProgress(args)
         try:
             path_applied, path_suggested = linter.fix_and_apply(
-                confidence, dry_run=dry_run, progress=rule_progress
+                confidence,
+                dry_run=dry_run,
+                progress=rule_progress,
+                severity_threshold=severity_threshold,
             )
         finally:
             rule_progress.clear()
@@ -91,7 +95,9 @@ def _run_fix(args):
                 no_custom_rules=args.no_custom_rules,
                 no_plugins=args.no_plugins,
             )
-            rename_applied, rename_suggested = linter.fix_and_apply(confidence)
+            rename_applied, rename_suggested = linter.fix_and_apply(
+                confidence, severity_threshold=severity_threshold
+            )
             path_applied.extend(rename_applied)
             path_suggested.extend(rename_suggested)
 
@@ -151,8 +157,9 @@ def _run_fix(args):
         print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
         for fix, root in suggested:
             print(f"  ? [{_display(fix.file_path, root)}] {fix.description}")
-        print("\nRun `skillsaw fix --suggest` to apply suggested fixes.")
-        print("Run `skillsaw fix --suggest --dry-run` to preview changes.")
+        threshold_flag = f" --severity-threshold {severity_threshold}"
+        print(f"\nRun `skillsaw fix{threshold_flag} --suggest` to apply suggested fixes.")
+        print(f"Run `skillsaw fix{threshold_flag} --suggest --dry-run` to preview changes.")
 
     if dry_run and applied:
         print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
