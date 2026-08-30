@@ -26,6 +26,21 @@ def _run_feedback(path: Path, *args: str):
     )
 
 
+def _run_feedback_in_pty(path: Path, *args: str):
+    command = [sys.executable, "-m", "skillsaw", "feedback", str(path), *args]
+    script = (
+        "import os, pty, sys\n"
+        f"status = pty.spawn({command!r})\n"
+        "raise SystemExit(os.waitstatus_to_exitcode(status))\n"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+
 def test_feedback_text_output_requires_review_before_sharing(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -420,6 +435,124 @@ def test_feedback_accepts_auto_discovered_config_above_target(tmp_path):
     archive_directory = json.loads(result.stdout)["archive_directory"]
     with zipfile.ZipFile(output) as bundle:
         assert f"{archive_directory}/skillsaw-config.yaml" not in bundle.namelist()
+
+
+def test_feedback_uses_but_does_not_bundle_ignored_auto_config(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = repo / ".skillsaw.yaml"
+    config.write_text("version: 0.20.0\n")
+    (repo / ".gitignore").write_text("/.skillsaw.yaml\n")
+    bundle_path = tmp_path / "report.zip"
+    commands = []
+
+    def capture(command, cwd, **kwargs):
+        commands.append(command)
+        assert kwargs == {"mirror_stderr": False}
+        return "{}", "", 0
+
+    monkeypatch.setattr(_feedback, "_run_lint_process", capture)
+
+    class Args:
+        path = repo
+        config = None
+        output = bundle_path
+        message = ""
+        include: list = []
+        with_extensions = False
+        json = True
+
+    with pytest.raises(SystemExit) as exit_info:
+        _feedback._run_feedback(Args())
+
+    assert exit_info.value.code == 0
+    assert commands and commands[0][commands[0].index("--config") + 1] == str(config)
+    with zipfile.ZipFile(bundle_path) as bundle:
+        names = bundle.namelist()
+        archive_directory = names[0].split("/", 1)[0]
+        environment = json.loads(bundle.read(f"{archive_directory}/environment.json"))
+    assert f"{archive_directory}/skillsaw-config.yaml" not in names
+    assert environment["config_included"] is False
+    assert environment["config_diagnostics_withheld"] is True
+
+
+@pytest.mark.parametrize("json_output", [False, True], ids=["text", "json"])
+@pytest.mark.parametrize(
+    ("secret", "config_body", "expected_lint_exit"),
+    [
+        (
+            "sk-live-FIX24-VALUE-abcdefghijklmnopqrstuvwxyz",
+            "version: 0.20.0\nrules:\n  agentskill-description:\n    enabled: {secret}\n",
+            1,
+        ),
+        (
+            "sk-live-FIX24-KEY-abcdefghijklmnopqrstuvwxyz",
+            "version: 0.20.0\nstrict: true\nrules:\n  {secret}: {{}}\n",
+            0,
+        ),
+    ],
+    ids=["invalid-value", "unknown-key"],
+)
+def test_feedback_withholds_diagnostics_from_ignored_auto_config(
+    tmp_path, json_output, secret, config_body, expected_lint_exit
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".skillsaw.yaml").write_text(config_body.format(secret=secret))
+    (repo / ".gitignore").write_text("/.skillsaw.yaml\n")
+    output = tmp_path / "report.zip"
+    args = ["--output", str(output)]
+    if json_output:
+        args.append("--json")
+
+    result = _run_feedback(repo, *args)
+
+    assert result.returncode == 0, result.stderr
+    if json_output:
+        assert json.loads(result.stdout)["config_diagnostics_withheld"] is True
+    else:
+        assert "stdout and stderr were withheld" in result.stdout
+    with zipfile.ZipFile(output) as bundle:
+        archived = {name: bundle.read(name) for name in bundle.namelist()}
+        environment_name = next(name for name in archived if name.endswith("environment.json"))
+        environment = json.loads(archived[environment_name])
+    assert environment["lint_exit_code"] == expected_lint_exit
+    assert environment["config_included"] is False
+    assert environment["config_diagnostics_withheld"] is True
+    assert all(secret.encode() not in payload for payload in archived.values())
+
+
+@pytest.mark.skipif(os.name != "posix", reason="PTY output capture is POSIX-specific")
+@pytest.mark.parametrize(
+    ("secret", "config_body"),
+    [
+        (
+            "sk-live-FIX24-TTY-VALUE-abcdefghijklmnopqrstuvwxyz",
+            "version: 0.20.0\nrules:\n  agentskill-description:\n    enabled: {secret}\n",
+        ),
+        (
+            "sk-live-FIX24-TTY-KEY-abcdefghijklmnopqrstuvwxyz",
+            "version: 0.20.0\nrules:\n  {secret}: {{}}\n",
+        ),
+    ],
+    ids=["invalid-value", "unknown-key"],
+)
+def test_feedback_does_not_mirror_ignored_config_diagnostics_in_a_tty(
+    tmp_path, secret, config_body
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".skillsaw.yaml").write_text(config_body.format(secret=secret))
+    (repo / ".gitignore").write_text("/.skillsaw.yaml\n")
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback_in_pty(repo, "--output", str(output), "--json")
+
+    assert result.returncode == 0, result.stderr
+    assert secret not in result.stdout
+    assert secret not in result.stderr
+    with zipfile.ZipFile(output) as bundle:
+        assert all(secret.encode() not in bundle.read(name) for name in bundle.namelist())
 
 
 @pytest.mark.parametrize(

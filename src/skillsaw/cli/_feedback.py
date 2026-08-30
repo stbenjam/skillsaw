@@ -43,6 +43,11 @@ _FEEDBACK_EMAIL = "stephen@bitbin.de"
 _GPG_KEY_URL = "https://github.com/stbenjam.gpg"
 _BUNDLE_SCHEMA_VERSION = 1
 _LINT_TIMEOUT_SECONDS = 120
+_IGNORED_CONFIG_NOTICE = (
+    "The diagnostic lint ran, but its stdout and stderr were withheld because the "
+    "auto-discovered config is excluded by an ignore file. Copy a reviewed config to "
+    "a non-ignored path and pass --config to include those diagnostics."
+)
 _TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
 _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 
@@ -305,6 +310,15 @@ def _patterns_for_file(
     return [*root_patterns, *_nested_ignore_patterns(root, resolved)]
 
 
+def _ignored_by_ancestor_file(path: Path) -> bool:
+    """Whether an ignore file beside *path* or in an ancestor excludes it."""
+    for directory in path.parents:
+        patterns = _ignore_patterns_in(directory, directory)
+        if _is_ignored(path, directory, patterns):
+            return True
+    return False
+
+
 def _included_file(root: Path, raw_path: str, patterns: list[_IgnorePattern]) -> tuple[Path, Path]:
     candidate = Path(raw_path)
     if not candidate.is_absolute():
@@ -342,7 +356,11 @@ def _included_file(root: Path, raw_path: str, patterns: list[_IgnorePattern]) ->
 
 
 def _run_diagnostic_lint(
-    root: Path, config_path: Path | None, *, with_extensions: bool
+    root: Path,
+    config_path: Path | None,
+    *,
+    with_extensions: bool,
+    mirror_stderr: bool = True,
 ) -> dict[str, Any]:
     command = [
         sys.executable,
@@ -366,7 +384,14 @@ def _run_diagnostic_lint(
     command.append(str(root))
     try:
         with tempfile.TemporaryDirectory(prefix="skillsaw-feedback-") as neutral_cwd:
-            stdout, stderr, return_code = _run_lint_process(command, Path(neutral_cwd))
+            if mirror_stderr:
+                stdout, stderr, return_code = _run_lint_process(command, Path(neutral_cwd))
+            else:
+                stdout, stderr, return_code = _run_lint_process(
+                    command,
+                    Path(neutral_cwd),
+                    mirror_stderr=False,
+                )
         return {
             "command": ["skillsaw", *command[3:-1], "<repository>"],
             "exit_code": return_code,
@@ -396,9 +421,11 @@ def _lint_child_environment() -> dict[str, str]:
     return {**os.environ, "PYTHONSAFEPATH": "1"}
 
 
-def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
+def _run_lint_process(
+    command: list[str], root: Path, *, mirror_stderr: bool = True
+) -> tuple[str, str, int]:
     """Run lint, mirroring its interactive verbose output into this terminal."""
-    if not sys.stderr.isatty() or os.name == "nt":
+    if not mirror_stderr or not sys.stderr.isatty() or os.name == "nt":
         completed = subprocess.run(
             command,
             cwd=root,
@@ -550,36 +577,65 @@ def _run_feedback(args) -> None:
         selected_files = [
             _included_file(root, raw_path, ignore_patterns) for raw_path in args.include
         ]
-        guarded_config_paths = tuple(
-            dict.fromkeys(path for path in (config_guard_path, config_path) if path is not None)
-        )
-        for guarded_config_path in guarded_config_paths:
-            if _is_secret_filename(guarded_config_path.name):
-                raise ValueError(
-                    f"--config refuses {guarded_config_path.name}: that name holds credentials"
-                )
-            if _is_ignored(
-                guarded_config_path,
-                root,
-                _patterns_for_file(guarded_config_path, root, ignore_patterns),
-            ):
-                raise ValueError(
-                    "--config refuses a file an ignore file already excludes: "
-                    f"{guarded_config_path}"
-                )
+        if args.config is not None:
+            guarded_config_paths = tuple(
+                dict.fromkeys(path for path in (config_guard_path, config_path) if path is not None)
+            )
+            for guarded_config_path in guarded_config_paths:
+                if _is_secret_filename(guarded_config_path.name):
+                    raise ValueError(
+                        f"--config refuses {guarded_config_path.name}: that name holds credentials"
+                    )
+                if _is_ignored(
+                    guarded_config_path,
+                    root,
+                    _patterns_for_file(guarded_config_path, root, ignore_patterns),
+                ):
+                    raise ValueError(
+                        "--config refuses a file an ignore file already excludes: "
+                        f"{guarded_config_path}"
+                    )
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
 
-    lint = _run_diagnostic_lint(root, config_path, with_extensions=args.with_extensions)
-    artifact_texts: dict[str, str] = {}
-    for name, raw_text in (
-        ("lint-report.json", lint["stdout"]),
-        ("lint-stderr.txt", lint["stderr"]),
-    ):
-        artifact_texts[name] = _neutralize_terminal_control(
-            _replace_local_paths(raw_text, root, config_path)
+    config_diagnostics_withheld = False
+    if args.config is None and config_path is not None:
+        resolved_config = safe_resolve(config_path)
+        guarded_config_paths = tuple(
+            dict.fromkeys(path for path in (config_path, resolved_config) if path is not None)
         )
+        config_diagnostics_withheld = any(
+            _ignored_by_ancestor_file(path) for path in guarded_config_paths
+        )
+
+    lint = _run_diagnostic_lint(
+        root,
+        config_path,
+        with_extensions=args.with_extensions,
+        mirror_stderr=not config_diagnostics_withheld,
+    )
+    if config_diagnostics_withheld:
+        artifact_texts: dict[str, str] = {
+            "lint-report.json": json.dumps(
+                {
+                    "diagnostic_output_withheld": True,
+                    "reason": _IGNORED_CONFIG_NOTICE,
+                },
+                indent=2,
+            )
+            + "\n",
+            "lint-stderr.txt": _IGNORED_CONFIG_NOTICE + "\n",
+        }
+    else:
+        artifact_texts = {}
+        for name, raw_text in (
+            ("lint-report.json", lint["stdout"]),
+            ("lint-stderr.txt", lint["stderr"]),
+        ):
+            artifact_texts[name] = _neutralize_terminal_control(
+                _replace_local_paths(raw_text, root, config_path)
+            )
 
     config_included = args.config is not None
     if config_included:
@@ -613,6 +669,7 @@ def _run_feedback(args) -> None:
         "lint_timed_out": lint["timed_out"],
         "lint_extensions_enabled": args.with_extensions,
         "config_included": config_included,
+        "config_diagnostics_withheld": config_diagnostics_withheld,
         "included_files": included_names,
         "message": message,
     }
@@ -660,6 +717,7 @@ def _run_feedback(args) -> None:
         "issue_url": issue_url,
         "email": {"to": _FEEDBACK_EMAIL, "gpg_key": _GPG_KEY_URL},
         "included_files": included_names,
+        "config_diagnostics_withheld": config_diagnostics_withheld,
     }
     if args.json:
         print(json.dumps(result, sort_keys=True))
@@ -681,6 +739,8 @@ def _run_feedback(args) -> None:
                 print(f"    included/{name}")
         else:
             print("  This bundle contains skillsaw's own output only — no repository files.")
+        if config_diagnostics_withheld:
+            print(f"  {_IGNORED_CONFIG_NOTICE}")
         print()
         print("Share the reviewed bundle")
         print("  GitHub issue:")
