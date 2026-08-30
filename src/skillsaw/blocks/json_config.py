@@ -58,8 +58,7 @@ class HookHandler:
     shell: Optional[str] = None
     allowed_env_vars: Optional[List[str]] = None
     source_line: Optional[int] = None
-    # Appended to preserve the positional constructor contract of every
-    # pre-existing field above.
+    # Keep new fields at the end to preserve positional construction.
     command_variants: List[Tuple[str, Optional[int]]] = field(default_factory=list)
 
     @classmethod
