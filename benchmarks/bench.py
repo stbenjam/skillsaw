@@ -47,9 +47,18 @@ def _fresh_lint(repo_path: Path):
     from skillsaw.config import LinterConfig
     from skillsaw.context import RepositoryContext
     from skillsaw.linter import Linter
+    from skillsaw.markdown_doc import _PARSE_CACHE
     from skillsaw.rules.builtin.utils import invalidate_read_caches
 
     invalidate_read_caches()
+    # The markdown parse cache is keyed on body text rather than on a path,
+    # so nothing invalidates it: a changed file yields a different key, and
+    # the entry it no longer matches is simply never read again. That is
+    # correct for a lint and wrong for a benchmark -- left alone, the second
+    # and later repeats of a "cold caches" run reuse every parsed document
+    # from the first, and the reported time is a warm one wearing a cold
+    # label. Clearing it here is the only place that distinction matters.
+    _PARSE_CACHE.clear()
     phases: Dict[str, float] = {}
 
     t0 = time.perf_counter()

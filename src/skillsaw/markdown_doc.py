@@ -145,6 +145,18 @@ def _html_comment_spans(text: str):
 #: run (see the note above the memo).
 _RETENTION_RATIO = 1000
 
+#: Which raises the fair question of why the cache is kept. Switching it
+#: off entirely (budget 0, refusing every admission) moves a full lint by
+#: -2.3% on anthropics/claude-code, -1.5% on ai-helpers and +0.3% on the
+#: marketplace: noise in both directions on every corpus measured. It is
+#: not here for speed.
+#:
+#: It is here for the bound. What it replaced was ``lru_cache(maxsize=128)``,
+#: which caps entries and not bytes, so 128 parsed trees of 134 KB
+#: documents is 406 MB held by a cache nothing in the process can see.
+#: Trading that for a byte budget at no measurable cost is the whole of
+#: the argument -- so if this ever looks like dead weight, weigh it as a
+#: memory bound, not as a hit rate.
 _PARSE_CACHE = BudgetedMemo(32 * 1024 * 1024)
 
 
