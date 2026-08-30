@@ -7,7 +7,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Set, TYPE_CHECKING, Tuple
+from typing import Callable, Dict, List, Optional, Protocol, Set, TYPE_CHECKING, Tuple
 
 from .diagnostics import safe_display
 
@@ -156,9 +156,96 @@ _OPENCODE_CONTENT_DIRS = tuple(
 #: loads is its business rather than a defect in either file.
 _OPENCODE_CONFIG_NAMES = ("opencode.json", "opencode.jsonc")
 
+# Authored APM content directories, in lint-tree attachment order. Keeping the
+# directory, file convention, and semantic block together makes format support
+# a data change rather than another nested branch in the tree orchestrator.
+_APM_CONTENT_GLOBS = (
+    ("instructions", "*.instructions.md", InstructionBlock),
+    ("agents", "*.agent.md", AgentBlock),
+    ("prompts", "*.md", PromptBlock),
+    ("chatmodes", "*.md", ChatmodeBlock),
+    ("context", "*.md", ContextFileBlock),
+)
+
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
+
+
+class _BlockAdder(Protocol):
+    """The shared attachment primitive supplied by ``build_lint_tree``."""
+
+    def __call__(
+        self,
+        parent: LintTarget,
+        p: Path,
+        block_cls: type,
+        owner: Path | None = None,
+        content_suppressed: bool = False,
+    ) -> None: ...
+
+
+def _attach_apm_skills(
+    context: "RepositoryContext",
+    apm_node: ApmNode,
+    apm_skills: Path,
+    add_block: _BlockAdder,
+) -> None:
+    """Attach authored APM skills and their Markdown references."""
+    if not apm_skills.is_dir():
+        return
+
+    for skill_path in context.skills:
+        if not (safe_resolve(skill_path) or skill_path).is_relative_to(
+            safe_resolve(apm_skills) or apm_skills
+        ):
+            continue
+        skill_node = SkillNode(path=skill_path)
+        add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
+        refs_dir = skill_path / "references"
+        if refs_dir.is_dir():
+            for ref_file in sorted(refs_dir.glob("*.md")):
+                add_block(skill_node, ref_file, SkillRefBlock)
+        apm_node.children.append(skill_node)
+
+
+def _attach_apm_tree(
+    context: "RepositoryContext",
+    root: LintTarget,
+    add_block: _BlockAdder,
+    is_excluded: Callable[[Path], bool],
+) -> None:
+    """Attach APM's manifest and authored primitives at their original stage."""
+    if not context.has_apm:
+        return
+
+    apm_yml = context.root_path / "apm.yml"
+    if apm_yml.exists() and not is_excluded(apm_yml):
+        root.children.append(ApmConfigNode(path=apm_yml))
+
+    # `.apm/` holds a package's authored primitives. A consumer-only
+    # manifest — `apm.yml` with `dependencies:`/`targets:` and no authored
+    # content — has no `.apm/` directory, so don't invent an ApmNode for a
+    # path that doesn't exist (issue #472).
+    apm_dir = context.root_path / ".apm"
+    if not apm_dir.is_dir():
+        return
+
+    apm_node = ApmNode(path=apm_dir)
+    for dirname, pattern, block_cls in _APM_CONTENT_GLOBS:
+        content_dir = apm_dir / dirname
+        if not content_dir.is_dir():
+            continue
+        for markdown_file in sorted(content_dir.glob(pattern)):
+            add_block(apm_node, markdown_file, block_cls)
+
+    # Hooks and settings inside .apm/ are supply-chain attack surfaces.
+    add_block(apm_node, apm_dir / "hooks" / "hooks.json", HooksBlock)
+    add_block(apm_node, apm_dir / "settings.json", SettingsBlock)
+    add_block(apm_node, apm_dir / "settings.local.json", SettingsBlock)
+
+    _attach_apm_skills(context, apm_node, apm_dir / "skills", add_block)
+    root.children.append(apm_node)
 
 
 def build_lint_tree(context: "RepositoryContext") -> LintTarget:
@@ -1114,64 +1201,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 break
 
     # --- APM ---
-    if context.has_apm:
-        apm_yml = context.root_path / "apm.yml"
-        if apm_yml.exists() and not _is_excluded(apm_yml):
-            root.children.append(ApmConfigNode(path=apm_yml))
-
-        # `.apm/` holds a package's authored primitives. A consumer-only
-        # manifest — `apm.yml` with `dependencies:`/`targets:` and no
-        # authored content — has no `.apm/` directory, so don't invent an
-        # ApmNode for a path that doesn't exist (issue #472).
-        apm_dir = context.root_path / ".apm"
-        if apm_dir.is_dir():
-            apm_node = ApmNode(path=apm_dir)
-
-            apm_instructions = apm_dir / "instructions"
-            if apm_instructions.is_dir():
-                for md in sorted(apm_instructions.glob("*.instructions.md")):
-                    _add_block(apm_node, md, InstructionBlock)
-
-            apm_agents = apm_dir / "agents"
-            if apm_agents.is_dir():
-                for md in sorted(apm_agents.glob("*.agent.md")):
-                    _add_block(apm_node, md, AgentBlock)
-
-            apm_prompts = apm_dir / "prompts"
-            if apm_prompts.is_dir():
-                for md in sorted(apm_prompts.glob("*.md")):
-                    _add_block(apm_node, md, PromptBlock)
-
-            apm_chatmodes = apm_dir / "chatmodes"
-            if apm_chatmodes.is_dir():
-                for md in sorted(apm_chatmodes.glob("*.md")):
-                    _add_block(apm_node, md, ChatmodeBlock)
-
-            apm_context = apm_dir / "context"
-            if apm_context.is_dir():
-                for md in sorted(apm_context.glob("*.md")):
-                    _add_block(apm_node, md, ContextFileBlock)
-
-            # Hooks and settings inside .apm/ (supply-chain attack surface)
-            _add_block(apm_node, apm_dir / "hooks" / "hooks.json", HooksBlock)
-            _add_block(apm_node, apm_dir / "settings.json", SettingsBlock)
-            _add_block(apm_node, apm_dir / "settings.local.json", SettingsBlock)
-
-            apm_skills = apm_dir / "skills"
-            if apm_skills.is_dir():
-                for skill_path in context.skills:
-                    if (safe_resolve(skill_path) or skill_path).is_relative_to(
-                        (safe_resolve(apm_skills) or apm_skills)
-                    ):
-                        skill_node = SkillNode(path=skill_path)
-                        _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
-                        refs_dir = skill_path / "references"
-                        if refs_dir.is_dir():
-                            for ref_file in sorted(refs_dir.glob("*.md")):
-                                _add_block(skill_node, ref_file, SkillRefBlock)
-                        apm_node.children.append(skill_node)
-
-            root.children.append(apm_node)
+    _attach_apm_tree(context, root, _add_block, _is_excluded)
 
     # --- Extra content paths from config ---
     # User-configured content paths plus globs contributed by detected

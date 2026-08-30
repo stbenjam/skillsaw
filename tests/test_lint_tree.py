@@ -6,15 +6,23 @@ import json
 from pathlib import Path
 
 from skillsaw.blocks import (
+    AgentBlock,
     BodyContent,
+    ChatmodeBlock,
     ClineWorkflowBlock,
+    ContextFileBlock,
     CopilotAgentBlock,
     CopilotPromptBlock,
     CursorCommandBlock,
     CursorPromptHookBlock,
     CursorRuleBlock,
+    HooksBlock,
     InstructionBlock,
+    PromptBlock,
     QwenMdBlock,
+    SettingsBlock,
+    SkillBlock,
+    SkillRefBlock,
     VsCodeMcpBlock,
 )
 from skillsaw.config import LinterConfig
@@ -242,6 +250,51 @@ def test_tree_contains_apm_nodes(temp_dir):
     assert len(tree.find(ApmConfigNode)) == 1
     assert tree.find(ApmConfigNode)[0].path.name == "apm.yml"
     assert len(tree.find(ApmNode)) == 1
+
+
+def test_tree_preserves_apm_primitive_types_and_order(temp_dir):
+    """APM primitives keep their semantic roles and deterministic order."""
+    (temp_dir / "apm.yml").write_text("name: test\nversion: 1.0.0\ndescription: Test\n")
+    apm_dir = temp_dir / ".apm"
+    files = (
+        ("instructions/coding.instructions.md", "# Coding\n"),
+        ("agents/reviewer.agent.md", "# Reviewer\n"),
+        ("prompts/review.md", "# Review\n"),
+        ("chatmodes/planning.md", "# Planning\n"),
+        ("context/project.md", "# Project\n"),
+        ("hooks/hooks.json", "{}\n"),
+        ("settings.json", "{}\n"),
+        ("settings.local.json", "{}\n"),
+        (
+            "skills/release/SKILL.md",
+            "---\nname: release\ndescription: Use when preparing a release.\n---\n\n# Release\n",
+        ),
+        ("skills/release/references/checklist.md", "# Checklist\n"),
+    )
+    for relative_path, content in files:
+        path = apm_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+
+    apm_node = RepositoryContext(temp_dir).lint_tree.find(ApmNode)[0]
+    assert [
+        (type(child), child.path.relative_to(apm_dir).as_posix()) for child in apm_node.children
+    ] == [
+        (InstructionBlock, "instructions/coding.instructions.md"),
+        (AgentBlock, "agents/reviewer.agent.md"),
+        (PromptBlock, "prompts/review.md"),
+        (ChatmodeBlock, "chatmodes/planning.md"),
+        (ContextFileBlock, "context/project.md"),
+        (HooksBlock, "hooks/hooks.json"),
+        (SettingsBlock, "settings.json"),
+        (SettingsBlock, "settings.local.json"),
+        (SkillNode, "skills/release"),
+    ]
+    skill_node = apm_node.children[-1]
+    assert [(type(child), child.path.name) for child in skill_node.children] == [
+        (SkillBlock, "SKILL.md"),
+        (SkillRefBlock, "checklist.md"),
+    ]
 
 
 def test_tree_contains_coderabbit_node(temp_dir):
