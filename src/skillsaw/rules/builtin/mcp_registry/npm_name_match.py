@@ -23,6 +23,7 @@ from ._helpers import (
     MCP_REGISTRY_REPO_TYPES,
     declares_unsupported_schema,
     is_clean_repository_subfolder,
+    is_release_source_placeholder,
     stable_key,
 )
 
@@ -99,7 +100,11 @@ class McpRegistryNpmNameMatchRule(Rule):
                 continue
             server_name = block.raw_data.get("name")
             packages = block.raw_data.get("packages")
-            if not isinstance(server_name, str) or not isinstance(packages, list):
+            if (
+                not isinstance(server_name, str)
+                or is_release_source_placeholder(server_name)
+                or not isinstance(packages, list)
+            ):
                 continue
             schema_version = (
                 mcp_registry_schema_version(block.raw_data.get("$schema"))
@@ -115,10 +120,12 @@ class McpRegistryNpmNameMatchRule(Rule):
                 ):
                     continue
                 identifier = package.get("identifier")
-                if not isinstance(identifier, str):
+                if not isinstance(identifier, str) or is_release_source_placeholder(identifier):
                     continue
                 package_version = package.get("version")
-                if not isinstance(package_version, str):
+                if not isinstance(package_version, str) or is_release_source_placeholder(
+                    package_version
+                ):
                     # A missing or malformed version cannot identify the exact
                     # local artifact whose published metadata Registry checks.
                     continue

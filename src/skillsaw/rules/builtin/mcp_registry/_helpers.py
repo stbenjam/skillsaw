@@ -46,6 +46,16 @@ _URL_TEMPLATE_VARIABLE = re.compile(r"\{[^{}\s]+\}")
 _URI = re.compile(r"\A[A-Za-z][A-Za-z0-9+.-]*:" r"[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*\Z")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _CLEAN_SUBFOLDER = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
+_RELEASE_SOURCE_PLACEHOLDER = re.compile(
+    r"\A(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|"
+    r"\{\{[A-Za-z_][A-Za-z0-9_]*\}\}|"
+    r"<<[A-Za-z_][A-Za-z0-9_]*>>)\Z"
+)
+
+
+def is_release_source_placeholder(value: object) -> bool:
+    """Recognize an exact publish-time placeholder in Registry source metadata."""
+    return isinstance(value, str) and _RELEASE_SOURCE_PLACEHOLDER.fullmatch(value) is not None
 
 
 def is_version_range(value: str) -> bool:

@@ -37,6 +37,8 @@ For the selected package, the rule verifies that:
 - `mcpName` matches the exact `server.json` `name`, including case.
 
 This check is entirely offline and never downloads npm metadata.
+Exact publish-time placeholders are skipped until the server and package
+coordinates have been rendered.
 
 ## How to fix
 

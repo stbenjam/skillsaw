@@ -37,6 +37,10 @@ leading zeroes. Optional prerelease and build identifiers follow SemVer 2.0.0:
 Versions such as `v1.2.3`, `1.2`, `2025-12-11`, and `1.2.3-01` trigger the
 recommendation.
 
+An exact publish-time placeholder such as `${VERSION}`, `{{VERSION}}`, or
+`<<Version>>` is ignored in source metadata. Its rendered value should be
+SemVer.
+
 ## How to fix
 
 Publish a three-component semantic version. When the upstream package

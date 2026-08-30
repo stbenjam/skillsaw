@@ -16,6 +16,7 @@ from skillsaw.formats.mcp_registry import (
     MCP_REGISTRY_SCHEMA_PROFILES,
     MCP_REGISTRY_SCHEMA_VERSION,
     MCP_REGISTRY_SCHEMA_VERSIONS,
+    McpRegistrySchemaProfile,
     mcp_registry_schema_version,
 )
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -26,6 +27,7 @@ from ._helpers import (
     is_clean_repository_subfolder,
     is_http_url_template,
     is_package_version_range,
+    is_release_source_placeholder,
     is_version_range,
     registry_validator,
     schema_error_summary,
@@ -35,6 +37,16 @@ _DNS_LABEL = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
 _SERVER_NAME = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z")
 _SEMANTIC_SAMPLE_LIMIT = 4
 _VERSIONED_PACKAGE_REGISTRIES = frozenset({"npm", "pypi", "cargo", "nuget"})
+_PLACEHOLDER_IDENTIFIERS: Mapping[str, str] = MappingProxyType(
+    {
+        "npm": "@example/server",
+        "pypi": "example-server",
+        "cargo": "example-server",
+        "nuget": "Example.Server",
+        "oci": "docker.io/example/server:1.0.0",
+        "mcpb": "https://example.com/server.mcpb",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -142,6 +154,44 @@ def _mapping_item(data: dict, key: str, index: object) -> Optional[dict]:
         return None
     value = values[index]
     return value if isinstance(value, dict) else None
+
+
+def _schema_checked_document(
+    data: dict,
+    schema_profile: McpRegistrySchemaProfile,
+) -> dict:
+    """Substitute exact release placeholders only in the schema-validation view."""
+    checked = dict(data)
+    if is_release_source_placeholder(checked.get("name")):
+        checked["name"] = "io.github.example/server"
+    if is_release_source_placeholder(checked.get("version")):
+        checked["version"] = "1.0.0"
+
+    packages = checked.get("packages")
+    if not isinstance(packages, list):
+        return checked
+
+    checked_packages = list(packages)
+    changed = False
+    for index, package in enumerate(packages):
+        if not isinstance(package, dict):
+            continue
+        registry_type = package.get(schema_profile.registry_type_field)
+        substitutions = {}
+        if is_release_source_placeholder(package.get("identifier")):
+            substitutions["identifier"] = _PLACEHOLDER_IDENTIFIERS.get(
+                registry_type, "example-server"
+            )
+        if is_release_source_placeholder(package.get("version")):
+            substitutions["version"] = "1.0.0"
+        if is_release_source_placeholder(package.get(schema_profile.file_sha256_field)):
+            substitutions[schema_profile.file_sha256_field] = "0" * 64
+        if substitutions:
+            checked_packages[index] = {**package, **substitutions}
+            changed = True
+    if changed:
+        checked["packages"] = checked_packages
+    return checked
 
 
 def _schema_error_is_owned(
@@ -307,9 +357,15 @@ class McpRegistryServerJsonValidRule(Rule):
 
         semantic_policy = _SEMANTIC_POLICIES[schema_version]
         schema_profile = MCP_REGISTRY_SCHEMA_PROFILES[schema_version]
+        checked = _schema_checked_document(checked, schema_profile)
         allowed_registry_types = semantic_policy.registry_types | additional_registry_types
 
-        name_problem = _name_problem(data.get("name")) if semantic_policy.reverse_dns_name else None
+        name = data.get("name")
+        name_problem = (
+            _name_problem(name)
+            if semantic_policy.reverse_dns_name and not is_release_source_placeholder(name)
+            else None
+        )
         if name_problem:
             violations.append(
                 self.violation(
@@ -349,6 +405,7 @@ class McpRegistryServerJsonValidRule(Rule):
         if (
             semantic_policy.exact_versions
             and isinstance(version, str)
+            and not is_release_source_placeholder(version)
             and is_version_range(version)
         ):
             violations.append(
@@ -408,6 +465,7 @@ class McpRegistryServerJsonValidRule(Rule):
                     )
                     or (
                         isinstance(package_version, str)
+                        and not is_release_source_placeholder(package_version)
                         and registry_type not in semantic_policy.forbidden_package_versions
                         and (
                             is_package_version_range(registry_type, package_version)

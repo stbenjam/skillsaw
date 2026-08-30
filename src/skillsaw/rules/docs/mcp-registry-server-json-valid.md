@@ -39,6 +39,11 @@ Each schema is bundled from a pinned revision of the
 Validation is offline. An unknown future version receives one diagnostic and
 is not interpreted using a different schema.
 
+Source files may use an exact publish-time placeholder such as `${VERSION}`,
+`{{VERSION}}`, or `<<Version>>` in release fields. Skillsaw accepts those
+forms while continuing to validate all other fields; rendered publisher
+metadata must contain the concrete value required by the schema.
+
 ## Additional Registry types
 
 Self-hosted registries can add to the package vocabulary defined by the

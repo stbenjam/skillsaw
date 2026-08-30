@@ -12,7 +12,10 @@ from skillsaw.formats.mcp_registry import (
     mcp_registry_schema_id,
 )
 from skillsaw.rule import Severity
-from skillsaw.rules.builtin.mcp_registry._helpers import schema_error_summary
+from skillsaw.rules.builtin.mcp_registry._helpers import (
+    is_release_source_placeholder,
+    schema_error_summary,
+)
 from skillsaw.rules.builtin.mcp_registry.npm_name_match import McpRegistryNpmNameMatchRule
 from skillsaw.rules.builtin.mcp_registry.server_json_valid import _SEMANTIC_POLICIES
 
@@ -40,6 +43,28 @@ def _for_rule(findings, rule_id):
 
 
 class TestMcpRegistrySchemaRule:
+    @pytest.mark.parametrize("value", ["${VERSION}", "{{VERSION}}", "<<Version>>"])
+    def test_release_source_placeholder_forms_are_exact(self, value):
+        assert is_release_source_placeholder(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "v${VERSION}",
+            "${VERSION}-rc",
+            "{VERSION}",
+            "${{ github.ref }}",
+            "{{}}",
+            "<<../x>>",
+            "<<Version>>extra",
+            "latest",
+            "*",
+            None,
+        ],
+    )
+    def test_release_source_placeholder_near_misses_remain_values(self, value):
+        assert not is_release_source_placeholder(value)
+
     def test_every_schema_version_has_an_explicit_semantic_policy(self):
         assert frozenset(_SEMANTIC_POLICIES) == MCP_REGISTRY_SCHEMA_VERSIONS
 
@@ -53,6 +78,81 @@ class TestMcpRegistrySchemaRule:
         repo = copy_fixture(f"mcp-registry/schema-versions/{version}", tmp_path)
 
         assert lint_rules(repo, VALID_RULE, SEMVER_RULE, NPM_NAME_RULE) == []
+
+    @pytest.mark.parametrize("placeholder", ["${VERSION}", "{{VERSION}}", "<<Version>>"])
+    def test_publish_time_placeholders_pass_all_registry_rules(self, tmp_path, placeholder):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["name"] = placeholder
+        data["version"] = placeholder
+        data["packages"][0]["identifier"] = placeholder
+        data["packages"][0]["version"] = placeholder
+        data["packages"].append(
+            {
+                "registryType": "mcpb",
+                "identifier": placeholder,
+                "version": placeholder,
+                "fileSha256": placeholder,
+                "transport": {"type": "stdio"},
+            }
+        )
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE, SEMVER_RULE, NPM_NAME_RULE) == []
+
+    def test_placeholder_sanitizing_retains_unrelated_schema_errors(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["name"] = "${NAME}"
+        data["version"] = "${VERSION}"
+        data["description"] = "x" * 101
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("description" in message for message in messages_lower(findings))
+
+    def test_initial_schema_sanitizes_its_native_hash_field(self, tmp_path):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-07-09", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registry_type"] = "mcpb"
+        package["identifier"] = "${IDENTIFIER}"
+        package["version"] = "${VERSION}"
+        package["file_sha256"] = "${FILE_SHA256}"
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize(
+        ("fixture_version", "registry_type"),
+        [("2025-10-11", "oci"), ("2025-10-17", "mcpb")],
+    )
+    def test_placeholder_does_not_override_forbidden_version_field(
+        self, tmp_path, fixture_version, registry_type
+    ):
+        repo = copy_fixture(f"mcp-registry/schema-versions/{fixture_version}", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registryType"] = registry_type
+        package["version"] = "${VERSION}"
+        if registry_type == "mcpb":
+            data["$schema"] = mcp_registry_schema_id("2025-10-11")
+            package["identifier"] = "https://example.com/server.mcpb"
+            package["fileSha256"] = "0" * 64
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("must be omitted" in message for message in messages_lower(findings))
+
+    def test_embedded_placeholder_in_name_is_still_invalid(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["name"] = "prefix-${NAME}"
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE)
 
     def test_initial_snake_case_schema_keeps_npm_ownership_check(self, tmp_path):
         repo = copy_fixture("mcp-registry/schema-versions/2025-07-09", tmp_path)
@@ -711,6 +811,15 @@ class TestMcpRegistrySemverRule:
 
         assert _for_rule(lint_rules(repo, SEMVER_RULE), SEMVER_RULE) == []
 
+    @pytest.mark.parametrize("version", ["${VERSION}", "{{VERSION}}", "<<Version>>"])
+    def test_release_source_placeholder_is_quiet(self, tmp_path, version):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["version"] = version
+        _write_server(path, data)
+
+        assert _for_rule(lint_rules(repo, SEMVER_RULE), SEMVER_RULE) == []
+
     @pytest.mark.parametrize("version", ["2025-12-11", "v1.2.3", "1.2", "1.2.3-01"])
     def test_non_semver_exact_versions_warn(self, tmp_path, version):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
@@ -737,6 +846,14 @@ class TestMcpRegistrySemverRule:
 
 
 class TestMcpRegistryNpmNameRule:
+    def test_release_source_server_name_placeholder_skips_local_match(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["name"] = "${NAME}"
+        _write_server(path, data)
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
     def test_matching_adjacent_package_passes(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
 
