@@ -5,7 +5,8 @@ only when the reporter names them with ``--include`` or ``--config``, and
 reviewing those for secrets is the reporter's job: skillsaw does not scan
 file contents for credentials and does not claim the bundle is sanitized.
 A file whose name means credentials (``.env``, ``id_rsa``, ``*.pem``) or that
-an ignore file already excludes cannot be bundled at all."""
+an ignore file in its directory or an ancestor already excludes cannot be
+bundled at all."""
 
 from __future__ import annotations
 
@@ -149,8 +150,10 @@ class _IgnorePattern:
     anchored: bool
     directory_only: bool
     ignore_case: bool
+    base_parts: tuple[str, ...] = ()
 
 
+@lru_cache(maxsize=256)
 def _git_ignore_case(root: Path) -> bool:
     """Return Git's case-folding policy without requiring the repository API."""
     try:
@@ -170,17 +173,22 @@ def _git_ignore_case(root: Path) -> bool:
     return os.path.normcase("A") == os.path.normcase("a")
 
 
-def _ignore_patterns(root: Path) -> list[_IgnorePattern]:
-    """Patterns from the repository's ignore files, comments and negations dropped."""
+def _ignore_patterns_in(root: Path, directory: Path) -> list[_IgnorePattern]:
+    """Patterns declared in one contained directory, relative to that directory."""
+    try:
+        base_parts = directory.relative_to(root).parts
+    except ValueError:
+        return []
+
     patterns: list[_IgnorePattern] = []
     for name in _IGNORE_FILES:
-        ignore_file = root / name
-        if not safe_is_file(ignore_file):
+        ignore_file = contained_resolve(directory / name, root)
+        if ignore_file is None or not safe_is_file(ignore_file):
             continue
         content = read_text(ignore_file)
         if content is None:
             continue
-        ignore_case = _git_ignore_case(root) if name == ".gitignore" else os.name == "nt"
+        ignore_case = _git_ignore_case(directory) if name == ".gitignore" else os.name == "nt"
         for line in content.splitlines():
             entry = line.strip()
             # A negation re-includes a path; skipping it keeps this a guardrail
@@ -193,7 +201,34 @@ def _ignore_patterns(root: Path) -> list[_IgnorePattern]:
                 anchored = entry.startswith("/") or "/" in entry
                 value = entry.lstrip("/")
                 if value:
-                    patterns.append(_IgnorePattern(value, anchored, directory_only, ignore_case))
+                    patterns.append(
+                        _IgnorePattern(
+                            value,
+                            anchored,
+                            directory_only,
+                            ignore_case,
+                            base_parts,
+                        )
+                    )
+    return patterns
+
+
+def _ignore_patterns(root: Path) -> list[_IgnorePattern]:
+    """Patterns from root ignore files, comments and negations dropped."""
+    return _ignore_patterns_in(root, root)
+
+
+def _nested_ignore_patterns(root: Path, resolved: Path) -> list[_IgnorePattern]:
+    """Patterns from ignore files between *root* and the file's parent."""
+    try:
+        relative = resolved.relative_to(root)
+    except ValueError:
+        return []
+    patterns: list[_IgnorePattern] = []
+    directory = root
+    for part in relative.parts[:-1]:
+        directory /= part
+        patterns.extend(_ignore_patterns_in(root, directory))
     return patterns
 
 
@@ -229,6 +264,15 @@ def _ignore_pattern_matches(path_parts: tuple[str, ...], pattern: _IgnorePattern
         if pattern.ignore_case
         else path_parts
     )
+    comparable_base = (
+        tuple(part.translate(_ASCII_LOWER) for part in pattern.base_parts)
+        if pattern.ignore_case
+        else pattern.base_parts
+    )
+    if comparable_parts[: len(comparable_base)] != comparable_base:
+        return False
+    path_parts = path_parts[len(pattern.base_parts) :]
+    comparable_parts = comparable_parts[len(comparable_base) :]
     eligible_parts = path_parts[:-1] if pattern.directory_only else path_parts
     comparable_eligible_parts = (
         comparable_parts[:-1] if pattern.directory_only else comparable_parts
@@ -250,26 +294,50 @@ def _is_ignored(resolved: Path, root: Path, patterns: list[_IgnorePattern]) -> b
     return any(_ignore_pattern_matches(path_parts, pattern) for pattern in patterns)
 
 
+def _patterns_for_file(
+    resolved: Path, root: Path, root_patterns: list[_IgnorePattern]
+) -> list[_IgnorePattern]:
+    """Root patterns plus ignore files on this contained file's ancestor path."""
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return root_patterns
+    return [*root_patterns, *_nested_ignore_patterns(root, resolved)]
+
+
 def _included_file(root: Path, raw_path: str, patterns: list[_IgnorePattern]) -> tuple[Path, Path]:
     candidate = Path(raw_path)
     if not candidate.is_absolute():
         candidate = root / candidate
+    lexical = Path(os.path.abspath(candidate))
     resolved = contained_resolve(candidate, root)
     if resolved is None:
         raise ValueError(f"--include must name a file inside the repository: {raw_path}")
+    if contained_resolve(lexical, root) != resolved:
+        raise ValueError(
+            f"--include path changes meaning across a symlink and '..': {raw_path}. "
+            "Use a path without '..'"
+        )
     if not safe_is_file(resolved):
         raise ValueError(f"--include must name a file: {raw_path}")
-    if _is_secret_filename(resolved.name):
-        raise ValueError(
-            f"--include refuses {resolved.name}: files with this name hold credentials. "
-            "Put just the part you need to demonstrate the bug in another file"
-        )
-    if _is_ignored(resolved, root, patterns):
-        raise ValueError(
-            f"--include refuses a file an ignore file already excludes: {raw_path}. "
-            "Copy it to a non-ignored path if you have reviewed it and still want to share it"
-        )
-    relative = resolved.relative_to(root)
+    for guarded_path in dict.fromkeys((lexical, resolved)):
+        if _is_secret_filename(guarded_path.name):
+            raise ValueError(
+                f"--include refuses {guarded_path.name}: files with this name hold "
+                "credentials. Put just the part you need to demonstrate the bug in "
+                "another file"
+            )
+        if _is_ignored(
+            guarded_path,
+            root,
+            _patterns_for_file(guarded_path, root, patterns),
+        ):
+            raise ValueError(
+                f"--include refuses a file an ignore file already excludes: {raw_path}. "
+                "Copy it to a non-ignored path if you have reviewed it and still want "
+                "to share it"
+            )
+    relative = lexical.relative_to(root)
     return resolved, relative
 
 
@@ -432,6 +500,11 @@ def _issue_url(bundle_name: str, bundle_sha256: str, message: str) -> str:
 
 
 def _run_feedback(args) -> None:
+    # A library caller may run the CLI repeatedly in one interpreter while
+    # repositories or their Git settings change between calls. Keep the
+    # per-run speedup without leaking stale case policy across commands.
+    _git_ignore_case.cache_clear()
+
     if not safe_is_dir(args.path):
         print(f"Error: Path is not a directory: {args.path}", file=sys.stderr)
         sys.exit(1)
@@ -441,8 +514,22 @@ def _run_feedback(args) -> None:
         print(f"Error: Path could not be resolved: {args.path}", file=sys.stderr)
         sys.exit(1)
     config_path = _config_path(args, root)
+    config_guard_path = config_path
+    if args.config is not None:
+        config_guard_path = Path(os.path.abspath(args.config))
     if args.config is not None and config_path is None:
         print(f"Error: Config file could not be resolved: {args.config}", file=sys.stderr)
+        sys.exit(1)
+    if (
+        args.config is not None
+        and config_path is not None
+        and safe_resolve(config_guard_path) != config_path
+    ):
+        print(
+            f"Error: --config path changes meaning across a symlink and '..': {args.config}. "
+            "Use a path without '..'",
+            file=sys.stderr,
+        )
         sys.exit(1)
     if config_path is not None and not safe_is_file(config_path):
         print(f"Error: Config file not found: {config_path}", file=sys.stderr)
@@ -463,12 +550,23 @@ def _run_feedback(args) -> None:
         selected_files = [
             _included_file(root, raw_path, ignore_patterns) for raw_path in args.include
         ]
-        if config_path is not None and _is_secret_filename(config_path.name):
-            raise ValueError(f"--config refuses {config_path.name}: that name holds credentials")
-        if config_path is not None and _is_ignored(config_path, root, ignore_patterns):
-            raise ValueError(
-                f"--config refuses a file an ignore file already excludes: {config_path}"
-            )
+        guarded_config_paths = tuple(
+            dict.fromkeys(path for path in (config_guard_path, config_path) if path is not None)
+        )
+        for guarded_config_path in guarded_config_paths:
+            if _is_secret_filename(guarded_config_path.name):
+                raise ValueError(
+                    f"--config refuses {guarded_config_path.name}: that name holds credentials"
+                )
+            if _is_ignored(
+                guarded_config_path,
+                root,
+                _patterns_for_file(guarded_config_path, root, ignore_patterns),
+            ):
+                raise ValueError(
+                    "--config refuses a file an ignore file already excludes: "
+                    f"{guarded_config_path}"
+                )
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
