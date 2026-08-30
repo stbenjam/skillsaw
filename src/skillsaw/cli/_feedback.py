@@ -108,6 +108,7 @@ _IGNORE_FILES = (
     ".helmignore",
     ".gcloudignore",
 )
+_GIT_STYLE_IGNORE_FILES = frozenset({".gitignore", ".npmignore", ".gcloudignore"})
 
 
 # Files whose *name* is the declaration: they exist to hold credentials, so a
@@ -159,6 +160,17 @@ class _IgnorePattern:
     directory_only: bool
     ignore_case: bool
     base_parts: tuple[str, ...] = ()
+    git_style: bool = True
+
+
+@dataclass(frozen=True)
+class _GlobClass:
+    """One parsed gitignore bracket expression."""
+
+    negated: bool
+    singles: frozenset[str]
+    ranges: tuple[tuple[str, str], ...]
+    posix: frozenset[str]
 
 
 @lru_cache(maxsize=256)
@@ -181,6 +193,21 @@ def _git_ignore_case(root: Path) -> bool:
     return os.path.normcase("A") == os.path.normcase("a")
 
 
+def _trim_ignore_trailing_spaces(line: str) -> str:
+    """Drop trailing spaces unless an odd run of backslashes quotes one."""
+    end = len(line)
+    while end and line[end - 1] == " ":
+        backslashes = 0
+        index = end - 2
+        while index >= 0 and line[index] == "\\":
+            backslashes += 1
+            index -= 1
+        if backslashes % 2:
+            break
+        end -= 1
+    return line[:end]
+
+
 def _ignore_patterns_in(root: Path, directory: Path) -> list[_IgnorePattern]:
     """Patterns declared in one contained directory, relative to that directory."""
     try:
@@ -197,8 +224,9 @@ def _ignore_patterns_in(root: Path, directory: Path) -> list[_IgnorePattern]:
         if content is None:
             continue
         ignore_case = _git_ignore_case(directory) if name == ".gitignore" else os.name == "nt"
+        git_style = name in _GIT_STYLE_IGNORE_FILES
         for line in content.splitlines():
-            entry = line.strip()
+            entry = _trim_ignore_trailing_spaces(line) if git_style else line.strip()
             # A negation re-includes a path; skipping it keeps this a guardrail
             # that only ever refuses, never grants.
             if not entry or entry.startswith(("#", "!")):
@@ -216,6 +244,7 @@ def _ignore_patterns_in(root: Path, directory: Path) -> list[_IgnorePattern]:
                             directory_only,
                             ignore_case,
                             base_parts,
+                            git_style,
                         )
                     )
     return patterns
@@ -240,7 +269,238 @@ def _nested_ignore_patterns(root: Path, resolved: Path) -> list[_IgnorePattern]:
     return patterns
 
 
-def _path_pattern_matches(path_parts: tuple[str, ...], pattern_parts: tuple[str, ...]) -> bool:
+def _parse_glob_class(pattern: str, start: int) -> tuple[tuple[str, object], int] | None:
+    """Parse a gitignore bracket expression into a matcher token."""
+    index = start + 1
+    negated = index < len(pattern) and pattern[index] in {"!", "^"}
+    if negated:
+        index += 1
+
+    singles: set[str] = set()
+    ranges: list[tuple[str, str]] = []
+    posix: set[str] = set()
+    previous: str | None = None
+    first = True
+    while index < len(pattern):
+        character = pattern[index]
+        if character == "]" and not first:
+            return (
+                (
+                    "class",
+                    _GlobClass(
+                        negated,
+                        frozenset(singles),
+                        tuple(ranges),
+                        frozenset(posix),
+                    ),
+                ),
+                index + 1,
+            )
+        first = False
+
+        if character == "[" and pattern.startswith("[:", index):
+            end = pattern.find(":]", index + 2)
+            if end < 0:
+                return (("never", None), len(pattern))
+            name = pattern[index + 2 : end]
+            if name not in {
+                "alnum",
+                "alpha",
+                "blank",
+                "cntrl",
+                "digit",
+                "graph",
+                "lower",
+                "print",
+                "punct",
+                "space",
+                "upper",
+                "xdigit",
+            }:
+                return (("never", None), len(pattern))
+            posix.add(name)
+            previous = None
+            index = end + 2
+            continue
+
+        escaped = character == "\\" and index + 1 < len(pattern)
+        if escaped:
+            index += 1
+            character = pattern[index]
+        elif character == "\\":
+            return (("never", None), len(pattern))
+        elif (
+            character == "-"
+            and previous is not None
+            and index + 1 < len(pattern)
+            and pattern[index + 1] != "]"
+        ):
+            index += 1
+            upper = pattern[index]
+            if upper == "\\":
+                if index + 1 >= len(pattern):
+                    return (("never", None), len(pattern))
+                index += 1
+                upper = pattern[index]
+            ranges.append((previous, upper))
+            previous = None
+            index += 1
+            continue
+        singles.add(character)
+        previous = character
+        index += 1
+    return (("never", None), len(pattern))
+
+
+def _tokenize_git_glob(pattern: str) -> tuple[tuple[str, object], ...]:
+    """Tokenize one slash-free gitignore glob component."""
+    tokens: list[tuple[str, object]] = []
+    index = 0
+    while index < len(pattern):
+        character = pattern[index]
+        if character == "\\":
+            if index + 1 >= len(pattern):
+                tokens.append(("never", None))
+                break
+            tokens.append(("literal", pattern[index + 1]))
+            index += 2
+            continue
+        if character == "*":
+            if not tokens or tokens[-1][0] != "star":
+                tokens.append(("star", None))
+            index += 1
+            continue
+        if character == "?":
+            tokens.append(("any", None))
+            index += 1
+            continue
+        if character == "[":
+            parsed = _parse_glob_class(pattern, index)
+            if parsed is not None:
+                token, index = parsed
+                tokens.append(token)
+                continue
+        tokens.append(("literal", character))
+        index += 1
+    return tuple(tokens)
+
+
+@lru_cache(maxsize=256)
+def _cached_git_glob_tokens(pattern: str) -> tuple[tuple[str, object], ...]:
+    """Cache ordinary patterns without retaining hostile oversized tokens."""
+    return _tokenize_git_glob(pattern)
+
+
+def _git_glob_tokens(pattern: str) -> tuple[tuple[str, object], ...]:
+    if len(pattern) > 512:
+        return _tokenize_git_glob(pattern)
+    return _cached_git_glob_tokens(pattern)
+
+
+def _glob_token_matches(character: str, token: tuple[str, object], *, ignore_case: bool) -> bool:
+    """Whether one non-star token consumes *character*."""
+    kind, value = token
+    if kind == "any":
+        return True
+    if kind == "literal":
+        return character == value
+    if kind == "class":
+        assert isinstance(value, _GlobClass)
+        matched = character in value.singles or any(
+            lower <= character <= upper for lower, upper in value.ranges
+        )
+        matched = matched or any(
+            _posix_class_matches(character, name, ignore_case=ignore_case) for name in value.posix
+        )
+        return not matched if value.negated else matched
+    return False
+
+
+def _posix_class_matches(character: str, name: str, *, ignore_case: bool) -> bool:
+    """Match Git's ASCII/POSIX bracket-class vocabulary."""
+    codepoint = ord(character)
+    alpha = "a" <= character <= "z" or "A" <= character <= "Z"
+    digit = "0" <= character <= "9"
+    if name == "alnum":
+        return alpha or digit
+    if name == "alpha":
+        return alpha
+    if name == "blank":
+        return character in {" ", "\t"}
+    if name == "cntrl":
+        return codepoint < 32 or codepoint == 127
+    if name == "digit":
+        return digit
+    if name == "graph":
+        return 33 <= codepoint <= 126
+    if name == "lower":
+        return "a" <= character <= "z"
+    if name == "print":
+        return 32 <= codepoint <= 126
+    if name == "punct":
+        return 33 <= codepoint <= 126 and not (alpha or digit)
+    if name == "space":
+        return character in {" ", "\t", "\r", "\n", "\v", "\f"}
+    if name == "upper":
+        return "A" <= character <= "Z" or (ignore_case and "a" <= character <= "z")
+    return digit or "a" <= character.lower() <= "f"
+
+
+def _git_fnmatchcase(name: str, pattern: str, *, ignore_case: bool = False) -> bool:
+    """Match one path component using Git escapes and glob syntax."""
+    tokens = _git_glob_tokens(pattern)
+    if any(kind == "never" for kind, _value in tokens):
+        return False
+    if sum(kind != "star" for kind, _value in tokens) > len(name):
+        return False
+
+    previous = [False] * (len(name) + 1)
+    previous[0] = True
+    for token in tokens:
+        current = [False] * (len(name) + 1)
+        if token[0] == "star":
+            current[0] = previous[0]
+            for name_index in range(1, len(name) + 1):
+                current[name_index] = previous[name_index] or current[name_index - 1]
+        else:
+            for name_index, character in enumerate(name, 1):
+                current[name_index] = previous[name_index - 1] and _glob_token_matches(
+                    character, token, ignore_case=ignore_case
+                )
+        if not any(current):
+            return False
+        previous = current
+    return previous[-1]
+
+
+def _split_git_pattern(pattern: str) -> tuple[str, ...]:
+    """Split on path separators after consuming a slash's odd escape."""
+    parts: list[str] = []
+    current: list[str] = []
+    for character in pattern:
+        if character != "/":
+            current.append(character)
+            continue
+        backslashes = 0
+        for existing in reversed(current):
+            if existing != "\\":
+                break
+            backslashes += 1
+        if backslashes % 2:
+            current.pop()
+        parts.append("".join(current))
+        current = []
+    parts.append("".join(current))
+    return tuple(parts)
+
+
+def _path_pattern_matches(
+    path_parts: tuple[str, ...],
+    pattern_parts: tuple[str, ...],
+    *,
+    ignore_case: bool,
+    git_style: bool,
+) -> bool:
     """Match a gitignore path pattern without allowing ``*`` to cross ``/``."""
 
     @lru_cache(maxsize=None)
@@ -258,11 +518,24 @@ def _path_pattern_matches(path_parts: tuple[str, ...], pattern_parts: tuple[str,
             )
         return (
             path_index < len(path_parts)
-            and fnmatch.fnmatchcase(path_parts[path_index], pattern)
+            and _component_pattern_matches(
+                path_parts[path_index],
+                pattern,
+                ignore_case=ignore_case,
+                git_style=git_style,
+            )
             and match(pattern_index + 1, path_index + 1)
         )
 
     return match(0, 0)
+
+
+def _component_pattern_matches(
+    name: str, pattern: str, *, ignore_case: bool, git_style: bool
+) -> bool:
+    if git_style:
+        return _git_fnmatchcase(name, pattern, ignore_case=ignore_case)
+    return fnmatch.fnmatchcase(name, pattern)
 
 
 def _ignore_pattern_matches(path_parts: tuple[str, ...], pattern: _IgnorePattern) -> bool:
@@ -285,11 +558,26 @@ def _ignore_pattern_matches(path_parts: tuple[str, ...], pattern: _IgnorePattern
     comparable_eligible_parts = (
         comparable_parts[:-1] if pattern.directory_only else comparable_parts
     )
-    pattern_parts = tuple(pattern_value.split("/"))
+    pattern_parts = (
+        _split_git_pattern(pattern_value) if pattern.git_style else tuple(pattern_value.split("/"))
+    )
     if not pattern.anchored:
-        return any(fnmatch.fnmatchcase(part, pattern_value) for part in comparable_eligible_parts)
+        return any(
+            _component_pattern_matches(
+                part,
+                pattern_value,
+                ignore_case=pattern.ignore_case,
+                git_style=pattern.git_style,
+            )
+            for part in comparable_eligible_parts
+        )
     return any(
-        _path_pattern_matches(comparable_parts[:end], pattern_parts)
+        _path_pattern_matches(
+            comparable_parts[:end],
+            pattern_parts,
+            ignore_case=pattern.ignore_case,
+            git_style=pattern.git_style,
+        )
         for end in range(1, len(eligible_parts) + 1)
     )
 

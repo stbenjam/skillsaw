@@ -334,6 +334,220 @@ def test_feedback_refuses_files_an_ignore_file_excludes(tmp_path):
         assert "ignore file already excludes" in result.stderr, target
 
 
+@pytest.mark.parametrize(
+    ("pattern", "filename"),
+    [
+        (r"\#private", "#private"),
+        (r"\!credentials", "!credentials"),
+        (r"/\#root-private", "#root-private"),
+    ],
+)
+def test_feedback_refuses_git_escaped_leading_ignore_markers(tmp_path, pattern, filename):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    (repo / ".gitignore").write_text(f"{pattern}\n")
+    (repo / filename).write_text("must stay local\n")
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--include", filename, "--output", str(output))
+
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+    assert not output.exists()
+
+
+def test_feedback_preserves_leading_space_before_escaped_marker(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    (repo / ".gitignore").write_text(r" \#public" + "\n")
+    (repo / "#public").write_text("reviewed reproducer\n")
+    output = tmp_path / "report.zip"
+
+    git_result = subprocess.run(
+        ["git", "-C", str(repo), "check-ignore", "--no-index", "#public"],
+        capture_output=True,
+        check=False,
+    )
+    result = _run_feedback(repo, "--include", "#public", "--output", str(output), "--json")
+
+    assert git_result.returncode == 1
+    assert result.returncode == 0, result.stderr
+    assert output.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="backslash is a separator on Windows")
+def test_feedback_refuses_config_ignored_with_escaped_backslash(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    config = repo / r"\#private"
+    config.write_text("version: 0.20.0\n")
+    (repo / ".gitignore").write_text(r"\\#private" + "\n")
+    output = tmp_path / "report.zip"
+
+    git_result = subprocess.run(
+        ["git", "-C", str(repo), "check-ignore", "--no-index", config.name],
+        capture_output=True,
+        check=False,
+    )
+    result = _run_feedback(repo, "--config", str(config), "--output", str(output))
+
+    assert git_result.returncode == 0
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+    assert not output.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="backslash is a separator on Windows")
+@pytest.mark.parametrize(
+    ("filename", "git_ignored", "feedback_refuses"),
+    [
+        ("\\" + "*", True, True),
+        ("\\\\" + "x", False, False),
+    ],
+)
+def test_feedback_preserves_escaped_glob_literals(
+    tmp_path, filename, git_ignored, feedback_refuses
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    config = repo / filename
+    config.write_text("version: 0.20.0\n")
+    (repo / ".gitignore").write_text("\\" * 3 + "*\n")
+    output = tmp_path / "report.zip"
+
+    git_result = subprocess.run(
+        ["git", "-C", str(repo), "check-ignore", "--no-index", config.name],
+        capture_output=True,
+        check=False,
+    )
+    result = _run_feedback(repo, "--config", str(config), "--output", str(output), "--json")
+
+    assert (git_result.returncode == 0) is git_ignored
+    assert (result.returncode == 1) is feedback_refuses
+    assert output.exists() is not feedback_refuses
+
+
+@pytest.mark.skipif(os.name != "posix", reason="backslash is a separator on Windows")
+@pytest.mark.parametrize(
+    ("pattern", "matches", "misses"),
+    [
+        (r"[\*]", ["*"], ["\\", "?"]),
+        (r"[\?]", ["?"], ["\\", "*"]),
+        (r"[\[]", ["["], ["\\", "]"]),
+        (r"[\]]", ["]"], ["\\", "["]),
+        (r"[\-]", ["-"], ["\\", "a"]),
+        (r"[a\-]", ["a", "-"], ["\\", "b"]),
+        (r"[\!a]", ["!", "a"], ["\\", "b"]),
+        (r"[a-c]", ["a", "b", "c"], ["-", "d"]),
+        (r"[!a]", ["b", "!"], ["a"]),
+        (r"[^a]", ["b", "!"], ["a"]),
+        (r"[]-]", ["]", "-"], ["a"]),
+        (r"[a-\]]", ["a"], ["]", "b"]),
+        (r"[a\-c]", ["a", "-", "c"], ["b", "\\"]),
+        (r"[a-\-]", ["a"], ["-", "b"]),
+        (r"[[:digit:]]", ["0", "9"], ["a", ":"]),
+        (r"[![:space:]]", ["a", "!"], [" ", "\t"]),
+    ],
+)
+def test_feedback_component_globs_match_git_classes(tmp_path, pattern, matches, misses):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / ".gitignore").write_text(pattern + "\n")
+
+    for candidate in [*matches, *misses]:
+        git_result = subprocess.run(
+            ["git", "-C", str(repo), "check-ignore", "--no-index", "--", candidate],
+            capture_output=True,
+            check=False,
+        )
+        assert _feedback._git_fnmatchcase(candidate, pattern) is (git_result.returncode == 0), (
+            pattern,
+            candidate,
+            git_result.stderr,
+        )
+
+
+@pytest.mark.parametrize(
+    ("pattern", "relative"),
+    [
+        (r"foo\/bar", "foo/bar"),
+        ("foo" + "\\" * 3 + "/bar", "foo\\/bar"),
+    ],
+)
+@pytest.mark.skipif(os.name != "posix", reason="backslash is a separator on Windows")
+def test_feedback_honors_escaped_path_separators(tmp_path, pattern, relative):
+    repo = tmp_path / "repo"
+    path = repo / relative
+    path.parent.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / ".gitignore").write_text(pattern + "\n")
+    path.write_text("version: 0.20.0\n")
+    output = tmp_path / "report.zip"
+
+    git_result = subprocess.run(
+        ["git", "-C", str(repo), "check-ignore", "--no-index", "--", relative],
+        capture_output=True,
+        check=False,
+    )
+    result = _run_feedback(repo, "--config", str(path), "--output", str(output))
+
+    assert git_result.returncode == 0
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+    assert not output.exists()
+
+
+def test_feedback_posix_upper_class_honors_git_ignore_case(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "core.ignoreCase", "true"], check=True)
+    (repo / ".gitignore").write_text("[[:upper:]]\n")
+    (repo / "a").write_text("reviewed reproducer\n")
+    output = tmp_path / "report.zip"
+
+    git_result = subprocess.run(
+        ["git", "-C", str(repo), "check-ignore", "--no-index", "--", "a"],
+        capture_output=True,
+        check=False,
+    )
+    result = _run_feedback(repo, "--include", "a", "--output", str(output))
+
+    assert git_result.returncode == 0
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("name", [".dockerignore", ".helmignore"])
+def test_feedback_preserves_trimmed_space_for_non_git_ignore_dialects(tmp_path, name):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / name).write_text(" secret.txt \n")
+    (repo / "secret.txt").write_text("must stay local\n")
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--include", "secret.txt", "--output", str(output))
+
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+    assert not output.exists()
+
+
+def test_feedback_does_not_cache_oversized_git_patterns():
+    _feedback._cached_git_glob_tokens.cache_clear()
+    pattern = "a" * 513
+
+    assert not _feedback._git_fnmatchcase("a", pattern)
+    assert _feedback._cached_git_glob_tokens.cache_info().currsize == 0
+
+
 def test_feedback_refuses_file_excluded_by_nested_gitignore(tmp_path):
     repo = tmp_path / "repo"
     package = repo / "packages" / "app"
