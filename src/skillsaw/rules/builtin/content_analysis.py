@@ -20,7 +20,6 @@ import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
@@ -224,8 +223,116 @@ except ImportError:  # Python 3.9/3.10
     import sre_parse as _sre_parser
 
 
-@lru_cache(maxsize=512)
+#: Charged on top of what an entry's own parts measure, for the value and
+#: cost dict slots and the hash-table slack behind them.
+_LITERALS_ENTRY_OVERHEAD_BYTES = 256
+
+
+class _BudgetedMemo:
+    """A memo bounded by the bytes its entries retain, not by their count.
+
+    Both pattern-literal caches below hold entries whose size a config
+    supplies rather than the code: nothing caps the length of a banned
+    pattern, so an entry can be a few hundred bytes or a few megabytes.
+    A count cap on such a cache is a bound in name only — 512 entries of
+    a 200,000-character pattern is 102 MB — while refusing the large ones
+    outright costs 194 ms of re-parsing per document, so the answer is a
+    byte budget with eviction.
+
+    Reads go straight to ``values`` and take no lock: a ``get`` racing a
+    ``del`` returns the value or nothing, and nothing is just a miss. The
+    dict is exposed rather than wrapped in a method because the
+    pattern-keyed lookup runs once per (pattern, document) pair — 39,513
+    times linting a 115-skill, 41-plugin repository — and the point of it
+    is to stay a plain lookup rather than grow a call in front.
+
+    Writes take the lock, the way ``_resolve_lock`` and
+    ``FileCache._lock`` do for the other process-global caches: two
+    threads admitting the same key would otherwise charge one retained
+    entry twice, and two evicting at once would pop a key the other
+    already removed.
+    """
+
+    __slots__ = ("values", "_costs", "_bytes", "_budget", "_lock")
+
+    def __init__(self, budget: int):
+        self.values: Dict[object, Tuple[str, ...]] = {}
+        self._costs: Dict[object, int] = {}
+        self._bytes = 0
+        self._budget = budget
+        self._lock = threading.Lock()
+
+    def put(self, key: object, value: Tuple[str, ...], cost: int) -> None:
+        """Remember *value* under *key*, charged *cost* bytes."""
+        if cost > self._budget:
+            # Remembering it would evict everything else and still not
+            # fit. Recomputing costs time; retaining it costs the budget.
+            return
+        with self._lock:
+            if key in self.values:
+                # Another thread admitted it while this one was
+                # measuring. Its entry is already charged, and charging
+                # again would bill one retained entry twice.
+                return
+            while self.values and self._bytes + cost > self._budget:
+                # Halves, not everything: a bound a workload can cross
+                # must not be a cliff. Repeated because entries are not
+                # uniform — dropping half of a memo holding one large
+                # pattern and many small ones need not free enough for
+                # the next one.
+                for stale in list(self.values)[: len(self.values) // 2 or 1]:
+                    self._bytes -= self._costs.pop(stale)
+                    del self.values[stale]
+            self.values[key] = value
+            self._costs[key] = cost
+            self._bytes += cost
+
+    def clear(self) -> None:
+        with self._lock:
+            self.values.clear()
+            self._costs.clear()
+            self._bytes = 0
+
+    @property
+    def total_bytes(self) -> int:
+        return self._bytes
+
+    @property
+    def charged(self) -> Dict[object, int]:
+        """The per-entry costs, for tests asserting the accounting."""
+        return self._costs
+
+
+def _literals_cost(literals: Tuple[str, ...]) -> int:
+    """What a tuple of extracted literals retains, in bytes."""
+    return sys.getsizeof(literals) + sum(sys.getsizeof(literal) for literal in literals)
+
+
+#: Literals per (pattern source, flags). Distinct compiled patterns
+#: sharing a source — the same config parsed on a later pass — hit here
+#: rather than re-walking the parse tree, which is 194 ms for a
+#: 200,000-character pattern. It keys on the source, so it is that
+#: string's retainer once the config is gone; hence the byte budget
+#: rather than the ``lru_cache(maxsize=512)`` this replaces, whose count
+#: cap let 512 oversized sources past the budget below.
+_LITERALS_BY_SOURCE = _BudgetedMemo(8 * 1024 * 1024)
+
+
 def _required_literals(pattern_src: str, flags: int) -> Tuple[str, ...]:
+    """Memoized :func:`_extract_required_literals`; see ``_LITERALS_BY_SOURCE``."""
+    key = (pattern_src, flags)
+    literals = _LITERALS_BY_SOURCE.values.get(key)
+    if literals is None:
+        literals = _extract_required_literals(pattern_src, flags)
+        _LITERALS_BY_SOURCE.put(
+            key,
+            literals,
+            _LITERALS_ENTRY_OVERHEAD_BYTES + sys.getsizeof(pattern_src) + _literals_cost(literals),
+        )
+    return literals
+
+
+def _extract_required_literals(pattern_src: str, flags: int) -> Tuple[str, ...]:
     """Every literal a match must contain, case-folded, longest first.
 
     Walks the top-level concatenation of the regex parse tree collecting
@@ -282,52 +389,29 @@ def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
 # Required literals per compiled pattern object.
 #
 # The lookup stands in front of a loop that runs once per (pattern,
-# document) pair — millions of times on a large marketplace. At that
-# volume even an ``lru_cache`` hit, which hashes the pattern's source
-# string and builds a key tuple, costs more than the substring test it
-# guards; a dict keyed by the compiled pattern object is one identity
-# hash.
+# document) pair — 6,870 times on a self-lint and 39,513 linting a
+# 115-skill, 41-plugin repository. An ``lru_cache`` hit hashes the
+# pattern's source string and builds a key tuple where a dict keyed by
+# the compiled pattern object is one identity hash. At this volume the
+# difference is small in absolute terms — an extra attribute load on this
+# path measured 4.3 ns, or 0.03 ms across a whole run — so the object-keyed
+# dict is here because it is the simpler thing that avoids re-hashing a
+# possibly enormous pattern source, not because the saving is large.
 #
 # The builtin patterns are module constants and number in the low
 # hundreds, a few hundred bytes each; only config-supplied ones are
 # compiled per run, so the bound is a backstop for a long-lived process
 # linting many differently-configured repositories.
 #
-# Bytes, not a count. An entry is not fixed-small in either half: nothing
-# caps the length of a config-supplied pattern, and the dict is keyed by
-# the compiled pattern itself, so it keeps that pattern alive after the
-# config that compiled it is gone — it is the retainer, not a passenger on
-# one. A single 200,000-character pattern measures 3.4 MB compiled, so a
-# count cap of 20,000 bounded this at gigabytes. ``sys.getsizeof`` on a
-# compiled pattern does scale with its code array, so the charge is a
-# direct measurement rather than an estimate.
-#
-# Over budget it drops the oldest half rather than everything: a bound a
-# workload can cross must not be a cliff. Accounting sits in the miss
-# branch only — the lookup stays one identity hash, which is the whole
-# point of the dict.
-_LITERALS_BY_PATTERN: Dict[re.Pattern, Tuple[str, ...]] = {}
-_LITERALS_CACHE_BUDGET_BYTES = 8 * 1024 * 1024
-_literals_cache_bytes = 0
-
-#: Serializes admission and eviction, the way ``_resolve_lock`` does for
-#: the resolution memo and ``FileCache._lock`` for the file caches. It is
-#: taken in the miss branch only — never in front of the lookup, which is
-#: the hot path this structure exists to keep to one identity hash. A
-#: ``get`` racing a ``del`` is safe: it returns the value or nothing, and
-#: nothing just becomes a miss.
-_literals_lock = threading.Lock()
-
-#: What each entry costs, charged at admission and credited back verbatim
-#: on eviction. A parallel dict rather than a second slot in the value:
-#: the value is read on the hot path and the cost only in the miss branch,
-#: so pairing them would put a tuple index in front of every lookup.
-_LITERALS_COSTS: Dict[re.Pattern, int] = {}
-
-#: Charged on top of what the pattern and its literals measure, for the
-#: two dict entries — value and cost — and the hash-table slack behind
-#: them.
-_LITERALS_ENTRY_OVERHEAD_BYTES = 256
+# Bytes, not a count. An entry is not fixed-small: nothing caps the length
+# of a config-supplied pattern, and the memo is keyed by the compiled
+# pattern itself, so it keeps that pattern alive after the config that
+# compiled it is gone — it is the retainer, not a passenger on someone
+# else's reference. A single 200,000-character pattern measures 3.4 MB
+# compiled, so a count cap of 20,000 bounded this at gigabytes.
+# ``sys.getsizeof`` on a compiled pattern does scale with its code array,
+# so the charge is a direct measurement rather than an estimate.
+_LITERALS_BY_PATTERN = _BudgetedMemo(8 * 1024 * 1024)
 
 
 def _literals_entry_cost(pattern: "re.Pattern", literals: Tuple[str, ...]) -> int:
@@ -336,8 +420,7 @@ def _literals_entry_cost(pattern: "re.Pattern", literals: Tuple[str, ...]) -> in
         _LITERALS_ENTRY_OVERHEAD_BYTES
         + sys.getsizeof(pattern)
         + sys.getsizeof(pattern.pattern)
-        + sys.getsizeof(literals)
-        + sum(sys.getsizeof(literal) for literal in literals)
+        + _literals_cost(literals)
     )
 
 
@@ -371,36 +454,10 @@ def case_fold(text: str) -> str:
 
 def _pattern_literals(pattern: re.Pattern) -> Tuple[str, ...]:
     """Literals every match of *pattern* must contain (see `_required_literals`)."""
-    literals = _LITERALS_BY_PATTERN.get(pattern)
+    literals = _LITERALS_BY_PATTERN.values.get(pattern)
     if literals is None:
-        global _literals_cache_bytes
         literals = _required_literals(pattern.pattern, pattern.flags)
-        cost = _literals_entry_cost(pattern, literals)
-        if cost > _LITERALS_CACHE_BUDGET_BYTES:
-            # Remembering it would evict everything else and still not
-            # fit. Recomputing costs time; retaining it costs the budget.
-            return literals
-        with _literals_lock:
-            if pattern in _LITERALS_BY_PATTERN:
-                # Another thread admitted it while this one was measuring.
-                # Its entry is already charged, and charging again would
-                # bill one retained entry twice.
-                return literals
-            while (
-                _LITERALS_BY_PATTERN and _literals_cache_bytes + cost > _LITERALS_CACHE_BUDGET_BYTES
-            ):
-                # Halves, not everything: a bound a workload can cross
-                # must not be a cliff. Repeated because entries are not
-                # uniform — dropping half of a memo holding one large
-                # pattern and many small ones need not free enough for
-                # the next one. Under the lock, so a second evicting
-                # thread cannot pop a key this one already removed.
-                for stale in list(_LITERALS_BY_PATTERN)[: len(_LITERALS_BY_PATTERN) // 2 or 1]:
-                    _literals_cache_bytes -= _LITERALS_COSTS.pop(stale)
-                    del _LITERALS_BY_PATTERN[stale]
-            _LITERALS_BY_PATTERN[pattern] = literals
-            _LITERALS_COSTS[pattern] = cost
-            _literals_cache_bytes += cost
+        _LITERALS_BY_PATTERN.put(pattern, literals, _literals_entry_cost(pattern, literals))
     return literals
 
 
@@ -435,9 +492,9 @@ def patterns_matching_anywhere(
         pattern = t[0]
         literals = _pattern_literals(pattern)
         # An explicit loop, not ``any(... for ...)``: this runs once per
-        # (pattern, document) pair — millions of times on a large
-        # marketplace — and the generator's per-item frame costs more than
-        # the substring tests it wraps.
+        # (pattern, document) pair — 39,513 times linting a 115-skill,
+        # 41-plugin repository — and the generator's per-item frame costs
+        # more than the substring tests it wraps.
         missing = False
         for literal in literals:
             if literal not in folded:

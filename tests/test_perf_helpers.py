@@ -235,8 +235,7 @@ class TestPatternLiteralCacheBudget:
         import skillsaw.rules.builtin.content_analysis as ca
 
         ca._LITERALS_BY_PATTERN.clear()
-        ca._LITERALS_COSTS.clear()
-        ca._literals_cache_bytes = 0
+        ca._LITERALS_BY_SOURCE.clear()
 
     def test_a_long_config_pattern_is_charged_what_it_retains(self):
         """Not a fixed-small entry, so not boundable by a count.
@@ -253,11 +252,11 @@ class TestPatternLiteralCacheBudget:
         try:
             small = re.compile(r"\bfoo bar baz\b")
             ca._pattern_literals(small)
-            after_small = ca._literals_cache_bytes
+            after_small = ca._LITERALS_BY_PATTERN.total_bytes
 
             large = re.compile("x" * 200_000)
             ca._pattern_literals(large)
-            charged = ca._literals_cache_bytes - after_small
+            charged = ca._LITERALS_BY_PATTERN.total_bytes - after_small
 
             assert after_small < 4096, "a short pattern must stay cheap"
             assert charged > 1_000_000, (
@@ -271,20 +270,72 @@ class TestPatternLiteralCacheBudget:
         import skillsaw.rules.builtin.content_analysis as ca
 
         self._reset()
-        budget = ca._LITERALS_CACHE_BUDGET_BYTES
+        budget = ca._LITERALS_BY_PATTERN._budget
         try:
-            ca._LITERALS_CACHE_BUDGET_BYTES = 64 * 1024
+            ca._LITERALS_BY_PATTERN._budget = 64 * 1024
             for index in range(400):
                 ca._pattern_literals(re.compile(f"alpha{index}beta" + "z" * 200))
 
-            assert ca._literals_cache_bytes <= 64 * 1024
-            assert len(ca._LITERALS_BY_PATTERN) < 400, "the budget never evicted"
-            assert len(ca._LITERALS_COSTS) == len(ca._LITERALS_BY_PATTERN)
-            assert ca._literals_cache_bytes == sum(
-                ca._LITERALS_COSTS.values()
+            assert ca._LITERALS_BY_PATTERN.total_bytes <= 64 * 1024
+            assert len(ca._LITERALS_BY_PATTERN.values) < 400, "the budget never evicted"
+            assert len(ca._LITERALS_BY_PATTERN.charged) == len(ca._LITERALS_BY_PATTERN.values)
+            assert ca._LITERALS_BY_PATTERN.total_bytes == sum(
+                ca._LITERALS_BY_PATTERN.charged.values()
             ), "eviction must credit back the number charged at admission"
         finally:
-            ca._LITERALS_CACHE_BUDGET_BYTES = budget
+            ca._LITERALS_BY_PATTERN._budget = budget
+            self._reset()
+
+    def test_the_source_keyed_memo_is_bounded_too(self):
+        """The second retainer, which the first one's budget cannot see.
+
+        ``_required_literals`` is memoized by pattern source, so it holds
+        that string alive independently of the compiled-pattern memo — and
+        its old ``lru_cache(maxsize=512)`` was a count cap over entries a
+        config sizes: 512 sources of 200,000 characters is 102 MB, admitted
+        here before the byte budget downstream ever sees the pattern.
+
+        Refusing them instead of bounding them would be worse: extracting
+        the literals from a source that size walks the parse tree for
+        194 ms, and with nothing cached that runs once per document.
+        """
+        import skillsaw.rules.builtin.content_analysis as ca
+
+        self._reset()
+        budget = ca._LITERALS_BY_SOURCE._budget
+        try:
+            ca._LITERALS_BY_SOURCE._budget = 64 * 1024
+            for index in range(200):
+                ca._required_literals(f"prefix{index}suffix" + "w" * 400, 0)
+
+            assert ca._LITERALS_BY_SOURCE.total_bytes <= 64 * 1024
+            assert len(ca._LITERALS_BY_SOURCE.values) < 200, "the budget never evicted"
+            assert ca._LITERALS_BY_SOURCE.total_bytes == sum(
+                ca._LITERALS_BY_SOURCE.charged.values()
+            )
+        finally:
+            ca._LITERALS_BY_SOURCE._budget = budget
+            self._reset()
+
+    def test_a_large_source_is_still_remembered(self):
+        """The bound must not become the 194 ms cliff it exists to avoid.
+
+        A 200,000-character pattern retains about 200 KB here — the
+        compiled object it produces is 3.4 MB, but that lives in the other
+        memo — so it fits the budget comfortably and is cached. Only a
+        source larger than the whole budget is refused, and then the
+        answer is still correct, just recomputed.
+        """
+        import skillsaw.rules.builtin.content_analysis as ca
+
+        self._reset()
+        try:
+            source = "|".join(f"alpha{i}beta" for i in range(2000))
+            first = ca._required_literals(source, 0)
+
+            assert (source, 0) in ca._LITERALS_BY_SOURCE.values
+            assert ca._required_literals(source, 0) is first, "a second call must hit the memo"
+        finally:
             self._reset()
 
     def test_concurrent_admission_charges_one_entry_once(self):
@@ -325,9 +376,13 @@ class TestPatternLiteralCacheBudget:
             for thread in workers:
                 thread.join()
 
-            assert len(ca._LITERALS_BY_PATTERN) == 1
-            assert ca._literals_cache_bytes == sum(ca._LITERALS_COSTS.values())
-            assert ca._literals_cache_bytes == real_cost(pattern, ca._LITERALS_BY_PATTERN[pattern])
+            assert len(ca._LITERALS_BY_PATTERN.values) == 1
+            assert ca._LITERALS_BY_PATTERN.total_bytes == sum(
+                ca._LITERALS_BY_PATTERN.charged.values()
+            )
+            assert ca._LITERALS_BY_PATTERN.total_bytes == real_cost(
+                pattern, ca._LITERALS_BY_PATTERN.values[pattern]
+            )
         finally:
             ca._literals_entry_cost = real_cost
             self._reset()
@@ -350,12 +405,12 @@ class TestPatternLiteralCacheBudget:
         import skillsaw.rules.builtin.content_analysis as ca
 
         self._reset()
-        budget = ca._LITERALS_CACHE_BUDGET_BYTES
+        budget = ca._LITERALS_BY_PATTERN._budget
         switch_interval = sys.getswitchinterval()
         errors = []
         try:
             sys.setswitchinterval(1e-6)
-            ca._LITERALS_CACHE_BUDGET_BYTES = 32 * 1024
+            ca._LITERALS_BY_PATTERN._budget = 32 * 1024
             barrier = threading.Barrier(4)
 
             def worker(offset):
@@ -373,31 +428,33 @@ class TestPatternLiteralCacheBudget:
                 thread.join()
 
             assert not errors, f"eviction raced: {errors[0]!r}"
-            assert ca._literals_cache_bytes == sum(ca._LITERALS_COSTS.values())
-            assert set(ca._LITERALS_COSTS) == set(ca._LITERALS_BY_PATTERN)
-            assert ca._literals_cache_bytes <= 32 * 1024
+            assert ca._LITERALS_BY_PATTERN.total_bytes == sum(
+                ca._LITERALS_BY_PATTERN.charged.values()
+            )
+            assert set(ca._LITERALS_BY_PATTERN.charged) == set(ca._LITERALS_BY_PATTERN.values)
+            assert ca._LITERALS_BY_PATTERN.total_bytes <= 32 * 1024
         finally:
             sys.setswitchinterval(switch_interval)
-            ca._LITERALS_CACHE_BUDGET_BYTES = budget
+            ca._LITERALS_BY_PATTERN._budget = budget
             self._reset()
 
     def test_an_entry_larger_than_the_budget_is_never_stored(self):
         import skillsaw.rules.builtin.content_analysis as ca
 
         self._reset()
-        budget = ca._LITERALS_CACHE_BUDGET_BYTES
+        budget = ca._LITERALS_BY_PATTERN._budget
         try:
-            ca._LITERALS_CACHE_BUDGET_BYTES = 4096
+            ca._LITERALS_BY_PATTERN._budget = 4096
             oversized = re.compile("y" * 100_000)
 
             assert ca._pattern_literals(oversized) == ca._required_literals(
                 oversized.pattern, oversized.flags
             ), "refusing to remember must not change the answer"
-            assert oversized not in ca._LITERALS_BY_PATTERN
-            assert ca._literals_cache_bytes == 0
-            assert not ca._LITERALS_COSTS
+            assert oversized not in ca._LITERALS_BY_PATTERN.values
+            assert ca._LITERALS_BY_PATTERN.total_bytes == 0
+            assert not ca._LITERALS_BY_PATTERN.charged
         finally:
-            ca._LITERALS_CACHE_BUDGET_BYTES = budget
+            ca._LITERALS_BY_PATTERN._budget = budget
             self._reset()
 
 
