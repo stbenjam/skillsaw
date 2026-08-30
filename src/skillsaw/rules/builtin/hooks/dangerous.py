@@ -539,24 +539,30 @@ class HooksDangerousRule(Rule):
         for event_type, configs in events.items():
             for cfg in configs:
                 for handler in cfg.handlers:
-                    if handler.type != "command" or not handler.command:
+                    if handler.type != "command":
                         continue
-                    # Exec-form hooks split the invocation across command +
-                    # args; scan the joined form so patterns can't hide in args.
-                    command = handler.command
-                    if isinstance(handler.args, list):
-                        command = " ".join([command, *(str(a) for a in handler.args)])
-                    if self._is_allowed(handler.command) or self._is_allowed(command):
-                        continue
-                    for message in dangerous_command_descriptions(command):
-                        violations.append(
-                            self.violation(
-                                f"Hook {safe_display(event_type)}: {message} — "
-                                f"command: {safe_display(command)!r}",
-                                file_path=file_path,
-                                line=handler.source_line or line,
+                    commands = handler.command_variants
+                    if not commands and handler.command:
+                        commands = [(handler.command, handler.source_line)]
+                    for configured_command, source_line in commands:
+                        if not configured_command:
+                            continue
+                        # Exec-form hooks split the invocation across command +
+                        # args; scan the joined form so patterns can't hide in args.
+                        command = configured_command
+                        if isinstance(handler.args, list):
+                            command = " ".join([command, *(str(a) for a in handler.args)])
+                        if self._is_allowed(configured_command) or self._is_allowed(command):
+                            continue
+                        for message in dangerous_command_descriptions(command):
+                            violations.append(
+                                self.violation(
+                                    f"Hook {safe_display(event_type)}: {message} — "
+                                    f"command: {safe_display(command)!r}",
+                                    file_path=file_path,
+                                    line=source_line or line,
+                                )
                             )
-                        )
         return violations
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -591,7 +597,7 @@ class HooksDangerousRule(Rule):
 
         if self.surface_rule_enabled("copilot-agent-valid"):
             for block in context.lint_tree.find(CopilotAgentBlock):
-                if block.frontmatter_error or block.field_value("target") == "github-copilot":
+                if block.frontmatter_error:
                     continue
                 events = block.hooks_events
                 if events:

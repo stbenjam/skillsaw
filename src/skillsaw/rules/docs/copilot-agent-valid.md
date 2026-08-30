@@ -12,8 +12,10 @@ model collections, subagent/tool coordination, metadata, handoffs, hook
 shape, the two documented `target` values, and GitHub's 30,000-character
 prompt limit. In an `*.agent.md` file, omitted `target` means both
 environments and accepts the documented union. Other Markdown files under
-`.github/agents/` are VS Code-only, as are legacy chatmodes. Unknown tool
-names remain valid because both consumers ignore tools they do not provide.
+`.github/agents/` and legacy chatmodes default to VS Code-only when `target`
+is omitted. A valid explicit `target` always takes precedence over the file
+suffix. Unknown tool names remain valid because both consumers ignore tools
+they do not provide.
 
 Missing or weak descriptions remain owned by
 [`content-description-routing`](content-description-routing.md). This rule
@@ -26,17 +28,18 @@ Embedded cloud configuration stays visible to the shared security rules. A
 validate and police it. GitHub's `local` transport is treated as the compatible spelling of `stdio`, and
 `${{ secrets.NAME }}` / `${{ vars.NAME }}` values are placeholders rather
 than committed credentials. Hooks in VS Code-capable agents (an omitted
-target, `target: vscode`, an ordinary `.github/agents/**/*.md` file, or a
-legacy chatmode) are scanned by
+target on `*.agent.md`, `target: vscode`, or a VS Code-default filename) are scanned by
 [`hooks-dangerous`](hooks-dangerous.md) and [`hooks-prohibited`](hooks-prohibited.md)
-like hooks in standalone config; hooks on a cloud-only target are ignored by
-that host and are not scanned. All checks are offline.
+like hooks in standalone config. Command hooks may provide `command` or one
+or more OS-specific `windows`, `linux`, and `osx` commands; every provided
+variant is scanned. Hooks on a cloud-only target are ignored by that host and
+are not scanned. All checks are offline.
 
 Legacy `.github/chatmodes/**/*.chatmode.md` files and non-`*.agent.md` files
 under `.github/agents/` receive the same validation so teams can migrate
-without losing diagnostics. They are VS Code-only even when `target` is
-omitted, so the cloud prompt limit and cloud-only embedded MCP checks do not
-apply.
+without losing diagnostics. They are VS Code-only when `target` is omitted,
+so the cloud prompt limit and cloud-only embedded MCP checks do not apply by
+default.
 
 ## Severity
 

@@ -590,8 +590,32 @@ class CopilotAgentBlock(FrontmatteredBlock):
     category: str = "agent"
 
     @property
+    def effective_target(self) -> Optional[str]:
+        """Return the declared target, or the filename-based default.
+
+        The suffix only supplies the legacy VS Code default; an explicit,
+        valid target always wins.
+        """
+        declared = self.field_value("target")
+        if declared in ("vscode", "github-copilot"):
+            return declared
+        if not self.path.name.endswith(".agent.md"):
+            return "vscode"
+        return None
+
+    @property
+    def supports_vscode(self) -> bool:
+        return self.effective_target != "github-copilot"
+
+    @property
+    def supports_github_copilot(self) -> bool:
+        return self.effective_target != "vscode"
+
+    @property
     def hooks_events(self) -> Dict[str, List[HookEventConfig]]:
         """Parse embedded hooks while retaining each command's YAML line."""
+        if not self.supports_vscode:
+            return {}
         # A top-level YAML merge can supply ``hooks`` without giving the
         # merged key its own source line. The compatibility parse has already
         # resolved merges into FrontmatterField children, so it is the cheap,
@@ -615,10 +639,7 @@ class CopilotAgentBlock(FrontmatteredBlock):
         mcp_field = self.field("mcp-servers")
         if mcp_field is None:
             return
-        # GitHub cloud loads only ``*.agent.md``; VS Code accepts every
-        # Markdown filename in this directory plus legacy chatmodes. Those
-        # local-only files ignore this cloud MCP field.
-        if not self.path.name.endswith(".agent.md") or self.field_value("target") == "vscode":
+        if not self.supports_github_copilot:
             return
         frontmatter, error, _error_line = read_frontmatter_commented(self.path)
         if error or not isinstance(frontmatter, dict):

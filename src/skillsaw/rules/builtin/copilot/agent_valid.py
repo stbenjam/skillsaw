@@ -44,6 +44,7 @@ _KNOWN_FIELDS = frozenset(
     }
 )
 _AGENT_TOOL_ALIASES = frozenset({"agent", "custom-agent", "task"})
+_PLATFORM_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
 _QUALIFIED_MODEL = re.compile(r"^\S(?:.*\S)?\s+\([^)]+\)$")
 
 
@@ -167,9 +168,8 @@ class CopilotAgentValidRule(Rule):
             ]
 
         violations: List[RuleViolation] = []
-        target = self._check_target(block, data, violations)
-        if not block.path.name.endswith(".agent.md"):
-            target = "vscode"
+        self._check_target(block, data, violations)
+        target = block.effective_target
         self._check_scalar(block, data, "name", violations)
         self._check_description(block, data, violations)
         argument_hint_valid = self._check_scalar(block, data, "argument-hint", violations)
@@ -755,7 +755,34 @@ class CopilotAgentValidRule(Rule):
             return False
 
         valid = True
-        for key, expected in _TYPE_REQUIRED_FIELDS[hook_type].items():
+        required_fields = _TYPE_REQUIRED_FIELDS[hook_type]
+        if hook_type == "command":
+            present_commands = [key for key in _PLATFORM_COMMAND_FIELDS if key in handler]
+            if not present_commands:
+                violations.append(
+                    self._finding(
+                        block,
+                        f"Hook '{path}' of type 'command' requires at least one of: "
+                        f"{', '.join(_PLATFORM_COMMAND_FIELDS)}",
+                        line=line,
+                        discriminator=f"hooks:{path}:command:missing",
+                    )
+                )
+                valid = False
+            for key in present_commands:
+                if not _nonempty_string(handler[key]):
+                    violations.append(
+                        self._finding(
+                            block,
+                            f"Hook '{path}' field '{key}' must be a non-empty string",
+                            line=_key_line(handler, key) or line,
+                            discriminator=f"hooks:{path}:{key}:type",
+                        )
+                    )
+                    valid = False
+            required_fields = {}
+
+        for key, expected in required_fields.items():
             if key not in handler:
                 violations.append(
                     self._finding(
@@ -808,7 +835,9 @@ class CopilotAgentValidRule(Rule):
                     )
                     valid = False
         for key in handler:
-            allowed_types = _TYPE_SPECIFIC_FIELDS.get(key)
+            allowed_types = (
+                {"command"} if key in _PLATFORM_COMMAND_FIELDS else _TYPE_SPECIFIC_FIELDS.get(key)
+            )
             if allowed_types is not None and hook_type not in allowed_types:
                 violations.append(
                     self._finding(
