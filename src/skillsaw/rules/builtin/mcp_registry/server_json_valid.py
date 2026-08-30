@@ -352,6 +352,327 @@ def _registry_types_summary(values: frozenset[str], *, limit: int = 20) -> str:
     return rendered or "(none configured)"
 
 
+@dataclass(frozen=True)
+class _SemanticSpec:
+    """One ordered, aggregated semantic diagnostic."""
+
+    kind: str
+    collection: str
+    field: str
+    requirement: str
+
+
+@dataclass
+class _SemanticState:
+    """Bounded matches for one semantic diagnostic."""
+
+    spec: _SemanticSpec
+    count: int = 0
+    indices: list[int] = field(default_factory=list)
+
+
+class _IndexedSemanticFindings:
+    """Collect and render indexed findings without duplicating their vocabulary."""
+
+    def __init__(self, specs: tuple[_SemanticSpec, ...]) -> None:
+        self._ordered_states = tuple(_SemanticState(spec) for spec in specs)
+        self._states = {state.spec.kind: state for state in self._ordered_states}
+        if len(self._states) != len(self._ordered_states):
+            raise ValueError("duplicate MCP Registry semantic finding kind")
+
+    def record(self, kind: str, index: int) -> None:
+        state = self._states[kind]
+        state.count += 1
+        if len(state.indices) < _SEMANTIC_SAMPLE_LIMIT:
+            state.indices.append(index)
+
+    def problems(self) -> list[tuple[str, str]]:
+        """Return ``(fingerprint, message)`` pairs in declaration order."""
+        problems = []
+        for state in self._ordered_states:
+            if not state.count:
+                continue
+            spec = state.spec
+            problems.append(
+                (
+                    f"semantic:{spec.kind}",
+                    _indexed_problem(
+                        spec.collection,
+                        spec.field,
+                        state.indices,
+                        state.count,
+                        spec.requirement,
+                    ),
+                )
+            )
+        return problems
+
+
+def _semantic_specs(
+    schema_profile: McpRegistrySchemaProfile,
+    semantic_policy: _SemanticPolicy,
+    allowed_registry_types: frozenset[str],
+) -> tuple[_SemanticSpec, ...]:
+    """Declare the complete ordered vocabulary of indexed findings once."""
+    return (
+        _SemanticSpec(
+            "registry-type",
+            "packages",
+            f".{schema_profile.registry_type_field}",
+            f"must be one of {_registry_types_summary(allowed_registry_types)}",
+        ),
+        _SemanticSpec(
+            "package-transport",
+            "packages",
+            ".transport.type",
+            f"must be one of {', '.join(sorted(semantic_policy.package_transports))}",
+        ),
+        _SemanticSpec(
+            "package-url",
+            "packages",
+            ".transport.url",
+            "must be a structurally valid HTTP(S) URL template",
+        ),
+        _SemanticSpec(
+            "package-stdio-url",
+            "packages",
+            ".transport.url",
+            "must be empty or omitted for stdio transport",
+        ),
+        _SemanticSpec(
+            "package-url-variable",
+            "packages",
+            ".transport.url",
+            "must reference only declared package arguments or environment variables",
+        ),
+        _SemanticSpec(
+            "registry-base-url",
+            "packages",
+            f".{schema_profile.registry_base_url_field}",
+            "must be the canonical public base URL for its registry type",
+        ),
+        _SemanticSpec(
+            "registry-base-url-forbidden",
+            "packages",
+            f".{schema_profile.registry_base_url_field}",
+            "must be omitted for OCI and MCPB packages",
+        ),
+        _SemanticSpec(
+            "file-hash-forbidden",
+            "packages",
+            f".{schema_profile.file_sha256_field}",
+            "must be omitted unless the package is MCPB",
+        ),
+        _SemanticSpec(
+            "mcpb-identifier",
+            "packages",
+            ".identifier",
+            "must be an HTTPS URL containing 'mcp' for MCPB packages",
+        ),
+        _SemanticSpec(
+            "package-version",
+            "packages",
+            ".version",
+            "must identify one exact release, not a tag or range",
+        ),
+        _SemanticSpec(
+            "package-version-forbidden",
+            "packages",
+            ".version",
+            "must be omitted when "
+            f"{schema_profile.registry_type_field} is one of "
+            f"{', '.join(sorted(semantic_policy.forbidden_package_versions))}",
+        ),
+        _SemanticSpec(
+            "mcpb-hash",
+            "packages",
+            f".{schema_profile.file_sha256_field}",
+            f"is required when {schema_profile.registry_type_field} is mcpb",
+        ),
+        _SemanticSpec(
+            "remote-transport",
+            "remotes",
+            ".type",
+            f"must be one of {', '.join(sorted(semantic_policy.remote_transports))}",
+        ),
+        _SemanticSpec(
+            "remote-url",
+            "remotes",
+            ".url",
+            "must be a structurally valid HTTPS URL template using a non-loopback host",
+        ),
+        _SemanticSpec(
+            "remote-url-variable",
+            "remotes",
+            ".url",
+            "must reference only keys declared in the remote variables object",
+        ),
+        _SemanticSpec("icon-src", "icons", ".src", "must use an HTTPS URI"),
+    )
+
+
+def _collect_package_semantics(
+    packages: object,
+    schema_profile: McpRegistrySchemaProfile,
+    semantic_policy: _SemanticPolicy,
+    allowed_registry_types: frozenset[str],
+    findings: _IndexedSemanticFindings,
+) -> None:
+    """Collect package defects in one linear pass."""
+    if not isinstance(packages, list):
+        return
+    for index, package in enumerate(packages):
+        if not isinstance(package, dict):
+            continue
+        registry_type = package.get(schema_profile.registry_type_field)
+        if isinstance(registry_type, str) and registry_type not in allowed_registry_types:
+            findings.record("registry-type", index)
+        transport = package.get("transport")
+        transport_type = transport.get("type") if isinstance(transport, dict) else None
+        if (
+            isinstance(transport_type, str)
+            and transport_type not in semantic_policy.package_transports
+        ):
+            findings.record("package-transport", index)
+        transport_url = transport.get("url") if isinstance(transport, dict) else None
+        if (
+            transport_type == "stdio"
+            and isinstance(transport, dict)
+            and "url" in transport
+            and transport_url is not None
+            and transport_url != ""
+        ):
+            findings.record("package-stdio-url", index)
+        package_url = (
+            analyze_http_url_template(transport_url) if isinstance(transport_url, str) else None
+        )
+        if (
+            semantic_policy.http_url_templates
+            and transport_type in semantic_policy.remote_transports
+            and isinstance(transport_url, str)
+            and package_url is None
+        ):
+            findings.record("package-url", index)
+        if (
+            semantic_policy.http_url_templates
+            and transport_type in semantic_policy.remote_transports
+            and package_url is not None
+            and not package_url.variables <= _package_template_variables(package, schema_profile)
+        ):
+            findings.record("package-url-variable", index)
+        registry_base_url = package.get(schema_profile.registry_base_url_field)
+        canonical_base_urls = semantic_policy.canonical_registry_base_urls.get(registry_type)
+        if (
+            isinstance(registry_base_url, str)
+            and registry_base_url
+            and canonical_base_urls is not None
+            and registry_base_url not in canonical_base_urls
+        ):
+            findings.record("registry-base-url", index)
+        if (
+            isinstance(registry_base_url, str)
+            and registry_base_url
+            and registry_type in semantic_policy.forbidden_registry_base_urls
+        ):
+            findings.record("registry-base-url-forbidden", index)
+        file_hash = package.get(schema_profile.file_sha256_field)
+        if (
+            isinstance(file_hash, str)
+            and file_hash
+            and registry_type in semantic_policy.forbidden_file_hashes
+        ):
+            findings.record("file-hash-forbidden", index)
+        identifier = package.get("identifier")
+        if (
+            semantic_policy.mcpb_identifier_constraints
+            and registry_type == "mcpb"
+            and isinstance(identifier, str)
+            and not is_release_source_placeholder(identifier)
+            and (not _is_https_url(identifier) or "mcp" not in identifier.lower())
+        ):
+            findings.record("mcpb-identifier", index)
+        package_version = package.get("version")
+        if semantic_policy.exact_versions and (
+            (
+                registry_type in semantic_policy.required_package_versions
+                and "version" not in package
+            )
+            or (
+                isinstance(package_version, str)
+                and not is_release_source_placeholder(package_version)
+                and registry_type not in semantic_policy.forbidden_package_versions
+                and (
+                    is_package_version_range(registry_type, package_version)
+                    or (registry_type == "npm" and SEMVER.fullmatch(package_version) is None)
+                )
+            )
+        ):
+            findings.record("package-version", index)
+        if registry_type in semantic_policy.forbidden_package_versions and isinstance(
+            package_version, str
+        ):
+            findings.record("package-version-forbidden", index)
+        if (
+            semantic_policy.mcpb_hash
+            and registry_type == "mcpb"
+            and schema_profile.file_sha256_field not in package
+        ):
+            findings.record("mcpb-hash", index)
+
+
+def _collect_remote_semantics(
+    remotes: object,
+    semantic_policy: _SemanticPolicy,
+    findings: _IndexedSemanticFindings,
+) -> None:
+    """Collect remote defects in one linear pass."""
+    if not isinstance(remotes, list):
+        return
+    for index, remote in enumerate(remotes):
+        if not isinstance(remote, dict):
+            continue
+        transport_type = remote.get("type")
+        if (
+            isinstance(transport_type, str)
+            and transport_type not in semantic_policy.remote_transports
+        ):
+            findings.record("remote-transport", index)
+        remote_url = remote.get("url")
+        analyzed_remote_url = (
+            analyze_http_url_template(remote_url) if isinstance(remote_url, str) else None
+        )
+        if (
+            semantic_policy.http_url_templates
+            and isinstance(remote_url, str)
+            and (
+                analyzed_remote_url is None
+                or analyzed_remote_url.scheme != "https"
+                or is_loopback_hostname(analyzed_remote_url.hostname)
+            )
+        ):
+            findings.record("remote-url", index)
+        if (
+            semantic_policy.http_url_templates
+            and analyzed_remote_url is not None
+            and not analyzed_remote_url.variables <= _remote_template_variables(remote)
+        ):
+            findings.record("remote-url-variable", index)
+
+
+def _collect_icon_semantics(
+    icons: object,
+    semantic_policy: _SemanticPolicy,
+    findings: _IndexedSemanticFindings,
+) -> None:
+    """Collect icon defects in one linear pass."""
+    if not isinstance(icons, list):
+        return
+    for index, icon in enumerate(icons):
+        src = icon.get("src") if isinstance(icon, dict) else None
+        if semantic_policy.https_icons and isinstance(src, str) and not _is_https_url(src):
+            findings.record("icon-src", index)
+
+
 class McpRegistryServerJsonValidRule(Rule):
     """Validate MCP Registry publisher metadata against schema and semantics."""
 
@@ -513,176 +834,18 @@ class McpRegistryServerJsonValidRule(Rule):
                 )
             )
 
-        semantic_counts = {
-            "registry-type": 0,
-            "package-transport": 0,
-            "package-url": 0,
-            "package-stdio-url": 0,
-            "package-url-variable": 0,
-            "registry-base-url": 0,
-            "registry-base-url-forbidden": 0,
-            "file-hash-forbidden": 0,
-            "mcpb-identifier": 0,
-            "package-version": 0,
-            "package-version-forbidden": 0,
-            "mcpb-hash": 0,
-            "remote-transport": 0,
-            "remote-url": 0,
-            "remote-url-variable": 0,
-            "icon-src": 0,
-        }
-        semantic_indices = {key: [] for key in semantic_counts}
-
-        def record_semantic(kind: str, index: int) -> None:
-            semantic_counts[kind] += 1
-            if len(semantic_indices[kind]) < _SEMANTIC_SAMPLE_LIMIT:
-                semantic_indices[kind].append(index)
-
-        packages = data.get("packages")
-        if isinstance(packages, list):
-            for index, package in enumerate(packages):
-                if not isinstance(package, dict):
-                    continue
-                registry_type = package.get(schema_profile.registry_type_field)
-                if isinstance(registry_type, str) and registry_type not in allowed_registry_types:
-                    record_semantic("registry-type", index)
-                transport = package.get("transport")
-                transport_type = transport.get("type") if isinstance(transport, dict) else None
-                if (
-                    isinstance(transport_type, str)
-                    and transport_type not in semantic_policy.package_transports
-                ):
-                    record_semantic("package-transport", index)
-                transport_url = transport.get("url") if isinstance(transport, dict) else None
-                if (
-                    transport_type == "stdio"
-                    and isinstance(transport, dict)
-                    and "url" in transport
-                    and transport_url is not None
-                    and transport_url != ""
-                ):
-                    record_semantic("package-stdio-url", index)
-                package_url = (
-                    analyze_http_url_template(transport_url)
-                    if isinstance(transport_url, str)
-                    else None
-                )
-                if (
-                    semantic_policy.http_url_templates
-                    and transport_type in semantic_policy.remote_transports
-                    and isinstance(transport_url, str)
-                    and package_url is None
-                ):
-                    record_semantic("package-url", index)
-                if (
-                    semantic_policy.http_url_templates
-                    and transport_type in semantic_policy.remote_transports
-                    and package_url is not None
-                    and not package_url.variables
-                    <= _package_template_variables(package, schema_profile)
-                ):
-                    record_semantic("package-url-variable", index)
-                registry_base_url = package.get(schema_profile.registry_base_url_field)
-                canonical_base_urls = semantic_policy.canonical_registry_base_urls.get(
-                    registry_type
-                )
-                if (
-                    isinstance(registry_base_url, str)
-                    and registry_base_url
-                    and canonical_base_urls is not None
-                    and registry_base_url not in canonical_base_urls
-                ):
-                    record_semantic("registry-base-url", index)
-                if (
-                    isinstance(registry_base_url, str)
-                    and registry_base_url
-                    and registry_type in semantic_policy.forbidden_registry_base_urls
-                ):
-                    record_semantic("registry-base-url-forbidden", index)
-                file_hash = package.get(schema_profile.file_sha256_field)
-                if (
-                    isinstance(file_hash, str)
-                    and file_hash
-                    and registry_type in semantic_policy.forbidden_file_hashes
-                ):
-                    record_semantic("file-hash-forbidden", index)
-                identifier = package.get("identifier")
-                if (
-                    semantic_policy.mcpb_identifier_constraints
-                    and registry_type == "mcpb"
-                    and isinstance(identifier, str)
-                    and not is_release_source_placeholder(identifier)
-                    and (not _is_https_url(identifier) or "mcp" not in identifier.lower())
-                ):
-                    record_semantic("mcpb-identifier", index)
-                package_version = package.get("version")
-                if semantic_policy.exact_versions and (
-                    (
-                        registry_type in semantic_policy.required_package_versions
-                        and "version" not in package
-                    )
-                    or (
-                        isinstance(package_version, str)
-                        and not is_release_source_placeholder(package_version)
-                        and registry_type not in semantic_policy.forbidden_package_versions
-                        and (
-                            is_package_version_range(registry_type, package_version)
-                            or (
-                                registry_type == "npm" and SEMVER.fullmatch(package_version) is None
-                            )
-                        )
-                    )
-                ):
-                    record_semantic("package-version", index)
-                if registry_type in semantic_policy.forbidden_package_versions and isinstance(
-                    package_version, str
-                ):
-                    record_semantic("package-version-forbidden", index)
-                if (
-                    semantic_policy.mcpb_hash
-                    and registry_type == "mcpb"
-                    and schema_profile.file_sha256_field not in package
-                ):
-                    record_semantic("mcpb-hash", index)
-
-        remotes = data.get("remotes")
-        if isinstance(remotes, list):
-            for index, remote in enumerate(remotes):
-                if not isinstance(remote, dict):
-                    continue
-                transport_type = remote.get("type")
-                if (
-                    isinstance(transport_type, str)
-                    and transport_type not in semantic_policy.remote_transports
-                ):
-                    record_semantic("remote-transport", index)
-                remote_url = remote.get("url")
-                analyzed_remote_url = (
-                    analyze_http_url_template(remote_url) if isinstance(remote_url, str) else None
-                )
-                if (
-                    semantic_policy.http_url_templates
-                    and isinstance(remote_url, str)
-                    and (
-                        analyzed_remote_url is None
-                        or analyzed_remote_url.scheme != "https"
-                        or is_loopback_hostname(analyzed_remote_url.hostname)
-                    )
-                ):
-                    record_semantic("remote-url", index)
-                if (
-                    semantic_policy.http_url_templates
-                    and analyzed_remote_url is not None
-                    and not analyzed_remote_url.variables <= _remote_template_variables(remote)
-                ):
-                    record_semantic("remote-url-variable", index)
-
-        icons = data.get("icons")
-        if isinstance(icons, list):
-            for index, icon in enumerate(icons):
-                src = icon.get("src") if isinstance(icon, dict) else None
-                if semantic_policy.https_icons and isinstance(src, str) and not _is_https_url(src):
-                    record_semantic("icon-src", index)
+        indexed_findings = _IndexedSemanticFindings(
+            _semantic_specs(schema_profile, semantic_policy, allowed_registry_types)
+        )
+        _collect_package_semantics(
+            data.get("packages"),
+            schema_profile,
+            semantic_policy,
+            allowed_registry_types,
+            indexed_findings,
+        )
+        _collect_remote_semantics(data.get("remotes"), semantic_policy, indexed_findings)
+        _collect_icon_semantics(data.get("icons"), semantic_policy, indexed_findings)
 
         repository = data.get("repository")
         if not _repository_url_is_official_shape(repository):
@@ -707,122 +870,14 @@ class McpRegistryServerJsonValidRule(Rule):
                 )
             )
 
-        semantic_specs = (
-            (
-                "registry-type",
-                "packages",
-                f".{schema_profile.registry_type_field}",
-                f"must be one of {_registry_types_summary(allowed_registry_types)}",
-            ),
-            (
-                "package-transport",
-                "packages",
-                ".transport.type",
-                f"must be one of {', '.join(sorted(semantic_policy.package_transports))}",
-            ),
-            (
-                "package-url",
-                "packages",
-                ".transport.url",
-                "must be a structurally valid HTTP(S) URL template",
-            ),
-            (
-                "package-stdio-url",
-                "packages",
-                ".transport.url",
-                "must be empty or omitted for stdio transport",
-            ),
-            (
-                "package-url-variable",
-                "packages",
-                ".transport.url",
-                "must reference only declared package arguments or environment variables",
-            ),
-            (
-                "registry-base-url",
-                "packages",
-                f".{schema_profile.registry_base_url_field}",
-                "must be the canonical public base URL for its registry type",
-            ),
-            (
-                "registry-base-url-forbidden",
-                "packages",
-                f".{schema_profile.registry_base_url_field}",
-                "must be omitted for OCI and MCPB packages",
-            ),
-            (
-                "file-hash-forbidden",
-                "packages",
-                f".{schema_profile.file_sha256_field}",
-                "must be omitted unless the package is MCPB",
-            ),
-            (
-                "mcpb-identifier",
-                "packages",
-                ".identifier",
-                "must be an HTTPS URL containing 'mcp' for MCPB packages",
-            ),
-            (
-                "package-version",
-                "packages",
-                ".version",
-                "must identify one exact release, not a tag or range",
-            ),
-            (
-                "package-version-forbidden",
-                "packages",
-                ".version",
-                "must be omitted when "
-                f"{schema_profile.registry_type_field} is one of "
-                f"{', '.join(sorted(semantic_policy.forbidden_package_versions))}",
-            ),
-            (
-                "mcpb-hash",
-                "packages",
-                f".{schema_profile.file_sha256_field}",
-                f"is required when {schema_profile.registry_type_field} is mcpb",
-            ),
-            (
-                "remote-transport",
-                "remotes",
-                ".type",
-                f"must be one of {', '.join(sorted(semantic_policy.remote_transports))}",
-            ),
-            (
-                "remote-url",
-                "remotes",
-                ".url",
-                "must be a structurally valid HTTPS URL template using a non-loopback host",
-            ),
-            (
-                "remote-url-variable",
-                "remotes",
-                ".url",
-                "must reference only keys declared in the remote variables object",
-            ),
-            (
-                "icon-src",
-                "icons",
-                ".src",
-                "must use an HTTPS URI",
-            ),
-        )
-        for kind, collection, field, requirement in semantic_specs:
-            count = semantic_counts[kind]
-            if count:
-                violations.append(
-                    self.violation(
-                        _indexed_problem(
-                            collection,
-                            field,
-                            semantic_indices[kind],
-                            count,
-                            requirement,
-                        ),
-                        file_path=block.path,
-                        fingerprint_discriminator=f"semantic:{kind}",
-                    )
+        for fingerprint, problem in indexed_findings.problems():
+            violations.append(
+                self.violation(
+                    problem,
+                    file_path=block.path,
+                    fingerprint_discriminator=fingerprint,
                 )
+            )
 
         schema_summary = schema_error_summary(
             error

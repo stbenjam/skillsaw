@@ -21,8 +21,10 @@ from skillsaw.rules.builtin.mcp_registry._helpers import (
 )
 from skillsaw.rules.builtin.mcp_registry.npm_name_match import McpRegistryNpmNameMatchRule
 from skillsaw.rules.builtin.mcp_registry.server_json_valid import (
+    _IndexedSemanticFindings,
     _SEMANTIC_POLICIES,
     _SemanticPolicy,
+    _semantic_specs,
 )
 
 from ._helpers import (
@@ -84,6 +86,31 @@ class TestMcpRegistrySchemaRule:
         assert policy_field.default is MISSING
         assert policy_field.default_factory is not MISSING
         assert policy_field.default_factory() == {}
+
+    def test_indexed_semantic_vocabulary_has_stable_order_and_bounded_samples(self):
+        version = max(MCP_REGISTRY_SCHEMA_VERSIONS)
+        policy = _SEMANTIC_POLICIES[version]
+        specs = _semantic_specs(
+            MCP_REGISTRY_SCHEMA_PROFILES[version],
+            policy,
+            policy.registry_types,
+        )
+        findings = _IndexedSemanticFindings(specs)
+
+        for index, spec in reversed(tuple(enumerate(specs))):
+            findings.record(spec.kind, index)
+        for index in range(20, 25):
+            findings.record("registry-type", index)
+
+        problems = findings.problems()
+
+        assert [fingerprint for fingerprint, _message in problems] == [
+            f"semantic:{spec.kind}" for spec in specs
+        ]
+        assert problems[0][1] == (
+            "packages[].registryType at indices 0, 20, 21, 22, and 2 more "
+            "must be one of cargo, mcpb, npm, nuget, oci, pypi"
+        )
 
     def test_clean_publisher_metadata_passes(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
