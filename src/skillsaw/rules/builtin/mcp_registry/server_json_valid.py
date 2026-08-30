@@ -13,6 +13,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.mcp_registry import (
     MCP_REGISTRY_SCHEMA_ID,
+    MCP_REGISTRY_SCHEMA_PROFILES,
     MCP_REGISTRY_SCHEMA_VERSION,
     MCP_REGISTRY_SCHEMA_VERSIONS,
     mcp_registry_schema_version,
@@ -33,6 +34,7 @@ from ._helpers import (
 _DNS_LABEL = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
 _SERVER_NAME = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z")
 _SEMANTIC_SAMPLE_LIMIT = 4
+_VERSIONED_PACKAGE_REGISTRIES = frozenset({"npm", "pypi", "cargo", "nuget"})
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,10 @@ class _SemanticPolicy:
     package_transports: frozenset[str]
     remote_transports: frozenset[str]
     registry_types: frozenset[str]
+    required_package_versions: frozenset[str] = frozenset()
+    forbidden_package_versions: frozenset[str] = frozenset()
+    publisher_status_allowed: bool = False
+    official_metadata_allowed: bool = False
     reverse_dns_name: bool = True
     exact_versions: bool = True
     http_url_templates: bool = True
@@ -50,14 +56,52 @@ class _SemanticPolicy:
     clean_repository_subfolder: bool = True
 
 
-_SEMANTIC_POLICY_2025_12_11 = _SemanticPolicy(
-    package_transports=frozenset({"stdio", "streamable-http", "sse"}),
-    remote_transports=frozenset({"streamable-http", "sse"}),
-    registry_types=frozenset({"npm", "pypi", "cargo", "oci", "nuget", "mcpb"}),
-)
+def _semantic_policy(
+    *,
+    https_icons: bool,
+    publisher_managed_fields: bool = False,
+    required_package_versions: frozenset[str] = frozenset(),
+    forbidden_package_versions: frozenset[str] = frozenset(),
+) -> _SemanticPolicy:
+    """Build the common publisher policy with version-gated features."""
+    return _SemanticPolicy(
+        package_transports=frozenset({"stdio", "streamable-http", "sse"}),
+        remote_transports=frozenset({"streamable-http", "sse"}),
+        registry_types=frozenset({"npm", "pypi", "cargo", "oci", "nuget", "mcpb"}),
+        required_package_versions=required_package_versions,
+        forbidden_package_versions=forbidden_package_versions,
+        publisher_status_allowed=publisher_managed_fields,
+        official_metadata_allowed=publisher_managed_fields,
+        https_icons=https_icons,
+    )
+
+
 _SEMANTIC_POLICIES: Mapping[str, _SemanticPolicy] = MappingProxyType(
     {
-        "2025-12-11": _SEMANTIC_POLICY_2025_12_11,
+        "2025-07-09": _semantic_policy(
+            https_icons=False,
+            publisher_managed_fields=True,
+        ),
+        "2025-09-16": _semantic_policy(
+            https_icons=False,
+            publisher_managed_fields=True,
+        ),
+        "2025-09-29": _semantic_policy(https_icons=False),
+        "2025-10-11": _semantic_policy(
+            https_icons=True,
+            required_package_versions=_VERSIONED_PACKAGE_REGISTRIES,
+            forbidden_package_versions=frozenset({"mcpb", "oci"}),
+        ),
+        "2025-10-17": _semantic_policy(
+            https_icons=True,
+            required_package_versions=_VERSIONED_PACKAGE_REGISTRIES,
+            forbidden_package_versions=frozenset({"oci"}),
+        ),
+        "2025-12-11": _semantic_policy(
+            https_icons=True,
+            required_package_versions=_VERSIONED_PACKAGE_REGISTRIES,
+            forbidden_package_versions=frozenset({"oci"}),
+        ),
     }
 )
 
@@ -262,6 +306,7 @@ class McpRegistryServerJsonValidRule(Rule):
             checked["$schema"] = MCP_REGISTRY_SCHEMA_ID
 
         semantic_policy = _SEMANTIC_POLICIES[schema_version]
+        schema_profile = MCP_REGISTRY_SCHEMA_PROFILES[schema_version]
         allowed_registry_types = semantic_policy.registry_types | additional_registry_types
 
         name_problem = _name_problem(data.get("name")) if semantic_policy.reverse_dns_name else None
@@ -271,6 +316,32 @@ class McpRegistryServerJsonValidRule(Rule):
                     f"'name' {name_problem}",
                     file_path=block.path,
                     fingerprint_discriminator="server:name",
+                )
+            )
+
+        if not semantic_policy.publisher_status_allowed and "status" in data:
+            violations.append(
+                self.violation(
+                    f"'status' is Registry-managed in schema {schema_version} "
+                    "and must not appear in publisher metadata",
+                    file_path=block.path,
+                    fingerprint_discriminator="semantic:publisher-status",
+                )
+            )
+
+        metadata = data.get("_meta")
+        official_metadata_key = "io.modelcontextprotocol.registry/official"
+        if (
+            not semantic_policy.official_metadata_allowed
+            and isinstance(metadata, dict)
+            and official_metadata_key in metadata
+        ):
+            violations.append(
+                self.violation(
+                    f"'_meta.{official_metadata_key}' is Registry-managed in "
+                    f"schema {schema_version} and must not appear in publisher metadata",
+                    file_path=block.path,
+                    fingerprint_discriminator="semantic:official-metadata",
                 )
             )
 
@@ -293,6 +364,7 @@ class McpRegistryServerJsonValidRule(Rule):
             "package-transport": 0,
             "package-url": 0,
             "package-version": 0,
+            "package-version-forbidden": 0,
             "mcpb-hash": 0,
             "remote-transport": 0,
             "remote-url": 0,
@@ -310,7 +382,7 @@ class McpRegistryServerJsonValidRule(Rule):
             for index, package in enumerate(packages):
                 if not isinstance(package, dict):
                     continue
-                registry_type = package.get("registryType")
+                registry_type = package.get(schema_profile.registry_type_field)
                 if isinstance(registry_type, str) and registry_type not in allowed_registry_types:
                     record_semantic("registry-type", index)
                 transport = package.get("transport")
@@ -330,9 +402,13 @@ class McpRegistryServerJsonValidRule(Rule):
                     record_semantic("package-url", index)
                 package_version = package.get("version")
                 if semantic_policy.exact_versions and (
-                    (registry_type == "npm" and "version" not in package)
+                    (
+                        registry_type in semantic_policy.required_package_versions
+                        and "version" not in package
+                    )
                     or (
                         isinstance(package_version, str)
+                        and registry_type not in semantic_policy.forbidden_package_versions
                         and (
                             is_package_version_range(registry_type, package_version)
                             or (
@@ -342,10 +418,14 @@ class McpRegistryServerJsonValidRule(Rule):
                     )
                 ):
                     record_semantic("package-version", index)
+                if registry_type in semantic_policy.forbidden_package_versions and isinstance(
+                    package_version, str
+                ):
+                    record_semantic("package-version-forbidden", index)
                 if (
                     semantic_policy.mcpb_hash
                     and registry_type == "mcpb"
-                    and "fileSha256" not in package
+                    and schema_profile.file_sha256_field not in package
                 ):
                     record_semantic("mcpb-hash", index)
 
@@ -394,7 +474,7 @@ class McpRegistryServerJsonValidRule(Rule):
             (
                 "registry-type",
                 "packages",
-                ".registryType",
+                f".{schema_profile.registry_type_field}",
                 f"must be one of {_registry_types_summary(allowed_registry_types)}",
             ),
             (
@@ -416,10 +496,18 @@ class McpRegistryServerJsonValidRule(Rule):
                 "must identify one exact release, not a tag or range",
             ),
             (
+                "package-version-forbidden",
+                "packages",
+                ".version",
+                "must be omitted when "
+                f"{schema_profile.registry_type_field} is one of "
+                f"{', '.join(sorted(semantic_policy.forbidden_package_versions))}",
+            ),
+            (
                 "mcpb-hash",
                 "packages",
-                ".fileSha256",
-                "is required when registryType is mcpb",
+                f".{schema_profile.file_sha256_field}",
+                f"is required when {schema_profile.registry_type_field} is mcpb",
             ),
             (
                 "remote-transport",

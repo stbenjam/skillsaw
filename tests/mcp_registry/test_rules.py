@@ -9,6 +9,7 @@ from skillsaw.context import RepositoryType
 from skillsaw.formats.mcp_registry import (
     MCP_REGISTRY_SCHEMA_ID,
     MCP_REGISTRY_SCHEMA_VERSIONS,
+    mcp_registry_schema_id,
 )
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.mcp_registry._helpers import schema_error_summary
@@ -46,6 +47,126 @@ class TestMcpRegistrySchemaRule:
         repo = copy_fixture("mcp-registry/clean", tmp_path)
 
         assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize("version", sorted(MCP_REGISTRY_SCHEMA_VERSIONS))
+    def test_each_released_schema_validates_its_native_document(self, tmp_path, version):
+        repo = copy_fixture(f"mcp-registry/schema-versions/{version}", tmp_path)
+
+        assert lint_rules(repo, VALID_RULE, SEMVER_RULE, NPM_NAME_RULE) == []
+
+    def test_initial_snake_case_schema_keeps_npm_ownership_check(self, tmp_path):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-07-09", tmp_path)
+        package_path = repo / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package["mcpName"] = "io.github.example/something-else"
+        _write_server(package_path, package)
+
+        findings = lint_rules(repo, NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].rule_id == NPM_NAME_RULE
+        assert "exactly match" in findings[0].message.lower()
+
+    def test_initial_schema_uses_native_hash_field_in_semantic_diagnostic(self, tmp_path):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-07-09", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registry_type"] = "mcpb"
+        package["identifier"] = "https://example.com/releases/weather.mcpb"
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("packages[0].file_sha256" in message for message in messages_lower(findings))
+
+    @pytest.mark.parametrize("version", ["2025-07-09", "2025-09-16", "2025-09-29"])
+    def test_pre_icon_schemas_do_not_apply_later_icon_policy(self, tmp_path, version):
+        repo = copy_fixture(f"mcp-registry/schema-versions/{version}", tmp_path)
+        path, data = _load_server(repo)
+        data["icons"] = [{"src": "http://example.com/icon.png"}]
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    def test_mcpb_package_version_transition_is_version_specific(self, tmp_path):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-10-17", tmp_path)
+        path, data = _load_server(repo)
+        data["$schema"] = mcp_registry_schema_id("2025-10-11")
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any(
+            "version" in message and "mcpb" in message for message in messages_lower(findings)
+        )
+
+    @pytest.mark.parametrize("version", ["2025-10-11", "2025-10-17", "2025-12-11"])
+    def test_oci_package_version_stays_in_identifier(self, tmp_path, version):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-10-11", tmp_path)
+        path, data = _load_server(repo)
+        data["$schema"] = mcp_registry_schema_id(version)
+        data["packages"][0]["version"] = "1.0.0"
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any(
+            "version" in message and "oci" in message for message in messages_lower(findings)
+        )
+
+    @pytest.mark.parametrize("version", ["2025-10-11", "2025-10-17", "2025-12-11"])
+    @pytest.mark.parametrize("registry_type", ["pypi", "cargo", "nuget"])
+    def test_registry_packages_that_publish_versions_require_one(
+        self, tmp_path, version, registry_type
+    ):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-10-11", tmp_path)
+        path, data = _load_server(repo)
+        data["$schema"] = mcp_registry_schema_id(version)
+        data["packages"][0]["registryType"] = registry_type
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("packages[0].version" in message for message in messages_lower(findings))
+
+    def test_registry_managed_fields_follow_the_schema_transition(self, tmp_path):
+        legacy = copy_fixture("mcp-registry/schema-versions/2025-09-16", tmp_path)
+        legacy_path, legacy_data = _load_server(legacy)
+        legacy_data["status"] = "active"
+        legacy_data["_meta"] = {"io.modelcontextprotocol.registry/official": {}}
+        _write_server(legacy_path, legacy_data)
+
+        current = copy_fixture("mcp-registry/schema-versions/2025-09-29", tmp_path)
+        current_path, current_data = _load_server(current)
+        current_data["status"] = "active"
+        current_data["_meta"] = {"io.modelcontextprotocol.registry/official": {}}
+        _write_server(current_path, current_data)
+
+        assert lint_rules(legacy, VALID_RULE) == []
+        current_messages = messages_lower(lint_rules(current, VALID_RULE))
+        assert any("'status' is registry-managed" in message for message in current_messages)
+        assert any(
+            "official" in message and "registry-managed" in message for message in current_messages
+        )
+
+    @pytest.mark.parametrize(
+        ("version", "old_field", "new_field"),
+        [
+            ("2025-07-09", "registry_type", "registryType"),
+            ("2025-09-16", "registryType", "registry_type"),
+        ],
+    )
+    def test_declared_schema_enforces_its_field_vocabulary(
+        self, tmp_path, version, old_field, new_field
+    ):
+        repo = copy_fixture(f"mcp-registry/schema-versions/{version}", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0][new_field] = data["packages"][0].pop(old_field)
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("does not conform" in message for message in messages_lower(findings))
 
     def test_malformed_json_is_reported_when_type_is_forced(self, tmp_path):
         (tmp_path / "server.json").write_text('{"name": ', encoding="utf-8")
@@ -225,9 +346,16 @@ class TestMcpRegistrySchemaRule:
     def test_current_registry_types_pass(self, tmp_path, registry_type):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
-        data["packages"][0]["registryType"] = registry_type
-        if registry_type == "mcpb":
-            data["packages"][0]["fileSha256"] = "0" * 64
+        package = data["packages"][0]
+        package["registryType"] = registry_type
+        if registry_type == "oci":
+            package["identifier"] = "ghcr.io/example/weather:1.2.3"
+            del package["version"]
+        elif registry_type == "mcpb":
+            package["identifier"] = (
+                "https://github.com/example/weather/releases/download/v1.2.3/weather.mcpb"
+            )
+            package["fileSha256"] = "0" * 64
         _write_server(path, data)
 
         assert lint_rules(repo, VALID_RULE) == []

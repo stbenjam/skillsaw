@@ -108,8 +108,8 @@ keeps unrelated application files named `server.json` out of scope. Use
 `--type mcp-registry` when an intended Registry document is too malformed to
 provide detection evidence.
 
-The Registry rules validate strict JSON against the bundled immutable
-2025-12-11 schema, enforce the reverse-DNS server namespace and current
+The Registry rules validate strict JSON against the released schema each
+document declares, enforce the reverse-DNS server namespace and current
 transport/registry type vocabulary, reject version ranges, recommend strict
 Semantic Versioning, and compare a local npm package's `mcpName` with the
 `server.json` `name`. The npm check never queries a package registry; an

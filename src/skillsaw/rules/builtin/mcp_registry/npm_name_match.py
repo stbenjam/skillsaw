@@ -10,6 +10,11 @@ from urllib.parse import urlsplit
 from skillsaw.blocks import McpRegistryNpmPackageBlock, McpRegistryServerBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
+from skillsaw.formats.mcp_registry import (
+    MCP_REGISTRY_SCHEMA_PROFILES,
+    MCP_REGISTRY_SCHEMA_VERSION,
+    mcp_registry_schema_version,
+)
 from skillsaw.paths import safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
 
@@ -93,8 +98,18 @@ class McpRegistryNpmNameMatchRule(Rule):
             packages = block.raw_data.get("packages")
             if not isinstance(server_name, str) or not isinstance(packages, list):
                 continue
+            schema_version = (
+                mcp_registry_schema_version(block.raw_data.get("$schema"))
+                or MCP_REGISTRY_SCHEMA_VERSION
+            )
+            schema_profile = MCP_REGISTRY_SCHEMA_PROFILES.get(schema_version)
+            if schema_profile is None:
+                continue
             for package in packages:
-                if not isinstance(package, dict) or package.get("registryType") != "npm":
+                if (
+                    not isinstance(package, dict)
+                    or package.get(schema_profile.registry_type_field) != "npm"
+                ):
                     continue
                 identifier = package.get("identifier")
                 if not isinstance(identifier, str):

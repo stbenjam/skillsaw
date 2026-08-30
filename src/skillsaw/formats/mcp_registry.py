@@ -4,14 +4,47 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from importlib import resources
 from types import MappingProxyType
 from typing import Any, Dict, Mapping, Optional
 
-MCP_REGISTRY_SCHEMA_PACKAGES: Mapping[str, str] = MappingProxyType(
+
+@dataclass(frozen=True)
+class McpRegistrySchemaProfile:
+    """Immutable bundle location and vocabulary for one released schema."""
+
+    package: str
+    registry_type_field: str = "registryType"
+    file_sha256_field: str = "fileSha256"
+
+
+MCP_REGISTRY_SCHEMA_PROFILES: Mapping[str, McpRegistrySchemaProfile] = MappingProxyType(
     {
-        "2025-12-11": "skillsaw.schemas.mcp_registry.v2025_12_11",
+        "2025-07-09": McpRegistrySchemaProfile(
+            package="skillsaw.schemas.mcp_registry.v2025_07_09",
+            registry_type_field="registry_type",
+            file_sha256_field="file_sha256",
+        ),
+        "2025-09-16": McpRegistrySchemaProfile(
+            package="skillsaw.schemas.mcp_registry.v2025_09_16",
+        ),
+        "2025-09-29": McpRegistrySchemaProfile(
+            package="skillsaw.schemas.mcp_registry.v2025_09_29",
+        ),
+        "2025-10-11": McpRegistrySchemaProfile(
+            package="skillsaw.schemas.mcp_registry.v2025_10_11",
+        ),
+        "2025-10-17": McpRegistrySchemaProfile(
+            package="skillsaw.schemas.mcp_registry.v2025_10_17",
+        ),
+        "2025-12-11": McpRegistrySchemaProfile(
+            package="skillsaw.schemas.mcp_registry.v2025_12_11",
+        ),
     }
+)
+MCP_REGISTRY_SCHEMA_PACKAGES: Mapping[str, str] = MappingProxyType(
+    {version: profile.package for version, profile in MCP_REGISTRY_SCHEMA_PROFILES.items()}
 )
 MCP_REGISTRY_SCHEMA_VERSIONS = frozenset(MCP_REGISTRY_SCHEMA_PACKAGES)
 # Registry schema versions are ISO dates, so lexical order identifies the
@@ -57,7 +90,11 @@ def is_mcp_registry_server(data: object) -> bool:
         return False
     packages = data.get("packages")
     if isinstance(packages, list) and any(
-        isinstance(package, dict) and {"registryType", "identifier", "transport"} <= package.keys()
+        isinstance(package, dict)
+        and (
+            {"registryType", "identifier", "transport"} <= package.keys()
+            or {"registry_type", "identifier", "transport"} <= package.keys()
+        )
         for package in packages
     ):
         return True

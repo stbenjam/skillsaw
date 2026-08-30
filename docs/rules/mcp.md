@@ -3,7 +3,7 @@
 
 # MCP (Model Context Protocol)
 
-Validates both MCP client configuration and MCP Registry publisher metadata. Registry rules use the bundled 2025-12-11 schema and local package metadata; they never query a package registry.
+Validates both MCP client configuration and MCP Registry publisher metadata. Registry rules use every released schema and local package metadata; they never query a package registry.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
