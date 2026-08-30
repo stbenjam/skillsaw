@@ -849,7 +849,8 @@ GUIDES = [
     ("CLI Reference", "cli.md", "every command and flag"),
     ("Custom Rules", "custom-rules.md", "write project-local rules in Python"),
     ("Rule Plugins", "plugins.md", "install and publish pip-distributed rule packages"),
-    ("Scaffolding", "scaffolding.md", "generate plugins, skills, commands, agents, and hooks"),
+    ("Scaffolding", "scaffolding.md", "deprecated: generate plugins, skills, commands, agents, and hooks"),
+
     ("Lint Tree", "lint-tree.md", "the typed node tree rules use for discovery"),
     (
         "Supply Chain Protection",

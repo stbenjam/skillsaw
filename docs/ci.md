@@ -263,14 +263,6 @@ being current — regenerating in CI and failing if the working tree changed.
 Upgrading skillsaw can change that output, so plan on regenerating and
 committing the result as part of a version bump.
 
-!!! note "Changed in 0.18"
-    `skillsaw docs` output changed for every repository, Claude-only ones
-    included. The generated HTML now escapes JavaScript-string contexts with
-    a dedicated escaper (`escJsAttr`) and attribute contexts with `escAttr`,
-    and plugin pages carry the manifest's `author` field. A repository that
-    commits generated docs will see a diff on the first run under 0.18 and
-    must regenerate; nothing about the published pages' behavior changes
-    otherwise.
 
 ## GitLab CI
 
