@@ -8,6 +8,7 @@ from jsonschema.exceptions import ValidationError
 from skillsaw.context import RepositoryType
 from skillsaw.formats.mcp_registry import (
     MCP_REGISTRY_SCHEMA_ID,
+    MCP_REGISTRY_SCHEMA_PROFILES,
     MCP_REGISTRY_SCHEMA_VERSIONS,
     mcp_registry_schema_id,
 )
@@ -461,6 +462,200 @@ class TestMcpRegistrySchemaRule:
         _write_server(path, data)
 
         assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize(
+        ("registry_type", "base_url"),
+        [
+            ("npm", "https://registry.npmjs.org"),
+            ("pypi", "https://pypi.org"),
+            ("nuget", "https://api.nuget.org/v3/index.json"),
+            ("cargo", "https://crates.io"),
+        ],
+    )
+    def test_current_canonical_registry_base_urls_pass(self, tmp_path, registry_type, base_url):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registryType"] = registry_type
+        package["registryBaseUrl"] = base_url
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize(
+        ("registry_type", "base_url"),
+        [
+            ("npm", "https://pypi.org"),
+            ("pypi", "https://pypi.org/"),
+            ("nuget", "https://api.nuget.org"),
+            ("cargo", "https://example.com/crates"),
+        ],
+    )
+    def test_noncanonical_registry_base_urls_are_reported(self, tmp_path, registry_type, base_url):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registryType"] = registry_type
+        package["registryBaseUrl"] = base_url
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("canonical public" in message for message in messages_lower(findings))
+
+    @pytest.mark.parametrize("version", sorted(MCP_REGISTRY_SCHEMA_VERSIONS - {"2025-12-11"}))
+    @pytest.mark.parametrize(
+        "base_url", ["https://api.nuget.org", "https://api.nuget.org/v3/index.json"]
+    )
+    def test_legacy_nuget_accepts_both_publisher_base_urls(self, tmp_path, version, base_url):
+        repo = copy_fixture(f"mcp-registry/schema-versions/{version}", tmp_path)
+        path, data = _load_server(repo)
+        profile = MCP_REGISTRY_SCHEMA_PROFILES[version]
+        data["packages"] = [
+            {
+                profile.registry_type_field: "nuget",
+                profile.registry_base_url_field: base_url,
+                "identifier": "Example.Weather",
+                "version": "1.0.0",
+                "transport": {"type": "stdio"},
+            }
+        ]
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    def test_custom_registry_type_does_not_inherit_public_base_policy(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registryType"] = "company-internal"
+        package["registryBaseUrl"] = "https://packages.example.com"
+        _write_server(path, data)
+
+        findings = lint_rules(
+            repo,
+            VALID_RULE,
+            rule_config={VALID_RULE: {"registry-types": ["company-internal"]}},
+        )
+
+        assert findings == []
+
+    def test_initial_schema_allows_legacy_base_and_non_mcpb_hash_fields(self, tmp_path):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-07-09", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registry_base_url"] = "https://registry.npmjs.org"
+        package["file_sha256"] = "0" * 64
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize("registry_type", ["oci", "mcpb"])
+    def test_initial_schema_allows_legacy_direct_package_base_url(self, tmp_path, registry_type):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-07-09", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registry_type"] = registry_type
+        package["registry_base_url"] = "https://github.com"
+        if registry_type == "oci":
+            package["identifier"] = "ghcr.io/example/weather:1.0.0"
+        else:
+            package["identifier"] = "https://example.com/weather.mcpb"
+            package["file_sha256"] = "0" * 64
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
+    @pytest.mark.parametrize("version", ["2025-10-11", "2025-10-17", "2025-12-11"])
+    @pytest.mark.parametrize("registry_type", ["oci", "mcpb"])
+    def test_modern_oci_and_mcpb_packages_forbid_registry_base_url(
+        self, tmp_path, version, registry_type
+    ):
+        repo = copy_fixture(f"mcp-registry/schema-versions/{version}", tmp_path)
+        path, data = _load_server(repo)
+        package = {
+            "registryType": registry_type,
+            "registryBaseUrl": "https://github.com",
+            "transport": {"type": "stdio"},
+        }
+        if registry_type == "oci":
+            package["identifier"] = "ghcr.io/example/weather:1.2.3"
+        else:
+            package["identifier"] = "https://example.com/weather.mcpb"
+            package["fileSha256"] = "0" * 64
+        data["packages"] = [package]
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("omitted for oci and mcpb" in message for message in messages_lower(findings))
+
+    @pytest.mark.parametrize("version", ["2025-10-11", "2025-10-17"])
+    @pytest.mark.parametrize("registry_type", ["npm", "pypi", "nuget", "oci"])
+    def test_10_series_non_mcpb_packages_forbid_file_hash(self, tmp_path, version, registry_type):
+        repo = copy_fixture(f"mcp-registry/schema-versions/{version}", tmp_path)
+        path, data = _load_server(repo)
+        package = {
+            "registryType": registry_type,
+            "identifier": "example-weather",
+            "fileSha256": "0" * 64,
+            "transport": {"type": "stdio"},
+        }
+        if registry_type == "oci":
+            package["identifier"] = "ghcr.io/example/weather:1.2.3"
+        else:
+            package["version"] = "1.2.3"
+        data["packages"] = [package]
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("unless the package is mcpb" in message for message in messages_lower(findings))
+
+    @pytest.mark.parametrize("registry_type", ["npm", "pypi", "nuget", "cargo", "oci"])
+    @pytest.mark.parametrize("file_hash", ["0" * 64, "${FILE_SHA256}"])
+    def test_current_non_mcpb_packages_forbid_file_hash(self, tmp_path, registry_type, file_hash):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registryType"] = registry_type
+        package["fileSha256"] = file_hash
+        if registry_type == "oci":
+            package["identifier"] = "ghcr.io/example/weather:1.2.3"
+            del package["version"]
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+
+        assert any("unless the package is mcpb" in message for message in messages_lower(findings))
+
+    @pytest.mark.parametrize(
+        ("identifier", "valid"),
+        [
+            ("https://example.com/releases/server.mcpb", True),
+            ("https://example.com/releases/MCP-package.zip", True),
+            ("https://example.com/mcp/{{VERSION}}/server.zip", True),
+            ("${MCPB_URL}", True),
+            ("http://example.com/releases/server.mcpb", False),
+            ("https://example.com/releases/server.zip", False),
+            ("not-a-url-with-mcp", False),
+        ],
+    )
+    def test_mcpb_identifier_constraints(self, tmp_path, identifier, valid):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        package = data["packages"][0]
+        package["registryType"] = "mcpb"
+        package["identifier"] = identifier
+        package["fileSha256"] = "0" * 64
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+        identifier_findings = [
+            message for message in messages_lower(findings) if "packages[0].identifier" in message
+        ]
+
+        assert bool(identifier_findings) == (not valid)
 
     def test_mcpb_package_requires_integrity_hash(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)

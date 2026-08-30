@@ -39,6 +39,25 @@ _DNS_LABEL = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
 _SERVER_NAME = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z")
 _SEMANTIC_SAMPLE_LIMIT = 4
 _VERSIONED_PACKAGE_REGISTRIES = frozenset({"npm", "pypi", "cargo", "nuget"})
+_COMPATIBLE_REGISTRY_BASE_URLS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "npm": frozenset({"https://registry.npmjs.org"}),
+        "pypi": frozenset({"https://pypi.org"}),
+        "nuget": frozenset({"https://api.nuget.org", "https://api.nuget.org/v3/index.json"}),
+    }
+)
+_CURRENT_REGISTRY_BASE_URLS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "npm": frozenset({"https://registry.npmjs.org"}),
+        "pypi": frozenset({"https://pypi.org"}),
+        "nuget": frozenset({"https://api.nuget.org/v3/index.json"}),
+        "cargo": frozenset({"https://crates.io"}),
+    }
+)
+_NO_REGISTRY_BASE_URLS: Mapping[str, frozenset[str]] = MappingProxyType({})
+_FORBIDDEN_REGISTRY_BASE_URLS = frozenset({"oci", "mcpb"})
+_FORBIDDEN_FILE_HASHES = frozenset({"npm", "pypi", "nuget", "oci"})
+_CURRENT_FORBIDDEN_FILE_HASHES = _FORBIDDEN_FILE_HASHES | {"cargo"}
 _PLACEHOLDER_IDENTIFIERS: Mapping[str, str] = MappingProxyType(
     {
         "npm": "@example/server",
@@ -76,6 +95,10 @@ class _SemanticPolicy:
     mcpb_hash: bool = True
     https_icons: bool = True
     clean_repository_subfolder: bool = True
+    canonical_registry_base_urls: Mapping[str, frozenset[str]] = _NO_REGISTRY_BASE_URLS
+    forbidden_registry_base_urls: frozenset[str] = frozenset()
+    forbidden_file_hashes: frozenset[str] = frozenset()
+    mcpb_identifier_constraints: bool = True
 
 
 def _semantic_policy(
@@ -84,6 +107,9 @@ def _semantic_policy(
     publisher_managed_fields: bool = False,
     required_package_versions: frozenset[str] = frozenset(),
     forbidden_package_versions: frozenset[str] = frozenset(),
+    canonical_registry_base_urls: Mapping[str, frozenset[str]] = _COMPATIBLE_REGISTRY_BASE_URLS,
+    forbidden_registry_base_urls: frozenset[str] = frozenset(),
+    forbidden_file_hashes: frozenset[str] = frozenset(),
 ) -> _SemanticPolicy:
     """Build the common publisher policy with version-gated features."""
     return _SemanticPolicy(
@@ -92,6 +118,9 @@ def _semantic_policy(
         registry_types=frozenset({"npm", "pypi", "cargo", "oci", "nuget", "mcpb"}),
         required_package_versions=required_package_versions,
         forbidden_package_versions=forbidden_package_versions,
+        canonical_registry_base_urls=canonical_registry_base_urls,
+        forbidden_registry_base_urls=forbidden_registry_base_urls,
+        forbidden_file_hashes=forbidden_file_hashes,
         publisher_status_allowed=publisher_managed_fields,
         official_metadata_allowed=publisher_managed_fields,
         https_icons=https_icons,
@@ -113,16 +142,23 @@ _SEMANTIC_POLICIES: Mapping[str, _SemanticPolicy] = MappingProxyType(
             https_icons=True,
             required_package_versions=_VERSIONED_PACKAGE_REGISTRIES,
             forbidden_package_versions=frozenset({"mcpb", "oci"}),
+            forbidden_registry_base_urls=_FORBIDDEN_REGISTRY_BASE_URLS,
+            forbidden_file_hashes=_FORBIDDEN_FILE_HASHES,
         ),
         "2025-10-17": _semantic_policy(
             https_icons=True,
             required_package_versions=_VERSIONED_PACKAGE_REGISTRIES,
             forbidden_package_versions=frozenset({"oci"}),
+            forbidden_registry_base_urls=_FORBIDDEN_REGISTRY_BASE_URLS,
+            forbidden_file_hashes=_FORBIDDEN_FILE_HASHES,
         ),
         "2025-12-11": _semantic_policy(
             https_icons=True,
             required_package_versions=_VERSIONED_PACKAGE_REGISTRIES,
             forbidden_package_versions=frozenset({"oci"}),
+            canonical_registry_base_urls=_CURRENT_REGISTRY_BASE_URLS,
+            forbidden_registry_base_urls=_FORBIDDEN_REGISTRY_BASE_URLS,
+            forbidden_file_hashes=_CURRENT_FORBIDDEN_FILE_HASHES,
         ),
     }
 )
@@ -481,6 +517,10 @@ class McpRegistryServerJsonValidRule(Rule):
             "package-url": 0,
             "package-stdio-url": 0,
             "package-url-variable": 0,
+            "registry-base-url": 0,
+            "registry-base-url-forbidden": 0,
+            "file-hash-forbidden": 0,
+            "mcpb-identifier": 0,
             "package-version": 0,
             "package-version-forbidden": 0,
             "mcpb-hash": 0,
@@ -540,6 +580,39 @@ class McpRegistryServerJsonValidRule(Rule):
                     <= _package_template_variables(package, schema_profile)
                 ):
                     record_semantic("package-url-variable", index)
+                registry_base_url = package.get(schema_profile.registry_base_url_field)
+                canonical_base_urls = semantic_policy.canonical_registry_base_urls.get(
+                    registry_type
+                )
+                if (
+                    isinstance(registry_base_url, str)
+                    and registry_base_url
+                    and canonical_base_urls is not None
+                    and registry_base_url not in canonical_base_urls
+                ):
+                    record_semantic("registry-base-url", index)
+                if (
+                    isinstance(registry_base_url, str)
+                    and registry_base_url
+                    and registry_type in semantic_policy.forbidden_registry_base_urls
+                ):
+                    record_semantic("registry-base-url-forbidden", index)
+                file_hash = package.get(schema_profile.file_sha256_field)
+                if (
+                    isinstance(file_hash, str)
+                    and file_hash
+                    and registry_type in semantic_policy.forbidden_file_hashes
+                ):
+                    record_semantic("file-hash-forbidden", index)
+                identifier = package.get("identifier")
+                if (
+                    semantic_policy.mcpb_identifier_constraints
+                    and registry_type == "mcpb"
+                    and isinstance(identifier, str)
+                    and not is_release_source_placeholder(identifier)
+                    and (not _is_https_url(identifier) or "mcp" not in identifier.lower())
+                ):
+                    record_semantic("mcpb-identifier", index)
                 package_version = package.get("version")
                 if semantic_policy.exact_versions and (
                     (
@@ -662,6 +735,30 @@ class McpRegistryServerJsonValidRule(Rule):
                 "packages",
                 ".transport.url",
                 "must reference only declared package arguments or environment variables",
+            ),
+            (
+                "registry-base-url",
+                "packages",
+                f".{schema_profile.registry_base_url_field}",
+                "must be the canonical public base URL for its registry type",
+            ),
+            (
+                "registry-base-url-forbidden",
+                "packages",
+                f".{schema_profile.registry_base_url_field}",
+                "must be omitted for OCI and MCPB packages",
+            ),
+            (
+                "file-hash-forbidden",
+                "packages",
+                f".{schema_profile.file_sha256_field}",
+                "must be omitted unless the package is MCPB",
+            ),
+            (
+                "mcpb-identifier",
+                "packages",
+                ".identifier",
+                "must be an HTTPS URL containing 'mcp' for MCPB packages",
             ),
             (
                 "package-version",

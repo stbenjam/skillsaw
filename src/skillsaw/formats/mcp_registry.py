@@ -16,6 +16,7 @@ class McpRegistrySchemaProfile:
 
     package: str
     registry_type_field: str = "registryType"
+    registry_base_url_field: str = "registryBaseUrl"
     file_sha256_field: str = "fileSha256"
     environment_variables_field: str = "environmentVariables"
     runtime_arguments_field: str = "runtimeArguments"
@@ -28,6 +29,7 @@ MCP_REGISTRY_SCHEMA_PROFILES: Mapping[str, McpRegistrySchemaProfile] = MappingPr
         "2025-07-09": McpRegistrySchemaProfile(
             package="skillsaw.schemas.mcp_registry.v2025_07_09",
             registry_type_field="registry_type",
+            registry_base_url_field="registry_base_url",
             file_sha256_field="file_sha256",
             environment_variables_field="environment_variables",
             runtime_arguments_field="runtime_arguments",

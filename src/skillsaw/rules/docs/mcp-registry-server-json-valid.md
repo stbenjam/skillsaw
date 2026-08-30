@@ -30,6 +30,11 @@ publishing constraints. Skillsaw supports every released server schema from
   non-loopback host, and their placeholders name keys in the remote `variables`
   object.
 - MCPB packages declare the required `fileSha256` integrity hash.
+- Explicit npm, PyPI, NuGet, and Cargo registry base URLs use the official
+  public endpoint. From `2025-10-11` onward, OCI and MCPB packages omit that
+  field, and file hashes are reserved for MCPB packages.
+- MCPB identifiers are HTTPS URLs containing `mcp`; exact release-source
+  placeholders remain valid until publishing renders them.
 - Icon sources use HTTPS, and `repository.subfolder` is a clean relative path
   without empty, current-directory, or parent-directory segments.
 - Repository URLs use the supported GitHub or GitLab shape and agree with the
