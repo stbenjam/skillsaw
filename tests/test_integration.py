@@ -2750,6 +2750,51 @@ class TestOpenCode:
         messages = [v["message"] for v in by_rule(run_lint(repo)).get("opencode-config-valid", [])]
         assert not any("Invalid JSON" in m for m in messages)
 
+    def test_configured_instruction_paths_and_globs_are_linted(self, tmp_path):
+        """OpenCode merges every local ``instructions`` match into its system prompt."""
+        from skillsaw.blocks import InstructionBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("opencode/native-v1", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(InstructionBlock)
+        paths = {block.path.relative_to(repo).as_posix() for block in blocks}
+
+        assert "docs/conventions.md" in paths
+        assert "packages/worker/AGENTS.md" in paths
+        # AGENTS.md is discovered independently too, but path-based content
+        # deduplication must keep one copy in the lint tree.
+        assert [block.path.name for block in blocks].count("AGENTS.md") == 2
+
+        (repo / "docs" / "conventions.md").write_text(
+            "# Service conventions\n\nYou should probably run the unit tests.\n"
+        )
+        found = by_rule(run_lint(repo))["content-weak-language"]
+        assert "docs/conventions.md" in {violation["file_path"] for violation in found}
+
+    def test_nested_config_instruction_globs_follow_workspace_ancestors(self, tmp_path):
+        """A package config sees its workspace and ancestors, never a sibling package."""
+        from skillsaw.blocks import InstructionBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = tmp_path / "monorepo"
+        for relative in (
+            "docs/root.md",
+            "packages/api/docs/api.md",
+            "packages/web/docs/web.md",
+        ):
+            path = repo / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"# {path.stem}\n\nRun the tests for this workspace.\n")
+        config = repo / "packages" / "api" / ".opencode" / "opencode.json"
+        config.parent.mkdir(parents=True)
+        config.write_text('{"instructions": ["docs/*.md"]}')
+
+        paths = {
+            block.path.relative_to(repo).as_posix()
+            for block in RepositoryContext(repo).lint_tree.find(InstructionBlock)
+        }
+        assert paths == {"docs/root.md", "packages/api/docs/api.md"}
+
     def test_an_unparseable_config_is_the_fixtures_only_finding(self, tmp_path):
         """ "This is not JSON" holds in every dialect, so the neutral rule owns it.
 

@@ -4,7 +4,7 @@
   "model": "anthropic/claude-sonnet-4-5",
   "small_model": "anthropic/claude-haiku-4-5",
   "autoupdate": false,
-  "instructions": ["AGENTS.md", "docs/conventions.md"],
+  "instructions": ["AGENTS.md", "docs/conventions.md", "packages/*/AGENTS.md"],
   "mcp": {
     "playwright": {
       "type": "local",
