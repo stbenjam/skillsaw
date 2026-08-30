@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, List, Optional, Tuple
 
+from skillsaw.blocks import HOOK_COMMAND_FIELDS
 from skillsaw.context import HAS_COPILOT, RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -84,6 +85,9 @@ class CopilotAgentValidRule(Rule):
     since = "0.20.0"
     formats = frozenset({HAS_COPILOT})
     target_dependencies = ("content-description-routing",)
+    target_dependency_scopes = {
+        "content-description-routing": (CopilotAgentBlock,),
+    }
 
     config_schema = {
         "report-unknown-fields": {
@@ -167,9 +171,8 @@ class CopilotAgentValidRule(Rule):
             ]
 
         violations: List[RuleViolation] = []
-        target = self._check_target(block, data, violations)
-        if not block.path.name.endswith(".agent.md"):
-            target = "vscode"
+        self._check_target(block, data, violations)
+        target = block.effective_target
         self._check_scalar(block, data, "name", violations)
         self._check_description(block, data, violations)
         argument_hint_valid = self._check_scalar(block, data, "argument-hint", violations)
@@ -755,7 +758,34 @@ class CopilotAgentValidRule(Rule):
             return False
 
         valid = True
-        for key, expected in _TYPE_REQUIRED_FIELDS[hook_type].items():
+        required_fields = _TYPE_REQUIRED_FIELDS[hook_type]
+        if hook_type == "command":
+            present_commands = [key for key in HOOK_COMMAND_FIELDS if key in handler]
+            if not present_commands:
+                violations.append(
+                    self._finding(
+                        block,
+                        f"Hook '{path}' of type 'command' requires at least one of: "
+                        f"{', '.join(HOOK_COMMAND_FIELDS)}",
+                        line=line,
+                        discriminator=f"hooks:{path}:command:missing",
+                    )
+                )
+                valid = False
+            for key in present_commands:
+                if not _nonempty_string(handler[key]):
+                    violations.append(
+                        self._finding(
+                            block,
+                            f"Hook '{path}' field '{key}' must be a non-empty string",
+                            line=_key_line(handler, key) or line,
+                            discriminator=f"hooks:{path}:{key}:type",
+                        )
+                    )
+                    valid = False
+            required_fields = {}
+
+        for key, expected in required_fields.items():
             if key not in handler:
                 violations.append(
                     self._finding(
@@ -808,7 +838,9 @@ class CopilotAgentValidRule(Rule):
                     )
                     valid = False
         for key in handler:
-            allowed_types = _TYPE_SPECIFIC_FIELDS.get(key)
+            allowed_types = (
+                {"command"} if key in HOOK_COMMAND_FIELDS else _TYPE_SPECIFIC_FIELDS.get(key)
+            )
             if allowed_types is not None and hook_type not in allowed_types:
                 violations.append(
                     self._finding(

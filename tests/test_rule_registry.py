@@ -9,6 +9,7 @@ import pytest
 
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import LintTarget
 from skillsaw.rule import Rule, Severity
 from skillsaw.rules.builtin import BUILTIN_RULES, BUILTIN_RULE_REGISTRY
 
@@ -53,6 +54,41 @@ def test_rule_dependencies_are_known_builtins(attribute):
         if unknown:
             problems.append(f"{rule_id}: {', '.join(sorted(unknown))}")
     assert problems == [], f"unknown {attribute.replace('_', ' ')}: {problems}"
+
+
+def test_target_dependencies_declare_lint_target_scopes():
+    problems = []
+    for rule_id, cls in BUILTIN_RULE_REGISTRY.items():
+        dependencies = set(cls.target_dependencies)
+        scopes = cls.target_dependency_scopes
+        if set(scopes) != dependencies:
+            problems.append(f"{rule_id}: scope keys must match target dependencies")
+            continue
+        for dependency, target_types in scopes.items():
+            if not isinstance(target_types, tuple) or not target_types:
+                problems.append(f"{rule_id} -> {dependency}: scope must be a non-empty tuple")
+                continue
+            if not all(
+                isinstance(target_type, type) and issubclass(target_type, LintTarget)
+                for target_type in target_types
+            ):
+                problems.append(f"{rule_id} -> {dependency}: scope contains a non-target type")
+    assert problems == [], f"invalid target dependency scopes: {problems}"
+
+
+def test_target_dependencies_do_not_form_chains():
+    dependency_ids = {
+        dependency
+        for cls in BUILTIN_RULE_REGISTRY.values()
+        for dependency in cls.target_dependencies
+    }
+    chained = sorted(
+        rule_id for rule_id in dependency_ids if BUILTIN_RULE_REGISTRY[rule_id].target_dependencies
+    )
+    assert chained == [], (
+        "target dependency chains need path-aware scope propagation; "
+        f"split these chains before adding them: {chained}"
+    )
 
 
 def test_default_config_generated_from_registry():

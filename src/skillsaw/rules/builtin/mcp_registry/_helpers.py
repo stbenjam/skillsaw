@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
+from dataclasses import dataclass
 from functools import lru_cache
-from typing import Iterable, TYPE_CHECKING
-from urllib.parse import urlsplit
+from typing import FrozenSet, Iterable, Optional, TYPE_CHECKING
+from urllib.parse import unquote, urlsplit
 
 from skillsaw.context import RepositoryType
 from skillsaw.diagnostics import safe_display
@@ -42,9 +44,21 @@ _DOTTED_VERSION_ATOM = r"(?:v?[0-9]+|[xX*])(?:\.(?:[0-9]+|[xX*])){1,2}" r"(?:-[0
 _DOTTED_VERSION = re.compile(rf"\A\s*{_DOTTED_VERSION_ATOM}\s*\Z")
 _PYPI_SPECIFIER = re.compile(r"\A\s*(?:~=|==|!=|<=|>=|<|>|===)")
 _NUGET_RANGE = re.compile(r"\A\s*[\[(].*[\])]\s*\Z")
-_URL_TEMPLATE_VARIABLE = re.compile(r"\{[^{}\s]+\}")
+_URL_TEMPLATE_VARIABLE = re.compile(r"\{([^{}\s]+)\}")
 _URI = re.compile(r"\A[A-Za-z][A-Za-z0-9+.-]*:" r"[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*\Z")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+_CLEAN_SUBFOLDER = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
+_RELEASE_SOURCE_PLACEHOLDER = re.compile(
+    r"\A(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|"
+    r"\{\{[A-Za-z_][A-Za-z0-9_]*\}\}|"
+    r"<<[A-Za-z_][A-Za-z0-9_]*>>)\Z"
+)
+_TRADITIONAL_IPV4_WIDTHS = ((), (32,), (8, 24), (8, 8, 16), (8, 8, 8, 8))
+
+
+def is_release_source_placeholder(value: object) -> bool:
+    """Recognize an exact publish-time placeholder in Registry source metadata."""
+    return isinstance(value, str) and _RELEASE_SOURCE_PLACEHOLDER.fullmatch(value) is not None
 
 
 def is_version_range(value: str) -> bool:
@@ -116,16 +130,126 @@ def _is_uri(value: object) -> bool:
     return True
 
 
-def is_http_url_template(value: str) -> bool:
-    """Validate an HTTP URL after safely standing in for template variables."""
-    substituted = _URL_TEMPLATE_VARIABLE.sub("1", value)
+def is_uri(value: object) -> bool:
+    """Expose the Registry validator's URI syntax check to semantic rules."""
+    return _is_uri(value)
+
+
+@dataclass(frozen=True)
+class HttpUrlTemplate:
+    """Parsed properties of one structurally valid HTTP URL template."""
+
+    scheme: str
+    hostname: str
+    variables: FrozenSet[str]
+
+
+def analyze_http_url_template(value: str) -> Optional[HttpUrlTemplate]:
+    """Parse an HTTP URL after safely standing in for template variables."""
+    matches = tuple(_URL_TEMPLATE_VARIABLE.finditer(value))
+
+    def replacement(match: re.Match) -> str:
+        variable = match.group(1)
+        if variable in {"protocol", "scheme"}:
+            return "http"
+        suffix = value[match.end() : match.end() + 1]
+        if (
+            match.start() > 0
+            and value[match.start() - 1] == ":"
+            and suffix
+            in {
+                "",
+                "/",
+                "?",
+                "#",
+            }
+        ):
+            return "8080"
+        return "placeholder"
+
+    substituted = _URL_TEMPLATE_VARIABLE.sub(replacement, value)
     if "{" in substituted or "}" in substituted or not _is_uri(substituted):
-        return False
+        return None
     try:
         parsed = urlsplit(substituted)
-        return parsed.scheme.lower() in {"http", "https"} and parsed.hostname is not None
+        if parsed.scheme.lower() not in {"http", "https"} or parsed.hostname is None:
+            return None
+        return HttpUrlTemplate(
+            scheme=parsed.scheme.lower(),
+            hostname=parsed.hostname,
+            variables=frozenset(match.group(1) for match in matches),
+        )
     except ValueError:
+        return None
+
+
+def is_http_url_template(value: str) -> bool:
+    """Validate an HTTP URL after safely standing in for template variables."""
+    return analyze_http_url_template(value) is not None
+
+
+def _traditional_ipv4_address(hostname: str) -> Optional[ipaddress.IPv4Address]:
+    """Parse the numeric IPv4 forms accepted by common system resolvers."""
+    parts = hostname.split(".")
+    if not 1 <= len(parts) < len(_TRADITIONAL_IPV4_WIDTHS):
+        return None
+    widths = _TRADITIONAL_IPV4_WIDTHS[len(parts)]
+
+    address = 0
+    for part, width in zip(parts, widths):
+        if not part:
+            return None
+        if part.startswith(("0x", "0X")):
+            digits = part[2:]
+            base = 16
+        elif len(part) > 1 and part.startswith("0"):
+            digits = part[1:]
+            base = 8
+        else:
+            digits = part
+            base = 10
+        if not digits:
+            return None
+
+        number = 0
+        limit = (1 << width) - 1
+        for character in digits:
+            if "0" <= character <= "9":
+                digit = ord(character) - ord("0")
+            elif "a" <= character.lower() <= "f":
+                digit = ord(character.lower()) - ord("a") + 10
+            else:
+                return None
+            if digit >= base or number > (limit - digit) // base:
+                return None
+            number = number * base + digit
+        address = (address << width) | number
+    return ipaddress.IPv4Address(address)
+
+
+def is_loopback_hostname(hostname: str) -> bool:
+    """Recognize localhost names and loopback IP literals without DNS."""
+    try:
+        normalized = unquote(hostname, errors="strict").encode("idna").decode("ascii")
+    except UnicodeError:
+        normalized = hostname
+    normalized = normalized.rstrip(".").lower()
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        traditional = _traditional_ipv4_address(normalized)
+        return traditional is not None and traditional.is_loopback
+
+
+def is_clean_repository_subfolder(value: str) -> bool:
+    """Match the Registry's filesystem-free subfolder shape validation."""
+    if not value:
+        return True
+    if value.startswith("/") or value.endswith("/") or _CLEAN_SUBFOLDER.fullmatch(value) is None:
         return False
+    return all(segment not in {"", ".", ".."} for segment in value.split("/"))
 
 
 def declares_unsupported_schema(data: object) -> bool:

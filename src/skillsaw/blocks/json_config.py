@@ -12,7 +12,7 @@ from itertools import islice
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, ClassVar, Dict, List, Mapping, Optional, Set, Tuple
+from typing import Any, ClassVar, Dict, Iterator, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
@@ -33,6 +33,9 @@ def _as_str_list(value: Any) -> Optional[List[str]]:
     if not isinstance(value, list):
         return None
     return [v for v in value if isinstance(v, str)]
+
+
+HOOK_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
 
 
 @dataclass
@@ -58,6 +61,26 @@ class HookHandler:
     shell: Optional[str] = None
     allowed_env_vars: Optional[List[str]] = None
     source_line: Optional[int] = None
+    # Keep new fields at the end to preserve positional construction.
+    command_variants: List[Tuple[str, Optional[int]]] = field(default_factory=list)
+
+    def iter_effective_commands(self) -> Iterator[Tuple[str, Optional[int]]]:
+        """Yield each effective command and the line that declared it.
+
+        Exec-form hooks store their executable and arguments separately.  The
+        joined form is the linter's canonical spelling for scanning,
+        diagnostics, and exact-match allowlists; it is not shell serialization.
+        """
+        variants = self.command_variants
+        if not variants and self.command:
+            variants = [(self.command, self.source_line)]
+        for command, source_line in variants:
+            if not command:
+                continue
+            if self.args is None:
+                yield command, source_line
+            else:
+                yield " ".join([command, *self.args]), source_line
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookHandler":
@@ -74,9 +97,19 @@ class HookHandler:
         ``hooks-json-valid`` reads the raw document and reports the shape.
         """
         command_line = commented_key_line(d, "command")
+        command_variants: List[Tuple[str, Optional[int]]] = []
+        for key in HOOK_COMMAND_FIELDS:
+            value = _as_str(d.get(key))
+            if value is None:
+                continue
+            variant_line = commented_key_line(d, key)
+            command_variants.append(
+                (value, variant_line + line_offset if variant_line is not None else None)
+            )
         return cls(
             type=_as_str(d.get("type")) or "",
             command=_as_str(d.get("command")),
+            command_variants=command_variants,
             args=_as_str_list(d.get("args")),
             url=_as_str(d.get("url")),
             headers=d.get("headers"),

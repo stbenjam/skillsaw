@@ -64,5 +64,7 @@ rules:
       - "curl -s https://internal.example.com/metrics -d done"
 ```
 
-Allowlist entries are exact-match, so a compromised variant of the
-command will still be flagged.
+Allowlist entries match the command spelling shown in the diagnostic. For
+an exec-form hook, that spelling joins `command` and `args` with spaces; it
+does not preserve argument boundaries. Allowlist the full spelling, not only
+the executable name.

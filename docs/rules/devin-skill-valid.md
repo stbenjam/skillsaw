@@ -14,9 +14,9 @@ Devin-native SKILL.md frontmatter must use Devin's documented field shapes
 
 ## Why
 
-Skills in `.devin/skills/` and `.windsurf/skills/` use Devin's native
-dialect. Unlike portable Agent Skills under `.agents/skills/`, their
-frontmatter is optional and the directory name supplies the default name.
+Skills in `.devin/skills/` use Devin's native dialect. Unlike portable Agent
+Skills under `.agents/skills/` and `.windsurf/skills/`, their frontmatter is
+optional and the directory name supplies the default name.
 When frontmatter is present, however, values with the wrong shape can keep
 tools, permissions, activation, or delegation settings from taking effect.
 
@@ -37,7 +37,7 @@ combination as invalid.
 
 ```markdown
 ---
-allowed-tools: read
+allowed-tools: 4
 permissions:
   allow: Read(src/**)
 triggers:
@@ -51,9 +51,7 @@ triggers:
 ---
 argument-hint: "[path]"
 model: sonnet
-allowed-tools:
-  - read
-  - grep
+allowed-tools: Bash(openspec:*)
 permissions:
   allow:
     - Read(src/**)
@@ -71,7 +69,7 @@ A native skill with no frontmatter is also valid.
 
 - Use strings for `name`, `description`, `argument-hint`, `model`, and
   `agent`, and a boolean for `subagent`.
-- Make `allowed-tools` a list of strings.
+- Make `allowed-tools` a string or a list of strings.
 - Make `permissions` an object; its `allow`, `deny`, and `ask` values must be
   lists of strings.
 - Make `triggers` a non-empty list containing only `user` and/or `model`.

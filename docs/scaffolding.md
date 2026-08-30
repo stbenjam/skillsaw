@@ -1,5 +1,9 @@
 # Scaffolding
 
+!!! warning "Deprecated in 0.20.0"
+    `skillsaw add` is deprecated and will be removed in an upcoming release.
+    It remains available during the deprecation period.
+
 `skillsaw add` scaffolds marketplaces, plugins, and components with best-practice structure, CI, and branding out of the box.
 
 ## Initialize a Marketplace

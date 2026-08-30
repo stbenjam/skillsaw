@@ -24,33 +24,21 @@ which leaves a shared agent only partly configured.
 This rule validates the common scalar fields, real YAML booleans, tool and
 model collections, subagent/tool coordination, metadata, handoffs, hook
 shape, the two documented `target` values, and GitHub's 30,000-character
-prompt limit. In an `*.agent.md` file, omitted `target` means both
-environments and accepts the documented union. Other Markdown files under
-`.github/agents/` are VS Code-only, as are legacy chatmodes. Unknown tool
-names remain valid because both consumers ignore tools they do not provide.
+prompt limit. Files under `.github/agents/` target both environments when
+`target` is omitted and accept the documented union. Legacy chatmodes default
+to VS Code. A valid explicit `target` always wins. Unknown tool names remain
+valid because both consumers ignore tools they do not provide.
 
-Missing or weak descriptions remain owned by
-[`content-description-routing`](content-description-routing.md). This rule
-only reports `description` when its YAML value is not a string, avoiding two
-findings for one missing or empty description.
+Embedded `mcp-servers` configurations in cloud or shared agent files
+are scanned by the shared [`mcp-valid-json`](mcp-valid-json.md) and
+[`mcp-prohibited`](mcp-prohibited.md) rules. Lifecycle hooks in VS Code-capable
+agent files are scanned by [`hooks-dangerous`](hooks-dangerous.md). GitHub
+template variables (`${{ secrets.NAME }}` and `${{ vars.NAME }}`) are recognized
+as valid placeholders.
 
-Embedded cloud configuration stays visible to the shared security rules. A
-`mcp-servers` mapping in a cloud or shared agent becomes an MCP node, so
-[`mcp-valid-json`](mcp-valid-json.md) and [`mcp-prohibited`](mcp-prohibited.md)
-validate and police it. GitHub's `local` transport is treated as the compatible spelling of `stdio`, and
-`${{ secrets.NAME }}` / `${{ vars.NAME }}` values are placeholders rather
-than committed credentials. Hooks in VS Code-capable agents (an omitted
-target, `target: vscode`, an ordinary `.github/agents/**/*.md` file, or a
-legacy chatmode) are scanned by
-[`hooks-dangerous`](hooks-dangerous.md) and [`hooks-prohibited`](hooks-prohibited.md)
-like hooks in standalone config; hooks on a cloud-only target are ignored by
-that host and are not scanned. All checks are offline.
-
-Legacy `.github/chatmodes/**/*.chatmode.md` files and non-`*.agent.md` files
-under `.github/agents/` receive the same validation so teams can migrate
-without losing diagnostics. They are VS Code-only even when `target` is
-omitted, so the cloud prompt limit and cloud-only embedded MCP checks do not
-apply.
+GitHub's `local` MCP transport is accepted as the cloud spelling of `stdio`.
+VS Code command hooks may use `command`, `windows`, `linux`, and `osx`; every
+provided command is security-scanned. Hooks on cloud-only agents are ignored.
 
 ## Severity
 

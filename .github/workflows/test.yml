@@ -161,13 +161,48 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          pip install .
+          python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/skillsaw-wheel" .
+          pip install "$RUNNER_TEMP"/skillsaw-wheel/skillsaw-*.whl
 
       - name: Test --version
         run: skillsaw --version
 
       - name: Test list-rules
         run: skillsaw list-rules
+
+      - name: Test bundled MCP Registry schemas from wheel
+        run: |
+          cd "$RUNNER_TEMP"
+          python - <<'PY'
+          import os
+          import socket
+          from importlib import resources
+          from pathlib import Path
+
+          import skillsaw
+          from skillsaw.formats.mcp_registry import (
+              MCP_REGISTRY_SCHEMA_PACKAGES,
+              load_mcp_registry_schema,
+              mcp_registry_schema_id,
+          )
+          from skillsaw.rules.builtin.mcp_registry._helpers import registry_validator
+
+          installed = Path(skillsaw.__file__).resolve()
+          checkout = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          assert not installed.is_relative_to(checkout), installed
+
+          def refuse_network(*_args, **_kwargs):
+              raise AssertionError("schema validation attempted network access")
+
+          socket.create_connection = refuse_network
+          for version, package in sorted(MCP_REGISTRY_SCHEMA_PACKAGES.items()):
+              bundle = resources.files(package)
+              for name in ("server.schema.json", "LICENSE", "SCHEMA-SOURCE.md"):
+                  assert bundle.joinpath(name).is_file(), f"{version}: missing {name}"
+              schema = load_mcp_registry_schema(version)
+              assert schema.get("$id") == mcp_registry_schema_id(version)
+              list(registry_validator(version).iter_errors({}))
+          PY
 
       - name: Test init
         run: |

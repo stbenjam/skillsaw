@@ -23,7 +23,7 @@ from skillsaw.formats.codex import (
 )
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
 from skillsaw.paths import safe_is_dir, safe_is_file, safe_resolve
-from skillsaw.rules.builtin.utils import read_json, read_text
+from skillsaw.rules.builtin.utils import reject_duplicate_json_keys, read_json, read_text
 
 from ._helpers import (
     CODEX_MARKETPLACE_REPO_TYPES,
@@ -36,16 +36,6 @@ from ._helpers import (
 # policy.installation, policy.authentication and category on every entry.
 _NEW_ENTRY_POLICY = {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
 _NEW_ENTRY_CATEGORY = "Productivity"
-
-
-def _reject_duplicate_json_keys(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
-    """Build one JSON object, rejecting keys the decoder would collapse."""
-    result: Dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate JSON key: {key}")
-        result[key] = value
-    return result
 
 
 def _mutable_marketplace_data(original: str) -> Optional[dict]:
@@ -62,7 +52,7 @@ def _mutable_marketplace_data(original: str) -> Optional[dict]:
         data = json.loads(
             original,
             parse_constant=reject_nonfinite_json_number,
-            object_pairs_hook=_reject_duplicate_json_keys,
+            object_pairs_hook=reject_duplicate_json_keys,
         )
     except (json.JSONDecodeError, ValueError):
         return None

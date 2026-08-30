@@ -24,6 +24,7 @@ _DEFAULT_EXCLUDE_PATTERNS = [
     "**/template/**",
     "**/templates/**",
     "**/_template/**",
+    "**/__pycache__/**",
 ]
 
 # Severity threshold ordering for ``fail-on``: a run fails when violations

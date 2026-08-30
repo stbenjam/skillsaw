@@ -5,11 +5,13 @@ only when the reporter names them with ``--include`` or ``--config``, and
 reviewing those for secrets is the reporter's job: skillsaw does not scan
 file contents for credentials and does not claim the bundle is sanitized.
 A file whose name means credentials (``.env``, ``id_rsa``, ``*.pem``) or that
-an ignore file already excludes cannot be bundled at all."""
+an ignore file in its directory or an ancestor already excludes cannot be
+bundled at all."""
 
 from __future__ import annotations
 
 import errno
+import fnmatch
 import hashlib
 import io
 import json
@@ -24,13 +26,14 @@ import sysconfig
 import tempfile
 import time
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
 from ..config import find_config
-from ..discovery.excludes import path_matches_patterns
 from ..paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from ..utils import mkdir_parents_anchored, read_text, write_bytes_atomic
 from ._config import _get_version
@@ -40,7 +43,16 @@ _FEEDBACK_EMAIL = "stephen@bitbin.de"
 _GPG_KEY_URL = "https://github.com/stbenjam.gpg"
 _BUNDLE_SCHEMA_VERSION = 1
 _LINT_TIMEOUT_SECONDS = 120
+_IGNORED_CONFIG_NOTICE = (
+    "The diagnostic lint ran, but its stdout and stderr were withheld because the "
+    "auto-discovered config is excluded by an ignore file. Copy a reviewed config to "
+    "a non-ignored path and pass --config to include those diagnostics."
+)
 _TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
+_UNSAFE_ARCHIVE_PATH = re.compile(
+    r"[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028-\u202e\u2066-\u206f\ud800-\udfff]"
+)
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 
 
 def _neutralize_terminal_control(text: str) -> str:
@@ -96,6 +108,7 @@ _IGNORE_FILES = (
     ".helmignore",
     ".gcloudignore",
 )
+_GIT_STYLE_IGNORE_FILES = frozenset({".gitignore", ".npmignore", ".gcloudignore"})
 
 
 # Files whose *name* is the declaration: they exist to hold credentials, so a
@@ -140,57 +153,529 @@ def _is_secret_filename(name: str) -> bool:
     return lowered.startswith(".env.")
 
 
-def _ignore_patterns(root: Path) -> list[str]:
-    """Patterns from the repository's ignore files, comments and negations dropped."""
-    patterns: list[str] = []
+@dataclass(frozen=True)
+class _IgnorePattern:
+    value: str
+    anchored: bool
+    directory_only: bool
+    ignore_case: bool
+    base_parts: tuple[str, ...] = ()
+    git_style: bool = True
+
+
+@dataclass(frozen=True)
+class _GlobClass:
+    """One parsed gitignore bracket expression."""
+
+    negated: bool
+    singles: frozenset[str]
+    ranges: tuple[tuple[str, str], ...]
+    posix: frozenset[str]
+
+
+@lru_cache(maxsize=256)
+def _git_ignore_case(root: Path) -> bool:
+    """Return Git's case-folding policy without requiring the repository API."""
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "config", "--bool", "core.ignoreCase"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return os.path.normcase("A") == os.path.normcase("a")
+    if completed.returncode == 0:
+        return completed.stdout.strip().lower() == "true"
+    return os.path.normcase("A") == os.path.normcase("a")
+
+
+def _trim_ignore_trailing_spaces(line: str) -> str:
+    """Drop trailing spaces unless an odd run of backslashes quotes one."""
+    end = len(line)
+    while end and line[end - 1] == " ":
+        backslashes = 0
+        index = end - 2
+        while index >= 0 and line[index] == "\\":
+            backslashes += 1
+            index -= 1
+        if backslashes % 2:
+            break
+        end -= 1
+    return line[:end]
+
+
+def _ignore_patterns_in(root: Path, directory: Path) -> list[_IgnorePattern]:
+    """Patterns declared in one contained directory, relative to that directory."""
+    try:
+        base_parts = directory.relative_to(root).parts
+    except ValueError:
+        return []
+
+    patterns: list[_IgnorePattern] = []
     for name in _IGNORE_FILES:
-        ignore_file = root / name
-        if not safe_is_file(ignore_file):
+        ignore_file = contained_resolve(directory / name, root)
+        if ignore_file is None or not safe_is_file(ignore_file):
             continue
         content = read_text(ignore_file)
         if content is None:
             continue
+        ignore_case = _git_ignore_case(directory) if name == ".gitignore" else os.name == "nt"
+        git_style = name in _GIT_STYLE_IGNORE_FILES
         for line in content.splitlines():
-            entry = line.strip()
+            entry = _trim_ignore_trailing_spaces(line) if git_style else line.strip()
             # A negation re-includes a path; skipping it keeps this a guardrail
             # that only ever refuses, never grants.
             if not entry or entry.startswith(("#", "!")):
                 continue
+            directory_only = entry.endswith("/")
             entry = entry.rstrip("/")
             if entry:
-                patterns.extend((entry, f"{entry}/*", f"**/{entry}", f"**/{entry}/*"))
+                anchored = entry.startswith("/") or "/" in entry
+                value = entry.lstrip("/")
+                if value:
+                    patterns.append(
+                        _IgnorePattern(
+                            value,
+                            anchored,
+                            directory_only,
+                            ignore_case,
+                            base_parts,
+                            git_style,
+                        )
+                    )
     return patterns
 
 
-def _is_ignored(resolved: Path, root: Path, patterns: list[str]) -> bool:
-    return path_matches_patterns(resolved, root, patterns)
+def _ignore_patterns(root: Path) -> list[_IgnorePattern]:
+    """Patterns from root ignore files, comments and negations dropped."""
+    return _ignore_patterns_in(root, root)
 
 
-def _included_file(root: Path, raw_path: str, patterns: list[str]) -> tuple[Path, Path]:
+def _nested_ignore_patterns(root: Path, resolved: Path) -> list[_IgnorePattern]:
+    """Patterns from ignore files between *root* and the file's parent."""
+    try:
+        relative = resolved.relative_to(root)
+    except ValueError:
+        return []
+    patterns: list[_IgnorePattern] = []
+    directory = root
+    for part in relative.parts[:-1]:
+        directory /= part
+        patterns.extend(_ignore_patterns_in(root, directory))
+    return patterns
+
+
+def _parse_glob_class(pattern: str, start: int) -> tuple[tuple[str, object], int] | None:
+    """Parse a gitignore bracket expression into a matcher token."""
+    index = start + 1
+    negated = index < len(pattern) and pattern[index] in {"!", "^"}
+    if negated:
+        index += 1
+
+    singles: set[str] = set()
+    ranges: list[tuple[str, str]] = []
+    posix: set[str] = set()
+    previous: str | None = None
+    first = True
+    while index < len(pattern):
+        character = pattern[index]
+        if character == "]" and not first:
+            return (
+                (
+                    "class",
+                    _GlobClass(
+                        negated,
+                        frozenset(singles),
+                        tuple(ranges),
+                        frozenset(posix),
+                    ),
+                ),
+                index + 1,
+            )
+        first = False
+
+        if character == "[" and pattern.startswith("[:", index):
+            end = pattern.find(":]", index + 2)
+            if end < 0:
+                return (("never", None), len(pattern))
+            name = pattern[index + 2 : end]
+            if name not in {
+                "alnum",
+                "alpha",
+                "blank",
+                "cntrl",
+                "digit",
+                "graph",
+                "lower",
+                "print",
+                "punct",
+                "space",
+                "upper",
+                "xdigit",
+            }:
+                return (("never", None), len(pattern))
+            posix.add(name)
+            previous = None
+            index = end + 2
+            continue
+
+        escaped = character == "\\" and index + 1 < len(pattern)
+        if escaped:
+            index += 1
+            character = pattern[index]
+        elif character == "\\":
+            return (("never", None), len(pattern))
+        elif (
+            character == "-"
+            and previous is not None
+            and index + 1 < len(pattern)
+            and pattern[index + 1] != "]"
+        ):
+            index += 1
+            upper = pattern[index]
+            if upper == "\\":
+                if index + 1 >= len(pattern):
+                    return (("never", None), len(pattern))
+                index += 1
+                upper = pattern[index]
+            ranges.append((previous, upper))
+            previous = None
+            index += 1
+            continue
+        singles.add(character)
+        previous = character
+        index += 1
+    return (("never", None), len(pattern))
+
+
+def _tokenize_git_glob(pattern: str) -> tuple[tuple[str, object], ...]:
+    """Tokenize one slash-free gitignore glob component."""
+    tokens: list[tuple[str, object]] = []
+    index = 0
+    while index < len(pattern):
+        character = pattern[index]
+        if character == "\\":
+            if index + 1 >= len(pattern):
+                tokens.append(("never", None))
+                break
+            tokens.append(("literal", pattern[index + 1]))
+            index += 2
+            continue
+        if character == "*":
+            if not tokens or tokens[-1][0] != "star":
+                tokens.append(("star", None))
+            index += 1
+            continue
+        if character == "?":
+            tokens.append(("any", None))
+            index += 1
+            continue
+        if character == "[":
+            parsed = _parse_glob_class(pattern, index)
+            if parsed is not None:
+                token, index = parsed
+                tokens.append(token)
+                continue
+        tokens.append(("literal", character))
+        index += 1
+    return tuple(tokens)
+
+
+@lru_cache(maxsize=256)
+def _cached_git_glob_tokens(pattern: str) -> tuple[tuple[str, object], ...]:
+    """Cache ordinary patterns without retaining hostile oversized tokens."""
+    return _tokenize_git_glob(pattern)
+
+
+def _git_glob_tokens(pattern: str) -> tuple[tuple[str, object], ...]:
+    if len(pattern) > 512:
+        return _tokenize_git_glob(pattern)
+    return _cached_git_glob_tokens(pattern)
+
+
+def _glob_token_matches(character: str, token: tuple[str, object], *, ignore_case: bool) -> bool:
+    """Whether one non-star token consumes *character*."""
+    kind, value = token
+    if kind == "any":
+        return True
+    if kind == "literal":
+        return character == value
+    if kind == "class":
+        assert isinstance(value, _GlobClass)
+        matched = character in value.singles or any(
+            lower <= character <= upper for lower, upper in value.ranges
+        )
+        matched = matched or any(
+            _posix_class_matches(character, name, ignore_case=ignore_case) for name in value.posix
+        )
+        return not matched if value.negated else matched
+    return False
+
+
+def _posix_class_matches(character: str, name: str, *, ignore_case: bool) -> bool:
+    """Match Git's ASCII/POSIX bracket-class vocabulary."""
+    codepoint = ord(character)
+    alpha = "a" <= character <= "z" or "A" <= character <= "Z"
+    digit = "0" <= character <= "9"
+    if name == "alnum":
+        return alpha or digit
+    if name == "alpha":
+        return alpha
+    if name == "blank":
+        return character in {" ", "\t"}
+    if name == "cntrl":
+        return codepoint < 32 or codepoint == 127
+    if name == "digit":
+        return digit
+    if name == "graph":
+        return 33 <= codepoint <= 126
+    if name == "lower":
+        return "a" <= character <= "z"
+    if name == "print":
+        return 32 <= codepoint <= 126
+    if name == "punct":
+        return 33 <= codepoint <= 126 and not (alpha or digit)
+    if name == "space":
+        return character in {" ", "\t", "\r", "\n", "\v", "\f"}
+    if name == "upper":
+        return "A" <= character <= "Z" or (ignore_case and "a" <= character <= "z")
+    return digit or "a" <= character.lower() <= "f"
+
+
+def _git_fnmatchcase(name: str, pattern: str, *, ignore_case: bool = False) -> bool:
+    """Match one path component using Git escapes and glob syntax."""
+    tokens = _git_glob_tokens(pattern)
+    if any(kind == "never" for kind, _value in tokens):
+        return False
+    if sum(kind != "star" for kind, _value in tokens) > len(name):
+        return False
+
+    previous = [False] * (len(name) + 1)
+    previous[0] = True
+    for token in tokens:
+        current = [False] * (len(name) + 1)
+        if token[0] == "star":
+            current[0] = previous[0]
+            for name_index in range(1, len(name) + 1):
+                current[name_index] = previous[name_index] or current[name_index - 1]
+        else:
+            for name_index, character in enumerate(name, 1):
+                current[name_index] = previous[name_index - 1] and _glob_token_matches(
+                    character, token, ignore_case=ignore_case
+                )
+        if not any(current):
+            return False
+        previous = current
+    return previous[-1]
+
+
+def _split_git_pattern(pattern: str) -> tuple[str, ...]:
+    """Split on path separators after consuming a slash's odd escape."""
+    parts: list[str] = []
+    current: list[str] = []
+    for character in pattern:
+        if character != "/":
+            current.append(character)
+            continue
+        backslashes = 0
+        for existing in reversed(current):
+            if existing != "\\":
+                break
+            backslashes += 1
+        if backslashes % 2:
+            current.pop()
+        parts.append("".join(current))
+        current = []
+    parts.append("".join(current))
+    return tuple(parts)
+
+
+def _path_pattern_matches(
+    path_parts: tuple[str, ...],
+    pattern_parts: tuple[str, ...],
+    *,
+    ignore_case: bool,
+    git_style: bool,
+) -> bool:
+    """Match a gitignore path pattern without allowing ``*`` to cross ``/``."""
+
+    @lru_cache(maxsize=None)
+    def match(pattern_index: int, path_index: int) -> bool:
+        if pattern_index == len(pattern_parts):
+            return path_index == len(path_parts)
+        pattern = pattern_parts[pattern_index]
+        if pattern == "**":
+            if pattern_index == len(pattern_parts) - 1:
+                # A trailing '/**' means contents of the directory, not the
+                # directory entry (or an identically named regular file).
+                return path_index < len(path_parts)
+            return match(pattern_index + 1, path_index) or (
+                path_index < len(path_parts) and match(pattern_index, path_index + 1)
+            )
+        return (
+            path_index < len(path_parts)
+            and _component_pattern_matches(
+                path_parts[path_index],
+                pattern,
+                ignore_case=ignore_case,
+                git_style=git_style,
+            )
+            and match(pattern_index + 1, path_index + 1)
+        )
+
+    return match(0, 0)
+
+
+def _component_pattern_matches(
+    name: str, pattern: str, *, ignore_case: bool, git_style: bool
+) -> bool:
+    if git_style:
+        return _git_fnmatchcase(name, pattern, ignore_case=ignore_case)
+    return fnmatch.fnmatchcase(name, pattern)
+
+
+def _ignore_pattern_matches(path_parts: tuple[str, ...], pattern: _IgnorePattern) -> bool:
+    pattern_value = pattern.value.translate(_ASCII_LOWER) if pattern.ignore_case else pattern.value
+    comparable_parts = (
+        tuple(part.translate(_ASCII_LOWER) for part in path_parts)
+        if pattern.ignore_case
+        else path_parts
+    )
+    comparable_base = (
+        tuple(part.translate(_ASCII_LOWER) for part in pattern.base_parts)
+        if pattern.ignore_case
+        else pattern.base_parts
+    )
+    if comparable_parts[: len(comparable_base)] != comparable_base:
+        return False
+    path_parts = path_parts[len(pattern.base_parts) :]
+    comparable_parts = comparable_parts[len(comparable_base) :]
+    eligible_parts = path_parts[:-1] if pattern.directory_only else path_parts
+    comparable_eligible_parts = (
+        comparable_parts[:-1] if pattern.directory_only else comparable_parts
+    )
+    pattern_parts = (
+        _split_git_pattern(pattern_value) if pattern.git_style else tuple(pattern_value.split("/"))
+    )
+    if not pattern.anchored:
+        return any(
+            _component_pattern_matches(
+                part,
+                pattern_value,
+                ignore_case=pattern.ignore_case,
+                git_style=pattern.git_style,
+            )
+            for part in comparable_eligible_parts
+        )
+    return any(
+        _path_pattern_matches(
+            comparable_parts[:end],
+            pattern_parts,
+            ignore_case=pattern.ignore_case,
+            git_style=pattern.git_style,
+        )
+        for end in range(1, len(eligible_parts) + 1)
+    )
+
+
+def _is_ignored(resolved: Path, root: Path, patterns: list[_IgnorePattern]) -> bool:
+    try:
+        path_parts = resolved.relative_to(root).parts
+    except ValueError:
+        return False
+    return any(_ignore_pattern_matches(path_parts, pattern) for pattern in patterns)
+
+
+def _patterns_for_file(
+    resolved: Path, root: Path, root_patterns: list[_IgnorePattern]
+) -> list[_IgnorePattern]:
+    """Root patterns plus ignore files on this contained file's ancestor path."""
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return root_patterns
+    return [*root_patterns, *_nested_ignore_patterns(root, resolved)]
+
+
+def _ignored_by_ancestor_file(path: Path) -> bool:
+    """Whether an ignore file beside *path* or in an ancestor excludes it."""
+    for directory in path.parents:
+        patterns = _ignore_patterns_in(directory, directory)
+        if _is_ignored(path, directory, patterns):
+            return True
+    return False
+
+
+def _unsafe_archive_path(raw_path: str) -> bool:
+    """Whether an include name is unsafe in diagnostics or a ZIP member."""
+    return bool(_UNSAFE_ARCHIVE_PATH.search(raw_path)) or (os.name != "nt" and "\\" in raw_path)
+
+
+def _included_file(
+    root: Path,
+    raw_path: str,
+    patterns: list[_IgnorePattern],
+    *,
+    lexical_root: Path | None = None,
+) -> tuple[Path, Path]:
+    if _unsafe_archive_path(raw_path):
+        raise ValueError(
+            "--include refuses paths containing control, bidirectional-formatting, "
+            "surrogate, or archive-separator characters. Copy the reproducer to a "
+            "safe filename"
+        )
     candidate = Path(raw_path)
-    if not candidate.is_absolute():
+    if lexical_root is None:
+        lexical_root = root
+    if candidate.is_absolute():
+        lexical = Path(os.path.abspath(candidate))
+    else:
+        lexical = Path(os.path.abspath(lexical_root / candidate))
         candidate = root / candidate
     resolved = contained_resolve(candidate, root)
     if resolved is None:
         raise ValueError(f"--include must name a file inside the repository: {raw_path}")
+    if contained_resolve(lexical, root) != resolved:
+        raise ValueError(
+            f"--include path changes meaning across a symlink and '..': {raw_path}. "
+            "Use a path without '..'"
+        )
     if not safe_is_file(resolved):
         raise ValueError(f"--include must name a file: {raw_path}")
-    if _is_secret_filename(resolved.name):
-        raise ValueError(
-            f"--include refuses {resolved.name}: files with this name hold credentials. "
-            "Put just the part you need to demonstrate the bug in another file"
-        )
-    if _is_ignored(resolved, root, patterns):
-        raise ValueError(
-            f"--include refuses a file an ignore file already excludes: {raw_path}. "
-            "Copy it to a non-ignored path if you have reviewed it and still want to share it"
-        )
-    relative = resolved.relative_to(root)
+    for guarded_path in dict.fromkeys((lexical, resolved)):
+        if _is_secret_filename(guarded_path.name):
+            raise ValueError(
+                f"--include refuses {guarded_path.name}: files with this name hold "
+                "credentials. Put just the part you need to demonstrate the bug in "
+                "another file"
+            )
+        if _is_ignored(
+            guarded_path,
+            root,
+            _patterns_for_file(guarded_path, root, patterns),
+        ) or _ignored_by_ancestor_file(guarded_path):
+            raise ValueError(
+                f"--include refuses a file an ignore file already excludes: {raw_path}. "
+                "Copy it to a non-ignored path if you have reviewed it and still want "
+                "to share it"
+            )
+    try:
+        relative = lexical.relative_to(lexical_root)
+    except ValueError:
+        relative = lexical.relative_to(root)
     return resolved, relative
 
 
 def _run_diagnostic_lint(
-    root: Path, config_path: Path | None, *, with_extensions: bool
+    root: Path,
+    config_path: Path | None,
+    *,
+    with_extensions: bool,
+    mirror_stderr: bool = True,
 ) -> dict[str, Any]:
     command = [
         sys.executable,
@@ -214,7 +699,14 @@ def _run_diagnostic_lint(
     command.append(str(root))
     try:
         with tempfile.TemporaryDirectory(prefix="skillsaw-feedback-") as neutral_cwd:
-            stdout, stderr, return_code = _run_lint_process(command, Path(neutral_cwd))
+            if mirror_stderr:
+                stdout, stderr, return_code = _run_lint_process(command, Path(neutral_cwd))
+            else:
+                stdout, stderr, return_code = _run_lint_process(
+                    command,
+                    Path(neutral_cwd),
+                    mirror_stderr=False,
+                )
         return {
             "command": ["skillsaw", *command[3:-1], "<repository>"],
             "exit_code": return_code,
@@ -244,9 +736,11 @@ def _lint_child_environment() -> dict[str, str]:
     return {**os.environ, "PYTHONSAFEPATH": "1"}
 
 
-def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
+def _run_lint_process(
+    command: list[str], root: Path, *, mirror_stderr: bool = True
+) -> tuple[str, str, int]:
     """Run lint, mirroring its interactive verbose output into this terminal."""
-    if not sys.stderr.isatty() or os.name == "nt":
+    if not mirror_stderr or not sys.stderr.isatty() or os.name == "nt":
         completed = subprocess.run(
             command,
             cwd=root,
@@ -348,17 +842,37 @@ def _issue_url(bundle_name: str, bundle_sha256: str, message: str) -> str:
 
 
 def _run_feedback(args) -> None:
+    # A library caller may run the CLI repeatedly in one interpreter while
+    # repositories or their Git settings change between calls. Keep the
+    # per-run speedup without leaking stale case policy across commands.
+    _git_ignore_case.cache_clear()
+
     if not safe_is_dir(args.path):
         print(f"Error: Path is not a directory: {args.path}", file=sys.stderr)
         sys.exit(1)
 
+    lexical_root = Path(os.path.abspath(args.path))
     root = safe_resolve(args.path)
     if root is None:
         print(f"Error: Path could not be resolved: {args.path}", file=sys.stderr)
         sys.exit(1)
     config_path = _config_path(args, root)
+    config_guard_path = config_path
+    if args.config is not None:
+        config_guard_path = Path(os.path.abspath(args.config))
     if args.config is not None and config_path is None:
         print(f"Error: Config file could not be resolved: {args.config}", file=sys.stderr)
+        sys.exit(1)
+    if (
+        args.config is not None
+        and config_path is not None
+        and safe_resolve(config_guard_path) != config_path
+    ):
+        print(
+            f"Error: --config path changes meaning across a symlink and '..': {args.config}. "
+            "Use a path without '..'",
+            file=sys.stderr,
+        )
         sys.exit(1)
     if config_path is not None and not safe_is_file(config_path):
         print(f"Error: Config file not found: {config_path}", file=sys.stderr)
@@ -377,27 +891,73 @@ def _run_feedback(args) -> None:
     ignore_patterns = _ignore_patterns(root)
     try:
         selected_files = [
-            _included_file(root, raw_path, ignore_patterns) for raw_path in args.include
-        ]
-        if config_path is not None and _is_secret_filename(config_path.name):
-            raise ValueError(f"--config refuses {config_path.name}: that name holds credentials")
-        if config_path is not None and _is_ignored(config_path, root, ignore_patterns):
-            raise ValueError(
-                f"--config refuses a file an ignore file already excludes: {config_path}"
+            _included_file(
+                root,
+                raw_path,
+                ignore_patterns,
+                lexical_root=lexical_root,
             )
+            for raw_path in args.include
+        ]
+        if args.config is not None:
+            guarded_config_paths = tuple(
+                dict.fromkeys(path for path in (config_guard_path, config_path) if path is not None)
+            )
+            for guarded_config_path in guarded_config_paths:
+                if _is_secret_filename(guarded_config_path.name):
+                    raise ValueError(
+                        f"--config refuses {guarded_config_path.name}: that name holds credentials"
+                    )
+                if _is_ignored(
+                    guarded_config_path,
+                    root,
+                    _patterns_for_file(guarded_config_path, root, ignore_patterns),
+                ) or _ignored_by_ancestor_file(guarded_config_path):
+                    raise ValueError(
+                        "--config refuses a file an ignore file already excludes: "
+                        f"{guarded_config_path}"
+                    )
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
 
-    lint = _run_diagnostic_lint(root, config_path, with_extensions=args.with_extensions)
-    artifact_texts: dict[str, str] = {}
-    for name, raw_text in (
-        ("lint-report.json", lint["stdout"]),
-        ("lint-stderr.txt", lint["stderr"]),
-    ):
-        artifact_texts[name] = _neutralize_terminal_control(
-            _replace_local_paths(raw_text, root, config_path)
+    config_diagnostics_withheld = False
+    if args.config is None and config_path is not None:
+        resolved_config = safe_resolve(config_path)
+        guarded_config_paths = tuple(
+            dict.fromkeys(path for path in (config_path, resolved_config) if path is not None)
         )
+        config_diagnostics_withheld = any(
+            _ignored_by_ancestor_file(path) for path in guarded_config_paths
+        )
+
+    lint = _run_diagnostic_lint(
+        root,
+        config_path,
+        with_extensions=args.with_extensions,
+        mirror_stderr=not config_diagnostics_withheld,
+    )
+    if config_diagnostics_withheld:
+        artifact_texts: dict[str, str] = {
+            "lint-report.json": json.dumps(
+                {
+                    "diagnostic_output_withheld": True,
+                    "reason": _IGNORED_CONFIG_NOTICE,
+                },
+                indent=2,
+            )
+            + "\n",
+            "lint-stderr.txt": _IGNORED_CONFIG_NOTICE + "\n",
+        }
+    else:
+        artifact_texts = {}
+        for name, raw_text in (
+            ("lint-report.json", lint["stdout"]),
+            ("lint-stderr.txt", lint["stderr"]),
+        ):
+            artifact_texts[name] = _neutralize_terminal_control(
+                _replace_local_paths(raw_text, root, config_path)
+            )
 
     config_included = args.config is not None
     if config_included:
@@ -431,6 +991,7 @@ def _run_feedback(args) -> None:
         "lint_timed_out": lint["timed_out"],
         "lint_extensions_enabled": args.with_extensions,
         "config_included": config_included,
+        "config_diagnostics_withheld": config_diagnostics_withheld,
         "included_files": included_names,
         "message": message,
     }
@@ -478,6 +1039,7 @@ def _run_feedback(args) -> None:
         "issue_url": issue_url,
         "email": {"to": _FEEDBACK_EMAIL, "gpg_key": _GPG_KEY_URL},
         "included_files": included_names,
+        "config_diagnostics_withheld": config_diagnostics_withheld,
     }
     if args.json:
         print(json.dumps(result, sort_keys=True))
@@ -499,6 +1061,8 @@ def _run_feedback(args) -> None:
                 print(f"    included/{name}")
         else:
             print("  This bundle contains skillsaw's own output only — no repository files.")
+        if config_diagnostics_withheld:
+            print(f"  {_IGNORED_CONFIG_NOTICE}")
         print()
         print("Share the reviewed bundle")
         print("  GitHub issue:")

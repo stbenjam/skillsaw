@@ -12,6 +12,7 @@ from ._helpers import (
     MCP_REGISTRY_REPO_TYPES,
     SEMVER,
     declares_unsupported_schema,
+    is_release_source_placeholder,
     is_version_range,
 )
 
@@ -22,6 +23,9 @@ class McpRegistryVersionSemverRule(Rule):
     repo_types = MCP_REGISTRY_REPO_TYPES
     since = "0.20.0"
     target_dependencies = ("mcp-registry-server-json-valid",)
+    target_dependency_scopes = {
+        "mcp-registry-server-json-valid": (McpRegistryServerBlock,),
+    }
 
     @property
     def rule_id(self) -> str:
@@ -48,6 +52,7 @@ class McpRegistryVersionSemverRule(Rule):
             version = block.raw_data.get("version")
             if (
                 isinstance(version, str)
+                and not is_release_source_placeholder(version)
                 and not is_version_range(version)
                 and SEMVER.fullmatch(version) is None
             ):

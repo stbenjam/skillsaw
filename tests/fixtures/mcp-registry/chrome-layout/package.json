@@ -1,0 +1,6 @@
+{
+  "name": "chrome-devtools-mcp",
+  "version": "1.8.0",
+  "mcpName": "wrong/name",
+  "repository": "ChromeDevTools/chrome-devtools-mcp"
+}

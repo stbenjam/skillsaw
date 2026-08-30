@@ -257,7 +257,13 @@ def install_warning_display() -> None:
     Skillsaw warning categories get a compact colored line instead; every
     other warning keeps the default rendering.
     """
-    default_showwarning = warnings.showwarning
+    # ``CustomRuleWarning`` is imported at module scope from ``notices``,
+    # not from ``linter`` — this runs before the banner, and importing the
+    # linter here would pull the whole lint path in with it. See
+    # ``tests/test_cli_startup.py``.
+    current_showwarning = warnings.showwarning
+    if getattr(current_showwarning, "_skillsaw_warning_display", None) is current_showwarning:
+        return
 
     def _showwarning(message, category, filename, lineno, file=None, line=None):
         if isinstance(message, CustomRuleWarning):
@@ -270,6 +276,11 @@ def install_warning_display() -> None:
                 file=out,
             )
         else:
-            default_showwarning(message, category, filename, lineno, file, line)
+            current_showwarning(message, category, filename, lineno, file, line)
 
+    # Mark the concrete handler rather than keeping a module-global boolean.
+    # If an embedder replaces warnings.showwarning later, the next CLI call
+    # wraps its new handler; functools.wraps cannot make that external wrapper
+    # look like the exact Skillsaw handler whose marker it copied.
+    setattr(_showwarning, "_skillsaw_warning_display", _showwarning)
     warnings.showwarning = _showwarning

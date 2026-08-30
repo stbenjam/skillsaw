@@ -105,6 +105,7 @@ def test_exact_filename_excludes_and_vendored_trees(tmp_path: Path) -> None:
     ("contents", "expected"),
     [
         ('{"version": 1, "skills": {}, "bad": NaN}', "Invalid JSON"),
+        ('{"version": 1, "skills": {}, "skills": {}}', "duplicate JSON object key"),
         ("[]", "must contain a JSON object"),
         ('{"version": 1,', "Invalid JSON"),
     ],

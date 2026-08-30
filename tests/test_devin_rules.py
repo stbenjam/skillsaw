@@ -1,7 +1,10 @@
 """Devin CLI/Desktop rule and native skill validation."""
 
+import pytest
+
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
+from skillsaw.rules.builtin.agentskills.valid import AgentSkillValidRule
 from skillsaw.rules.builtin.devin.rules_valid import DevinRulesValidRule
 from skillsaw.rules.builtin.devin.skill_valid import DevinSkillValidRule
 
@@ -15,6 +18,13 @@ def _devin_rule(tmp_path, name, content):
 
 def _native_skill(tmp_path, name, content):
     path = tmp_path / ".devin" / "skills" / name / "SKILL.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return path
+
+
+def _windsurf_skill(tmp_path, name, content):
+    path = tmp_path / ".windsurf" / "skills" / name / "SKILL.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
     return path
@@ -35,6 +45,31 @@ def test_valid_devin_rule_activation_modes(tmp_path):
         _devin_rule(tmp_path, name, content)
 
     assert DevinRulesValidRule().check(RepositoryContext(tmp_path)) == []
+
+
+def test_devin_documented_unquoted_glob_scalar_is_valid(tmp_path):
+    _devin_rule(
+        tmp_path,
+        "documented-glob.md",
+        "---\ntrigger: glob\nglobs: **/*.test.ts # documented syntax\n---\nUse test helpers.\n",
+    )
+
+    assert DevinRulesValidRule().check(RepositoryContext(tmp_path)) == []
+
+
+def test_devin_glob_fallback_does_not_hide_unrelated_malformed_yaml(tmp_path):
+    malformed = _devin_rule(
+        tmp_path,
+        "malformed-after-glob.md",
+        "---\ntrigger: [unterminated\nglobs: **/*.test.ts\n---\nRule body.\n",
+    )
+
+    found = DevinRulesValidRule().check(RepositoryContext(tmp_path))
+
+    assert len(found) == 1
+    assert found[0].file_path == malformed
+    assert found[0].line == 3
+    assert "Invalid frontmatter" in found[0].message
 
 
 def test_devin_rule_activation_errors_have_field_lines(tmp_path):
@@ -149,6 +184,59 @@ Run the requested workflow.
     )
 
     assert DevinSkillValidRule().check(RepositoryContext(tmp_path)) == []
+
+
+@pytest.mark.parametrize(
+    "allowed_tools",
+    [
+        "Read Bash",
+        "Bash(openspec:*)",
+        "mcp__github__get_issue",
+    ],
+)
+def test_native_skill_accepts_scalar_allowed_tools(tmp_path, allowed_tools):
+    _native_skill(
+        tmp_path,
+        "scalar-tools",
+        f"---\nallowed-tools: {allowed_tools}\n---\nRun the requested workflow.\n",
+    )
+
+    assert DevinSkillValidRule().check(RepositoryContext(tmp_path)) == []
+
+
+@pytest.mark.parametrize("allowed_tools", ["42", "{}"])
+def test_native_skill_rejects_non_string_allowed_tools_scalar(tmp_path, allowed_tools):
+    skill = _native_skill(
+        tmp_path,
+        "invalid-tools",
+        f"---\nallowed-tools: {allowed_tools}\n---\nRun the requested workflow.\n",
+    )
+
+    found = DevinSkillValidRule().check(RepositoryContext(tmp_path))
+
+    assert [(violation.file_path, violation.line, violation.message) for violation in found] == [
+        (skill, 2, "'allowed-tools' must be a string or a list of strings")
+    ]
+
+
+def test_windsurf_skills_use_portable_agent_skills_dialect(tmp_path):
+    portable = _windsurf_skill(
+        tmp_path,
+        "portable",
+        "---\nname: portable\ndescription: Run the portable workflow.\n"
+        "allowed-tools: Read Bash\n---\nRun the workflow.\n",
+    )
+    missing = _windsurf_skill(tmp_path, "missing", "# Missing metadata\n\nRun the workflow.\n")
+    context = RepositoryContext(tmp_path)
+
+    assert DevinSkillValidRule().check(context) == []
+    portable_findings = AgentSkillValidRule().check(context)
+
+    assert all(violation.file_path != portable for violation in portable_findings)
+    assert {violation.file_path for violation in portable_findings} == {missing}
+    assert {violation.message for violation in portable_findings} == {
+        "Missing YAML frontmatter (must start with ---)",
+    }
 
 
 def test_invalid_native_skill_fields_have_nested_yaml_lines(tmp_path):

@@ -686,7 +686,7 @@ def test_detected_formats_devin_rules_and_instructions(temp_dir):
 
 
 def test_nested_devin_and_windsurf_skills_are_discovered(temp_dir):
-    """The shared scan finds native skill collections in nested workspaces."""
+    """The shared scan finds both skill dialects in nested workspaces."""
     from skillsaw.context import HAS_DEVIN, RepositoryType
 
     expected = []
@@ -1394,7 +1394,7 @@ class TestPathMatchesPatterns:
         from skillsaw.config import LinterConfig
 
         patterns = LinterConfig.default().exclude_patterns
-        for d in ("template", "templates", "_template"):
+        for d in ("template", "templates", "_template", "__pycache__"):
             assert self._match(temp_dir, f"{d}/starter/SKILL.md", patterns)
 
     def test_plain_star_still_crosses_slashes(self, temp_dir):

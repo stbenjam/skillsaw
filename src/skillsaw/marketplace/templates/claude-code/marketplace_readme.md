@@ -26,6 +26,9 @@ make lint
 
 Update documentation:
 
+> **Deprecated in skillsaw 0.20.0:** `make docs` uses `skillsaw docs`, which
+> will be removed in an upcoming release.
+
 ```bash
 make docs
 ```

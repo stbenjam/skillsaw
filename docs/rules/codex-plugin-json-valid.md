@@ -81,11 +81,7 @@ the right kind of filesystem object. Other path fields (`apps`, the
 `interface` asset paths) are checked for containment and existence but
 not for kind, because Codex accepts more than one shape for them.
 
-`version` is deliberately not checked against semver. The public prose
-specification does not constrain the format, while the field-level spec
-shipped inside `openai/codex`'s `plugin-creator` skill requires strict
-semver. Because those upstream documents disagree, skillsaw leaves the
-version scheme to the plugin author.
+`version` can be any valid version string; semver is recommended but not enforced.
 
 ## Configuration
 

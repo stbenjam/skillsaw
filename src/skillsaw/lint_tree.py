@@ -7,7 +7,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 from pathlib import Path
-from typing import Set, TYPE_CHECKING, Tuple
+from typing import Dict, List, Optional, Set, TYPE_CHECKING, Tuple
 
 from .diagnostics import safe_display
 
@@ -62,10 +62,13 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
+from .discovery.opencode import contained_instruction_globs
 from .formats import devin
 from .utils import has_apm_generated_header, read_text
 from .paths import (
     contained_resolve,
+    has_parent_traversal,
+    is_absolute_path,
     path_within_roots,
     safe_exists,
     safe_is_dir,
@@ -153,6 +156,7 @@ _OPENCODE_CONTENT_DIRS = tuple(
 #: loads is its business rather than a defect in either file.
 _OPENCODE_CONFIG_NAMES = ("opencode.json", "opencode.jsonc")
 
+
 if TYPE_CHECKING:
     from .context import RepositoryContext
 
@@ -184,6 +188,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     seen: Set[Path] = set()
     seen_roles: Set[Tuple[Path, type]] = set()
     openai_seen: Set[Tuple[Path, Path]] = set()
+    opencode_configs: List[OpenCodeConfigBlock] = []
 
     _is_excluded = context.is_path_excluded
     _is_in_compiled_dir = context.in_apm_compiled_dir
@@ -328,7 +333,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         block_cls: type,
         owner: Path | None = None,
         content_suppressed: bool = False,
-    ) -> None:
+    ) -> Optional[LintTarget]:
         """Attach a structured document once for each parser role.
 
         A JSON document may legitimately contain both hooks and MCP servers.
@@ -338,10 +343,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """
         resolved = _resolve_repo_path(p)
         if resolved is None:
-            return
+            return None
         role = (resolved, block_cls)
         if role in seen_roles or not safe_is_file(resolved) or _is_excluded(p):
-            return
+            return None
         # seen_roles only — never the path-only ``seen`` set: a manifest can
         # declare ``hooks``/``mcpServers`` at any in-plugin markdown file,
         # and poisoning ``seen`` would drop that file from every content
@@ -351,6 +356,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         block.plugin_owner = owner
         block.content_suppressed = content_suppressed
         parent.children.append(block)
+        return block
 
     # Nearest package ownership, with the roots resolved once per context.
     _contained_plugin_owner = context.contained_plugin_owning
@@ -655,8 +661,109 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         appearing twice in the tree rather than two findings for one defect.
         """
         for name in _OPENCODE_CONFIG_NAMES:
-            _add_parser_block(root, directory / name, OpenCodeConfigBlock)
+            config = _add_parser_block(root, directory / name, OpenCodeConfigBlock)
+            if isinstance(config, OpenCodeConfigBlock):
+                opencode_configs.append(config)
             _add_parser_block(root, directory / name, OpenCodeMcpBlock)
+
+    def _add_opencode_instructions() -> None:
+        """Attach local files selected by each OpenCode ``instructions`` entry.
+
+        OpenCode treats these paths and globs as ambient instruction text. A
+        config under ``.opencode/`` belongs to the directory containing that
+        tool directory; a root config belongs to the repository root. Remote
+        URLs are deliberately left alone: lint-tree construction never opens
+        a connection, and the local checkout contains no stable content to
+        inspect for them.
+
+        This runs after every ordinary content attachment. A configured glob
+        may select a skill, command, editor rule, or OpenCode agent, and its
+        structural owner must claim it before path-only content deduplication.
+        """
+        searched: Set[Tuple[Path, str]] = set()
+        searches: List[Tuple[Path, str]] = []
+        for config in opencode_configs:
+            data = config.raw_data
+            instructions = data.get("instructions") if data is not None else None
+            if not isinstance(instructions, list):
+                continue
+            project_dir = (
+                config.path.parent.parent
+                if config.path.parent.name == ".opencode"
+                else config.path.parent
+            )
+            if _resolve_repo_path(project_dir) is None:
+                continue
+            search_dirs: List[Path] = []
+            current = project_dir
+            while True:
+                search_dirs.append(current)
+                if current == context.root_path:
+                    break
+                parent = current.parent
+                if parent == current or _resolve_repo_path(parent) is None:
+                    break
+                current = parent
+
+            for raw_pattern in instructions:
+                if (
+                    not isinstance(raw_pattern, str)
+                    or raw_pattern.startswith(("https://", "http://", "~/"))
+                    or has_parent_traversal(raw_pattern)
+                ):
+                    continue
+
+                pattern_path = Path(raw_pattern)
+                if is_absolute_path(raw_pattern):
+                    # On the current host only POSIX absolute paths can name
+                    # a file in this checkout. A Windows-rooted value is an
+                    # external path here and therefore has no lintable local
+                    # content.
+                    if not pattern_path.is_absolute():
+                        continue
+                    candidates = ((pattern_path.parent, pattern_path.name),)
+                else:
+                    candidates = tuple((base, raw_pattern) for base in search_dirs)
+
+                for glob_base, pattern in candidates:
+                    resolved_base = _resolve_repo_path(glob_base)
+                    search = (resolved_base, pattern) if resolved_base is not None else None
+                    if search is None or search in searched or not safe_is_dir(glob_base):
+                        continue
+                    searched.add(search)
+                    searches.append((glob_base, pattern))
+
+        searches_by_base: Dict[Path, List[Tuple[int, str]]] = {}
+        for search_index, (glob_base, pattern) in enumerate(searches):
+            searches_by_base.setdefault(glob_base, []).append((search_index, pattern))
+
+        matches_by_search: List[List[Path]] = [[] for _search in searches]
+        for glob_base, ranked_patterns in searches_by_base.items():
+            patterns = [pattern for _rank, pattern in ranked_patterns]
+            try:
+                for pattern_index, match in contained_instruction_globs(
+                    repo_root,
+                    glob_base,
+                    patterns,
+                    _is_excluded,
+                ):
+                    search_index = ranked_patterns[pattern_index][0]
+                    matches_by_search[search_index].append(match)
+            except (OSError, ValueError):
+                # OpenCode also ignores invalid patterns. The config rule owns
+                # schema/type diagnostics; discovery stays best-effort.
+                continue
+
+        for matches in matches_by_search:
+            for match in matches:
+                resolved_match = _resolve_repo_path(match)
+                if resolved_match is not None and safe_is_file(resolved_match):
+                    _add_block(
+                        root,
+                        match,
+                        _instruction_block_type(match),
+                        content_suppressed=_is_in_compiled_dir(match),
+                    )
 
     # The project config is read from the repository root as well as from
     # ``.opencode/``. The root copy is never APM output — APM compiles into
@@ -928,7 +1035,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for skill_path in context.skills:
         if _is_in_apm_source(skill_path):
             continue
-        native_devin = devin.is_native_skill_dir(skill_path)
+        native_devin = devin.is_devin_native_skill_dir(skill_path)
         skill_node = DevinSkillNode(path=skill_path) if native_devin else SkillNode(path=skill_path)
         block_cls = DevinSkillBlock if native_devin else SkillBlock
         _add_block(skill_node, skill_path / "SKILL.md", block_cls)
@@ -1135,6 +1242,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 f"Plugin '{plugin_name}': tree contributor failed: " f"{e.__class__.__name__}: {e}"
             )
             continue
+
+    # Configured OpenCode instructions are ambient prose, but their
+    # original semantic owner wins when a path is also a skill, command,
+    # agent, editor rule, README, or plugin-contributed content block.
+    _add_opencode_instructions()
 
     external_roots = context.externally_sourced_roots()
 

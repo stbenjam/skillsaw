@@ -20,24 +20,25 @@ field in `package.json`. It must exactly match the server `name` in
 
 ## What is checked
 
-For every `packages[]` entry whose `registryType` is `npm`, the rule looks
-for a local `package.json` whose `name` matches the package `identifier`. When
-the Registry entry declares a string `version`, the local manifest's `version`
-must also match exactly before the rule treats it as that published release.
-Malformed declared versions remain owned by schema validation because they
-cannot identify a local release. It
-supports a package beside `server.json` and packages elsewhere in a monorepo.
-Only a valid JSON-object manifest can supply package name/version identity;
-adjacency alone is not enough, so a malformed or non-object `package.json`
-whose identity cannot be established remains out of scope. The matching local
-manifest must:
+For each npm package with an exact version, the rule selects a local
+`package.json` from deterministic evidence: the nearest package boundary or one
+corroborated package `repository.url` and `repository.directory` match. With no
+conflicting package boundary, one unique local package with the exact published
+name, version, and repository is also checked. A private root package may act as
+a workspace container, while a declared package directory must match the
+package's path. The server's `repository.subfolder` describes source location,
+not package location. Ambiguous and external packages stay quiet; missing npm
+versions are reported by
+`mcp-registry-server-json-valid`.
 
-- declare a string-valued `mcpName`; and
-- set `mcpName` to the exact `server.json` `name`, including case.
+For the selected package, the rule verifies that:
 
-The check is intentionally local-only. A published npm dependency may live in
-another repository, so the absence of a matching local `package.json` is not
-a violation. Skillsaw never downloads npm metadata.
+- `package.json` declares a string-valued `mcpName`; and
+- `mcpName` matches the exact `server.json` `name`, including case.
+
+This check is entirely offline and never downloads npm metadata.
+Exact publish-time placeholders are skipped until the server and package
+coordinates have been rendered.
 
 ## How to fix
 

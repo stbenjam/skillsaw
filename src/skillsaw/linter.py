@@ -13,7 +13,7 @@ import re
 import sys
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Set, Type, TYPE_CHECKING
 from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
@@ -167,6 +167,8 @@ class Linter:
         # Legacy rule names keep working on the CLI: resolve --rule /
         # --skip-rule arguments to canonical IDs before any matching.
         self._rule_ids = {canonical_rule_id(r) for r in rule_ids} if rule_ids else rule_ids
+        self._explicit_rule_ids = frozenset(self._rule_ids or ())
+        self._dependency_target_scopes: Dict[str, tuple[Type, ...]] = {}
         self._skip_rule_ids = {canonical_rule_id(r) for r in (skip_rule_ids or set())}
         self._baseline = baseline
         self._no_custom_rules = no_custom_rules
@@ -310,16 +312,32 @@ class Linter:
         # dependencies before filtering or a targeted run can falsely pass.
         if self._rule_ids:
             pending = list(self._rule_ids)
+            dependency_scopes: Dict[str, Set[Type]] = {}
             while pending:
                 selected = pending.pop()
                 rule_class = BUILTIN_RULE_REGISTRY.get(selected)
                 if rule_class is None:
                     continue
+                if selected not in self._explicit_rule_ids and rule_class.target_dependencies:
+                    raise ValueError(
+                        f"Rule '{selected}' is itself a targeted validation dependency and "
+                        "cannot declare another target dependency"
+                    )
                 for dependency in rule_class.target_dependencies:
                     dependency = canonical_rule_id(dependency)
+                    if dependency not in self._explicit_rule_ids:
+                        dependency_scopes.setdefault(dependency, set()).update(
+                            rule_class.target_dependency_scopes[dependency]
+                        )
                     if dependency not in self._rule_ids:
                         self._rule_ids.add(dependency)
                         pending.append(dependency)
+            self._dependency_target_scopes = {
+                rule_id: tuple(
+                    sorted(types, key=lambda target: (target.__module__, target.__qualname__))
+                )
+                for rule_id, types in dependency_scopes.items()
+            }
 
         for rule_class in BUILTIN_RULES:
             rule_instance = rule_class()
@@ -335,6 +353,9 @@ class Linter:
             config = self.config.get_rule_config(rule_instance.rule_id)
             if config:
                 rule_instance = rule_class(config)
+            dependency_scope = self._dependency_target_scopes.get(rid)
+            if dependency_scope is not None:
+                rule_instance._dependency_target_types = dependency_scope
 
             if self._rule_ids or self.config.is_rule_enabled(
                 rule_instance.rule_id,

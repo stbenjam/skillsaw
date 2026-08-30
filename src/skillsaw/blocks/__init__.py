@@ -59,6 +59,7 @@ from .frontmatter import (
     _parse_file_frontmatter,
 )
 from .json_config import (
+    HOOK_COMMAND_FIELDS,
     HookEventConfig,
     HookHandler,
     AgentPluginMcpBlock,
@@ -139,6 +140,7 @@ __all__ = [
     "PluginRuleBlock",
     "_parse_file_frontmatter",
     # json_config
+    "HOOK_COMMAND_FIELDS",
     "HookHandler",
     "HookEventConfig",
     "AgentPluginMcpBlock",

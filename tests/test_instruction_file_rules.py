@@ -1,5 +1,7 @@
 """Tests for instruction file validation rules (AGENTS.md, CLAUDE.md, GEMINI.md)"""
 
+import time
+
 import pytest
 from pathlib import Path
 import tempfile
@@ -7,6 +9,7 @@ import shutil
 
 from skillsaw.blocks import ClaudeMdBlock
 from skillsaw.context import HAS_AGENTS_MD, HAS_CLAUDE_MD, RepositoryContext
+from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.rule import AutofixConfidence, Severity
 from skillsaw.rules.builtin import BUILTIN_RULES
 from skillsaw.rules.builtin.utils import invalidate_read_caches
@@ -16,6 +19,7 @@ from skillsaw.rules.builtin.instructions import (
     InstructionFileValidRule,
     InstructionImportsValidRule,
 )
+from skillsaw.rules.builtin.instructions import _helpers as instruction_helpers
 
 
 @pytest.fixture
@@ -155,6 +159,35 @@ class TestInstructionImportsValidRule:
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
 
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "Please read **@docs/setup.md** first.\n",
+            "- _@docs/setup.md_ — canonical instructions.\n",
+            "~~@docs/setup.md~~\n",
+        ],
+    )
+    def test_markdown_emphasis_preserves_the_import_target(self, temp_dir, content):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "setup.md").write_text("# Setup\n")
+        (temp_dir / "CLAUDE.md").write_text(content)
+        assert InstructionImportsValidRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_missing_emphasized_import_reports_the_normalized_target(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("- **@missing** — required context.\n")
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 1
+        assert "@missing" in violations[0].message
+        assert "**" not in violations[0].message
+
+    @pytest.mark.parametrize("filename", ["guide_", "guide~"])
+    def test_real_trailing_path_markers_are_not_stripped(self, temp_dir, filename):
+        (temp_dir / filename).write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text(f"@{filename}\n")
+        assert InstructionImportsValidRule().check(RepositoryContext(temp_dir)) == []
+
     def test_missing_import_fails(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@docs/missing.md\n")
         context = RepositoryContext(temp_dir)
@@ -162,6 +195,48 @@ class TestInstructionImportsValidRule:
         assert len(violations) == 1
         assert "non-existent" in violations[0].message.lower()
         assert violations[0].line == 3
+
+    @pytest.mark.parametrize(
+        ("host", "content"),
+        [
+            ("CLAUDE.md", "@CLAUDE.local.md\n"),
+            ("CLAUDE.md", "- @CLAUDE.local.md\n"),
+            ("CLAUDE.md", "Load @CLAUDE.local.md for personal overrides.\n"),
+            ("AGENTS.md", "@AGENTS.local.md\n"),
+            ("AGENTS.md", "- @config/AGENTS.local.md\n"),
+        ],
+    )
+    def test_missing_conventional_local_override_is_optional(self, temp_dir, host, content):
+        (temp_dir / host).write_text(content)
+        assert InstructionImportsValidRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_present_local_override_is_recursively_validated(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("@CLAUDE.local.md\n")
+        (temp_dir / "CLAUDE.local.md").write_text("# Personal notes\n\n@missing.md\n")
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].file_path == temp_dir / "CLAUDE.local.md"
+        assert violations[0].line == 3
+        assert "missing.md" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "target",
+        ["CLAUDE.local.mdx", "claude.local.md", "AGENTS.local.md.bak"],
+    )
+    def test_near_local_override_names_still_report(self, temp_dir, target):
+        (temp_dir / "CLAUDE.md").write_text(f"@{target}\n")
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert target in violations[0].message
+
+    def test_local_override_import_must_stay_inside_repository(self, temp_dir):
+        repo = temp_dir / "repo"
+        repo.mkdir()
+        (temp_dir / "CLAUDE.local.md").write_text("# Outside\n")
+        (repo / "CLAUDE.md").write_text("@../CLAUDE.local.md\n")
+        violations = InstructionImportsValidRule().check(RepositoryContext(repo))
+        assert len(violations) == 1
+        assert "escapes repository root" in violations[0].message
 
     def test_unresolvable_import_reports_missing_without_stat(self, temp_dir, monkeypatch):
         """A rejected import target must not be revived for an unsafe stat."""
@@ -219,6 +294,86 @@ class TestInstructionImportsValidRule:
         context = RepositoryContext(temp_dir)
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
+
+    def test_long_marker_run_before_prose_stays_a_mention(self, temp_dir):
+        marker_prefix = "*" * 64
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{marker_prefix} Ask @platform-team before changing deploys.\n"
+        )
+
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+
+        assert violations == []
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "[@platform-team](https://example.com)\n",
+            "![@platform-team](image.png)\n",
+            "`code` @platform-team\n",
+            "&copy; @platform-team\n",
+            "# @platform-team\n",
+            "<br> @platform-team\n",
+        ],
+    )
+    def test_nonprose_ast_construct_before_mention_is_not_line_start(self, temp_dir, content):
+        (temp_dir / "CLAUDE.md").write_text(content)
+
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+
+        assert violations == []
+
+    def test_unknown_import_column_is_not_treated_as_line_start(self):
+        markdown = MarkdownDoc("@platform-team\n")
+        segment = markdown.text_segments()[0]
+        segment.col_start = None
+
+        imports = list(instruction_helpers.iter_markdown_instruction_imports(markdown))
+
+        assert len(imports) == 1
+        assert imports[0].line_start is False
+
+    @pytest.mark.parametrize("prefix", ["_ ", "~ ", "*_ "])
+    def test_malformed_marker_then_space_does_not_make_a_line_start_import(self, temp_dir, prefix):
+        (temp_dir / "CLAUDE.md").write_text(f"{prefix}@platform-team\n")
+
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+
+        assert violations == []
+
+    def test_many_imports_classify_the_source_prefix_once(self, monkeypatch):
+        import_count = 10_000
+        markdown = MarkdownDoc(" ".join("@mention" for _ in range(import_count)))
+        calls = []
+        classify = instruction_helpers._is_line_start_import_prefix
+
+        def count_classifications(line, end):
+            calls.append((line, end))
+            return classify(line, end)
+
+        monkeypatch.setattr(
+            instruction_helpers,
+            "_is_line_start_import_prefix",
+            count_classifications,
+        )
+
+        actual_count = sum(
+            1 for _ in instruction_helpers.iter_markdown_instruction_imports(markdown)
+        )
+
+        assert actual_count == import_count
+        assert len(calls) == 1
+
+    def test_many_imports_are_normalized_in_linear_time(self):
+        import_count = 256_000
+        line = " ".join("@mention" for _ in range(import_count))
+
+        started = time.process_time()
+        actual_count = sum(1 for _ in instruction_helpers.iter_instruction_imports(line))
+        elapsed = time.process_time() - started
+
+        assert actual_count == import_count
+        assert elapsed < 1.0, f"import scan took {elapsed:.2f}s — likely superlinear"
 
     def test_github_team_mention_not_checked(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
@@ -544,6 +699,7 @@ class TestClaudeMdAgentsImportRule:
         assert rule.default_enabled == "auto"
         assert rule.since == "0.20.0"
         assert rule.formats == frozenset({HAS_CLAUDE_MD, HAS_AGENTS_MD})
+        assert rule.config_schema["allow-extra"]["default"] is True
         assert rule.supports_autofix
         assert rule.autofix_confidence == AutofixConfidence.SUGGEST
 
@@ -650,6 +806,34 @@ class TestClaudeMdAgentsImportRule:
         assert len(violations) == 1
         assert violations[0].fixable is False
 
+    def test_default_message_keeps_disjoint_claude_instructions(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text("Run `make test` before pushing.\n")
+        (temp_dir / "CLAUDE.md").write_text("Use plan mode for billing changes.\n")
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].fixable is False
+        assert "does not import" in violations[0].message
+        assert "keep Claude-specific instructions" in violations[0].message
+        assert "replace its contents" not in violations[0].message
+
+    def test_exact_duplicate_message_recommends_replacement(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
+        (temp_dir / "CLAUDE.md").write_text(AGENTS_BODY)
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].fixable is True
+        assert "duplicates its sibling" in violations[0].message
+        assert "replace its contents" in violations[0].message
+
+    def test_strict_message_preserves_disjoint_claude_instructions(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text("Run tests.\n")
+        (temp_dir / "CLAUDE.md").write_text("Use plan mode for billing changes.\n")
+        violations = self._check(temp_dir, **{"allow-extra": False})
+        assert len(violations) == 1
+        assert violations[0].fixable is False
+        assert "instructions that must be kept" in violations[0].message
+        assert "then make CLAUDE.md" in violations[0].message
+
     def test_reported_line_is_the_first_non_import_content(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
         (temp_dir / "CLAUDE.md").write_text(
@@ -661,7 +845,7 @@ class TestClaudeMdAgentsImportRule:
             "\n"
             "Load the `release` skill before cutting a tag.\n"
         )
-        violations = self._check(temp_dir)
+        violations = self._check(temp_dir, **{"allow-extra": False})
         assert len(violations) == 1
         assert violations[0].line == 5
         assert "move them into AGENTS.md" in violations[0].message
@@ -669,21 +853,77 @@ class TestClaudeMdAgentsImportRule:
     def test_code_fence_counts_as_content(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
         (temp_dir / "CLAUDE.md").write_text("@AGENTS.md\n\n```sh\nmake deploy\n```\n")
-        violations = self._check(temp_dir)
+        violations = self._check(temp_dir, **{"allow-extra": False})
         assert len(violations) == 1
         assert violations[0].line == 3
 
     # -- allow-extra -------------------------------------------------
 
-    def test_allow_extra_accepts_import_plus_extras(self, temp_dir):
+    def test_default_accepts_import_plus_claude_specific_content(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
-        (temp_dir / "CLAUDE.md").write_text("@AGENTS.md\n\n## Claude only\n\nUse the skill.\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "@AGENTS.md\n\n## Claude Code\n\nUse plan mode for changes under `src/billing/`.\n"
+        )
+        assert self._check(temp_dir) == []
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "- @AGENTS.md\n",
+            "> @AGENTS.md\n",
+            "Read @./AGENTS.md\n",
+            "Include: @./AGENTS.md\n",
+            "Read @AGENTS.md and @README.md\n",
+            "Please read **@AGENTS.md** first.\n",
+            "- **@AGENTS.md** — canonical instructions.\n",
+            "_@AGENTS.md_\n",
+            "~~@AGENTS.md~~\n",
+        ],
+    )
+    def test_allow_extra_recognizes_wrapped_sibling_imports(self, temp_dir, content):
+        (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
+        (temp_dir / "CLAUDE.md").write_text(content)
         assert self._check(temp_dir, **{"allow-extra": True}) == []
 
-    def test_allow_extra_still_reports_a_missing_import(self, temp_dir):
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "- @AGENTS.md\n",
+            "> @AGENTS.md\n",
+            "Read @./AGENTS.md\n",
+            "Include: @./AGENTS.md\n",
+            "Please read **@AGENTS.md** first.\n",
+            "- **@AGENTS.md** — canonical instructions.\n",
+            "_@AGENTS.md_\n",
+            "~~@AGENTS.md~~\n",
+        ],
+    )
+    def test_strict_mode_still_reports_wrapped_sibling_imports(self, temp_dir, content):
+        (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
+        (temp_dir / "CLAUDE.md").write_text(content)
+        violations = self._check(temp_dir, **{"allow-extra": False})
+        assert len(violations) == 1
+        assert violations[0].line == 1
+        assert "imports AGENTS.md but also" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "```markdown\n@AGENTS.md\n```\n",
+            "    @AGENTS.md\n",
+            "`@AGENTS.md`\n",
+            "<!-- @AGENTS.md -->\nClaude-only text.\n",
+        ],
+    )
+    def test_allow_extra_ignores_imports_in_non_prose(self, temp_dir, content):
+        (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
+        (temp_dir / "CLAUDE.md").write_text(content)
+        assert len(self._check(temp_dir, **{"allow-extra": True})) == 1
+
+    def test_default_still_reports_a_missing_import(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
         (temp_dir / "CLAUDE.md").write_text(AGENTS_BODY)
-        assert len(self._check(temp_dir, **{"allow-extra": True})) == 1
+        assert len(self._check(temp_dir)) == 1
 
     # -- fix ---------------------------------------------------------
 

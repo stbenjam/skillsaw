@@ -126,7 +126,7 @@ class McpValidJsonRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for block in context.lint_tree.find(McpConfigRole):
+        for block in self.dependency_scoped_find(context, McpConfigRole):
             # This tree role exists so the format rule and shared MCP rules
             # can read one parsed payload. When a version pin disables the
             # format rule that introduced the surface, keep the established
@@ -269,7 +269,7 @@ class McpValidJsonRule(Rule):
             )
 
         # Also check mcpServers embedded in plugin.json (not a separate file node)
-        for plugin_node in context.lint_tree.find(PluginNode):
+        for plugin_node in self.dependency_scoped_find(context, PluginNode):
             plugin_json_path = plugin_node.path / ".claude-plugin" / "plugin.json"
             if plugin_json_path.exists():
                 violations.extend(self._validate_plugin_json_mcp(plugin_json_path))

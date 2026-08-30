@@ -1,0 +1,16 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.example/legacy-weather",
+  "description": "Weather data published with the initial Registry schema.",
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registry_type": "npm",
+      "identifier": "@example/legacy-weather",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

@@ -4946,6 +4946,13 @@ class TestContentProgressiveDisclosureRule:
         rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
         assert rule.check(RepositoryContext(temp_dir)) == []
 
+    def test_emphasized_import_counts(self, temp_dir):
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
+        self._write_claude(temp_dir, extra="\nRead **@docs/testing.md** first.\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
     def test_qwen_import_counts(self, temp_dir):
         (temp_dir / "docs").mkdir()
         (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
@@ -5421,17 +5428,16 @@ class TestContentMcpToolNameRule:
         rule = ContentMcpToolNameRule()
         assert rule.rule_id == "content-mcp-tool-name"
         assert rule.default_severity() == Severity.WARNING
+        assert rule.default_enabled is False
         assert rule.autofix_confidence == AutofixConfidence.SUGGEST
         assert rule.supports_autofix
         assert rule.since == "0.20.0"
 
-    def test_version_gate_shields_pinned_repos(self, temp_dir):
-        """A repo pinned below the rule's since version never sees it; the
-        pin is the upgrade-safety promise for existing users."""
+    def test_rule_requires_opt_in(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("# Rules\n\nUse `mcp__jira__getJiraIssue`.\n")
         context = RepositoryContext(temp_dir)
         rule = ContentMcpToolNameRule()
-        for version, expected in [("0.19.0", False), ("0.20.0", True)]:
+        for version in ("0.19.0", "0.20.0"):
             config = LinterConfig(version=version, rules={})
             enabled = config.is_rule_enabled(
                 rule.rule_id,
@@ -5440,7 +5446,19 @@ class TestContentMcpToolNameRule:
                 formats=rule.formats,
                 since_version=rule.since,
             )
-            assert enabled is expected
+            assert enabled is False
+
+        config = LinterConfig(
+            version="0.20.0",
+            rules={rule.rule_id: {"enabled": True}},
+        )
+        assert config.is_rule_enabled(
+            rule.rule_id,
+            context,
+            repo_types=rule.repo_types,
+            formats=rule.formats,
+            since_version=rule.since,
+        )
 
     def test_detects_name_in_plain_prose(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
@@ -5524,6 +5542,70 @@ class TestContentMcpToolNameRule:
             "the v2.mcp__jira__getIssue naming.\n"
         )
         assert self._check(temp_dir) == []
+
+    def test_selector_wildcard_and_path_continuation_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Load `select:mcp__playwright__browser_navigate` with ToolSearch.\n"
+            "Load `select:mcp__playwright__browser_navigate,"
+            "mcp__playwright__browser_snapshot,mcp__playwright__browser_close` "
+            "for a complete browser pass.\n"
+            'Call `ToolSearch(query="select:mcp__jira__getIssue,'
+            'mcp__jira__searchIssues")` before triage.\n'
+            "Mix `select:Read,mcp__jira__getIssue,mcp__jira__searchIssues` "
+            "with a built-in first.\n"
+            "Mix `select:mcp__jira__getIssue,Read,mcp__jira__searchIssues` "
+            "with a built-in between MCP tools.\n"
+            "Allow `select:mcp__server__memory_*` for the memory tools.\n"
+            "Read `mcp__jira__getIssue/examples/output.txt` as fixture data.\n"
+            "Keep `mcp__jira__getIssue\\examples\\output.txt` on Windows.\n"
+            "Read `mcp__jira__getIssue`/examples/output.txt across markup.\n"
+            "Read `mcp__jira__getIssue`.json across markup.\n"
+            "Read ` mcp__jira__getIssue `/examples/output.txt with padding.\n"
+            "Match *mcp__server__tool or [ab]mcp__server__tool patterns.\n"
+            "Match mcp__server__tool@(One|Two) as an extended glob.\n"
+        )
+
+        assert self._check(temp_dir) == []
+
+    def test_comma_separated_names_without_select_are_still_prose(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n" "Compare mcp__server__first,mcp__server__second before choosing.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 2
+
+    def test_terminated_selector_does_not_hide_later_prose(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Broken `select:mcp__server__first,,mcp__server__after_gap`.\n"
+            "Broken `select:mcp__server__first, mcp__server__after_space`.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 2
+        assert "mcp__server__after_gap" in violations[0].message
+        assert "mcp__server__after_space" in violations[1].message
+
+    def test_arbitrary_colon_prefix_is_not_treated_as_a_selector(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nThe exact tool:mcp__server__lookup form is client-specific.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert "'lookup'" in violations[0].message
+
+    def test_question_and_markdown_emphasis_remain_prose(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Can we call mcp__server__tool?\n"
+            "Can we call `mcp__server__tool`?\n"
+            "Call *mcp__server__tool* now.\n"
+        )
+
+        violations = self._check(temp_dir)
+
+        assert len(violations) == 3
+        assert all("'tool'" in violation.message for violation in violations)
 
     def test_link_text_not_flagged(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
@@ -5700,6 +5782,42 @@ class TestContentMcpToolNameAutofix:
         fixes = self._fix(temp_dir)
         assert len(fixes) == 1
 
+        (temp_dir / "CLAUDE.md").write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert ContentMcpToolNameRule().check(RepositoryContext(temp_dir)) == []
+        assert self._fix(temp_dir) == []
+
+    def test_fix_preserves_selectors_wildcards_and_paths_byte_for_byte(self, temp_dir):
+        from skillsaw.utils import invalidate_read_caches
+
+        content = (
+            "# Rules\n\n"
+            "Call mcp__jira__getIssue in prose.\n"
+            "Load `select:mcp__playwright__browser_navigate` with ToolSearch.\n"
+            "Load `select:mcp__playwright__browser_navigate,"
+            "mcp__playwright__browser_snapshot,mcp__playwright__browser_close` "
+            "for a complete browser pass.\n"
+            'Call `ToolSearch(query="select:mcp__jira__getIssue,'
+            'mcp__jira__searchIssues")` before triage.\n'
+            "Mix `select:Read,mcp__jira__getIssue,mcp__jira__searchIssues` "
+            "with a built-in first.\n"
+            "Mix `select:mcp__jira__getIssue,Read,mcp__jira__searchIssues` "
+            "with a built-in between MCP tools.\n"
+            "Allow `select:mcp__server__memory_*` for the memory tools.\n"
+            "Read `mcp__jira__getIssue/examples/output.txt` as fixture data.\n"
+            "Read `mcp__jira__getIssue`/examples/output.txt across markup.\n"
+            "Read `mcp__jira__getIssue`.json across markup.\n"
+            "Read ` mcp__jira__getIssue `/examples/output.txt with padding.\n"
+            "Match *mcp__server__tool or [ab]mcp__server__tool patterns.\n"
+            "Match mcp__server__tool@(One|Two) as an extended glob.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+
+        fixes = self._fix(temp_dir)
+
+        assert len(fixes) == 1
+        expected = content.replace("Call mcp__jira__getIssue", "Call getIssue")
+        assert fixes[0].fixed_content == expected
         (temp_dir / "CLAUDE.md").write_text(fixes[0].fixed_content)
         invalidate_read_caches()
         assert ContentMcpToolNameRule().check(RepositoryContext(temp_dir)) == []

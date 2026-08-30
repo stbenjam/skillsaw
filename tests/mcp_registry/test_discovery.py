@@ -1,5 +1,6 @@
 """MCP Registry repository detection and lint-tree routing."""
 
+import hashlib
 import json
 from importlib import resources
 
@@ -17,6 +18,7 @@ from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats.mcp_registry import (
     MCP_REGISTRY_SCHEMA_ID,
     MCP_REGISTRY_SCHEMA_PACKAGES,
+    MCP_REGISTRY_SCHEMA_PROFILES,
     MCP_REGISTRY_SCHEMA_VERSION,
     MCP_REGISTRY_SCHEMA_VERSIONS,
     load_mcp_registry_schema,
@@ -26,6 +28,15 @@ from skillsaw.formats.mcp_registry import (
 from skillsaw.rules.builtin.mcp_registry import _helpers as registry_helpers
 
 from ._helpers import copy_fixture
+
+_RELEASED_SCHEMA_SHA256 = {
+    "2025-07-09": "9e349ba6b321bdf99432666f67e019b4b27e58ecc816fede4c08adc797e4f88a",
+    "2025-09-16": "a5c19f122907b4e0684ca08f36b944c3d0972799bc6223d575d5677f94717b0b",
+    "2025-09-29": "80fede68c01e868b7170b966f247bd32b9932c46f3fbef2e3b0d0a18996bf54f",
+    "2025-10-11": "64135841ae0929143b22b70cbe0dda1483f7ee011adf9e19a3cee38392476808",
+    "2025-10-17": "2cc1552fb3a00ad83d9ae4ee0445a21617098963b58e9bae7b94d680d841b4cc",
+    "2025-12-11": "3fba09590c99f61735d234822279f4223fab9e300c0a81e81c91ab62a4114de0",
+}
 
 
 class TestMcpRegistryDetection:
@@ -55,6 +66,18 @@ class TestMcpRegistryDetection:
 
     def test_distinctive_shape_detects_missing_schema_for_diagnostics(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path = repo / "server.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        del data["$schema"]
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        context = RepositoryContext(repo)
+
+        assert RepositoryType.MCP_REGISTRY in context.repo_types
+        assert context.mcp_registry_server_paths() == [path]
+
+    def test_initial_snake_case_shape_detects_missing_schema_for_diagnostics(self, tmp_path):
+        repo = copy_fixture("mcp-registry/schema-versions/2025-07-09", tmp_path)
         path = repo / "server.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         del data["$schema"]
@@ -198,6 +221,9 @@ class TestMcpRegistryDetection:
 
 
 class TestMcpRegistrySchemaBundle:
+    def test_all_released_server_schema_versions_are_registered(self):
+        assert MCP_REGISTRY_SCHEMA_VERSIONS == frozenset(_RELEASED_SCHEMA_SHA256)
+
     def test_schema_version_parser_is_exact(self):
         assert mcp_registry_schema_version(MCP_REGISTRY_SCHEMA_ID) == (MCP_REGISTRY_SCHEMA_VERSION)
         assert mcp_registry_schema_version("http://example.com/server.schema.json") is None
@@ -207,6 +233,15 @@ class TestMcpRegistrySchemaBundle:
         assert MCP_REGISTRY_SCHEMA_VERSION == max(MCP_REGISTRY_SCHEMA_VERSIONS)
         assert MCP_REGISTRY_SCHEMA_ID == mcp_registry_schema_id(MCP_REGISTRY_SCHEMA_VERSION)
         assert MCP_REGISTRY_SCHEMA_VERSION in MCP_REGISTRY_SCHEMA_VERSIONS
+
+    def test_schema_profiles_preserve_the_field_name_transition(self):
+        initial = MCP_REGISTRY_SCHEMA_PROFILES["2025-07-09"]
+        camel_case = MCP_REGISTRY_SCHEMA_PROFILES["2025-09-16"]
+
+        assert initial.registry_type_field == "registry_type"
+        assert initial.file_sha256_field == "file_sha256"
+        assert camel_case.registry_type_field == "registryType"
+        assert camel_case.file_sha256_field == "fileSha256"
 
     def test_bundled_schema_is_the_pinned_release(self):
         schema = load_mcp_registry_schema(MCP_REGISTRY_SCHEMA_VERSION)
@@ -222,8 +257,10 @@ class TestMcpRegistrySchemaBundle:
     def test_registered_bundle_is_complete_and_offline(self, version, package):
         root = resources.files(package)
         schema = load_mcp_registry_schema(version)
+        schema_bytes = root.joinpath("server.schema.json").read_bytes()
 
         assert schema["$id"] == mcp_registry_schema_id(version)
+        assert hashlib.sha256(schema_bytes).hexdigest() == _RELEASED_SCHEMA_SHA256[version]
         assert root.joinpath("server.schema.json").is_file()
         assert root.joinpath("LICENSE").is_file()
         assert root.joinpath("SCHEMA-SOURCE.md").is_file()
@@ -273,7 +310,7 @@ class TestMcpRegistrySchemaBundle:
             registry_helpers.registry_validator.cache_clear()
 
     def test_unbundled_schema_version_is_rejected(self):
-        with pytest.raises(ValueError, match="available versions: 2025-12-11"):
+        with pytest.raises(ValueError, match="2025-07-09.*2025-12-11"):
             load_mcp_registry_schema("2099-01-01")
 
     def test_upstream_mit_notice_is_bundled(self):
