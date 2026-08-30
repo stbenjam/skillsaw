@@ -126,24 +126,25 @@ nav:
     - Supply Chain Protection: supply-chain-protection.md
   - Rules:
     - rules/index.md
-    - AgentSkills: rules/agentskills.md
-    - Vercel: rules/vercel.md
     - Agent Plugins: rules/agent-plugins.md
-    - Claude Code: rules/claude.md
-    - OpenAI Codex: rules/codex.md
-    - Hooks: rules/hooks.md
-    - Security: rules/security.md
-    - MCP: rules/mcp.md
-    - OpenClaw: rules/openclaw.md
-    - Cursor: rules/cursor.md
-    - Copilot / VS Code: rules/copilot.md
-    - Devin: rules/devin.md
-    - OpenCode: rules/opencode.md
-    - Instruction Files: rules/instruction-files.md
-    - Context Budget: rules/context-budget.md
-    - Content Intelligence: rules/content-intelligence.md
-    - CodeRabbit: rules/coderabbit.md
-    - Promptfoo: rules/promptfoo.md
+    - AgentSkills: rules/agentskills.md
     - APM: rules/apm.md
+    - Claude Code: rules/claude.md
+    - CodeRabbit: rules/coderabbit.md
+    - Content Intelligence: rules/content-intelligence.md
+    - Context Budget: rules/context-budget.md
+    - Copilot / VS Code: rules/copilot.md
+    - Cursor: rules/cursor.md
+    - Devin: rules/devin.md
+    - Hooks: rules/hooks.md
+    - Instruction Files: rules/instruction-files.md
+    - MCP: rules/mcp.md
+    - OpenAI Codex: rules/codex.md
+    - OpenClaw: rules/openclaw.md
+    - OpenCode: rules/opencode.md
+    - Promptfoo: rules/promptfoo.md
+    - Security: rules/security.md
+    - Vercel: rules/vercel.md
     - Deprecated: rules/deprecated.md
   - Research: research.md
+
