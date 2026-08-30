@@ -1,6 +1,7 @@
 """Conformance tests for MCP Registry server.json rules."""
 
 import json
+from dataclasses import MISSING, fields
 
 import pytest
 from jsonschema.exceptions import ValidationError
@@ -18,7 +19,10 @@ from skillsaw.rules.builtin.mcp_registry._helpers import (
     schema_error_summary,
 )
 from skillsaw.rules.builtin.mcp_registry.npm_name_match import McpRegistryNpmNameMatchRule
-from skillsaw.rules.builtin.mcp_registry.server_json_valid import _SEMANTIC_POLICIES
+from skillsaw.rules.builtin.mcp_registry.server_json_valid import (
+    _SEMANTIC_POLICIES,
+    _SemanticPolicy,
+)
 
 from ._helpers import (
     NPM_NAME_RULE,
@@ -68,6 +72,17 @@ class TestMcpRegistrySchemaRule:
 
     def test_every_schema_version_has_an_explicit_semantic_policy(self):
         assert frozenset(_SEMANTIC_POLICIES) == MCP_REGISTRY_SCHEMA_VERSIONS
+
+    def test_mapping_policy_default_uses_a_dataclass_factory(self):
+        policy_field = next(
+            candidate
+            for candidate in fields(_SemanticPolicy)
+            if candidate.name == "canonical_registry_base_urls"
+        )
+
+        assert policy_field.default is MISSING
+        assert policy_field.default_factory is not MISSING
+        assert policy_field.default_factory() == {}
 
     def test_clean_publisher_metadata_passes(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)

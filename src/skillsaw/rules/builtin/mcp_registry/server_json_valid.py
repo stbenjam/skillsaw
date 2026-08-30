@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import List, Mapping, Optional
 from urllib.parse import urlsplit
@@ -95,7 +95,9 @@ class _SemanticPolicy:
     mcpb_hash: bool = True
     https_icons: bool = True
     clean_repository_subfolder: bool = True
-    canonical_registry_base_urls: Mapping[str, frozenset[str]] = _NO_REGISTRY_BASE_URLS
+    canonical_registry_base_urls: Mapping[str, frozenset[str]] = field(
+        default_factory=lambda: _NO_REGISTRY_BASE_URLS
+    )
     forbidden_registry_base_urls: frozenset[str] = frozenset()
     forbidden_file_hashes: frozenset[str] = frozenset()
     mcpb_identifier_constraints: bool = True
