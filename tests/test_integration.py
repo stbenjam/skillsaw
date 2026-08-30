@@ -5155,9 +5155,8 @@ class TestClaudeMdAgentsImport:
 
     The four fixtures are the four states a CLAUDE.md/AGENTS.md pair can be
     in: an exact duplicate (fires, SUGGEST-fixable), a diverged copy (fires
-    and so does ``content-instruction-drift``, not fixable), the recommended
-    import-only end state (silent under every rule), and the import plus
-    Claude-specific extras (fires, and is accepted under ``allow-extra``).
+    and so does ``content-instruction-drift``, not fixable), the import-only
+    end state, and the documented import plus Claude-specific instructions.
     """
 
     FIXTURES = "instructions/agents-import"
@@ -5198,22 +5197,22 @@ class TestClaudeMdAgentsImport:
         assert violations(r) == []
         assert r["rc"] == 0
 
-    def test_import_plus_extras_reports_the_first_extra_line(self, tmp_path):
+    def test_import_plus_extras_is_clean_by_default(self, tmp_path):
         repo = copy_fixture(f"{self.FIXTURES}/import-plus-extras", tmp_path)
         r = run_lint(repo)
+        assert "claude-md-agents-import" not in rule_ids(r)
+
+    def test_strict_mode_reports_the_first_extra_line(self, tmp_path):
+        repo = copy_fixture(f"{self.FIXTURES}/import-plus-extras", tmp_path)
+        config = tmp_path / "strict-import.yaml"
+        config.write_text(
+            'version: "99.0.0"\nrules:\n  claude-md-agents-import:\n    allow-extra: false\n'
+        )
+        r = run_lint(repo, config=config)
         ours = [v for v in violations(r) if v["rule_id"] == "claude-md-agents-import"]
         assert len(ours) == 1
         assert ours[0]["line"] == 4  # the '## Claude Code specifics' heading
         assert ours[0]["fixable"] is False
-
-    def test_allow_extra_accepts_the_import_plus_extras(self, tmp_path):
-        repo = copy_fixture(f"{self.FIXTURES}/import-plus-extras", tmp_path)
-        config = tmp_path / "allow-extra.yaml"
-        config.write_text(
-            'version: "99.0.0"\nrules:\n  claude-md-agents-import:\n    allow-extra: true\n'
-        )
-        r = run_lint(repo, config=config)
-        assert "claude-md-agents-import" not in rule_ids(r)
 
     def test_plain_fix_leaves_the_duplicate_alone(self, tmp_path):
         """Replacing a file's contents is SUGGEST-only."""

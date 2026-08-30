@@ -81,7 +81,7 @@ skillsaw includes **87** built-in rules organized into the following categories:
 | [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md and tool-compatible alternatives) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files | warning (auto) | - | Instruction Files |
-| [`claude-md-agents-import`](claude-md-agents-import.md) | CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' so both assistants read one source of truth | info (auto) | auto | Instruction Files |
+| [`claude-md-agents-import`](claude-md-agents-import.md) | CLAUDE.md next to an AGENTS.md should import it so both assistants read one source of truth | info (auto) | auto | Instruction Files |
 | [`context-budget`](context-budget.md) | Warn when instruction or config files exceed recommended token limits | warning (auto) | - | Context Budget |
 | [`content-weak-language`](content-weak-language.md) | Detect hedging, vague, and non-actionable language in instruction files | info (auto) | - | Content Intelligence |
 | [`content-tautological`](content-tautological.md) | Detect tautological instructions that the model already follows by default | info (auto) | - | Content Intelligence |

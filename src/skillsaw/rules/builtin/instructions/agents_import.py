@@ -35,18 +35,18 @@ class _BodyShape:
 
 
 class ClaudeMdAgentsImportRule(Rule):
-    """Recommend that a CLAUDE.md sitting next to an AGENTS.md be the import.
+    """Recommend that a CLAUDE.md sitting next to an AGENTS.md import it.
 
     Claude Code reads CLAUDE.md; almost every other agent reads AGENTS.md.
     Teams that keep both end up maintaining two copies of the same
     instructions, and the copies drift (which is what
     ``content-instruction-drift`` reports once it has happened). Claude
     Code's ``@path`` import syntax removes the duplication instead of
-    policing it: a CLAUDE.md whose whole body is ``@AGENTS.md`` gives one
-    source of truth that every assistant reads.
+    policing it. Claude-specific instructions may follow the import without
+    duplicating the shared guidance.
 
-    Deliberately INFO: keeping Claude-specific extras is a legitimate
-    choice, not a defect.
+    Deliberately INFO: importing shared guidance is a maintainability
+    recommendation, not a correctness requirement.
     """
 
     formats = frozenset({HAS_CLAUDE_MD, HAS_AGENTS_MD})
@@ -58,11 +58,10 @@ class ClaudeMdAgentsImportRule(Rule):
     config_schema = {
         "allow-extra": {
             "type": "bool",
-            "default": False,
+            "default": True,
             "description": (
-                "Accept a CLAUDE.md that imports the sibling AGENTS.md but also "
-                "carries its own Claude-specific content; only a CLAUDE.md with "
-                "no import at all is then reported"
+                "Allow Claude-specific content in CLAUDE.md when it also imports "
+                "the sibling AGENTS.md"
             ),
         },
         "ignore-generated": {
@@ -83,8 +82,8 @@ class ClaudeMdAgentsImportRule(Rule):
     @property
     def description(self) -> str:
         return (
-            "CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' "
-            "so both assistants read one source of truth"
+            "CLAUDE.md next to an AGENTS.md should import it so both assistants "
+            "read one source of truth"
         )
 
     def default_severity(self) -> Severity:
@@ -239,25 +238,39 @@ class ClaudeMdAgentsImportRule(Rule):
             if allow_extra and shape.import_lines:
                 continue
 
+            is_duplicate = self._is_duplicate(
+                body,
+                agents.read_body(strip_code_blocks=False),
+            )
             if shape.import_lines:
                 message = (
                     "CLAUDE.md imports AGENTS.md but also carries its own "
                     "instructions — move them into AGENTS.md so the import is the "
                     "whole file and both assistants read one source of truth"
                 )
+            elif is_duplicate:
+                message = (
+                    "CLAUDE.md duplicates its sibling AGENTS.md — replace its contents "
+                    "with '@AGENTS.md' so both assistants read one source of truth"
+                )
+            elif allow_extra:
+                message = (
+                    "CLAUDE.md does not import its sibling AGENTS.md — add '@AGENTS.md', "
+                    "remove any duplicated shared guidance, and keep Claude-specific "
+                    "instructions below the import"
+                )
             else:
                 message = (
-                    "CLAUDE.md duplicates instructions kept alongside AGENTS.md — "
-                    "replace its contents with the single line '@AGENTS.md' so "
-                    "Claude Code imports the shared file instead of a second copy "
-                    "that can drift"
+                    "CLAUDE.md does not import its sibling AGENTS.md — move any "
+                    "instructions that must be kept into AGENTS.md, then make CLAUDE.md "
+                    "the single line '@AGENTS.md'"
                 )
             violations.append(
                 self.violation(
                     message,
                     block=claude,
                     line=shape.extra_lines[0],
-                    fixable=self._is_duplicate(body, agents.read_body(strip_code_blocks=False)),
+                    fixable=is_duplicate,
                 )
             )
         return violations

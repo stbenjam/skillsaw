@@ -573,6 +573,7 @@ class TestClaudeMdAgentsImportRule:
         assert rule.default_enabled == "auto"
         assert rule.since == "0.20.0"
         assert rule.formats == frozenset({HAS_CLAUDE_MD, HAS_AGENTS_MD})
+        assert rule.config_schema["allow-extra"]["default"] is True
         assert rule.supports_autofix
         assert rule.autofix_confidence == AutofixConfidence.SUGGEST
 
@@ -679,6 +680,34 @@ class TestClaudeMdAgentsImportRule:
         assert len(violations) == 1
         assert violations[0].fixable is False
 
+    def test_default_message_keeps_disjoint_claude_instructions(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text("Run `make test` before pushing.\n")
+        (temp_dir / "CLAUDE.md").write_text("Use plan mode for billing changes.\n")
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].fixable is False
+        assert "does not import" in violations[0].message
+        assert "keep Claude-specific instructions" in violations[0].message
+        assert "replace its contents" not in violations[0].message
+
+    def test_exact_duplicate_message_recommends_replacement(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
+        (temp_dir / "CLAUDE.md").write_text(AGENTS_BODY)
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].fixable is True
+        assert "duplicates its sibling" in violations[0].message
+        assert "replace its contents" in violations[0].message
+
+    def test_strict_message_preserves_disjoint_claude_instructions(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text("Run tests.\n")
+        (temp_dir / "CLAUDE.md").write_text("Use plan mode for billing changes.\n")
+        violations = self._check(temp_dir, **{"allow-extra": False})
+        assert len(violations) == 1
+        assert violations[0].fixable is False
+        assert "instructions that must be kept" in violations[0].message
+        assert "then make CLAUDE.md" in violations[0].message
+
     def test_reported_line_is_the_first_non_import_content(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
         (temp_dir / "CLAUDE.md").write_text(
@@ -690,7 +719,7 @@ class TestClaudeMdAgentsImportRule:
             "\n"
             "Load the `release` skill before cutting a tag.\n"
         )
-        violations = self._check(temp_dir)
+        violations = self._check(temp_dir, **{"allow-extra": False})
         assert len(violations) == 1
         assert violations[0].line == 5
         assert "move them into AGENTS.md" in violations[0].message
@@ -698,16 +727,18 @@ class TestClaudeMdAgentsImportRule:
     def test_code_fence_counts_as_content(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
         (temp_dir / "CLAUDE.md").write_text("@AGENTS.md\n\n```sh\nmake deploy\n```\n")
-        violations = self._check(temp_dir)
+        violations = self._check(temp_dir, **{"allow-extra": False})
         assert len(violations) == 1
         assert violations[0].line == 3
 
     # -- allow-extra -------------------------------------------------
 
-    def test_allow_extra_accepts_import_plus_extras(self, temp_dir):
+    def test_default_accepts_import_plus_claude_specific_content(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
-        (temp_dir / "CLAUDE.md").write_text("@AGENTS.md\n\n## Claude only\n\nUse the skill.\n")
-        assert self._check(temp_dir, **{"allow-extra": True}) == []
+        (temp_dir / "CLAUDE.md").write_text(
+            "@AGENTS.md\n\n## Claude Code\n\nUse plan mode for changes under `src/billing/`.\n"
+        )
+        assert self._check(temp_dir) == []
 
     @pytest.mark.parametrize(
         "content",
@@ -744,7 +775,7 @@ class TestClaudeMdAgentsImportRule:
     def test_strict_mode_still_reports_wrapped_sibling_imports(self, temp_dir, content):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
         (temp_dir / "CLAUDE.md").write_text(content)
-        violations = self._check(temp_dir)
+        violations = self._check(temp_dir, **{"allow-extra": False})
         assert len(violations) == 1
         assert violations[0].line == 1
         assert "imports AGENTS.md but also" in violations[0].message
@@ -763,10 +794,10 @@ class TestClaudeMdAgentsImportRule:
         (temp_dir / "CLAUDE.md").write_text(content)
         assert len(self._check(temp_dir, **{"allow-extra": True})) == 1
 
-    def test_allow_extra_still_reports_a_missing_import(self, temp_dir):
+    def test_default_still_reports_a_missing_import(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
         (temp_dir / "CLAUDE.md").write_text(AGENTS_BODY)
-        assert len(self._check(temp_dir, **{"allow-extra": True})) == 1
+        assert len(self._check(temp_dir)) == 1
 
     # -- fix ---------------------------------------------------------
 
