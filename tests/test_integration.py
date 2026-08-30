@@ -2952,11 +2952,10 @@ class TestOpenCode:
         }
         repo = self._opencode_repo(tmp_path, "merged-collections", json.dumps(config))
 
-        messages = [
-            violation["message"]
-            for violation in by_rule(run_lint(repo)).get("opencode-config-valid", [])
-        ]
+        grouped = by_rule(run_lint(repo))
+        messages = [violation["message"] for violation in grouped.get("opencode-config-valid", [])]
 
+        assert grouped.get("rule-execution-error", []) == []
         assert not any("define the same entry differently" in message for message in messages)
         assert not any(
             f"declares both '{v1_key}' and '{v2_key}'" in message for message in messages
@@ -2992,6 +2991,36 @@ class TestOpenCode:
             f"differently — OpenCode merges these sections and keeps "
             f"'{v1_key}.review' when names overlap; keep one definition"
         ]
+
+    @pytest.mark.parametrize(
+        ("right_leaf", "expected_conflict"),
+        [("0", False), ("1", True)],
+        ids=["equal", "different"],
+    )
+    def test_deep_collection_alias_values_do_not_exhaust_python_stack(
+        self, tmp_path, right_leaf, expected_conflict
+    ):
+        depth = 500
+        left_value = "[" * depth + "0" + "]" * depth
+        right_value = "[" * depth + right_leaf + "]" * depth
+        content = (
+            '{"agent":{"review":{"provider-option":'
+            + left_value
+            + '}},"agents":{"review":{"provider-option":'
+            + right_value
+            + "}}}"
+        )
+        repo = self._opencode_repo(tmp_path, "deep-collection-values", content)
+
+        grouped = by_rule(run_lint(repo))
+
+        assert grouped.get("rule-execution-error", []) == []
+        conflicts = [
+            violation
+            for violation in grouped.get("opencode-config-valid", [])
+            if "define the same entry differently" in violation["message"]
+        ]
+        assert bool(conflicts) is expected_conflict
 
     def test_native_command_model_is_lowered_before_overlap_comparison(self, tmp_path):
         config = {

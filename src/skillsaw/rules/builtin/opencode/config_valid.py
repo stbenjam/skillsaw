@@ -5,7 +5,7 @@ Rule: opencode-config-valid
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, List, Mapping, Set, Tuple
+from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Set, Tuple
 
 from skillsaw.blocks import OpenCodeConfigBlock, OpenCodeMcpBlock
 from skillsaw.context import HAS_OPENCODE, RepositoryContext
@@ -19,23 +19,48 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 _TOGGLE_ONLY_KEYS = frozenset({"enabled", "disabled"})
 
 
+def _mapping_value_pairs(
+    left: Mapping[str, Any], right: Mapping[str, Any]
+) -> Iterator[Tuple[Any, Any]]:
+    """Yield pairs without retaining work proportional to mapping width."""
+    for key in left:
+        yield left[key], right[key]
+
+
 def _json_values_equal(left: Any, right: Any) -> bool:
     """JSON equality matching JavaScript's deep-strict value semantics."""
-    if isinstance(left, bool) or isinstance(right, bool):
-        return type(left) is bool and type(right) is bool and left is right
-    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-        return left == right
-    if type(left) is not type(right):
-        return False
-    if isinstance(left, dict):
-        return left.keys() == right.keys() and all(
-            _json_values_equal(left[key], right[key]) for key in left
-        )
-    if isinstance(left, list):
-        return len(left) == len(right) and all(
-            _json_values_equal(left_item, right_item) for left_item, right_item in zip(left, right)
-        )
-    return left == right
+    comparisons: List[Iterator[Tuple[Any, Any]]] = [iter(((left, right),))]
+    while comparisons:
+        try:
+            left_value, right_value = next(comparisons[-1])
+        except StopIteration:
+            comparisons.pop()
+            continue
+        if isinstance(left_value, bool) or isinstance(right_value, bool):
+            if not (
+                type(left_value) is bool and type(right_value) is bool and left_value is right_value
+            ):
+                return False
+            continue
+        if isinstance(left_value, (int, float)) and isinstance(right_value, (int, float)):
+            if left_value != right_value:
+                return False
+            continue
+        if type(left_value) is not type(right_value):
+            return False
+        if isinstance(left_value, dict):
+            if left_value.keys() != right_value.keys():
+                return False
+            comparisons.append(_mapping_value_pairs(left_value, right_value))
+            continue
+        if isinstance(left_value, list):
+            if len(left_value) != len(right_value):
+                return False
+            comparisons.append(iter(zip(left_value, right_value)))
+            continue
+        if left_value != right_value:
+            return False
+    return True
 
 
 def _lower_model_selection(value: Any) -> Dict[str, str] | None:
