@@ -583,10 +583,20 @@ class BudgetedMemo:
     key would otherwise charge one retained entry twice, and two evicting
     at once would pop a key the other already removed.
 
-    Callers supply the cost, since only they know what an entry holds;
+    Callers supply what the *entry* holds, since only they know that;
     :func:`_approximate_size` measures a parsed structure, and an entry it
-    declines to size (:data:`UNCACHEABLE_SIZE`) is never stored.
+    declines to size (:data:`UNCACHEABLE_SIZE`) is never stored. What the
+    *memo* holds on top — a slot in each of the two dicts, the stored cost
+    integer, and the slack a hash table carries between resizes — is added
+    here rather than by every caller, so no caller can forget it and none
+    has to do arithmetic on a value that might be the sentinel.
     """
+
+    #: Charged per entry on top of the caller's figure. Two dict slots and
+    #: a small int measure about 80 bytes; 256 is deliberately generous,
+    #: because being over on a memory bound costs a little cache and being
+    #: under makes the bound a fiction.
+    ENTRY_OVERHEAD_BYTES = 256
 
     __slots__ = ("values", "_costs", "_bytes", "_budget", "_lock")
 
@@ -599,10 +609,15 @@ class BudgetedMemo:
 
     def put(self, key: Any, value: Any, cost: int) -> None:
         """Remember *value* under *key*, charged *cost* bytes."""
-        if cost == UNCACHEABLE_SIZE or cost > self._budget:
-            # Either the walk gave up, or remembering it would evict
-            # everything else and still not fit. Recomputing costs time;
-            # retaining it costs the budget.
+        if cost == UNCACHEABLE_SIZE:
+            # The walk gave up, so nothing here knows what the entry
+            # holds. Checked before anything is added to it: arithmetic on
+            # the sentinel turns a refusal into a small positive cost.
+            return
+        cost += self.ENTRY_OVERHEAD_BYTES
+        if cost > self._budget:
+            # Remembering it would evict everything else and still not
+            # fit. Recomputing costs time; retaining it costs the budget.
             return
         with self._lock:
             if key in self.values:

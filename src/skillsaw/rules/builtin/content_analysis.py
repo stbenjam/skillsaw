@@ -225,11 +225,6 @@ except ImportError:  # Python 3.9/3.10
     import sre_parse as _sre_parser
 
 
-#: Charged on top of what an entry's own parts measure, for the value and
-#: cost dict slots and the hash-table slack behind them.
-_LITERALS_ENTRY_OVERHEAD_BYTES = 256
-
-
 def _literals_cost(literals: Tuple[str, ...]) -> int:
     """What a tuple of extracted literals retains, in bytes."""
     return sys.getsizeof(literals) + sum(sys.getsizeof(literal) for literal in literals)
@@ -254,7 +249,7 @@ def _required_literals(pattern_src: str, flags: int) -> Tuple[str, ...]:
         _LITERALS_BY_SOURCE.put(
             key,
             literals,
-            _LITERALS_ENTRY_OVERHEAD_BYTES + sys.getsizeof(pattern_src) + _literals_cost(literals),
+            sys.getsizeof(pattern_src) + _literals_cost(literals),
         )
     return literals
 
@@ -343,12 +338,7 @@ _LITERALS_BY_PATTERN = BudgetedMemo(8 * 1024 * 1024)
 
 def _literals_entry_cost(pattern: "re.Pattern", literals: Tuple[str, ...]) -> int:
     """What one ``_LITERALS_BY_PATTERN`` entry retains, in bytes."""
-    return (
-        _LITERALS_ENTRY_OVERHEAD_BYTES
-        + sys.getsizeof(pattern)
-        + sys.getsizeof(pattern.pattern)
-        + _literals_cost(literals)
-    )
+    return sys.getsizeof(pattern) + sys.getsizeof(pattern.pattern) + _literals_cost(literals)
 
 
 # ``str.lower`` is not the fold ``re.IGNORECASE`` uses, and ``str.casefold``

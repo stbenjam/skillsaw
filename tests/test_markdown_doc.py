@@ -697,6 +697,38 @@ class TestParseCacheBudget:
             _PARSE_CACHE._budget = budget
             self._reset()
 
+    def test_the_memo_charges_what_holding_an_entry_costs(self):
+        """The caller measures the value; the memo measures itself.
+
+        Charging only the body and the token graph leaves out the slot in
+        each of the two dicts, the stored cost integer, and the hash-table
+        slack — about 80 bytes measured, charged at 256. That is 4% of the
+        smallest realistic document, so a full budget of tiny entries sits
+        roughly 10 MB over rather than "substantially" over, but a bound
+        that does not count what the container costs is still not a bound.
+        """
+        from skillsaw.utils import BudgetedMemo, _approximate_size
+
+        from skillsaw.markdown_doc import _PARSE_CACHE, _PARSER, _parse_cached
+
+        self._reset()
+        try:
+            body = "# Title\n\nA short paragraph.\n"
+            env: dict = {}
+            parsed = (
+                _PARSER.parse(body, env),
+                env.get("references", {}),
+                env.get("duplicate_refs", []),
+            )
+            value_only = _approximate_size((body, parsed))
+
+            _parse_cached(body)
+
+            assert _PARSE_CACHE.total_bytes == value_only + BudgetedMemo.ENTRY_OVERHEAD_BYTES
+            assert _PARSE_CACHE.charged[body] == _PARSE_CACHE.total_bytes
+        finally:
+            self._reset()
+
     def test_a_tree_too_large_to_size_is_never_stored(self):
         """A refusal must not become a small positive charge.
 

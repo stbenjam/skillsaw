@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from skillsaw.utils import BudgetedMemo
 from skillsaw.rules.builtin.content_analysis import (
     _required_literal,
     case_fold,
@@ -380,8 +381,11 @@ class TestPatternLiteralCacheBudget:
             assert ca._LITERALS_BY_PATTERN.total_bytes == sum(
                 ca._LITERALS_BY_PATTERN.charged.values()
             )
-            assert ca._LITERALS_BY_PATTERN.total_bytes == real_cost(
-                pattern, ca._LITERALS_BY_PATTERN.values[pattern]
+            # Exactly one entry's worth: what the value holds, plus the
+            # one per-entry overhead the memo charges for holding it.
+            assert ca._LITERALS_BY_PATTERN.total_bytes == (
+                real_cost(pattern, ca._LITERALS_BY_PATTERN.values[pattern])
+                + BudgetedMemo.ENTRY_OVERHEAD_BYTES
             )
         finally:
             ca._literals_entry_cost = real_cost
