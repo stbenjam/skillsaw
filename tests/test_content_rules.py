@@ -5536,6 +5536,15 @@ class TestContentMcpToolNameRule:
         (temp_dir / "CLAUDE.md").write_text(
             "# Rules\n\n"
             "Load `select:mcp__playwright__browser_navigate` with ToolSearch.\n"
+            "Load `select:mcp__playwright__browser_navigate,"
+            "mcp__playwright__browser_snapshot,mcp__playwright__browser_close` "
+            "for a complete browser pass.\n"
+            'Call `ToolSearch(query="select:mcp__jira__getIssue,'
+            'mcp__jira__searchIssues")` before triage.\n'
+            "Mix `select:Read,mcp__jira__getIssue,mcp__jira__searchIssues` "
+            "with a built-in first.\n"
+            "Mix `select:mcp__jira__getIssue,Read,mcp__jira__searchIssues` "
+            "with a built-in between MCP tools.\n"
             "Allow `select:mcp__server__memory_*` for the memory tools.\n"
             "Read `mcp__jira__getIssue/examples/output.txt` as fixture data.\n"
             "Keep `mcp__jira__getIssue\\examples\\output.txt` on Windows.\n"
@@ -5547,6 +5556,32 @@ class TestContentMcpToolNameRule:
         )
 
         assert self._check(temp_dir) == []
+
+    def test_comma_separated_names_without_select_are_still_prose(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n" "Compare mcp__server__first,mcp__server__second before choosing.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 2
+
+    def test_terminated_selector_does_not_hide_later_prose(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Broken `select:mcp__server__first,,mcp__server__after_gap`.\n"
+            "Broken `select:mcp__server__first, mcp__server__after_space`.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 2
+        assert "mcp__server__after_gap" in violations[0].message
+        assert "mcp__server__after_space" in violations[1].message
+
+    def test_arbitrary_colon_prefix_is_not_treated_as_a_selector(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nThe exact tool:mcp__server__lookup form is client-specific.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert "'lookup'" in violations[0].message
 
     def test_question_and_markdown_emphasis_remain_prose(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
@@ -5748,6 +5783,15 @@ class TestContentMcpToolNameAutofix:
             "# Rules\n\n"
             "Call mcp__jira__getIssue in prose.\n"
             "Load `select:mcp__playwright__browser_navigate` with ToolSearch.\n"
+            "Load `select:mcp__playwright__browser_navigate,"
+            "mcp__playwright__browser_snapshot,mcp__playwright__browser_close` "
+            "for a complete browser pass.\n"
+            'Call `ToolSearch(query="select:mcp__jira__getIssue,'
+            'mcp__jira__searchIssues")` before triage.\n'
+            "Mix `select:Read,mcp__jira__getIssue,mcp__jira__searchIssues` "
+            "with a built-in first.\n"
+            "Mix `select:mcp__jira__getIssue,Read,mcp__jira__searchIssues` "
+            "with a built-in between MCP tools.\n"
             "Allow `select:mcp__server__memory_*` for the memory tools.\n"
             "Read `mcp__jira__getIssue/examples/output.txt` as fixture data.\n"
             "Read `mcp__jira__getIssue`/examples/output.txt across markup.\n"

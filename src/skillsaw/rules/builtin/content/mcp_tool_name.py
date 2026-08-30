@@ -26,6 +26,12 @@ from skillsaw.utils import read_text
 # into the token, where the required literal `mcp__` no longer matches — so
 # no truncated match exists to splice.
 _MCP_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_-])mcp__[A-Za-z0-9_-]+")
+# ToolSearch accepts one whitespace-free ``select:`` expression containing
+# comma-separated tool patterns. Protect the complete expression: checking
+# only the characters beside each token misses every member after the first.
+_TOOLSEARCH_SELECTOR_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])select:[A-Za-z0-9_*?-]+" r"(?:,[A-Za-z0-9_*?-]+)*"
+)
 
 
 class ContentMcpToolNameRule(Rule):
@@ -95,7 +101,23 @@ class ContentMcpToolNameRule(Rule):
             if "mcp__" not in text:
                 return
             raw_line = doc.line(body_line)
+            selector_spans = [
+                (match.start(), match.end()) for match in _TOOLSEARCH_SELECTOR_RE.finditer(text)
+            ]
+            selector_index = 0
             for match in _MCP_TOKEN_RE.finditer(text):
+                while (
+                    selector_index < len(selector_spans)
+                    and selector_spans[selector_index][1] <= match.start()
+                ):
+                    selector_index += 1
+                if (
+                    selector_index < len(selector_spans)
+                    and selector_spans[selector_index][0]
+                    <= match.start()
+                    < selector_spans[selector_index][1]
+                ):
+                    continue
                 token = match.group(0)
                 if token in allow:
                     continue
@@ -122,7 +144,7 @@ class ContentMcpToolNameRule(Rule):
                     closing_markup = base_col + len(text)
                     adjacent_after = raw_line[closing_markup + len(markup) :]
 
-                if adjacent_before and adjacent_before[-1] in "/.\\:":
+                if adjacent_before and adjacent_before[-1] in "/.\\":
                     continue
                 chunk_start = max(before.rfind(" "), before.rfind("\t")) + 1
                 if "://" in before[chunk_start:]:
