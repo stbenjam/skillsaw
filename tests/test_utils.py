@@ -1077,11 +1077,18 @@ def test_aliases_cannot_build_a_graph_deeper_than_the_source_reads(tmp_path):
 def test_the_write_paths_load_under_the_same_bound(tmp_path):
     """A writer loads its own document, and must not be the way in.
 
-    ``read_yaml_commented`` is cached, so a caller that edits and writes
-    back cannot use it — which is how two block writers came to build a
-    bare ``YAML()`` and take untrusted nesting with neither half of the
-    bound. Both now go through ``roundtrip_yaml`` and degrade to a no-op
-    instead of letting ``RecursionError`` escape into a rule's fix.
+    A caller that edits a document and writes it back cannot use
+    ``read_yaml_commented``: it is cached, so mutating what it returns
+    corrupts every later read of that file. Loading a private copy is
+    therefore correct — but it must be ``roundtrip_yaml``, which is
+    uncached and carries both halves of the depth bound, not a bare
+    ``YAML()``, which carries neither. A write path that loads its own
+    copy without the bound is untrusted nesting's way in, and the file it
+    is about to rewrite is the thing at risk.
+
+    Over the bound, a writer degrades to a no-op: the fix does not apply
+    and the file is left as it was, rather than ``RecursionError``
+    escaping into a rule's ``fix()``.
     """
     from skillsaw.blocks.coderabbit import CodeRabbitContentBlock
     from skillsaw.blocks.promptfoo import PromptfooPromptBlock
