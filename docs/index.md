@@ -14,8 +14,9 @@ hide:
 
 <p class="hero-subtitle" markdown>
 skillsaw lints the files that steer your AI coding agents: skills, plugins,
-CLAUDE.md, and AGENTS.md. It catches weak language, contradictions, attention
-dead zones, and structural issues with more than 60 rules, then auto-fixes them.
+instructions, and tool configs across Claude Code, Codex, Copilot, Agent Skills,
+OpenCode, and more. It catches security risks, structural flaws, and content dead
+zones with 87 rules, then applies deterministic autofixes.
 </p>
 
 <p class="hero-badges" markdown>
@@ -36,53 +37,55 @@ dead zones, and structural issues with more than 60 rules, then auto-fixes them.
 
 <div class="grid cards" markdown>
 
--   :brain:{ .lg .middle } **Content Intelligence**
+-   :shield:{ .lg .middle } **Security & Supply Chain**
 
     ---
 
-    [Research-backed](research.md) rules that catch weak language, tautological instructions,
-    attention dead zones, embedded secrets, contradictions, and more.
+    [Supply chain protection](supply-chain-protection.md) blocks **dangerous lifecycle hooks** (`curl | sh`, `eval`, arbitrary execution),
+    prohibited MCP servers, invisible Unicode (ASCII smuggling), high-entropy encoded payloads,
+    and unallowlisted dynamic context before they run.
 
--   :wrench:{ .lg .middle } **Agent-Friendly Fixes**
+-   :package:{ .lg .middle } **Multi-Ecosystem Structure**
 
     ---
 
-    Deterministic autofixes via `skillsaw fix`; a Skills plugin guides coding
-    agents through the rest — see demo below.
+    Schema and syntax validation across [supported ecosystems](repo-types.md): Agent Skills,
+    Claude Code, OpenAI Codex, Agent Plugins v1, Copilot custom agents, OpenCode, APM, and MCP Registry.
+
+-   :wrench:{ .lg .middle } **Deterministic Autofixes**
+
+    ---
+
+    Safe, instant [autofixes](autofixing.md) via `skillsaw fix`; bundled skills guide coding
+    agents through remaining manual resolutions — see demo below.
+
+-   :brain:{ .lg .middle } **Context & Token Economy**
+
+    ---
+
+    [Research-backed](research.md) content intelligence: eliminates instruction drift,
+    attention dead zones, cognitive overload, contradictions, and redundant tooling.
+
+-   :robot:{ .lg .middle } **CI-Ready & Baselines**
+
+    ---
+
+    [GitHub and GitLab integration](ci.md) with PR comments, SARIF reporting, and
+    [baselines](baseline.md) for gradual, zero-friction adoption.
 
 -   :electric_plug:{ .lg .middle } **Extensible**
 
     ---
 
-    Custom rules, pip-installable rule plugins, and per-rule thresholds
-    tailor skillsaw to your project.
-
--   :robot:{ .lg .middle } **CI-Ready**
-
-    ---
-
-    GitHub and GitLab integration with inline PR comments, deduplication, and
-    automatic thread resolution.
-
--   :building_construction:{ .lg .middle } **Scaffolding**
-
-    ---
-
-    **Deprecated in 0.20.0.** `skillsaw add` remains available for now but
-    will be removed in an upcoming release.
-
--   :memo:{ .lg .middle } **Documentation**
-
-    ---
-
-    **Deprecated in 0.20.0.** `skillsaw docs` remains available for now but
-    will be removed in an upcoming release.
+    [Custom rules](custom-rules.md) in Python, pip-installable [rule plugins](plugins.md),
+    and typed [lint tree](lint-tree.md) traversal tailor skillsaw to your repository.
 
 </div>
 
 </div>
 
 </div>
+
 
 <div class="hero-demo">
 <script src="https://asciinema.org/a/1259880.js" id="asciicast-1259880" async data-autoplay="true" data-loop="true" data-speed="1.5" data-theme="dracula"></script>

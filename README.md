@@ -19,10 +19,9 @@ A linter for the files that steer AI coding agents.
 </tr></table>
 
 Agent instructions behave like code, but most teams still review them like
-prose. skillsaw gives them a linter. It finds the structural errors and content
-problems that make agents less reliable: vague language, contradictions,
-buried priorities, repeated directives, hidden content, broken references,
-unsafe configuration, and more.
+prose. skillsaw gives them a linter. It secures agent context against prompt
+injections and supply-chain attacks, validates structure across every major AI
+coding ecosystem, and eliminates content dead zones with deterministic autofixes.
 
 It understands Agent Skills,
 [Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
@@ -71,31 +70,19 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 
 ## What it catches
 
-- **Instruction quality:** weak language, contradictions, tautologies,
-  attention dead zones, missing stop conditions, repetitive tool-call
-  examples, and bloated context.
-- **Structure and compatibility:** invalid frontmatter, manifests, commands,
-  skills, agents, hooks, marketplaces, and tool-specific configuration.
-- **Security risks:** embedded secrets, invisible Unicode, encoded payloads,
-  hidden instructions, unallowlisted dynamic context, dangerous hooks, and
-  prohibited MCP servers.
-- **Repository drift:** broken references, unreferenced files, inconsistent
-  terminology, stale baselines, and context-budget regressions.
+- **Security & supply chain (highest priority):**
+  - **Dangerous lifecycle hooks:** blocks arbitrary remote code execution, download-and-execute (`curl | sh`, `wget | bash`), and script obfuscation (`eval`) in `hooks.json` and settings.
+  - **Prohibited & unvetted MCP servers:** enforces strict MCP allowlists across root, plugin, and custom agent configurations.
+  - **Prompt injection & stealth payloads:** detects invisible Unicode (ASCII smuggling, zero-width tags, bidi overrides), high-entropy encoded payloads (base64/hex), and hidden instructions in comments and code fences.
+  - **Environment & context security:** flags dangerous environment overrides (`LD_PRELOAD`, `NODE_OPTIONS`, `PYTHONPATH`), unallowlisted dynamic context injection, and embedded credentials.
+- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (plugins & marketplaces), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, APM packages, MCP server maps, and MCP Registry metadata.
+- **Deterministic autofixes:** safe, instant automated fixes for invalid frontmatter, broken headings, missing manifests, unclosed code fences, and schema keys via `skillsaw fix`.
+- **Content quality & token economy:** research-backed rules detecting instruction drift across duplicate files, lost-in-the-middle attention dead zones, cognitive overload, section length violations, weak language, contradictions, and repetitive inline tool-call examples.
+- **Discovery & repository integrity:** unreferenced bundled files, broken internal file references, inconsistent terminology, missing stop conditions, and stale baselines.
 
-The `description-routing` rule checks when-to-use phrasing and descriptions that
-only repeat a skill, agent, or command name. Both checks can be configured
-independently; see the [rule reference](https://skillsaw.org/rules/content-description-routing/).
+skillsaw detects repository types automatically and lints multiple formats in the same project. See [supported repository types](https://skillsaw.org/repo-types/) and the [complete rule reference](https://skillsaw.org/rules/) for details.
 
-Copilot and VS Code custom agents under `.github/agents/` (plus legacy
-`.github/chatmodes/`) also receive target-aware structural validation through
-`copilot-agent-valid`. Their prose keeps the shared content checks, while
-frontmatter fields, handoffs, embedded MCP servers, and agent-scoped hooks are
-checked against the consumer that will load them.
 
-skillsaw detects the repository type automatically and can lint multiple types
-in the same project. See [supported repository
-types](https://skillsaw.org/repo-types/) and the [complete rule
-reference](https://skillsaw.org/rules/) for details.
 
 ## Built for real workflows
 
@@ -112,14 +99,17 @@ being silently ignored.
 | Install and run skillsaw | [Getting Started](https://skillsaw.org/getting-started/) |
 | Tune rules and exclusions | [Configuration](https://skillsaw.org/configuration/) |
 | Adopt it without fixing everything at once | [Baselines](https://skillsaw.org/baseline/) |
-| Convert plugins to Agent Plugins v1 with `skillsaw port` | [Porting to Agent Plugins](https://skillsaw.org/porting/) |
-| Add checks to pull requests | [CI Integration](https://skillsaw.org/ci/) |
+| Review the security model | [Supply Chain Protection](https://skillsaw.org/supply-chain-protection/) |
+| Supported ecosystems and tools | [Repository Types](https://skillsaw.org/repo-types/) |
+| Add checks to pull requests & CI | [CI Integration](https://skillsaw.org/ci/) |
 | Understand and apply fixes | [Autofixing](https://skillsaw.org/autofixing/) |
+| Convert plugins to Agent Plugins v1 | [Porting to Agent Plugins](https://skillsaw.org/porting/) |
 | Create project-specific checks | [Custom Rules](https://skillsaw.org/custom-rules/) |
 | Publish reusable rule packages | [Rule Plugins](https://skillsaw.org/plugins/) |
-| Review the security model | [Supply Chain Protection](https://skillsaw.org/supply-chain-protection/) |
+| Inspect the typed parse tree | [Lint Tree](https://skillsaw.org/lint-tree/) |
 | Look up commands and flags | [CLI Reference](https://skillsaw.org/cli/) |
 | Feed the docs to an AI agent | [llms.txt](https://skillsaw.org/llms.txt) index, [llms-full.txt](https://skillsaw.org/llms-full.txt) full docs |
+
 
 ## Measure the result
 

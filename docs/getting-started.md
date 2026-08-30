@@ -160,14 +160,18 @@ Violations that `skillsaw fix` can resolve automatically are marked with
 
 ## More Commands
 
-!!! warning "Deprecated in 0.20.0"
-    `skillsaw docs` and `skillsaw add` remain available for now, but both
-    commands will be removed in an upcoming release.
-
 ```bash
-# Your coding agent can fix content violations directly — just run
-# skillsaw and let the agent read the output. For detailed guidance:
+# View detected repositories, plugins, skills, and configuration files
+skillsaw tree
+
+# Get detailed documentation and configuration options for any rule
 skillsaw explain content-weak-language
+
+# Accept existing findings and fail only on new violations
+skillsaw baseline
+
+# Generate a grade badge and SVG report card for your README
+skillsaw badge --large .
 
 # Generate default config you can customize
 skillsaw init
@@ -178,37 +182,20 @@ skillsaw -v
 # Strict mode (warnings become errors)
 skillsaw --strict
 
-# Fail on any violation, even info-level (see Configuration → Failure Threshold)
-skillsaw --fail-on info
-
-# List all rules with fix support info
-skillsaw list-rules
-
-# Deprecated: generate plugin/skill documentation
-skillsaw docs
-
 # Output in different formats (text, json, sarif, html, code-climate, gitlab)
 skillsaw --format json
-skillsaw --format code-climate   # Code Climate / GitLab Code Quality format
-skillsaw --format gitlab          # Alias for code-climate
+skillsaw --format sarif
 
-# Write formatted output to a file (format inferred from extension)
+# Write formatted output directly to a file (format inferred from extension)
 skillsaw --output report.sarif
-
-# Explicit format prefix (needed when extension is ambiguous, e.g. .json)
 skillsaw --output gitlab:gl-code-quality.json
-skillsaw --output json:native-report.json
 
-# Multiple outputs in one run
-skillsaw --output report.sarif --output gitlab:gl-code-quality.json
-
-# Deprecated: scaffold a new marketplace, plugin, or skill
-skillsaw add marketplace
-skillsaw add plugin my-plugin
-skillsaw add skill my-skill
+# Create a diagnostic feedback bundle for bug reports
+skillsaw feedback --message "Unexpected finding on custom hook"
 ```
 
 See the [CLI Reference](cli.md) for all flags and options.
+
 
 ## What's Next?
 
