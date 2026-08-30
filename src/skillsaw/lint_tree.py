@@ -7,7 +7,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 from pathlib import Path
-from typing import List, Optional, Set, TYPE_CHECKING, Tuple
+from typing import Dict, List, Optional, Set, TYPE_CHECKING, Tuple
 
 from .diagnostics import safe_display
 
@@ -62,7 +62,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
-from .discovery.opencode import contained_instruction_glob
+from .discovery.opencode import contained_instruction_globs
 from .formats import devin
 from .utils import has_apm_generated_header, read_text
 from .paths import (
@@ -681,6 +681,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         structural owner must claim it before path-only content deduplication.
         """
         searched: Set[Tuple[Path, str]] = set()
+        searches: List[Tuple[Path, str]] = []
         for config in opencode_configs:
             data = config.raw_data
             instructions = data.get("instructions") if data is not None else None
@@ -730,28 +731,39 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                     if search is None or search in searched or not safe_is_dir(glob_base):
                         continue
                     searched.add(search)
-                    try:
-                        matches = sorted(
-                            contained_instruction_glob(
-                                repo_root,
-                                glob_base,
-                                pattern,
-                                _is_excluded,
-                            )
-                        )
-                    except (OSError, ValueError):
-                        # OpenCode also ignores invalid patterns. The config rule
-                        # owns schema/type diagnostics; discovery stays best-effort.
-                        continue
-                    for match in matches:
-                        resolved_match = _resolve_repo_path(match)
-                        if resolved_match is not None and safe_is_file(resolved_match):
-                            _add_block(
-                                root,
-                                match,
-                                _instruction_block_type(match),
-                                content_suppressed=_is_in_compiled_dir(match),
-                            )
+                    searches.append((glob_base, pattern))
+
+        searches_by_base: Dict[Path, List[Tuple[int, str]]] = {}
+        for search_index, (glob_base, pattern) in enumerate(searches):
+            searches_by_base.setdefault(glob_base, []).append((search_index, pattern))
+
+        matches_by_search: List[List[Path]] = [[] for _search in searches]
+        for glob_base, ranked_patterns in searches_by_base.items():
+            patterns = [pattern for _rank, pattern in ranked_patterns]
+            try:
+                for pattern_index, match in contained_instruction_globs(
+                    repo_root,
+                    glob_base,
+                    patterns,
+                    _is_excluded,
+                ):
+                    search_index = ranked_patterns[pattern_index][0]
+                    matches_by_search[search_index].append(match)
+            except (OSError, ValueError):
+                # OpenCode also ignores invalid patterns. The config rule owns
+                # schema/type diagnostics; discovery stays best-effort.
+                continue
+
+        for matches in matches_by_search:
+            for match in matches:
+                resolved_match = _resolve_repo_path(match)
+                if resolved_match is not None and safe_is_file(resolved_match):
+                    _add_block(
+                        root,
+                        match,
+                        _instruction_block_type(match),
+                        content_suppressed=_is_in_compiled_dir(match),
+                    )
 
     # The project config is read from the repository root as well as from
     # ``.opencode/``. The root copy is never APM output — APM compiles into

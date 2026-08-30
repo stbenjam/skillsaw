@@ -2814,7 +2814,12 @@ class TestOpenCode:
             path = repo / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"# {path.stem}\n\nRun the tests for this guide.\n")
-        (repo / "opencode.json").write_text('{"instructions": ["docs/**/guide*.md"]}')
+        patterns = [
+            "docs/**/guide*.md",
+            "docs/**/guide-one.md",
+            *(f"docs/**/missing-{index}.md" for index in range(16)),
+        ]
+        (repo / "opencode.json").write_text(json.dumps({"instructions": patterns}))
 
         paths = {
             block.path.relative_to(repo).as_posix()
