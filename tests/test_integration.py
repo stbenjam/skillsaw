@@ -2800,6 +2800,65 @@ class TestOpenCode:
         }
         assert paths == {"docs/root.md", "packages/api/docs/api.md"}
 
+    def test_configured_instruction_double_star_matches_zero_or_more_directories(self, tmp_path):
+        """OpenCode's recursive glob includes files beside and below ``**``."""
+        from skillsaw.blocks import InstructionBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = tmp_path / "repo"
+        for relative in (
+            "docs/guide.md",
+            "docs/api/guide-one.md",
+            "docs/api/deep/guide-two.md",
+        ):
+            path = repo / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"# {path.stem}\n\nRun the tests for this guide.\n")
+        (repo / "opencode.json").write_text('{"instructions": ["docs/**/guide*.md"]}')
+
+        paths = {
+            block.path.relative_to(repo).as_posix()
+            for block in RepositoryContext(repo).lint_tree.find(InstructionBlock)
+        }
+        assert paths == {
+            "docs/guide.md",
+            "docs/api/guide-one.md",
+            "docs/api/deep/guide-two.md",
+        }
+
+    @pytest.mark.parametrize(
+        "pattern",
+        ("../outside/*.md", "linked/*.md", "*/secret.md"),
+    )
+    def test_configured_instruction_globs_never_enumerate_outside_repo(
+        self, tmp_path, monkeypatch, pattern
+    ):
+        """Parent components and directory links are rejected before enumeration."""
+        from skillsaw.blocks import InstructionBlock
+        from skillsaw.context import RepositoryContext
+        from skillsaw.lint_tree import build_lint_tree
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.md").write_text("# External\n\nDo not read this file.\n")
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "linked").symlink_to(outside, target_is_directory=True)
+        (repo / "opencode.json").write_text(json.dumps({"instructions": [pattern]}))
+
+        real_scandir = os.scandir
+        resolved_repo = repo.resolve()
+
+        def contained_scandir(path):
+            resolved = Path(path).resolve()
+            assert resolved == resolved_repo or resolved.is_relative_to(resolved_repo)
+            return real_scandir(path)
+
+        monkeypatch.setattr(os, "scandir", contained_scandir)
+        tree = build_lint_tree(RepositoryContext(repo))
+
+        assert tree.find(InstructionBlock) == []
+
     def test_an_unparseable_config_is_the_fixtures_only_finding(self, tmp_path):
         """ "This is not JSON" holds in every dialect, so the neutral rule owns it.
 

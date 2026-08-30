@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import os
 from pathlib import Path
-from typing import List, Optional, Set, TYPE_CHECKING, Tuple
+from typing import Callable, Iterator, List, Optional, Set, TYPE_CHECKING, Tuple
 
 from .diagnostics import safe_display
 
@@ -66,11 +67,13 @@ from .formats import devin
 from .utils import has_apm_generated_header, read_text
 from .paths import (
     contained_resolve,
+    has_parent_traversal,
     is_absolute_path,
     path_within_roots,
     safe_exists,
     safe_is_dir,
     safe_is_file,
+    safe_is_symlink,
     safe_resolve,
 )
 from .formats.promptfoo import (
@@ -153,6 +156,73 @@ _OPENCODE_CONTENT_DIRS = tuple(
 #: own terms — no rule reports the pairing itself, since which one OpenCode
 #: loads is its business rather than a defect in either file.
 _OPENCODE_CONFIG_NAMES = ("opencode.json", "opencode.jsonc")
+
+
+def _contained_instruction_glob(
+    repo_root: Path,
+    glob_base: Path,
+    pattern: str,
+    is_excluded: Callable[[Path], bool],
+) -> Iterator[Path]:
+    """Return file matches without walking outside *repo_root* or through links."""
+    if is_absolute_path(pattern) or has_parent_traversal(pattern):
+        return
+
+    parts = tuple(part for part in Path(pattern).parts if part not in ("", "."))
+    visited: Set[Tuple[Path, int]] = set()
+
+    def _descend(directory: Path, index: int) -> Iterator[Path]:
+        state = (directory, index)
+        if state in visited:
+            return
+        visited.add(state)
+
+        # Check before scandir: resolving and rejecting directory symlinks
+        # prevents a repository-controlled pattern from enumerating elsewhere.
+        if (
+            contained_resolve(directory, repo_root) != directory
+            or safe_is_symlink(directory)
+            or is_excluded(directory)
+        ):
+            return
+
+        if index == len(parts):
+            yield directory
+            return
+
+        component = parts[index]
+        if component == "**":
+            yield from _descend(directory, index + 1)
+
+        with os.scandir(directory) as scan:
+            entries = sorted(scan, key=lambda entry: entry.name)
+
+        if component == "**":
+            for entry in entries:
+                try:
+                    is_real_dir = entry.is_dir(follow_symlinks=False)
+                except OSError:
+                    continue
+                if is_real_dir:
+                    yield from _descend(directory / entry.name, index)
+            return
+
+        for entry in entries:
+            if not fnmatch.fnmatch(entry.name, component):
+                continue
+            candidate = directory / entry.name
+            if index + 1 == len(parts):
+                yield candidate
+                continue
+            try:
+                is_real_dir = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            if is_real_dir:
+                yield from _descend(candidate, index + 1)
+
+    yield from _descend(glob_base, 0)
+
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -702,8 +772,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 current = parent
 
             for raw_pattern in instructions:
-                if not isinstance(raw_pattern, str) or raw_pattern.startswith(
-                    ("https://", "http://", "~/")
+                if (
+                    not isinstance(raw_pattern, str)
+                    or raw_pattern.startswith(("https://", "http://", "~/"))
+                    or has_parent_traversal(raw_pattern)
                 ):
                     continue
 
@@ -726,13 +798,21 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                         continue
                     searched.add(search)
                     try:
-                        matches = sorted(glob_base.glob(pattern))
-                    except (OSError, ValueError, NotImplementedError):
+                        matches = sorted(
+                            _contained_instruction_glob(
+                                repo_root,
+                                glob_base,
+                                pattern,
+                                _is_excluded,
+                            )
+                        )
+                    except (OSError, ValueError):
                         # OpenCode also ignores invalid patterns. The config rule
                         # owns schema/type diagnostics; discovery stays best-effort.
                         continue
                     for match in matches:
-                        if safe_is_file(match):
+                        resolved_match = _resolve_repo_path(match)
+                        if resolved_match is not None and safe_is_file(resolved_match):
                             _add_block(
                                 root,
                                 match,
