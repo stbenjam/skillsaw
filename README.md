@@ -84,7 +84,7 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 
 The `description-routing` rule checks when-to-use phrasing and descriptions that
 only repeat a skill, agent, or command name. Both checks can be configured
-independently; see the [rule reference](https://skillsaw.org/rules/description-routing/).
+independently; see the [rule reference](https://skillsaw.org/rules/content-description-routing/).
 
 Copilot and VS Code custom agents under `.github/agents/` (plus legacy
 `.github/chatmodes/`) also receive target-aware structural validation through

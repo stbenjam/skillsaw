@@ -44,7 +44,7 @@ and only when it finds zero disclosure references. What counts as a reference di
   `copilot-instructions.md`, …) an `@path` token is just prose, so
   those files disclose through markdown links. Bare path mentions and
   directory links deliberately do not count — "`src/api/` contains the
-  handlers" and "see [src](src/)" are structure narration, not an
+  handlers" and "see the `src/` directory" are structure narration, not an
   instruction to load a file on demand.
 
 ## Examples

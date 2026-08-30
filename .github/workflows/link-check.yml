@@ -29,6 +29,7 @@ jobs:
           args: >-
             --verbose
             --no-progress
+            --user-agent 'Mozilla/5.0 (compatible; skillsaw-link-check/1.0; +https://github.com/stbenjam/skillsaw)'
             --exclude-path '(^|/)tests/fixtures/'
             --exclude-path '(^|/)src/skillsaw/marketplace/templates/'
             './**/*.md'
