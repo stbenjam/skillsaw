@@ -757,8 +757,29 @@ class CopilotAgentValidRule(Rule):
             )
             return False
 
+        # Run every phase: one malformed field must not hide later diagnostics.
+        required_valid = self._check_hook_required_fields(
+            block, path, hook_type, handler, line, violations
+        )
+        optional_valid = self._check_hook_optional_fields(block, path, handler, line, violations)
+        self._warn_hook_field_compatibility(block, path, hook_type, handler, line, violations)
+
+        valid = required_valid
+        if not optional_valid:
+            valid = False
+        return valid
+
+    def _check_hook_required_fields(
+        self,
+        block: CopilotAgentBlock,
+        path: str,
+        hook_type: str,
+        handler: dict,
+        line: Optional[int],
+        violations: List[RuleViolation],
+    ) -> bool:
+        """Validate the fields that make a handler of *hook_type* runnable."""
         valid = True
-        required_fields = _TYPE_REQUIRED_FIELDS[hook_type]
         if hook_type == "command":
             present_commands = [key for key in HOOK_COMMAND_FIELDS if key in handler]
             if not present_commands:
@@ -783,9 +804,9 @@ class CopilotAgentValidRule(Rule):
                         )
                     )
                     valid = False
-            required_fields = {}
+            return valid
 
-        for key, expected in required_fields.items():
+        for key, expected in _TYPE_REQUIRED_FIELDS[hook_type].items():
             if key not in handler:
                 violations.append(
                     self._finding(
@@ -809,7 +830,18 @@ class CopilotAgentValidRule(Rule):
                     )
                 )
                 valid = False
+        return valid
 
+    def _check_hook_optional_fields(
+        self,
+        block: CopilotAgentBlock,
+        path: str,
+        handler: dict,
+        line: Optional[int],
+        violations: List[RuleViolation],
+    ) -> bool:
+        """Validate common optional fields and command argument members."""
+        valid = True
         for key, expected in _OPTIONAL_FIELD_TYPES.items():
             if key not in handler:
                 continue
@@ -837,6 +869,18 @@ class CopilotAgentValidRule(Rule):
                         )
                     )
                     valid = False
+        return valid
+
+    def _warn_hook_field_compatibility(
+        self,
+        block: CopilotAgentBlock,
+        path: str,
+        hook_type: str,
+        handler: dict,
+        line: Optional[int],
+        violations: List[RuleViolation],
+    ) -> None:
+        """Warn when a valid field belongs to a different handler type."""
         for key in handler:
             allowed_types = (
                 {"command"} if key in HOOK_COMMAND_FIELDS else _TYPE_SPECIFIC_FIELDS.get(key)
@@ -852,7 +896,6 @@ class CopilotAgentValidRule(Rule):
                         discriminator=f"hooks:{path}:{key}:compatibility",
                     )
                 )
-        return valid
 
     def _compatibility_warning(
         self,
