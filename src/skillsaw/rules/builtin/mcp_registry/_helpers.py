@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import FrozenSet, Iterable, Optional, TYPE_CHECKING
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from skillsaw.context import RepositoryType
 from skillsaw.diagnostics import safe_display
@@ -53,6 +53,7 @@ _RELEASE_SOURCE_PLACEHOLDER = re.compile(
     r"\{\{[A-Za-z_][A-Za-z0-9_]*\}\}|"
     r"<<[A-Za-z_][A-Za-z0-9_]*>>)\Z"
 )
+_TRADITIONAL_IPV4_WIDTHS = ((), (32,), (8, 24), (8, 8, 16), (8, 8, 8, 8))
 
 
 def is_release_source_placeholder(value: object) -> bool:
@@ -187,15 +188,59 @@ def is_http_url_template(value: str) -> bool:
     return analyze_http_url_template(value) is not None
 
 
+def _traditional_ipv4_address(hostname: str) -> Optional[ipaddress.IPv4Address]:
+    """Parse the numeric IPv4 forms accepted by common system resolvers."""
+    parts = hostname.split(".")
+    if not 1 <= len(parts) < len(_TRADITIONAL_IPV4_WIDTHS):
+        return None
+    widths = _TRADITIONAL_IPV4_WIDTHS[len(parts)]
+
+    address = 0
+    for part, width in zip(parts, widths):
+        if not part:
+            return None
+        if part.startswith(("0x", "0X")):
+            digits = part[2:]
+            base = 16
+        elif len(part) > 1 and part.startswith("0"):
+            digits = part[1:]
+            base = 8
+        else:
+            digits = part
+            base = 10
+        if not digits:
+            return None
+
+        number = 0
+        limit = (1 << width) - 1
+        for character in digits:
+            if "0" <= character <= "9":
+                digit = ord(character) - ord("0")
+            elif "a" <= character.lower() <= "f":
+                digit = ord(character.lower()) - ord("a") + 10
+            else:
+                return None
+            if digit >= base or number > (limit - digit) // base:
+                return None
+            number = number * base + digit
+        address = (address << width) | number
+    return ipaddress.IPv4Address(address)
+
+
 def is_loopback_hostname(hostname: str) -> bool:
     """Recognize localhost names and loopback IP literals without DNS."""
-    normalized = hostname.rstrip(".").lower()
+    try:
+        normalized = unquote(hostname, errors="strict").encode("idna").decode("ascii")
+    except UnicodeError:
+        normalized = hostname
+    normalized = normalized.rstrip(".").lower()
     if normalized == "localhost" or normalized.endswith(".localhost"):
         return True
     try:
         return ipaddress.ip_address(normalized).is_loopback
     except ValueError:
-        return False
+        traditional = _traditional_ipv4_address(normalized)
+        return traditional is not None and traditional.is_loopback
 
 
 def is_clean_repository_subfolder(value: str) -> bool:

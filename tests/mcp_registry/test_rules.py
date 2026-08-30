@@ -15,6 +15,7 @@ from skillsaw.formats.mcp_registry import (
 )
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.mcp_registry._helpers import (
+    is_loopback_hostname,
     is_release_source_placeholder,
     schema_error_summary,
 )
@@ -926,6 +927,17 @@ class TestMcpRegistrySchemaRule:
             "https://LOCALHOST./mcp",
             "https://tenant.localhost/mcp",
             "https://127.0.0.2/mcp",
+            "https://127.1/mcp",
+            "https://127.1./mcp",
+            "https://127.0.1/mcp",
+            "https://0177.0.0.1/mcp",
+            "https://0x7f000001/mcp",
+            "https://2130706433/mcp",
+            "https://%31%32%37.0.0.1/mcp",
+            "https://127%2e0%2e0%2e1/mcp",
+            "https://0x7f%2e1/mcp",
+            "https://127%E3%80%820%E3%80%820%E3%80%821/mcp",
+            "https://%EF%BC%91%EF%BC%92%EF%BC%97.%EF%BC%90.%EF%BC%90.%EF%BC%91/mcp",
             "https://[::1]/mcp",
         ],
     )
@@ -938,6 +950,22 @@ class TestMcpRegistrySchemaRule:
         findings = lint_rules(repo, VALID_RULE)
 
         assert any("remotes[0].url" in message for message in messages_lower(findings))
+
+    @pytest.mark.parametrize(
+        "hostname",
+        [
+            "1.1",
+            "134744072",
+            "127.1.example.com",
+            "127.1x",
+            "256.1.1.1",
+            "0x100000000",
+            "09.1",
+            "%38%2e%38%2e%38%2e%38",
+        ],
+    )
+    def test_non_loopback_or_malformed_numeric_hosts_are_not_misclassified(self, hostname):
+        assert not is_loopback_hostname(hostname)
 
     def test_private_package_and_remote_urls_remain_allowed(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
