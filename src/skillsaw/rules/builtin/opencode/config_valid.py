@@ -63,23 +63,23 @@ def _json_values_equal(left: Any, right: Any) -> bool:
     return True
 
 
-def _lower_model_selection(value: Any) -> Dict[str, str] | None:
-    """Lower one valid OpenCode 2.0 model selection to its 1.x fields."""
-    if isinstance(value, str):
-        if "/" not in value:
-            return None
-        provider, selected = value.split("/", 1)
-        if not provider or "#" in provider or not selected or selected.count("#") > 1:
-            return None
-        if "#" not in selected:
-            return {"model": value}
-        model, variant = selected.split("#", 1)
-        if not model or not variant:
-            return None
-        return {"model": f"{provider}/{model}", "variant": variant}
-
-    if not isinstance(value, dict):
+def _lower_string_model_selection(value: str) -> Dict[str, str] | None:
+    """Lower a provider/model string with an optional ``#variant`` suffix."""
+    if "/" not in value:
         return None
+    provider, selected = value.split("/", 1)
+    if not provider or "#" in provider or not selected or selected.count("#") > 1:
+        return None
+    if "#" not in selected:
+        return {"model": value}
+    model, variant = selected.split("#", 1)
+    if not model or not variant:
+        return None
+    return {"model": f"{provider}/{model}", "variant": variant}
+
+
+def _lower_object_model_selection(value: Dict[str, Any]) -> Dict[str, str] | None:
+    """Lower a provider/model selection object to OpenCode 1.x fields."""
     provider = value.get("providerID")
     model = value.get("model")
     if (
@@ -99,6 +99,15 @@ def _lower_model_selection(value: Any) -> Dict[str, str] | None:
             return None
         lowered["variant"] = variant
     return lowered
+
+
+def _lower_model_selection(value: Any) -> Dict[str, str] | None:
+    """Lower one valid OpenCode 2.0 model selection to its 1.x fields."""
+    if isinstance(value, str):
+        return _lower_string_model_selection(value)
+    if isinstance(value, dict):
+        return _lower_object_model_selection(value)
+    return None
 
 
 def _lower_native_command(entry: Any) -> Dict[str, Any] | None:
