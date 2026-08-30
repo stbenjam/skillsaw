@@ -7,6 +7,7 @@ import re
 import secrets
 import stat
 import sys
+from itertools import chain
 import threading
 import warnings
 from pathlib import Path
@@ -1381,6 +1382,21 @@ _SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 _MAX_YAML_DEPTH = 100
 
 
+_CONTAINER_TYPES = (dict, list, tuple, set)
+
+
+def _is_container(node: Any) -> bool:
+    """Whether *node* is a type :func:`_child_containers` descends into.
+
+    Kept separate so the depth walk can ask the cheap question. Asking it
+    by calling ``_child_containers`` and testing for ``None`` builds that
+    node's child view first, which for a mapping means materializing its
+    keys and values -- once per child, on a node whose children are almost
+    all scalars.
+    """
+    return isinstance(node, _CONTAINER_TYPES)
+
+
 def _child_containers(node: Any) -> Optional[Any]:
     """The containers *node* holds, or ``None`` when it is a scalar.
 
@@ -1403,7 +1419,10 @@ def _child_containers(node: Any) -> Optional[Any]:
     having.
     """
     if isinstance(node, dict):
-        return list(node.keys()) + list(node.values())
+        # ``chain`` rather than two lists and a concatenation: a mapping
+        # here can hold hundreds of thousands of entries, and this is
+        # asked twice per node.
+        return chain(node.keys(), node.values())
     if isinstance(node, (list, tuple, set)):
         return node
     return None
@@ -1449,7 +1468,13 @@ def _reject_overly_nested(data: Any) -> None:
             on_path.add(node_id)
             alive.append(node)
             stack.append((node, True))
-            stack.extend((child, False) for child in children)
+            # Containers only. Pushing every scalar and discarding it on
+            # the next iteration made the stack a function of how *wide*
+            # a document is rather than how deep: a flat mapping of
+            # 300,000 scalars built 300,000 tuples to measure a graph one
+            # level tall, which is a repository-controlled allocation in
+            # the check that exists to bound repository-controlled input.
+            stack.extend((child, False) for child in children if _is_container(child))
             continue
         on_path.discard(node_id)
         # A container is one level whether or not it holds anything. At
@@ -1459,7 +1484,7 @@ def _reject_overly_nested(data: Any) -> None:
         # disagree by one at the boundary.
         height = 1
         for child in children:
-            if _child_containers(child) is None:
+            if not _is_container(child):
                 height = max(height, 1)
                 continue
             # A child still on the path is a cycle back into this subtree;

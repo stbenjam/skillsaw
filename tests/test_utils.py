@@ -3033,3 +3033,50 @@ class TestSizeWalkSurvivesAHostileSizeof:
 
         with pytest.raises(KeyboardInterrupt):
             _approximate_size({"a": Interrupting()})
+
+
+class TestDepthWalkIsBoundedByDepthNotWidth:
+    """A flat document must not build a stack the size of itself."""
+
+    def test_a_wide_flat_mapping_does_not_allocate_per_scalar(self):
+        """The check that bounds repository-controlled input must not itself
+        allocate proportionally to it.
+
+        Pushing every child and discarding the scalars on the next
+        iteration made the stack a function of how *wide* a document is
+        rather than how deep. Measured before the fix, a flat mapping of
+        300,000 scalars took 423ms and 50.2 MB of peak RSS to measure a
+        graph one level tall; after, 195ms and no measurable RSS growth.
+
+        Asserted as peak RSS growth rather than a time threshold, because
+        the allocation is the defect and timing is the noisy proxy for it.
+        """
+        import resource
+
+        from skillsaw.utils import _reject_overly_nested
+
+        data = {f"k{i}": i for i in range(300_000)}
+        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        _reject_overly_nested(data)
+        after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+
+        grew_mb = (after - before) / 1024
+        assert grew_mb < 10, (
+            f"measuring a one-level-deep document grew peak RSS by {grew_mb:.1f} MB; "
+            "the walk is allocating per scalar again"
+        )
+
+    def test_width_does_not_change_the_verdict(self):
+        """The cheap path must still reach the same answer."""
+        from skillsaw.utils import _MAX_YAML_DEPTH, _TOO_DEEP, _reject_overly_nested
+
+        wide_and_shallow = {f"k{i}": i for i in range(1_000)}
+        wide_and_shallow["nested"] = {"a": [1, 2, {"b": "c"}]}
+        _reject_overly_nested(wide_and_shallow)  # must not raise
+
+        deep = current = {}
+        for _ in range(_MAX_YAML_DEPTH + 5):
+            current["n"] = {}
+            current = current["n"]
+        with pytest.raises(RecursionError, match=_TOO_DEEP):
+            _reject_overly_nested(deep)

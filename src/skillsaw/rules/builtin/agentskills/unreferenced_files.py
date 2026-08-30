@@ -683,7 +683,15 @@ class AgentSkillUnreferencedFilesRule(Rule):
         ``normcase``, so the comparison is the case-insensitive one
         ``Path`` equality makes on Windows.
         """
-        init_suffix = os.sep + "__init__.py"
+        # ``os.path.join`` and not ``prefix + os.sep + part``. A skill at a
+        # filesystem root -- ``/``, or a Windows UNC share root -- arrives
+        # here as a ``base`` that already ends in a separator, and
+        # concatenating another one spells ``//module`` where
+        # ``resolved_file_strs`` holds pathlib's single-separator
+        # ``/module``. Every import in such a skill would then miss its
+        # own bundled modules and report them unreferenced. ``main`` was
+        # immune because it joined ``Path`` objects; this is a regression
+        # of the rewrite to string membership, not a latent bug.
         # ``base`` arrives normcased, but the dotted components come from
         # the authored import statement — ``import MyModule`` would have
         # built a target the normcased ``mymodule.py`` on disk never
@@ -697,7 +705,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             if module in resolved_file_strs:
                 targets.add(module)
                 return True
-            init = prefix + init_suffix
+            init = os.path.join(prefix, "__init__.py")
             if init in resolved_file_strs:
                 targets.add(init)
                 return True
@@ -705,8 +713,8 @@ class AgentSkillUnreferencedFilesRule(Rule):
 
         prefix = base
         for part in parts:
-            prefix = prefix + os.sep + part
-            init = prefix + init_suffix
+            prefix = os.path.join(prefix, part)
+            init = os.path.join(prefix, "__init__.py")
             if init in resolved_file_strs:
                 targets.add(init)
 
@@ -715,7 +723,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             return
         for name in names:
             # `from a.b import c`: c may be a submodule or a symbol in a.b.
-            if not mark(prefix + os.sep + name):
+            if not mark(os.path.join(prefix, name)):
                 mark(prefix)
 
     def _text_mentions(

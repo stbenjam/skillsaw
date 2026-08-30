@@ -2352,3 +2352,34 @@ def test_whitespace_only_fence_info_does_not_crash(temp_dir):
     (core / "frames.py").write_text("def compose():\n    pass\n")
 
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+class TestImportJoinAtAFilesystemRoot:
+    """A skill at a root must still resolve its own imports."""
+
+    def test_a_root_base_does_not_double_the_separator(self):
+        """``str(Path("/"))`` already ends in a separator.
+
+        Concatenating another one spells ``//module`` where the resolved
+        file set holds pathlib's single-separator ``/module``, so every
+        import in such a skill missed its own bundled modules and reported
+        them unreferenced. ``main`` joined ``Path`` objects and was immune;
+        this is a regression of the rewrite to string membership.
+        """
+        import os
+
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        root = os.path.normcase(os.sep)
+
+        module_on_disk = {os.path.normcase(os.sep + "mod.py")}
+        targets = set()
+        AgentSkillUnreferencedFilesRule._mark_module(root, ["mod"], [], module_on_disk, targets)
+        assert targets == module_on_disk, targets
+
+        package_on_disk = {os.path.normcase(os.path.join(os.sep, "pkg", "__init__.py"))}
+        targets = set()
+        AgentSkillUnreferencedFilesRule._mark_module(root, ["pkg"], [], package_on_disk, targets)
+        assert targets == package_on_disk, targets
