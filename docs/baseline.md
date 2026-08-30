@@ -104,7 +104,35 @@ may still reject it.
 
 Either way, a file whose frontmatter previously failed to parse now has
 its fields checked, and any violation that surfaces is not in your
-baseline.
+baseline. The reverse also holds: a `coderabbit-yaml-valid` (or other
+parse-validity) error that your baseline suppresses can *disappear*,
+because the file now parses. A baseline entry for a violation that no
+longer fires is stale rather than harmful, but it will not be pruned for
+you.
+
+**One caveat on reproducibility.** The loader is chosen at import time
+from whether the installed PyYAML carries its C extension. Nearly every
+wheel does, but a source build — some musl or hardened environments —
+falls back to the pure-Python scanner and keeps the stricter behaviour.
+The same skillsaw version can therefore reach different verdicts about
+the same file on two machines. If CI and a laptop disagree about a parse
+error, compare `python -c "import yaml; print(hasattr(yaml, 'CSafeLoader'))"`
+on both before looking anywhere else.
+
+### The other direction: files that stop parsing
+
+Parsing is now bounded at 100 levels of nesting, measured over both the
+document's own structure and the object graph its aliases build (a chain
+of anchors is two levels as text and any depth at all as an object). A
+document past that bound is **not** malformed — earlier versions parsed
+and linted it — but skillsaw now declines to, and reports that it did.
+The bound exists because the C parser underneath has no recursion guard
+and a deep enough document takes the process down with it, which is worse
+than a refusal.
+
+If you hit this, the message says so explicitly ("Frontmatter nesting
+exceeds the 100-level reader bound"). Flatten the document; the bound is
+not configurable.
 
 If your baseline predates the upgrade and CI fails on violations you did
 not introduce, re-run `skillsaw baseline` to take them up, then fix them

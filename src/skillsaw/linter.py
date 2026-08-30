@@ -23,7 +23,12 @@ from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidenc
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
-from .utils import mkdir_parents_anchored, rename_path_anchored, write_text_preserving
+from .utils import (
+    frontmatter_rewrite_is_portable,
+    mkdir_parents_anchored,
+    rename_path_anchored,
+    write_text_preserving,
+)
 
 if TYPE_CHECKING:
     from .baseline import BaselineFile, BaselineEntry
@@ -1472,6 +1477,19 @@ class Linter:
                 fix.rename_from is not None and safe_is_symlink(fix.rename_from)
             ):
                 logger.warning("Skipping autofix for symlinked path: %s", fix.file_path)
+                continue
+
+            # Same posture as the symlink re-check above: stand down at the
+            # write boundary rather than trust every rule to have checked.
+            # A fix that rewrites frontmatter must not persist YAML only
+            # libyaml accepts -- see ``frontmatter_rewrite_is_portable``.
+            if not frontmatter_rewrite_is_portable(fix.original_content, fix.fixed_content):
+                logger.warning(
+                    "Skipping autofix for %s on %s: the rewritten frontmatter "
+                    "parses only under libyaml",
+                    fix.rule_id,
+                    fix.file_path,
+                )
                 continue
 
             try:

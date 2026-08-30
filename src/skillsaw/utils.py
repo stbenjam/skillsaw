@@ -1566,6 +1566,50 @@ def _reject_deep_before_compose(source: str, loader: Any = None) -> None:
         return
 
 
+def frontmatter_rewrite_is_portable(original: str, fixed: str) -> bool:
+    """Whether a fix's new frontmatter is parseable by every reader.
+
+    ``assert_portable_yaml`` guards :meth:`FrontmatteredBlock.write_frontmatter_text`,
+    but that is not the path an autofix takes: a rule returns rewritten
+    content and ``Linter._apply_fixes`` writes it, so a fix that rewrites
+    frontmatter through ``replace_frontmatter_field`` reached disk without
+    the check. Measured: a skill whose frontmatter carries a tab separator
+    -- accepted by libyaml, rejected by both pure PyYAML and ruamel -- is
+    unfixable on ``main`` (nothing can parse it, so no rule reports a
+    fixable violation) and on this branch was renamed and written back,
+    tab intact. Persisting bytes only one of our own readers accepts is
+    exactly what ``assert_portable_yaml`` exists to prevent, so the guard
+    belongs at the write boundary too rather than at three call sites and
+    whichever the next rule adds.
+
+    Only a *changed* frontmatter is checked. A body-only fix on a file
+    whose frontmatter was already unportable is left alone: the bytes are
+    not this fix's doing, ``main`` applies that fix too, and refusing it
+    would be a behaviour change in the other direction.
+    """
+    old_fm, _ = _extract_frontmatter_text(original)
+    new_fm, _ = _extract_frontmatter_text(fixed)
+    if new_fm is None or new_fm == old_fm:
+        return True
+    try:
+        safe_load_yaml(new_fm)
+    except Exception:
+        # Our own primary reader cannot parse it either, so there is no
+        # divergence for this guard to own. Cursor's ``.mdc`` frontmatter
+        # is the case that matters: ``globs: **/*.ts`` is Cursor's
+        # documented syntax and an alias error to every YAML parser, so
+        # its rules run on a lenient path of their own. Refusing those
+        # fixes was the first thing this guard did, and it was wrong --
+        # "no reader accepts this" is not the hazard; "one reader accepts
+        # it and another does not" is.
+        return True
+    try:
+        assert_portable_yaml(new_fm)
+    except yaml.YAMLError:
+        return False
+    return True
+
+
 def assert_portable_yaml(source: str) -> None:
     """Raise ``yaml.YAMLError`` if only libyaml's laxer scanner accepts *source*.
 
@@ -2093,6 +2137,38 @@ def replace_frontmatter_field(content: str, key: str, replacement_line: str) -> 
     start = m.start(1) + line_start
     end = m.start(1) + end_off
     return content[:start] + replacement + content[end:]
+
+
+def frontmatter_error_message(content: str) -> str:
+    """Why *content*'s frontmatter did not parse, as a reportable message.
+
+    ``parse_frontmatter`` folds every failure into the same ``(None, ...)``
+    return, so its callers cannot tell a syntax error from this project's
+    own nesting bound. That produced a message which was simply false: a
+    document nested past ``_MAX_YAML_DEPTH`` -- or one whose depth is built
+    by aliases, two levels as text -- is well-formed YAML that ``main``
+    parses and lints, and reporting it as "malformed YAML or missing
+    closing ---" tells an author to go looking for a typo that is not
+    there.
+
+    The re-parse costs one extra load and runs only on the error path,
+    where a violation is being built anyway. Both halves of the bound are
+    covered because ``safe_load_yaml`` carries both, and only the depth
+    verdict is distinguished -- anything else keeps the generic wording,
+    which for an actual syntax error is accurate.
+    """
+    text, _ = _extract_frontmatter_text(content)
+    if text is not None:
+        try:
+            safe_load_yaml(text)
+        except RecursionError:
+            return (
+                f"Frontmatter nesting exceeds the {_MAX_YAML_DEPTH}-level reader "
+                "bound, so it was not parsed (the document may be valid YAML)"
+            )
+        except Exception:
+            pass
+    return "Invalid frontmatter (malformed YAML or missing closing ---)"
 
 
 def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Optional[int]]:

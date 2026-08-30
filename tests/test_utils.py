@@ -3080,3 +3080,69 @@ class TestDepthWalkIsBoundedByDepthNotWidth:
             current = current["n"]
         with pytest.raises(RecursionError, match=_TOO_DEEP):
             _reject_overly_nested(deep)
+
+
+class TestAutofixDoesNotPersistNonPortableFrontmatter:
+    """``assert_portable_yaml`` guarded one write path; autofix took another."""
+
+    def test_a_rewritten_frontmatter_only_libyaml_accepts_is_refused(self):
+        """The autofix pipeline does not go through ``write_frontmatter_text``.
+
+        A rule returns rewritten content and ``Linter._apply_fixes`` writes
+        it, so ``replace_frontmatter_field`` reached disk unchecked. Measured
+        end to end: a skill whose frontmatter carries a tab separator is
+        unfixable on ``main`` -- nothing can parse it, so no rule reports a
+        fixable violation -- while this branch renamed the skill and wrote
+        the file back with the tab intact, persisting bytes that both pure
+        PyYAML and ruamel reject.
+        """
+        from skillsaw.utils import frontmatter_rewrite_is_portable
+
+        original = "---\nname: My_Bad_Name\nextra:\tvalue\n---\nbody\n"
+        renamed = "---\nname: my-bad-name\nextra:\tvalue\n---\nbody\n"
+        assert not frontmatter_rewrite_is_portable(original, renamed)
+
+    def test_a_body_only_fix_on_such_a_file_still_applies(self):
+        """Only a *changed* frontmatter is checked.
+
+        The bytes are not that fix's doing, ``main`` applies it too, and
+        refusing would be a behaviour change in the other direction.
+        """
+        from skillsaw.utils import frontmatter_rewrite_is_portable
+
+        original = "---\nname: x\nextra:\tvalue\n---\nold body\n"
+        body_fixed = "---\nname: x\nextra:\tvalue\n---\nnew body\n"
+        assert frontmatter_rewrite_is_portable(original, body_fixed)
+
+    def test_an_ordinary_rewrite_is_allowed(self):
+        from skillsaw.utils import frontmatter_rewrite_is_portable
+
+        assert frontmatter_rewrite_is_portable(
+            "---\nname: Bad_Name\n---\nbody\n", "---\nname: bad-name\n---\nbody\n"
+        )
+
+
+class TestFrontmatterErrorMessageNamesTheRealReason:
+    """Refusing to parse valid YAML must not be reported as malformed."""
+
+    def test_source_nested_depth_says_so(self):
+        from skillsaw.utils import frontmatter_error_message
+
+        content = "---\nm:\n" + "".join("  " * i + "n:\n" for i in range(1, 150)) + "---\nbody\n"
+        assert "nesting exceeds" in frontmatter_error_message(content)
+
+    def test_alias_built_depth_says_so(self):
+        """Two levels as text, any depth at all as an object."""
+        from skillsaw.utils import frontmatter_error_message
+
+        content = (
+            "---\nname: x\na0: &a0 [1]\n"
+            + "".join(f"a{i}: &a{i} [*a{i - 1}]\n" for i in range(1, 150))
+            + "---\nbody\n"
+        )
+        assert "nesting exceeds" in frontmatter_error_message(content)
+
+    def test_a_genuine_syntax_error_keeps_the_generic_wording(self):
+        from skillsaw.utils import frontmatter_error_message
+
+        assert "malformed YAML" in frontmatter_error_message("---\nname: [unclosed\n---\nbody\n")

@@ -684,3 +684,37 @@ class TestCoderabbitWriterRoundTrip:
         )
         block.write_body("ignored")  # must not raise
         assert "Keep me." in cr_path.read_text(encoding="utf-8")
+
+
+class TestTabSeparatorNoLongerReportsAParseError:
+    """A shipped verdict changed with the loader; pin it deliberately."""
+
+    def test_a_tab_token_separator_now_parses(self, temp_dir):
+        """``tabbed:<TAB>value`` errored before the libyaml switch.
+
+        PyYAML's own scanner rejected a tab used as a token separator; the
+        YAML spec permits it outside indentation, so libyaml accepts it and
+        this rule stops reporting. The file is then *scanned* rather than
+        skipped, so violations its unparseability used to mask can appear.
+
+        Pinned because it is a user-visible change to a shipped rule with
+        no other test covering it: if a future change reinstates the error,
+        that is a decision to make on purpose, not a silent revert. The
+        upgrade note in ``docs/baseline.md`` describes the same change.
+        """
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n  profile: chill\ntabbed:\tvalue\n", encoding="utf-8"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitYamlValidRule().check(context)
+
+        assert violations == [], [v.message for v in violations]
+
+    def test_a_tab_used_as_indentation_is_still_an_error(self, temp_dir):
+        """The spec forbids this one, and both scanners agree."""
+        (temp_dir / ".coderabbit.yaml").write_text("reviews:\n\tprofile: chill\n", encoding="utf-8")
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitYamlValidRule().check(context)
+
+        assert len(violations) == 1, [v.message for v in violations]
+        assert "Invalid YAML" in violations[0].message

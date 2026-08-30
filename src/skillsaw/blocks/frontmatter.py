@@ -18,6 +18,7 @@ import yaml
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import (
     assert_portable_yaml,
+    frontmatter_error_message,
     _FRONTMATTER_RE,
     commented_key_line,
     read_text,
@@ -52,7 +53,7 @@ def _parse_file_frontmatter(
     if fm is None:
         return (
             None,
-            "Invalid frontmatter (malformed YAML or missing closing ---)",
+            frontmatter_error_message(content),
             error_line,
             body,
             0,
