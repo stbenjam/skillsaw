@@ -250,7 +250,9 @@ def install_warning_display() -> None:
     """
     from ..linter import CustomRuleWarning
 
-    default_showwarning = warnings.showwarning
+    current_showwarning = warnings.showwarning
+    if getattr(current_showwarning, "_skillsaw_warning_display", None) is current_showwarning:
+        return
 
     def _showwarning(message, category, filename, lineno, file=None, line=None):
         if isinstance(message, CustomRuleWarning):
@@ -263,6 +265,11 @@ def install_warning_display() -> None:
                 file=out,
             )
         else:
-            default_showwarning(message, category, filename, lineno, file, line)
+            current_showwarning(message, category, filename, lineno, file, line)
 
+    # Mark the concrete handler rather than keeping a module-global boolean.
+    # If an embedder replaces warnings.showwarning later, the next CLI call
+    # wraps its new handler; functools.wraps cannot make that external wrapper
+    # look like the exact Skillsaw handler whose marker it copied.
+    setattr(_showwarning, "_skillsaw_warning_display", _showwarning)
     warnings.showwarning = _showwarning
