@@ -287,6 +287,100 @@ class TestPatternLiteralCacheBudget:
             ca._LITERALS_CACHE_BUDGET_BYTES = budget
             self._reset()
 
+    def test_concurrent_admission_charges_one_entry_once(self):
+        """Two clients linting in one process both miss for one pattern.
+
+        Without the lock both charge, the dict holds one entry, and
+        ``_literals_cache_bytes`` drifts up by a whole entry per racing
+        thread — the budget then evicts a cache that is not actually over
+        it. Measuring is made slow so the window is the whole call rather
+        than a few instructions.
+        """
+        import threading
+        import time
+
+        import skillsaw.rules.builtin.content_analysis as ca
+
+        self._reset()
+        real_cost = ca._literals_entry_cost
+        threads_count = 8
+        barrier = threading.Barrier(threads_count)
+
+        def slow_cost(pattern, literals):
+            value = real_cost(pattern, literals)
+            time.sleep(0.02)
+            return value
+
+        pattern = re.compile(r"\bshared across threads\b")
+        try:
+            ca._literals_entry_cost = slow_cost
+
+            def worker():
+                barrier.wait()
+                ca._pattern_literals(pattern)
+
+            workers = [threading.Thread(target=worker) for _ in range(threads_count)]
+            for thread in workers:
+                thread.start()
+            for thread in workers:
+                thread.join()
+
+            assert len(ca._LITERALS_BY_PATTERN) == 1
+            assert ca._literals_cache_bytes == sum(ca._LITERALS_COSTS.values())
+            assert ca._literals_cache_bytes == real_cost(pattern, ca._LITERALS_BY_PATTERN[pattern])
+        finally:
+            ca._literals_entry_cost = real_cost
+            self._reset()
+
+    def test_concurrent_eviction_does_not_lose_the_accounting(self):
+        """Two threads evicting at once must not pop the same key twice.
+
+        Each builds its own list of stale keys before deleting, so
+        unsynchronized the second ``pop`` raises ``KeyError`` — which
+        surfaces as ``rule-execution-error`` and discards that rule's
+        findings for the file. The interpreter is asked to switch threads
+        as often as it will, since the unsynchronized window is a handful
+        of bytecodes wide; the run is a stress rather than a proof, and
+        the accounting invariants it asserts hold whether or not the race
+        is hit on a given pass.
+        """
+        import sys
+        import threading
+
+        import skillsaw.rules.builtin.content_analysis as ca
+
+        self._reset()
+        budget = ca._LITERALS_CACHE_BUDGET_BYTES
+        switch_interval = sys.getswitchinterval()
+        errors = []
+        try:
+            sys.setswitchinterval(1e-6)
+            ca._LITERALS_CACHE_BUDGET_BYTES = 32 * 1024
+            barrier = threading.Barrier(4)
+
+            def worker(offset):
+                barrier.wait()
+                try:
+                    for index in range(60):
+                        ca._pattern_literals(re.compile(f"group{offset}item{index}" + "q" * 150))
+                except Exception as exc:  # pragma: no cover - the bug being pinned
+                    errors.append(exc)
+
+            workers = [threading.Thread(target=worker, args=(n,)) for n in range(4)]
+            for thread in workers:
+                thread.start()
+            for thread in workers:
+                thread.join()
+
+            assert not errors, f"eviction raced: {errors[0]!r}"
+            assert ca._literals_cache_bytes == sum(ca._LITERALS_COSTS.values())
+            assert set(ca._LITERALS_COSTS) == set(ca._LITERALS_BY_PATTERN)
+            assert ca._literals_cache_bytes <= 32 * 1024
+        finally:
+            sys.setswitchinterval(switch_interval)
+            ca._LITERALS_CACHE_BUDGET_BYTES = budget
+            self._reset()
+
     def test_an_entry_larger_than_the_budget_is_never_stored(self):
         import skillsaw.rules.builtin.content_analysis as ca
 

@@ -310,6 +310,14 @@ _LITERALS_BY_PATTERN: Dict[re.Pattern, Tuple[str, ...]] = {}
 _LITERALS_CACHE_BUDGET_BYTES = 8 * 1024 * 1024
 _literals_cache_bytes = 0
 
+#: Serializes admission and eviction, the way ``_resolve_lock`` does for
+#: the resolution memo and ``FileCache._lock`` for the file caches. It is
+#: taken in the miss branch only — never in front of the lookup, which is
+#: the hot path this structure exists to keep to one identity hash. A
+#: ``get`` racing a ``del`` is safe: it returns the value or nothing, and
+#: nothing just becomes a miss.
+_literals_lock = threading.Lock()
+
 #: What each entry costs, charged at admission and credited back verbatim
 #: on eviction. A parallel dict rather than a second slot in the value:
 #: the value is read on the hot path and the cost only in the miss branch,
@@ -372,17 +380,27 @@ def _pattern_literals(pattern: re.Pattern) -> Tuple[str, ...]:
             # Remembering it would evict everything else and still not
             # fit. Recomputing costs time; retaining it costs the budget.
             return literals
-        while _LITERALS_BY_PATTERN and _literals_cache_bytes + cost > _LITERALS_CACHE_BUDGET_BYTES:
-            # Halves, not everything: a bound a workload can cross must
-            # not be a cliff. Repeated because entries are not uniform —
-            # dropping half of a memo holding one large pattern and many
-            # small ones need not free enough for the next one.
-            for stale in list(_LITERALS_BY_PATTERN)[: len(_LITERALS_BY_PATTERN) // 2 or 1]:
-                _literals_cache_bytes -= _LITERALS_COSTS.pop(stale)
-                del _LITERALS_BY_PATTERN[stale]
-        _LITERALS_BY_PATTERN[pattern] = literals
-        _LITERALS_COSTS[pattern] = cost
-        _literals_cache_bytes += cost
+        with _literals_lock:
+            if pattern in _LITERALS_BY_PATTERN:
+                # Another thread admitted it while this one was measuring.
+                # Its entry is already charged, and charging again would
+                # bill one retained entry twice.
+                return literals
+            while (
+                _LITERALS_BY_PATTERN and _literals_cache_bytes + cost > _LITERALS_CACHE_BUDGET_BYTES
+            ):
+                # Halves, not everything: a bound a workload can cross
+                # must not be a cliff. Repeated because entries are not
+                # uniform — dropping half of a memo holding one large
+                # pattern and many small ones need not free enough for
+                # the next one. Under the lock, so a second evicting
+                # thread cannot pop a key this one already removed.
+                for stale in list(_LITERALS_BY_PATTERN)[: len(_LITERALS_BY_PATTERN) // 2 or 1]:
+                    _literals_cache_bytes -= _LITERALS_COSTS.pop(stale)
+                    del _LITERALS_BY_PATTERN[stale]
+            _LITERALS_BY_PATTERN[pattern] = literals
+            _LITERALS_COSTS[pattern] = cost
+            _literals_cache_bytes += cost
     return literals
 
 
