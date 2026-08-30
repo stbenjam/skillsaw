@@ -3146,3 +3146,87 @@ class TestFrontmatterErrorMessageNamesTheRealReason:
         from skillsaw.utils import frontmatter_error_message
 
         assert "malformed YAML" in frontmatter_error_message("---\nname: [unclosed\n---\nbody\n")
+
+
+class TestDepthWalkStackIsBoundedByPathLength:
+    """Neither width nor emptiness may size the walk's transient state."""
+
+    @pytest.mark.parametrize(
+        "label,value",
+        [("scalars", 1), ("empty lists", None), ("empty dicts", None)],
+    )
+    def test_a_wide_flat_mapping_allocates_nothing(self, label, value):
+        """Three shapes, one level deep, 300,000 wide.
+
+        Expanding a node's children onto the stack made it a function of how
+        wide the document is rather than how deep, and filtering that
+        expansion was whack-a-mole: dropping scalars still left a frame per
+        entry for a mapping of empty lists, because an empty list is a
+        container. Advancing one child at a time bounds the stack by path
+        length, which is the thing already bounded.
+        """
+        import resource
+
+        from skillsaw.utils import _reject_overly_nested
+
+        factory = {
+            "scalars": lambda i: i,
+            "empty lists": lambda i: [],
+            "empty dicts": lambda i: {},
+        }[label]
+        data = {f"k{i}": factory(i) for i in range(300_000)}
+
+        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        _reject_overly_nested(data)
+        after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+
+        grew_mb = (after - before) / 1024
+        assert (
+            grew_mb < 10
+        ), f"{label}: measuring a shallow document grew peak RSS by {grew_mb:.1f} MB"
+
+    def test_an_empty_container_still_counts_as_a_level(self):
+        """Cheap must not mean uncounted.
+
+        An empty terminal collection has a start event, so the pre-compose
+        count sees a level for it. Handling it without descending is fine;
+        dropping its level is what makes the two halves disagree at the
+        boundary.
+        """
+        from skillsaw.utils import _MAX_YAML_DEPTH, _TOO_DEEP, _reject_overly_nested
+
+        # A chain one short of the bound, terminated by an empty collection,
+        # is exactly at it.
+        root = current = {}
+        for _ in range(_MAX_YAML_DEPTH - 2):
+            current["n"] = {}
+            current = current["n"]
+        current["leaf"] = []
+
+        with pytest.raises(RecursionError, match=_TOO_DEEP):
+            _reject_overly_nested(root)
+
+    def test_an_alias_reused_at_depth_is_still_caught(self):
+        """The path check alone cannot see accumulation through a memo."""
+        from skillsaw.utils import _TOO_DEEP, _reject_overly_nested
+
+        shared = current = {}
+        for _ in range(60):
+            current["n"] = {}
+            current = current["n"]
+
+        outer = current = {"shallow": shared}
+        for _ in range(60):
+            current["n"] = {}
+            current = current["n"]
+        current["reuse"] = shared
+
+        with pytest.raises(RecursionError, match=_TOO_DEEP):
+            _reject_overly_nested(outer)
+
+    def test_a_cycle_terminates(self):
+        from skillsaw.utils import _reject_overly_nested
+
+        node = {}
+        node["self"] = node
+        _reject_overly_nested(node)

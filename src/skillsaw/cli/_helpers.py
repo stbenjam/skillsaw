@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ..notices import CustomRuleWarning
 from ..repo_type import RepositoryType
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import resolve_uncached
 
 # ``..context`` is imported inside the two methods that need it. Importing
 # it here would pull discovery, the format packages and both YAML parsers
@@ -71,7 +71,10 @@ def _resolve_lint_paths(paths):
     """
     normalized = []
     for p in paths:
-        resolved = safe_resolve(p) or p
+        # Uncached: this runs before RepositoryContext declares a pass,
+        # so a warm memo from an earlier in-process ``main()`` call would
+        # answer for a symlink that has since been retargeted.
+        resolved = resolve_uncached(p) or p
         if resolved.is_file():
             resolved = resolved.parent
         normalized.append(resolved)

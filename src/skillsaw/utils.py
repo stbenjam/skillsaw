@@ -1450,50 +1450,106 @@ def _reject_overly_nested(data: Any) -> None:
     rules already handle), and contributes nothing further rather than
     looping forever.
     """
+    root_children = _child_containers(data)
+    if root_children is None:
+        return
+
     heights: Dict[int, int] = {}
     on_path: Set[int] = set()
     # Holds a reference to every node under measurement, so no id() is
     # reused for a different object while it is a key here.
-    alive: List[Any] = []
-    stack: List[Tuple[Any, bool]] = [(data, False)]
+    alive: List[Any] = [data]
+
+    # One frame per level of the path currently being descended, each
+    # holding its node, an *iterator* over that node's children, and the
+    # height established for it so far.
+    #
+    # An iterator and not a materialized level. Expanding a node's children
+    # onto the stack makes the stack a function of how *wide* the document
+    # is rather than how deep, and filtering that expansion is whack-a-mole:
+    # dropping scalars still left 300,000 frames for a mapping of 300,000
+    # empty lists, because an empty list is a container. Advancing one child
+    # at a time bounds the stack by path length instead, which is the thing
+    # already bounded.
+    #
+    # ``height`` starts at 1 because a container is one level whether or not
+    # it holds anything. At zero, an empty terminal collection would
+    # contribute nothing while a scalar contributes one, and this measure
+    # and the pre-compose event count -- which sees the empty collection's
+    # start event -- would disagree by one at the boundary.
+    on_path.add(id(data))
+    stack: List[List[Any]] = [[data, iter(root_children), 1]]
+
     while stack:
-        node, computed = stack.pop()
-        children = _child_containers(node)
-        if children is None:
-            continue
-        node_id = id(node)
-        if not computed:
-            if node_id in heights or node_id in on_path:
-                continue
-            on_path.add(node_id)
-            alive.append(node)
-            stack.append((node, True))
-            # Containers only. Pushing every scalar and discarding it on
-            # the next iteration made the stack a function of how *wide*
-            # a document is rather than how deep: a flat mapping of
-            # 300,000 scalars built 300,000 tuples to measure a graph one
-            # level tall, which is a repository-controlled allocation in
-            # the check that exists to bound repository-controlled input.
-            stack.extend((child, False) for child in children if _is_container(child))
-            continue
-        on_path.discard(node_id)
-        # A container is one level whether or not it holds anything. At
-        # zero, an empty terminal collection contributes nothing while a
-        # scalar contributes one, so this measure and the pre-compose
-        # event count — which sees the empty collection's start event —
-        # disagree by one at the boundary.
-        height = 1
+        frame = stack[-1]
+        node, children, _height = frame
+        descended = False
+
         for child in children:
             if not _is_container(child):
-                height = max(height, 1)
+                # A scalar contributes one level, which ``height`` already is.
                 continue
-            # A child still on the path is a cycle back into this subtree;
-            # a child with no recorded height is one, so it counts as a
-            # leaf here rather than as unbounded depth.
-            height = max(height, 1 + heights.get(id(child), 0))
+            if not child:
+                # An empty container's height is exactly 1, so its parent's
+                # is at least 2 -- the same answer descending would reach,
+                # without a frame, a memo slot or a pin for each one. Worth
+                # its own branch because it is the widest remaining shape: a
+                # mapping of 300,000 ``k: []`` entries is two levels deep and
+                # would otherwise take a memo entry per key to establish it.
+                #
+                # Counted, not skipped. An empty terminal collection has a
+                # start event, so the pre-compose count sees a level here;
+                # dropping it instead of charging 2 makes the two halves
+                # disagree at exactly the boundary, which
+                # ``test_the_two_depth_bounds_agree_on_an_empty_terminal_collection``
+                # exists to catch -- and did.
+                if frame[2] < 2:
+                    frame[2] = 2
+                continue
+            child_id = id(child)
+            if child_id in on_path:
+                # A cycle back into this subtree (``metadata: &m {nested: *m}``
+                # is an ordinary document): contributes nothing further.
+                continue
+            known = heights.get(child_id)
+            if known is not None:
+                # Memoized, so a shared container -- a YAML anchor referenced
+                # from several places -- counts at its true depth wherever it
+                # appears rather than only where it was first reached.
+                if 1 + known > frame[2]:
+                    frame[2] = 1 + known
+                continue
+            grandchildren = _child_containers(child)
+            # ``_is_container`` said yes, so this is never ``None``.
+            if len(stack) >= _MAX_YAML_DEPTH:
+                # The path itself is already too long. Checked on descent
+                # rather than only on the way back up, so the stack stays
+                # bounded by the limit instead of growing to whatever depth
+                # the document spells out before anything is finalized.
+                raise RecursionError(_TOO_DEEP)
+            alive.append(child)
+            on_path.add(child_id)
+            stack.append([child, iter(grandchildren), 1])
+            descended = True
+            break
+
+        if descended:
+            continue
+
+        # Children exhausted: this node's height is final.
+        stack.pop()
+        node_id = id(node)
+        on_path.discard(node_id)
+        height = frame[2]
+        # Still needed alongside the path check above: an alias lets a
+        # subtree measured once at a shallow position be counted again from
+        # a deep one, so a graph can exceed the bound by accumulation
+        # without any single descent reaching it.
         if height >= _MAX_YAML_DEPTH:
             raise RecursionError(_TOO_DEEP)
         heights[node_id] = height
+        if stack and 1 + height > stack[-1][2]:
+            stack[-1][2] = 1 + height
 
 
 #: Event types that open and close a collection in the parse stream.

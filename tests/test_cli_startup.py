@@ -13,6 +13,7 @@ already holds everything, so an in-process check would pass vacuously.
 """
 
 import subprocess
+from pathlib import Path
 import sys
 
 # Imported lazily on purpose; see the module docstring.
@@ -70,3 +71,32 @@ def test_version_reports_the_running_package():
     from skillsaw.cli._config import _get_version
 
     assert _get_version() == __version__
+
+
+def test_cli_path_normalization_does_not_consult_the_resolution_memo():
+    """``_resolve_lint_paths`` runs before anything declares a pass.
+
+    ``RepositoryContext.__init__`` is what calls ``invalidate_path_identity``,
+    and the CLI normalizes its arguments before constructing one. In a
+    one-shot process that is harmless -- the memo starts empty -- but
+    ``skillsaw.cli.main()`` is also called repeatedly in-process, by this
+    suite's own ``run_cli`` and by any embedder, and then an argument is
+    resolved against whatever the previous call left behind.
+
+    Reproduced with a first call that resolves the argument and exits before
+    any context is built: with the memo consulted, a retargeted symlink was
+    still read at its old target on the second call.
+
+    Asserted structurally rather than by racing a symlink, so the test says
+    what it means: this function must not fill the memo.
+    """
+    import skillsaw.paths as paths
+    from skillsaw.cli._helpers import _resolve_lint_paths
+
+    paths.clear_resolve_cache()
+    _resolve_lint_paths([Path(__file__).parent])
+
+    assert not paths._RESOLVE_CACHE, (
+        "CLI path normalization filled the resolution memo; a later in-process "
+        "call would resolve its arguments against it before any pass is declared"
+    )

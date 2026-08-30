@@ -205,6 +205,31 @@ def resolve_generation() -> int:
     return _resolve_generation
 
 
+def resolve_uncached(path: Path) -> Optional[Path]:
+    """:func:`safe_resolve` without consulting or filling the memo.
+
+    For a caller that resolves *before* anything has declared a pass. The
+    CLI is the one that matters: ``_resolve_lint_paths`` normalizes its
+    arguments before ``RepositoryContext`` is constructed, and the
+    constructor is what calls ``invalidate_path_identity``. In a one-shot
+    process that ordering is harmless because the memo starts empty, but
+    ``skillsaw.cli.main()`` is also called repeatedly in-process -- by the
+    test suite's ``run_cli``, and by any embedder -- and then the argument
+    is resolved against whatever the previous call left behind.
+
+    The memo cannot buy anything here: this resolves a handful of
+    command-line arguments once. Taking it out of the picture removes the
+    ordering dependency rather than adding an invalidation that has to be
+    sequenced correctly against it -- and an invalidation is not available
+    at this point anyway, since ``invalidate_path_identity`` lives in
+    ``utils``, which the CLI must not import before it prints its banner.
+    """
+    try:
+        return path.resolve()
+    except (OSError, ValueError, RuntimeError):
+        return None
+
+
 def safe_resolve(path: Path) -> Optional[Path]:
     """``path.resolve()``, or ``None`` when the path cannot be resolved.
 
