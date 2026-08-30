@@ -53,7 +53,7 @@ class HooksProhibitedRule(Rule):
         return Severity.ERROR
 
     def _is_allowed(self, command: str) -> bool:
-        allowlist = self.config.get("allowlist", [])
+        allowlist = self.setting("allowlist")
         return any(command == entry for entry in allowlist)
 
     def _check_events(
@@ -63,17 +63,14 @@ class HooksProhibitedRule(Rule):
         line=None,
     ) -> List[RuleViolation]:
         violations = []
-        allowlist = self.config.get("allowlist", [])
+        allowlist = self.setting("allowlist")
 
         for event_type, configs in events.items():
             for cfg in configs:
                 for handler in cfg.handlers:
                     if handler.type != "command":
                         continue
-                    commands = handler.command_variants
-                    if not commands and handler.command:
-                        commands = [(handler.command, handler.source_line)]
-                    for command, source_line in commands:
+                    for command, source_line in handler.iter_effective_commands():
                         if not command or self._is_allowed(command):
                             continue
 

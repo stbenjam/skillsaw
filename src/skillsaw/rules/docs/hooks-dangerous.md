@@ -65,4 +65,6 @@ rules:
 ```
 
 Allowlist entries are exact-match, so a compromised variant of the
-command will still be flagged.
+command will still be flagged. For an exec-form hook with `command` and
+`args`, allowlist the complete invocation as it appears in the diagnostic,
+not only the executable name.

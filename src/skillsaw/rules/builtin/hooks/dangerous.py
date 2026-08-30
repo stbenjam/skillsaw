@@ -526,7 +526,7 @@ class HooksDangerousRule(Rule):
         return Severity.ERROR
 
     def _is_allowed(self, command: str) -> bool:
-        allowlist = self.config.get("allowlist", [])
+        allowlist = self.setting("allowlist")
         return any(command == entry for entry in allowlist)
 
     def _check_events(
@@ -541,18 +541,8 @@ class HooksDangerousRule(Rule):
                 for handler in cfg.handlers:
                     if handler.type != "command":
                         continue
-                    commands = handler.command_variants
-                    if not commands and handler.command:
-                        commands = [(handler.command, handler.source_line)]
-                    for configured_command, source_line in commands:
-                        if not configured_command:
-                            continue
-                        # Exec-form hooks split the invocation across command +
-                        # args; scan the joined form so patterns can't hide in args.
-                        command = configured_command
-                        if isinstance(handler.args, list):
-                            command = " ".join([command, *(str(a) for a in handler.args)])
-                        if self._is_allowed(configured_command) or self._is_allowed(command):
+                    for command, source_line in handler.iter_effective_commands():
+                        if self._is_allowed(command):
                             continue
                         for message in dangerous_command_descriptions(command):
                             violations.append(

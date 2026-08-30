@@ -58,6 +58,10 @@ so a modified version of the command will still be flagged. This rule
 is disabled by default — enable it for supply-chain-sensitive
 repositories.
 
+For an exec-form hook with separate `command` and `args`, the allowlist
+matches the complete invocation shown in the diagnostic. Allowlisting only
+the executable does not permit arbitrary arguments passed to it.
+
 ## Configuration
 
 ```yaml
