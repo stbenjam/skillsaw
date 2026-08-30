@@ -2922,3 +2922,75 @@ class TestOpenCodeTimeout:
         from skillsaw.formats.opencode import timeout_is_valid
 
         assert not timeout_is_valid(value)
+
+
+class TestWritePathHoldsTheStricterAcceptanceSet:
+    """A write must not persist syntax only libyaml accepts."""
+
+    def test_lax_block_scalar_header_is_refused_on_write(self, tmp_path):
+        """``a: |#`` scans on libyaml and raises on pure PyYAML.
+
+        Reading such a file is not this project's problem — it exists, and
+        skillsaw reports on it. Writing one is: the bytes would parse on the
+        wheel that wrote them and fail on a wheel without the C extension,
+        which is the reader-agreement invariant broken by our own hand.
+        """
+        import yaml as pyyaml
+
+        from skillsaw.utils import _SAFE_LOADER, assert_portable_yaml
+
+        source = "a: |#\n  text\n"
+        if _SAFE_LOADER is pyyaml.SafeLoader:
+            pytest.skip("no libyaml on this wheel; the loaders cannot disagree")
+
+        # The premise: the two loaders really do disagree about this text.
+        assert pyyaml.load(source, Loader=_SAFE_LOADER) is not None
+        with pytest.raises(pyyaml.YAMLError):
+            pyyaml.load(source, Loader=pyyaml.SafeLoader)
+
+        with pytest.raises(pyyaml.YAMLError):
+            assert_portable_yaml(source)
+
+    def test_duplicate_keys_still_write(self):
+        """The check restores PyYAML's acceptance set, not ruamel's.
+
+        ``roundtrip_yaml`` would be the obvious reach and is the wrong one:
+        it rejects a duplicate mapping key that both PyYAML loaders accept,
+        so validating writes through it would newly refuse frontmatter that
+        ``main`` writes today.
+        """
+        from skillsaw.utils import assert_portable_yaml
+
+        assert_portable_yaml("a: 1\na: 2\n")
+
+
+class TestDepthWalkCoversMappingKeys:
+    """The two walks must not disagree about a document."""
+
+    def test_a_container_key_counts_toward_depth(self):
+        """A mapping key can be a container, and it is counted.
+
+        ruamel builds a hashable ``CommentedKeySeq`` for an explicit
+        ``? [a, b]`` key. It can only be one at the top — nesting anything
+        inside such a key needs the inner container to be hashable too, and
+        ruamel builds a plain ``CommentedSeq`` there, so ``? [[1]]`` raises
+        ``TypeError`` during load. So this changes an answer by at most a
+        level; it is counted because a boundary disagreement between the
+        size walk and the depth walk is still a disagreement.
+        """
+        from ruamel.yaml import YAML
+
+        from skillsaw.utils import _child_containers
+
+        data = YAML().load("? [1, 2]\n: v\n")
+        key = next(iter(data.keys()))
+        assert not isinstance(key, str), "expected a container key"
+        assert key in list(_child_containers(data)), "the container key was not walked"
+
+    def test_nesting_inside_a_key_does_not_load_at_all(self):
+        """Which is why one level is the whole of the exposure."""
+        from ruamel.yaml import YAML
+
+        for source in ("? [[1]]\n: v\n", "? [{a: 1}]\n: v\n"):
+            with pytest.raises(TypeError):
+                YAML().load(source)

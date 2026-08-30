@@ -17,6 +17,7 @@ import yaml
 
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import (
+    assert_portable_yaml,
     _FRONTMATTER_RE,
     commented_key_line,
     read_text,
@@ -271,6 +272,11 @@ class FrontmatteredBlock(LintTarget):
         """
         try:
             data = safe_load_yaml(new_fm_text)
+            # ``safe_load_yaml`` parses with libyaml where the wheel has it,
+            # and libyaml's scanner accepts a little that PyYAML's does not.
+            # Reading such a file is fine; writing one is not, so this write
+            # is held to the stricter of the two acceptance sets.
+            assert_portable_yaml(new_fm_text)
         except (yaml.YAMLError, ValueError) as e:
             raise ValueError(f"Invalid YAML: {e}") from e
         except RecursionError as e:

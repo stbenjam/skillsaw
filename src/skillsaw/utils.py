@@ -1362,9 +1362,28 @@ _MAX_YAML_DEPTH = 100
 
 
 def _child_containers(node: Any) -> Optional[Any]:
-    """The containers *node* holds, or ``None`` when it is a scalar."""
+    """The containers *node* holds, or ``None`` when it is a scalar.
+
+    Keys as well as values, so this walk covers what ``_approximate_size``
+    covers. A mapping key can be a container: ruamel builds ruamel's own
+    hashable ``CommentedKeySeq`` / ``CommentedKeyMap`` for an explicit
+    ``? [a, b]`` key.
+
+    It can be one *only at the top*, which is why counting keys changes an
+    answer by at most a level. Nesting anything inside such a key needs the
+    inner container to be hashable too, and ruamel builds a plain
+    ``CommentedSeq`` / ``CommentedMap`` there — so ``? [[1]]`` and
+    ``? [{a: 1}]`` both raise ``TypeError: unhashable type`` during load,
+    and an alias chain routed through keys fails for the same reason
+    before this function ever sees it. A key holds scalars or it does not
+    load.
+
+    Counted anyway: an off-by-one at the boundary is still a document the
+    two walks disagree about, and the disagreement is the thing worth not
+    having.
+    """
     if isinstance(node, dict):
-        return node.values()
+        return list(node.keys()) + list(node.values())
     if isinstance(node, (list, tuple, set)):
         return node
     return None
@@ -1500,6 +1519,32 @@ def _reject_deep_before_compose(source: str, loader: Any = None) -> None:
                 depth -= 1
     except yaml.YAMLError:
         return
+
+
+def assert_portable_yaml(source: str) -> None:
+    """Raise ``yaml.YAMLError`` if only libyaml's laxer scanner accepts *source*.
+
+    For a **write** path, and only a write path. The readers here select
+    libyaml when the wheel ships it, and its scanner accepts a little more
+    than PyYAML's: ``a: |#`` is a block-scalar header with a comment to
+    libyaml and a ``ScannerError`` to the pure-Python one. Reading such a
+    file is not this project's problem — it already exists, and skillsaw
+    reports on it. *Writing* one is: it would persist bytes that skillsaw
+    itself parses on one wheel and rejects on another, which is the
+    reader-agreement invariant broken by our own hand.
+
+    Deliberately not ``roundtrip_yaml``, which would be the obvious reach.
+    ruamel rejects this case, but it also rejects a duplicate mapping key
+    that both PyYAML loaders accept — validating writes through it would
+    newly refuse frontmatter that ``main`` writes today. The acceptance set
+    to preserve is PyYAML's, so PyYAML's strict scanner is what checks it.
+
+    A no-op when libyaml is absent: the loader that already ran *is* the
+    strict one, and parsing twice would buy nothing.
+    """
+    if _SAFE_LOADER is yaml.SafeLoader:
+        return
+    yaml.load(source, Loader=yaml.SafeLoader)
 
 
 def safe_load_yaml(source: Any) -> Any:

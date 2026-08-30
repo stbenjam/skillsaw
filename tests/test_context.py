@@ -1437,3 +1437,27 @@ class TestPathMatchesPatterns:
             assert context.matches_patterns(temp_dir / rel, ["**/generated/**"])
 
         assert expanded == ["**/templates/**", "**/generated/**"]
+
+
+class TestPromptfooCandidatesFilterByExtension:
+    """The memoized candidate list must not retain files no caller accepts."""
+
+    def test_non_yaml_promptfoo_names_are_not_retained(self, tmp_path):
+        """``promptfooconfig`` as a prefix matches more than YAML.
+
+        The list is memoized for the life of the context, so a repository
+        holding many ``promptfooconfig-*.txt`` files would retain a ``Path``
+        for each to answer a question neither caller can answer yes to:
+        detection wants ``suffix in (".yaml", ".yml")`` and the tree globs
+        ``promptfooconfig*.y{a,ml}``.
+        """
+        (tmp_path / "promptfooconfig.yaml").write_text("prompts: []\n", encoding="utf-8")
+        (tmp_path / "promptfooconfig-notes.txt").write_text("scratch\n", encoding="utf-8")
+        (tmp_path / "promptfooconfig-old.bak").write_text("scratch\n", encoding="utf-8")
+
+        context = RepositoryContext(tmp_path)
+        names = {p.name for p in context.promptfoo_config_candidates()}
+
+        assert "promptfooconfig.yaml" in names
+        assert "promptfooconfig-notes.txt" not in names, names
+        assert "promptfooconfig-old.bak" not in names, names

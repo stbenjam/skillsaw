@@ -402,8 +402,28 @@ def promptfoo_config_candidates(root: Path, walk_files: Callable[[Path], object]
     return [
         path
         for path in walk_files(root)  # type: ignore[union-attr]
-        if os.path.normcase(path.name).startswith("promptfooconfig")
+        if _names_a_promptfoo_config(os.path.normcase(path.name))
     ]
+
+
+def _names_a_promptfoo_config(normcased_name: str) -> bool:
+    """Whether *normcased_name* could name a Promptfoo config for either caller.
+
+    The extension is checked here and not left to the callers, even though
+    both apply their own rule to what comes back. The prefix alone matches
+    ``promptfooconfig-notes.txt``, and this list is memoized for the life of
+    the context, so a repository holding many such files would have every
+    one of their ``Path`` objects retained to answer a question neither
+    caller can answer "yes" to: detection wants ``suffix in (".yaml",
+    ".yml")`` and the tree globs ``promptfooconfig*.y{a,ml}``.
+
+    Still a superset of both, which is the property that matters: this
+    tests the *normcased* name, so a ``.YAML`` that detection will reject on
+    the authored name is kept rather than filtered out here.
+    """
+    return normcased_name.startswith("promptfooconfig") and normcased_name.endswith(
+        (".yaml", ".yml")
+    )
 
 
 def is_promptfoo_repo(

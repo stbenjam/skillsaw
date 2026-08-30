@@ -230,7 +230,7 @@ class TestSharedFold:
 
 
 class TestPatternLiteralCacheBudget:
-    """The literals memo retains the patterns it is keyed by."""
+    """The literals memo retains the pattern sources it is keyed by."""
 
     def _reset(self):
         import skillsaw.rules.builtin.content_analysis as ca
@@ -242,10 +242,14 @@ class TestPatternLiteralCacheBudget:
         """Not a fixed-small entry, so not boundable by a count.
 
         Nothing caps the length of a config-supplied banned pattern, and
-        the memo is keyed by the compiled pattern — so it is what keeps
-        that pattern alive once the config that compiled it is gone. A
-        count cap high enough to never evict a real workload would let
-        a sequence of such configs retain gigabytes.
+        the memo is keyed by that pattern's *source* — so it is what keeps
+        the string alive once the config that compiled it is gone. A count
+        cap high enough to never evict a real workload would let a sequence
+        of such configs retain gigabytes.
+
+        The compiled pattern is deliberately not charged: keying by it cost
+        a structural ``re.Pattern.__hash__`` on every lookup, so the memo no
+        longer holds one and must not be charged for what it does not keep.
         """
         import skillsaw.rules.builtin.content_analysis as ca
 
@@ -260,9 +264,13 @@ class TestPatternLiteralCacheBudget:
             charged = ca._LITERALS_BY_PATTERN.total_bytes - after_small
 
             assert after_small < 4096, "a short pattern must stay cheap"
-            assert charged > 1_000_000, (
-                "the compiled pattern is the bulk of what the entry retains "
-                "and must be charged, not just its literals"
+            assert charged > 200_000, (
+                "the pattern source is what the entry retains and must be "
+                "charged, not just its literals"
+            )
+            assert charged < 1_000_000, (
+                "the compiled pattern is no longer reachable from the entry, "
+                "so charging for it would bill memory nothing holds"
             )
         finally:
             self._reset()
@@ -383,8 +391,9 @@ class TestPatternLiteralCacheBudget:
             )
             # Exactly one entry's worth: what the value holds, plus the
             # one per-entry overhead the memo charges for holding it.
+            key = (pattern.pattern, pattern.flags)
             assert ca._LITERALS_BY_PATTERN.total_bytes == (
-                real_cost(pattern, ca._LITERALS_BY_PATTERN.values[pattern])
+                real_cost(pattern, ca._LITERALS_BY_PATTERN.values[key])
                 + BudgetedMemo.ENTRY_OVERHEAD_BYTES
             )
         finally:
@@ -811,3 +820,48 @@ class TestWindowsModulePaths:
         assert self._marked(["Pkg", "Sub"], [], {"/skill/pkg/__init__.py"}) == {
             "/skill/pkg/__init__.py"
         }
+
+
+class TestPatternLiteralKeyHashesInConstantTime:
+    """The literals memo must not hash the pattern it is keyed by."""
+
+    def test_lookup_does_not_scale_with_pattern_length(self):
+        """``re.Pattern.__hash__`` is structural, not the identity hash.
+
+        A compiled pattern defines ``__hash__``, and it walks the pattern
+        rather than using the object's address. Keying this memo by the
+        compiled object therefore put a full scan of the pattern in front of
+        every ``(pattern, block)`` lookup — in the prefilter whose entire
+        job is to be cheaper than the regex it guards. Keying by the source
+        string avoids it, because CPython caches a string's hash after the
+        first call.
+
+        Asserted as a ratio between a short pattern and a long one rather
+        than against a wall-clock threshold, so the test says what it means
+        on a slow machine as well as a fast one.
+        """
+        import re
+        import time
+
+        from skillsaw.rules.builtin.content_analysis import _pattern_literals
+
+        short = re.compile("(?:alpha|beta)")
+        long = re.compile("(?:" + "|".join("w%d" % i for i in range(20_000)) + ")")
+        assert len(long.pattern) > 100_000
+
+        def timed(pattern):
+            _pattern_literals(pattern)  # prime; the miss does the real work
+            best = None
+            for _ in range(5):
+                start = time.perf_counter()
+                for _ in range(2_000):
+                    _pattern_literals(pattern)
+                elapsed = time.perf_counter() - start
+                best = elapsed if best is None else min(best, elapsed)
+            return best
+
+        ratio = timed(long) / timed(short)
+        assert ratio < 10, (
+            f"a {len(long.pattern):,}-character pattern costs {ratio:.1f}x a short "
+            "one per lookup — the key is being hashed structurally again"
+        )

@@ -308,17 +308,22 @@ def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
     return literals[0] if literals else None
 
 
-# Required literals per compiled pattern object.
+# Required literals, keyed by ``(pattern source, flags)``.
 #
 # The lookup stands in front of a loop that runs once per (pattern,
 # document) pair — 6,870 times on a self-lint and 39,513 linting a
-# 115-skill, 41-plugin repository. An ``lru_cache`` hit hashes the
-# pattern's source string and builds a key tuple where a dict keyed by
-# the compiled pattern object is one identity hash. At this volume the
-# difference is small in absolute terms — an extra attribute load on this
-# path measured 4.3 ns, or 0.03 ms across a whole run — so the object-keyed
-# dict is here because it is the simpler thing that avoids re-hashing a
-# possibly enormous pattern source, not because the saving is large.
+# 115-skill, 41-plugin repository — so the key has to hash in constant
+# time at that volume.
+#
+# **Not the compiled pattern object, which does not.** ``re.Pattern``
+# defines ``__hash__``, and it is structural rather than the identity hash
+# an object without one would inherit: it walks the pattern. Measured on
+# CPython 3.11, hashing a 200,000-character pattern costs 0.894 ms, so
+# keying this memo by the compiled object put ~8.9 seconds of hashing in
+# front of 10,000 blocks — in the prefilter whose entire purpose is to be
+# cheaper than the regex it guards. A ``str`` key cannot go the same way:
+# CPython caches a string's hash in the object after the first call, so
+# every later lookup is O(1) however long the pattern is.
 #
 # The builtin patterns are module constants and number in the low
 # hundreds, a few hundred bytes each; only config-supplied ones are
@@ -326,19 +331,24 @@ def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
 # linting many differently-configured repositories.
 #
 # Bytes, not a count. An entry is not fixed-small: nothing caps the length
-# of a config-supplied pattern, and the memo is keyed by the compiled
-# pattern itself, so it keeps that pattern alive after the config that
-# compiled it is gone — it is the retainer, not a passenger on someone
-# else's reference. A single 200,000-character pattern measures 3.4 MB
-# compiled, so a count cap of 20,000 bounded this at gigabytes.
-# ``sys.getsizeof`` on a compiled pattern does scale with its code array,
-# so the charge is a direct measurement rather than an estimate.
+# of a config-supplied pattern, and the key *is* the pattern source, so
+# the memo keeps that string alive after the config that compiled it is
+# gone — it is the retainer, not a passenger on someone else's reference.
+# A count cap of 20,000 bounded this at gigabytes. What it no longer
+# retains is the compiled pattern itself (3.4 MB for that 200,000-character
+# example against ~200 KB of source), which is a second reason the object
+# key was the wrong one.
 _LITERALS_BY_PATTERN = BudgetedMemo(8 * 1024 * 1024)
 
 
 def _literals_entry_cost(pattern: "re.Pattern", literals: Tuple[str, ...]) -> int:
-    """What one ``_LITERALS_BY_PATTERN`` entry retains, in bytes."""
-    return sys.getsizeof(pattern) + sys.getsizeof(pattern.pattern) + _literals_cost(literals)
+    """What one ``_LITERALS_BY_PATTERN`` entry retains, in bytes.
+
+    The key's source string, which the memo keeps alive, plus the literals
+    it stores. The compiled pattern is deliberately absent: it is no longer
+    reachable from the entry.
+    """
+    return sys.getsizeof(pattern.pattern) + _literals_cost(literals)
 
 
 # ``str.lower`` is not the fold ``re.IGNORECASE`` uses, and ``str.casefold``
@@ -371,10 +381,11 @@ def case_fold(text: str) -> str:
 
 def _pattern_literals(pattern: re.Pattern) -> Tuple[str, ...]:
     """Literals every match of *pattern* must contain (see `_required_literals`)."""
-    literals = _LITERALS_BY_PATTERN.values.get(pattern)
+    key = (pattern.pattern, pattern.flags)
+    literals = _LITERALS_BY_PATTERN.values.get(key)
     if literals is None:
         literals = _required_literals(pattern.pattern, pattern.flags)
-        _LITERALS_BY_PATTERN.put(pattern, literals, _literals_entry_cost(pattern, literals))
+        _LITERALS_BY_PATTERN.put(key, literals, _literals_entry_cost(pattern, literals))
     return literals
 
 
