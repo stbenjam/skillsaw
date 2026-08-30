@@ -21,9 +21,6 @@ from ._helpers import iter_markdown_instruction_imports
 from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
 
 _MAX_IMPORT_HOPS = 4
-_LINE_START_IMPORT_PREFIX_RE = re.compile(
-    r"^\s*(?:(?:>\s*)|(?:[-*+]\s+)|(?:\d+[.)]\s+)|(?:[*_~]+))*$"
-)
 _GITHUB_TEAM_MENTION_RE = re.compile(
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?/"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?"
@@ -119,11 +116,7 @@ class InstructionImportsValidRule(Rule):
 
         for import_ref in iter_markdown_instruction_imports(markdown):
             import_path_str = import_ref.path
-            source_line = markdown.line(import_ref.body_line)
-            line_start_import = bool(
-                import_ref.col_start is not None
-                and _LINE_START_IMPORT_PREFIX_RE.fullmatch(source_line[: import_ref.col_start])
-            )
+            line_start_import = import_ref.line_start
             # Home-directory imports (Claude Code's ``@~/.claude/...``
             # memory syntax) reference machine-local files that are not
             # part of the repository. They're environment-specific, so

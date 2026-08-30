@@ -1,5 +1,7 @@
 """Tests for instruction file validation rules (AGENTS.md, CLAUDE.md, GEMINI.md)"""
 
+import time
+
 import pytest
 from pathlib import Path
 import tempfile
@@ -7,6 +9,7 @@ import shutil
 
 from skillsaw.blocks import ClaudeMdBlock
 from skillsaw.context import HAS_AGENTS_MD, HAS_CLAUDE_MD, RepositoryContext
+from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.rule import AutofixConfidence, Severity
 from skillsaw.rules.builtin import BUILTIN_RULES
 from skillsaw.rules.builtin.utils import invalidate_read_caches
@@ -16,6 +19,7 @@ from skillsaw.rules.builtin.instructions import (
     InstructionFileValidRule,
     InstructionImportsValidRule,
 )
+from skillsaw.rules.builtin.instructions import _helpers as instruction_helpers
 
 
 @pytest.fixture
@@ -290,6 +294,86 @@ class TestInstructionImportsValidRule:
         context = RepositoryContext(temp_dir)
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
+
+    def test_long_marker_run_before_prose_stays_a_mention(self, temp_dir):
+        marker_prefix = "*" * 64
+        (temp_dir / "CLAUDE.md").write_text(
+            f"{marker_prefix} Ask @platform-team before changing deploys.\n"
+        )
+
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+
+        assert violations == []
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "[@platform-team](https://example.com)\n",
+            "![@platform-team](image.png)\n",
+            "`code` @platform-team\n",
+            "&copy; @platform-team\n",
+            "# @platform-team\n",
+            "<br> @platform-team\n",
+        ],
+    )
+    def test_nonprose_ast_construct_before_mention_is_not_line_start(self, temp_dir, content):
+        (temp_dir / "CLAUDE.md").write_text(content)
+
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+
+        assert violations == []
+
+    def test_unknown_import_column_is_not_treated_as_line_start(self):
+        markdown = MarkdownDoc("@platform-team\n")
+        segment = markdown.text_segments()[0]
+        segment.col_start = None
+
+        imports = list(instruction_helpers.iter_markdown_instruction_imports(markdown))
+
+        assert len(imports) == 1
+        assert imports[0].line_start is False
+
+    @pytest.mark.parametrize("prefix", ["_ ", "~ ", "*_ "])
+    def test_malformed_marker_then_space_does_not_make_a_line_start_import(self, temp_dir, prefix):
+        (temp_dir / "CLAUDE.md").write_text(f"{prefix}@platform-team\n")
+
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+
+        assert violations == []
+
+    def test_many_imports_classify_the_source_prefix_once(self, monkeypatch):
+        import_count = 10_000
+        markdown = MarkdownDoc(" ".join("@mention" for _ in range(import_count)))
+        calls = []
+        classify = instruction_helpers._is_line_start_import_prefix
+
+        def count_classifications(line, end):
+            calls.append((line, end))
+            return classify(line, end)
+
+        monkeypatch.setattr(
+            instruction_helpers,
+            "_is_line_start_import_prefix",
+            count_classifications,
+        )
+
+        actual_count = sum(
+            1 for _ in instruction_helpers.iter_markdown_instruction_imports(markdown)
+        )
+
+        assert actual_count == import_count
+        assert len(calls) == 1
+
+    def test_many_imports_are_normalized_in_linear_time(self):
+        import_count = 256_000
+        line = " ".join("@mention" for _ in range(import_count))
+
+        started = time.process_time()
+        actual_count = sum(1 for _ in instruction_helpers.iter_instruction_imports(line))
+        elapsed = time.process_time() - started
+
+        assert actual_count == import_count
+        assert elapsed < 1.0, f"import scan took {elapsed:.2f}s — likely superlinear"
 
     def test_github_team_mention_not_checked(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
