@@ -1074,6 +1074,39 @@ def test_aliases_cannot_build_a_graph_deeper_than_the_source_reads(tmp_path):
     assert data is None
 
 
+def test_a_deep_document_reads_the_same_on_a_wheel_without_libyaml():
+    """The bound is stated, so its message must not depend on the wheel.
+
+    ``safe_load_yaml`` runs the pre-compose event count only for libyaml,
+    whose composer is recursive C with no guard; the pure-Python composer
+    raises instead, and running the prescan there too would parse every
+    document twice to reach an answer the post-load check already gives.
+
+    But it only gives that answer while the document is shallower than the
+    interpreter's own limit. Past that the composer gives out first, and
+    the caller saw ``maximum recursion depth exceeded`` where libyaml
+    users saw the explicit bound — a different message for the same file,
+    and baselines fingerprint the message.
+    """
+    import yaml
+
+    import skillsaw.utils as utils_module
+
+    saved = utils_module._SAFE_LOADER
+    try:
+        utils_module._SAFE_LOADER = yaml.SafeLoader
+        messages = []
+        for depth in (utils_module._MAX_YAML_DEPTH + 100, 5000):
+            document = "".join("a:\n" + " " * (i + 1) for i in range(depth)) + "1\n"
+            with pytest.raises(RecursionError) as caught:
+                utils_module.safe_load_yaml(document)
+            messages.append(str(caught.value))
+
+        assert messages[0] == messages[1] == utils_module._TOO_DEEP, messages
+    finally:
+        utils_module._SAFE_LOADER = saved
+
+
 def test_the_write_paths_load_under_the_same_bound(tmp_path):
     """A writer loads its own document, and must not be the way in.
 

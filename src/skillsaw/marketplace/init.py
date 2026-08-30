@@ -20,6 +20,7 @@ from .branding import (
     write_template_config,
 )
 from skillsaw.paths import safe_resolve
+from skillsaw.marketplace._pass import _start_resolution_pass
 
 
 def _prompt_color_scheme() -> Dict[str, str]:
@@ -60,6 +61,7 @@ def init_marketplace(
     interactive: bool = False,
 ) -> Path:
     """Initialize a new marketplace at the given path."""
+    _start_resolution_pass()
     root = safe_resolve((path or Path.cwd())) or (path or Path.cwd())
 
     if marketplace_type not in MARKETPLACE_TYPES:

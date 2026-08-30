@@ -14,6 +14,7 @@ from .branding import (
     read_template,
 )
 from skillsaw.paths import contained_resolve, safe_exists, safe_resolve
+from skillsaw.marketplace._pass import _start_resolution_pass
 
 _KEBAB_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 
@@ -278,6 +279,7 @@ def add_plugin(
     path: Optional[Path] = None,
 ) -> Path:
     """Create a new plugin with scaffold structure and register it."""
+    _start_resolution_pass()
     _validate_kebab(name, "Plugin name")
     root = _find_marketplace_root(path or Path.cwd())
     # Scaffold under metadata.pluginRoot when the marketplace declares one,
@@ -331,6 +333,7 @@ def add_skill(
     path: Optional[Path] = None,
 ) -> Path:
     """Add a skill to a plugin, .claude/ repo, or standalone directory."""
+    _start_resolution_pass()
     _validate_kebab(name, "Skill name")
 
     try:
@@ -372,6 +375,7 @@ def add_command(
     path: Optional[Path] = None,
 ) -> Path:
     """Add a command to an existing plugin."""
+    _start_resolution_pass()
     _validate_kebab(name, "Command name")
     _root, plugin_dir, mp_type = _find_plugin_context(path or Path.cwd(), plugin_name)
 
@@ -408,6 +412,7 @@ def add_agent(
     path: Optional[Path] = None,
 ) -> Path:
     """Add an agent to an existing plugin."""
+    _start_resolution_pass()
     _validate_kebab(name, "Agent name")
     _root, plugin_dir, mp_type = _find_plugin_context(path or Path.cwd(), plugin_name)
 
@@ -473,6 +478,7 @@ def add_hook(
 
     Creates a hook script and registers it in hooks/hooks.json.
     """
+    _start_resolution_pass()
     if event not in _VALID_HOOK_EVENTS:
         raise ValueError(
             f"Unknown hook event: {event!r}. "

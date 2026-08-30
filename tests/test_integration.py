@@ -7244,3 +7244,45 @@ class TestYamlMergeKeyConfig:
 
         assert r["rc"] == 0
         assert all(v["rule_id"] != "invalid-config" for v in violations(r))
+
+
+def test_relative_mentions_anchor_to_the_symlink_not_its_target(tmp_path):
+    """A symlinked source's needles follow where it is linked from.
+
+    A relative mention is written against the file's authored location, so
+    for ``agents/openai.yaml`` symlinked to ``metadata/openai.yaml`` an
+    ``icons/`` mention means ``agents/icons/``. Anchoring to the resolved
+    target looks under ``metadata/`` instead and reports a plainly
+    referenced file as dead weight.
+
+    Driven through the CLI rather than by calling the rule: the anchor only
+    decides the outcome once directory-mention coverage is running over a
+    discovered skill, and a bare ``Rule().check()`` on a skill-rooted
+    context reaches the file by a path that makes the anchor moot.
+    """
+    skill = tmp_path / "skills" / "demo"
+    (skill / "agents" / "icons").mkdir(parents=True)
+    (skill / "metadata").mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: A demo skill exercising bundled reachability.\n---\n\n"
+        "See [the agent config](agents/openai.yaml).\n"
+    )
+    (skill / "metadata" / "openai.yaml").write_text(
+        "name: openai\ndescription: Agent metadata\n"
+        "notes: The branding lives under icons/ next to this file.\n"
+    )
+    (skill / "agents" / "openai.yaml").symlink_to(Path("..") / "metadata" / "openai.yaml")
+    (skill / "agents" / "icons" / "logo.png").write_bytes(b"PNGDATA")
+    (skill / "agents" / "definitely-orphan.txt").write_text("clearly dead\n")
+
+    report = run_lint(tmp_path, "--no-custom-rules", "--no-baseline")
+    flagged = {
+        Path(v["file_path"]).name
+        for v in report["out"]["violations"]
+        if v["rule_id"] == "agentskill-unreferenced-files"
+    }
+
+    assert (
+        "definitely-orphan.txt" in flagged
+    ), "the rule did not run; the assertion below is vacuous"
+    assert "logo.png" not in flagged, f"unexpectedly flagged: {sorted(flagged)}"

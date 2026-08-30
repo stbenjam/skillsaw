@@ -1540,6 +1540,15 @@ def safe_load_yaml(source: Any) -> Any:
         _reject_deep_before_compose(source)
     try:
         data = yaml.load(source, Loader=_SAFE_LOADER)
+    except RecursionError:
+        # Only reachable on the pure-Python loader, which skips the
+        # prescan above: its composer recurses, so a document deeper than
+        # the interpreter's limit gives out there rather than at
+        # ``_MAX_YAML_DEPTH``. The verdict is the same either way — the
+        # document is rejected — but the message is not, and baselines
+        # fingerprint the message. Re-raised as the explicit bound so one
+        # file reads the same on every wheel.
+        raise RecursionError(_TOO_DEEP) from None
     except yaml.YAMLError:
         if _SAFE_LOADER is yaml.SafeLoader:
             raise

@@ -194,7 +194,10 @@ class MarkdownCodeSpan:
     in_link: bool = False
 
 
-@dataclass
+# Frozen: ``fences()`` and ``headings()`` are memoized and hand out the
+# same record objects on every call, so a mutable one would let a rule
+# alter what every later rule sees in the same document.
+@dataclass(frozen=True)
 class MarkdownFence:
     """A fenced or indented code block. Line range includes the delimiters."""
 
@@ -240,7 +243,10 @@ class MarkdownReferenceDefinition:
     dest_col_end: Optional[int] = None
 
 
-@dataclass
+# Frozen: ``fences()`` and ``headings()`` are memoized and hand out the
+# same record objects on every call, so a mutable one would let a rule
+# alter what every later rule sees in the same document.
+@dataclass(frozen=True)
 class MarkdownHeading:
     """An ATX or setext heading."""
 

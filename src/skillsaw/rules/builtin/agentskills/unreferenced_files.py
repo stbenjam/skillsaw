@@ -412,7 +412,15 @@ class AgentSkillUnreferencedFilesRule(Rule):
             # directory ("" at the skill root).  Every needle relative to
             # the mentioning file is a suffix of a skill-relative path, so
             # one lookup here replaces a per-candidate ``os.path.relpath``.
-            source_rel_dir = self._source_rel_dir(resolved_source, skill_resolved)
+            #
+            # Anchored to the *authored* path, not the resolved one. A
+            # relative mention is written relative to where the file is
+            # linked from, so for ``agents/openai.yaml`` symlinked to
+            # ``metadata/openai.yaml`` an ``icons/`` mention means
+            # ``agents/icons/``. Resolving first would look under
+            # ``metadata/`` and report the real file unreferenced.
+            # ``resolved_source`` stays the identity and containment key.
+            source_rel_dir = self._source_rel_dir(source, skill_resolved)
 
             # Markdown links, resolved relative to the linking file.  Link
             # syntax only means anything in markdown sources; scripts and
@@ -758,15 +766,19 @@ class AgentSkillUnreferencedFilesRule(Rule):
         )
 
     @staticmethod
-    def _source_rel_dir(resolved_source: Path, skill_resolved: Path) -> str:
+    def _source_rel_dir(source: Path, skill_resolved: Path) -> str:
         """The mentioning file's directory, relative to the skill root.
 
-        ``""`` for a source at the skill root, and for the (impossible in
-        practice) case of a source outside the skill, where no
-        source-relative needle can be formed anyway.
+        Takes the path as authored rather than as resolved: relative
+        mentions inside a file are written against where it is linked
+        from, so a symlinked source anchors its needles to the link's
+        directory, not the target's.
+
+        ``""`` for a source at the skill root, and for a source outside
+        the skill, where no source-relative needle can be formed anyway.
         """
         try:
-            relative = resolved_source.parent.relative_to(skill_resolved).as_posix()
+            relative = source.parent.relative_to(skill_resolved).as_posix()
         except ValueError:
             return ""
         # ``as_posix()`` spells "the skill root itself" as ".". Only that

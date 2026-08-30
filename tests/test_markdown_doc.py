@@ -5,6 +5,7 @@ construct's reported line/column must match its actual file position, since
 fixes splice at these exact spans.
 """
 
+import dataclasses
 import re
 import sys
 from pathlib import Path
@@ -787,3 +788,29 @@ class TestParseCacheBudget:
         finally:
             _PARSE_CACHE._budget = budget
             self._reset()
+
+
+class TestCachedRecordsAreImmutable:
+    """``fences()`` and ``headings()`` hand out the same objects every call."""
+
+    def test_a_fence_record_cannot_be_mutated_for_later_readers(self):
+        """The memo shares records; a mutable one would leak between rules.
+
+        Before these were memoized each call rebuilt them, so a consumer
+        editing a record affected nobody. Now one custom rule assigning to
+        a returned record would change what every later rule sees in the
+        same document, which is why they are frozen rather than copied on
+        the way out.
+        """
+        doc = MarkdownDoc("```python\nprint(1)\n```\n\n## A heading\n")
+
+        fence = doc.fences()[0]
+        heading = doc.headings()[0]
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            fence.info = "tampered"
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            heading.level = 99
+
+        assert doc.fences()[0].info == "python"
+        assert doc.headings()[0].level == 2
