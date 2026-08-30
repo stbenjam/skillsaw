@@ -59,6 +59,34 @@ def _parse_file_frontmatter(
     return fm, None, None, body, fm_line_count
 
 
+def _compose_frontmatter_document(content: Optional[str], fm: str) -> str:
+    """Return *content* with its frontmatter replaced by normalized *fm*."""
+    if not content:
+        return f"---\n{fm}---\n"
+
+    match = _FRONTMATTER_RE.match(content)
+    if match:
+        return f"---\n{fm}---\n{content[match.end() :]}"
+
+    if not content.startswith("---"):
+        return f"---\n{fm}---\n{content}"
+
+    lines = content.split("\n")
+    close_idx = None
+    for index, line in enumerate(lines[1:], 1):
+        if line.strip() == "---":
+            close_idx = index
+            break
+    if close_idx is None:
+        body_after = "\n".join(lines[1:])
+        return f"---\n{fm}---\n{body_after}"
+
+    body_after = "\n".join(lines[close_idx + 1 :])
+    if body_after and not body_after.startswith("\n"):
+        body_after = "\n" + body_after
+    return f"---\n{fm}---{body_after}"
+
+
 @dataclass(eq=False)
 class FrontmatterField(LintTarget):
     """A single key-value pair from YAML frontmatter, exposed as a tree node."""
@@ -276,35 +304,9 @@ class FrontmatteredBlock(LintTarget):
             raise ValueError("Frontmatter must be a YAML mapping")
 
         fm = new_fm_text.rstrip("\n") + "\n"
-
         content = read_text(self.path)
-        if not content:
-            self.path.write_text(f"---\n{fm}---\n", encoding="utf-8")
-            self._fm_parsed = None
-            self.invalidate_find_cache()
-            return
-
-        m = _FRONTMATTER_RE.match(content)
-        if m:
-            body_after = content[m.end() :]
-            self.path.write_text(f"---\n{fm}---\n{body_after}", encoding="utf-8")
-        elif content.startswith("---"):
-            lines = content.split("\n")
-            close_idx = None
-            for i, line in enumerate(lines[1:], 1):
-                if line.strip() == "---":
-                    close_idx = i
-                    break
-            if close_idx is not None:
-                body_after = "\n".join(lines[close_idx + 1 :])
-                if body_after and not body_after.startswith("\n"):
-                    body_after = "\n" + body_after
-                self.path.write_text(f"---\n{fm}---{body_after}", encoding="utf-8")
-            else:
-                body_after = "\n".join(lines[1:])
-                self.path.write_text(f"---\n{fm}---\n{body_after}", encoding="utf-8")
-        else:
-            self.path.write_text(f"---\n{fm}---\n{content}", encoding="utf-8")
+        updated = _compose_frontmatter_document(content, fm)
+        self.path.write_text(updated, encoding="utf-8")
         self._fm_parsed = None
         # Children will be rebuilt on the next walk — cached find() results
         # on this node and its ancestors must not serve the old fields.

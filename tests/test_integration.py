@@ -6911,6 +6911,18 @@ class TestRenameRefsAutofix:
 
     FIXTURE = "autofix/rename-refs-substring"
 
+    def test_plain_fix_distinguishes_suggestions_from_no_fixes(self, tmp_path):
+        """A SUGGEST-only result must not claim that no fix exists."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo, "--rule", "agentskill-name")
+
+        result = _run_fix(repo, "--rule", "agentskill-rename-refs")
+
+        assert "No safe fixes found." in result.stdout
+        assert "Suggested fixes" in result.stdout
+        assert "skillsaw fix --suggest" in result.stdout
+        assert "No auto-fixable violations found." not in result.stdout
+
     def test_substring_matches_not_corrupted(self, tmp_path):
         """'metadata-parser'/'data-parser-staging' must survive a rename of 'data-parser'."""
         repo = copy_fixture(self.FIXTURE, tmp_path)

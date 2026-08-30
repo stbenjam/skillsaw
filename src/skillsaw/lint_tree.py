@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, TYPE_CHECKING, Tuple
 
@@ -156,9 +157,194 @@ _OPENCODE_CONTENT_DIRS = tuple(
 #: loads is its business rather than a defect in either file.
 _OPENCODE_CONFIG_NAMES = ("opencode.json", "opencode.jsonc")
 
+# Authored APM content directories, in lint-tree attachment order. Keeping the
+# directory, file convention, and semantic block together makes format support
+# a data change rather than another nested branch in the tree orchestrator.
+_APM_CONTENT_GLOBS = (
+    ("instructions", "*.instructions.md", InstructionBlock),
+    ("agents", "*.agent.md", AgentBlock),
+    ("prompts", "*.md", PromptBlock),
+    ("chatmodes", "*.md", ChatmodeBlock),
+    ("context", "*.md", ContextFileBlock),
+)
+
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
+
+
+@dataclass
+class _TreeBuildState:
+    """Shared state and attachment primitives for one lint-tree build."""
+
+    context: "RepositoryContext"
+    root: LintTarget
+    repo_root: Path
+    seen: Set[Path] = field(default_factory=set)
+    seen_roles: Set[Tuple[Path, type]] = field(default_factory=set)
+    openai_seen: Set[Tuple[Path, Path]] = field(default_factory=set)
+    opencode_configs: List[OpenCodeConfigBlock] = field(default_factory=list)
+
+    def resolve_repo_path(self, path: Path) -> Path | None:
+        """Resolve *path* only when repository containment is safe."""
+        return contained_resolve(path, self.repo_root)
+
+    def add_block(
+        self,
+        parent: LintTarget,
+        p: Path,
+        block_cls: type,
+        owner: Path | None = None,
+        content_suppressed: bool = False,
+    ) -> None:
+        """Add one safely resolved block unless its role is already present."""
+        resolved = self.resolve_repo_path(p)
+        if (
+            resolved is None
+            or resolved in self.seen
+            or not safe_exists(resolved)
+            or self.context.is_path_excluded(p)
+        ):
+            return
+        self.seen.add(resolved)
+        self.seen_roles.add((resolved, block_cls))
+        block = block_cls(path=p)
+        block.plugin_owner = owner
+        block.content_suppressed = content_suppressed
+        parent.children.append(block)
+
+    def add_parser_block(
+        self,
+        parent: LintTarget,
+        p: Path,
+        block_cls: type,
+        owner: Path | None = None,
+        content_suppressed: bool = False,
+    ) -> Optional[LintTarget]:
+        """Attach a structured document once for each parser role.
+
+        A JSON document may legitimately contain both hooks and MCP servers.
+        Path-only deduplication would hide whichever parser runs second, while
+        role-aware deduplication still prevents duplicate findings when two
+        discovery paths select the same parser.
+        """
+        resolved = self.resolve_repo_path(p)
+        if resolved is None:
+            return None
+        role = (resolved, block_cls)
+        if (
+            role in self.seen_roles
+            or not safe_is_file(resolved)
+            or self.context.is_path_excluded(p)
+        ):
+            return None
+        # seen_roles only — never the path-only ``seen`` set: a manifest can
+        # declare ``hooks``/``mcpServers`` at any in-plugin markdown file,
+        # and poisoning ``seen`` would drop that file from every content
+        # rule that attaches later.
+        self.seen_roles.add(role)
+        block = block_cls(path=p)
+        block.plugin_owner = owner
+        block.content_suppressed = content_suppressed
+        parent.children.append(block)
+        return block
+
+    def add_openai_metadata(
+        self,
+        parent: LintTarget,
+        path: Path,
+        *,
+        metadata_root: Path,
+        containment_root: Path,
+    ) -> None:
+        """Attach structured OpenAI metadata."""
+        # Existence first: this runs once per SkillNode, and `agents/
+        # openai.yaml` is absent in the overwhelming majority of them — the
+        # three resolves below cost a realpath each and answer nothing when
+        # there is no file to attach.
+        if not safe_is_file(path) or self.context.is_path_excluded(path):
+            return
+        resolved = safe_resolve(path)
+        root = safe_resolve(containment_root)
+        owner = safe_resolve(metadata_root)
+        if (
+            resolved is None
+            or root is None
+            or owner is None
+            or (resolved, owner) in self.openai_seen
+            or not resolved.is_relative_to(root)
+        ):
+            return
+        # Metadata paths have owner-relative semantics, so the same contained
+        # file may need validation once for each skill that links to it. Keep
+        # this separate from the content-block dedupe set for the same reason.
+        self.openai_seen.add((resolved, owner))
+        block = OpenAIMetadataBlock(
+            path=path,
+            metadata_root=metadata_root,
+            containment_root=containment_root,
+        )
+        parent.children.append(block)
+
+
+def _attach_apm_skills(
+    state: _TreeBuildState,
+    apm_node: ApmNode,
+    apm_skills: Path,
+) -> None:
+    """Attach authored APM skills and their Markdown references."""
+    if not apm_skills.is_dir():
+        return
+
+    for skill_path in state.context.skills:
+        if not (safe_resolve(skill_path) or skill_path).is_relative_to(
+            safe_resolve(apm_skills) or apm_skills
+        ):
+            continue
+        skill_node = SkillNode(path=skill_path)
+        state.add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
+        refs_dir = skill_path / "references"
+        if refs_dir.is_dir():
+            for ref_file in sorted(refs_dir.glob("*.md")):
+                state.add_block(skill_node, ref_file, SkillRefBlock)
+        apm_node.children.append(skill_node)
+
+
+def _attach_apm_tree(
+    state: _TreeBuildState,
+) -> None:
+    """Attach APM's manifest and authored primitives at their original stage."""
+    context = state.context
+    if not context.has_apm:
+        return
+
+    apm_yml = context.root_path / "apm.yml"
+    if apm_yml.exists() and not context.is_path_excluded(apm_yml):
+        state.root.children.append(ApmConfigNode(path=apm_yml))
+
+    # `.apm/` holds a package's authored primitives. A consumer-only
+    # manifest — `apm.yml` with `dependencies:`/`targets:` and no authored
+    # content — has no `.apm/` directory, so don't invent an ApmNode for a
+    # path that doesn't exist (issue #472).
+    apm_dir = context.root_path / ".apm"
+    if not apm_dir.is_dir():
+        return
+
+    apm_node = ApmNode(path=apm_dir)
+    for dirname, pattern, block_cls in _APM_CONTENT_GLOBS:
+        content_dir = apm_dir / dirname
+        if not content_dir.is_dir():
+            continue
+        for markdown_file in sorted(content_dir.glob(pattern)):
+            state.add_block(apm_node, markdown_file, block_cls)
+
+    # Hooks and settings inside .apm/ are supply-chain attack surfaces.
+    state.add_block(apm_node, apm_dir / "hooks" / "hooks.json", HooksBlock)
+    state.add_block(apm_node, apm_dir / "settings.json", SettingsBlock)
+    state.add_block(apm_node, apm_dir / "settings.local.json", SettingsBlock)
+
+    _attach_apm_skills(state, apm_node, apm_dir / "skills")
+    state.root.children.append(apm_node)
 
 
 def build_lint_tree(context: "RepositoryContext") -> LintTarget:
@@ -185,19 +371,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         logger.error(message)
         root.set_parents()
         return root
-    seen: Set[Path] = set()
-    seen_roles: Set[Tuple[Path, type]] = set()
-    openai_seen: Set[Tuple[Path, Path]] = set()
-    opencode_configs: List[OpenCodeConfigBlock] = []
+    state = _TreeBuildState(context=context, root=root, repo_root=repo_root)
 
     _is_excluded = context.is_path_excluded
     _is_in_compiled_dir = context.in_apm_compiled_dir
-
-    def _resolve_repo_path(path: Path) -> Path | None:
-        """Resolve *path* only when the repository root and containment are safe."""
-        if repo_root is None:
-            return None
-        return contained_resolve(path, repo_root)
 
     apm_source_root = (
         (safe_resolve((context.root_path / ".apm")) or (context.root_path / ".apm"))
@@ -309,55 +486,6 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         resolved = safe_resolve(path)
         return resolved is not None and resolved in apm_compiled_github
 
-    def _add_block(
-        parent: LintTarget,
-        p: Path,
-        block_cls: type,
-        owner: Path | None = None,
-        content_suppressed: bool = False,
-    ) -> None:
-        """Add one safely resolved block unless its role is already present."""
-        resolved = _resolve_repo_path(p)
-        if resolved is None or resolved in seen or not safe_exists(resolved) or _is_excluded(p):
-            return
-        seen.add(resolved)
-        seen_roles.add((resolved, block_cls))
-        block = block_cls(path=p)
-        block.plugin_owner = owner
-        block.content_suppressed = content_suppressed
-        parent.children.append(block)
-
-    def _add_parser_block(
-        parent: LintTarget,
-        p: Path,
-        block_cls: type,
-        owner: Path | None = None,
-        content_suppressed: bool = False,
-    ) -> Optional[LintTarget]:
-        """Attach a structured document once for each parser role.
-
-        A JSON document may legitimately contain both hooks and MCP servers.
-        Path-only deduplication would hide whichever parser runs second, while
-        role-aware deduplication still prevents duplicate findings when two
-        discovery paths select the same parser.
-        """
-        resolved = _resolve_repo_path(p)
-        if resolved is None:
-            return None
-        role = (resolved, block_cls)
-        if role in seen_roles or not safe_is_file(resolved) or _is_excluded(p):
-            return None
-        # seen_roles only — never the path-only ``seen`` set: a manifest can
-        # declare ``hooks``/``mcpServers`` at any in-plugin markdown file,
-        # and poisoning ``seen`` would drop that file from every content
-        # rule that attaches later.
-        seen_roles.add(role)
-        block = block_cls(path=p)
-        block.plugin_owner = owner
-        block.content_suppressed = content_suppressed
-        parent.children.append(block)
-        return block
-
     # Nearest package ownership, with the roots resolved once per context.
     _contained_plugin_owner = context.contained_plugin_owning
     agent_plugin_roots = set(context.agent_plugin_roots())
@@ -388,7 +516,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         resolved = safe_resolve(p)
         if root is None or resolved is None or not resolved.is_relative_to(root):
             return
-        _add_parser_block(parent, p, block_cls, owner=owner)
+        state.add_parser_block(parent, p, block_cls, owner=owner)
 
     def _add_plugin_prose(parent: LintTarget, plugin_dir: Path, owner: Path) -> None:
         """The one prose attach for every plugin container.
@@ -437,46 +565,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 continue
             for md in files:
                 if _contained(md):
-                    _add_block(parent, md, block_cls, owner=owner)
+                    state.add_block(parent, md, block_cls, owner=owner)
         readme = plugin_dir / "README.md"
         if _contained(readme):
-            _add_block(parent, readme, ReadmeBlock, owner=owner)
-
-    def _add_openai_metadata(
-        parent: LintTarget,
-        path: Path,
-        *,
-        metadata_root: Path,
-        containment_root: Path,
-    ) -> None:
-        """Attach structured OpenAI metadata."""
-        # Existence first: this runs once per SkillNode, and `agents/
-        # openai.yaml` is absent in the overwhelming majority of them — the
-        # three resolves below cost a realpath each and answer nothing when
-        # there is no file to attach.
-        if not safe_is_file(path) or _is_excluded(path):
-            return
-        resolved = safe_resolve(path)
-        root = safe_resolve(containment_root)
-        owner = safe_resolve(metadata_root)
-        if (
-            resolved is None
-            or root is None
-            or owner is None
-            or (resolved, owner) in openai_seen
-            or not resolved.is_relative_to(root)
-        ):
-            return
-        # Metadata paths have owner-relative semantics, so the same contained
-        # file may need validation once for each skill that links to it. Keep
-        # this separate from the content-block dedupe set for the same reason.
-        openai_seen.add((resolved, owner))
-        block = OpenAIMetadataBlock(
-            path=path,
-            metadata_root=metadata_root,
-            containment_root=containment_root,
-        )
-        parent.children.append(block)
+            state.add_block(parent, readme, ReadmeBlock, owner=owner)
 
     # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
     for f in context.instruction_files:
@@ -488,11 +580,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # security rules still scan the copy that ships.
         compiled = _is_apm_compiled_github(f.parent)
         block_cls = _instruction_block_type(f)
-        _add_block(root, f, block_cls, content_suppressed=compiled)
+        state.add_block(root, f, block_cls, content_suppressed=compiled)
 
     # --- .claude/settings.json (supply-chain attack surface) ---
-    _add_block(root, context.root_path / ".claude" / "settings.json", SettingsBlock)
-    _add_block(root, context.root_path / ".claude" / "settings.local.json", SettingsBlock)
+    state.add_block(root, context.root_path / ".claude" / "settings.json", SettingsBlock)
+    state.add_block(root, context.root_path / ".claude" / "settings.local.json", SettingsBlock)
 
     # --- Root-level .mcp.json (MCP server configuration) ---
     # A dual-format package may symlink both conventional paths to one file.
@@ -503,7 +595,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     )
     root_native_mcp = context.root_path / ".mcp.json"
     if not _shadowed_by_agent_plugin_mcp(root_native_mcp, root_agent_plugin_mcp):
-        _add_block(root, root_native_mcp, McpBlock)
+        state.add_block(root, root_native_mcp, McpBlock)
 
     # --- MCP Registry publisher metadata ---
     # server.json is not an MCP client configuration file: it describes one
@@ -511,10 +603,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # reaches content-quality rules as prose.
     registry_servers = context.mcp_registry_server_paths()
     for server_json in registry_servers:
-        _add_parser_block(root, server_json, McpRegistryServerBlock)
+        state.add_parser_block(root, server_json, McpRegistryServerBlock)
     if registry_servers:
         for package_json in context.package_json_paths():
-            _add_parser_block(root, package_json, McpRegistryNpmPackageBlock)
+            state.add_parser_block(root, package_json, McpRegistryNpmPackageBlock)
 
     # --- Editor-owned content directories (Cursor, Copilot/VS Code, Cline) ---
     # These tools read AGENTS.md for portable instructions — already attached
@@ -554,7 +646,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # symlink at the base even though it will not follow one during
         # ``**`` descent, so a ``.clinerules -> /`` symlink would walk the
         # filesystem before a single match was rejected.
-        if _resolve_repo_path(directory) is None:
+        if state.resolve_repo_path(directory) is None:
             return
         try:
             matches = sorted(directory.glob(pattern))
@@ -576,13 +668,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             if skip_dirs and relative and relative[0] in skip_dirs:
                 continue
             if safe_is_file(match):
-                _add_block(parent, match, block_cls, content_suppressed=content_suppressed)
+                state.add_block(parent, match, block_cls, content_suppressed=content_suppressed)
 
     # Cursor reads the legacy file from the nearest enclosing directory too,
     # so a monorepo package keeps its own — discovered in the same walk that
     # finds `.cursor/`, which is what keeps detection and attachment agreeing.
     for legacy_cursor in context.legacy_editor_files(".cursorrules"):
-        _add_block(root, legacy_cursor, InstructionBlock)
+        state.add_block(root, legacy_cursor, InstructionBlock)
 
     for cursor_dir in context.agent_tool_dirs(".cursor"):
         # APM's cursor target compiles ``.apm/instructions/`` into
@@ -604,15 +696,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             content_suppressed=rules_suppressed,
         )
         _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
-        _add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
-        _add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
+        state.add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
+        state.add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
 
     for github_dir in context.agent_tool_dirs(".github"):
         # A compiled Copilot copy duplicates its ``.apm/`` source for the
         # content rules, so those findings are dropped — but it is attached,
         # not removed, so the security rules still scan what actually ships.
         copilot_instructions = github_dir / "copilot-instructions.md"
-        _add_block(
+        state.add_block(
             root,
             copilot_instructions,
             InstructionBlock,
@@ -641,12 +733,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             )
 
     for vscode_dir in context.agent_tool_dirs(".vscode"):
-        _add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
+        state.add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
 
     # The skills CLI writes one project lockfile at each project root. A
     # monorepo may therefore have several, all found by the shared walk.
     for lockfile in context.skills_lock_files():
-        _add_parser_block(root, lockfile, SkillsLockBlock)
+        state.add_parser_block(root, lockfile, SkillsLockBlock)
 
     def _add_opencode_config(directory: Path) -> None:
         """Attach every ``opencode.json`` and ``opencode.jsonc`` in *directory*.
@@ -657,14 +749,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         ``opencode-config-valid``, and its ``mcp`` section is additionally
         exposed as an :class:`McpBlock` so the ecosystem-neutral policy and
         security rules read OpenCode's servers the way they read every other
-        host's. ``_add_parser_block`` is role-aware, so this is one file
+        host's. ``state.add_parser_block`` is role-aware, so this is one file
         appearing twice in the tree rather than two findings for one defect.
         """
         for name in _OPENCODE_CONFIG_NAMES:
-            config = _add_parser_block(root, directory / name, OpenCodeConfigBlock)
+            config = state.add_parser_block(root, directory / name, OpenCodeConfigBlock)
             if isinstance(config, OpenCodeConfigBlock):
-                opencode_configs.append(config)
-            _add_parser_block(root, directory / name, OpenCodeMcpBlock)
+                state.opencode_configs.append(config)
+            state.add_parser_block(root, directory / name, OpenCodeMcpBlock)
 
     def _add_opencode_instructions() -> None:
         """Attach local files selected by each OpenCode ``instructions`` entry.
@@ -682,7 +774,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """
         searched: Set[Tuple[Path, str]] = set()
         searches: List[Tuple[Path, str]] = []
-        for config in opencode_configs:
+        for config in state.opencode_configs:
             data = config.raw_data
             instructions = data.get("instructions") if data is not None else None
             if not isinstance(instructions, list):
@@ -692,7 +784,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 if config.path.parent.name == ".opencode"
                 else config.path.parent
             )
-            if _resolve_repo_path(project_dir) is None:
+            if state.resolve_repo_path(project_dir) is None:
                 continue
             search_dirs: List[Path] = []
             current = project_dir
@@ -701,7 +793,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 if current == context.root_path:
                     break
                 parent = current.parent
-                if parent == current or _resolve_repo_path(parent) is None:
+                if parent == current or state.resolve_repo_path(parent) is None:
                     break
                 current = parent
 
@@ -726,7 +818,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                     candidates = tuple((base, raw_pattern) for base in search_dirs)
 
                 for glob_base, pattern in candidates:
-                    resolved_base = _resolve_repo_path(glob_base)
+                    resolved_base = state.resolve_repo_path(glob_base)
                     search = (resolved_base, pattern) if resolved_base is not None else None
                     if search is None or search in searched or not safe_is_dir(glob_base):
                         continue
@@ -756,9 +848,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
         for matches in matches_by_search:
             for match in matches:
-                resolved_match = _resolve_repo_path(match)
+                resolved_match = state.resolve_repo_path(match)
                 if resolved_match is not None and safe_is_file(resolved_match):
-                    _add_block(
+                    state.add_block(
                         root,
                         match,
                         _instruction_block_type(match),
@@ -795,27 +887,27 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for dir_name in devin.TOOL_DIR_NAMES:
         for devin_dir in context.agent_tool_dirs(dir_name):
             _add_glob(root, devin_dir / "rules", "**/*.md", DevinRuleBlock)
-            _add_block(root, devin_dir / "global_rules.md", DevinGlobalRuleBlock)
+            state.add_block(root, devin_dir / "global_rules.md", DevinGlobalRuleBlock)
 
     kiro_steering = context.root_path / ".kiro" / "steering"
     if kiro_steering.is_dir():
         for md in sorted(kiro_steering.glob("*.md")):
-            _add_block(root, md, InstructionBlock)
+            state.add_block(root, md, InstructionBlock)
 
-    _add_block(root, context.root_path / ".windsurfrules", InstructionBlock)
+    state.add_block(root, context.root_path / ".windsurfrules", InstructionBlock)
 
     # Same story as `.cursorrules`: the file form of `.clinerules` is read
     # from the workspace directory, so a package that carries its own is
     # linted alongside the root's.
     for clinerules_file in context.legacy_editor_files(".clinerules"):
-        _add_block(root, clinerules_file, InstructionBlock)
+        state.add_block(root, clinerules_file, InstructionBlock)
     for clinerules_dir in context.agent_tool_dirs(".clinerules"):
         # Cline concatenates every .md and .txt under .clinerules/ into the
         # system prompt, but its loader excludes three subdirectories:
         # workflows/ (on demand), skills/ (on demand, and discovered as
         # skills), and hooks/ (executables, not prose). Sweeping them in
         # would budget content Cline never loads as always-on context.
-        # Claim the workflows first: ``_add_block`` keeps the first role a
+        # Claim the workflows first: ``state.add_block`` keeps the first role a
         # path gets.
         _add_glob(root, clinerules_dir / "workflows", "**/*.md", ClineWorkflowBlock)
         for pattern in ("**/*.md", "**/*.txt"):
@@ -940,21 +1032,21 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # unclaimed packages. Portable-only packages must not accidentally
         # inherit Claude's hooks, .mcp.json, or settings semantics.
         if prov.claude or (not prov.ecosystems and not is_agent_plugin):
-            _add_block(
+            state.add_block(
                 container, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
             )
             native_mcp = plugin_path / ".mcp.json"
             if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
-                _add_block(container, native_mcp, McpBlock, owner=resolved_plugin)
+                state.add_block(container, native_mcp, McpBlock, owner=resolved_plugin)
         # settings.json is Claude-side configuration with no Codex
         # counterpart: attached only for Claude-style directories, keeping
-        # _add_block's bare resolve() away from content a hostile
+        # the generic attachment path away from content a hostile
         # Codex-only checkout controls.
         if prov.claude or (not prov.ecosystems and not is_agent_plugin):
-            _add_block(
+            state.add_block(
                 container, plugin_path / "settings.json", SettingsBlock, owner=resolved_plugin
             )
-            _add_block(
+            state.add_block(
                 container, plugin_path / "settings.local.json", SettingsBlock, owner=resolved_plugin
             )
 
@@ -970,7 +1062,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # against the excluded manifest itself.
             node = CodexPluginConfigNode(path=manifest)
             node.plugin_owner = resolved_plugin
-            _add_openai_metadata(
+            state.add_openai_metadata(
                 node,
                 plugin_path / "agents" / "openai.yaml",
                 metadata_root=plugin_path,
@@ -987,7 +1079,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # payloads have no file of their own, so they borrow the
             # manifest path.
             for declared_hooks in codex_declared_hook_files(plugin_path):
-                _add_parser_block(node, declared_hooks, HooksBlock, owner=resolved_plugin)
+                state.add_parser_block(node, declared_hooks, HooksBlock, owner=resolved_plugin)
             for inline_hooks in codex_inline_hooks(plugin_path):
                 inline_block = CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks)
                 inline_block.plugin_owner = resolved_plugin
@@ -1000,7 +1092,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             for declared_mcp in codex_declared_mcp_files(plugin_path):
                 if _shadowed_by_agent_plugin_mcp(declared_mcp, agent_plugin_mcp):
                     continue
-                _add_parser_block(node, declared_mcp, McpBlock, owner=resolved_plugin)
+                state.add_parser_block(node, declared_mcp, McpBlock, owner=resolved_plugin)
             for inline_mcp in codex_inline_mcp_servers(plugin_path):
                 inline_block = CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp)
                 inline_block.plugin_owner = resolved_plugin
@@ -1038,13 +1130,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         native_devin = devin.is_devin_native_skill_dir(skill_path)
         skill_node = DevinSkillNode(path=skill_path) if native_devin else SkillNode(path=skill_path)
         block_cls = DevinSkillBlock if native_devin else SkillBlock
-        _add_block(skill_node, skill_path / "SKILL.md", block_cls)
+        state.add_block(skill_node, skill_path / "SKILL.md", block_cls)
         # Contained against the owning package: rules both read and
         # rewrite these files, so a symlink here is a read *and* a write
         # outside the checkout.
         ref_root = _contained_plugin_owner(skill_path)
 
-        _add_openai_metadata(
+        state.add_openai_metadata(
             skill_node,
             skill_path / "agents" / "openai.yaml",
             metadata_root=skill_path,
@@ -1061,7 +1153,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if refs_dir.is_dir():
             for ref_file in sorted(refs_dir.glob("*.md")):
                 if _contained_in_plugin(ref_file):
-                    _add_block(skill_node, ref_file, SkillRefBlock)
+                    state.add_block(skill_node, ref_file, SkillRefBlock)
 
         # Nearest plugin ancestor via dict lookups — iterating all plugins
         # with is_relative_to() is O(skills x plugins) and dominated tree
@@ -1089,15 +1181,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- .coderabbit.yaml ---
     cr_path = context.root_path / ".coderabbit.yaml"
-    cr_resolved = _resolve_repo_path(cr_path)
+    cr_resolved = state.resolve_repo_path(cr_path)
     if cr_resolved is not None and safe_exists(cr_resolved) and not _is_excluded(cr_path):
         cr_container = CodeRabbitNode(path=cr_path)
-        cr_blocks = CodeRabbitContentBlock.gather(context, seen, _is_excluded)
+        cr_blocks = CodeRabbitContentBlock.gather(context, state.seen, _is_excluded)
         cr_container.children.extend(cr_blocks)
         root.children.append(cr_container)
 
     # --- Promptfoo eval configs ---
-    _build_promptfoo_nodes(context, root, plugin_nodes, seen, _is_excluded)
+    _build_promptfoo_nodes(context, root, plugin_nodes, state.seen, _is_excluded)
 
     # --- Cursor prompt-hook content blocks ---
     # Attached to the root rather than to the hooks block: a JsonConfigBlock
@@ -1114,64 +1206,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 break
 
     # --- APM ---
-    if context.has_apm:
-        apm_yml = context.root_path / "apm.yml"
-        if apm_yml.exists() and not _is_excluded(apm_yml):
-            root.children.append(ApmConfigNode(path=apm_yml))
-
-        # `.apm/` holds a package's authored primitives. A consumer-only
-        # manifest — `apm.yml` with `dependencies:`/`targets:` and no
-        # authored content — has no `.apm/` directory, so don't invent an
-        # ApmNode for a path that doesn't exist (issue #472).
-        apm_dir = context.root_path / ".apm"
-        if apm_dir.is_dir():
-            apm_node = ApmNode(path=apm_dir)
-
-            apm_instructions = apm_dir / "instructions"
-            if apm_instructions.is_dir():
-                for md in sorted(apm_instructions.glob("*.instructions.md")):
-                    _add_block(apm_node, md, InstructionBlock)
-
-            apm_agents = apm_dir / "agents"
-            if apm_agents.is_dir():
-                for md in sorted(apm_agents.glob("*.agent.md")):
-                    _add_block(apm_node, md, AgentBlock)
-
-            apm_prompts = apm_dir / "prompts"
-            if apm_prompts.is_dir():
-                for md in sorted(apm_prompts.glob("*.md")):
-                    _add_block(apm_node, md, PromptBlock)
-
-            apm_chatmodes = apm_dir / "chatmodes"
-            if apm_chatmodes.is_dir():
-                for md in sorted(apm_chatmodes.glob("*.md")):
-                    _add_block(apm_node, md, ChatmodeBlock)
-
-            apm_context = apm_dir / "context"
-            if apm_context.is_dir():
-                for md in sorted(apm_context.glob("*.md")):
-                    _add_block(apm_node, md, ContextFileBlock)
-
-            # Hooks and settings inside .apm/ (supply-chain attack surface)
-            _add_block(apm_node, apm_dir / "hooks" / "hooks.json", HooksBlock)
-            _add_block(apm_node, apm_dir / "settings.json", SettingsBlock)
-            _add_block(apm_node, apm_dir / "settings.local.json", SettingsBlock)
-
-            apm_skills = apm_dir / "skills"
-            if apm_skills.is_dir():
-                for skill_path in context.skills:
-                    if (safe_resolve(skill_path) or skill_path).is_relative_to(
-                        (safe_resolve(apm_skills) or apm_skills)
-                    ):
-                        skill_node = SkillNode(path=skill_path)
-                        _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
-                        refs_dir = skill_path / "references"
-                        if refs_dir.is_dir():
-                            for ref_file in sorted(refs_dir.glob("*.md")):
-                                _add_block(skill_node, ref_file, SkillRefBlock)
-                        apm_node.children.append(skill_node)
-
-            root.children.append(apm_node)
+    _attach_apm_tree(state)
 
     # --- Extra content paths from config ---
     # User-configured content paths plus globs contributed by detected
@@ -1192,13 +1227,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 continue
             extra_resolved = safe_resolve(extra)
             if extra_resolved is not None and any(
-                claimed == extra_resolved for claimed, _ in seen_roles
+                claimed == extra_resolved for claimed, _ in state.seen_roles
             ):
                 # Already attached under a structured parser role (hooks,
                 # MCP): re-attaching it as prose would make every
                 # content-quality rule lint structured config as text.
                 continue
-            _add_block(root, extra, ExtraBlock)
+            state.add_block(root, extra, ExtraBlock)
 
     # --- Plugin tree contributors ---
     # Contributors return pre-constructed nodes (typically ContentBlock or
@@ -1218,12 +1253,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             raise TypeError(f"contributor returned {block!r}, which is not a lint tree node")
         if not isinstance(block.path, Path):
             raise TypeError(f"contributor returned a node with invalid path {block.path!r}")
-        resolved = _resolve_repo_path(block.path)
+        resolved = state.resolve_repo_path(block.path)
         if resolved is None:
             raise ValueError(f"contributor path is unresolved or outside repository: {block.path}")
-        if resolved in seen or not safe_exists(resolved) or _is_excluded(block.path):
+        if resolved in state.seen or not safe_exists(resolved) or _is_excluded(block.path):
             return False
-        seen.add(resolved)
+        state.seen.add(resolved)
         block.children = [child for child in block.children if _admit_contributed_node(child)]
         return True
 
@@ -1336,24 +1371,12 @@ def _build_promptfoo_nodes(
         config_nodes.append(node)
 
     def _scan_evals_dir(evals_dir: Path, parent: LintTarget) -> None:
-        if not evals_dir.is_dir():
-            return
-        for pattern in ("*.yaml", "*.yml"):
-            for yaml_file in sorted(evals_dir.rglob(pattern)):
-                _try_add_config(yaml_file, parent, require_keys=True)
+        for yaml_file in context.promptfoo_eval_files(evals_dir):
+            _try_add_config(yaml_file, parent, require_keys=True)
 
     # Pass 1a: promptfooconfig* anywhere in repo (naming convention → no key
-    # check).  One pruned walk instead of two whole-repo rglobs — pruning
-    # matches the repo-type detector, which already skips .git/node_modules/
-    # .venv and friends.
-    yaml_matches: list[Path] = []
-    yml_matches: list[Path] = []
-    for f in context._walk_files(context.root_path):
-        if fnmatch.fnmatch(f.name, "promptfooconfig*.yaml"):
-            yaml_matches.append(f)
-        elif fnmatch.fnmatch(f.name, "promptfooconfig*.yml"):
-            yml_matches.append(f)
-    for yaml_file in sorted(yaml_matches) + sorted(yml_matches):
+    # check), reusing candidates from the repository's shared discovery walk.
+    for yaml_file in context.promptfoo_named_files():
         _try_add_config(yaml_file, root, require_keys=False)
 
     # Pass 1b: evals/ at repo root

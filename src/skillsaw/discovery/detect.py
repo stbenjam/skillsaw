@@ -7,9 +7,10 @@ This module deliberately returns string labels rather than importing
 from __future__ import annotations
 
 from dataclasses import dataclass
+import fnmatch
 from pathlib import Path
 import os
-from typing import Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
@@ -53,6 +54,8 @@ class RepositoryScan:
     mcp_registry_files: Tuple[Path, ...]
     package_json_files: Tuple[Path, ...]
     skills_lock_files: Tuple[Path, ...]
+    promptfoo_named_files: Tuple[Path, ...]
+    promptfoo_eval_files: Dict[Path, Tuple[Path, ...]]
 
 
 #: Pre-directory instruction files, read from the nearest enclosing directory
@@ -72,10 +75,25 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     mcp_registry_files: List[Path] = []
     package_json_files: List[Path] = []
     skills_locks: List[Path] = []
+    promptfoo_named: List[Path] = []
+    promptfoo_evals: Dict[Path, List[Path]] = {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
         vendored = bool(VENDOR_DIR_NAMES.intersection(here.relative_to(root).parts))
+        for name in filenames:
+            path = here / name
+            if fnmatch.fnmatch(name, "promptfooconfig*.yaml") or fnmatch.fnmatch(
+                name, "promptfooconfig*.yml"
+            ):
+                promptfoo_named.append(path)
+            if not (fnmatch.fnmatch(name, "*.yaml") or fnmatch.fnmatch(name, "*.yml")):
+                continue
+            relative_parts = path.relative_to(root).parts
+            for index, part in enumerate(relative_parts[:-1]):
+                if os.path.normcase(part) == os.path.normcase("evals"):
+                    evals_dir = root.joinpath(*relative_parts[: index + 1])
+                    promptfoo_evals.setdefault(evals_dir, []).append(path)
         found.update(here / name for name in filenames if name.endswith(".instructions.md"))
         if not vendored:
             found.update(here / name for name in filenames if devin.is_instruction_filename(name))
@@ -104,6 +122,13 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
         mcp_registry_files=tuple(sorted(mcp_registry_files)),
         package_json_files=tuple(sorted(package_json_files)),
         skills_lock_files=tuple(sorted(skills_locks)),
+        promptfoo_named_files=tuple(
+            sorted(promptfoo_named, key=lambda path: (path.suffix == ".yml", path))
+        ),
+        promptfoo_eval_files={
+            directory: tuple(sorted(paths, key=lambda path: (path.suffix == ".yml", path)))
+            for directory, paths in promptfoo_evals.items()
+        },
     )
 
 
@@ -295,14 +320,6 @@ def instruction_formats(
     return found
 
 
-def walk_files(root: Path) -> Iterator[Path]:
-    """Yield every file under *root*, pruning :data:`WALK_SKIP_DIRS`."""
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
-        for name in filenames:
-            yield Path(dirpath) / name
-
-
 def should_skip_dir(item: Path) -> bool:
     """Whether *item* is not a directory worth recursing into."""
     return not item.is_dir() or item.name.startswith(".") or item.name in WALK_SKIP_DIRS
@@ -388,17 +405,18 @@ def is_dot_claude(root: Path, apm: bool) -> bool:
     )
 
 
-def is_promptfoo_repo(root: Path, walk_files: Callable[[Path], object]) -> bool:
+def is_promptfoo_repo(
+    root: Path,
+    named_files: Iterable[Path],
+    eval_files: Mapping[Path, Iterable[Path]],
+) -> bool:
     """Return whether repository files include a Promptfoo configuration."""
     if any(
         path.name.startswith("promptfooconfig") and path.suffix in (".yaml", ".yml")
-        for path in walk_files(root)
+        for path in named_files
     ):
         return True
-    evals = root / "evals"
-    if not evals.is_dir():
-        return False
-    for path in walk_files(evals):
+    for path in eval_files.get(root / "evals", ()):
         if path.suffix not in (".yaml", ".yml"):
             continue
         data, error = read_yaml(path)
@@ -412,7 +430,8 @@ def marker_types(
     *,
     apm: bool,
     should_skip: Callable[[Path], bool],
-    walk_files: Callable[[Path], object],
+    promptfoo_named_files: Iterable[Path],
+    promptfoo_eval_files: Mapping[Path, Iterable[Path]],
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
 ) -> Set[str]:
     """Return independently detectable type labels (excluding ecosystems)."""
@@ -436,6 +455,6 @@ def marker_types(
         found.add("apm")
     if is_dot_claude(root, apm):
         found.add("dot-claude")
-    if is_promptfoo_repo(root, walk_files):
+    if is_promptfoo_repo(root, promptfoo_named_files, promptfoo_eval_files):
         found.add("promptfoo")
     return found
