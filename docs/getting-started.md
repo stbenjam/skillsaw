@@ -160,6 +160,10 @@ Violations that `skillsaw fix` can resolve automatically are marked with
 
 ## More Commands
 
+!!! warning "Deprecated in 0.20.0"
+    `skillsaw docs` and `skillsaw add` remain available for now, but both
+    commands will be removed in an upcoming release.
+
 ```bash
 # Your coding agent can fix content violations directly — just run
 # skillsaw and let the agent read the output. For detailed guidance:
@@ -180,7 +184,7 @@ skillsaw --fail-on info
 # List all rules with fix support info
 skillsaw list-rules
 
-# Generate plugin/skill documentation
+# Deprecated: generate plugin/skill documentation
 skillsaw docs
 
 # Output in different formats (text, json, sarif, html, code-climate, gitlab)
@@ -198,7 +202,7 @@ skillsaw --output json:native-report.json
 # Multiple outputs in one run
 skillsaw --output report.sarif --output gitlab:gl-code-quality.json
 
-# Scaffold a new marketplace, plugin, or skill
+# Deprecated: scaffold a new marketplace, plugin, or skill
 skillsaw add marketplace
 skillsaw add plugin my-plugin
 skillsaw add skill my-skill

@@ -43,8 +43,6 @@ Examples:
   skillsaw lint /path/to/skills   # Lint specific directory
   skillsaw init                   # Generate default config
   skillsaw list-rules             # List available rules
-  skillsaw docs                   # Generate documentation
-  skillsaw add marketplace        # Scaffold a new marketplace
 
 For more information, visit: https://github.com/stbenjam/skillsaw
         """,
@@ -341,8 +339,10 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     # --- docs ---
     docs_parser = subparsers.add_parser(
         "docs",
-        help="Generate documentation for a Claude or Codex plugin, marketplace, or .claude repository",
-        description="Generate documentation for a Claude or Codex plugin, marketplace, or .claude repository",
+        help="Deprecated: generate repository documentation",
+        description="Deprecated: Generate documentation for a Claude or Codex plugin, "
+        "marketplace, or .claude repository. This command will be removed in an "
+        "upcoming release.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     docs_parser.add_argument(
@@ -544,7 +544,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     # --- add ---
     subparsers.add_parser(
         "add",
-        help="Scaffold marketplaces, plugins, skills, commands, agents, and hooks",
+        help="Deprecated: scaffold marketplaces, plugins, and components",
         add_help=False,
     )
 

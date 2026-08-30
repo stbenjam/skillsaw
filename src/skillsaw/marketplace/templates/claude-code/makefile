@@ -9,10 +9,10 @@ help: ## Show this help message
 lint: ## Run plugin linter (verbose, strict mode)
 	skillsaw -v --strict
 
-docs: ## Generate documentation
+docs: ## Generate documentation (deprecated in skillsaw 0.20.0)
 	skillsaw docs --format html -o docs/
 
-new-plugin: ## Create a new plugin (usage: make new-plugin NAME=my-plugin)
+new-plugin: ## Create a plugin (deprecated; usage: make new-plugin NAME=my-plugin)
 	@if [ -z "$(NAME)" ]; then \
 		echo "Error: NAME is required. Usage: make new-plugin NAME=my-plugin"; \
 		exit 1; \

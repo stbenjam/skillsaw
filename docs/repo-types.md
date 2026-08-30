@@ -213,7 +213,10 @@ vendor-managed installed content.
 
 Paths that leave the plugin root are not followed; `codex-plugin-json-valid` reports them.
 
-`skillsaw docs` describes Codex-only plugins as well, reading name, version, description, `interface.displayName`, author and license from the Codex manifest.
+!!! warning "Deprecated in 0.20.0"
+    `skillsaw docs` is deprecated and will be removed in an upcoming release.
+    During the deprecation period, it continues to describe Codex-only plugins
+    using their manifest metadata.
 
 ## OpenAI Codex Marketplace
 

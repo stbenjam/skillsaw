@@ -89,7 +89,7 @@ Show documentation and effective configuration for a rule
 
 ## `skillsaw docs`
 
-Generate documentation for a Claude or Codex plugin, marketplace, or .claude repository
+Deprecated: generate repository documentation
 
 | Flag | Description | Default |
 |------|-------------|---------|
@@ -147,7 +147,7 @@ Grade the repository and write a shields.io badge JSON file
 
 ## `skillsaw add`
 
-Scaffold marketplaces, plugins, skills, commands, agents, and hooks
+Deprecated: scaffold marketplaces, plugins, and components
 
 ### `skillsaw add marketplace`
 

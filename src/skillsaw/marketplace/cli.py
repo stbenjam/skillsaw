@@ -77,7 +77,8 @@ def _build_add_parser():
     """
     parser = argparse.ArgumentParser(
         prog="skillsaw add",
-        description="Scaffold marketplaces, plugins, skills, commands, agents, and hooks",
+        description="Deprecated: scaffold marketplaces, plugins, and components. "
+        "This command will be removed in an upcoming release.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

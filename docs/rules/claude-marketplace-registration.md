@@ -44,8 +44,7 @@ entry for it.
 ## How to fix
 
 Add the plugin to the `plugins` array in `marketplace.json` with at
-least its `name` and `path`. Use `skillsaw add plugin` to register
-new plugins automatically.
+least its `name` and `path`.
 
 `skillsaw fix` can append the missing entry, except when the
 violation is reported without the fixable marker because the file

@@ -254,6 +254,10 @@ See the [CLI reference](cli.md) for details.
 
 ## Committed generated docs
 
+!!! warning "Deprecated in 0.20.0"
+    `skillsaw docs` is deprecated and will be removed in an upcoming release.
+    Existing CI jobs can keep using it during the deprecation period.
+
 Some repositories commit the output of `skillsaw docs` and gate CI on it
 being current — regenerating in CI and failing if the working tree changed.
 Upgrading skillsaw can change that output, so plan on regenerating and
