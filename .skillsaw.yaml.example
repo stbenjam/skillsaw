@@ -117,11 +117,11 @@ rules:
     enabled: auto
     severity: error
 
-  # CLAUDE.md next to an AGENTS.md should be the single line '@AGENTS.md' so both assistants read one source of truth
+  # CLAUDE.md next to an AGENTS.md should import it so both assistants read one source of truth
   claude-md-agents-import:
     enabled: auto
     severity: info
-    # allow-extra: false
+    # allow-extra: true
     # ignore-generated: true
 
   # Plugin must have .claude-plugin/plugin.json
@@ -283,9 +283,9 @@ rules:
     # ignore-generated: true
     # similarity-max-sections: 400
 
-  # Detect fully-qualified MCP tool names that should use the short tool name
+  # Detect fully-qualified MCP tool names in portable prose that should use the short tool name
   content-mcp-tool-name:
-    enabled: auto
+    enabled: false
     severity: warning
     # allow: []
 

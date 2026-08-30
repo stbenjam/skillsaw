@@ -5428,17 +5428,16 @@ class TestContentMcpToolNameRule:
         rule = ContentMcpToolNameRule()
         assert rule.rule_id == "content-mcp-tool-name"
         assert rule.default_severity() == Severity.WARNING
+        assert rule.default_enabled is False
         assert rule.autofix_confidence == AutofixConfidence.SUGGEST
         assert rule.supports_autofix
         assert rule.since == "0.20.0"
 
-    def test_version_gate_shields_pinned_repos(self, temp_dir):
-        """A repo pinned below the rule's since version never sees it; the
-        pin is the upgrade-safety promise for existing users."""
+    def test_rule_requires_opt_in(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("# Rules\n\nUse `mcp__jira__getJiraIssue`.\n")
         context = RepositoryContext(temp_dir)
         rule = ContentMcpToolNameRule()
-        for version, expected in [("0.19.0", False), ("0.20.0", True)]:
+        for version in ("0.19.0", "0.20.0"):
             config = LinterConfig(version=version, rules={})
             enabled = config.is_rule_enabled(
                 rule.rule_id,
@@ -5447,7 +5446,19 @@ class TestContentMcpToolNameRule:
                 formats=rule.formats,
                 since_version=rule.since,
             )
-            assert enabled is expected
+            assert enabled is False
+
+        config = LinterConfig(
+            version="0.20.0",
+            rules={rule.rule_id: {"enabled": True}},
+        )
+        assert config.is_rule_enabled(
+            rule.rule_id,
+            context,
+            repo_types=rule.repo_types,
+            formats=rule.formats,
+            since_version=rule.since,
+        )
 
     def test_detects_name_in_plain_prose(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(

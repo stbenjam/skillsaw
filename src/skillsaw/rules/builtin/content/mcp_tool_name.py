@@ -35,7 +35,7 @@ _TOOLSEARCH_SELECTOR_RE = re.compile(
 
 
 class ContentMcpToolNameRule(Rule):
-    """Detect fully-qualified MCP tool names in prose"""
+    """Detect fully-qualified MCP tool names in portable prose."""
 
     # SUGGEST, deliberately: the splice is mechanically exact, but whether
     # the strip is an adequate replacement is a judgment call — a generic
@@ -47,6 +47,7 @@ class ContentMcpToolNameRule(Rule):
     formats = None
     since = "0.20.0"
     repo_types = None
+    default_enabled = False
 
     config_schema = {
         "allow": {
@@ -62,7 +63,10 @@ class ContentMcpToolNameRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Detect fully-qualified MCP tool names that should use the short tool name"
+        return (
+            "Detect fully-qualified MCP tool names in portable prose that should use "
+            "the short tool name"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.WARNING

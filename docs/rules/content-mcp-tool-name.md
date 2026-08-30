@@ -3,11 +3,11 @@
 
 # content-mcp-tool-name
 
-Detect fully-qualified MCP tool names that should use the short tool name
+Detect fully-qualified MCP tool names in portable prose that should use the short tool name
 
 | | |
 |---|---|
-| **Severity** | warning (auto) |
+| **Severity** | warning (disabled) |
 | **Autofix** | auto |
 | **Since** | v0.20.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
@@ -16,27 +16,21 @@ Detect fully-qualified MCP tool names that should use the short tool name
 
 MCP tools are exposed to an agent under a fully-qualified runtime
 identifier — `mcp__<server>__<tool>` — where the `<server>` half comes from
-how *that* user installed and named the MCP server in their own
-configuration. Writing the fully-qualified name in prose bakes one
-installation's naming into an instruction everyone reads: a reader whose
-server is registered under a different name has no tool by that identifier,
-so the instruction silently misdirects the agent.
+how the server is installed and named. Portable prose can therefore break
+when another reader uses a different server name.
 
-Shipping the server alongside the prose does not rescue the name: Claude
-Code namespaces a plugin-bundled server, exposing its tools as
-`mcp__plugin_<plugin-name>_<server-name>__<tool>`, so a bare
-`mcp__<server>__<tool>` written in a plugin's own content never resolves
-for that plugin's installers.
+Fully-qualified names are also valid and necessary in many places: project
+instructions tied to a known server, permissions, tool lists, plugin
+namespaces, and documentation that explains runtime syntax. This rule is
+opt-in so those common uses stay quiet. Enable it only for portable prose
+whose audience may register the server under different names.
 
 Brevity is a secondary benefit. Fully-qualified names are long, low-signal
 strings that spend an agent's context window, usually without telling it
 anything the short name does not.
 
-The `mcp__<server>__<tool>` flattening is the convention of Claude Code and
-the Claude Agent SDK, and the same convention appears throughout OpenAI's
-Codex plugin content — it is a client convention, not part of the MCP
-specification. Because the convention spans ecosystems, this rule applies
-to every content file.
+The `mcp__<server>__<tool>` flattening is a client convention rather than
+part of the MCP specification.
 
 ## Examples
 
@@ -55,6 +49,10 @@ one.
 ```
 
 ## When not to flag
+
+Leave the rule disabled when exact runtime names are intentional, such as a
+known project server, a plugin namespace, a tool catalog, or a comparison of
+client naming conventions.
 
 Fenced and indented code blocks are never scanned. Configuration examples
 genuinely require the fully-qualified name — a `permissions` array in
@@ -90,6 +88,7 @@ the `allow` option:
 ```yaml
 rules:
   content-mcp-tool-name:
+    enabled: true
     allow:
       - mcp__internal__getDeployStatus
 ```
@@ -119,7 +118,7 @@ apply the same rewrites by hand.
 ```yaml
 rules:
   content-mcp-tool-name:
-    enabled: auto  # true | false | auto
+    enabled: false  # true | false | auto
     severity: warning
 ```
 

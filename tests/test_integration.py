@@ -5122,6 +5122,14 @@ class TestContentMcpToolNameSuggestGate:
 
     FIXTURE = "content/mcp-tool-name"
 
+    def test_rule_is_opt_in(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "CLAUDE.md").write_text(
+            "# Instructions\n\nCall mcp__jira__getJiraIssue for the active ticket.\n"
+        )
+        assert "content-mcp-tool-name" not in rule_ids(run_lint(repo))
+
     def test_plain_fix_applies_nothing(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         before = _snapshot_contents(repo)
