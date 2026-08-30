@@ -1179,7 +1179,7 @@ def _ruamel_load(text: str) -> Any:
     ry.preserve_quotes = True
     try:
         return ry.load(text)
-    except _RuamelYAMLError:
+    except (_RuamelYAMLError, ValueError, RecursionError):
         return None
 
 

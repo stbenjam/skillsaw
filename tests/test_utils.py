@@ -798,6 +798,31 @@ def test_yaml_path_line_lookup_invalid_yaml():
     assert lookup("bad") is None
 
 
+def test_yaml_path_line_lookup_deep_nesting_does_not_crash():
+    depth = 250
+    text = "root:\n" + "".join("  " * (index + 1) + "nested:\n" for index in range(depth))
+    text += "  " * (depth + 1) + "value\n"
+
+    lookup = yaml_path_line_lookup(text)
+
+    assert lookup("root") is None
+
+
+@pytest.mark.parametrize("error_type", [ValueError, RecursionError])
+def test_yaml_path_line_lookup_handles_ruamel_runtime_errors(monkeypatch, error_type):
+    class BrokenYaml:
+        preserve_quotes = False
+
+        def load(self, _text):
+            raise error_type("parser failed")
+
+    monkeypatch.setattr(skillsaw_utils, "_RuamelYAML", BrokenYaml)
+
+    lookup = yaml_path_line_lookup("name: test\n")
+
+    assert lookup("name") is None
+
+
 # ---------------------------------------------------------------------------
 # yaml_key_line_after
 # ---------------------------------------------------------------------------
