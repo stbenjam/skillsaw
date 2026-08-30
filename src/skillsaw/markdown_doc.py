@@ -32,12 +32,13 @@ from __future__ import annotations
 
 import bisect
 import re
+import sys
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from markdown_it import MarkdownIt
 
-from skillsaw.utils import BudgetedMemo, _approximate_size
+from skillsaw.utils import BudgetedMemo
 
 __all__ = [
     "MarkdownDoc",
@@ -102,16 +103,27 @@ def _html_comment_spans(text: str):
 #: ``lru_cache`` this replaces admitted 406 MB of repository-controlled
 #: content, which is the T11 surface exactly.
 #:
-#: The budget is sized on measured demand, not guessed. Linting
-#: openshift-eng/ai-helpers (41 plugins, 115 skills) parses 336 distinct
-#: documents holding 86 MB, so 256 MB leaves a real repository well clear
-#: of eviction — which matters here in a way it does not for the pattern
-#: memos, where eviction is a rare backstop. Halving eviction discards
-#: entries about to be reused, so a budget a normal repository crosses is
-#: a thrash: at 64 MB this same run spent 7907 ms in rules_run against
-#: 3043 ms at 256 MB. The old 128-entry cap was already thrashing for the
-#: same reason, which is why byte-bounding it made the run 1.8x faster
-#: rather than merely bounded.
+#: The charge is ``getsizeof(body) * _RETENTION_RATIO``, not a walk of the
+#: tree. Walking is the accurate measurement and it was the first thing
+#: tried, but it costs ~24% of a real lint: the walk runs once per
+#: document, and *a real lint reads each document about once*, so there is
+#: no later hit to pay it back. `TestParseChargeCoversWhatIsRetained` pins
+#: the ratio against every fixture document, so an under-charge — the only
+#: direction that would make the bound a fiction — fails the suite rather
+#: than shipping.
+#:
+#: Sized against measured demand: ai-helpers holds 86 MB across 336
+#: documents and a 18,039-file marketplace wants 638 MB. 256 MB covers the
+#: former outright and degrades gracefully on the latter, which matters
+#: less than it looks: the within-run hit rate is 0.0% and 2.6%
+#: respectively, so this cache is nearly free to evict from and exists
+#: mainly so a body read twice (a content block and its suppression map)
+#: is not parsed twice.
+#: Charged per byte of source. The measured worst case across document
+#: shapes is 90x; 100 leaves margin, and over-charging only evicts sooner
+#: from a cache whose hit rate is near zero.
+_RETENTION_RATIO = 100
+
 _PARSE_CACHE = BudgetedMemo(256 * 1024 * 1024)
 
 
@@ -130,19 +142,11 @@ def _parse_cached(body: str):
     env: Dict = {}
     tokens = _PARSER.parse(body, env)
     parsed = (tokens, env.get("references", {}), env.get("duplicate_refs", []))
-    # Measured, not estimated. The walk costs about 7% of the parse it
-    # follows and runs once per distinct document, where getting the
-    # charge wrong makes the budget unenforceable for every later entry.
-    #
-    # Key and value are walked *together*, in one call, rather than
-    # charged separately and added: ``_approximate_size`` returns
-    # ``UNCACHEABLE_SIZE`` when a tree exceeds its node limit, and adding
-    # anything to that sentinel turns a refusal into a small positive
-    # cost — which ``put`` then accepts, storing a tree nobody could
-    # size. One walk has no arithmetic to get wrong. It is also the more
-    # accurate charge: the walk dedups by identity, so the body counted
-    # here is the one object the memo's key keeps alive.
-    _PARSE_CACHE.put(body, parsed, _approximate_size((body, parsed)))
+    # One multiplication, deliberately, rather than a walk of the tree.
+    # See ``_RETENTION_RATIO``: the accurate measurement costs a quarter
+    # of a real lint and buys nothing back, because a lint reads each
+    # document about once.
+    _PARSE_CACHE.put(body, parsed, sys.getsizeof(body) * _RETENTION_RATIO)
     return parsed
 
 

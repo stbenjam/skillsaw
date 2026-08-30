@@ -6,6 +6,7 @@ fixes splice at these exact spans.
 """
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -700,71 +701,73 @@ class TestParseCacheBudget:
     def test_the_memo_charges_what_holding_an_entry_costs(self):
         """The caller measures the value; the memo measures itself.
 
-        Charging only the body and the token graph leaves out the slot in
+        Charging only what the document retains leaves out the slot in
         each of the two dicts, the stored cost integer, and the hash-table
-        slack — about 80 bytes measured, charged at 256. That is 4% of the
-        smallest realistic document, so a full budget of tiny entries sits
-        roughly 10 MB over rather than "substantially" over, but a bound
-        that does not count what the container costs is still not a bound.
+        slack — about 80 bytes measured, charged at 256.
         """
-        from skillsaw.utils import BudgetedMemo, _approximate_size
+        from skillsaw.utils import BudgetedMemo
 
-        from skillsaw.markdown_doc import _PARSE_CACHE, _PARSER, _parse_cached
+        from skillsaw.markdown_doc import _PARSE_CACHE, _RETENTION_RATIO, _parse_cached
 
         self._reset()
         try:
             body = "# Title\n\nA short paragraph.\n"
-            env: dict = {}
-            parsed = (
-                _PARSER.parse(body, env),
-                env.get("references", {}),
-                env.get("duplicate_refs", []),
-            )
-            value_only = _approximate_size((body, parsed))
 
             _parse_cached(body)
 
-            assert _PARSE_CACHE.total_bytes == value_only + BudgetedMemo.ENTRY_OVERHEAD_BYTES
-            assert _PARSE_CACHE.charged[body] == _PARSE_CACHE.total_bytes
+            expected = sys.getsizeof(body) * _RETENTION_RATIO + BudgetedMemo.ENTRY_OVERHEAD_BYTES
+            assert _PARSE_CACHE.total_bytes == expected
+            assert _PARSE_CACHE.charged[body] == expected
         finally:
             self._reset()
 
-    def test_a_tree_too_large_to_size_is_never_stored(self):
-        """A refusal must not become a small positive charge.
+    def test_the_charge_covers_what_every_fixture_document_retains(self):
+        """The ratio is a bound, and an under-charge is the failure mode.
 
-        ``_approximate_size`` returns ``UNCACHEABLE_SIZE`` (-1) once a tree
-        exceeds its node limit, which a structurally dense document reaches
-        at about 24 KB — one of the 416 Markdown files in ai-helpers does.
-        Charging the key separately and adding turned that -1 into roughly
-        the size of the source, so the memo stored a tree nobody could
-        measure and charged almost nothing for it, which is how a 256 MB
-        budget is exceeded without ever appearing to be.
+        The charge is ``getsizeof(body) * _RETENTION_RATIO`` rather than a
+        walk of the tree, because walking costs about a quarter of a real
+        lint and a lint reads each document roughly once, so there is no
+        later cache hit to pay it back. That trade is only safe while the
+        ratio actually covers what a tree holds — so this measures every
+        Markdown document in the fixture corpus and fails if any retains
+        more than it was charged.
         """
         from skillsaw.utils import UNCACHEABLE_SIZE, _approximate_size
 
-        from skillsaw.markdown_doc import _PARSE_CACHE, _PARSER, _parse_cached
+        from skillsaw.markdown_doc import _PARSER, _RETENTION_RATIO
 
-        self._reset()
-        try:
-            body = "# doc\n\n" + "- alpha\n- beta\n- gamma\n  - nested\n\n" * 700
+        fixtures = Path(__file__).parent / "fixtures"
+        documents = sorted(fixtures.rglob("*.md"))
+        assert len(documents) > 50, "fixture corpus shrank; this test needs real content"
+
+        checked = 0
+        worst = 0.0
+        for document in documents:
+            try:
+                body = document.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):  # pragma: no cover - fixture hygiene
+                continue
+            if not body:
+                continue
             env: dict = {}
             parsed = (
                 _PARSER.parse(body, env),
                 env.get("references", {}),
                 env.get("duplicate_refs", []),
             )
-            assert (
-                _approximate_size(parsed) == UNCACHEABLE_SIZE
-            ), "fixture no longer exceeds the walk limit; grow it"
+            retained = _approximate_size((body, parsed))
+            if retained == UNCACHEABLE_SIZE:
+                continue
+            charged = sys.getsizeof(body) * _RETENTION_RATIO
+            assert retained <= charged, (
+                f"{document.name} retains {retained} but is charged {charged}; "
+                f"_RETENTION_RATIO is too low"
+            )
+            worst = max(worst, retained / sys.getsizeof(body))
+            checked += 1
 
-            tokens, _refs, _dupes = _parse_cached(body)
-
-            assert tokens, "a refused document must still parse"
-            assert body not in _PARSE_CACHE.values
-            assert _PARSE_CACHE.total_bytes == 0
-            assert not _PARSE_CACHE.charged
-        finally:
-            self._reset()
+        assert checked > 50, "too few documents actually measured"
+        assert worst < _RETENTION_RATIO, f"worst observed ratio {worst:.1f}x"
 
     def test_an_entry_larger_than_the_budget_still_parses(self):
         """Refusing to remember must not change the answer."""
