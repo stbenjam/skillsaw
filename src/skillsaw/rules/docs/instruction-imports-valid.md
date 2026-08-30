@@ -28,6 +28,10 @@ Both line-start imports (`@docs/guidelines.md`) and mid-line references
 [Claude Code import semantics](https://docs.anthropic.com/en/docs/claude-code/memory#imports)
 where `@path` references are resolved regardless of position in the line.
 
+The exact local override names `CLAUDE.local.md` and `AGENTS.local.md` may be
+absent because teams commonly gitignore them. If present, their own imports
+are still validated.
+
 ## How to fix
 
 Update the import path to point to the correct file. If the file was

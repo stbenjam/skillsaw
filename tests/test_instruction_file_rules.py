@@ -192,6 +192,48 @@ class TestInstructionImportsValidRule:
         assert "non-existent" in violations[0].message.lower()
         assert violations[0].line == 3
 
+    @pytest.mark.parametrize(
+        ("host", "content"),
+        [
+            ("CLAUDE.md", "@CLAUDE.local.md\n"),
+            ("CLAUDE.md", "- @CLAUDE.local.md\n"),
+            ("CLAUDE.md", "Load @CLAUDE.local.md for personal overrides.\n"),
+            ("AGENTS.md", "@AGENTS.local.md\n"),
+            ("AGENTS.md", "- @config/AGENTS.local.md\n"),
+        ],
+    )
+    def test_missing_conventional_local_override_is_optional(self, temp_dir, host, content):
+        (temp_dir / host).write_text(content)
+        assert InstructionImportsValidRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_present_local_override_is_recursively_validated(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("@CLAUDE.local.md\n")
+        (temp_dir / "CLAUDE.local.md").write_text("# Personal notes\n\n@missing.md\n")
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].file_path == temp_dir / "CLAUDE.local.md"
+        assert violations[0].line == 3
+        assert "missing.md" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "target",
+        ["CLAUDE.local.mdx", "claude.local.md", "AGENTS.local.md.bak"],
+    )
+    def test_near_local_override_names_still_report(self, temp_dir, target):
+        (temp_dir / "CLAUDE.md").write_text(f"@{target}\n")
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert target in violations[0].message
+
+    def test_local_override_import_must_stay_inside_repository(self, temp_dir):
+        repo = temp_dir / "repo"
+        repo.mkdir()
+        (temp_dir / "CLAUDE.local.md").write_text("# Outside\n")
+        (repo / "CLAUDE.md").write_text("@../CLAUDE.local.md\n")
+        violations = InstructionImportsValidRule().check(RepositoryContext(repo))
+        assert len(violations) == 1
+        assert "escapes repository root" in violations[0].message
+
     def test_unresolvable_import_reports_missing_without_stat(self, temp_dir, monkeypatch):
         """A rejected import target must not be revived for an unsafe stat."""
         from skillsaw.rules.builtin.instructions import imports_valid as rule_module

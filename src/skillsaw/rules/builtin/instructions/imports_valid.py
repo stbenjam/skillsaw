@@ -41,6 +41,7 @@ _IMPORT_FILE_EXTENSIONS = {
     "yaml",
     "yml",
 }
+_OPTIONAL_LOCAL_IMPORT_NAMES = frozenset({"AGENTS.local.md", "CLAUDE.local.md"})
 
 
 class InstructionImportsValidRule(Rule):
@@ -159,6 +160,11 @@ class InstructionImportsValidRule(Rule):
                 continue
 
             if not safe_exists(target):
+                # Teams commonly commit this import while gitignoring the
+                # machine-local override. Its absence is intentional; if the
+                # file exists, the normal recursive validation below applies.
+                if target.name in _OPTIONAL_LOCAL_IMPORT_NAMES:
+                    continue
                 if first_visit and _should_report_missing(
                     import_path_str, line_start_import, target
                 ):
