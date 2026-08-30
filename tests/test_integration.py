@@ -2644,8 +2644,8 @@ class TestDevin:
         result = run_cli(["tree", repo])
 
         assert result.returncode == 0, result.stderr
-        assert result.stdout.count("[devin skill]") == 4
-        assert result.stdout.count("[skill]") == 1
+        assert result.stdout.count("[devin skill]") == 3
+        assert result.stdout.count("[skill]") == 2
         assert result.stdout.count("SKILL.md (skill)") == 5
         for instruction in (
             "AGENT.md (instruction)",
@@ -2674,7 +2674,10 @@ class TestDevin:
         assert {v["line"] for v in native} == {2, 3, 6, 8, 10}
 
         portable = grouped["agentskill-valid"]
-        assert {v["file_path"] for v in portable} == {".agents/skills/portable/SKILL.md"}
+        assert {v["file_path"] for v in portable} == {
+            ".agents/skills/portable/SKILL.md",
+            ".windsurf/skills/missing/SKILL.md",
+        }
         assert all(".devin/skills/plain" not in v["file_path"] for v in portable)
 
         assert {v["file_path"] for v in grouped["content-weak-language"]} >= {

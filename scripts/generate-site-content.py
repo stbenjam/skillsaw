@@ -222,9 +222,10 @@ RULE_GROUPS = [
         "devin",
         ["devin-rules-valid", "devin-skill-valid"],
         "Validates Devin CLI/Desktop workspace rules under `.devin/rules/` "
-        "and legacy `.windsurf/rules/`, plus Devin-native skills whose "
-        "frontmatter is optional and extends the portable Agent Skills "
-        "dialect. Enabled automatically when Devin repository context is present.",
+        "and legacy `.windsurf/rules/`, plus Devin-native `.devin/skills` whose "
+        "frontmatter is optional and extends the portable Agent Skills dialect. "
+        "Windsurf `.windsurf/skills` use portable Agent Skills validation. Enabled "
+        "automatically when Devin repository context is present.",
     ),
     (
         "OpenCode",

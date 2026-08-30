@@ -36,16 +36,20 @@ Standard discovery paths are checked automatically: `.agents/skills/`,
 of them makes the repository an Agent Skills repository, which turns on the
 `agentskill-*` rules.
 
-Devin also reads native skills from `.devin/skills/` and the legacy
-`.windsurf/skills/` spelling, including those directories under nested
-workspace/package roots. Those files deliberately use a separate dialect:
-their YAML frontmatter is optional, `name` defaults from the directory, and
-Devin adds model, subagent, permission, tool, and trigger fields. They get
-the shared content and security rules plus
+Devin also reads native skills from `.devin/skills/`, including that directory
+under nested workspace/package roots. Those files deliberately use a separate
+dialect: their YAML frontmatter is optional, `name` defaults from the
+directory, and Devin adds model, subagent, permission, tool, and trigger
+fields. They get the shared content and security rules plus
 [`devin-skill-valid`](rules/devin-skill-valid.md), not the portable
-`agentskill-valid`/`agentskill-name` requirements. A skill under the portable
-`.agents/skills/` location remains an Agent Skills skill even in a Devin
-repository and keeps the `agentskill-*` validation.
+`agentskill-valid`/`agentskill-name` requirements.
+
+Windsurf skills under `.windsurf/skills/` follow the portable Agent Skills
+dialect: `name` and `description` are required, and the specification expresses
+`allowed-tools` as a space-separated string. Skillsaw also accepts the
+historical list form for compatibility. Like Devin skills, nested Windsurf
+skill collections are discovered. A skill under `.agents/skills/` also remains
+a portable Agent Skill even when the repository contains Devin configuration.
 
 ## Agent Plugins
 
@@ -290,7 +294,8 @@ validation wherever a tool's own metadata can fail silently — see
 | **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
 | **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
 | **OpenCode** | `opencode.json` or `opencode.jsonc` at the root and in `.opencode/`, `.opencode/commands/**/*.md`, `.opencode/agents/**/*.md`, `.opencode/modes/*.md`, `.opencode/skills/*/SKILL.md`, and the 1.x singular spelling of each (`command/`, `agent/`, `mode/`, `skill/`) |
-| **Devin CLI / Desktop** | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/` equivalents and `.windsurfrules` |
+| **Devin CLI / Desktop** | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/rules/`, `.windsurf/global_rules.md`, and `.windsurfrules` |
+| **Windsurf** | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
 
@@ -339,9 +344,10 @@ is attached once, so a nested `CLAUDE.md` or `AGENTS.md` does not produce
 duplicate content findings.
 
 Most conventional skill directories remain root-only: a skill in
-`apps/web/.cursor/skills/review/SKILL.md` is not discovered. Devin is the
-exception because its workspace scan explicitly supports nested `.devin/`
-and `.windsurf/` roots; native skills under either are discovered there.
+`apps/web/.cursor/skills/review/SKILL.md` is not discovered. Devin and
+Windsurf are the exceptions because the workspace scan explicitly supports
+nested `.devin/` and `.windsurf/` roots. Their distinct skill dialects are
+preserved after discovery.
 
 [`devin-rules-valid`](rules/devin-rules-valid.md) validates rule YAML,
 activation fields, repository-relative glob patterns, and Devin Desktop's

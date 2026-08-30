@@ -2,6 +2,7 @@
 
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
+from skillsaw.rules.builtin.agentskills.valid import AgentSkillValidRule
 from skillsaw.rules.builtin.devin.rules_valid import DevinRulesValidRule
 from skillsaw.rules.builtin.devin.skill_valid import DevinSkillValidRule
 
@@ -15,6 +16,13 @@ def _devin_rule(tmp_path, name, content):
 
 def _native_skill(tmp_path, name, content):
     path = tmp_path / ".devin" / "skills" / name / "SKILL.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return path
+
+
+def _windsurf_skill(tmp_path, name, content):
+    path = tmp_path / ".windsurf" / "skills" / name / "SKILL.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
     return path
@@ -174,6 +182,26 @@ Run the requested workflow.
     )
 
     assert DevinSkillValidRule().check(RepositoryContext(tmp_path)) == []
+
+
+def test_windsurf_skills_use_portable_agent_skills_dialect(tmp_path):
+    portable = _windsurf_skill(
+        tmp_path,
+        "portable",
+        "---\nname: portable\ndescription: Run the portable workflow.\n"
+        "allowed-tools: Read Bash\n---\nRun the workflow.\n",
+    )
+    missing = _windsurf_skill(tmp_path, "missing", "# Missing metadata\n\nRun the workflow.\n")
+    context = RepositoryContext(tmp_path)
+
+    assert DevinSkillValidRule().check(context) == []
+    portable_findings = AgentSkillValidRule().check(context)
+
+    assert all(violation.file_path != portable for violation in portable_findings)
+    assert {violation.file_path for violation in portable_findings} == {missing}
+    assert {violation.message for violation in portable_findings} == {
+        "Missing YAML frontmatter (must start with ---)",
+    }
 
 
 def test_invalid_native_skill_fields_have_nested_yaml_lines(tmp_path):

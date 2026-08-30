@@ -319,6 +319,12 @@ def test_tree_contains_nested_devin_content_without_duplicates(temp_dir):
     native = temp_dir / "apps" / "web" / ".devin" / "skills" / "team" / "review"
     native.mkdir(parents=True)
     (native / "SKILL.md").write_text("Review the current changes.\n")
+    windsurf = temp_dir / "apps" / "web" / ".windsurf" / "skills" / "deploy"
+    windsurf.mkdir(parents=True)
+    (windsurf / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: Deploy a reviewed release.\n"
+        "allowed-tools: Read Bash\n---\nDeploy safely.\n"
+    )
     portable = temp_dir / ".agents" / "skills" / "portable"
     portable.mkdir(parents=True)
     (portable / "SKILL.md").write_text(
@@ -329,10 +335,27 @@ def test_tree_contains_nested_devin_content_without_duplicates(temp_dir):
 
     assert {block.path for block in tree.find(DevinRuleBlock)} == {root_rule, nested_rule}
     assert [block.path for block in tree.find(DevinSkillBlock)] == [native / "SKILL.md"]
-    assert [block.path for block in tree.find(SkillBlock)] == [portable / "SKILL.md"]
+    assert {block.path for block in tree.find(SkillBlock)} == {
+        portable / "SKILL.md",
+        windsurf / "SKILL.md",
+    }
     assert [block.path for block in tree.find(AgentsMdBlock)] == [nested_agents]
     assert [block.path for block in tree.find(DevinGlobalRuleBlock)] == [global_rule]
     assert [block.path for block in tree.find(InstructionBlock)].count(global_rule) == 1
+
+
+def test_nearest_tool_root_determines_nested_skill_dialect(temp_dir):
+    from skillsaw.blocks import DevinSkillBlock, SkillBlock
+
+    windsurf = temp_dir / ".devin" / "skills" / "outer" / ".windsurf" / "skills" / "inner"
+    windsurf.mkdir(parents=True)
+    skill_file = windsurf / "SKILL.md"
+    skill_file.write_text("---\nname: inner\ndescription: Run the nested workflow.\n---\nRun it.\n")
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    assert skill_file in {block.path for block in tree.find(SkillBlock)}
+    assert skill_file not in {block.path for block in tree.find(DevinSkillBlock)}
 
 
 def test_setext_underline_is_not_read_as_mdc_frontmatter(temp_dir):

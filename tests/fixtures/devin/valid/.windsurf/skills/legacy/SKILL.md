@@ -1,6 +1,7 @@
 ---
 name: legacy
 description: Check compatibility with legacy Windsurf conventions.
+allowed-tools: Read Grep
 triggers:
   - user
 ---
