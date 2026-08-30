@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -24,6 +25,8 @@ from ._helpers import (
     is_clean_repository_subfolder,
     stable_key,
 )
+
+_GITHUB_REPOSITORY_SHORTCUT = re.compile(r"\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:#[^\s/#]+)?\Z")
 
 
 @dataclass(frozen=True)
@@ -185,11 +188,24 @@ class McpRegistryNpmNameMatchRule(Rule):
             return None
 
         repository = reference.server.raw_data.get("repository")
+        exact = candidates.exact(reference.identifier, reference.version)
+        located = [
+            manifest
+            for manifest in exact
+            if self._repository_directory_matches(root, manifest, repository)
+        ]
+        if located:
+            return located[0] if len(located) == 1 else None
+
         nearest_boundary = None
         directory = server_path.parent
         while directory.is_relative_to(root):
             candidate_path = safe_resolve(directory / "package.json")
-            candidate = candidates.at(candidate_path)
+            candidate = (
+                candidates.at(candidate_path)
+                if candidate_path is not None and candidate_path.is_relative_to(root)
+                else None
+            )
             if candidate is not None:
                 nearest_boundary = candidate
                 break
@@ -197,27 +213,26 @@ class McpRegistryNpmNameMatchRule(Rule):
                 break
             directory = directory.parent
         if nearest_boundary is not None and self._coordinates_match(nearest_boundary, reference):
-            return nearest_boundary
+            return (
+                nearest_boundary
+                if self._nearest_repository_matches(root, nearest_boundary, repository)
+                else None
+            )
 
-        subfolder = repository.get("subfolder") if isinstance(repository, dict) else None
-        if isinstance(subfolder, str) and is_clean_repository_subfolder(subfolder):
-            candidate_path = safe_resolve(root / subfolder / "package.json")
-            candidate = candidates.at(candidate_path)
-            if candidate is not None:
-                return candidate if self._coordinates_match(candidate, reference) else None
-
-        # Do not search across an enclosing package boundary that identifies
-        # a different artifact. Explicit repository.subfolder evidence above
-        # is the only safe way to cross it.
-        if nearest_boundary is not None:
+        # Do not search across a package boundary that identifies a different
+        # artifact. A private root package may be a workspace container, but
+        # nested or publishable boundaries remain authoritative.
+        if nearest_boundary is not None and not self._is_private_root_container(
+            root, nearest_boundary
+        ):
             return None
 
-        corroborated = [
-            manifest
-            for manifest in candidates.exact(reference.identifier, reference.version)
-            if self._repository_location_matches(root, manifest, repository)
-        ]
-        return corroborated[0] if len(corroborated) == 1 else None
+        if len(exact) != 1:
+            return None
+        fallback = exact[0]
+        if not self._repository_matches(root, fallback, repository):
+            return None
+        return fallback if self._fallback_path_is_unambiguous(root, fallback, candidates) else None
 
     @staticmethod
     def _coordinates_match(
@@ -230,29 +245,127 @@ class McpRegistryNpmNameMatchRule(Rule):
         return data.get("version") == reference.version
 
     @staticmethod
-    def _repository_location_matches(
+    def _is_private_root_container(
+        root: Path,
+        manifest: McpRegistryNpmPackageBlock,
+    ) -> bool:
+        """Return whether *manifest* is the repository's private root package."""
+        data = manifest.raw_data
+        manifest_path = safe_resolve(manifest.path)
+        root_manifest = safe_resolve(root / "package.json")
+        return (
+            isinstance(data, dict)
+            and data.get("private") is True
+            and manifest_path is not None
+            and manifest_path == root_manifest
+        )
+
+    @classmethod
+    def _repository_matches(
+        cls,
         root: Path,
         manifest: McpRegistryNpmPackageBlock,
         server_repository: object,
     ) -> bool:
-        """Require both repository identity and an exact package-directory claim."""
+        """Require repository identity and honor an optional package directory."""
         data = manifest.raw_data
         package_repository = data.get("repository") if isinstance(data, dict) else None
-        if not isinstance(server_repository, dict) or not isinstance(package_repository, dict):
-            return False
-        server_url = _canonical_repository_url(server_repository.get("url"))
-        package_url = _canonical_repository_url(package_repository.get("url"))
-        directory = package_repository.get("directory")
-        if (
-            server_url is None
-            or package_url != server_url
-            or not isinstance(directory, str)
-            or not is_clean_repository_subfolder(directory)
+        if not isinstance(server_repository, dict) or not isinstance(
+            package_repository, (dict, str)
         ):
             return False
+        server_url = _canonical_repository_url(server_repository.get("url"))
+        package_url = _canonical_repository_url(
+            package_repository.get("url")
+            if isinstance(package_repository, dict)
+            else package_repository
+        )
+        if server_url is None or package_url != server_url:
+            return False
+        return cls._repository_path_matches(root, manifest, package_repository)
+
+    @staticmethod
+    def _repository_path_matches(
+        root: Path,
+        manifest: McpRegistryNpmPackageBlock,
+        package_repository: object,
+    ) -> bool:
+        """Honor a package's directory claim and repository containment."""
         manifest_path = safe_resolve(manifest.path)
+        if manifest_path is None or not manifest_path.is_relative_to(root):
+            return False
+        if not isinstance(package_repository, dict) or "directory" not in package_repository:
+            return True
+        directory = package_repository.get("directory")
+        if not isinstance(directory, str) or not is_clean_repository_subfolder(directory):
+            return False
         declared_path = safe_resolve(root / directory / "package.json")
-        return manifest_path is not None and manifest_path == declared_path
+        return manifest_path == declared_path
+
+    @classmethod
+    def _repository_directory_matches(
+        cls,
+        root: Path,
+        manifest: McpRegistryNpmPackageBlock,
+        server_repository: object,
+    ) -> bool:
+        """Return whether an exact package directory corroborates the path."""
+        data = manifest.raw_data
+        package_repository = data.get("repository") if isinstance(data, dict) else None
+        return (
+            isinstance(package_repository, dict)
+            and "directory" in package_repository
+            and cls._repository_matches(root, manifest, server_repository)
+        )
+
+    @classmethod
+    def _nearest_repository_matches(
+        cls,
+        root: Path,
+        manifest: McpRegistryNpmPackageBlock,
+        server_repository: object,
+    ) -> bool:
+        """Honor repository metadata when a nearest manifest declares it."""
+        data = manifest.raw_data
+        package_repository = data.get("repository") if isinstance(data, dict) else None
+        if not cls._repository_path_matches(root, manifest, package_repository):
+            return False
+        if package_repository is None:
+            return True
+        server_url = (
+            _canonical_repository_url(server_repository.get("url"))
+            if isinstance(server_repository, dict)
+            else None
+        )
+        if server_url is None:
+            return True
+        package_url = _canonical_repository_url(
+            package_repository.get("url")
+            if isinstance(package_repository, dict)
+            else package_repository
+        )
+        return package_url == server_url
+
+    @classmethod
+    def _fallback_path_is_unambiguous(
+        cls,
+        root: Path,
+        manifest: McpRegistryNpmPackageBlock,
+        candidates: _PackageCandidates,
+    ) -> bool:
+        """Reject global fallback through another local package boundary."""
+        manifest_path = safe_resolve(manifest.path)
+        if manifest_path is None or not manifest_path.is_relative_to(root):
+            return False
+        directory = manifest_path.parent.parent
+        while directory.is_relative_to(root):
+            boundary = candidates.at(safe_resolve(directory / "package.json"))
+            if boundary is not None and not cls._is_private_root_container(root, boundary):
+                return False
+            if directory == root:
+                break
+            directory = directory.parent
+        return True
 
 
 def _canonical_repository_url(value: object) -> Optional[str]:
@@ -260,6 +373,12 @@ def _canonical_repository_url(value: object) -> Optional[str]:
     if not isinstance(value, str):
         return None
     url = value.strip()
+    if _GITHUB_REPOSITORY_SHORTCUT.fullmatch(url):
+        url = f"https://github.com/{url}"
+    for prefix, host in (("github:", "github.com"), ("gitlab:", "gitlab.com")):
+        if url.startswith(prefix):
+            url = f"https://{host}/{url.removeprefix(prefix)}"
+            break
     if url.startswith("git+"):
         url = url[4:]
     if url.startswith("git@") and ":" in url:
@@ -280,5 +399,10 @@ def _canonical_repository_url(value: object) -> Optional[str]:
     path = parsed.path.rstrip("/")
     if path.endswith(".git"):
         path = path[:-4]
-    authority = hostname.lower() if port is None else f"{hostname.lower()}:{port}"
+    normalized_host = hostname.lower()
+    if normalized_host in {"www.github.com", "www.gitlab.com"}:
+        normalized_host = normalized_host.removeprefix("www.")
+    if normalized_host == "github.com":
+        path = path.casefold()
+    authority = normalized_host if port is None else f"{normalized_host}:{port}"
     return f"{authority}{path}"

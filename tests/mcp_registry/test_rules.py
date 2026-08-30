@@ -747,49 +747,89 @@ class TestMcpRegistryNpmNameRule:
 
         assert lint_rules(repo, NPM_NAME_RULE) == []
 
+    def test_bare_github_repository_shortcut_matches_nearest_package(self, tmp_path):
+        repo = copy_fixture("mcp-registry/chrome-layout", tmp_path)
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == repo / "package.json"
+
+    def test_github_repository_identity_is_case_insensitive(self, tmp_path):
+        repo = copy_fixture("mcp-registry/xactions-layout", tmp_path)
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == repo / "package.json"
+
+    @pytest.mark.parametrize(
+        "repository",
+        ["packages/local/copy", "owner/repository/extra", "../owner/repository"],
+    )
+    def test_local_or_multisegment_repository_strings_are_not_github_shortcuts(
+        self, tmp_path, repository
+    ):
+        repo = copy_fixture("mcp-registry/chrome-layout", tmp_path)
+        package_path = repo / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package["repository"] = repository
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
     def test_same_coordinates_outside_package_scope_are_ignored(self, tmp_path):
         repo = copy_fixture("mcp-registry/locality", tmp_path)
 
         assert lint_rules(repo, NPM_NAME_RULE) == []
 
-    def test_repository_subfolder_selects_nested_package_over_private_root(self, tmp_path):
-        root_package = {"name": "private-workspace", "version": "0.0.0", "private": True}
-        (tmp_path / "package.json").write_text(json.dumps(root_package), encoding="utf-8")
-        package_dir = tmp_path / "engine" / "packages" / "mcp-server"
-        package_dir.mkdir(parents=True)
-        package = {"name": "midplane", "version": "0.20.0"}
-        package_path = package_dir / "package.json"
-        package_path.write_text(json.dumps(package), encoding="utf-8")
-        stale_dir = tmp_path / "fixtures" / "old-midplane"
-        stale_dir.mkdir(parents=True)
-        stale_package = {
-            "name": "midplane",
-            "version": "0.20.0",
-            "mcpName": "ai.midplane/old",
-        }
-        (stale_dir / "package.json").write_text(json.dumps(stale_package), encoding="utf-8")
-        server = {
-            "$schema": MCP_REGISTRY_SCHEMA_ID,
-            "name": "ai.midplane/midplane",
-            "description": "A server published from one monorepo package.",
-            "version": "0.20.0",
-            "repository": {
-                "url": "https://github.com/midplaneai/midplane",
-                "source": "github",
-                "subfolder": "engine/packages/mcp-server",
-            },
-            "packages": [
-                {
-                    "registryType": "npm",
-                    "identifier": "midplane",
-                    "version": "0.20.0",
-                    "transport": {"type": "stdio"},
-                }
-            ],
-        }
-        _write_server(tmp_path / "server.json", server)
+    def test_repository_subfolder_describes_source_not_package_location(self, tmp_path):
+        repo = copy_fixture("mcp-registry/firebase-layout", tmp_path)
+        package_path = repo / "package.json"
 
-        findings = _for_rule(lint_rules(tmp_path, NPM_NAME_RULE), NPM_NAME_RULE)
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == package_path
+
+    def test_repository_subfolder_does_not_veto_unique_package_fallback(self, tmp_path):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        server_path, server = _load_server(repo)
+        server["repository"]["subfolder"] = "src/weather-server"
+        _write_server(server_path, server)
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == repo / "packages" / "weather" / "package.json"
+
+    def test_nearest_exact_package_honors_its_declared_directory(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        package_path = repo / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package.pop("mcpName")
+        package["repository"] = {
+            "url": "https://github.com/example/weather",
+            "directory": "packages/actual",
+        }
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
+    def test_package_directory_selects_nested_package_across_publishable_root(self, tmp_path):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps({"name": "other-package", "version": "1.0.0"}), encoding="utf-8"
+        )
+        package_path = repo / "packages" / "weather" / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package["repository"] = {
+            "url": "https://github.com/example/weather.git",
+            "directory": "packages/weather",
+        }
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
 
         assert len(findings) == 1
         assert findings[0].file_path == package_path
@@ -837,6 +877,108 @@ class TestMcpRegistryNpmNameRule:
 
         assert len(findings) == 1
         assert findings[0].file_path == package_path
+
+    def test_unique_exact_coordinate_selects_nested_package_without_directory_metadata(
+        self, tmp_path
+    ):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        package_path = repo / "packages" / "weather" / "package.json"
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == package_path
+        assert "mcpname" in findings[0].message.lower()
+
+    def test_unique_exact_coordinate_crosses_private_root_workspace(self, tmp_path):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps({"name": "private-workspace", "version": "0.0.0", "private": True}),
+            encoding="utf-8",
+        )
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == repo / "packages" / "weather" / "package.json"
+
+    def test_unique_exact_coordinate_does_not_cross_publishable_root_package(self, tmp_path):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps({"name": "other-package", "version": "1.0.0"}), encoding="utf-8"
+        )
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
+    def test_unique_exact_coordinate_does_not_cross_nested_private_package(self, tmp_path):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps({"name": "private-workspace", "version": "0.0.0", "private": True}),
+            encoding="utf-8",
+        )
+        (repo / "packages" / "package.json").write_text(
+            json.dumps({"name": "private-example", "version": "0.0.0", "private": True}),
+            encoding="utf-8",
+        )
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
+    def test_unique_exact_coordinate_requires_same_repository(self, tmp_path):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        package_path = repo / "packages" / "weather" / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package["repository"] = "github:someone-else/weather"
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
+    @pytest.mark.parametrize(
+        ("server_url", "package_repository"),
+        [
+            ("https://www.github.com/example/weather", "github:example/weather"),
+            ("https://gitlab.com/example/weather", "gitlab:example/weather"),
+        ],
+    )
+    def test_repository_shortcuts_match_canonical_host(
+        self, tmp_path, server_url, package_repository
+    ):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        server_path, server = _load_server(repo)
+        server["repository"]["url"] = server_url
+        _write_server(server_path, server)
+        package_path = repo / "packages" / "weather" / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package["repository"] = package_repository
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert len(findings) == 1
+        assert findings[0].file_path == package_path
+
+    def test_self_hosted_repository_paths_remain_case_sensitive(self, tmp_path):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        server_path, server = _load_server(repo)
+        server["repository"]["url"] = "https://git.example.test/Owner/Weather"
+        _write_server(server_path, server)
+        package_path = repo / "packages" / "weather" / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package["repository"] = "https://git.example.test/owner/weather"
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
+    def test_declared_package_directory_must_match_unique_candidate_path(self, tmp_path):
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        package_path = repo / "packages" / "weather" / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package["repository"] = {
+            "url": "git+https://github.com/example/weather.git",
+            "directory": "packages/somewhere-else",
+        }
+        package_path.write_text(json.dumps(package), encoding="utf-8")
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
 
     def test_ambiguous_corroborated_packages_are_ignored(self, tmp_path):
         repository_url = "https://github.com/example/publisher"
@@ -910,11 +1052,25 @@ class TestMcpRegistryNpmNameRule:
         assert len(findings) == 1
         assert findings[0].file_path == package_path
 
+    def test_symlinked_package_outside_repository_is_ignored(self, tmp_path):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        package_path = repo / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package.pop("mcpName")
+        external = tmp_path / "external" / "package.json"
+        external.parent.mkdir()
+        external.write_text(json.dumps(package), encoding="utf-8")
+        package_path.unlink()
+        package_path.symlink_to(external)
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
     def test_shared_package_is_checked_for_each_server_identity(self, tmp_path):
         package = {
             "name": "@example/weather-mcp",
             "version": "1.0.0",
             "mcpName": "com.example/first",
+            "repository": "github:example/weather-mcp",
         }
         (tmp_path / "package.json").write_text(json.dumps(package), encoding="utf-8")
         for directory, server_name in (

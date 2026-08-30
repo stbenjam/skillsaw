@@ -1,0 +1,6 @@
+{
+  "name": "@example/weather-mcp",
+  "version": "1.2.3",
+  "description": "MCP server for current weather conditions",
+  "repository": "github:example/weather"
+}

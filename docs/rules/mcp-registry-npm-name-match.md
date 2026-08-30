@@ -21,11 +21,15 @@ field in `package.json`. It must exactly match the server `name` in
 ## What is checked
 
 For each npm package with an exact version, the rule selects a local
-`package.json` only when path or repository metadata links it to `server.json`.
-It checks the nearest package boundary, an exact `repository.subfolder`, or one
-uniquely corroborated `repository.url` and `repository.directory` match.
-Ambiguous and external packages stay quiet; missing npm versions are reported
-by `mcp-registry-server-json-valid`.
+`package.json` from deterministic evidence: the nearest package boundary or one
+corroborated package `repository.url` and `repository.directory` match. With no
+conflicting package boundary, one unique local package with the exact published
+name, version, and repository is also checked. A private root package may act as
+a workspace container, while a declared package directory must match the
+package's path. The server's `repository.subfolder` describes source location,
+not package location. Ambiguous and external packages stay quiet; missing npm
+versions are reported by
+`mcp-registry-server-json-valid`.
 
 For the selected package, the rule verifies that:
 
