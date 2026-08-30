@@ -124,17 +124,26 @@ def _html_comment_spans(text: str):
 #: This is a sampled bound, not a proof, and it is sized on that footing.
 #: Retention follows structure: prose is ~7x, a file of ``---`` rules is
 #: 112x, a file of bare ``-`` list markers is 294x, and denser shapes
-#: still exceed the node limit of any affordable exact walk. 600 sits
-#: well above everything measured, and the budget below is small enough
-#: that even a 2x under-charge leaves the real figure in tens of
-#: megabytes rather than hundreds.
+#: still exceed the node limit of any affordable exact walk.
+#:
+#: **Retention is interpreter-dependent, so the constant must clear the
+#: oldest supported one, not the one you measured on.** A fixture that
+#: retains 66x on 3.11 retains 104x on 3.9 — 1.56x more for the same
+#: bytes — and a ratio calibrated on 3.11 alone turned CI red on 3.9.
+#: 3.10 measures identically to 3.11, so a local check on either says
+#: nothing about the floor. 1000 leaves roughly 2x over the densest shape
+#: measured, scaled by that 3.9 factor.
+#:
+#: The budget below is the other half, and the one not resting on a
+#: sampled number: at 32 MB even a 2x under-charge leaves the real figure
+#: in tens of megabytes rather than hundreds.
 #:
 #: Over-charging is close to free here. Measured within one lint, this
 #: cache hits 0.0% of the time on ai-helpers and 2.6% on an 18,039-file
 #: marketplace — a lint reads each document about once — so evicting
 #: early costs almost nothing, while charging accurately costs 24% of the
 #: run (see the note above the memo).
-_RETENTION_RATIO = 600
+_RETENTION_RATIO = 1000
 
 _PARSE_CACHE = BudgetedMemo(32 * 1024 * 1024)
 

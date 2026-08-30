@@ -168,3 +168,36 @@ def test_ansi_colors_enabled_has_codes():
 def test_ansi_colors_disabled_is_all_empty():
     c = _ansi_colors(False)
     assert all(v == "" for v in c.values())
+
+
+# --- _RuleProgress on a terminal that cannot render escapes ---
+
+
+class _Args:
+    no_progress = False
+    verbose = False
+
+
+def test_progress_suppressed_on_dumb_terminal(monkeypatch):
+    """The progress line is nothing but escape sequences.
+
+    ``TERM=dumb`` is a real terminal — Emacs shell mode is the usual one —
+    so ``isatty()`` is true and the writes would arrive as literal control
+    characters. Colour and hyperlinks already stand down here; progress is
+    the same terminal and the same reason.
+    """
+    from skillsaw.cli._helpers import _RuleProgress
+
+    monkeypatch.setenv("TERM", "dumb")
+    monkeypatch.setattr("sys.stderr.isatty", lambda: True, raising=False)
+
+    assert _RuleProgress(_Args()).enabled is False
+
+
+def test_progress_enabled_on_capable_terminal(monkeypatch):
+    from skillsaw.cli._helpers import _RuleProgress
+
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setattr("sys.stderr.isatty", lambda: True, raising=False)
+
+    assert _RuleProgress(_Args()).enabled is True

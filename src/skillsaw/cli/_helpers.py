@@ -31,6 +31,12 @@ class _RuleProgress:
     def __init__(self, args) -> None:
         self.enabled = (
             sys.stderr.isatty()
+            # A real terminal that advertises no escape-sequence support:
+            # Emacs shell mode is the common one. The progress line is
+            # nothing but escapes, so it would arrive as literal control
+            # characters. Colour and hyperlinks below already stand down
+            # here; this is the same terminal and the same reason.
+            and os.environ.get("TERM") != "dumb"
             and not getattr(args, "no_progress", False)
             and not getattr(args, "verbose", False)
         )
