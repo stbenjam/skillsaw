@@ -140,6 +140,11 @@ class Rule(ABC):
     # whose diagnostics are deliberately owned by another rule; ordinary
     # config-driven enablement remains independent.
     target_dependencies: tuple[str, ...] = ()
+    # Target types each validation dependency may inspect when it was loaded
+    # only because another rule named it. Every target dependency declares a
+    # scope; use ``LintTarget`` explicitly when repo-wide behavior is intended.
+    # Directly selecting the dependency with ``--rule`` leaves it unrestricted.
+    target_dependency_scopes: Dict[str, tuple[Type["LintTarget"], ...]] = {}
     # Format-owner rule IDs whose syntax this rule consumes indirectly. The
     # linter evaluates these independently of ``--rule`` selection so a
     # targeted shared security rule still sees current-format surfaces while
@@ -170,6 +175,7 @@ class Rule(ABC):
     # several independently configured linters. ``None`` keeps focused unit
     # calls to ``Rule.check(context)`` self-contained.
     _enabled_surface_rule_ids: Optional[frozenset] = None
+    _dependency_target_types: Optional[tuple[Type["LintTarget"], ...]] = None
 
     def __init__(self, config: Dict[str, Any] = None):
         """
@@ -313,6 +319,23 @@ class Rule(ABC):
             ("provenance_scope", ecosystem),
             lambda node: context.in_format_scope(node, ecosystem),
         )
+
+    def dependency_scoped_find(
+        self,
+        context: "RepositoryContext",
+        node_type: Type[TargetT],
+    ) -> List[TargetT]:
+        """Find targets allowed by this dependency-only ``--rule`` run.
+
+        Direct rule checks and explicitly selected rules remain unrestricted.
+        When the linter loaded this rule as another validator's prerequisite,
+        it supplies the declaring validator's target types and this helper
+        intersects them with the rule's ordinary provenance scope.
+        """
+        found = self.scoped_find(context, node_type)
+        if self._dependency_target_types is None:
+            return found
+        return [node for node in found if isinstance(node, self._dependency_target_types)]
 
     def fix(
         self,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, List, Optional, Tuple
 
+from skillsaw.blocks import HOOK_COMMAND_FIELDS
 from skillsaw.context import HAS_COPILOT, RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -44,7 +45,6 @@ _KNOWN_FIELDS = frozenset(
     }
 )
 _AGENT_TOOL_ALIASES = frozenset({"agent", "custom-agent", "task"})
-_PLATFORM_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
 _QUALIFIED_MODEL = re.compile(r"^\S(?:.*\S)?\s+\([^)]+\)$")
 
 
@@ -85,6 +85,9 @@ class CopilotAgentValidRule(Rule):
     since = "0.20.0"
     formats = frozenset({HAS_COPILOT})
     target_dependencies = ("content-description-routing",)
+    target_dependency_scopes = {
+        "content-description-routing": (CopilotAgentBlock,),
+    }
 
     config_schema = {
         "report-unknown-fields": {
@@ -757,13 +760,13 @@ class CopilotAgentValidRule(Rule):
         valid = True
         required_fields = _TYPE_REQUIRED_FIELDS[hook_type]
         if hook_type == "command":
-            present_commands = [key for key in _PLATFORM_COMMAND_FIELDS if key in handler]
+            present_commands = [key for key in HOOK_COMMAND_FIELDS if key in handler]
             if not present_commands:
                 violations.append(
                     self._finding(
                         block,
                         f"Hook '{path}' of type 'command' requires at least one of: "
-                        f"{', '.join(_PLATFORM_COMMAND_FIELDS)}",
+                        f"{', '.join(HOOK_COMMAND_FIELDS)}",
                         line=line,
                         discriminator=f"hooks:{path}:command:missing",
                     )
@@ -836,7 +839,7 @@ class CopilotAgentValidRule(Rule):
                     valid = False
         for key in handler:
             allowed_types = (
-                {"command"} if key in _PLATFORM_COMMAND_FIELDS else _TYPE_SPECIFIC_FIELDS.get(key)
+                {"command"} if key in HOOK_COMMAND_FIELDS else _TYPE_SPECIFIC_FIELDS.get(key)
             )
             if allowed_types is not None and hook_type not in allowed_types:
                 violations.append(

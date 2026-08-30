@@ -215,9 +215,9 @@ directory: `vendor/**` excludes `vendor/a.md` and everything deeper, but
 not the `vendor` entry itself — a violation addressed to the directory,
 such as a missing required file, is still reported.
 
-By default, skillsaw excludes `**/template/**`, `**/templates/**`, and
-`**/_template/**` directories. These defaults are replaced when you specify
-your own `exclude` list.
+By default, skillsaw excludes `**/template/**`, `**/templates/**`,
+`**/_template/**`, and generated Python `**/__pycache__/**` directories.
+These defaults are replaced when you specify your own `exclude` list.
 
 Exclude patterns apply to **all** rules, including custom rules loaded via
 `custom-rules`. Any violation whose file path matches an exclude pattern is

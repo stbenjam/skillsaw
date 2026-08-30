@@ -78,8 +78,10 @@ rules:
       - "curl -s https://internal.example.com/metrics -d done"
 ```
 
-Allowlist entries are exact-match, so a compromised variant of the
-command will still be flagged.
+Allowlist entries match the command spelling shown in the diagnostic. For
+an exec-form hook, that spelling joins `command` and `args` with spaces; it
+does not preserve argument boundaries. Allowlist the full spelling, not only
+the executable name.
 
 ## Configuration
 
@@ -92,7 +94,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `allowlist` | Hook commands to permit (exact match) | `[]` |
+| `allowlist` | Hook command spellings to permit (exact diagnostic match) | `[]` |
 
 
 *Run `skillsaw explain hooks-dangerous` to see this documentation and the rule's effective configuration in your terminal.*

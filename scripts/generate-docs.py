@@ -189,8 +189,9 @@ RULE_GROUPS = [
         "of one name are reported. Comments and trailing commas "
         "are fine — OpenCode reads `.json` through a JSONC parser. OpenCode "
         "reads AGENTS.md for portable instructions, so no OpenCode-specific "
-        "instruction format is validated, and its commands, agents and skills "
-        "get the shared content rules. Enabled automatically wherever an "
+        "instruction format is validated. Its commands, agents, skills and "
+        "repository-local files matched by `instructions` paths or globs get the shared content "
+        "rules; remote URLs are not fetched. Enabled automatically wherever an "
         "`opencode.json` or `opencode.jsonc` exists, or a `.opencode/` "
         "directory holds OpenCode "
         "content.",

@@ -1417,11 +1417,16 @@ class TestCopilotAgentValidation:
         agent = tmp_path / ".github" / "agents" / "missing.agent.md"
         agent.parent.mkdir(parents=True)
         agent.write_text("---\ntarget: github-copilot\n---\nReview changes.\n")
+        unrelated = tmp_path / ".opencode" / "commands" / "missing.md"
+        unrelated.parent.mkdir(parents=True)
+        unrelated.write_text("Review changes.\n")
 
         grouped = by_rule(run_lint(tmp_path, "--rule", "copilot-agent-valid"))
 
         assert grouped.get("copilot-agent-valid", []) == []
-        assert len(grouped["content-description-routing"]) == 1
+        assert [v["file_path"] for v in grouped["content-description-routing"]] == [
+            ".github/agents/missing.agent.md"
+        ]
 
 
 # ── Dot-Claude ───────────────────────────────────────────────────
@@ -2750,6 +2755,115 @@ class TestOpenCode:
         messages = [v["message"] for v in by_rule(run_lint(repo)).get("opencode-config-valid", [])]
         assert not any("Invalid JSON" in m for m in messages)
 
+    def test_configured_instruction_paths_and_globs_are_linted(self, tmp_path):
+        """OpenCode merges every local ``instructions`` match into its system prompt."""
+        from skillsaw.blocks import InstructionBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("opencode/native-v1", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(InstructionBlock)
+        paths = {block.path.relative_to(repo).as_posix() for block in blocks}
+
+        assert "docs/conventions.md" in paths
+        assert "packages/worker/AGENTS.md" in paths
+        # AGENTS.md is discovered independently too, but path-based content
+        # deduplication must keep one copy in the lint tree.
+        assert [block.path.name for block in blocks].count("AGENTS.md") == 2
+
+        (repo / "docs" / "conventions.md").write_text(
+            "# Service conventions\n\nYou should probably run the unit tests.\n"
+        )
+        found = by_rule(run_lint(repo))["content-weak-language"]
+        assert "docs/conventions.md" in {violation["file_path"] for violation in found}
+
+    def test_nested_config_instruction_globs_follow_workspace_ancestors(self, tmp_path):
+        """A package config sees its workspace and ancestors, never a sibling package."""
+        from skillsaw.blocks import InstructionBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = tmp_path / "monorepo"
+        for relative in (
+            "docs/root.md",
+            "packages/api/docs/api.md",
+            "packages/web/docs/web.md",
+        ):
+            path = repo / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"# {path.stem}\n\nRun the tests for this workspace.\n")
+        config = repo / "packages" / "api" / ".opencode" / "opencode.json"
+        config.parent.mkdir(parents=True)
+        config.write_text('{"instructions": ["docs/*.md"]}')
+
+        paths = {
+            block.path.relative_to(repo).as_posix()
+            for block in RepositoryContext(repo).lint_tree.find(InstructionBlock)
+        }
+        assert paths == {"docs/root.md", "packages/api/docs/api.md"}
+
+    def test_configured_instruction_double_star_matches_zero_or_more_directories(self, tmp_path):
+        """OpenCode's recursive glob includes files beside and below ``**``."""
+        from skillsaw.blocks import InstructionBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = tmp_path / "repo"
+        for relative in (
+            "docs/guide.md",
+            "docs/api/guide-one.md",
+            "docs/api/deep/guide-two.md",
+        ):
+            path = repo / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"# {path.stem}\n\nRun the tests for this guide.\n")
+        patterns = [
+            "docs/**/guide*.md",
+            "docs/**/guide-one.md",
+            *(f"docs/**/missing-{index}.md" for index in range(16)),
+        ]
+        (repo / "opencode.json").write_text(json.dumps({"instructions": patterns}))
+
+        paths = {
+            block.path.relative_to(repo).as_posix()
+            for block in RepositoryContext(repo).lint_tree.find(InstructionBlock)
+        }
+        assert paths == {
+            "docs/guide.md",
+            "docs/api/guide-one.md",
+            "docs/api/deep/guide-two.md",
+        }
+
+    @pytest.mark.parametrize(
+        "pattern",
+        ("../outside/*.md", "linked/*.md", "*/secret.md"),
+    )
+    def test_configured_instruction_globs_never_enumerate_outside_repo(
+        self, tmp_path, monkeypatch, pattern
+    ):
+        """Parent components and directory links are rejected before enumeration."""
+        from skillsaw.blocks import InstructionBlock
+        from skillsaw.context import RepositoryContext
+        from skillsaw.lint_tree import build_lint_tree
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.md").write_text("# External\n\nDo not read this file.\n")
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "linked").symlink_to(outside, target_is_directory=True)
+        (repo / "opencode.json").write_text(json.dumps({"instructions": [pattern]}))
+
+        real_scandir = os.scandir
+        resolved_repo = repo.resolve()
+
+        def contained_scandir(path):
+            resolved = Path(path).resolve()
+            assert resolved == resolved_repo or resolved.is_relative_to(resolved_repo)
+            return real_scandir(path)
+
+        monkeypatch.setattr(os, "scandir", contained_scandir)
+        tree = build_lint_tree(RepositoryContext(repo))
+
+        assert tree.find(InstructionBlock) == []
+
     def test_an_unparseable_config_is_the_fixtures_only_finding(self, tmp_path):
         """ "This is not JSON" holds in every dialect, so the neutral rule owns it.
 
@@ -2784,6 +2898,7 @@ class TestOpenCode:
     def test_targeting_config_validation_also_runs_its_parse_validation(self, tmp_path):
         """A focused config check must not pass a file OpenCode cannot read."""
         repo = copy_fixture("opencode/unparseable", tmp_path)
+        (repo / ".mcp.json").write_text("{")
         r = run_lint(repo, "--rule", "opencode-config-valid")
 
         assert r["rc"] == 1
@@ -2794,6 +2909,31 @@ class TestOpenCode:
             "mcp-valid-json",
             "opencode-config-valid",
         }
+
+        explicitly_selected = by_rule(
+            run_lint(
+                repo,
+                "--rule",
+                "opencode-config-valid",
+                "--rule",
+                "mcp-valid-json",
+            )
+        )
+        assert sorted(v["file_path"] for v in explicitly_selected["mcp-valid-json"]) == [
+            ".mcp.json",
+            "opencode.jsonc",
+        ]
+
+    def test_targeted_config_parse_dependency_covers_nested_opencode_config(self, tmp_path):
+        repo = tmp_path / "nested-parse"
+        config = repo / ".opencode" / "opencode.jsonc"
+        config.parent.mkdir(parents=True)
+        config.write_text("{")
+
+        found = by_rule(run_lint(repo, "--rule", "opencode-config-valid"))
+
+        assert [v["file_path"] for v in found["mcp-valid-json"]] == [".opencode/opencode.jsonc"]
+        assert found.get("opencode-config-valid", []) == []
 
     def test_a_version_pinned_project_still_learns_the_config_is_unreadable(self, tmp_path):
         """The `since` gate, exercised as itself rather than as `enabled: false`.
@@ -3141,6 +3281,37 @@ class TestOpenCode:
         assert (".opencode/agent/main.md", "trigger") not in flagged
         assert (".opencode/modes/build.md", "trigger") not in flagged
         assert (".opencode/agents/modes/reviewer.md", "trigger") in flagged
+
+    def test_opencode_commands_receive_command_description_checks(self, tmp_path):
+        """Picker descriptions need purpose, but not model-routing phrasing."""
+        repo = tmp_path / "command-descriptions"
+        commands = repo / ".opencode" / "commands"
+        commands.mkdir(parents=True)
+        (commands / "missing.md").write_text("Review the current changes.\n")
+        (commands / "deploy.md").write_text(
+            "---\ndescription: Deploy\n---\n\nDeploy the current build to staging.\n"
+        )
+        (commands / "changelog.md").write_text(
+            "---\n"
+            "description: Drafts a release-note entry from the staged changes\n"
+            "---\n\n"
+            "Draft a concise changelog entry from the staged changes.\n"
+        )
+
+        found = by_rule(run_lint(repo))["content-description-routing"]
+
+        assert [(violation["file_path"], violation["message"]) for violation in found] == [
+            (
+                ".opencode/commands/deploy.md",
+                "Description only restates the name or generic category; explain what the "
+                "building block does",
+            ),
+            (
+                ".opencode/commands/missing.md",
+                "Description is missing; add frontmatter describing this command",
+            ),
+        ]
+        assert not any("trigger phrasing" in violation["message"] for violation in found)
 
     def test_credentials_in_an_mcp_environment_map_are_errors(self, tmp_path):
         """`environment`, not `env` — the map name is the host's, the scan is not.
@@ -3752,6 +3923,32 @@ class TestConfigFeatures:
         assert r["out"] is not None
         violated_files = {v["file_path"] for v in violations(r)}
         assert not any("templates/" in f for f in violated_files)
+
+    def test_default_exclude_ignores_python_cache_artifacts(self, tmp_path):
+        """Running a skill's Python helper must not create a dead-file warning."""
+        repo = tmp_path / "repo"
+        skill = repo / "skills" / "eval-compare"
+        cache = skill / "scripts" / "__pycache__" / "compare.cpython-313.pyc"
+        cache.parent.mkdir(parents=True)
+        cache.write_bytes(b"\0generated bytecode")
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: eval-compare\n"
+            "description: Compare two evaluation runs. Use when reviewing model output changes.\n"
+            "---\n\n"
+            "# Compare evaluations\n\nRun `scripts/compare.py`.\n"
+        )
+        (skill / "scripts" / "compare.py").write_text("print('compare')\n")
+
+        assert not any("__pycache__" in v["file_path"] for v in violations(run_lint(repo)))
+
+        # This is a default, not a hard-coded blind spot: users who explicitly
+        # disable defaults can still audit an intentionally bundled cache.
+        (repo / ".skillsaw.yaml").write_text('version: "99.0.0"\nexclude: []\n')
+        found = by_rule(run_lint(repo))["agentskill-unreferenced-files"]
+        assert [v["file_path"] for v in found] == [
+            "skills/eval-compare/scripts/__pycache__/compare.cpython-313.pyc"
+        ]
 
     def test_top_level_templates_linted_when_defaults_overridden(self, tmp_path):
         """Sanity check: the fixture's templates/ skill does violate rules,

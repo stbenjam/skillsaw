@@ -1394,7 +1394,7 @@ class TestPathMatchesPatterns:
         from skillsaw.config import LinterConfig
 
         patterns = LinterConfig.default().exclude_patterns
-        for d in ("template", "templates", "_template"):
+        for d in ("template", "templates", "_template", "__pycache__"):
             assert self._match(temp_dir, f"{d}/starter/SKILL.md", patterns)
 
     def test_plain_star_still_crosses_slashes(self, temp_dir):
