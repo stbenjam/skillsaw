@@ -49,6 +49,9 @@ _IGNORED_CONFIG_NOTICE = (
     "a non-ignored path and pass --config to include those diagnostics."
 )
 _TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
+_UNSAFE_ARCHIVE_PATH = re.compile(
+    r"[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028-\u202e\u2066-\u206f\ud800-\udfff]"
+)
 _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 
 
@@ -319,11 +322,32 @@ def _ignored_by_ancestor_file(path: Path) -> bool:
     return False
 
 
-def _included_file(root: Path, raw_path: str, patterns: list[_IgnorePattern]) -> tuple[Path, Path]:
+def _unsafe_archive_path(raw_path: str) -> bool:
+    """Whether an include name is unsafe in diagnostics or a ZIP member."""
+    return bool(_UNSAFE_ARCHIVE_PATH.search(raw_path)) or (os.name != "nt" and "\\" in raw_path)
+
+
+def _included_file(
+    root: Path,
+    raw_path: str,
+    patterns: list[_IgnorePattern],
+    *,
+    lexical_root: Path | None = None,
+) -> tuple[Path, Path]:
+    if _unsafe_archive_path(raw_path):
+        raise ValueError(
+            "--include refuses paths containing control, bidirectional-formatting, "
+            "surrogate, or archive-separator characters. Copy the reproducer to a "
+            "safe filename"
+        )
     candidate = Path(raw_path)
-    if not candidate.is_absolute():
+    if lexical_root is None:
+        lexical_root = root
+    if candidate.is_absolute():
+        lexical = Path(os.path.abspath(candidate))
+    else:
+        lexical = Path(os.path.abspath(lexical_root / candidate))
         candidate = root / candidate
-    lexical = Path(os.path.abspath(candidate))
     resolved = contained_resolve(candidate, root)
     if resolved is None:
         raise ValueError(f"--include must name a file inside the repository: {raw_path}")
@@ -345,13 +369,16 @@ def _included_file(root: Path, raw_path: str, patterns: list[_IgnorePattern]) ->
             guarded_path,
             root,
             _patterns_for_file(guarded_path, root, patterns),
-        ):
+        ) or _ignored_by_ancestor_file(guarded_path):
             raise ValueError(
                 f"--include refuses a file an ignore file already excludes: {raw_path}. "
                 "Copy it to a non-ignored path if you have reviewed it and still want "
                 "to share it"
             )
-    relative = lexical.relative_to(root)
+    try:
+        relative = lexical.relative_to(lexical_root)
+    except ValueError:
+        relative = lexical.relative_to(root)
     return resolved, relative
 
 
@@ -536,6 +563,7 @@ def _run_feedback(args) -> None:
         print(f"Error: Path is not a directory: {args.path}", file=sys.stderr)
         sys.exit(1)
 
+    lexical_root = Path(os.path.abspath(args.path))
     root = safe_resolve(args.path)
     if root is None:
         print(f"Error: Path could not be resolved: {args.path}", file=sys.stderr)
@@ -575,7 +603,13 @@ def _run_feedback(args) -> None:
     ignore_patterns = _ignore_patterns(root)
     try:
         selected_files = [
-            _included_file(root, raw_path, ignore_patterns) for raw_path in args.include
+            _included_file(
+                root,
+                raw_path,
+                ignore_patterns,
+                lexical_root=lexical_root,
+            )
+            for raw_path in args.include
         ]
         if args.config is not None:
             guarded_config_paths = tuple(
@@ -590,7 +624,7 @@ def _run_feedback(args) -> None:
                     guarded_config_path,
                     root,
                     _patterns_for_file(guarded_config_path, root, ignore_patterns),
-                ):
+                ) or _ignored_by_ancestor_file(guarded_config_path):
                     raise ValueError(
                         "--config refuses a file an ignore file already excludes: "
                         f"{guarded_config_path}"

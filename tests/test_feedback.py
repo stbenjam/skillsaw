@@ -355,6 +355,52 @@ def test_feedback_refuses_file_excluded_by_nested_gitignore(tmp_path):
     assert not (tmp_path / "report.zip").exists()
 
 
+def test_feedback_refuses_include_excluded_above_selected_repository(tmp_path):
+    workspace = tmp_path / "workspace"
+    repo = workspace / "packages" / "app"
+    repo.mkdir(parents=True)
+    (workspace / ".gitignore").write_text("/packages/app/private.txt\n")
+    (repo / "private.txt").write_text("must stay local\n")
+
+    output = tmp_path / "report.zip"
+    result = _run_feedback(
+        repo,
+        "--include",
+        "private.txt",
+        "--output",
+        str(output),
+    )
+
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+    assert not output.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlink behavior is POSIX-specific")
+def test_feedback_checks_enclosing_ignore_against_symlinked_repository_name(tmp_path):
+    workspace = tmp_path / "workspace"
+    repo = workspace / "real" / "app"
+    alias_parent = workspace / "packages"
+    repo.mkdir(parents=True)
+    alias_parent.mkdir()
+    (alias_parent / "app").symlink_to(Path("../real/app"), target_is_directory=True)
+    (workspace / ".gitignore").write_text("/packages/app/private.txt\n")
+    (repo / "private.txt").write_text("must stay local\n")
+
+    output = tmp_path / "report.zip"
+    result = _run_feedback(
+        alias_parent / "app",
+        "--include",
+        "private.txt",
+        "--output",
+        str(output),
+    )
+
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+    assert not output.exists()
+
+
 def test_feedback_nested_ignore_patterns_are_scoped_to_their_directory(tmp_path):
     repo = tmp_path / "repo"
     app = repo / "packages" / "app"
@@ -396,6 +442,28 @@ def test_feedback_refuses_explicit_config_excluded_by_nested_ignore_file(tmp_pat
 
     assert result.returncode == 1
     assert "ignore file already excludes" in result.stderr
+
+
+def test_feedback_refuses_explicit_config_excluded_above_selected_repository(tmp_path):
+    workspace = tmp_path / "workspace"
+    repo = workspace / "packages" / "app"
+    repo.mkdir(parents=True)
+    (workspace / ".dockerignore").write_text("/skillsaw-local.yaml\n")
+    config = workspace / "skillsaw-local.yaml"
+    config.write_text("version: 0.20.0\n")
+
+    output = tmp_path / "report.zip"
+    result = _run_feedback(
+        repo,
+        "--config",
+        str(config),
+        "--output",
+        str(output),
+    )
+
+    assert result.returncode == 1
+    assert "ignore file already excludes" in result.stderr
+    assert not output.exists()
 
 
 def test_feedback_accepts_explicit_config_outside_target_repository(tmp_path):
@@ -1224,6 +1292,67 @@ def test_feedback_refuses_credential_filenames_without_any_ignore_file(tmp_path,
     assert result.returncode == 1
     assert "hold credentials" in result.stderr
     assert not output.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="hostile filenames are POSIX-specific")
+@pytest.mark.parametrize(
+    "name",
+    [
+        "line\nbreak.md",
+        "escape\x1b.md",
+        "line-separator\u2028.md",
+        "paragraph-separator\u2029.md",
+        "override\u202e.md",
+        "back\\slash.md",
+    ],
+)
+def test_feedback_refuses_unsafe_include_names_without_echoing_them(tmp_path, name):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / name).write_text("reviewed reproducer\n")
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(
+        repo,
+        "--include",
+        name,
+        "--output",
+        str(output),
+    )
+
+    assert result.returncode == 1
+    assert "refuses paths containing" in result.stderr
+    assert name not in result.stderr
+    assert not output.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Unicode filenames are POSIX-specific")
+def test_feedback_allows_safe_multilingual_include_name(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    name = "café-東京-שלום-مرحبا.md"
+    (repo / name).write_text("reviewed reproducer\n")
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(
+        repo,
+        "--include",
+        name,
+        "--output",
+        str(output),
+        "--json",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["included_files"] == [name]
+
+
+@pytest.mark.parametrize("name", ["bad\ud800.md", "bad\udfff.md"])
+def test_feedback_refuses_surrogate_include_names_before_path_operations(tmp_path, name):
+    with pytest.raises(ValueError, match="refuses paths containing") as error:
+        _feedback._included_file(tmp_path, name, [])
+
+    assert name not in str(error.value)
 
 
 @pytest.mark.parametrize("name", [".env.example", "id_rsa.pub", "terraform.tfvars.sample"])
