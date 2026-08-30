@@ -43,7 +43,7 @@ from skillsaw.discovery import exact_name_exists
 from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 from skillsaw.rules.builtin.context_budget.budget import DEFAULT_LIMITS, _estimate_tokens
-from skillsaw.rules.builtin.instructions._helpers import IMPORT_RE
+from skillsaw.rules.builtin.instructions._helpers import iter_markdown_instruction_imports
 
 # Thresholds default to the context-budget warn limits so the two rules
 # agree on when a file is "long" — except skills, whose threshold is
@@ -321,20 +321,17 @@ class ContentProgressiveDisclosureRule(Rule):
         """
         if "@" not in body:
             return False
-        for _line_num, line in cf.markdown.prose_lines():
-            if "@" not in line:
+        for import_ref in iter_markdown_instruction_imports(cf.markdown):
+            import_path = import_ref.path
+            if import_path.startswith("~"):
                 continue
-            for match in IMPORT_RE.finditer(line):
-                import_path = match.group(1).rstrip(".!?")
-                if not import_path or import_path.startswith("~"):
-                    continue
-                resolved = safe_resolve(cf.path.parent / import_path)
-                if resolved is None or resolved == self_path or resolved == boundary:
-                    continue
-                if not resolved.is_relative_to(boundary):
-                    continue
-                if safe_exists(resolved):
-                    return True
+            resolved = safe_resolve(cf.path.parent / import_path)
+            if resolved is None or resolved == self_path or resolved == boundary:
+                continue
+            if not resolved.is_relative_to(boundary):
+                continue
+            if safe_exists(resolved):
+                return True
         return False
 
     def _has_bundled_mention(self, body: str, rel_paths: Set[str], names: Set[str]) -> bool:

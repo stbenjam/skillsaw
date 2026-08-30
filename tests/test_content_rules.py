@@ -4946,6 +4946,13 @@ class TestContentProgressiveDisclosureRule:
         rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
         assert rule.check(RepositoryContext(temp_dir)) == []
 
+    def test_emphasized_import_counts(self, temp_dir):
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
+        self._write_claude(temp_dir, extra="\nRead **@docs/testing.md** first.\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
     def test_qwen_import_counts(self, temp_dir):
         (temp_dir / "docs").mkdir()
         (temp_dir / "docs" / "testing.md").write_text("# Testing\n")

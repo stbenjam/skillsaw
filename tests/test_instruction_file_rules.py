@@ -155,6 +155,35 @@ class TestInstructionImportsValidRule:
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
 
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "Please read **@docs/setup.md** first.\n",
+            "- _@docs/setup.md_ — canonical instructions.\n",
+            "~~@docs/setup.md~~\n",
+        ],
+    )
+    def test_markdown_emphasis_preserves_the_import_target(self, temp_dir, content):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "setup.md").write_text("# Setup\n")
+        (temp_dir / "CLAUDE.md").write_text(content)
+        assert InstructionImportsValidRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_missing_emphasized_import_reports_the_normalized_target(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("- **@missing** — required context.\n")
+        violations = InstructionImportsValidRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 1
+        assert "@missing" in violations[0].message
+        assert "**" not in violations[0].message
+
+    @pytest.mark.parametrize("filename", ["guide_", "guide~"])
+    def test_real_trailing_path_markers_are_not_stripped(self, temp_dir, filename):
+        (temp_dir / filename).write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text(f"@{filename}\n")
+        assert InstructionImportsValidRule().check(RepositoryContext(temp_dir)) == []
+
     def test_missing_import_fails(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@docs/missing.md\n")
         context = RepositoryContext(temp_dir)
@@ -679,6 +708,60 @@ class TestClaudeMdAgentsImportRule:
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
         (temp_dir / "CLAUDE.md").write_text("@AGENTS.md\n\n## Claude only\n\nUse the skill.\n")
         assert self._check(temp_dir, **{"allow-extra": True}) == []
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "- @AGENTS.md\n",
+            "> @AGENTS.md\n",
+            "Read @./AGENTS.md\n",
+            "Include: @./AGENTS.md\n",
+            "Read @AGENTS.md and @README.md\n",
+            "Please read **@AGENTS.md** first.\n",
+            "- **@AGENTS.md** — canonical instructions.\n",
+            "_@AGENTS.md_\n",
+            "~~@AGENTS.md~~\n",
+        ],
+    )
+    def test_allow_extra_recognizes_wrapped_sibling_imports(self, temp_dir, content):
+        (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
+        (temp_dir / "CLAUDE.md").write_text(content)
+        assert self._check(temp_dir, **{"allow-extra": True}) == []
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "- @AGENTS.md\n",
+            "> @AGENTS.md\n",
+            "Read @./AGENTS.md\n",
+            "Include: @./AGENTS.md\n",
+            "Please read **@AGENTS.md** first.\n",
+            "- **@AGENTS.md** — canonical instructions.\n",
+            "_@AGENTS.md_\n",
+            "~~@AGENTS.md~~\n",
+        ],
+    )
+    def test_strict_mode_still_reports_wrapped_sibling_imports(self, temp_dir, content):
+        (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
+        (temp_dir / "CLAUDE.md").write_text(content)
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].line == 1
+        assert "imports AGENTS.md but also" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "```markdown\n@AGENTS.md\n```\n",
+            "    @AGENTS.md\n",
+            "`@AGENTS.md`\n",
+            "<!-- @AGENTS.md -->\nClaude-only text.\n",
+        ],
+    )
+    def test_allow_extra_ignores_imports_in_non_prose(self, temp_dir, content):
+        (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
+        (temp_dir / "CLAUDE.md").write_text(content)
+        assert len(self._check(temp_dir, **{"allow-extra": True})) == 1
 
     def test_allow_extra_still_reports_a_missing_import(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(AGENTS_BODY)
