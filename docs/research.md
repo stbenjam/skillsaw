@@ -412,8 +412,9 @@ template directories where placeholder links are expected.
 - [W3C: Link Checking](https://www.w3.org/QA/Tools/) — Broken links are a
   recognized web quality defect; the same principle applies to interlinked
   instruction files
-- [Google Technical Writing: Links](https://developers.google.com/tech-writing/two/links)
-  — "Don't force readers to backtrack because a link doesn't work"
+- [Google style guide: Make headings into link
+  targets](https://developers.google.com/style/headings-targets) — Keep old
+  anchors when headings change so existing links keep working
 - [Anthropic: Effective Context
   Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
   — Context that references missing information degrades agent performance
@@ -446,9 +447,9 @@ names and illustrative paths that cannot be turned into working local links.
 
 **References:**
 
-- [Google Technical Writing: Links](https://developers.google.com/tech-writing/two/links)
-  — "Use meaningful link text" — paths mentioned without links are
-  un-navigable and un-verifiable
+- [Google style guide: Cross-references and
+  linking](https://developers.google.com/style/cross-references) — Use
+  descriptive link text so readers can navigate to related material
 - [Microsoft Writing Style Guide: Links](https://learn.microsoft.com/en-us/style-guide/urls-web-addresses)
   — Bare URLs and paths should be formatted as actionable links
 
@@ -469,20 +470,16 @@ nonexistent endpoint or asking the user to fill in information that should
 already be present.
 
 This is standard software engineering hygiene applied to a new file type.
-`TODO` and `FIXME` markers have been tracked by linters (ESLint's `no-warning-comments`,
-SonarQube's "Track uses of 'TODO' tags") for decades because they
-indicate incomplete implementation. The same principle applies to instruction
-files: if the content isn't ready, it shouldn't be in the agent's context.
+`TODO` and `FIXME` markers have been tracked by linters such as ESLint's
+`no-warning-comments` for decades because they indicate incomplete
+implementation. The same principle applies to instruction files: if the
+content isn't ready, it shouldn't be in the agent's context.
 
 **References:**
 
 - [ESLint: no-warning-comments](https://eslint.org/docs/latest/rules/no-warning-comments)
   — Tracks TODO/FIXME as code quality signals; the same pattern applies to
   instruction files
-- [SonarSource: Track uses of "TODO"
-  tags](https://rules.sonarsource.com/python/RSPEC-1135/) — "TODO tags are
-  commonly used to mark places where some more code is required, but which the
-  developer wants to implement later"
 - [Anthropic: Effective Context
   Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
   — "Keep your context informative, yet tight" — placeholder text is
