@@ -11,6 +11,7 @@ from skillsaw.rules.builtin.content_analysis import (
     CommandBlock,
     CopilotAgentBlock,
     OpenCodeAgentBlock,
+    OpenCodeCommandBlock,
     SkillBlock,
 )
 from skillsaw.rules.builtin.utils import read_frontmatter_commented
@@ -143,13 +144,14 @@ class DescriptionRoutingRule(Rule):
             CopilotAgentBlock,
             OpenCodeAgentBlock,
             CommandBlock,
+            OpenCodeCommandBlock,
         ):
             for block in context.lint_tree.find(block_type):
                 if block.frontmatter_error:
                     continue
                 if (
                     block_type is SkillBlock
-                    and self.config.get("check-user-only-skills", False) is not True
+                    and self.setting("check-user-only-skills") is not True
                     and block.field_value("disable-model-invocation") is True
                 ):
                     continue
@@ -221,9 +223,9 @@ class DescriptionRoutingRule(Rule):
                 # meaningful, non-name-restating description (checked below),
                 # but the trigger-phrasing style is not imposed on them.
                 if (
-                    block_type not in (CommandBlock, CopilotAgentBlock)
+                    block_type not in (CommandBlock, CopilotAgentBlock, OpenCodeCommandBlock)
                     and not self._is_user_selected_agent(block_type, block)
-                    and self.config.get("require-trigger-phrasing", True)
+                    and self.setting("require-trigger-phrasing")
                     and not self._has_trigger_phrase(text)
                 ):
                     violations.append(
@@ -236,7 +238,7 @@ class DescriptionRoutingRule(Rule):
                         )
                     )
 
-                if self.config.get("flag-name-restatement", True) and self._restates_name(
+                if self.setting("flag-name-restatement") and self._restates_name(
                     text, self._block_name(block.path, block.field_value("name"))
                 ):
                     violations.append(

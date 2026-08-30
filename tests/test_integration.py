@@ -3187,6 +3187,37 @@ class TestOpenCode:
         assert (".opencode/modes/build.md", "trigger") not in flagged
         assert (".opencode/agents/modes/reviewer.md", "trigger") in flagged
 
+    def test_opencode_commands_receive_command_description_checks(self, tmp_path):
+        """Picker descriptions need purpose, but not model-routing phrasing."""
+        repo = tmp_path / "command-descriptions"
+        commands = repo / ".opencode" / "commands"
+        commands.mkdir(parents=True)
+        (commands / "missing.md").write_text("Review the current changes.\n")
+        (commands / "deploy.md").write_text(
+            "---\ndescription: Deploy\n---\n\nDeploy the current build to staging.\n"
+        )
+        (commands / "changelog.md").write_text(
+            "---\n"
+            "description: Drafts a release-note entry from the staged changes\n"
+            "---\n\n"
+            "Draft a concise changelog entry from the staged changes.\n"
+        )
+
+        found = by_rule(run_lint(repo))["content-description-routing"]
+
+        assert [(violation["file_path"], violation["message"]) for violation in found] == [
+            (
+                ".opencode/commands/deploy.md",
+                "Description only restates the name or generic category; explain what the "
+                "building block does",
+            ),
+            (
+                ".opencode/commands/missing.md",
+                "Description is missing; add frontmatter describing this command",
+            ),
+        ]
+        assert not any("trigger phrasing" in violation["message"] for violation in found)
+
     def test_credentials_in_an_mcp_environment_map_are_errors(self, tmp_path):
         """`environment`, not `env` — the map name is the host's, the scan is not.
 
