@@ -1437,7 +1437,7 @@ _YAML_OPEN_EVENTS = (yaml.SequenceStartEvent, yaml.MappingStartEvent)
 _YAML_CLOSE_EVENTS = (yaml.SequenceEndEvent, yaml.MappingEndEvent)
 
 
-def _reject_deep_before_compose(source: str) -> None:
+def _reject_deep_before_compose(source: str, loader: Any = None) -> None:
     """Bound nesting depth before any composer sees *source*.
 
     This has to run first, and the reason is the whole point of the
@@ -1459,10 +1459,15 @@ def _reject_deep_before_compose(source: str) -> None:
     the ``problem_mark`` callers report line numbers from. That is safe
     because reaching a parse error means the parser got there without
     exceeding the bound.
+
+    *loader* selects the parser. It matters on the retry path: the
+    document arrives there precisely because libyaml stopped early on
+    syntax it rejects, so a prescan using libyaml would return at that
+    same point and see none of the nesting the retry is about to compose.
     """
     depth = 0
     try:
-        for event in yaml.parse(source, Loader=_SAFE_LOADER):
+        for event in yaml.parse(source, Loader=loader or _SAFE_LOADER):
             if isinstance(event, _YAML_OPEN_EVENTS):
                 depth += 1
                 # ``>=``, matching ``_reject_overly_nested``. The two
@@ -1552,7 +1557,18 @@ def safe_load_yaml(source: Any) -> Any:
     except yaml.YAMLError:
         if _SAFE_LOADER is yaml.SafeLoader:
             raise
-        data = yaml.load(source, Loader=yaml.SafeLoader)
+        # The retry composes with the recursive Python loader, and the
+        # prescan above ran on libyaml's parser — which stopped at the
+        # syntax that sent us here, before reaching anything deeper. So
+        # the bound has to be re-established over this loader's own event
+        # stream: without it a document libyaml rejects early and nests
+        # deeply later composes unbounded, even where libyaml is
+        # installed. Only the retry pays for it, which is the rare path.
+        _reject_deep_before_compose(source, loader=yaml.SafeLoader)
+        try:
+            data = yaml.load(source, Loader=yaml.SafeLoader)
+        except RecursionError:
+            raise RecursionError(_TOO_DEEP) from None
     # Kept as the backstop the event count cannot be: aliases let a
     # shallow event stream build a deep object graph.
     _reject_overly_nested(data)

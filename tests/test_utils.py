@@ -1074,6 +1074,41 @@ def test_aliases_cannot_build_a_graph_deeper_than_the_source_reads(tmp_path):
     assert data is None
 
 
+def test_the_retry_path_carries_the_depth_bound_too():
+    """The prescan the retry needs is not the prescan that already ran.
+
+    A document libyaml rejects is retried on the pure-Python loader so its
+    error wording survives. But the prescan ahead of the first attempt used
+    libyaml's parser, which stopped at exactly the syntax that sent the
+    document to the retry — before reaching anything deeper. The retry then
+    composed with a recursive Python loader and no bound at all, so a file
+    that opens with an escaped surrogate pair and nests deeply afterwards
+    reached ``maximum recursion depth exceeded`` rather than the explicit
+    limit. This happens with libyaml installed, so it is not the
+    no-C-extension case.
+
+    What this asserts is the observable part: the message. Two changes
+    produce it — the prescan re-run on the retry's own loader, and the
+    ``RecursionError`` conversion around the retry — and either alone
+    would satisfy this assertion, so it does not pin the prescan
+    specifically. The prescan is there so the rejection point is the
+    stated bound rather than wherever the interpreter's stack gives out;
+    a pure-Python composer cannot fault the process, so unlike libyaml it
+    is uniformity rather than safety that requires it.
+    """
+    import skillsaw.utils as utils_module
+
+    surrogate = 'name: "\\ud83d\\ude00"\n'
+    deep = "deep: " + "[" * 3000 + "0" + "]" * 3000 + "\n"
+
+    with pytest.raises(RecursionError) as caught:
+        utils_module.safe_load_yaml(surrogate + deep)
+    assert str(caught.value) == utils_module._TOO_DEEP
+
+    # The retry itself must still work for the shape it exists for.
+    assert utils_module.safe_load_yaml(surrogate + "other: 1\n")["other"] == 1
+
+
 def test_a_deep_document_reads_the_same_on_a_wheel_without_libyaml():
     """The bound is stated, so its message must not depend on the wheel.
 

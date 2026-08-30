@@ -112,19 +112,31 @@ def _html_comment_spans(text: str):
 #: direction that would make the bound a fiction — fails the suite rather
 #: than shipping.
 #:
-#: Sized against measured demand: ai-helpers holds 86 MB across 336
-#: documents and a 18,039-file marketplace wants 638 MB. 256 MB covers the
-#: former outright and degrades gracefully on the latter, which matters
-#: less than it looks: the within-run hit rate is 0.0% and 2.6%
-#: respectively, so this cache is nearly free to evict from and exists
-#: mainly so a body read twice (a content block and its suppression map)
-#: is not parsed twice.
-#: Charged per byte of source. The measured worst case across document
-#: shapes is 90x; 100 leaves margin, and over-charging only evicts sooner
-#: from a cache whose hit rate is near zero.
-_RETENTION_RATIO = 100
+#: Deliberately small. The cache exists so a body read twice — a content
+#: block and its suppression map — is not parsed twice, and that is all
+#: it is worth: the within-run hit rate is 0.0% on ai-helpers and 2.6% on
+#: an 18,039-file marketplace. Sizing it to hold a whole repository
+#: (86 MB and 638 MB respectively) would buy that same 0-3% while making
+#: every under-charge proportionally worse, so the budget is set for the
+#: locality the cache actually serves.
+#: Charged per byte of source.
+#:
+#: This is a sampled bound, not a proof, and it is sized on that footing.
+#: Retention follows structure: prose is ~7x, a file of ``---`` rules is
+#: 112x, a file of bare ``-`` list markers is 294x, and denser shapes
+#: still exceed the node limit of any affordable exact walk. 600 sits
+#: well above everything measured, and the budget below is small enough
+#: that even a 2x under-charge leaves the real figure in tens of
+#: megabytes rather than hundreds.
+#:
+#: Over-charging is close to free here. Measured within one lint, this
+#: cache hits 0.0% of the time on ai-helpers and 2.6% on an 18,039-file
+#: marketplace — a lint reads each document about once — so evicting
+#: early costs almost nothing, while charging accurately costs 24% of the
+#: run (see the note above the memo).
+_RETENTION_RATIO = 600
 
-_PARSE_CACHE = BudgetedMemo(256 * 1024 * 1024)
+_PARSE_CACHE = BudgetedMemo(32 * 1024 * 1024)
 
 
 def _parse_cached(body: str):

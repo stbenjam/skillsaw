@@ -741,13 +741,36 @@ class TestParseCacheBudget:
         documents = sorted(fixtures.rglob("*.md"))
         assert len(documents) > 50, "fixture corpus shrank; this test needs real content"
 
+        # Real documents are not the hard case. Retention follows
+        # structure, so the shapes that stress the ratio are the ones no
+        # fixture contains: rules, bare list markers, empty headings and
+        # quotes, repeated at a size that still fits the walk's node limit.
+        # A ratio that covers the corpus but not these is not a bound.
+        synthetic = [
+            unit * repeat
+            for unit, repeat in (
+                ("---\n", 600),
+                ("-\n", 2400),
+                ("#\n", 2400),
+                (">\n", 2400),
+                ("*a* ", 2400),
+                ("| a |\n|---|\n", 400),
+                ("<div>\n\n", 300),
+                ("```\nx\n```\n\n", 200),
+            )
+        ]
+
         checked = 0
         worst = 0.0
-        for document in documents:
-            try:
-                body = document.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):  # pragma: no cover - fixture hygiene
-                continue
+        for body in [d for d in documents] + synthetic:
+            if isinstance(body, Path):
+                document = body
+                try:
+                    body = document.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):  # pragma: no cover
+                    continue
+            else:
+                document = Path("<synthetic>")
             if not body:
                 continue
             env: dict = {}
