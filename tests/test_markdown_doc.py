@@ -645,3 +645,73 @@ class TestParityWithLegacyStrip:
                     f"{md_file}:{i} unexplained divergence:\n"
                     f"  legacy: {legacy_line!r}\n  new:    {new_line!r}"
                 )
+
+
+class TestParseCacheBudget:
+    """The parse memo retains token trees, which are not fixed-small."""
+
+    def _reset(self):
+        from skillsaw.markdown_doc import _PARSE_CACHE
+
+        _PARSE_CACHE.clear()
+
+    def test_a_repeated_body_is_parsed_once(self):
+        from skillsaw.markdown_doc import _parse_cached
+
+        self._reset()
+        try:
+            body = "# Title\n\nProse with a [link](https://example.com) in it.\n"
+            assert _parse_cached(body) is _parse_cached(body)
+        finally:
+            self._reset()
+
+    def test_the_budget_bounds_what_parsed_trees_retain(self):
+        """A count cap could not express this bound.
+
+        Retention follows structure, not length: measured across document
+        shapes a tree holds between 2.7x and 90x its source, because a file
+        of list items builds far more tokens per byte than one of fenced
+        code. At 90x, the old cap of 128 entries admitted 406 MB of
+        repository-controlled content.
+        """
+        from skillsaw.markdown_doc import _PARSE_CACHE, _parse_cached
+
+        self._reset()
+        budget = _PARSE_CACHE._budget
+        try:
+            # Sized so each entry fits the budget comfortably and the set
+            # of them does not: this must exercise eviction, not the
+            # oversize refusal, which would satisfy the bound vacuously by
+            # storing nothing at all.
+            _PARSE_CACHE._budget = 1024 * 1024
+            unit = "- alpha\n- beta\n- gamma\n  - nested\n\n"
+            for index in range(20):
+                _parse_cached(f"# doc {index}\n\n" + unit * 20)
+
+            assert _PARSE_CACHE.values, "entries were refused, not evicted"
+            assert _PARSE_CACHE.total_bytes <= 1024 * 1024
+            assert len(_PARSE_CACHE.values) < 40, "the budget never evicted"
+            assert _PARSE_CACHE.total_bytes == sum(_PARSE_CACHE.charged.values())
+            assert set(_PARSE_CACHE.charged) == set(_PARSE_CACHE.values)
+        finally:
+            _PARSE_CACHE._budget = budget
+            self._reset()
+
+    def test_an_entry_larger_than_the_budget_still_parses(self):
+        """Refusing to remember must not change the answer."""
+        from skillsaw.markdown_doc import _PARSE_CACHE, _parse_cached
+
+        self._reset()
+        budget = _PARSE_CACHE._budget
+        try:
+            _PARSE_CACHE._budget = 1024
+            body = "- alpha\n- beta\n\n" * 200
+            tokens, refs, dupes = _parse_cached(body)
+
+            assert tokens, "the document must still parse"
+            assert body not in _PARSE_CACHE.values
+            assert _PARSE_CACHE.total_bytes == 0
+            assert not _PARSE_CACHE.charged
+        finally:
+            _PARSE_CACHE._budget = budget
+            self._reset()

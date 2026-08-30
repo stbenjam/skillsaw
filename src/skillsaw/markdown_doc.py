@@ -32,11 +32,13 @@ from __future__ import annotations
 
 import bisect
 import re
+import sys
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from markdown_it import MarkdownIt
+
+from skillsaw.utils import BudgetedMemo, _approximate_size
 
 __all__ = [
     "MarkdownDoc",
@@ -91,16 +93,51 @@ def _html_comment_spans(text: str):
         cursor = end
 
 
-@lru_cache(maxsize=128)
+#: Parsed trees, bounded by what they retain rather than by a count.
+#:
+#: A token tree is not a fixed-small entry: measured across document
+#: shapes it retains between 2.7x and 90x its source, because the ratio
+#: follows structure rather than length — a file of list items builds far
+#: more tokens per byte than one of fenced code. A count cap could not
+#: express a memory bound at that spread: at 90x, the 128-entry
+#: ``lru_cache`` this replaces admitted 406 MB of repository-controlled
+#: content, which is the T11 surface exactly.
+#:
+#: The budget is sized on measured demand, not guessed. Linting
+#: openshift-eng/ai-helpers (41 plugins, 115 skills) parses 336 distinct
+#: documents holding 86 MB, so 256 MB leaves a real repository well clear
+#: of eviction — which matters here in a way it does not for the pattern
+#: memos, where eviction is a rare backstop. Halving eviction discards
+#: entries about to be reused, so a budget a normal repository crosses is
+#: a thrash: at 64 MB this same run spent 7907 ms in rules_run against
+#: 3043 ms at 256 MB. The old 128-entry cap was already thrashing for the
+#: same reason, which is why byte-bounding it made the run 1.8x faster
+#: rather than merely bounded.
+_PARSE_CACHE = BudgetedMemo(256 * 1024 * 1024)
+
+
 def _parse_cached(body: str):
     """Parse *body* once and share the token stream.
 
     Several consumers parse the same text (content blocks, suppression maps
     for the same file); tokens are treated as read-only so sharing is safe.
+
+    The memo is keyed by the body, so it is content-addressed and needs no
+    invalidation: text rewritten by autofix is simply a different key.
     """
+    cached = _PARSE_CACHE.values.get(body)
+    if cached is not None:
+        return cached
     env: Dict = {}
     tokens = _PARSER.parse(body, env)
-    return tokens, env.get("references", {}), env.get("duplicate_refs", [])
+    parsed = (tokens, env.get("references", {}), env.get("duplicate_refs", []))
+    # Measured, not estimated. The walk costs about 7% of the parse it
+    # follows and runs once per distinct document, where getting the
+    # charge wrong makes the budget unenforceable for every later entry.
+    # The body is charged too: the memo is keyed by it, so it is what
+    # keeps that string alive once the caller is done with it.
+    _PARSE_CACHE.put(body, parsed, _approximate_size(parsed) + sys.getsizeof(body))
+    return parsed
 
 
 # ---------------------------------------------------------------------------

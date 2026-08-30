@@ -557,6 +557,88 @@ class _Unsizeable:
 _UNSIZEABLE = _Unsizeable()
 
 
+class BudgetedMemo:
+    """A memo bounded by the bytes its entries retain, not by their count.
+
+    Three caches in the tree hold entries whose size repository or config
+    content decides rather than the code: the two pattern-literal memos in
+    ``content_analysis`` (nothing caps the length of a banned pattern) and
+    the markdown parse cache in ``markdown_doc`` (nothing caps the size of
+    a document). A count cap on such a cache is a bound in name only —
+    512 entries of a 200,000-character pattern is 102 MB, and 128 parsed
+    trees of 134 KB documents is 406 MB. Refusing the large ones outright
+    is worse than the leak, because the work they cache is what makes a
+    document cheap on the second read, so the answer is a byte budget with
+    eviction.
+
+    Reads go straight to ``values`` and take no lock: a ``get`` racing a
+    ``del`` returns the value or nothing, and nothing is just a miss. The
+    dict is exposed rather than wrapped in a method because the
+    pattern-keyed lookup runs once per (pattern, document) pair — 39,513
+    times linting a 115-skill, 41-plugin repository — and the point of it
+    is to stay a plain lookup rather than grow a call in front.
+
+    Writes take the lock, the way ``_resolve_lock`` and ``FileCache._lock``
+    do for the other process-global caches: two threads admitting the same
+    key would otherwise charge one retained entry twice, and two evicting
+    at once would pop a key the other already removed.
+
+    Callers supply the cost, since only they know what an entry holds;
+    :func:`_approximate_size` measures a parsed structure, and an entry it
+    declines to size (:data:`UNCACHEABLE_SIZE`) is never stored.
+    """
+
+    __slots__ = ("values", "_costs", "_bytes", "_budget", "_lock")
+
+    def __init__(self, budget: int):
+        self.values: Dict[Any, Any] = {}
+        self._costs: Dict[Any, int] = {}
+        self._bytes = 0
+        self._budget = budget
+        self._lock = threading.Lock()
+
+    def put(self, key: Any, value: Any, cost: int) -> None:
+        """Remember *value* under *key*, charged *cost* bytes."""
+        if cost == UNCACHEABLE_SIZE or cost > self._budget:
+            # Either the walk gave up, or remembering it would evict
+            # everything else and still not fit. Recomputing costs time;
+            # retaining it costs the budget.
+            return
+        with self._lock:
+            if key in self.values:
+                # Another thread admitted it while this one was measuring.
+                # Its entry is already charged, and charging again would
+                # bill one retained entry twice.
+                return
+            while self.values and self._bytes + cost > self._budget:
+                # Halves, not everything: a bound a workload can cross
+                # must not be a cliff. Repeated because entries are not
+                # uniform — dropping half of a memo holding one large
+                # entry and many small ones need not free enough for the
+                # next one.
+                for stale in list(self.values)[: len(self.values) // 2 or 1]:
+                    self._bytes -= self._costs.pop(stale)
+                    del self.values[stale]
+            self.values[key] = value
+            self._costs[key] = cost
+            self._bytes += cost
+
+    def clear(self) -> None:
+        with self._lock:
+            self.values.clear()
+            self._costs.clear()
+            self._bytes = 0
+
+    @property
+    def total_bytes(self) -> int:
+        return self._bytes
+
+    @property
+    def charged(self) -> Dict[Any, int]:
+        """The per-entry costs, for tests asserting the accounting."""
+        return self._costs
+
+
 class FileCache:
     """Thread-safe cache that supports per-file invalidation.
 

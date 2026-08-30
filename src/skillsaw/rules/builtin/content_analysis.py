@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
+from skillsaw.utils import BudgetedMemo
+
 # Re-exported for backward compatibility — the canonical home is
 # ``skillsaw.blocks``.  Rules and tests import these block types from here.
 from skillsaw.blocks import (  # noqa: F401
@@ -228,81 +230,6 @@ except ImportError:  # Python 3.9/3.10
 _LITERALS_ENTRY_OVERHEAD_BYTES = 256
 
 
-class _BudgetedMemo:
-    """A memo bounded by the bytes its entries retain, not by their count.
-
-    Both pattern-literal caches below hold entries whose size a config
-    supplies rather than the code: nothing caps the length of a banned
-    pattern, so an entry can be a few hundred bytes or a few megabytes.
-    A count cap on such a cache is a bound in name only — 512 entries of
-    a 200,000-character pattern is 102 MB — while refusing the large ones
-    outright costs 194 ms of re-parsing per document, so the answer is a
-    byte budget with eviction.
-
-    Reads go straight to ``values`` and take no lock: a ``get`` racing a
-    ``del`` returns the value or nothing, and nothing is just a miss. The
-    dict is exposed rather than wrapped in a method because the
-    pattern-keyed lookup runs once per (pattern, document) pair — 39,513
-    times linting a 115-skill, 41-plugin repository — and the point of it
-    is to stay a plain lookup rather than grow a call in front.
-
-    Writes take the lock, the way ``_resolve_lock`` and
-    ``FileCache._lock`` do for the other process-global caches: two
-    threads admitting the same key would otherwise charge one retained
-    entry twice, and two evicting at once would pop a key the other
-    already removed.
-    """
-
-    __slots__ = ("values", "_costs", "_bytes", "_budget", "_lock")
-
-    def __init__(self, budget: int):
-        self.values: Dict[object, Tuple[str, ...]] = {}
-        self._costs: Dict[object, int] = {}
-        self._bytes = 0
-        self._budget = budget
-        self._lock = threading.Lock()
-
-    def put(self, key: object, value: Tuple[str, ...], cost: int) -> None:
-        """Remember *value* under *key*, charged *cost* bytes."""
-        if cost > self._budget:
-            # Remembering it would evict everything else and still not
-            # fit. Recomputing costs time; retaining it costs the budget.
-            return
-        with self._lock:
-            if key in self.values:
-                # Another thread admitted it while this one was
-                # measuring. Its entry is already charged, and charging
-                # again would bill one retained entry twice.
-                return
-            while self.values and self._bytes + cost > self._budget:
-                # Halves, not everything: a bound a workload can cross
-                # must not be a cliff. Repeated because entries are not
-                # uniform — dropping half of a memo holding one large
-                # pattern and many small ones need not free enough for
-                # the next one.
-                for stale in list(self.values)[: len(self.values) // 2 or 1]:
-                    self._bytes -= self._costs.pop(stale)
-                    del self.values[stale]
-            self.values[key] = value
-            self._costs[key] = cost
-            self._bytes += cost
-
-    def clear(self) -> None:
-        with self._lock:
-            self.values.clear()
-            self._costs.clear()
-            self._bytes = 0
-
-    @property
-    def total_bytes(self) -> int:
-        return self._bytes
-
-    @property
-    def charged(self) -> Dict[object, int]:
-        """The per-entry costs, for tests asserting the accounting."""
-        return self._costs
-
-
 def _literals_cost(literals: Tuple[str, ...]) -> int:
     """What a tuple of extracted literals retains, in bytes."""
     return sys.getsizeof(literals) + sum(sys.getsizeof(literal) for literal in literals)
@@ -315,7 +242,7 @@ def _literals_cost(literals: Tuple[str, ...]) -> int:
 #: string's retainer once the config is gone; hence the byte budget
 #: rather than the ``lru_cache(maxsize=512)`` this replaces, whose count
 #: cap let 512 oversized sources past the budget below.
-_LITERALS_BY_SOURCE = _BudgetedMemo(8 * 1024 * 1024)
+_LITERALS_BY_SOURCE = BudgetedMemo(8 * 1024 * 1024)
 
 
 def _required_literals(pattern_src: str, flags: int) -> Tuple[str, ...]:
@@ -411,7 +338,7 @@ def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
 # compiled, so a count cap of 20,000 bounded this at gigabytes.
 # ``sys.getsizeof`` on a compiled pattern does scale with its code array,
 # so the charge is a direct measurement rather than an estimate.
-_LITERALS_BY_PATTERN = _BudgetedMemo(8 * 1024 * 1024)
+_LITERALS_BY_PATTERN = BudgetedMemo(8 * 1024 * 1024)
 
 
 def _literals_entry_cost(pattern: "re.Pattern", literals: Tuple[str, ...]) -> int:
