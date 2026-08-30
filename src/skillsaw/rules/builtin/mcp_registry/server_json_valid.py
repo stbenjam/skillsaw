@@ -224,7 +224,8 @@ def _schema_checked_document(
     for index, package in enumerate(packages):
         if not isinstance(package, dict):
             continue
-        registry_type = package.get(schema_profile.registry_type_field)
+        raw_registry_type = package.get(schema_profile.registry_type_field)
+        registry_type = raw_registry_type if isinstance(raw_registry_type, str) else None
         substitutions = {}
         if is_release_source_placeholder(package.get("identifier")):
             substitutions["identifier"] = _PLACEHOLDER_IDENTIFIERS.get(
@@ -524,15 +525,14 @@ def _collect_package_semantics(
     for index, package in enumerate(packages):
         if not isinstance(package, dict):
             continue
-        registry_type = package.get(schema_profile.registry_type_field)
-        if isinstance(registry_type, str) and registry_type not in allowed_registry_types:
+        raw_registry_type = package.get(schema_profile.registry_type_field)
+        registry_type = raw_registry_type if isinstance(raw_registry_type, str) else None
+        if registry_type is not None and registry_type not in allowed_registry_types:
             findings.record("registry-type", index)
         transport = package.get("transport")
-        transport_type = transport.get("type") if isinstance(transport, dict) else None
-        if (
-            isinstance(transport_type, str)
-            and transport_type not in semantic_policy.package_transports
-        ):
+        raw_transport_type = transport.get("type") if isinstance(transport, dict) else None
+        transport_type = raw_transport_type if isinstance(raw_transport_type, str) else None
+        if transport_type is not None and transport_type not in semantic_policy.package_transports:
             findings.record("package-transport", index)
         transport_url = transport.get("url") if isinstance(transport, dict) else None
         if (

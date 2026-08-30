@@ -726,6 +726,20 @@ class TestMcpRegistrySchemaRule:
         assert any("registrytype" in message for message in messages_lower(findings))
         assert configured == []
 
+    @pytest.mark.parametrize("registry_type", [["npm"], {"value": "npm"}, None])
+    def test_non_string_registry_type_is_left_to_schema_validation(self, tmp_path, registry_type):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["registryType"] = registry_type
+        data["packages"][0]["identifier"] = "${IDENTIFIER}"
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+        combined = "\n".join(finding.message for finding in findings)
+
+        assert not any(finding.rule_id == "rule-execution-error" for finding in findings)
+        assert "$.packages[0].registryType: must be of type string" in combined
+
     def test_configured_registry_types_are_sanitized_in_diagnostics(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
         path, data = _load_server(repo)
@@ -777,6 +791,21 @@ class TestMcpRegistrySchemaRule:
 
         assert "packages[0].transport.type" in combined
         assert "remotes[0].type" in combined
+
+    @pytest.mark.parametrize("transport_type", [["stdio"], {"value": "stdio"}, None])
+    def test_non_string_package_transport_type_is_left_to_schema_validation(
+        self, tmp_path, transport_type
+    ):
+        repo = copy_fixture("mcp-registry/clean", tmp_path)
+        path, data = _load_server(repo)
+        data["packages"][0]["transport"]["type"] = transport_type
+        _write_server(path, data)
+
+        findings = lint_rules(repo, VALID_RULE)
+        combined = "\n".join(finding.message for finding in findings)
+
+        assert not any(finding.rule_id == "rule-execution-error" for finding in findings)
+        assert "$.packages[0].transport: must match a permitted schema variant" in combined
 
     def test_package_and_remote_url_templates_must_be_structurally_valid(self, tmp_path):
         repo = copy_fixture("mcp-registry/clean", tmp_path)
