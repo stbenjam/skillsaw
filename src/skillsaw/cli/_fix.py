@@ -157,14 +157,12 @@ def _run_fix(args):
         print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
         for fix, root in suggested:
             print(f"  ? [{_display(fix.file_path, root)}] {fix.description}")
-        # Echo an explicitly passed CLI threshold back into the hint. Without
-        # one, plain `skillsaw fix --suggest` re-resolves the same config or
-        # default scope — except when an explicit --config widened it to info:
-        # auto-discovery may not find that file, so spell the scope out.
-        explicit_scope = args.fail_on
-        if not explicit_scope and getattr(args, "config", None) and severity_threshold == "info":
-            explicit_scope = severity_threshold
-        threshold_flag = f" --severity {explicit_scope}" if explicit_scope else ""
+        # Echo an explicitly passed CLI threshold back into the hint; without
+        # one, `skillsaw fix --suggest` re-resolves the same config/default
+        # scope this run used, so the flag would be noise. The hint is not a
+        # verbatim replay — like the path argument, an explicit -c is the
+        # user's to repeat — and config stays the canonical scope control.
+        threshold_flag = f" --severity {args.fail_on}" if args.fail_on else ""
         print(f"\nRun `skillsaw fix{threshold_flag} --suggest` to apply suggested fixes.")
         print(f"Run `skillsaw fix{threshold_flag} --suggest --dry-run` to preview changes.")
 

@@ -5328,9 +5328,11 @@ class TestInfoAutofixOptIn:
         assert "Would fix 1 issue(s)" in result.stdout
         assert "+Read [references/guide.md](references/guide.md)" in result.stdout
 
-    def test_config_widened_scope_is_spelled_out_in_suggest_hint(self, tmp_path):
-        """An explicit --config that widens fix scope to info may not be
-        auto-discoverable on a bare re-run, so the hint spells the scope out."""
+    def test_config_widened_scope_keeps_suggest_hint_flag_free(self, tmp_path):
+        """A config-widened scope needs no --severity in the hint — the hint
+        is not a verbatim replay, and a re-run keeps the user's own -c flag
+        just like it keeps the path argument. Config stays the canonical
+        scope control; the flag is echoed only when explicitly typed."""
         repo = copy_fixture("instructions/agents-import/duplicated-pair", tmp_path)
         cfg = tmp_path / "external-config.yaml"
         cfg.write_text('version: "0.20.0"\nfail-on: info\n')
@@ -5338,10 +5340,8 @@ class TestInfoAutofixOptIn:
         result = run_cli(["fix", "-c", cfg, repo])
 
         assert "Suggested fixes" in result.stdout
-        assert (
-            "Run `skillsaw fix --severity info --suggest` to apply suggested fixes."
-            in result.stdout
-        )
+        assert "Run `skillsaw fix --suggest` to apply suggested fixes." in result.stdout
+        assert "--severity" not in result.stdout
 
     def test_lint_cli_info_threshold_keeps_fix_opt_in_hint(self, tmp_path):
         """`lint --severity info` widens the display only — a later plain
