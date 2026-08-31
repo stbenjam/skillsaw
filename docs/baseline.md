@@ -85,9 +85,10 @@ resolved violations.
 
 ## Baseline and Fix
 
-The `skillsaw fix` command operates on all violations regardless of the
-baseline. The baseline only affects `lint` reporting and exit codes — if
-you explicitly ask to fix, everything is eligible.
+The `skillsaw fix` command ignores the baseline. The baseline only affects
+`lint` reporting and exit codes — if you explicitly ask to fix, everything
+within the selected severity scope (errors and warnings by default) is
+eligible, baselined or not.
 
 ## Workflow Example
 
