@@ -1344,6 +1344,14 @@ def test_text_fixable_summary_info_threshold_widens_default_scope(valid_plugin):
     assert "--severity" not in output
 
 
+def test_format_text_positional_color_binding_stable(valid_plugin):
+    """fix_level is appended after the pre-existing parameters — the tenth
+    positional argument must stay `color` for existing library callers."""
+    context = RepositoryContext(valid_plugin)
+    output = format_text([], context, [], "0.0.0", False, 0, None, None, "error", True)
+    assert "\033[" in output
+
+
 def test_text_lint_only_info_threshold_keeps_fix_opt_in(valid_plugin):
     """A lint-only --severity info run shows info findings, but a later plain
     `skillsaw fix` resolves scope from config — the hint must keep the flag."""

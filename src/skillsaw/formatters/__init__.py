@@ -116,9 +116,9 @@ def format_report(
     duration: Optional[float] = None,
     grade=None,
     fail_level: str = "error",
-    fix_level: str = "warning",
     color: bool = False,
     hyperlinks: bool = False,
+    fix_level: str = "warning",
 ) -> str:
     """
     Format lint results in the specified format.
@@ -141,7 +141,9 @@ def format_report(
             config alone ("warning" or "info") — drives which findings the
             text/html fix hints advertise as needing ``--severity info``.
             Distinct from fail_level: a lint-only ``--severity`` override
-            widens the display but never reaches a later fix run
+            widens the display but never reaches a later fix run. Kept
+            last in the signature so existing positional callers of
+            ``color``/``hyperlinks`` keep their bindings
         color: Emit ANSI colors (text format only — resolved by the caller
             via ``color_enabled()``; file outputs stay plain)
         hyperlinks: Emit OSC 8 terminal hyperlinks (text format only)
@@ -181,9 +183,9 @@ def _render_report(
     duration: Optional[float] = None,
     grade=None,
     fail_level: str = "error",
-    fix_level: str = "warning",
     color: bool = False,
     hyperlinks: bool = False,
+    fix_level: str = "warning",
 ) -> str:
     """Dispatch to the per-format renderer. See :func:`format_report`."""
     if fmt == "text":

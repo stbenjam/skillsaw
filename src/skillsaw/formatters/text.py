@@ -52,9 +52,10 @@ def format_text(
     duration: Optional[float] = None,
     grade=None,
     fail_level: str = "error",
-    fix_level: str = "warning",
     color: bool = False,
     hyperlinks: bool = False,
+    # Kept last so existing positional callers keep their bindings.
+    fix_level: str = "warning",
 ) -> str:
     show_info = should_show_info(verbose, fail_level)
     red = "\033[91m" if color else ""
