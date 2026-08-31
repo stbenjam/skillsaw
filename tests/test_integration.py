@@ -5328,6 +5328,21 @@ class TestInfoAutofixOptIn:
         assert "Would fix 1 issue(s)" in result.stdout
         assert "+Read [references/guide.md](references/guide.md)" in result.stdout
 
+    def test_config_widened_scope_is_spelled_out_in_suggest_hint(self, tmp_path):
+        """An explicit --config that widens fix scope to info may not be
+        auto-discoverable on a bare re-run, so the hint spells the scope out."""
+        repo = copy_fixture("instructions/agents-import/duplicated-pair", tmp_path)
+        cfg = tmp_path / "external-config.yaml"
+        cfg.write_text('version: "0.20.0"\nfail-on: info\n')
+
+        result = run_cli(["fix", "-c", cfg, repo])
+
+        assert "Suggested fixes" in result.stdout
+        assert (
+            "Run `skillsaw fix --severity info --suggest` to apply suggested fixes."
+            in result.stdout
+        )
+
     def test_lint_cli_info_threshold_keeps_fix_opt_in_hint(self, tmp_path):
         """`lint --severity info` widens the display only — a later plain
         `skillsaw fix` resolves scope from config, so the hint keeps the flag."""

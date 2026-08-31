@@ -26,7 +26,9 @@ unavailable).
 
 ## Step 2: Run the lint and build an inventory
 
-Run `skillsaw` (lint) from the repo root and capture the output. Each
+Run `skillsaw lint -v` from the repo root and capture the output. The `-v`
+matters: info-level findings are hidden by default but count toward the
+grade, and some are autofixable, so the inventory must include them. Each
 violation line includes the severity, file path, line number, message, and
 rule ID — read them all.
 
