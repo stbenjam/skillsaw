@@ -52,6 +52,7 @@ def format_text(
     duration: Optional[float] = None,
     grade=None,
     fail_level: str = "error",
+    fix_level: str = "warning",
     color: bool = False,
     hyperlinks: bool = False,
 ) -> str:
@@ -163,11 +164,11 @@ def format_text(
     # over the violations shown above, so marked lines and counts agree
     # (`skillsaw fix` groups per-file fixes and may report different totals).
     # Plain `skillsaw fix` already repairs errors and warnings (and info too
-    # when the effective threshold is info), so only findings outside that
-    # default scope advertise the `--severity info` opt-in.
-    default_fix_scope = (
-        set(Severity) if fail_level == "info" else {Severity.ERROR, Severity.WARNING}
-    )
+    # when the config widens the fix scope), so only findings outside that
+    # default scope advertise the `--severity info` opt-in. The scope reads
+    # fix_level, never fail_level: a lint-only --severity override widens the
+    # display but never reaches a later plain `skillsaw fix` run.
+    default_fix_scope = set(Severity) if fix_level == "info" else {Severity.ERROR, Severity.WARNING}
 
     def append_fixable_summary(scoped, command: str, label: str) -> None:
         safe_count = sum(

@@ -116,6 +116,7 @@ def format_report(
     duration: Optional[float] = None,
     grade=None,
     fail_level: str = "error",
+    fix_level: str = "warning",
     color: bool = False,
     hyperlinks: bool = False,
 ) -> str:
@@ -136,6 +137,11 @@ def format_report(
         fail_level: Effective severity threshold that fails the run — with
             ``fail-on: info`` every format must include the info violations
             that caused the failure even without -v
+        fix_level: Scope a plain ``skillsaw fix`` run would resolve from
+            config alone ("warning" or "info") — drives which findings the
+            text/html fix hints advertise as needing ``--severity info``.
+            Distinct from fail_level: a lint-only ``--severity`` override
+            widens the display but never reaches a later fix run
         color: Emit ANSI colors (text format only — resolved by the caller
             via ``color_enabled()``; file outputs stay plain)
         hyperlinks: Emit OSC 8 terminal hyperlinks (text format only)
@@ -157,6 +163,7 @@ def format_report(
             duration=duration,
             grade=grade,
             fail_level=fail_level,
+            fix_level=fix_level,
             color=color,
             hyperlinks=hyperlinks,
         )
@@ -174,6 +181,7 @@ def _render_report(
     duration: Optional[float] = None,
     grade=None,
     fail_level: str = "error",
+    fix_level: str = "warning",
     color: bool = False,
     hyperlinks: bool = False,
 ) -> str:
@@ -191,6 +199,7 @@ def _render_report(
             duration,
             grade,
             fail_level,
+            fix_level=fix_level,
             color=color,
             hyperlinks=hyperlinks,
         )
@@ -215,7 +224,9 @@ def _render_report(
     elif fmt == "html":
         from .html import format_html
 
-        return format_html(violations, context, rules, version, verbose, fail_level)
+        return format_html(
+            violations, context, rules, version, verbose, fail_level, fix_level=fix_level
+        )
     elif fmt in ("code-climate", "gitlab"):
         from .code_climate import format_code_climate
 

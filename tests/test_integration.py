@@ -5328,6 +5328,26 @@ class TestInfoAutofixOptIn:
         assert "Would fix 1 issue(s)" in result.stdout
         assert "+Read [references/guide.md](references/guide.md)" in result.stdout
 
+    def test_lint_cli_info_threshold_keeps_fix_opt_in_hint(self, tmp_path):
+        """`lint --severity info` widens the display only — a later plain
+        `skillsaw fix` resolves scope from config, so the hint keeps the flag."""
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+
+        r = run_lint(repo, "--severity", "info", fmt="text", verbose=False)
+
+        assert "[*] 1 info violation(s) fixable with `skillsaw fix --severity info`" in r["stdout"]
+
+    def test_config_info_threshold_advertises_plain_fix(self, tmp_path):
+        """With fail-on: info in config, plain `skillsaw fix` covers info —
+        the summary needs no opt-in flag."""
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        (repo / ".skillsaw.yaml").write_text('version: "0.20.0"\nfail-on: info\n')
+
+        r = run_lint(repo, fmt="text", verbose=False)
+
+        assert "[*] 1 violation(s) fixable with `skillsaw fix`" in r["stdout"]
+        assert "--severity" not in r["stdout"]
+
 
 class TestUnlinkedInternalReferenceAutofix:
     """Integration tests for content-unlinked-internal-reference autofix via CLI."""

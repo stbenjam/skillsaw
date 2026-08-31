@@ -14,6 +14,7 @@ def format_html(
     version: str,
     verbose: bool = False,
     fail_level: str = "error",
+    fix_level: str = "warning",
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
@@ -48,11 +49,11 @@ def format_html(
     )
 
     # Plain `skillsaw fix` already repairs errors and warnings (and info too
-    # when the effective threshold is info), so only findings outside that
-    # default scope advertise the `--severity info` opt-in.
-    default_fix_scope = (
-        set(Severity) if fail_level == "info" else {Severity.ERROR, Severity.WARNING}
-    )
+    # when the config widens the fix scope), so only findings outside that
+    # default scope advertise the `--severity info` opt-in. The scope reads
+    # fix_level, never fail_level: a lint-only --severity override widens the
+    # display but never reaches a later plain `skillsaw fix` run.
+    default_fix_scope = set(Severity) if fix_level == "info" else {Severity.ERROR, Severity.WARNING}
 
     def fix_marker(v: RuleViolation) -> str:
         if not v.fixable:

@@ -1325,7 +1325,28 @@ def test_text_fixable_summary_default_and_info_lines(valid_plugin):
 
 
 def test_text_fixable_summary_info_threshold_widens_default_scope(valid_plugin):
-    """With fail-on info, plain `skillsaw fix` covers info — no opt-in line."""
+    """With config fail-on info, plain `skillsaw fix` covers info — no opt-in line."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="content-unlinked-internal-reference",
+            severity=Severity.INFO,
+            message="Unlinked path reference: 'docs/x.md' (file exists, autofixable)",
+            file_path=Path("SKILL.md"),
+            line=3,
+            fixable=True,
+            fix_confidence=AutofixConfidence.SAFE,
+        ),
+    ]
+
+    output = format_text(violations, context, [], "0.0.0", fail_level="info", fix_level="info")
+    assert "[*] 1 violation(s) fixable with `skillsaw fix`" in output
+    assert "--severity" not in output
+
+
+def test_text_lint_only_info_threshold_keeps_fix_opt_in(valid_plugin):
+    """A lint-only --severity info run shows info findings, but a later plain
+    `skillsaw fix` resolves scope from config — the hint must keep the flag."""
     context = RepositoryContext(valid_plugin)
     violations = [
         RuleViolation(
@@ -1340,8 +1361,7 @@ def test_text_fixable_summary_info_threshold_widens_default_scope(valid_plugin):
     ]
 
     output = format_text(violations, context, [], "0.0.0", fail_level="info")
-    assert "[*] 1 violation(s) fixable with `skillsaw fix`" in output
-    assert "--severity" not in output
+    assert "[*] 1 info violation(s) fixable with `skillsaw fix --severity info`" in output
 
 
 def test_json_fixable_true_includes_confidence(valid_plugin):
@@ -1403,9 +1423,13 @@ def test_html_info_fixable_marker_requires_opt_in(valid_plugin):
     output = format_html([violation], context, [], "1.0.0", verbose=True)
     assert 'title="fixable with skillsaw fix --severity info"' in output
 
-    # With an info failure threshold, plain `skillsaw fix` covers info.
-    widened = format_html([violation], context, [], "1.0.0", fail_level="info")
+    # With a config-widened fix scope, plain `skillsaw fix` covers info.
+    widened = format_html([violation], context, [], "1.0.0", fail_level="info", fix_level="info")
     assert 'title="fixable with skillsaw fix"' in widened
+
+    # A lint-only info threshold shows the finding but keeps the opt-in hint.
+    lint_only = format_html([violation], context, [], "1.0.0", fail_level="info")
+    assert 'title="fixable with skillsaw fix --severity info"' in lint_only
 
 
 def test_html_no_fixable_marker_when_unknown(valid_plugin):

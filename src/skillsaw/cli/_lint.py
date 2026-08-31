@@ -10,7 +10,7 @@ from pathlib import Path
 from ..context import RepositoryContext, RepositoryType
 from ..formatters import format_report, get_counts, parse_output_spec
 from ..linter import Linter
-from ._config import _get_version, load_config, resolve_fail_level
+from ._config import _get_version, config_fix_level, load_config, resolve_fail_level
 from ._helpers import (
     _RuleProgress,
     _build_merged_context,
@@ -111,6 +111,9 @@ def _run_lint(args):
         print(f"Using config: {config_path}\n")
 
     fail_level = resolve_fail_level(args, config)
+    # What a later plain `skillsaw fix` will cover — resolved from config
+    # alone, since lint's --severity flag never reaches the fix command.
+    fix_level = config_fix_level(config)
 
     baseline = None
     if not args.no_baseline:
@@ -236,6 +239,7 @@ def _run_lint(args):
         duration=lint_duration,
         grade=grade,
         fail_level=fail_level,
+        fix_level=fix_level,
         color=color,
         hyperlinks=hyperlinks_enabled(sys.stdout, color),
     )
@@ -255,6 +259,7 @@ def _run_lint(args):
                 duration=lint_duration,
                 grade=grade,
                 fail_level=fail_level,
+                fix_level=fix_level,
             )
         out_path = Path(output_path)
         try:

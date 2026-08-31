@@ -53,12 +53,13 @@ skillsaw fix <path>
 ```
 
 This applies safe, structural fixes (missing frontmatter, kebab-case names,
-and similar) for errors and warnings; add `--severity info` when the lint
-output reports fixable info-level findings. Run `skillsaw fix --dry-run`
-first to inspect the diff before anything is written. Run
-`skillsaw fix --suggest` for a second tier of mechanically derived fixes
-(stale-reference updates after a rename, for example) — review each hunk in
-that tier before applying it.
+and similar) for errors and warnings. When the lint output reports fixable
+info-level findings, add `--severity info` to each fix command in this step.
+Run `skillsaw fix --dry-run` first to inspect the diff before anything is
+written. For the second tier of mechanically derived fixes (stale-reference
+updates after a rename, for example), run `skillsaw fix --suggest --dry-run`
+and review each hunk; if every hunk is correct, run `skillsaw fix --suggest`
+to apply them.
 
 ## Step 4: Resolve the remaining violations
 
