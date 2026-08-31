@@ -289,6 +289,20 @@ class TestLinterFix:
         _violations, fixes = linter.fix()
         assert fixes == []
 
+    def test_fix_rejects_unknown_severity_threshold(self, valid_plugin):
+        context = RepositoryContext(valid_plugin)
+        linter = Linter(context, LinterConfig.default())
+        with pytest.raises(ValueError, match="Unknown severity threshold"):
+            linter.fix(severity_threshold="critical")
+
+    def test_fix_rejects_empty_severity_threshold(self, valid_plugin):
+        # "" must not silently select the broadest (info) scope — only an
+        # explicit None keeps the historical fix-everything library default.
+        context = RepositoryContext(valid_plugin)
+        linter = Linter(context, LinterConfig.default())
+        with pytest.raises(ValueError, match="Unknown severity threshold"):
+            linter.fix(severity_threshold="")
+
     def test_fix_applies_safe_fixes(self, temp_dir):
         target = temp_dir / "fixme.txt"
         target.write_text("This is BAD content")

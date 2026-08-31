@@ -162,35 +162,43 @@ def format_text(
     # Legend for the [*]/[?] markers and the lint-to-fix hint. Counts are
     # over the violations shown above, so marked lines and counts agree
     # (`skillsaw fix` groups per-file fixes and may report different totals).
-    def append_fixable_summary(severity: Severity) -> None:
-        scoped = [v for v in shown if v.severity == severity]
+    # Plain `skillsaw fix` already repairs errors and warnings (and info too
+    # when the effective threshold is info), so only findings outside that
+    # default scope advertise the `--severity info` opt-in.
+    default_fix_scope = (
+        set(Severity) if fail_level == "info" else {Severity.ERROR, Severity.WARNING}
+    )
+
+    def append_fixable_summary(scoped, command: str, label: str) -> None:
         safe_count = sum(
             1 for v in scoped if v.fixable and v.fix_confidence == AutofixConfidence.SAFE
         )
         suggest_count = sum(
             1 for v in scoped if v.fixable and v.fix_confidence != AutofixConfidence.SAFE
         )
-        command = "skillsaw fix"
-        if severity != Severity.ERROR:
-            command += f" --severity-threshold {severity.value}"
         if safe_count and suggest_count:
             output.append(
-                f"  {green}[*] {safe_count} {severity.value} violation(s) fixable with"
+                f"  {green}[*] {safe_count} {label}violation(s) fixable with"
                 f" `{command}` ([?] {suggest_count} more with `{command} --suggest`){reset}"
             )
         elif safe_count:
             output.append(
-                f"  {green}[*] {safe_count} {severity.value} violation(s) fixable with"
-                f" `{command}`{reset}"
+                f"  {green}[*] {safe_count} {label}violation(s) fixable with `{command}`{reset}"
             )
         elif suggest_count:
             output.append(
-                f"  {green}[?] {suggest_count} {severity.value} violation(s) fixable with"
+                f"  {green}[?] {suggest_count} {label}violation(s) fixable with"
                 f" `{command} --suggest`{reset}"
             )
 
-    for severity in Severity:
-        append_fixable_summary(severity)
+    append_fixable_summary(
+        [v for v in shown if v.severity in default_fix_scope], "skillsaw fix", ""
+    )
+    append_fixable_summary(
+        [v for v in shown if v.severity not in default_fix_scope],
+        "skillsaw fix --severity info",
+        "info ",
+    )
 
     if errors == 0 and warnings == 0 and (fail_level != "info" or info == 0):
         output.append(f"\n{green}{bold}✓ All checks passed!{reset}")

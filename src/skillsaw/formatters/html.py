@@ -47,12 +47,19 @@ def format_html(
         key=lambda v: (severity_order[v.severity], str(v.file_path or ""), v.file_line or 0)
     )
 
+    # Plain `skillsaw fix` already repairs errors and warnings (and info too
+    # when the effective threshold is info), so only findings outside that
+    # default scope advertise the `--severity info` opt-in.
+    default_fix_scope = (
+        set(Severity) if fail_level == "info" else {Severity.ERROR, Severity.WARNING}
+    )
+
     def fix_marker(v: RuleViolation) -> str:
         if not v.fixable:
             return ""
         flags = []
-        if v.severity != Severity.ERROR:
-            flags.extend(("--severity-threshold", v.severity.value))
+        if v.severity not in default_fix_scope:
+            flags.extend(("--severity", "info"))
         if v.fix_confidence != AutofixConfidence.SAFE:
             flags.append("--suggest")
         cmd = "skillsaw fix" + (f" {' '.join(flags)}" if flags else "")

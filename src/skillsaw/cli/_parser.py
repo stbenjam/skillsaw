@@ -76,17 +76,17 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     lint_parser.add_argument(
         "--strict",
         action="store_true",
-        help="Treat warnings as errors (equivalent to --fail-on warning; "
+        help="Treat warnings as errors (equivalent to --severity warning; "
         "overrides the config file's strict/fail-on settings)",
     )
     lint_parser.add_argument(
-        "--severity-threshold",
+        "--severity",
         "--fail-on",
         dest="fail_on",
         choices=list(_FAIL_ON_LEVELS),
         default=None,
         help="Fail on violations at this severity or above (default: error; "
-        "--strict is equivalent to --fail-on warning). Overrides the config "
+        "--strict is equivalent to --severity warning). Overrides the config "
         "file's strict/fail-on settings.",
     )
     lint_parser.add_argument(
@@ -194,13 +194,15 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Also apply suggested fixes (not just safe ones)",
     )
     fix_parser.add_argument(
-        "--severity-threshold",
+        "--severity",
         "--fail-on",
         dest="fail_on",
         choices=list(_FAIL_ON_LEVELS),
         default=None,
-        help="Fix violations at this severity or above. Overrides the config "
-        "file's strict/fail-on settings.",
+        help="Fix violations at this severity or above (default: warning — "
+        "errors and warnings; a config-file fail-on of info expands the "
+        "default to info). The CLI flag overrides the config file's "
+        "strict/fail-on settings.",
     )
     fix_parser.add_argument(
         "--rule",

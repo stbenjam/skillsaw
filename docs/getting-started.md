@@ -149,7 +149,9 @@ Summary:
 
 Violations that `skillsaw fix` can resolve automatically are marked with
 `[*]` (safe fixes) or `[?]` (suggested fixes, applied with
-`skillsaw fix --suggest`) — see [Autofixing](autofixing.md).
+`skillsaw fix --suggest`). By default `skillsaw fix` repairs errors and
+warnings; info-level fixes take an explicit `skillsaw fix --severity info` —
+see [Autofixing](autofixing.md).
 
 ## Exit Codes
 

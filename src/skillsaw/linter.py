@@ -1290,7 +1290,7 @@ class Linter:
         all_violations = self._filter_violations(config_violations, record_baseline=False)
         all_fixes: List[AutofixResult] = []
         checked: List[RuleViolation] = list(config_violations)
-        threshold = severity_threshold or "info"
+        threshold = "info" if severity_threshold is None else severity_threshold
         allowed_severities = {
             "error": {Severity.ERROR},
             "warning": {Severity.ERROR, Severity.WARNING},

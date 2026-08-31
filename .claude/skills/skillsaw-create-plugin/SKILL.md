@@ -147,8 +147,9 @@ Install the package with `pip install -e .` in the same environment as skillsaw:
 2. Run `skillsaw lint <repo-with-violations>` — the rule fires, and the
    violation's `source` is `plugin:<name>` in `--format json` output; verify it.
 3. Run `skillsaw explain <rule-id>` — it shows the rule's description and config.
-4. If it has autofix: run `skillsaw fix --rule <rule-id>` to apply it; a second
-   run changes nothing.
+4. If it has autofix: run `skillsaw fix --severity info --rule <rule-id>` to
+   apply it (the info threshold covers rules of any severity); a second run
+   changes nothing.
 5. Run `skillsaw lint --no-plugins` — the rule disappears, confirming it loads
    via the entry point and never some other path.
 

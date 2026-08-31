@@ -37,7 +37,11 @@ each rule touches. Review this summary with the user before making changes.
 
 ## Step 3: Run deterministic autofixes
 
-Run `skillsaw fix`. This applies safe, structural fixes (missing frontmatter, kebab-case names, plugin registration, and similar).
+Run `skillsaw fix`. This applies safe, structural fixes (missing frontmatter,
+kebab-case names, plugin registration, and similar) for errors and warnings.
+When the inventory includes info-level violations, run
+`skillsaw fix --severity info` to cover them too — plain `skillsaw fix`
+leaves info-level findings untouched.
 
 Then run `skillsaw fix --suggest --dry-run` to preview the suggested tier.
 Suggested fixes (e.g. updating stale references after a rename) are

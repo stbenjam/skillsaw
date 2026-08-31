@@ -7,18 +7,18 @@ skillsaw applies deterministic fixes for structural issues. Content-quality viol
 Safe, pattern-based fixes that run instantly without any external dependencies:
 
 ```bash
-skillsaw fix                                  # Fix at the configured threshold
-skillsaw fix --severity-threshold warning     # Fix errors and warnings
-skillsaw fix --severity-threshold info        # Fix errors, warnings, and info
-skillsaw fix --suggest                        # Also apply suggested fixes
-skillsaw fix --suggest --dry-run              # Preview without writing
+skillsaw fix                     # Fix errors and warnings (SAFE)
+skillsaw fix --suggest           # Fix errors and warnings (SAFE + SUGGEST)
+skillsaw fix --severity info     # Also apply info-level fixes
+skillsaw fix --suggest --dry-run # Preview safe + suggested fixes without writing
 ```
 
-Plain `skillsaw fix` preserves its existing error-and-warning scope. A
-`.skillsaw.yaml` setting of `fail-on: info` expands that scope to informational
-findings, while the CLI `--severity-threshold` (`--fail-on`) override selects
-an exact one-off threshold. Severity and confidence are independent; add
-`--suggest` to include SUGGEST fixes within that scope.
+By default, `skillsaw fix` repairs errors and warnings. Info-level fixes need
+an explicit opt-in: pass `--severity info` (alias: `--fail-on`) or set
+`fail-on: info` in `.skillsaw.yaml`. The CLI flag selects an exact scope for
+one run; the config setting only ever expands the default scope to info, never
+narrows it. Severity and confidence are independent — add `--suggest` to
+include SUGGEST fixes within the selected scope.
 
 Examples: adding missing frontmatter, renaming files to kebab-case, registering unregistered plugins in marketplace.json, fixing skill names to match directory names. These are marked **SAFE** confidence and applied automatically.
 
@@ -38,14 +38,15 @@ Warnings:
 Summary:
   Errors:   1
   Warnings: 1
-  [*] 1 error violation(s) fixable with `skillsaw fix`
-  [?] 1 warning violation(s) fixable with `skillsaw fix --severity-threshold warning --suggest`
+  [*] 1 violation(s) fixable with `skillsaw fix` ([?] 1 more with `skillsaw fix --suggest`)
 ```
 
-- `[*]` — a **SAFE** fix exists; use the threshold-aware command shown in the
-  summary.
-- `[?]` — a **SUGGEST** fix exists; use the command shown in the summary, which
-  adds `--suggest`.
+- `[*]` — a **SAFE** fix exists; `skillsaw fix` resolves it.
+- `[?]` — a **SUGGEST** fix exists; it is only applied with `skillsaw fix --suggest`.
+
+Info-level findings sit outside the default fix scope, so when they are shown
+(with `-v`, or with an info failure threshold) they get their own summary line
+advertising `skillsaw fix --severity info`.
 
 Autofix never rewrites vendor-managed plugins under `.codex/plugins/`, even
 when a rule reports a finding there. It likewise never rewrites externally
@@ -69,7 +70,8 @@ The [onboarding skill](getting-started.md#onboard-with-ai) uses this approach en
 
 For an agent workflow focused purely on fixing, install the [`skillsaw-fix` skill](https://github.com/stbenjam/skillsaw/blob/main/skills/skillsaw-fix/SKILL.md). It gives an agent a repeatable procedure:
 
-1. Run `skillsaw fix` to apply all deterministic fixes first
+1. Run `skillsaw fix` (adding `--severity info` when info-level findings are
+   in scope) to apply deterministic fixes first
 2. Re-lint and group the remaining violations by rule
 3. Run `skillsaw explain <rule-id>` for each rule to load its how-to-fix guidance
 4. Make targeted edits, scoped to each violation
