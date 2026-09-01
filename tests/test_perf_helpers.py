@@ -298,7 +298,7 @@ class TestFrontmatterSuppressionWithFastPath:
         "---\n"
         "name: demo-skill\n"
         "{directive}"
-        "description: Use token ghp_" + "a" * 40 + " when calling the demo API\n"  # notsecret
+        "description: Use token ghp_" + "abcd" * 10 + " when calling the demo API\n"  # notsecret
         "---\n\n# Demo Skill\n\nA demo skill body.\n"
     )
 
