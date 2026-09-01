@@ -57,6 +57,32 @@ def test_instruction_globs_preserve_component_and_double_star_matching(tmp_path)
     }
 
 
+def test_wildcards_never_walk_into_vendored_or_vcs_directories(tmp_path):
+    """`**/*.md` gathers the repository's own prose. `node_modules/`, `.venv/`
+    and `.git/` are pruned the way every other skillsaw walk prunes them —
+    unless a pattern names the directory literally."""
+    root = tmp_path.resolve()
+    for relative in (
+        "docs/guide.md",
+        "node_modules/pkg/README.md",
+        ".venv/lib/site-packages/pkg/README.md",
+        ".git/HOOK.md",
+        "vendor/README.md",
+    ):
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("instructions\n")
+
+    patterns = ["**/*.md", "*/pkg/README.md", "node_modules/pkg/README.md", "node_modules/*/*.md"]
+
+    assert _matches_by_pattern(root, patterns) == {
+        0: ["docs/guide.md", "vendor/README.md"],
+        1: [],
+        2: ["node_modules/pkg/README.md"],
+        3: ["node_modules/pkg/README.md"],
+    }
+
+
 def test_recursive_instruction_patterns_scan_each_directory_once(tmp_path, monkeypatch):
     root = tmp_path.resolve()
     for relative in ("a/one", "a/two/deep", "b"):
