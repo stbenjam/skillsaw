@@ -46,10 +46,11 @@ Claude-specific instructions below the import. `instruction-imports-valid`
 checks that the import resolves.
 
 When `CLAUDE.md` is already a byte-for-byte copy (identical after trailing
-whitespace is stripped), `skillsaw fix --suggest` does this for you. It is
-SUGGEST, not SAFE — replacing a file's contents is a judgment call, so
-plain `skillsaw fix` never does it, and anything that is not an exact copy
-is reported only.
+whitespace is stripped), `skillsaw fix --suggest --rule claude-md-agents-import`
+does this for you — this rule reports at info severity, below what a plain
+`skillsaw fix` run repairs, and the fix is SUGGEST, not SAFE, because
+replacing a file's contents is a judgment call. Anything that is not an
+exact copy is reported only.
 
 To require an import-only `CLAUDE.md`, set:
 

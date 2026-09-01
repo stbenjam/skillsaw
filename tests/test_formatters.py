@@ -1343,7 +1343,6 @@ def test_text_fixable_summary_info_threshold_widens_default_scope(valid_plugin):
 
     output = format_text(violations, context, [], "0.0.0", fail_level="info", fix_level="info")
     assert "[*] 1 violation(s) fixable with `skillsaw fix`" in output
-    assert "--severity" not in output
 
 
 def test_format_text_positional_color_binding_stable(valid_plugin):

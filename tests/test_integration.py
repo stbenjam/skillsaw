@@ -5347,8 +5347,8 @@ class TestInfoAutofixOptIn:
         assert "Would fix 1 issue(s)" in result.stdout
         assert "+Read [references/guide.md](references/guide.md)" in result.stdout
 
-    def test_config_widened_scope_keeps_suggest_hint_flag_free(self, tmp_path):
-        """An explicit -c config that widens scope keeps the plain hint."""
+    def test_external_config_widens_scope_and_suggests_fixes(self, tmp_path):
+        """An explicit -c config widening to info surfaces the suggested fix."""
         repo = copy_fixture("instructions/agents-import/duplicated-pair", tmp_path)
         cfg = tmp_path / "external-config.yaml"
         cfg.write_text('version: "99.0.0"\nfail-on: info\n')
@@ -5737,8 +5737,10 @@ class TestClaudeMdAgentsImport:
         assert ours[0]["fixable"] is False
 
     def test_plain_fix_leaves_the_duplicate_alone(self, tmp_path):
-        """Replacing a file's contents is SUGGEST-only."""
+        """Replacing a file's contents is SUGGEST-only — even with the rule
+        in scope, a plain fix run must not touch it."""
         repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
+        _widen_fix_scope(repo)  # write the config before the snapshot
         before = _snapshot_contents(repo)
         _run_fix(repo)
         assert _snapshot_contents(repo) == before
@@ -5766,7 +5768,10 @@ class TestClaudeMdAgentsImport:
         assert _snapshot_contents(repo) == first
 
     def test_suggest_fix_declines_the_diverged_pair(self, tmp_path):
+        """The rule's own decline branch must run — widen the scope so the
+        violation reaches the fixer instead of being filtered first."""
         repo = copy_fixture(f"{self.FIXTURES}/diverged-pair", tmp_path)
+        _widen_fix_scope(repo)  # write the config before the snapshot
         before = _snapshot_contents(repo)
         _run_fix(repo, "--suggest")
         assert _snapshot_contents(repo) == before
