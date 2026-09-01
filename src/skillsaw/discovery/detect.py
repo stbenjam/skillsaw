@@ -308,7 +308,7 @@ def instruction_formats(
         ("HAS_QWEN", marker("QWEN.md")),
         (
             "HAS_AGENTS_MD",
-            any(path.name.lower() == "agents.md" and not is_excluded(path) for path in files),
+            any(path.name == "AGENTS.md" and not is_excluded(path) for path in files),
         ),
         ("HAS_KIRO", marker(".kiro", is_dir=True)),
         (

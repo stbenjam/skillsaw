@@ -685,6 +685,23 @@ def test_detected_formats_devin_rules_and_instructions(temp_dir):
     assert HAS_DEVIN in RepositoryContext(temp_dir).detected_formats
 
 
+def test_lowercase_agents_md_is_not_devin_or_agents_md_evidence(temp_dir):
+    """``docs/agents.md`` is a documentation page. Only Devin Desktop reads
+    that spelling as AGENTS.md, so it claims neither format on its own."""
+    from skillsaw.context import HAS_AGENTS_MD, HAS_CLAUDE_MD, HAS_DEVIN
+
+    (temp_dir / "CLAUDE.md").write_text("# Project\n\nRun `make test`.\n")
+    (temp_dir / "docs").mkdir()
+    (temp_dir / "docs" / "agents.md").write_text("# Agents\n\nSDK agent classes.\n")
+
+    assert RepositoryContext(temp_dir).detected_formats == {HAS_CLAUDE_MD}
+
+    (temp_dir / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+    detected = RepositoryContext(temp_dir).detected_formats
+    assert HAS_AGENTS_MD in detected
+    assert HAS_DEVIN not in detected
+
+
 def test_nested_devin_and_windsurf_skills_are_discovered(temp_dir):
     """The shared scan finds both skill dialects in nested workspaces."""
     from skillsaw.context import HAS_DEVIN, RepositoryType
