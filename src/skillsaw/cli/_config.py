@@ -56,13 +56,3 @@ def resolve_fail_level(args, config: LinterConfig) -> str:
     if args.strict:
         return "warning"
     return config.effective_fail_level()
-
-
-def config_fix_level(config: LinterConfig) -> str:
-    """The severity scope a plain ``skillsaw fix`` resolves from config alone."""
-    return "info" if config.effective_fail_level() == "info" else "warning"
-
-
-def resolve_fix_level(args, config: LinterConfig) -> str:
-    """An explicit CLI ``--severity`` wins; otherwise the config fix scope."""
-    return args.fail_on or config_fix_level(config)

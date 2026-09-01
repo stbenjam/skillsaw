@@ -1219,6 +1219,9 @@ class TestFixCliOutput:
         docs = repo / "docs"
         docs.mkdir()
         (docs / "guide.md").write_text("# Guide\n\nDeployment steps live here.\n")
+        # Fix repairs what fail-on fails on — cover the warning-severity
+        # broken-link suggestion this repo is built to produce.
+        (repo / ".skillsaw.yaml").write_text('version: "0.20.0"\nfail-on: warning\n')
         return repo
 
     @staticmethod

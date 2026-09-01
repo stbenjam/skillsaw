@@ -8,7 +8,7 @@ import sys
 from ..context import RepositoryContext
 from ..linter import Linter
 from ..rule import AutofixConfidence
-from ._config import load_config, resolve_fix_level
+from ._config import load_config
 from ._helpers import (
     _RuleProgress,
     _ansi_colors,
@@ -35,9 +35,11 @@ def _run_fix(args):
     paths = _resolve_lint_paths(args.path)
 
     config, _config_path = load_config(args, paths[0])
-    severity_threshold = resolve_fix_level(args, config)
 
     rule_ids = set(args.rule_ids) if args.rule_ids else None
+    # Fix repairs what fail-on fails the run for. Naming a rule with --rule
+    # is explicit intent, so the named rules fix at any severity.
+    severity_threshold = None if rule_ids else config.effective_fail_level()
     skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
     if rule_ids and skip_rule_ids:
         print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
@@ -157,11 +159,8 @@ def _run_fix(args):
         print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
         for fix, root in suggested:
             print(f"  ? [{_display(fix.file_path, root)}] {fix.description}")
-        # Echo an explicitly passed threshold into the hint; other arguments
-        # (the path, an explicit -c) are likewise left for the user to repeat.
-        threshold_flag = f" --severity {args.fail_on}" if args.fail_on else ""
-        print(f"\nRun `skillsaw fix{threshold_flag} --suggest` to apply suggested fixes.")
-        print(f"Run `skillsaw fix{threshold_flag} --suggest --dry-run` to preview changes.")
+        print("\nRun `skillsaw fix --suggest` to apply suggested fixes.")
+        print("Run `skillsaw fix --suggest --dry-run` to preview changes.")
 
     if dry_run and applied:
         print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")

@@ -165,19 +165,18 @@ fail-on: info   # any violation at info or above fails the run
 are set, the strictest one wins — adding `fail-on: info` to a config that
 already has `strict: true` just tightens the threshold.
 
-The `--severity` (alias `--fail-on`) and `--strict` CLI flags override the
-config file's settings for a single run — `--severity error` runs with the
-default threshold even when the config says `strict: true`. Passing both
-flags with contradictory values (`--strict --severity info`) is an error;
-`--strict --severity warning` is accepted since they agree.
+The `--fail-on` and `--strict` CLI flags override the config file's
+settings for a single run — `--fail-on error` runs with the default
+threshold even when the config says `strict: true`. Passing both flags
+with contradictory values (`--strict --fail-on info`) is an error;
+`--strict --fail-on warning` is accepted since they agree.
 
 `fail-on: info` is useful for ratcheting: once a repo is at zero
 violations, it stays that way — new info-level findings (including from
 rules added in newer skillsaw versions) fail CI instead of accumulating
 silently. When info violations are what failed the run, the text output
-shows them even without `--verbose`, and `skillsaw fix` repairs the ones
-it can. Pair it with a [baseline](baseline.md) to adopt the threshold
-before reaching zero.
+shows them even without `--verbose`. Pair it with a
+[baseline](baseline.md) to adopt the threshold before reaching zero.
 
 ## Custom Rules
 

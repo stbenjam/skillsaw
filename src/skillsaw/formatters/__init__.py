@@ -95,19 +95,18 @@ def should_show_info(verbose: bool, fail_level: str) -> bool:
     return verbose or fail_level == "info"
 
 
-def default_fix_scope(fix_level: str):
-    """Severities a plain ``skillsaw fix`` run repairs at this fix level.
-
-    ``fix_level`` is resolved from config alone — a lint-only ``--severity``
-    override never reaches a later fix run — so hints built from this scope
-    always name a command that does what they claim. Findings outside the
-    scope advertise the ``--severity info`` opt-in instead.
+def fix_scope(fix_level: str):
+    """Severities ``skillsaw fix`` repairs: the config's fail-on level and
+    above. Fixable markers and counts are gated on this scope, so a marked
+    finding is always one a plain fix run will repair.
     """
     from ..rule import Severity
 
     if fix_level == "info":
         return frozenset(Severity)
-    return frozenset({Severity.ERROR, Severity.WARNING})
+    if fix_level == "warning":
+        return frozenset({Severity.ERROR, Severity.WARNING})
+    return frozenset({Severity.ERROR})
 
 
 def get_counts(violations: List[RuleViolation]):
@@ -133,7 +132,7 @@ def format_report(
     fail_level: str = "error",
     color: bool = False,
     hyperlinks: bool = False,
-    fix_level: str = "warning",
+    fix_level: str = "error",
 ) -> str:
     """
     Format lint results in the specified format.
@@ -152,8 +151,8 @@ def format_report(
         fail_level: Effective severity threshold that fails the run — with
             ``fail-on: info`` every format must include the info violations
             that caused the failure even without -v
-        fix_level: The fix scope resolved from config alone ("warning" or
-            "info") — see :func:`default_fix_scope`
+        fix_level: The config's effective fail-on level, which is also what
+            ``skillsaw fix`` repairs — see :func:`fix_scope`
         color: Emit ANSI colors (text format only — resolved by the caller
             via ``color_enabled()``; file outputs stay plain)
         hyperlinks: Emit OSC 8 terminal hyperlinks (text format only)
@@ -195,7 +194,7 @@ def _render_report(
     fail_level: str = "error",
     color: bool = False,
     hyperlinks: bool = False,
-    fix_level: str = "warning",
+    fix_level: str = "error",
 ) -> str:
     """Dispatch to the per-format renderer. See :func:`format_report`."""
     if fmt == "text":

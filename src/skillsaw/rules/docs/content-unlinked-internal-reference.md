@@ -24,6 +24,5 @@ See [src/config.ts](src/config.ts) for the shared configuration.
 ## How to fix
 
 Wrap the bare path in markdown link syntax: `[path](path)`. When the
-violation message says "file exists, autofixable",
-`skillsaw fix --severity info` wraps it automatically. Paths without a
-resolvable local target are ignored.
+violation message says "file exists, autofixable", `skillsaw fix` can
+wrap it automatically. Paths without a resolvable local target are ignored.

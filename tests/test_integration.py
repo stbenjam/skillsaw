@@ -66,6 +66,24 @@ def run_lint(path, *extra_args, config=None, verbose=True, fmt="json"):
     }
 
 
+def _widen_fix_scope(repo):
+    """Fix repairs what fail-on fails on — widen to info via config, the
+    same lever a user would pull."""
+    cfg = Path(repo) / ".skillsaw.yaml"
+    if cfg.exists():
+        content = cfg.read_text()
+        if "fail-on: info" not in content:
+            assert "fail-on" not in content, f"conflicting fail-on in {cfg}"
+            cfg.write_text(content + "fail-on: info\n")
+        return
+    cfg.write_text('version: "0.20.0"\nfail-on: info\n')
+
+
+def _fix_widened(repo, *extra_args):
+    _widen_fix_scope(repo)
+    return _run_fix(repo, *extra_args)
+
+
 def violations(r):
     return r["out"]["violations"] if r["out"] else []
 
@@ -1260,7 +1278,8 @@ class TestFixMultiplePaths:
     """
 
     def _run_fix(self, *cli_args):
-        return run_cli(["fix", "--severity", "info", *cli_args])
+        # --rule names the rule explicitly, so it fixes at any severity.
+        return run_cli(["fix", "--rule", "content-unlinked-internal-reference", *cli_args])
 
     def test_fix_two_repos_fixes_both(self, tmp_path):
         """Every path passed to fix gets fixed, not just the last one."""
@@ -4172,17 +4191,11 @@ class TestExitCodes:
         assert summary(r)["info"] >= 1
 
     def test_contradictory_strict_and_fail_on_flags_error(self, tmp_path):
-        """--strict with a disagreeing --severity is rejected, naming the
-        canonical flag (the --fail-on alias reaches the same branch)."""
+        """--strict with a disagreeing --fail-on is rejected."""
         repo = copy_fixture("config/info-only", tmp_path)
-        r = run_lint(repo, "--strict", "--severity", "info")
+        r = run_lint(repo, "--strict", "--fail-on", "info")
         assert r["rc"] == 1
         assert "contradict" in r["stderr"]
-        assert "--severity info" in r["stderr"]
-
-        r_alias = run_lint(repo, "--strict", "--fail-on", "info")
-        assert r_alias["rc"] == 1
-        assert "--severity info" in r_alias["stderr"]
 
     def test_agreeing_strict_and_fail_on_flags_accepted(self, tmp_path):
         """--strict --fail-on warning agree and lint normally."""
@@ -5253,7 +5266,7 @@ class TestUnlinkedInternalReferenceSignal:
 
 @pytest.mark.integration
 class TestInfoAutofixOptIn:
-    """Info-level fixes must require an explicit CLI opt-in."""
+    """Fix repairs what fail-on fails on; hidden info findings stay put."""
 
     def test_default_fix_leaves_hidden_info_violation_unchanged(self, tmp_path):
         repo = copy_fixture("autofix/info-hidden", tmp_path)
@@ -5276,44 +5289,35 @@ class TestInfoAutofixOptIn:
         assert result.returncode == 0
         assert skill.read_text() == before
 
-    def test_rule_selection_does_not_override_severity_threshold(self, tmp_path):
+    def test_rule_flag_fixes_the_named_rule_at_any_severity(self, tmp_path):
+        """--rule names the rule explicitly — that intent wins over fail-on."""
         repo = copy_fixture("autofix/info-hidden", tmp_path)
-        skill = repo / "SKILL.md"
-        before = skill.read_text()
 
         result = run_cli(["fix", "--rule", "content-unlinked-internal-reference", repo])
 
         assert result.returncode == 0
-        assert skill.read_text() == before
-
-    def test_info_threshold_applies_hidden_info_fix(self, tmp_path):
-        repo = copy_fixture("autofix/info-hidden", tmp_path)
-
-        result = run_cli(["fix", "--severity", "info", repo])
-
-        assert result.returncode == 0
         assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
 
-    def test_fail_on_is_not_a_fix_flag(self, tmp_path):
-        """fix never had --fail-on; only lint keeps it as a compat alias."""
+    def test_severity_flags_are_rejected_on_fix(self, tmp_path):
+        """fix has no severity flag — scope comes from the config's fail-on."""
         repo = copy_fixture("autofix/info-hidden", tmp_path)
         skill = repo / "SKILL.md"
         before = skill.read_text()
 
-        result = run_cli(["fix", "--fail-on", "info", repo])
+        for flag in ("--severity", "--fail-on"):
+            result = run_cli(["fix", flag, "info", repo])
+            assert result.returncode == 2
+            assert skill.read_text() == before
 
-        assert result.returncode == 2
-        assert skill.read_text() == before
-
-    def test_severity_override_widens_default_fix_scope(self, tmp_path):
-        """The fix filter reads the effective severity: a rule promoted from
-        info to warning joins the default `skillsaw fix` scope."""
+    def test_severity_override_joins_default_fix_scope(self, tmp_path):
+        """The fix filter reads the effective severity: a rule promoted to
+        error joins the default `skillsaw fix` scope."""
         repo = copy_fixture("autofix/info-hidden", tmp_path)
         (repo / ".skillsaw.yaml").write_text(
             'version: "0.20.0"\n'
             "rules:\n"
             "  content-unlinked-internal-reference:\n"
-            "    severity: warning\n"
+            "    severity: error\n"
         )
 
         result = run_cli(["fix", repo])
@@ -5330,23 +5334,13 @@ class TestInfoAutofixOptIn:
         assert result.returncode == 0
         assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
 
-    def test_cli_threshold_overrides_config(self, tmp_path):
+    def test_configured_threshold_dry_run_previews_without_writing(self, tmp_path):
         repo = copy_fixture("autofix/info-hidden", tmp_path)
-        skill = repo / "SKILL.md"
-        before = skill.read_text()
         (repo / ".skillsaw.yaml").write_text('version: "0.20.0"\nfail-on: info\n')
-
-        result = run_cli(["fix", "--severity", "error", repo])
-
-        assert result.returncode == 0
-        assert skill.read_text() == before
-
-    def test_info_threshold_dry_run_previews_without_writing(self, tmp_path):
-        repo = copy_fixture("autofix/info-hidden", tmp_path)
         skill = repo / "SKILL.md"
         before = skill.read_text()
 
-        result = run_cli(["fix", "--severity", "info", "--dry-run", repo])
+        result = run_cli(["fix", "--dry-run", repo])
 
         assert result.returncode == 0
         assert skill.read_text() == before
@@ -5365,13 +5359,16 @@ class TestInfoAutofixOptIn:
         assert "Run `skillsaw fix --suggest` to apply suggested fixes." in result.stdout
         assert "--severity" not in result.stdout
 
-    def test_lint_cli_info_threshold_keeps_fix_opt_in_hint(self, tmp_path):
-        """lint --severity info widens the display; the fix hint keeps the flag."""
+    def test_lint_cli_override_shows_info_unmarked(self, tmp_path):
+        """A one-off `lint --fail-on info` shows the finding, but plain fix
+        follows the config — so no fixable marker or hint appears."""
         repo = copy_fixture("autofix/info-hidden", tmp_path)
 
-        r = run_lint(repo, "--severity", "info", fmt="text", verbose=False)
+        r = run_lint(repo, "--fail-on", "info", fmt="text", verbose=False)
 
-        assert "[*] 1 info violation(s) fixable with `skillsaw fix --severity info`" in r["stdout"]
+        assert "content-unlinked-internal-reference" in r["stdout"]
+        assert "[*]" not in r["stdout"]
+        assert "fixable with" not in r["stdout"]
 
     def test_config_info_threshold_advertises_plain_fix(self, tmp_path):
         """With fail-on: info in config, plain `skillsaw fix` covers info —
@@ -5389,7 +5386,8 @@ class TestUnlinkedInternalReferenceAutofix:
     """Integration tests for content-unlinked-internal-reference autofix via CLI."""
 
     def _run_fix(self, path, *extra_args):
-        return run_cli(["fix", "--severity", "info", *extra_args, path])
+        # --rule names the rule explicitly, so it fixes at any severity.
+        return run_cli(["fix", "--rule", "content-unlinked-internal-reference", *extra_args, path])
 
     def test_fix_duplicate_paths_via_cli(self, tmp_path):
         """CLI fix wraps duplicate bare paths without double-wrapping."""
@@ -5586,7 +5584,7 @@ class TestContentUnclosedFenceAutofix:
         repo = copy_fixture(self.FIXTURE, tmp_path)
         original = (repo / self.SKILL).read_text()
 
-        result = _run_fix(repo)
+        result = _fix_widened(repo)
         assert "Append missing closing fence" in result.stdout
         assert (repo / self.SKILL).read_text() == original
 
@@ -5594,7 +5592,7 @@ class TestContentUnclosedFenceAutofix:
         repo = copy_fixture(self.FIXTURE, tmp_path)
         original = (repo / self.SKILL).read_text()
 
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
 
         fixed = (repo / self.SKILL).read_text()
         assert fixed == original + "```\n"
@@ -5605,10 +5603,10 @@ class TestContentUnclosedFenceAutofix:
 
     def test_suggest_fix_is_idempotent(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         first = (repo / self.SKILL).read_text()
 
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         assert (repo / self.SKILL).read_text() == first
 
     def test_closing_fence_where_code_ends_surfaces_hidden_violations(self, tmp_path):
@@ -5650,14 +5648,16 @@ class TestContentMcpToolNameSuggestGate:
 
     def test_plain_fix_applies_nothing(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
+        _widen_fix_scope(repo)  # write the config before the snapshot
         before = _snapshot_contents(repo)
-        _run_fix(repo)
+        _fix_widened(repo)
         assert _snapshot_contents(repo) == before
 
     def test_suggest_fix_strips_and_converges(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
+        _widen_fix_scope(repo)  # write the config before the snapshot
         before = _snapshot_contents(repo)
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         after = _snapshot_contents(repo)
         assert {p: t.count("\n") for p, t in after.items()} == {
             p: t.count("\n") for p, t in before.items()
@@ -5671,7 +5671,7 @@ class TestContentMcpToolNameSuggestGate:
         assert "content-mcp-tool-name" not in rule_ids(r)
 
         first = _snapshot_contents(repo)
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         assert _snapshot_contents(repo) == first
 
 
@@ -5751,7 +5751,7 @@ class TestClaudeMdAgentsImport:
         repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
         agents_before = (repo / "AGENTS.md").read_text()
 
-        _run_fix(repo, "--severity", "info", "--suggest")
+        _fix_widened(repo, "--suggest")
 
         # A file-restructuring fix, not a splice: the line count collapsing
         # from the whole duplicated body to one import line is the point,
@@ -5764,9 +5764,9 @@ class TestClaudeMdAgentsImport:
 
     def test_suggest_fix_is_idempotent(self, tmp_path):
         repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
-        _run_fix(repo, "--severity", "info", "--suggest")
+        _fix_widened(repo, "--suggest")
         first = _snapshot_contents(repo)
-        _run_fix(repo, "--severity", "info", "--suggest")
+        _fix_widened(repo, "--suggest")
         assert _snapshot_contents(repo) == first
 
     def test_suggest_fix_declines_the_diverged_pair(self, tmp_path):
@@ -5857,7 +5857,7 @@ class TestEncodingPreservingAutofix:
             b"Also see docs/setup.md for details.\r\n"
         )
 
-        _run_fix(repo, "--severity", "info")
+        _fix_widened(repo)
 
         raw = target.read_bytes()
         # The fix fired (paths are now wrapped in link syntax) ...
@@ -5874,9 +5874,9 @@ class TestEncodingPreservingAutofix:
         target = repo / "CLAUDE.md"
         target.write_bytes(b"See scripts/build.sh here.\r\n")
 
-        _run_fix(repo, "--severity", "info")
+        _fix_widened(repo)
         first = target.read_bytes()
-        _run_fix(repo, "--severity", "info")
+        _fix_widened(repo)
         second = target.read_bytes()
         assert first == second
         assert b"\r\n" in first
@@ -5997,7 +5997,7 @@ class TestSafeAutofixIdempotency:
     @staticmethod
     def _fix_all(repo):
         """Fix at the widest scope so every SAFE rule in the fixture fires."""
-        return _run_fix(repo, "--severity", "info")
+        return _fix_widened(repo)
 
     def test_default_scope_fix_is_idempotent(self, tmp_path):
         """A plain (error+warning) fix run must also converge."""
@@ -6057,6 +6057,7 @@ class TestSafeAutofixIdempotency:
         whose fixes are expected to be line-preserving.
         """
         repo = copy_fixture(self.FIXTURE, tmp_path)
+        _widen_fix_scope(repo)  # write the config before the snapshot
         before = _snapshot_line_counts(repo)
 
         self._fix_all(repo)
@@ -6898,17 +6899,17 @@ class TestMarkdownAstRegressions:
     def test_substring_corruption_fix_targets_exact_span(self, tmp_path):
         """A path that is a substring of another token must not be corrupted."""
         repo = copy_fixture("regression/markdown-ast-substring", tmp_path)
-        _run_fix(repo, "--severity", "info")
+        _fix_widened(repo)
         fixed = (repo / "AGENTS.md").read_text()
         assert "Backup docs/setup.md.bak and [docs/setup.md](docs/setup.md) too." in fixed
         # Second run must be byte-identical (idempotent).
-        _run_fix(repo, "--severity", "info")
+        _fix_widened(repo)
         assert (repo / "AGENTS.md").read_text() == fixed
 
     def test_substring_fix_preserves_line_count(self, tmp_path):
         repo = copy_fixture("regression/markdown-ast-substring", tmp_path)
         before = len((repo / "AGENTS.md").read_text().splitlines())
-        _run_fix(repo, "--severity", "info")
+        _fix_widened(repo)
         assert len((repo / "AGENTS.md").read_text().splitlines()) == before
 
     def test_cross_paragraph_stray_backticks_do_not_hide_broken_link(self, tmp_path):
@@ -6923,7 +6924,7 @@ class TestMarkdownAstRegressions:
     def test_broken_link_fix_preserves_anchor(self, tmp_path):
         """Fixing [x](docs/gone.md#sec) must keep the #sec anchor."""
         repo = copy_fixture("regression/markdown-ast-anchor", tmp_path)
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         fixed = (repo / "CLAUDE.md").read_text()
         assert "[the section](gone.md#sec)" in fixed
         r = run_lint(repo)
@@ -6935,7 +6936,7 @@ class TestMarkdownAstRegressions:
         r = run_lint(repo)
         broken = [v for v in violations(r) if v["rule_id"] == "content-broken-internal-reference"]
         assert len(broken) == 1 and "did you mean" in broken[0]["message"]
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         fixed = (repo / "CLAUDE.md").read_text()
         assert '[the setup guide](docs/setup.md "Setup Guide")' in fixed
 
@@ -6945,13 +6946,13 @@ class TestMarkdownAstRegressions:
         r = run_lint(repo)
         broken = [v for v in violations(r) if v["rule_id"] == "content-broken-internal-reference"]
         assert len(broken) == 1 and "did you mean" in broken[0]["message"]
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         fixed = (repo / "CLAUDE.md").read_text()
         assert "[g]: guide.md" in fixed
         # Inline reference construct must be untouched.
         assert "[installation guide][g]" in fixed
         # Idempotent: second fix is byte-identical.
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         assert (repo / "CLAUDE.md").read_text() == fixed
         # No violations remain for this rule.
         r2 = run_lint(repo)
@@ -6981,7 +6982,7 @@ class TestMarkdownAstRegressions:
         assert "did you mean" in broken[0]["message"]
 
         before_lines = len((repo / "CLAUDE.md").read_text().splitlines())
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         fixed = (repo / "CLAUDE.md").read_text()
         assert "[the naming rules](references/naming%20rules.md)" in fixed
         assert "](references/naming rules.md)" not in fixed
@@ -6991,7 +6992,7 @@ class TestMarkdownAstRegressions:
         assert "[API notes](references/api%20notes.md)" in fixed
         assert len(fixed.splitlines()) == before_lines
         # Idempotent: second fix is byte-identical.
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         assert (repo / "CLAUDE.md").read_text() == fixed
         # Re-lint: the emitted destination parses and resolves.
         r2 = run_lint(repo)
@@ -7079,25 +7080,12 @@ class TestRenameRefsAutofix:
         assert "--severity" not in result.stdout
         assert "No auto-fixable violations found." not in result.stdout
 
-    def test_explicit_severity_is_echoed_in_suggest_hint(self, tmp_path):
-        """An explicitly passed threshold carries into the re-run hint."""
-        repo = copy_fixture(self.FIXTURE, tmp_path)
-        _run_fix(repo, "--rule", "agentskill-name")
-
-        result = _run_fix(repo, "--severity", "warning", "--rule", "agentskill-rename-refs")
-
-        assert "Suggested fixes" in result.stdout
-        assert (
-            "Run `skillsaw fix --severity warning --suggest` to apply suggested fixes."
-            in result.stdout
-        )
-
     def test_substring_matches_not_corrupted(self, tmp_path):
         """'metadata-parser'/'data-parser-staging' must survive a rename of 'data-parser'."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
         before_lines = _snapshot_line_counts(repo)
 
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
 
         skill_md = (repo / "data-parser-v2" / "SKILL.md").read_text()
         assert "name: data-parser-v2" in skill_md
@@ -7122,11 +7110,11 @@ class TestRenameRefsAutofix:
         """A second (and third) fix run must be byte-identical, and re-lint
         must show zero remaining rename-refs violations."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         baseline = _snapshot_contents(repo)
 
         for i in range(2):
-            _run_fix(repo, "--suggest")
+            _fix_widened(repo, "--suggest")
             current = _snapshot_contents(repo)
             assert current == baseline, f"fix run {i + 2} changed content (not idempotent)"
 
@@ -7138,9 +7126,10 @@ class TestRenameRefsAutofix:
         """``fix --dry-run`` must not write the renames manifest or modify any
         file, and a subsequent lint must not report phantom stale references."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
+        _widen_fix_scope(repo)  # write the config before the snapshot
         before = _snapshot_contents(repo)
 
-        _run_fix(repo, "--suggest", "--dry-run")
+        _fix_widened(repo, "--suggest", "--dry-run")
 
         assert not (repo / ".skillsaw-renames.json").exists()
         assert _snapshot_contents(repo) == before, "dry-run modified files"

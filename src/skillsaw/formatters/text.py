@@ -8,7 +8,7 @@ from typing import List, Optional
 from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
 from ..diagnostics import terminal_safe
-from . import default_fix_scope, get_counts, relative_path, should_show_info
+from . import fix_scope, get_counts, relative_path, should_show_info
 from skillsaw.paths import contained_resolve, safe_resolve
 
 
@@ -55,7 +55,7 @@ def format_text(
     color: bool = False,
     hyperlinks: bool = False,
     # Kept last so existing positional callers keep their bindings.
-    fix_level: str = "warning",
+    fix_level: str = "error",
 ) -> str:
     show_info = should_show_info(verbose, fail_level)
     red = "\033[91m" if color else ""
@@ -76,9 +76,13 @@ def format_text(
     # only link rules that actually ran as builtins.
     builtin_ids = {r.rule_id for r in rules if getattr(r, "_source", "builtin") == "builtin"}
 
+    # Markers mean "skillsaw fix repairs this", so they gate on the fix
+    # scope — a shown-but-below-threshold finding stays unmarked.
+    scope = fix_scope(fix_level)
+
     def fix_marker(v: RuleViolation) -> str:
         """Ruff-style fixability marker: [*] safe, [?] needs --suggest."""
-        if not v.fixable:
+        if not v.fixable or v.severity not in scope:
             return ""
         return " [*]" if v.fix_confidence == AutofixConfidence.SAFE else " [?]"
 
@@ -162,36 +166,26 @@ def format_text(
             )
 
     # Legend for the [*]/[?] markers and the lint-to-fix hint. Counts are
-    # over the violations shown above, so marked lines and counts agree
-    # (`skillsaw fix` groups per-file fixes and may report different totals).
-    fix_scope = default_fix_scope(fix_level)
-
-    def append_fixable_summary(scoped, command: str, label: str) -> None:
-        safe_count = sum(
-            1 for v in scoped if v.fixable and v.fix_confidence == AutofixConfidence.SAFE
+    # over the marked violations shown above, so marked lines and counts
+    # agree (`skillsaw fix` groups per-file fixes and may report different
+    # totals).
+    fixable_shown = [v for v in shown if v.fixable and v.severity in scope]
+    safe_fixable = sum(1 for v in fixable_shown if v.fix_confidence == AutofixConfidence.SAFE)
+    suggest_fixable = sum(1 for v in fixable_shown if v.fix_confidence != AutofixConfidence.SAFE)
+    if safe_fixable and suggest_fixable:
+        output.append(
+            f"  {green}[*] {safe_fixable} violation(s) fixable with `skillsaw fix`"
+            f" ([?] {suggest_fixable} more with `skillsaw fix --suggest`){reset}"
         )
-        suggest_count = sum(
-            1 for v in scoped if v.fixable and v.fix_confidence != AutofixConfidence.SAFE
+    elif safe_fixable:
+        output.append(
+            f"  {green}[*] {safe_fixable} violation(s) fixable with `skillsaw fix`{reset}"
         )
-        noun = f"{label} violation(s)" if label else "violation(s)"
-        if safe_count and suggest_count:
-            output.append(
-                f"  {green}[*] {safe_count} {noun} fixable with"
-                f" `{command}` ([?] {suggest_count} more with `{command} --suggest`){reset}"
-            )
-        elif safe_count:
-            output.append(f"  {green}[*] {safe_count} {noun} fixable with `{command}`{reset}")
-        elif suggest_count:
-            output.append(
-                f"  {green}[?] {suggest_count} {noun} fixable with `{command} --suggest`{reset}"
-            )
-
-    append_fixable_summary([v for v in shown if v.severity in fix_scope], "skillsaw fix", "")
-    append_fixable_summary(
-        [v for v in shown if v.severity not in fix_scope],
-        "skillsaw fix --severity info",
-        "info",
-    )
+    elif suggest_fixable:
+        output.append(
+            f"  {green}[?] {suggest_fixable} violation(s) fixable with"
+            f" `skillsaw fix --suggest`{reset}"
+        )
 
     if errors == 0 and warnings == 0 and (fail_level != "info" or info == 0):
         output.append(f"\n{green}{bold}✓ All checks passed!{reset}")

@@ -10,7 +10,7 @@ from pathlib import Path
 from ..context import RepositoryContext, RepositoryType
 from ..formatters import format_report, get_counts, parse_output_spec
 from ..linter import Linter
-from ._config import _get_version, config_fix_level, load_config, resolve_fail_level
+from ._config import _get_version, load_config, resolve_fail_level
 from ._helpers import (
     _RuleProgress,
     _build_merged_context,
@@ -41,8 +41,8 @@ def _run_lint(args):
 
     if args.strict and args.fail_on and args.fail_on != "warning":
         print(
-            f"Error: --strict and --severity {args.fail_on} contradict each other "
-            "(--strict means --severity warning)",
+            f"Error: --strict and --fail-on {args.fail_on} contradict each other "
+            "(--strict means --fail-on warning)",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -111,7 +111,9 @@ def _run_lint(args):
         print(f"Using config: {config_path}\n")
 
     fail_level = resolve_fail_level(args, config)
-    fix_level = config_fix_level(config)
+    # What `skillsaw fix` will repair — the config's own threshold, so the
+    # fixable markers stay honest under a one-off --fail-on override.
+    fix_level = config.effective_fail_level()
 
     baseline = None
     if not args.no_baseline:

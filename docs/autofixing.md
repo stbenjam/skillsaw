@@ -8,12 +8,10 @@ Safe, pattern-based fixes that run instantly without any external dependencies:
 
 ```bash
 skillsaw fix                     # Apply safe structural fixes
-skillsaw fix --dry-run           # Preview safe fixes as colored diffs without writing
 skillsaw fix --suggest           # Also apply suggested fixes (e.g. stale references)
+skillsaw fix --dry-run           # Preview safe fixes as colored diffs without writing
 skillsaw fix --suggest --dry-run # Preview safe + suggested fixes
 ```
-
-`skillsaw fix` repairs the problems `skillsaw lint` reports.
 
 Examples: adding missing frontmatter, renaming files to kebab-case, registering unregistered plugins in marketplace.json, fixing skill names to match directory names. These are marked **SAFE** confidence and applied automatically.
 
@@ -39,8 +37,6 @@ Summary:
 - `[*]` — a **SAFE** fix exists; `skillsaw fix` resolves it.
 - `[?]` — a **SUGGEST** fix exists; it is only applied with `skillsaw fix --suggest`.
 
-Each summary line shows the exact command that applies its fixes.
-
 Autofix never rewrites vendor-managed plugins under `.codex/plugins/`, even
 when a rule reports a finding there. It likewise never rewrites externally
 sourced lint-tree content, including APM packages under `apm_modules/` and
@@ -63,8 +59,7 @@ The [onboarding skill](getting-started.md#onboard-with-ai) uses this approach en
 
 For an agent workflow focused purely on fixing, install the [`skillsaw-fix` skill](https://github.com/stbenjam/skillsaw/blob/main/skills/skillsaw-fix/SKILL.md). It gives an agent a repeatable procedure:
 
-1. Run `skillsaw fix` (adding `--severity info` when info-level findings are
-   in scope) to apply deterministic fixes first
+1. Run `skillsaw fix` to apply all deterministic fixes first
 2. Re-lint and group the remaining violations by rule
 3. Run `skillsaw explain <rule-id>` for each rule to load its how-to-fix guidance
 4. Make targeted edits, scoped to each violation

@@ -26,9 +26,7 @@ unavailable).
 
 ## Step 2: Run the lint and build an inventory
 
-Run `skillsaw lint -v` from the repo root and capture the output. The `-v`
-matters: info-level findings are hidden by default but count toward the
-grade, and some are autofixable, so the inventory must include them. Each
+Run `skillsaw` (lint) from the repo root and capture the output. Each
 violation line includes the severity, file path, line number, message, and
 rule ID — read them all.
 
@@ -39,11 +37,7 @@ each rule touches. Review this summary with the user before making changes.
 
 ## Step 3: Run deterministic autofixes
 
-Run `skillsaw fix`. This applies safe, structural fixes (missing frontmatter,
-kebab-case names, plugin registration, and similar) for errors and warnings.
-When the inventory includes info-level violations, add `--severity info` to
-each fix command in this step, including the suggested-tier preview and
-apply runs.
+Run `skillsaw fix`. This applies safe, structural fixes (missing frontmatter, kebab-case names, plugin registration, and similar).
 
 Then run `skillsaw fix --suggest --dry-run` to preview the suggested tier.
 Suggested fixes (e.g. updating stale references after a rename) are
@@ -55,8 +49,7 @@ hunk is correct, run `skillsaw fix --suggest` to apply the tier. If any hunk is
 wrong, skip the tier entirely, handle those violations manually in Step 5, and
 keep only the edits you judged correct.
 
-Re-run `skillsaw lint -v` and report how many violations the autofixer
-resolved.
+Re-run `skillsaw` and report how many violations the autofixer resolved.
 
 ## Step 4: Read fix guidance for each remaining rule
 
@@ -80,8 +73,8 @@ Handle the violations file by file. For each violation:
    structure, and formatting
 3. Keep edits minimal — never rewrite a whole file to fix one line
 
-After finishing a file, re-run `skillsaw lint -v` scoped to confirm the
-violations are gone and your edit introduced no new ones. Always re-lint even after an edit
+After finishing a file, re-run `skillsaw` scoped to confirm the violations
+are gone and your edit introduced no new ones. Always re-lint even after an edit
 that looks obviously correct: wrap a path in a link, split a section,
 or add a directive, and you can trip a *different* rule you now have to fix.
 
@@ -180,8 +173,7 @@ so only new violations fail future lints, and remind them to commit `.skillsaw-b
 Run the repo's own lint entry point if it defines one — check the Makefile
 (or equivalent task runner) for a skillsaw target such as `lint` or
 `lint-fix` and use that, since it may pin a version or pass flags like
-`--strict`. Otherwise run `skillsaw lint -v` directly, so the final count
-covers the same inventory Step 2 captured.
+`--strict`. Otherwise run `skillsaw` directly.
 
 Check whether the repo has a grade badge (`.skillsaw-badge.json` exists, or the
 lint target depends on a `badge` target), refresh it: run `make badge` if
