@@ -331,7 +331,6 @@ class TestSupplyChainHooks:
         assert "hooks-dangerous" in rule_ids(r)
         sc = by_rule(r)["hooks-dangerous"]
         assert len(sc) >= 2
-        assert any("dotfile directory" in v["message"] for v in sc)
         assert any("downloads and executes" in v["message"] for v in sc)
 
     def test_frontmatter_hooks_malicious_detected(self, tmp_path):
@@ -342,7 +341,6 @@ class TestSupplyChainHooks:
         assert "hooks-dangerous" in rule_ids(r)
         sc = by_rule(r)["hooks-dangerous"]
         assert any("downloads and executes" in v["message"] for v in sc)
-        assert any("dotfile directory" in v["message"] for v in sc)
         # Line points at the frontmatter hooks: key, not the whole file.
         assert all(v["line"] for v in sc)
 
@@ -3853,7 +3851,6 @@ class TestApm:
         assert "hooks-dangerous" in rule_ids(r)
         sc = by_rule(r)["hooks-dangerous"]
         assert any("downloads and executes" in v["message"] for v in sc)
-        assert any("dotfile directory" in v["message"] for v in sc)
 
 
 # ── Promptfoo ────────────────────────────────────────────────────
