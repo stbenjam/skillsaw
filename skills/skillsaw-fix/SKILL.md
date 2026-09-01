@@ -55,7 +55,8 @@ hunk is correct, run `skillsaw fix --suggest` to apply the tier. If any hunk is
 wrong, skip the tier entirely, handle those violations manually in Step 5, and
 keep only the edits you judged correct.
 
-Re-run `skillsaw` and report how many violations the autofixer resolved.
+Re-run `skillsaw lint -v` and report how many violations the autofixer
+resolved.
 
 ## Step 4: Read fix guidance for each remaining rule
 
@@ -79,8 +80,8 @@ Handle the violations file by file. For each violation:
    structure, and formatting
 3. Keep edits minimal — never rewrite a whole file to fix one line
 
-After finishing a file, re-run `skillsaw` scoped to confirm the violations
-are gone and your edit introduced no new ones. Always re-lint even after an edit
+After finishing a file, re-run `skillsaw lint -v` scoped to confirm the
+violations are gone and your edit introduced no new ones. Always re-lint even after an edit
 that looks obviously correct: wrap a path in a link, split a section,
 or add a directive, and you can trip a *different* rule you now have to fix.
 
@@ -179,7 +180,8 @@ so only new violations fail future lints, and remind them to commit `.skillsaw-b
 Run the repo's own lint entry point if it defines one — check the Makefile
 (or equivalent task runner) for a skillsaw target such as `lint` or
 `lint-fix` and use that, since it may pin a version or pass flags like
-`--strict`. Otherwise run `skillsaw` directly.
+`--strict`. Otherwise run `skillsaw lint -v` directly, so the final count
+covers the same inventory Step 2 captured.
 
 Check whether the repo has a grade badge (`.skillsaw-badge.json` exists, or the
 lint target depends on a `badge` target), refresh it: run `make badge` if
