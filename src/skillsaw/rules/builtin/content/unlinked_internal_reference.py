@@ -92,8 +92,10 @@ class ContentUnlinkedInternalReferenceRule(Rule):
     ) -> List[Tuple[int, Optional[int], str, Optional[MarkdownCodeSpan]]]:
         """Collect (body_line, col_start, path_str, code_span) candidates in order."""
         results: List[Tuple[int, Optional[int], str, Optional[MarkdownCodeSpan]]] = []
+        # Path references always contain a "/", so quickly skip text segments
+        # and code spans that lack "/" before running regex checks.
         for seg in doc.text_segments():
-            if seg.in_link:
+            if seg.in_link or "/" not in seg.text:
                 continue
             if _IMPORT_LINE_RE.match(doc.line(seg.body_line)):
                 continue
@@ -111,7 +113,7 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 col = seg.col_start + match.start() if seg.col_start is not None else None
                 results.append((seg.body_line, col, path_str, None))
         for span in doc.code_spans():
-            if span.in_link:
+            if span.in_link or "/" not in span.content:
                 continue
             if _IMPORT_LINE_RE.match(doc.line(span.body_line)):
                 continue

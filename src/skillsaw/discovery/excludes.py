@@ -6,7 +6,7 @@ import fnmatch
 from pathlib import Path
 from typing import Callable, List, Tuple
 
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import relative_to_str, safe_resolve
 
 
 def pattern_variants(pattern: str) -> Tuple[str, ...]:
@@ -26,12 +26,11 @@ def path_matches_patterns(
     """Match *path* using a pure or caller-owned pattern expander."""
     if not patterns:
         return False
-    try:
-        resolved = safe_resolve(path)
-        if resolved is None:
-            return False
-        rel = str(resolved.relative_to(root))
-    except ValueError:
+    resolved = safe_resolve(path)
+    if resolved is None:
+        return False
+    rel = relative_to_str(resolved, root)
+    if rel is None:
         return False
     return any(
         fnmatch.fnmatch(rel, variant) for pattern in patterns for variant in variants_for(pattern)

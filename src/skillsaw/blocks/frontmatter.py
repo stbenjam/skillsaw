@@ -11,7 +11,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -171,9 +171,8 @@ class FrontmatteredBlock(LintTarget):
     def __hash__(self):
         return hash((type(self), self.resolved_path))
 
-    def walk(self) -> Iterator["LintTarget"]:
-        self._ensure_parsed()
-        yield from super().walk()
+    def _before_walk(self) -> None:
+        self._ensure_parsed()  # frontmatter fields and body are children
 
     def _parse_frontmatter_file(
         self,

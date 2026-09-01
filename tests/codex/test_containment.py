@@ -597,7 +597,7 @@ class TestDeeplyNestedDocuments:
 
         target = tmp_path / "deep.yaml"
         target.write_text("a: 1\n", encoding="utf-8")
-        monkeypatch.setattr(yaml_mod, "safe_load", self._explode)
+        monkeypatch.setattr(yaml_mod, "load", self._explode)
         assert read_yaml(target) == (None, "Nesting too deep to parse")
 
         monkeypatch.setattr(_Ruamel, "load", self._explode)

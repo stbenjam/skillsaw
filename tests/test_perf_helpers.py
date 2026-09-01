@@ -12,7 +12,9 @@ from pathlib import Path
 import pytest
 
 from skillsaw.rules.builtin.content_analysis import (
+    _gate_pattern,
     _required_literal,
+    _required_literal_sets,
     patterns_matching_anywhere,
     FrontmatterField,
 )
@@ -66,6 +68,82 @@ class TestRequiredLiteral:
         assert literal in text.lower()
 
 
+class TestRequiredLiteralSets:
+    """Tests for extracting sets of required literals from regex patterns."""
+
+    def test_single_run_is_a_one_member_set(self):
+        assert _required_literal_sets(r"\btry to\b", re.IGNORECASE) == (("try to",),)
+
+    def test_every_top_level_run_is_required(self):
+        # "api" and "key" are separated by an optional character class, so both
+        # literal runs must appear in any match.
+        assert _required_literal_sets(r"(?i)\bapi[_-]?key\s*[=:]", 0) == (("api",), ("key",))
+
+    def test_alternation_yields_one_set_of_alternatives(self):
+        assert _required_literal_sets(
+            r"\b(semicolons?|trailing commas?|single quotes?)\b", re.IGNORECASE
+        ) == (
+            ("semicolon", "trailing comma", "single quote"),
+        )
+        assert _required_literal_sets(r"(?:foo|bar)", 0) == (("foo", "bar"),)
+
+    def test_branches_and_runs_combine(self):
+        sets = _required_literal_sets(
+            r"\b(?:get|obtain|require)s?\s+(?:approval|confirmation|permission)\b(?!\s+x)",
+            re.IGNORECASE,
+        )
+        assert sets == (("get", "obtain", "require"), ("approval", "confirmation", "permission"))
+
+    def test_alternative_without_literal_drops_the_set(self):
+        assert _required_literal_sets(r"(a|)", 0) == ()
+        assert _required_literal_sets(r"(?:foo|[0-9]+)", 0) == ()
+
+    def test_short_or_invalid_yields_nothing(self):
+        assert _required_literal_sets(r"\bSK[0-9a-fA-F]{32}", 0) == ()
+        assert _required_literal_sets(r"(unclosed", 0) == ()
+
+    @pytest.mark.parametrize(
+        "pattern,flags,text",
+        [
+            (r"\b(semicolons?|trailing commas?)\b", re.IGNORECASE, "Use Semicolons everywhere"),
+            (r"\b(?:get|require)s?\s+(?:approval|permission)\b", re.IGNORECASE, "Get approval"),
+            (
+                r"(?i)\bapi[_-]?key\s*[=:]\s*['\"][^'\"]{16,}['\"]",
+                0,
+                'API-KEY = "abcdefghijklmnopq"',
+            ),
+        ],
+    )
+    def test_every_set_is_satisfied_by_every_match(self, pattern, flags, text):
+        compiled = re.compile(pattern, flags)
+        assert compiled.search(text)
+        lowered = text.lower()
+        for alternatives in _required_literal_sets(pattern, compiled.flags):
+            assert any(literal in lowered for literal in alternatives)
+
+
+class TestGatePattern:
+    def test_leading_boundary_is_stripped(self):
+        gate = _gate_pattern(re.compile(r"\bsk-[a-z]{3}"))
+        assert gate.pattern == r"sk-[a-z]{3}"
+
+    def test_inline_flags_are_kept_ahead_of_the_boundary(self):
+        gate = _gate_pattern(re.compile(r"(?i)\bpassword\s*="))
+        assert gate.pattern == r"(?i)password\s*="
+        assert gate.search("PASSWORD =")
+
+    def test_pattern_without_leading_boundary_is_returned_as_is(self):
+        pattern = re.compile(r"x\by")
+        assert _gate_pattern(pattern) is pattern
+
+    def test_gate_is_a_superset_of_the_pattern(self):
+        pattern = re.compile(r"\bcat\b")
+        gate = _gate_pattern(pattern)
+        for text in ("a cat", "concatenate", "cats", "dog"):
+            if pattern.search(text):
+                assert gate.search(text)
+
+
 class TestPatternsMatchingAnywhere:
     PATTERNS = [
         (re.compile(r"\btry to\b", re.IGNORECASE), "hedging"),
@@ -98,6 +176,29 @@ class TestPatternsMatchingAnywhere:
         patterns = [(re.compile(r"(?:ab|cd)"), "branchy")]
         assert patterns_matching_anywhere("xxabxx", patterns) == patterns
         assert patterns_matching_anywhere("xxxx", patterns) == []
+
+    def test_identical_to_naive_filter_across_prefilter_shapes(self):
+        """Verify the prefilter produces identical results to testing the full regex."""
+        patterns = [
+            (re.compile(r"\b(semicolons?|trailing commas?)\b", re.IGNORECASE), "alt"),
+            (re.compile(r"\b(?:get|require)s?\s+(?:approval|permission)\b", re.IGNORECASE), "two"),
+            (re.compile(r"(?i)\bapi[_-]?key\s*[=:]"), "runs"),
+            (re.compile(r"\bSK[0-9a-fA-F]{32}"), "gate-only"),
+            (re.compile(r"(?:ab|[0-9]+)"), "no-literal"),
+        ]
+        texts = [
+            "Use semicolons; get approval; API_KEY=1; SK" + "a" * 32,
+            "trailing comma, requires permission",
+            "get permission but no api key here",
+            "apikey: x  (no separator match)",
+            "the word getapproval has no space",
+            "SK" + "0" * 31,
+            "",
+            "xx ab 12",
+        ]
+        for text in texts:
+            naive = [t for t in patterns if t[0].search(text)]
+            assert patterns_matching_anywhere(text, patterns) == naive, text
 
 
 class TestFastTopLevelKeyLines:

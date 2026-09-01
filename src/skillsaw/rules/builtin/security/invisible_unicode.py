@@ -55,6 +55,11 @@ _TAG_CODEPOINTS = frozenset({0xE0001}) | frozenset(range(0xE0020, 0xE0080))
 
 _ALL_CODEPOINTS = _INVISIBLE_CODEPOINTS | _BIDI_CODEPOINTS | _TAG_CODEPOINTS
 
+# Deletion table mapping all flaggable codepoints to None.
+# If str.translate(_PRESENCE_TABLE) preserves the string length, no flaggable
+# characters are present. This provides a fast prefilter before regex evaluation.
+_PRESENCE_TABLE = {codepoint: None for codepoint in _ALL_CODEPOINTS}
+
 # ZWNJ / ZWJ have legitimate uses: emoji ZWJ sequences (family emoji,
 # profession emoji) and cursive-script shaping (Arabic, Persian, Indic).
 # They are flagged only in a suspicious context — see ``_joiner_suspicious``.
@@ -250,10 +255,12 @@ class SecurityInvisibleUnicodeRule(Rule):
     ) -> Dict[int, Counter]:
         """Map 1-based line number -> Counter of flagged codepoints.
 
-        One whole-text ``finditer`` pass is the gate — clean text costs a
-        single scan and no per-line work.  Line offsets are computed only
-        when there is at least one surviving hit.
+        Uses ``_PRESENCE_TABLE`` and ``str.isascii`` to quickly skip clean text
+        before running the regex pattern. Line offsets are only computed when
+        matches are found.
         """
+        if text.isascii() or len(text.translate(_PRESENCE_TABLE)) == len(text):
+            return {}
         hit_offsets = []
         flag_offsets: Optional[FrozenSet[int]] = None  # computed on first tag hit
         for match in pattern.finditer(text):

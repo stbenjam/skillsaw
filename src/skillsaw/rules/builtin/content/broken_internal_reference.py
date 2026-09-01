@@ -56,6 +56,7 @@ class ContentBrokenInternalReferenceRule(Rule):
         # marketplaces effectively unlintable. Reset per check() so each run
         # sees the current filesystem, matching the uncached behavior.
         self._paths_by_name: Optional[Dict[str, List[str]]] = None
+        self._names_by_length: Dict[int, List[str]] = {}
         self._fuzzy_name_cache: Dict[str, Optional[str]] = {}
         violations = []
         for cf in gather_all_content_blocks(context):
@@ -152,16 +153,17 @@ class ContentBrokenInternalReferenceRule(Rule):
     def _collect_repo_paths(self, root: Path) -> List[str]:
         """Collect all file paths in the repo, relative to root."""
         paths = []
-        for dirpath, dirnames, filenames in os.walk(root):
+        root_str = str(root)
+        for dirpath, dirnames, filenames in os.walk(root_str):
             dirnames[:] = [
                 d for d in dirnames if d not in {".git", "node_modules", "__pycache__", ".venv"}
             ]
+            # Derive relative directory path via string slicing rather than calling
+            # Path.relative_to on each file.
+            rel_dir = dirpath[len(root_str) + 1 :]
+            prefix = rel_dir + os.sep if rel_dir else ""
             for f in filenames:
-                full = Path(dirpath) / f
-                try:
-                    paths.append(str(full.relative_to(root)))
-                except ValueError:
-                    continue
+                paths.append(prefix + f)
         return paths
 
     def _path_index(self, root: Path) -> Dict[str, List[str]]:
@@ -169,14 +171,32 @@ class ContentBrokenInternalReferenceRule(Rule):
         if self._paths_by_name is None:
             index: Dict[str, List[str]] = {}
             for p in self._collect_repo_paths(root):
-                index.setdefault(Path(p).name, []).append(p)
+                index.setdefault(os.path.basename(p), []).append(p)
             self._paths_by_name = index
+            names_by_length: Dict[int, List[str]] = {}
+            for name in index:
+                names_by_length.setdefault(len(name), []).append(name)
+            self._names_by_length = names_by_length
         return self._paths_by_name
 
+    _FUZZY_CUTOFF = 0.6
+
     def _close_name(self, index: Dict[str, List[str]], target_name: str) -> Optional[str]:
-        """Best fuzzy file-name match, memoized — broken targets repeat a lot."""
+        """Find the closest matching file name, memoized for repeated broken links.
+
+        Filters candidates by length similarity first (using difflib's ratio bounds)
+        before running ``get_close_matches``, reducing overhead when comparing against
+        large numbers of files.
+        """
         if target_name not in self._fuzzy_name_cache:
-            close = difflib.get_close_matches(target_name, list(index), n=1, cutoff=0.6)
+            la = len(target_name)
+            cutoff = self._FUZZY_CUTOFF
+            candidates: List[str] = []
+            for lb, names in self._names_by_length.items():
+                # Use difflib's real_quick_ratio length threshold to filter candidates
+                if 2.0 * min(la, lb) / (la + lb) >= cutoff:
+                    candidates.extend(names)
+            close = difflib.get_close_matches(target_name, candidates, n=1, cutoff=cutoff)
             self._fuzzy_name_cache[target_name] = close[0] if close else None
         return self._fuzzy_name_cache[target_name]
 

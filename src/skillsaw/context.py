@@ -184,6 +184,8 @@ class RepositoryContext(
         self.lint_external_content = lint_external_content
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
+        self._excluded_cache: Dict[Path, bool] = {}
+        self._excluded_cache_patterns: Tuple[str, ...] = ()
         self.has_apm = detect_discovery.has_apm(self.root_path)
         self._scan: Optional[detect_discovery.RepositoryScan] = None
         self._apm_compiled_roots: Optional[Set[Path]] = None
@@ -307,8 +309,21 @@ class RepositoryContext(
         return sorted(names)
 
     def is_path_excluded(self, path: Path) -> bool:
-        """Check if a path matches any exclude pattern."""
-        return self.matches_patterns(path, self.exclude_patterns)
+        """Check if a path matches any exclude pattern.
+
+        Results are cached per path since tree construction and violation filtering
+        frequently query the same files. If ``exclude_patterns`` is modified, the cache
+        automatically resets.
+        """
+        patterns = tuple(self.exclude_patterns)
+        if patterns != self._excluded_cache_patterns:
+            self._excluded_cache_patterns = patterns
+            self._excluded_cache = {}
+        verdict = self._excluded_cache.get(path)
+        if verdict is None:
+            verdict = self.matches_patterns(path, self.exclude_patterns)
+            self._excluded_cache[path] = verdict
+        return verdict
 
     def pattern_variants(self, pattern: str) -> Tuple[str, ...]:
         """Expand one pattern once for this repository context."""

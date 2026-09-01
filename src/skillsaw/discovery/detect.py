@@ -77,10 +77,15 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     skills_locks: List[Path] = []
     promptfoo_named: List[Path] = []
     promptfoo_evals: Dict[Path, List[Path]] = {}
-    for dirpath, dirnames, filenames in os.walk(root):
+    root_str = str(root)
+    for dirpath, dirnames, filenames in os.walk(root_str):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
-        vendored = bool(VENDOR_DIR_NAMES.intersection(here.relative_to(root).parts))
+        # Slice relative directory parts from dirpath to avoid repeatedly calling
+        # Path.relative_to() for every directory and file during the walk.
+        relative_dir = dirpath[len(root_str) :].lstrip(os.sep)
+        dir_parts = tuple(relative_dir.split(os.sep)) if relative_dir else ()
+        vendored = bool(VENDOR_DIR_NAMES.intersection(dir_parts))
         for name in filenames:
             path = here / name
             if fnmatch.fnmatch(name, "promptfooconfig*.yaml") or fnmatch.fnmatch(
@@ -89,7 +94,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
                 promptfoo_named.append(path)
             if not (fnmatch.fnmatch(name, "*.yaml") or fnmatch.fnmatch(name, "*.yml")):
                 continue
-            relative_parts = path.relative_to(root).parts
+            relative_parts = dir_parts + (name,)
             for index, part in enumerate(relative_parts[:-1]):
                 if os.path.normcase(part) == os.path.normcase("evals"):
                     evals_dir = root.joinpath(*relative_parts[: index + 1])

@@ -50,11 +50,10 @@ benchmark`, `make profile`, `make benchmark-save` / `make benchmark-compare`
 for regression checks — review `DEVELOPMENT.md`). When touching content rules,
 the lint tree, or `utils.py` read paths, save a baseline on main and compare on your branch.
 
-- **Never write per-line × per-pattern regex loops** in scanning rules.
+- **Avoid scanning every line against every regex pattern.**
   Run `patterns_matching_anywhere(body, patterns)` from `content_analysis`
-  first, then per-line scan only the surviving patterns. Check each pattern's
-  required literal with a C-speed substring prefilter; it returns results
-  identical to the naive loop.
+  first to filter down to patterns that actually match the text, then scan
+  line-by-line only with surviving patterns.
 - **`lint_tree.find(NodeType)` is memoized per node** — keep it valid: anything
   that mutates tree structure outside a rebuild must call `invalidate_find_cache()`
   (see `FrontmatteredBlock.write_frontmatter_text`).
@@ -63,6 +62,19 @@ the lint tree, or `utils.py` read paths, save a baseline on main and compare on 
   per-key ruamel parses. Avoid ruamel round-trip parsing — it is ~30x slower and was the dominant cost of lint-tree construction.
 - Keep per-blob work (whole-body `.lower()`, config-file stats) outside
   the per-block loop — run it once per `check()`.
+- **Use fast string checks before running heavy regexes.** Simple checks
+  like `str.isascii()`, `str.translate()`, or `"/" in text` quickly filter
+  out clean text so regexes only run when necessary.
+- **Use `paths.relative_to_str()` for repo-relative paths.**
+  On Python 3.12+, `PurePath.relative_to` and `path.parents` allocate new
+  `Path` objects for every ancestor, which adds significant overhead in large repos.
+- **Load YAML with `yaml.load(..., Loader=_SAFE_LOADER)` from `utils.py`**
+  instead of bare `yaml.safe_load` — `_SAFE_LOADER` uses the fast C-based
+  LibYAML loader when available (~10x faster) while maintaining safe loading behavior.
+- **`Linter.run()` / `fix()` pause Python's cyclic garbage collector**
+  during rule execution to avoid expensive GC pauses across millions of
+  objects. Rules should avoid circular references so temporary data is
+  freed immediately via reference counting.
 
 ## Markdown: AST for reading, splice for writing
 

@@ -16,6 +16,10 @@ from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from skillsaw.paths import safe_is_symlink, safe_resolve
 
+# Use the fast C-based LibYAML loader (CSafeLoader) when available, falling
+# back to PyYAML's pure-Python SafeLoader. Both share the same safe loader semantics.
+_SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 
 def _atomic_destination(path: Path, root: Path) -> Tuple[Path, Path]:
     """Return a resolved root and lexical relative destination, or fail closed."""
@@ -325,13 +329,35 @@ class FileCache:
     ``invalidate(file_path)`` is O(1) -- it pops the entire inner dict
     for that path.  A global ``maxsize`` caps the total number of entries
     across all registered functions to prevent unbounded memory growth.
+
+    Keys use resolved paths so different aliases for the same file (such as
+    symlinks or relative ``..`` segments) share cache entries and are invalidated
+    together. Because ``Path.resolve()`` performs filesystem lookups on every call,
+    path resolutions are memoized here and cleared when ``invalidate()`` is called.
     """
 
-    def __init__(self, maxsize: int = 2048):
+    def __init__(self, maxsize: int = 65536):
         self._lock = threading.Lock()
         self._stores: List[Dict[Path, Dict[tuple, Any]]] = []
+        self._resolved: Dict[Path, Path] = {}
         self._maxsize = maxsize
         self._total_entries = 0
+
+    def _key(self, file_path: Any) -> Any:
+        """Resolved cache key for *file_path*, memoized."""
+        if not isinstance(file_path, Path):
+            return None
+        resolved = self._resolved.get(file_path)
+        if resolved is None:
+            try:
+                resolved = safe_resolve(file_path) or file_path
+            except (OSError, RuntimeError, ValueError):
+                # If path resolution fails (e.g. symlink loop or invalid path),
+                # fall back to the unresolved path so caching can proceed without
+                # raising during key lookup.
+                resolved = file_path
+            self._resolved[file_path] = resolved
+        return resolved
 
     def cached(self, func: Callable) -> Callable:
         """Decorator -- equivalent to ``@lru_cache`` but with per-key eviction."""
@@ -340,17 +366,7 @@ class FileCache:
 
         def wrapper(*args, **kwargs):
             # The first positional arg is always the file path.
-            file_path = args[0] if args else None
-            try:
-                resolved = (
-                    (safe_resolve(file_path) or file_path) if isinstance(file_path, Path) else None
-                )
-            except (OSError, RuntimeError, ValueError):
-                # Symlink loop or embedded NUL: raising here aborts the
-                # whole lint from a cache key lookup, while the wrapped
-                # reader already diagnoses unreadable input. Key on the
-                # unresolved path — that only loses alias deduplication.
-                resolved = file_path
+            resolved = self._key(args[0] if args else None)
             sub_key = (args[1:], tuple(sorted(kwargs.items())))
             with self._lock:
                 bucket = store.get(resolved)
@@ -409,8 +425,11 @@ class FileCache:
             if file_path is None:
                 for store in self._stores:
                     store.clear()
+                self._resolved.clear()
                 self._total_entries = 0
             else:
+                # Re-resolve the path on next access in case symlink targets changed.
+                self._resolved.pop(file_path, None)
                 resolved = safe_resolve(file_path) or file_path
                 for store in self._stores:
                     bucket = store.pop(resolved, None)
@@ -807,7 +826,7 @@ def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     if content is None:
         return None, f"Failed to read {file_path.name}"
     try:
-        return yaml.safe_load(content), None
+        return yaml.load(content, Loader=_SAFE_LOADER), None
     except yaml.YAMLError as e:
         return None, str(e)
     except ValueError as e:
@@ -933,9 +952,8 @@ def _fast_top_level_key_nodes(
     behavior: parse errors, non-string keys, or duplicate keys (which
     ruamel rejects).
     """
-    loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
     try:
-        node = yaml.compose(text, Loader=loader)
+        node = yaml.compose(text, Loader=_SAFE_LOADER)
     except yaml.YAMLError:
         return None
     if node is None or not isinstance(node, yaml.MappingNode):
@@ -1155,7 +1173,7 @@ def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Opti
     if not m:
         return None, content, None
     try:
-        data = yaml.safe_load(m.group(1))
+        data = yaml.load(m.group(1), Loader=_SAFE_LOADER)
     except (yaml.YAMLError, ValueError, RecursionError) as e:
         error_line = None
         if hasattr(e, "problem_mark") and e.problem_mark is not None:
