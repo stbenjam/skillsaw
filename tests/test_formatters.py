@@ -1294,8 +1294,124 @@ def test_text_fixable_summary_counts_only_shown_violations(valid_plugin):
     hidden = format_text(violations, context, [], "0.0.0", verbose=False)
     assert "fixable with" not in hidden
 
+    # Shown with -v but outside the fix scope: no marker, no summary line.
     shown = format_text(violations, context, [], "0.0.0", verbose=True)
-    assert "[*] 1 violation(s) fixable with `skillsaw fix`" in shown
+    assert "fixable with" not in shown
+    assert "[*]" not in shown
+
+    covered = format_text(violations, context, [], "0.0.0", verbose=True, fix_level="info")
+    assert "[*] 1 violation(s) fixable with `skillsaw fix`" in covered
+
+
+def test_text_fixable_summary_counts_only_in_scope(valid_plugin):
+    """An out-of-scope info fixable never joins the summary count."""
+    context = RepositoryContext(valid_plugin)
+    violations = _make_fixable_violations() + [
+        RuleViolation(
+            rule_id="content-unlinked-internal-reference",
+            severity=Severity.INFO,
+            message="Unlinked path reference: 'docs/x.md' (file exists, autofixable)",
+            file_path=Path("SKILL.md"),
+            line=3,
+            fixable=True,
+            fix_confidence=AutofixConfidence.SAFE,
+        ),
+    ]
+
+    output = format_text(violations, context, [], "0.0.0", verbose=True, fix_level="warning")
+    assert (
+        "[*] 2 violation(s) fixable with `skillsaw fix`"
+        " ([?] 1 more with `skillsaw fix --suggest`)" in output
+    )
+    assert "[*] 3" not in output
+
+
+def test_text_fixable_summary_info_threshold_widens_default_scope(valid_plugin):
+    """With config fail-on info, plain `skillsaw fix` covers info — no opt-in line."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="content-unlinked-internal-reference",
+            severity=Severity.INFO,
+            message="Unlinked path reference: 'docs/x.md' (file exists, autofixable)",
+            file_path=Path("SKILL.md"),
+            line=3,
+            fixable=True,
+            fix_confidence=AutofixConfidence.SAFE,
+        ),
+    ]
+
+    output = format_text(violations, context, [], "0.0.0", fail_level="info", fix_level="info")
+    assert "[*] 1 violation(s) fixable with `skillsaw fix`" in output
+
+
+def test_format_text_positional_color_binding_stable(valid_plugin):
+    """The tenth positional argument of format_text is color — pinned for
+    library callers."""
+    context = RepositoryContext(valid_plugin)
+    output = format_text([], context, [], "0.0.0", False, 0, None, None, "error", True)
+    assert "\033[" in output
+
+
+def test_text_info_suggest_counted_when_scope_covers_info(valid_plugin):
+    """An INFO+SUGGEST finding joins the suggest hint once in scope."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="claude-md-agents-import",
+            severity=Severity.INFO,
+            message="CLAUDE.md duplicates AGENTS.md",
+            file_path=Path("CLAUDE.md"),
+            fixable=True,
+            fix_confidence=AutofixConfidence.SUGGEST,
+        ),
+    ]
+
+    default = format_text(violations, context, [], "0.0.0", verbose=True)
+    assert "fixable with" not in default
+
+    covered = format_text(violations, context, [], "0.0.0", verbose=True, fix_level="info")
+    assert "[?] 1 violation(s) fixable with `skillsaw fix --suggest`" in covered
+
+
+def test_html_info_suggest_marker_composes_both_flags(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violation = RuleViolation(
+        rule_id="claude-md-agents-import",
+        severity=Severity.INFO,
+        message="CLAUDE.md duplicates AGENTS.md",
+        file_path=Path("CLAUDE.md"),
+        fixable=True,
+        fix_confidence=AutofixConfidence.SUGGEST,
+    )
+
+    shown = format_html([violation], context, [], "1.0.0", verbose=True)
+    assert "fixable with" not in shown
+
+    covered = format_html([violation], context, [], "1.0.0", verbose=True, fix_level="info")
+    assert 'title="fixable with skillsaw fix --suggest"' in covered
+
+
+def test_text_lint_only_info_threshold_shows_finding_unmarked(valid_plugin):
+    """A lint-only fail_level=info shows the finding, but plain fix follows
+    the config — so no marker and no fixable line."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="content-unlinked-internal-reference",
+            severity=Severity.INFO,
+            message="Unlinked path reference: 'docs/x.md' (file exists, autofixable)",
+            file_path=Path("SKILL.md"),
+            line=3,
+            fixable=True,
+            fix_confidence=AutofixConfidence.SAFE,
+        ),
+    ]
+
+    output = format_text(violations, context, [], "0.0.0", fail_level="info")
+    assert "content-unlinked-internal-reference" in output
+    assert "[*]" not in output
+    assert "fixable with" not in output
 
 
 def test_json_fixable_true_includes_confidence(valid_plugin):
@@ -1340,6 +1456,30 @@ def test_html_fixable_marker(valid_plugin):
 
     assert 'title="fixable with skillsaw fix"' in output
     assert 'title="fixable with skillsaw fix --suggest"' in output
+
+
+def test_html_info_fixable_marker_follows_scope(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violation = RuleViolation(
+        rule_id="content-unlinked-internal-reference",
+        severity=Severity.INFO,
+        message="Unlinked path reference",
+        file_path=Path("SKILL.md"),
+        fixable=True,
+        fix_confidence=AutofixConfidence.SAFE,
+    )
+
+    # Shown with -v but outside the fix scope: no marker.
+    shown = format_html([violation], context, [], "1.0.0", verbose=True)
+    assert "fixable with" not in shown
+
+    # With a config-widened fix scope, plain `skillsaw fix` covers info.
+    widened = format_html([violation], context, [], "1.0.0", fail_level="info", fix_level="info")
+    assert 'title="fixable with skillsaw fix"' in widened
+
+    # A lint-only info threshold shows the finding, still unmarked.
+    lint_only = format_html([violation], context, [], "1.0.0", fail_level="info")
+    assert "fixable with" not in lint_only
 
 
 def test_html_no_fixable_marker_when_unknown(valid_plugin):

@@ -66,6 +66,24 @@ def run_lint(path, *extra_args, config=None, verbose=True, fmt="json"):
     }
 
 
+def _widen_fix_scope(repo):
+    """Fix repairs what lint shows — widen to info via fail-on: info, the
+    same lever a user would pull."""
+    cfg = Path(repo) / ".skillsaw.yaml"
+    if cfg.exists():
+        content = cfg.read_text()
+        if "fail-on: info" not in content:
+            assert "fail-on" not in content, f"conflicting fail-on in {cfg}"
+            cfg.write_text(content + "fail-on: info\n")
+        return
+    cfg.write_text('version: "99.0.0"\nfail-on: info\n')
+
+
+def _fix_widened(repo, *extra_args):
+    _widen_fix_scope(repo)
+    return _run_fix(repo, *extra_args)
+
+
 def violations(r):
     return r["out"]["violations"] if r["out"] else []
 
@@ -1260,7 +1278,8 @@ class TestFixMultiplePaths:
     """
 
     def _run_fix(self, *cli_args):
-        return run_cli(["fix", *cli_args])
+        # --rule names the rule explicitly, so it fixes at any severity.
+        return run_cli(["fix", "--rule", "content-unlinked-internal-reference", *cli_args])
 
     def test_fix_two_repos_fixes_both(self, tmp_path):
         """Every path passed to fix gets fixed, not just the last one."""
@@ -5245,11 +5264,128 @@ class TestUnlinkedInternalReferenceSignal:
         assert found[0]["fixable"] is True
 
 
+@pytest.mark.integration
+class TestInfoAutofixOptIn:
+    """Fix repairs what lint shows; hidden info findings stay put."""
+
+    def test_default_fix_leaves_hidden_info_violation_unchanged(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
+
+        result = run_cli(["fix", repo])
+
+        assert result.returncode == 0
+        assert skill.read_text() == before
+        assert "No auto-fixable violations found" in result.stdout
+
+    def test_suggest_does_not_imply_info_opt_in(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
+
+        result = run_cli(["fix", "--suggest", repo])
+
+        assert result.returncode == 0
+        assert skill.read_text() == before
+
+    def test_rule_flag_fixes_the_named_rule_at_any_severity(self, tmp_path):
+        """--rule names the rule explicitly — that intent wins over fail-on."""
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+
+        result = run_cli(["fix", "--rule", "content-unlinked-internal-reference", repo])
+
+        assert result.returncode == 0
+        assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
+
+    def test_severity_flags_are_rejected_on_fix(self, tmp_path):
+        """fix has no severity flag — scope follows what lint shows."""
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
+
+        for flag in ("--severity", "--fail-on"):
+            result = run_cli(["fix", flag, "info", repo])
+            assert result.returncode == 2
+            assert skill.read_text() == before
+
+    def test_severity_override_joins_default_fix_scope(self, tmp_path):
+        """The fix filter reads the effective severity: a rule promoted to
+        error joins the default `skillsaw fix` scope."""
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n'
+            "rules:\n"
+            "  content-unlinked-internal-reference:\n"
+            "    severity: error\n"
+        )
+
+        result = run_cli(["fix", repo])
+
+        assert result.returncode == 0
+        assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
+
+    def test_configured_info_threshold_applies_info_fix(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        (repo / ".skillsaw.yaml").write_text('version: "99.0.0"\nfail-on: info\n')
+
+        result = run_cli(["fix", repo])
+
+        assert result.returncode == 0
+        assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
+
+    def test_configured_threshold_dry_run_previews_without_writing(self, tmp_path):
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        (repo / ".skillsaw.yaml").write_text('version: "99.0.0"\nfail-on: info\n')
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
+
+        result = run_cli(["fix", "--dry-run", repo])
+
+        assert result.returncode == 0
+        assert skill.read_text() == before
+        assert "Would fix 1 issue(s)" in result.stdout
+        assert "+Read [references/guide.md](references/guide.md)" in result.stdout
+
+    def test_external_config_widens_scope_and_suggests_fixes(self, tmp_path):
+        """An explicit -c config widening to info surfaces the suggested fix."""
+        repo = copy_fixture("instructions/agents-import/duplicated-pair", tmp_path)
+        cfg = tmp_path / "external-config.yaml"
+        cfg.write_text('version: "99.0.0"\nfail-on: info\n')
+
+        result = run_cli(["fix", "-c", cfg, repo])
+
+        assert "Suggested fixes" in result.stdout
+        assert "Run `skillsaw fix --suggest` to apply suggested fixes." in result.stdout
+
+    def test_lint_cli_override_shows_info_unmarked(self, tmp_path):
+        """A one-off `lint --fail-on info` shows the finding, but plain fix
+        follows the config — so no fixable marker or hint appears."""
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+
+        r = run_lint(repo, "--fail-on", "info", fmt="text", verbose=False)
+
+        assert "content-unlinked-internal-reference" in r["stdout"]
+        assert "[*]" not in r["stdout"]
+        assert "fixable with" not in r["stdout"]
+
+    def test_config_info_threshold_advertises_plain_fix(self, tmp_path):
+        """With fail-on: info in config, plain `skillsaw fix` covers info —
+        the summary needs no opt-in flag."""
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        (repo / ".skillsaw.yaml").write_text('version: "99.0.0"\nfail-on: info\n')
+
+        r = run_lint(repo, fmt="text", verbose=False)
+
+        assert "[*] 1 violation(s) fixable with `skillsaw fix`" in r["stdout"]
+
+
 class TestUnlinkedInternalReferenceAutofix:
     """Integration tests for content-unlinked-internal-reference autofix via CLI."""
 
     def _run_fix(self, path, *extra_args):
-        return run_cli(["fix", *extra_args, path])
+        # --rule names the rule explicitly, so it fixes at any severity.
+        return run_cli(["fix", "--rule", "content-unlinked-internal-reference", *extra_args, path])
 
     def test_fix_duplicate_paths_via_cli(self, tmp_path):
         """CLI fix wraps duplicate bare paths without double-wrapping."""
@@ -5601,8 +5737,10 @@ class TestClaudeMdAgentsImport:
         assert ours[0]["fixable"] is False
 
     def test_plain_fix_leaves_the_duplicate_alone(self, tmp_path):
-        """Replacing a file's contents is SUGGEST-only."""
+        """Replacing a file's contents is SUGGEST-only — even with the rule
+        in scope, a plain fix run must not touch it."""
         repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
+        _widen_fix_scope(repo)  # write the config before the snapshot
         before = _snapshot_contents(repo)
         _run_fix(repo)
         assert _snapshot_contents(repo) == before
@@ -5611,7 +5749,7 @@ class TestClaudeMdAgentsImport:
         repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
         agents_before = (repo / "AGENTS.md").read_text()
 
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
 
         # A file-restructuring fix, not a splice: the line count collapsing
         # from the whole duplicated body to one import line is the point,
@@ -5624,13 +5762,16 @@ class TestClaudeMdAgentsImport:
 
     def test_suggest_fix_is_idempotent(self, tmp_path):
         repo = copy_fixture(f"{self.FIXTURES}/duplicated-pair", tmp_path)
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         first = _snapshot_contents(repo)
-        _run_fix(repo, "--suggest")
+        _fix_widened(repo, "--suggest")
         assert _snapshot_contents(repo) == first
 
     def test_suggest_fix_declines_the_diverged_pair(self, tmp_path):
+        """The rule's own decline branch must run — widen the scope so the
+        violation reaches the fixer instead of being filtered first."""
         repo = copy_fixture(f"{self.FIXTURES}/diverged-pair", tmp_path)
+        _widen_fix_scope(repo)  # write the config before the snapshot
         before = _snapshot_contents(repo)
         _run_fix(repo, "--suggest")
         assert _snapshot_contents(repo) == before
@@ -5717,7 +5858,7 @@ class TestEncodingPreservingAutofix:
             b"Also see docs/setup.md for details.\r\n"
         )
 
-        _run_fix(repo)
+        _fix_widened(repo)
 
         raw = target.read_bytes()
         # The fix fired (paths are now wrapped in link syntax) ...
@@ -5734,9 +5875,9 @@ class TestEncodingPreservingAutofix:
         target = repo / "CLAUDE.md"
         target.write_bytes(b"See scripts/build.sh here.\r\n")
 
-        _run_fix(repo)
+        _fix_widened(repo)
         first = target.read_bytes()
-        _run_fix(repo)
+        _fix_widened(repo)
         second = target.read_bytes()
         assert first == second
         assert b"\r\n" in first
@@ -5854,6 +5995,19 @@ class TestSafeAutofixIdempotency:
         "cursor-rules-valid": 3,
     }
 
+    @staticmethod
+    def _fix_all(repo):
+        """Fix at the widest scope so every SAFE rule in the fixture fires."""
+        return _fix_widened(repo)
+
+    def test_default_scope_fix_is_idempotent(self, tmp_path):
+        """A plain (error+warning) fix run must also converge."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        baseline = _snapshot_contents(repo)
+        _run_fix(repo)
+        assert _snapshot_contents(repo) == baseline
+
     def test_fixture_violation_counts(self, tmp_path):
         """Fixture must produce the exact expected SAFE violation counts."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
@@ -5884,11 +6038,11 @@ class TestSafeAutofixIdempotency:
     def test_fix_is_idempotent(self, tmp_path):
         """Running fix 11 times must produce byte-identical content after the first."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        _run_fix(repo)
+        self._fix_all(repo)
         baseline = _snapshot_contents(repo)
 
         for i in range(10):
-            _run_fix(repo)
+            self._fix_all(repo)
             current = _snapshot_contents(repo)
             all_files = set(baseline.keys()) | set(current.keys())
             changed = {f for f in all_files if baseline.get(f) != current.get(f)}
@@ -5904,9 +6058,10 @@ class TestSafeAutofixIdempotency:
         whose fixes are expected to be line-preserving.
         """
         repo = copy_fixture(self.FIXTURE, tmp_path)
+        _widen_fix_scope(repo)  # write the config before the snapshot
         before = _snapshot_line_counts(repo)
 
-        _run_fix(repo)
+        self._fix_all(repo)
         after = _snapshot_line_counts(repo)
 
         # Only check files that should NOT have line-count changes.
@@ -5946,11 +6101,11 @@ class TestSafeAutofixIdempotency:
         Verify the end result is clean and idempotent after convergence.
         """
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        _run_fix(repo)
+        self._fix_all(repo)
         after_first = _snapshot_contents(repo)
 
         # Second fix should find nothing — proving convergence
-        result = _run_fix(repo)
+        result = self._fix_all(repo)
         after_second = _snapshot_contents(repo)
 
         assert (
@@ -5977,7 +6132,7 @@ class TestSafeAutofixIdempotency:
             if v["rule_id"] in safe_rules
         }
 
-        _run_fix(repo)
+        self._fix_all(repo)
 
         r_after = run_lint(repo)
         after_keys = {
@@ -5996,7 +6151,7 @@ class TestSafeAutofixIdempotency:
     def test_no_double_wrapping(self, tmp_path):
         """Fix must not double-wrap already-linked paths (regression for #173)."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        _run_fix(repo)
+        self._fix_all(repo)
 
         for md_file in repo.rglob("*.md"):
             content = md_file.read_text(encoding="utf-8")
@@ -6745,17 +6900,17 @@ class TestMarkdownAstRegressions:
     def test_substring_corruption_fix_targets_exact_span(self, tmp_path):
         """A path that is a substring of another token must not be corrupted."""
         repo = copy_fixture("regression/markdown-ast-substring", tmp_path)
-        _run_fix(repo)
+        _fix_widened(repo)
         fixed = (repo / "AGENTS.md").read_text()
         assert "Backup docs/setup.md.bak and [docs/setup.md](docs/setup.md) too." in fixed
         # Second run must be byte-identical (idempotent).
-        _run_fix(repo)
+        _fix_widened(repo)
         assert (repo / "AGENTS.md").read_text() == fixed
 
     def test_substring_fix_preserves_line_count(self, tmp_path):
         repo = copy_fixture("regression/markdown-ast-substring", tmp_path)
         before = len((repo / "AGENTS.md").read_text().splitlines())
-        _run_fix(repo)
+        _fix_widened(repo)
         assert len((repo / "AGENTS.md").read_text().splitlines()) == before
 
     def test_cross_paragraph_stray_backticks_do_not_hide_broken_link(self, tmp_path):
@@ -6920,7 +7075,7 @@ class TestRenameRefsAutofix:
 
         assert "No safe fixes found." in result.stdout
         assert "Suggested fixes" in result.stdout
-        assert "skillsaw fix --suggest" in result.stdout
+        assert "Run `skillsaw fix --suggest` to apply suggested fixes." in result.stdout
         assert "No auto-fixable violations found." not in result.stdout
 
     def test_substring_matches_not_corrupted(self, tmp_path):

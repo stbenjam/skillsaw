@@ -18,7 +18,14 @@ from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
 
-from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
+from .rule import (
+    Rule,
+    RuleViolation,
+    Severity,
+    AutofixResult,
+    AutofixConfidence,
+    severities_at_or_above,
+)
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
@@ -45,6 +52,7 @@ ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
 # forms and bare all-rules directives are the same blanket this set
 # exists to close.
 _UNEXCLUDABLE_RULE_IDS = frozenset({"invalid-config"})
+
 
 # Config keys every rule accepts regardless of its config_schema. `enabled`
 # is validated at config load, `severity` at rule construction, and `exclude`
@@ -1264,7 +1272,9 @@ class Linter:
         )
 
     def fix(
-        self, progress: Optional[Callable[[int, int, str], None]] = None
+        self,
+        progress: Optional[Callable[[int, int, str], None]] = None,
+        severity_threshold: Optional[str] = None,
     ) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
         Run all enabled rules and attempt to fix violations.
@@ -1272,10 +1282,17 @@ class Linter:
         Args:
             progress: Optional callback invoked before each rule check with
                 ``(rule_number, total_rules, rule_id)``.
+            severity_threshold: Generate fixes at this severity or above.
+                ``None`` preserves the historical library behavior of
+                generating fixes at every severity; the CLI always passes
+                its resolved threshold explicitly.
 
         Returns:
             Tuple of (remaining violations, autofix results)
         """
+        threshold = "info" if severity_threshold is None else severity_threshold
+        allowed_severities = severities_at_or_above(threshold)
+
         # Config warnings go through the same filter pipeline run() uses
         # (inline suppression, excludes, baseline) — but `checked` keeps the
         # raw list so the final accounting pass sees everything, exactly
@@ -1309,6 +1326,7 @@ class Linter:
                 for v in visible
                 if (v.block is None or not v.block.diagnostic_only)
                 and not self._is_on_external_source(v)
+                and v.severity in allowed_severities
             ]
             if fixable_input and rule.supports_autofix:
                 try:
@@ -1376,6 +1394,7 @@ class Linter:
         max_passes: int = 10,
         dry_run: bool = False,
         progress: Optional[Callable[[int, int, str], None]] = None,
+        severity_threshold: Optional[str] = None,
     ) -> tuple[List[AutofixResult], List[AutofixResult]]:
         """Fixed-point iteration over autofix passes with snapshot isolation.
 
@@ -1395,6 +1414,12 @@ class Linter:
         Args:
             confidence: Minimum confidence level to apply.
             max_passes: Safety cap on iterations.
+            dry_run: Return the first independent set without writing it.
+            progress: Optional callback passed to each rule check.
+            severity_threshold: Generate fixes at this severity or above.
+                ``None`` preserves the historical library behavior of
+                generating fixes at every severity; the CLI always passes
+                its resolved threshold explicitly.
 
         Returns:
             Tuple of (applied fixes, suggested-but-not-applied fixes).
@@ -1409,7 +1434,7 @@ class Linter:
             allowed.add(AutofixConfidence.SUGGEST)
 
         for _ in range(max_passes):
-            _violations, fixes = self.fix(progress=progress)
+            _violations, fixes = self.fix(progress=progress, severity_threshold=severity_threshold)
             if not fixes:
                 break
 

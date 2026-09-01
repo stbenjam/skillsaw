@@ -47,3 +47,25 @@ def load_config(args, start_path: Path) -> tuple[LinterConfig, Path | None]:
     else:
         config = LinterConfig.default()
     return config, config_path
+
+
+def resolve_fail_level(args, config: LinterConfig) -> str:
+    """Apply lint's CLI-over-config failure-threshold precedence."""
+    if args.fail_on:
+        return args.fail_on
+    if args.strict:
+        return "warning"
+    return config.effective_fail_level()
+
+
+def resolve_fix_level(args, config: LinterConfig) -> str:
+    """The severity scope ``skillsaw fix`` repairs: what lint shows — errors
+    and warnings, widened to everything by ``fail-on: info``. Naming rules
+    with ``--rule`` is explicit intent, so those fix at any severity.
+
+    Shared by the fix engine and the lint formatters, so a ``[*]``/``[?]``
+    marker is always a finding a fix run will actually repair.
+    """
+    if args.rule_ids:
+        return "info"
+    return "info" if config.effective_fail_level() == "info" else "warning"

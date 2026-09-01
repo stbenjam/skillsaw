@@ -281,6 +281,28 @@ class TestViolationFixability:
         assert v.fix_confidence is None
 
 
+class InfoFixRule(SafeFixRule):
+    """SafeFixRule at info severity."""
+
+    @property
+    def rule_id(self) -> str:
+        return "test-info-fix"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+
+class WarningFixRule(SafeFixRule):
+    """SafeFixRule at warning severity."""
+
+    @property
+    def rule_id(self) -> str:
+        return "test-warning-fix"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+
 class TestLinterFix:
     def test_fix_with_no_violations(self, valid_plugin):
         context = RepositoryContext(valid_plugin)
@@ -288,6 +310,47 @@ class TestLinterFix:
         linter = Linter(context, config)
         _violations, fixes = linter.fix()
         assert fixes == []
+
+    def test_fix_default_none_threshold_fixes_every_severity(self, temp_dir):
+        """Library back-compat: no severity_threshold means fix everything."""
+        (temp_dir / "fixme.txt").write_text("This is BAD content")
+        linter = Linter(RepositoryContext(temp_dir), LinterConfig.default())
+        linter.rules = [InfoFixRule()]
+
+        _violations, fixes = linter.fix()
+
+        assert len(fixes) == 1
+
+    def test_fix_warning_threshold_excludes_info(self, temp_dir):
+        (temp_dir / "fixme.txt").write_text("This is BAD content")
+        linter = Linter(RepositoryContext(temp_dir), LinterConfig.default())
+        linter.rules = [InfoFixRule()]
+
+        _violations, fixes = linter.fix(severity_threshold="warning")
+
+        assert fixes == []
+
+    def test_fix_error_threshold_excludes_warnings(self, temp_dir):
+        (temp_dir / "fixme.txt").write_text("This is BAD content")
+        linter = Linter(RepositoryContext(temp_dir), LinterConfig.default())
+        linter.rules = [WarningFixRule()]
+
+        assert linter.fix(severity_threshold="error")[1] == []
+        assert len(linter.fix(severity_threshold="warning")[1]) == 1
+
+    def test_fix_rejects_unknown_severity_threshold(self, valid_plugin):
+        context = RepositoryContext(valid_plugin)
+        linter = Linter(context, LinterConfig.default())
+        with pytest.raises(ValueError, match="Unknown severity threshold"):
+            linter.fix(severity_threshold="critical")
+
+    def test_fix_rejects_empty_severity_threshold(self, valid_plugin):
+        # "" must not silently select the broadest (info) scope — only an
+        # explicit None keeps the historical fix-everything library default.
+        context = RepositoryContext(valid_plugin)
+        linter = Linter(context, LinterConfig.default())
+        with pytest.raises(ValueError, match="Unknown severity threshold"):
+            linter.fix(severity_threshold="")
 
     def test_fix_applies_safe_fixes(self, temp_dir):
         target = temp_dir / "fixme.txt"
@@ -1181,6 +1244,23 @@ class TestFixCliOutput:
         assert "? [.claude/commands/deploy.md]" in out
         assert str(repo) not in out, "fix output leaked absolute paths"
         assert "Run `skillsaw lint` to see remaining issues." in out
+
+    def test_demoted_rule_leaves_default_fix_scope(self, tmp_path, monkeypatch, capsys):
+        """A rule demoted to info drops out of what plain fix repairs, just
+        as it drops out of what plain lint shows."""
+        repo = self._make_repo(tmp_path, "repo")
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n'
+            "rules:\n"
+            "  content-broken-internal-reference:\n"
+            "    severity: info\n"
+        )
+        invalidate_read_caches()
+
+        out = self._run_cli(monkeypatch, capsys, repo)
+
+        assert "✓ [.claude/commands/deploy.md]" in out
+        assert "? [" not in out
 
     def test_multi_root_keeps_absolute_paths(self, tmp_path, monkeypatch, capsys):
         repo1 = self._make_repo(tmp_path, "repo-one")

@@ -13,6 +13,10 @@ skillsaw fix --dry-run           # Preview safe fixes as colored diffs without w
 skillsaw fix --suggest --dry-run # Preview safe + suggested fixes
 ```
 
+`skillsaw fix` repairs the problems `skillsaw lint` shows. Info-level
+findings sit below that bar; `fail-on: info` brings them in, and `--rule`
+fixes the named rules at any severity.
+
 Examples: adding missing frontmatter, renaming files to kebab-case, registering unregistered plugins in marketplace.json, fixing skill names to match directory names. These are marked **SAFE** confidence and applied automatically.
 
 Some fixes produce cascading changes — for example, renaming a skill name creates stale references in other files. These secondary fixes are marked **SUGGEST** confidence because simple name matching may replace occurrences that aren't actually skill name references. Use `--suggest --dry-run` to review these changes before applying them.
@@ -44,7 +48,7 @@ skills installed from external `skills-lock.json` sources; those findings
 remain diagnostic even when `lint-external-content` is left at its default
 `true`.
 
-The JSON format carries the same information as an additive `fixable` boolean (plus `fix_confidence`: `safe` or `suggest` when fixable) on each violation. Fixability is per violation, not per rule — a rule that can only fix some shapes of a problem (e.g. `content-unlinked-internal-reference` only wraps references whose target file exists) marks only those violations. Because `skillsaw fix` batches several violations into one fix per file, its `Fixed N issue(s)` count can differ from the number of marked violations.
+The JSON format carries an additive `fixable` boolean (plus `fix_confidence`: `safe` or `suggest` when fixable) on each violation — whether a deterministic fix exists, even for findings `skillsaw lint` does not show by default; a consumer deciding what a plain fix run repairs should also check `severity`. Fixability is per violation, not per rule — a rule that can only fix some shapes of a problem (e.g. `content-unlinked-internal-reference` only wraps references whose target file exists) marks only those violations. Because `skillsaw fix` batches several violations into one fix per file, its `Fixed N issue(s)` count can differ from the number of marked violations.
 
 !!! note "Removed in 0.15"
     The deprecated `skillsaw lint --fix` flag was removed. `skillsaw fix` is the single entry point for autofixes.

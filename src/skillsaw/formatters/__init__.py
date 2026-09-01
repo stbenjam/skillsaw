@@ -118,6 +118,7 @@ def format_report(
     fail_level: str = "error",
     color: bool = False,
     hyperlinks: bool = False,
+    fix_level: str = "warning",
 ) -> str:
     """
     Format lint results in the specified format.
@@ -136,6 +137,9 @@ def format_report(
         fail_level: Effective severity threshold that fails the run — with
             ``fail-on: info`` every format must include the info violations
             that caused the failure even without -v
+        fix_level: The severity scope ``skillsaw fix`` repairs (what lint
+            shows: "warning", or "info" under ``fail-on: info``) — drives
+            the ``[*]``/``[?]`` markers and the fixable summary
         color: Emit ANSI colors (text format only — resolved by the caller
             via ``color_enabled()``; file outputs stay plain)
         hyperlinks: Emit OSC 8 terminal hyperlinks (text format only)
@@ -157,6 +161,7 @@ def format_report(
             duration=duration,
             grade=grade,
             fail_level=fail_level,
+            fix_level=fix_level,
             color=color,
             hyperlinks=hyperlinks,
         )
@@ -176,6 +181,7 @@ def _render_report(
     fail_level: str = "error",
     color: bool = False,
     hyperlinks: bool = False,
+    fix_level: str = "warning",
 ) -> str:
     """Dispatch to the per-format renderer. See :func:`format_report`."""
     if fmt == "text":
@@ -191,6 +197,7 @@ def _render_report(
             duration,
             grade,
             fail_level,
+            fix_level=fix_level,
             color=color,
             hyperlinks=hyperlinks,
         )
@@ -215,7 +222,9 @@ def _render_report(
     elif fmt == "html":
         from .html import format_html
 
-        return format_html(violations, context, rules, version, verbose, fail_level)
+        return format_html(
+            violations, context, rules, version, verbose, fail_level, fix_level=fix_level
+        )
     elif fmt in ("code-climate", "gitlab"):
         from .code_climate import format_code_climate
 
