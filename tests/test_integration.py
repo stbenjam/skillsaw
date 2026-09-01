@@ -7075,8 +7075,6 @@ class TestRenameRefsAutofix:
 
         assert "No safe fixes found." in result.stdout
         assert "Suggested fixes" in result.stdout
-        # No explicit threshold was passed, so the hint stays flag-free —
-        # plain `skillsaw fix --suggest` resolves the same default scope.
         assert "Run `skillsaw fix --suggest` to apply suggested fixes." in result.stdout
         assert "No auto-fixable violations found." not in result.stdout
 
