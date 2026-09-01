@@ -41,8 +41,8 @@ def _run_lint(args):
 
     if args.strict and args.fail_on and args.fail_on != "warning":
         print(
-            f"Error: --strict and --fail-on {args.fail_on} contradict each other "
-            "(--strict means --fail-on warning)",
+            f"Error: --strict and --severity {args.fail_on} contradict each other "
+            "(--strict means --severity warning)",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -111,8 +111,6 @@ def _run_lint(args):
         print(f"Using config: {config_path}\n")
 
     fail_level = resolve_fail_level(args, config)
-    # What a later plain `skillsaw fix` will cover — resolved from config
-    # alone, since lint's --severity flag never reaches the fix command.
     fix_level = config_fix_level(config)
 
     baseline = None

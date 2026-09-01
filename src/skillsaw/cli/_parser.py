@@ -195,7 +195,6 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     )
     fix_parser.add_argument(
         "--severity",
-        "--fail-on",
         dest="fail_on",
         choices=list(_FAIL_ON_LEVELS),
         default=None,

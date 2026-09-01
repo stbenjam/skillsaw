@@ -46,6 +46,13 @@ ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
 # exists to close.
 _UNEXCLUDABLE_RULE_IDS = frozenset({"invalid-config"})
 
+# Severities `fix()` generates fixes for, per threshold ("at or above").
+_FIXABLE_SEVERITIES = {
+    "error": frozenset({Severity.ERROR}),
+    "warning": frozenset({Severity.ERROR, Severity.WARNING}),
+    "info": frozenset(Severity),
+}
+
 # Config keys every rule accepts regardless of its config_schema. `enabled`
 # is validated at config load, `severity` at rule construction, and `exclude`
 # is read by the linter's per-rule exclude filter.
@@ -1282,6 +1289,11 @@ class Linter:
         Returns:
             Tuple of (remaining violations, autofix results)
         """
+        threshold = "info" if severity_threshold is None else severity_threshold
+        if threshold not in _FIXABLE_SEVERITIES:
+            raise ValueError(f"Unknown severity threshold: {threshold}")
+        allowed_severities = _FIXABLE_SEVERITIES[threshold]
+
         # Config warnings go through the same filter pipeline run() uses
         # (inline suppression, excludes, baseline) — but `checked` keeps the
         # raw list so the final accounting pass sees everything, exactly
@@ -1290,14 +1302,6 @@ class Linter:
         all_violations = self._filter_violations(config_violations, record_baseline=False)
         all_fixes: List[AutofixResult] = []
         checked: List[RuleViolation] = list(config_violations)
-        threshold = "info" if severity_threshold is None else severity_threshold
-        allowed_severities = {
-            "error": {Severity.ERROR},
-            "warning": {Severity.ERROR, Severity.WARNING},
-            "info": set(Severity),
-        }
-        if threshold not in allowed_severities:
-            raise ValueError(f"Unknown severity threshold: {threshold}")
 
         total = len(self.rules)
         for index, rule in enumerate(self.rules, 1):
@@ -1323,7 +1327,7 @@ class Linter:
                 for v in visible
                 if (v.block is None or not v.block.diagnostic_only)
                 and not self._is_on_external_source(v)
-                and v.severity in allowed_severities[threshold]
+                and v.severity in allowed_severities
             ]
             if fixable_input and rule.supports_autofix:
                 try:

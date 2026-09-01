@@ -4,7 +4,7 @@ import html
 from typing import List
 
 from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
-from . import get_counts, relative_path, should_show_info
+from . import default_fix_scope, get_counts, relative_path, should_show_info
 
 
 def format_html(
@@ -48,18 +48,13 @@ def format_html(
         key=lambda v: (severity_order[v.severity], str(v.file_path or ""), v.file_line or 0)
     )
 
-    # Plain `skillsaw fix` already repairs errors and warnings (and info too
-    # when the config widens the fix scope), so only findings outside that
-    # default scope advertise the `--severity info` opt-in. The scope reads
-    # fix_level, never fail_level: a lint-only --severity override widens the
-    # display but never reaches a later plain `skillsaw fix` run.
-    default_fix_scope = set(Severity) if fix_level == "info" else {Severity.ERROR, Severity.WARNING}
+    fix_scope = default_fix_scope(fix_level)
 
     def fix_marker(v: RuleViolation) -> str:
         if not v.fixable:
             return ""
         flags = []
-        if v.severity not in default_fix_scope:
+        if v.severity not in fix_scope:
             flags.extend(("--severity", "info"))
         if v.fix_confidence != AutofixConfidence.SAFE:
             flags.append("--suggest")

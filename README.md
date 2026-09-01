@@ -62,11 +62,11 @@ Or run it yourself. No installation is required with
 [`uvx`](https://docs.astral.sh/uv/guides/tools/):
 
 ```bash
-uvx skillsaw tree      # See what skillsaw detects
-uvx skillsaw           # Lint the current repository
-uvx skillsaw fix       # Apply safe, deterministic fixes (errors and warnings)
+uvx skillsaw tree                 # See what skillsaw detects
+uvx skillsaw                      # Lint the current repository
+uvx skillsaw fix                  # Apply safe, deterministic fixes (errors and warnings)
 uvx skillsaw fix --severity info  # Also apply info-level fixes
-uvx skillsaw baseline  # Accept existing findings and fail only on new ones
+uvx skillsaw baseline             # Accept existing findings and fail only on new ones
 ```
 
 ## What it catches

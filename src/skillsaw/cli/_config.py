@@ -51,24 +51,18 @@ def load_config(args, start_path: Path) -> tuple[LinterConfig, Path | None]:
 
 def resolve_fail_level(args, config: LinterConfig) -> str:
     """Apply the shared CLI-over-config failure-threshold precedence."""
-    if getattr(args, "fail_on", None):
+    if args.fail_on:
         return args.fail_on
-    if getattr(args, "strict", False):
+    if args.strict:
         return "warning"
     return config.effective_fail_level()
 
 
 def config_fix_level(config: LinterConfig) -> str:
-    """The scope a plain ``skillsaw fix`` resolves from config alone.
-
-    Also what lint output must advertise for plain ``skillsaw fix`` — a
-    lint-only ``--severity`` override never reaches a later fix run.
-    """
+    """The severity scope a plain ``skillsaw fix`` resolves from config alone."""
     return "info" if config.effective_fail_level() == "info" else "warning"
 
 
 def resolve_fix_level(args, config: LinterConfig) -> str:
-    """Resolve fix scope while preserving the error+warning default."""
-    if getattr(args, "fail_on", None):
-        return args.fail_on
-    return config_fix_level(config)
+    """An explicit CLI ``--severity`` wins; otherwise the config fix scope."""
+    return args.fail_on or config_fix_level(config)

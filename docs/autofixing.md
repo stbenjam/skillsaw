@@ -8,10 +8,15 @@ Safe, pattern-based fixes that run instantly without any external dependencies:
 
 ```bash
 skillsaw fix                     # Fix errors and warnings (SAFE)
+skillsaw fix --dry-run           # Preview safe fixes as colored diffs without writing
 skillsaw fix --suggest           # Fix errors and warnings (SAFE + SUGGEST)
+skillsaw fix --suggest --dry-run # Preview safe + suggested fixes
 skillsaw fix --severity info     # Also apply info-level fixes
-skillsaw fix --suggest --dry-run # Preview safe + suggested fixes without writing
 ```
+
+!!! note "Changed in 0.21"
+    Earlier releases applied info-level fixes in every `skillsaw fix` run.
+    They are opt-in now — pass `--severity info` or set `fail-on: info`.
 
 By default, `skillsaw fix` repairs errors and warnings. Info-level fixes need
 an explicit opt-in: pass `--severity info` (alias: `--fail-on`) or set
@@ -41,7 +46,8 @@ Summary:
   [*] 1 violation(s) fixable with `skillsaw fix` ([?] 1 more with `skillsaw fix --suggest`)
 ```
 
-- `[*]` — a **SAFE** fix exists; `skillsaw fix` resolves it.
+- `[*]` — a **SAFE** fix exists; `skillsaw fix` resolves it (info-level
+  findings take `--severity info`).
 - `[?]` — a **SUGGEST** fix exists; it is only applied with `skillsaw fix --suggest`.
 
 Info-level findings sit outside the default fix scope, so when they are shown

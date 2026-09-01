@@ -574,4 +574,5 @@ lint-external-content: true
 strict: false
 
 # Fail on violations at this severity or above: error, warning, info
+# (info also expands the default 'skillsaw fix' scope to info)
 fail-on: error

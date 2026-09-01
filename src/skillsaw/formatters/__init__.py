@@ -95,6 +95,21 @@ def should_show_info(verbose: bool, fail_level: str) -> bool:
     return verbose or fail_level == "info"
 
 
+def default_fix_scope(fix_level: str):
+    """Severities a plain ``skillsaw fix`` run repairs at this fix level.
+
+    ``fix_level`` is resolved from config alone — a lint-only ``--severity``
+    override never reaches a later fix run — so hints built from this scope
+    always name a command that does what they claim. Findings outside the
+    scope advertise the ``--severity info`` opt-in instead.
+    """
+    from ..rule import Severity
+
+    if fix_level == "info":
+        return frozenset(Severity)
+    return frozenset({Severity.ERROR, Severity.WARNING})
+
+
 def get_counts(violations: List[RuleViolation]):
     """Count violations by severity."""
     from ..rule import Severity
@@ -137,13 +152,8 @@ def format_report(
         fail_level: Effective severity threshold that fails the run — with
             ``fail-on: info`` every format must include the info violations
             that caused the failure even without -v
-        fix_level: Scope a plain ``skillsaw fix`` run would resolve from
-            config alone ("warning" or "info") — drives which findings the
-            text/html fix hints advertise as needing ``--severity info``.
-            Distinct from fail_level: a lint-only ``--severity`` override
-            widens the display but never reaches a later fix run. Kept
-            last in the signature so existing positional callers of
-            ``color``/``hyperlinks`` keep their bindings
+        fix_level: The fix scope resolved from config alone ("warning" or
+            "info") — see :func:`default_fix_scope`
         color: Emit ANSI colors (text format only — resolved by the caller
             via ``color_enabled()``; file outputs stay plain)
         hyperlinks: Emit OSC 8 terminal hyperlinks (text format only)

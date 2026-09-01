@@ -1345,16 +1345,48 @@ def test_text_fixable_summary_info_threshold_widens_default_scope(valid_plugin):
 
 
 def test_format_text_positional_color_binding_stable(valid_plugin):
-    """fix_level is appended after the pre-existing parameters — the tenth
-    positional argument must stay `color` for existing library callers."""
+    """The tenth positional argument of format_text is color — pinned for
+    library callers."""
     context = RepositoryContext(valid_plugin)
     output = format_text([], context, [], "0.0.0", False, 0, None, None, "error", True)
     assert "\033[" in output
 
 
+def test_text_info_suggest_line_composes_both_flags(valid_plugin):
+    """An INFO+SUGGEST finding renders both opt-ins in one command."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="claude-md-agents-import",
+            severity=Severity.INFO,
+            message="CLAUDE.md duplicates AGENTS.md",
+            file_path=Path("CLAUDE.md"),
+            fixable=True,
+            fix_confidence=AutofixConfidence.SUGGEST,
+        ),
+    ]
+
+    output = format_text(violations, context, [], "0.0.0", verbose=True)
+    assert "[?] 1 info violation(s) fixable with `skillsaw fix --severity info --suggest`" in output
+
+
+def test_html_info_suggest_marker_composes_both_flags(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violation = RuleViolation(
+        rule_id="claude-md-agents-import",
+        severity=Severity.INFO,
+        message="CLAUDE.md duplicates AGENTS.md",
+        file_path=Path("CLAUDE.md"),
+        fixable=True,
+        fix_confidence=AutofixConfidence.SUGGEST,
+    )
+
+    output = format_html([violation], context, [], "1.0.0", verbose=True)
+    assert 'title="fixable with skillsaw fix --severity info --suggest"' in output
+
+
 def test_text_lint_only_info_threshold_keeps_fix_opt_in(valid_plugin):
-    """A lint-only --severity info run shows info findings, but a later plain
-    `skillsaw fix` resolves scope from config — the hint must keep the flag."""
+    """lint-only fail_level=info shows the finding; the hint keeps the flag."""
     context = RepositoryContext(valid_plugin)
     violations = [
         RuleViolation(

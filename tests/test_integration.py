@@ -4172,11 +4172,17 @@ class TestExitCodes:
         assert summary(r)["info"] >= 1
 
     def test_contradictory_strict_and_fail_on_flags_error(self, tmp_path):
-        """--strict with a disagreeing --fail-on is rejected."""
+        """--strict with a disagreeing --severity is rejected, naming the
+        canonical flag (the --fail-on alias reaches the same branch)."""
         repo = copy_fixture("config/info-only", tmp_path)
-        r = run_lint(repo, "--strict", "--fail-on", "info")
+        r = run_lint(repo, "--strict", "--severity", "info")
         assert r["rc"] == 1
         assert "contradict" in r["stderr"]
+        assert "--severity info" in r["stderr"]
+
+        r_alias = run_lint(repo, "--strict", "--fail-on", "info")
+        assert r_alias["rc"] == 1
+        assert "--severity info" in r_alias["stderr"]
 
     def test_agreeing_strict_and_fail_on_flags_accepted(self, tmp_path):
         """--strict --fail-on warning agree and lint normally."""
@@ -5288,10 +5294,29 @@ class TestInfoAutofixOptIn:
         assert result.returncode == 0
         assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
 
-    def test_fail_on_alias_applies_info_fix(self, tmp_path):
+    def test_fail_on_is_not_a_fix_flag(self, tmp_path):
+        """fix never had --fail-on; only lint keeps it as a compat alias."""
         repo = copy_fixture("autofix/info-hidden", tmp_path)
+        skill = repo / "SKILL.md"
+        before = skill.read_text()
 
         result = run_cli(["fix", "--fail-on", "info", repo])
+
+        assert result.returncode == 2
+        assert skill.read_text() == before
+
+    def test_severity_override_widens_default_fix_scope(self, tmp_path):
+        """The fix filter reads the effective severity: a rule promoted from
+        info to warning joins the default `skillsaw fix` scope."""
+        repo = copy_fixture("autofix/info-hidden", tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "0.20.0"\n'
+            "rules:\n"
+            "  content-unlinked-internal-reference:\n"
+            "    severity: warning\n"
+        )
+
+        result = run_cli(["fix", repo])
 
         assert result.returncode == 0
         assert "[references/guide.md](references/guide.md)" in (repo / "SKILL.md").read_text()
@@ -5329,10 +5354,7 @@ class TestInfoAutofixOptIn:
         assert "+Read [references/guide.md](references/guide.md)" in result.stdout
 
     def test_config_widened_scope_keeps_suggest_hint_flag_free(self, tmp_path):
-        """A config-widened scope needs no --severity in the hint — the hint
-        is not a verbatim replay, and a re-run keeps the user's own -c flag
-        just like it keeps the path argument. Config stays the canonical
-        scope control; the flag is echoed only when explicitly typed."""
+        """Config-widened scope: the hint stays flag-free when no --severity was typed."""
         repo = copy_fixture("instructions/agents-import/duplicated-pair", tmp_path)
         cfg = tmp_path / "external-config.yaml"
         cfg.write_text('version: "0.20.0"\nfail-on: info\n')
@@ -5344,8 +5366,7 @@ class TestInfoAutofixOptIn:
         assert "--severity" not in result.stdout
 
     def test_lint_cli_info_threshold_keeps_fix_opt_in_hint(self, tmp_path):
-        """`lint --severity info` widens the display only — a later plain
-        `skillsaw fix` resolves scope from config, so the hint keeps the flag."""
+        """lint --severity info widens the display; the fix hint keeps the flag."""
         repo = copy_fixture("autofix/info-hidden", tmp_path)
 
         r = run_lint(repo, "--severity", "info", fmt="text", verbose=False)
@@ -5974,8 +5995,17 @@ class TestSafeAutofixIdempotency:
     }
 
     @staticmethod
-    def _run_fix(repo):
+    def _fix_all(repo):
+        """Fix at the widest scope so every SAFE rule in the fixture fires."""
         return _run_fix(repo, "--severity", "info")
+
+    def test_default_scope_fix_is_idempotent(self, tmp_path):
+        """A plain (error+warning) fix run must also converge."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        baseline = _snapshot_contents(repo)
+        _run_fix(repo)
+        assert _snapshot_contents(repo) == baseline
 
     def test_fixture_violation_counts(self, tmp_path):
         """Fixture must produce the exact expected SAFE violation counts."""
@@ -6007,11 +6037,11 @@ class TestSafeAutofixIdempotency:
     def test_fix_is_idempotent(self, tmp_path):
         """Running fix 11 times must produce byte-identical content after the first."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        self._run_fix(repo)
+        self._fix_all(repo)
         baseline = _snapshot_contents(repo)
 
         for i in range(10):
-            self._run_fix(repo)
+            self._fix_all(repo)
             current = _snapshot_contents(repo)
             all_files = set(baseline.keys()) | set(current.keys())
             changed = {f for f in all_files if baseline.get(f) != current.get(f)}
@@ -6029,7 +6059,7 @@ class TestSafeAutofixIdempotency:
         repo = copy_fixture(self.FIXTURE, tmp_path)
         before = _snapshot_line_counts(repo)
 
-        self._run_fix(repo)
+        self._fix_all(repo)
         after = _snapshot_line_counts(repo)
 
         # Only check files that should NOT have line-count changes.
@@ -6069,11 +6099,11 @@ class TestSafeAutofixIdempotency:
         Verify the end result is clean and idempotent after convergence.
         """
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        self._run_fix(repo)
+        self._fix_all(repo)
         after_first = _snapshot_contents(repo)
 
         # Second fix should find nothing — proving convergence
-        result = self._run_fix(repo)
+        result = self._fix_all(repo)
         after_second = _snapshot_contents(repo)
 
         assert (
@@ -6100,7 +6130,7 @@ class TestSafeAutofixIdempotency:
             if v["rule_id"] in safe_rules
         }
 
-        self._run_fix(repo)
+        self._fix_all(repo)
 
         r_after = run_lint(repo)
         after_keys = {
@@ -6119,7 +6149,7 @@ class TestSafeAutofixIdempotency:
     def test_no_double_wrapping(self, tmp_path):
         """Fix must not double-wrap already-linked paths (regression for #173)."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        self._run_fix(repo)
+        self._fix_all(repo)
 
         for md_file in repo.rglob("*.md"):
             content = md_file.read_text(encoding="utf-8")

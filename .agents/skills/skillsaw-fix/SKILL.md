@@ -42,9 +42,8 @@ each rule touches. Review this summary with the user before making changes.
 Run `skillsaw fix`. This applies safe, structural fixes (missing frontmatter,
 kebab-case names, plugin registration, and similar) for errors and warnings.
 When the inventory includes info-level violations, add `--severity info` to
-each fix command in this step — the suggested-tier preview and apply runs
-included — since without it those commands leave info-level findings
-untouched.
+each fix command in this step, including the suggested-tier preview and
+apply runs.
 
 Then run `skillsaw fix --suggest --dry-run` to preview the suggested tier.
 Suggested fixes (e.g. updating stale references after a rename) are

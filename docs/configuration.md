@@ -104,6 +104,11 @@ threshold can make any severity — including info — fail the run.
 Info-level violations are shown with `--verbose` (and always when
 `fail-on: info` makes them fatal).
 
+Severity also bounds autofix: plain `skillsaw fix` repairs errors and
+warnings, so a rule demoted to `severity: info` drops out of its default
+scope, and one promoted above info joins it — see
+[Autofixing](autofixing.md).
+
 ```yaml
 rules:
   content-weak-language:
@@ -165,11 +170,17 @@ fail-on: info   # any violation at info or above fails the run
 are set, the strictest one wins — adding `fail-on: info` to a config that
 already has `strict: true` just tightens the threshold.
 
-The `--fail-on` and `--strict` CLI flags override the config file's
-settings for a single run — `--fail-on error` runs with the default
-threshold even when the config says `strict: true`. Passing both flags
-with contradictory values (`--strict --fail-on info`) is an error;
-`--strict --fail-on warning` is accepted since they agree.
+`fail-on: info` also expands what plain `skillsaw fix` rewrites: the fix
+scope is errors and warnings by default and follows the configured
+threshold only when it is `info` — see [Autofixing](autofixing.md).
+
+The `--severity` (alias `--fail-on`) and `--strict` CLI flags override the
+config file's settings for a single run — `--severity error` runs with the
+default threshold even when the config says `strict: true`. Like `fail-on`,
+`--severity` selects a threshold (that severity or above); it is distinct
+from the per-rule `severity:` key, which assigns a single rule's level.
+Passing both flags with contradictory values (`--strict --severity info`)
+is an error; `--strict --severity warning` is accepted since they agree.
 
 `fail-on: info` is useful for ratcheting: once a repo is at zero
 violations, it stays that way — new info-level findings (including from
