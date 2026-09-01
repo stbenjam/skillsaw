@@ -153,6 +153,29 @@ _IMPORT_LINE_RE = re.compile(
 # simply yields no resolvable imports.
 _PY_FENCE_INFOS = {"", "python", "py", "python3"}
 
+# AST fields containing statement lists. Because import statements only appear
+# at statement level, walking only these containers reaches all imports while
+# avoiding traversal of expression subtrees.
+_STATEMENT_LIST_FIELDS = ("body", "orelse", "finalbody", "handlers", "cases")
+
+
+def _iter_statements(tree: ast.Module) -> Iterable[ast.AST]:
+    """Yield all statements in *tree* across any nesting depth.
+
+    Avoids traversing expression nodes (as ``ast.walk`` does) since imports
+    only occur as statements.
+    """
+    stack: List[ast.AST] = list(tree.body)
+    while stack:
+        node = stack.pop()
+        yield node
+        for name in _STATEMENT_LIST_FIELDS:
+            children = getattr(node, name, None)
+            # Ensure children is a list of statements (avoiding single-expression fields
+            # like in IfExp or Lambda).
+            if isinstance(children, list):
+                stack.extend(children)
+
 
 class AgentSkillUnreferencedFilesRule(Rule):
     """Detect bundled skill files that SKILL.md never references"""
@@ -330,10 +353,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
         resolved_files = set(resolved_of.values())
         rel_of = {f: resolved_of[f].relative_to(skill_resolved).as_posix() for f in all_files}
         all_dirs = self._candidate_dirs(rel_of.values())
-        block_by_path = {
-            (safe_resolve(block.path) or block.path): block
-            for block in skill_node.find(ContentBlock)
-        }
+        block_by_path = {block.resolved_path: block for block in skill_node.find(ContentBlock)}
 
         root_paths = {(safe_resolve(root) or root) for root in roots}
         referenced: Set[Path] = {
@@ -549,6 +569,8 @@ class AgentSkillUnreferencedFilesRule(Rule):
         templates) fall back to a line-based scan of import statements.
         """
         imports: List[Tuple[str, List[str], int]] = []
+        if "import" not in text:
+            return imports  # Quick check: skip parsing if "import" is not present in text
         try:
             tree = ast.parse(text)
         except (SyntaxError, ValueError):
@@ -568,7 +590,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
                         (module.lstrip("."), [n for n in names if n.isidentifier()], level)
                     )
             return imports
-        for node in ast.walk(tree):
+        for node in _iter_statements(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     imports.append((alias.name, [], 0))

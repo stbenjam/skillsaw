@@ -4,7 +4,9 @@ Main linter orchestration
 
 from __future__ import annotations
 
+import contextlib
 import difflib
+import gc
 import hashlib
 import importlib.util
 import inspect
@@ -17,6 +19,28 @@ from typing import Any, Callable, Dict, List, Optional, Set, Type, TYPE_CHECKING
 from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def _cyclic_gc_paused():
+    """Temporarily pause Python's cyclic garbage collector during rule execution.
+
+    Large repositories place many long-lived objects in memory (e.g., the lint tree
+    and markdown token streams). Automatic GC cycles repeatedly traverse these objects,
+    adding significant overhead while recovering very little memory since most rule
+    temporaries are freed immediately via reference counting.
+
+    The previous GC state is restored on exit so callers embedding the linter retain
+    their configuration.
+    """
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if was_enabled:
+            gc.enable()
+
 
 from .rule import (
     Rule,
@@ -195,6 +219,7 @@ class Linter:
         self._no_plugins = no_plugins
         self._plugin_load_violations: List[RuleViolation] = []
         self._vendor_managed_cache: Dict[Path, bool] = {}
+        self._external_source_path_cache: Dict[Path, bool] = {}
         self._stale_baseline_entries: List["BaselineEntry"] = []
         self._baseline_suppressed_count: int = 0
         # Prefer contexts constructed with the config's filters (see
@@ -1070,12 +1095,17 @@ class Linter:
         """Whether *path* sits inside an externally sourced tree root."""
         if path is None:
             return False
-        if not path.is_absolute():
-            path = self.context.root_path / path
-        resolved = safe_resolve(path) or path
-        return path_within_roots(
-            resolved, self._external_source_roots()
-        ) or self.context.is_externally_sourced(resolved)
+        # Cache results per path to avoid repeatedly resolving and walking parent
+        # directories when multiple violations occur in the same file.
+        verdict = self._external_source_path_cache.get(path)
+        if verdict is None:
+            candidate = path if path.is_absolute() else self.context.root_path / path
+            resolved = safe_resolve(candidate) or candidate
+            verdict = path_within_roots(
+                resolved, self._external_source_roots()
+            ) or self.context.is_externally_sourced(resolved)
+            self._external_source_path_cache[path] = verdict
+        return verdict
 
     def _external_source_roots(self) -> Set[Path]:
         """External roots from repository provenance and contributed tree tags."""
@@ -1237,27 +1267,28 @@ class Linter:
 
         logger.info("Running %d enabled rules", len(self.rules))
         total = len(self.rules)
-        for index, rule in enumerate(self.rules, 1):
-            if progress is not None:
-                progress(index, total, rule.rule_id)
-            try:
-                rule_violations = rule.check(self.context)
-                if rule_violations:
-                    logger.info(
-                        "Rule %-30s found %d violation(s)", rule.rule_id, len(rule_violations)
-                    )
-                violations.extend(rule_violations)
-            except Exception as e:
-                print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
-                violations.append(self._crash_violation(rule, e))
+        with _cyclic_gc_paused():
+            for index, rule in enumerate(self.rules, 1):
+                if progress is not None:
+                    progress(index, total, rule.rule_id)
+                try:
+                    rule_violations = rule.check(self.context)
+                    if rule_violations:
+                        logger.info(
+                            "Rule %-30s found %d violation(s)", rule.rule_id, len(rule_violations)
+                        )
+                    violations.extend(rule_violations)
+                except Exception as e:
+                    print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
+                    violations.append(self._crash_violation(rule, e))
 
-        # Tree contributors run lazily inside build_lint_tree (triggered by
-        # the rule checks above), so their failures are only known now.
-        _ = self.context.lint_tree
-        violations.extend(self._lint_tree_error_violations())
-        violations.extend(self._plugin_extension_error_violations())
+            # Tree contributors run lazily inside build_lint_tree (triggered by
+            # the rule checks above), so their failures are only known now.
+            _ = self.context.lint_tree
+            violations.extend(self._lint_tree_error_violations())
+            violations.extend(self._plugin_extension_error_violations())
 
-        return self._filter_violations(violations)
+            return self._filter_violations(violations)
 
     @staticmethod
     def _crash_violation(rule: Rule, exc: Exception, action: str = "check") -> RuleViolation:
@@ -1303,57 +1334,58 @@ class Linter:
         checked: List[RuleViolation] = list(config_violations)
 
         total = len(self.rules)
-        for index, rule in enumerate(self.rules, 1):
-            if progress is not None:
-                progress(index, total, rule.rule_id)
-            try:
-                rule_violations = rule.check(self.context)
-            except Exception as e:
-                print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
-                all_violations.append(self._crash_violation(rule, e))
-                continue
-
-            checked.extend(rule_violations)
-            visible = self._filter_violations(rule_violations, record_baseline=False)
-
-            # Diagnostic-only blocks never reach a fixer at all. Clearing
-            # their fixability metadata is presentation; a third-party rule's
-            # ``fix()`` does not read it, so handing the violation over would
-            # still invite a rewrite of text that has no honest span in the
-            # file that holds it (a prompt decoded out of JSON, say).
-            fixable_input = [
-                v
-                for v in visible
-                if (v.block is None or not v.block.diagnostic_only)
-                and not self._is_on_external_source(v)
-                and v.severity in allowed_severities
-            ]
-            if fixable_input and rule.supports_autofix:
+        with _cyclic_gc_paused():
+            for index, rule in enumerate(self.rules, 1):
+                if progress is not None:
+                    progress(index, total, rule.rule_id)
                 try:
-                    fixes = [
-                        f
-                        for f in rule.fix(self.context, fixable_input)
-                        if not self._is_vendor_managed(f.file_path)
-                        and not self._is_external_source_path(f.file_path)
-                        and (
-                            f.rename_from is None
-                            or not self._is_external_source_path(f.rename_from)
-                        )
-                    ]
-                    all_fixes.extend(fixes)
-                    fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
-                    remaining = [v for v in visible if id(v) not in fixed_violations]
-                    all_violations.extend(remaining)
+                    rule_violations = rule.check(self.context)
                 except Exception as e:
-                    print(f"Error fixing rule {rule.rule_id}: {e}", file=sys.stderr)
-                    all_violations.append(self._crash_violation(rule, e, action="fix"))
-                    all_violations.extend(visible)
-            else:
-                all_violations.extend(visible)
+                    print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
+                    all_violations.append(self._crash_violation(rule, e))
+                    continue
 
-        _ = self.context.lint_tree
-        all_violations.extend(self._lint_tree_error_violations())
-        all_violations.extend(self._plugin_extension_error_violations())
+                checked.extend(rule_violations)
+                visible = self._filter_violations(rule_violations, record_baseline=False)
+
+                # Diagnostic-only blocks never reach a fixer at all. Clearing
+                # their fixability metadata is presentation; a third-party rule's
+                # ``fix()`` does not read it, so handing the violation over would
+                # still invite a rewrite of text that has no honest span in the
+                # file that holds it (a prompt decoded out of JSON, say).
+                fixable_input = [
+                    v
+                    for v in visible
+                    if (v.block is None or not v.block.diagnostic_only)
+                    and not self._is_on_external_source(v)
+                    and v.severity in allowed_severities
+                ]
+                if fixable_input and rule.supports_autofix:
+                    try:
+                        fixes = [
+                            f
+                            for f in rule.fix(self.context, fixable_input)
+                            if not self._is_vendor_managed(f.file_path)
+                            and not self._is_external_source_path(f.file_path)
+                            and (
+                                f.rename_from is None
+                                or not self._is_external_source_path(f.rename_from)
+                            )
+                        ]
+                        all_fixes.extend(fixes)
+                        fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
+                        remaining = [v for v in visible if id(v) not in fixed_violations]
+                        all_violations.extend(remaining)
+                    except Exception as e:
+                        print(f"Error fixing rule {rule.rule_id}: {e}", file=sys.stderr)
+                        all_violations.append(self._crash_violation(rule, e, action="fix"))
+                        all_violations.extend(visible)
+                else:
+                    all_violations.extend(visible)
+
+            _ = self.context.lint_tree
+            all_violations.extend(self._lint_tree_error_violations())
+            all_violations.extend(self._plugin_extension_error_violations())
 
         # Baseline stale/suppressed accounting must consider all rules'
         # violations together, exactly as run() does — the per-rule calls
@@ -1471,6 +1503,7 @@ class Linter:
                 self._suppression_cache.clear()
             if hasattr(self, "_external_source_root_cache"):
                 del self._external_source_root_cache
+            self._external_source_path_cache.clear()
 
         return all_applied, all_suggested
 

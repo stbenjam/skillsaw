@@ -225,14 +225,13 @@ except ImportError:  # Python 3.9/3.10
 
 @lru_cache(maxsize=512)
 def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
-    """Longest literal that every match of the pattern must contain, lowercased.
+    """Return the longest lowercased literal substring required by any match of the pattern.
 
-    Walks the top-level concatenation of the regex parse tree collecting
-    consecutive LITERAL characters; zero-width anchors (``\\b``, ``^``…) are
-    transparent, anything else ends the run.  Returns ``None`` when no
-    usable literal exists (short, non-ASCII, or the pattern starts with a
-    branch) — callers must then fall back to a full regex scan, so this is
-    always correctness-preserving.
+    Walks the top-level regex parse tree to collect consecutive literal characters.
+    Zero-width anchors (e.g. ``\\b``, ``^``) are ignored, and any other token ends
+    the current run. Returns ``None`` if no usable literal is found (e.g. fewer than
+    3 characters, non-ASCII, or top-level branching). Callers fall back to a full
+    regex scan when ``None`` is returned.
     """
     try:
         tree = _sre_parser.parse(pattern_src, flags)
@@ -257,26 +256,164 @@ def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
     return literal.lower()
 
 
+def _literal_runs(sequence) -> List[str]:
+    """Return runs of consecutive literal characters at the top level of *sequence*.
+
+    Zero-width anchors are skipped since they do not consume characters in a match;
+    any other non-literal token ends the current run.
+    """
+    runs: List[str] = []
+    current: List[str] = []
+    for op, arg in sequence:
+        if op is _sre_constants.LITERAL:
+            current.append(chr(arg))
+        elif op is _sre_constants.AT:
+            continue
+        elif current:
+            runs.append("".join(current))
+            current = []
+    if current:
+        runs.append("".join(current))
+    return runs
+
+
+def _usable_literal(literal: str) -> Optional[str]:
+    """Return *literal* lowercased if long enough (>= 3 chars) and ASCII."""
+    if len(literal) < 3 or not literal.isascii():
+        return None
+    return literal.lower()
+
+
+def _branch_alternatives(op, arg) -> Optional[list]:
+    """Return the list of alternatives for a top-level branch or group wrapping a branch."""
+    if op is _sre_constants.BRANCH:
+        return arg[1]
+    if op is _sre_constants.SUBPATTERN:
+        inner = arg[3]  # (group, add_flags, del_flags, subpattern)
+        if len(inner) == 1 and inner[0][0] is _sre_constants.BRANCH:
+            return inner[0][1][1]
+    return None
+
+
+@lru_cache(maxsize=512)
+def _required_literal_sets(pattern_src: str, flags: int) -> Tuple[Tuple[str, ...], ...]:
+    """Return sets of required lowercase literals that must appear in any matching text.
+
+    The return value is a tuple of alternative sets (an AND of ORs): for every
+    inner tuple, the text must contain at least one of the string alternatives.
+
+    For example:
+    - A single literal run ``try to`` produces ``(("try to",),)``
+    - An alternation ``(?:get|obtain|require)`` produces ``(("get", "obtain", "require"),)``
+
+    If an alternative contains no usable literal or uses complex quantifiers, that
+    set is omitted. Returns an empty tuple if no reliable literal requirements can
+    be extracted.
+    """
+    try:
+        tree = _sre_parser.parse(pattern_src, flags)
+    except Exception:
+        return ()
+    sets: List[Tuple[str, ...]] = []
+    for run in _literal_runs(tree):
+        usable = _usable_literal(run)
+        if usable is not None:
+            sets.append((usable,))
+    for op, arg in tree:
+        alternatives = _branch_alternatives(op, arg)
+        if alternatives is None:
+            continue
+        members: List[str] = []
+        for alternative in alternatives:
+            runs = _literal_runs(alternative)
+            usable = _usable_literal(max(runs, key=len)) if runs else None
+            if usable is None:
+                break  # an alternative with no literal makes the set useless
+            members.append(usable)
+        else:
+            if members:
+                sets.append(tuple(members))
+    return tuple(sets)
+
+
+# Optional inline flag groups, then a leading word boundary.
+_LEADING_BOUNDARY_RE = re.compile(r"^((?:\(\?[aiLmsux]+\))*)\\b")
+
+
+def _gate_pattern(pattern: "re.Pattern[str]") -> "re.Pattern[str]":
+    """Return a relaxed pattern with any leading ``\\b`` stripped, or *pattern* as is.
+
+    Any match for ``\\bfoo`` is also a match for ``foo``, making the boundary-free
+    version a safe gate. Stripping the leading boundary allows Python's regex engine
+    to use its fast C-level literal prefix search rather than testing every character
+    position.
+    """
+    match = _LEADING_BOUNDARY_RE.match(pattern.pattern)
+    if match is None:
+        return pattern
+    try:
+        return re.compile(match.group(1) + pattern.pattern[match.end() :], pattern.flags)
+    except re.error:
+        return pattern
+
+
+# Cached prefilter metadata per compiled regex:
+# (primary_literal, remaining_literal_sets, gate_pattern)
+# The primary literal is the longest single-alternative literal, allowing a quick
+# initial substring check before iterating alternative sets.
+_PrefilterEntry = Tuple[Optional[str], Tuple[Tuple[str, ...], ...], "re.Pattern[str]"]
+_PREFILTER_CACHE: Dict["re.Pattern[str]", _PrefilterEntry] = {}
+
+
+def _prefilter_for(pattern: "re.Pattern[str]") -> _PrefilterEntry:
+    entry = _PREFILTER_CACHE.get(pattern)
+    if entry is None:
+        if len(_PREFILTER_CACHE) >= 4096:
+            _PREFILTER_CACHE.clear()  # Prevent unbounded growth from dynamically compiled patterns
+        sets = list(_required_literal_sets(pattern.pattern, pattern.flags))
+        first: Optional[str] = None
+        singles = [alternatives[0] for alternatives in sets if len(alternatives) == 1]
+        if singles:
+            first = max(singles, key=len)
+            sets.remove((first,))
+        entry = (first, tuple(sets), _gate_pattern(pattern))
+        _PREFILTER_CACHE[pattern] = entry
+    return entry
+
+
 def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tuple]:
-    """Whole-text prefilter for per-line pattern scans.
+    """Filter regex patterns down to those that match anywhere in *content*.
 
-    Returns the subset of ``(compiled_pattern, ...)`` tuples whose pattern
-    matches anywhere in *content*, preserving order.  Any pattern that
-    matches some line necessarily matches the whole text, so per-line scans
-    can safely skip the rest — results are identical, but the common case
-    (pattern absent from the file) is dramatically cheaper.
+    Returns the subset of ``(compiled_pattern, ...)`` tuples whose pattern matches
+    in *content*, preserving original order. Because a pattern must match the
+    full document before it can match any individual line, filtering upfront
+    allows subsequent per-line scans to skip non-matching patterns entirely.
 
-    Two-stage filter: a C-speed lowercase substring check on each pattern's
-    required literal eliminates most patterns without running the regex
-    engine at all; survivors (and patterns with no extractable literal) are
-    confirmed with a real whole-text search.
+    Uses a three-stage filter:
+    1. Fast lowercase substring checks on required literals (:func:`_required_literal_sets`).
+    2. A relaxed prefix gate pattern without leading word boundaries (:func:`_gate_pattern`).
+    3. Full regex search on surviving candidate patterns.
     """
     lowered = content.lower()
     active = []
     for t in patterns:
         pattern = t[0]
-        literal = _required_literal(pattern.pattern, pattern.flags)
+        literal, literal_sets, gate = _prefilter_for(pattern)
         if literal is not None and literal not in lowered:
+            continue
+        if literal_sets:
+            # Use explicit loops rather than generators to minimize per-pattern overhead
+            rejected = False
+            for alternatives in literal_sets:
+                for candidate in alternatives:
+                    if candidate in lowered:
+                        break
+                else:
+                    rejected = True
+                    break
+            if rejected:
+                continue
+        if gate is not pattern and gate.search(content) is None:
             continue
         if pattern.search(content):
             active.append(t)
@@ -394,6 +531,12 @@ class RedundancyDetector:
         (re.compile(r"\bindent\s+with\s+(\d+)\s+spaces?\b", re.IGNORECASE), "indent_size"),
         (re.compile(r"\bindent\s+with\s+tabs\b", re.IGNORECASE), "indent_style"),
     ]
+    _STYLE_RULE_RE = re.compile(
+        r"\b(semicolons?|trailing commas?|single quotes?|double quotes?)\b", re.IGNORECASE
+    )
+    _STRICT_MODE_RE = re.compile(
+        r"\b(strict\s+type|enable\s+strict\s+mode|use\s+strict\s+typescript)\b", re.IGNORECASE
+    )
 
     def __init__(self):
         # Tooling-config presence per root — stat the filesystem once per
@@ -440,55 +583,58 @@ class RedundancyDetector:
         content = _get_body_from_cf(cf)
         if not content:
             return []
+
+        # Filter patterns against the whole document first so line-by-line checks
+        # only evaluate patterns that actually appear in the content.
+        active_indent = (
+            patterns_matching_anywhere(content, self._INDENT_PATTERNS) if has_editorconfig else []
+        )
+        style_active = (has_eslint or has_prettier) and bool(
+            patterns_matching_anywhere(content, [(self._STYLE_RULE_RE,)])
+        )
+        strict_active = has_tsconfig and bool(
+            patterns_matching_anywhere(content, [(self._STRICT_MODE_RE,)])
+        )
+        if not active_indent and not style_active and not strict_active:
+            return []
+
         results: List[RedundancyMatch] = []
-
         for line_num, line in enumerate(content.splitlines(), 1):
-            if has_editorconfig:
-                for pattern, config_key in self._INDENT_PATTERNS:
-                    if pattern.search(line):
-                        results.append(
-                            RedundancyMatch(
-                                line_num,
-                                line.strip(),
-                                ".editorconfig",
-                                config_key,
-                            )
-                        )
-
-            if has_eslint or has_prettier:
-                if re.search(
-                    r"\b(semicolons?|trailing commas?|single quotes?|double quotes?)\b",
-                    line,
-                    re.IGNORECASE,
-                ):
-                    config_file = (
-                        ".eslintrc / .prettierrc"
-                        if has_eslint and has_prettier
-                        else (".eslintrc" if has_eslint else ".prettierrc")
-                    )
+            for pattern, config_key in active_indent:
+                if pattern.search(line):
                     results.append(
                         RedundancyMatch(
                             line_num,
                             line.strip(),
-                            config_file,
-                            "style rule",
+                            ".editorconfig",
+                            config_key,
                         )
                     )
 
-            if has_tsconfig:
-                if re.search(
-                    r"\b(strict\s+type|enable\s+strict\s+mode|use\s+strict\s+typescript)\b",
-                    line,
-                    re.IGNORECASE,
-                ):
-                    results.append(
-                        RedundancyMatch(
-                            line_num,
-                            line.strip(),
-                            "tsconfig.json",
-                            "strict mode",
-                        )
+            if style_active and self._STYLE_RULE_RE.search(line):
+                config_file = (
+                    ".eslintrc / .prettierrc"
+                    if has_eslint and has_prettier
+                    else (".eslintrc" if has_eslint else ".prettierrc")
+                )
+                results.append(
+                    RedundancyMatch(
+                        line_num,
+                        line.strip(),
+                        config_file,
+                        "style rule",
                     )
+                )
+
+            if strict_active and self._STRICT_MODE_RE.search(line):
+                results.append(
+                    RedundancyMatch(
+                        line_num,
+                        line.strip(),
+                        "tsconfig.json",
+                        "strict mode",
+                    )
+                )
 
         return results
 

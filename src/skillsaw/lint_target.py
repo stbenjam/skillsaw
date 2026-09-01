@@ -70,10 +70,25 @@ class LintTarget:
     def __hash__(self):
         return hash((type(self), self.resolved_path))
 
+    def _before_walk(self) -> None:
+        """Hook called when traversal reaches this node, before visiting its children.
+
+        Subclasses with lazily-built subtrees (such as ``FrontmatteredBlock``)
+        materialize child nodes here.
+        """
+
     def walk(self) -> Iterator["LintTarget"]:
-        yield self
-        for child in self.children:
-            yield from child.walk()
+        """Yield all nodes in this subtree in pre-order.
+
+        Uses an explicit stack instead of recursion to avoid generator frame
+        overhead on large trees.
+        """
+        stack = [self]
+        while stack:
+            node = stack.pop()
+            node._before_walk()
+            yield node
+            stack.extend(reversed(node.children))
 
     def find(self, target_type: Type[T]) -> List[T]:
         """Find all nodes of *target_type* in this subtree.
@@ -84,11 +99,13 @@ class LintTarget:
         completes) and by mutations that rebuild children (see
         ``FrontmatteredBlock._build_children``).
         """
-        cache = self.__dict__.setdefault("_find_cache", {})
-        found = cache.get(target_type)
+        cache = self.__dict__.get("_find_cache")
+        found = cache.get(target_type) if cache is not None else None
         if found is None:
             found = [n for n in self.walk() if isinstance(n, target_type)]
-            cache[target_type] = found
+            # Attach cache entry only after walk completes: lazy subtrees materialized
+            # during traversal may invalidate the cache during the walk.
+            self.__dict__.setdefault("_find_cache", {})[target_type] = found
         return list(found)
 
     def find_filtered(
@@ -106,12 +123,12 @@ class LintTarget:
         identifies the filter, and callers must make it name everything the
         predicate depends on.
         """
-        cache = self.__dict__.setdefault("_find_cache", {})
         key = (target_type, cache_key)
-        found = cache.get(key)
+        cache = self.__dict__.get("_find_cache")
+        found = cache.get(key) if cache is not None else None
         if found is None:
             found = [n for n in self.find(target_type) if predicate(n)]
-            cache[key] = found
+            self.__dict__.setdefault("_find_cache", {})[key] = found
         return list(found)
 
     def invalidate_find_cache(self) -> None:

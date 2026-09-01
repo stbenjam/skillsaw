@@ -805,6 +805,8 @@ class MarkdownDoc:
         self._inline_verbatim: List[Tuple[int, int, int]] = []  # (map_start, start, end)
         self._inline_maps: List[Tuple[int, str, List[Tuple[int, int]]]] = []
         self._html_comments: Optional[List[MarkdownHtmlComment]] = None
+        self._headings: Optional[List[MarkdownHeading]] = None
+        self._fences: Optional[List[MarkdownFence]] = None
         self._prose: Optional[List[str]] = None
         self._prose_text: Optional[str] = None
 
@@ -957,6 +959,8 @@ class MarkdownDoc:
 
     def fences(self) -> List[MarkdownFence]:
         """Fenced and indented code blocks (line ranges include delimiters)."""
+        if self._fences is not None:
+            return list(self._fences)
         result: List[MarkdownFence] = []
         for token in self._tokens:
             if token.type in ("fence", "code_block") and token.map:
@@ -974,10 +978,13 @@ class MarkdownDoc:
                         content=token.content or "",
                     )
                 )
-        return result
+        self._fences = result
+        return list(result)
 
     def headings(self) -> List[MarkdownHeading]:
         """ATX and setext headings."""
+        if self._headings is not None:
+            return list(self._headings)
         result: List[MarkdownHeading] = []
         tokens = self._tokens
         for i, token in enumerate(tokens):
@@ -997,7 +1004,8 @@ class MarkdownDoc:
                     setext=token.markup in ("=", "-"),
                 )
             )
-        return result
+        self._headings = result
+        return list(result)
 
     def html_comments(self) -> List[MarkdownHtmlComment]:
         """HTML comments from block-level HTML and inline HTML."""

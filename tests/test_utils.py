@@ -922,9 +922,16 @@ def test_parse_frontmatter_malformed_yaml_reports_error_line():
     assert error_line == 5  # --- closing line where parser fails
 
 
-def test_parse_frontmatter_recursion_is_reported_as_invalid():
-    nested = "[" * 1200 + "0" + "]" * 1200
-    content = f"---\nextra: {nested}\n---\nbody\n"
+def test_parse_frontmatter_recursion_is_reported_as_invalid(monkeypatch):
+    # Simulate a RecursionError during YAML loading to verify error handling
+    # without depending on environment-specific stack limits.
+    import yaml as yaml_mod
+
+    def explode(*_args, **_kwargs):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(yaml_mod, "load", explode)
+    content = "---\nextra: [[0]]\n---\nbody\n"
     frontmatter, body, error_line = parse_frontmatter(content)
 
     assert frontmatter is None
