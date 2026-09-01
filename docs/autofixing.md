@@ -13,9 +13,7 @@ skillsaw fix --suggest           # Also apply suggested fixes (e.g. stale refere
 skillsaw fix --suggest --dry-run # Preview safe + suggested fixes
 ```
 
-`skillsaw fix` repairs the problems `skillsaw lint` reports. Info-level
-findings hidden from the report stay untouched; when your configuration (or
-`--severity info`) surfaces them, the fix run picks them up too.
+`skillsaw fix` repairs the problems `skillsaw lint` reports.
 
 Examples: adding missing frontmatter, renaming files to kebab-case, registering unregistered plugins in marketplace.json, fixing skill names to match directory names. These are marked **SAFE** confidence and applied automatically.
 
