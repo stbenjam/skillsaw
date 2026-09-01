@@ -1183,16 +1183,10 @@ def test_text_marks_safe_fixable_violations(valid_plugin):
 
 
 def test_text_marks_suggest_fixable_violations(valid_plugin):
-    """Markers mean "fix repairs this" — a warning is marked only when the
-    fix scope (the config's fail-on level) covers warnings."""
     context = RepositoryContext(valid_plugin)
+    output = format_text(_make_fixable_violations(), context, [], "0.0.0")
 
-    default = format_text(_make_fixable_violations(), context, [], "0.0.0")
-    assert "(content-broken-internal-reference) [SKILL.md:8]:" in default
-    assert "[?]" not in default
-
-    widened = format_text(_make_fixable_violations(), context, [], "0.0.0", fix_level="warning")
-    assert "(content-broken-internal-reference) [?] [SKILL.md:8]:" in widened
+    assert "(content-broken-internal-reference) [?] [SKILL.md:8]:" in output
 
 
 def test_text_no_marker_on_unfixable_violation(valid_plugin):
@@ -1250,18 +1244,12 @@ def test_relative_path_distinguishes_same_named_outside_files(tmp_path):
 
 
 def test_text_fixable_summary_splits_safe_and_suggest(valid_plugin):
-    """The summary counts only in-scope fixables — the warning SUGGEST fix
-    joins the line once the fix scope covers warnings."""
     context = RepositoryContext(valid_plugin)
+    output = format_text(_make_fixable_violations(), context, [], "0.0.0")
 
-    default = format_text(_make_fixable_violations(), context, [], "0.0.0")
-    assert "[*] 2 violation(s) fixable with `skillsaw fix`" in default
-    assert "--suggest" not in default
-
-    widened = format_text(_make_fixable_violations(), context, [], "0.0.0", fix_level="warning")
     assert (
         "[*] 2 violation(s) fixable with `skillsaw fix`"
-        " ([?] 1 more with `skillsaw fix --suggest`)" in widened
+        " ([?] 1 more with `skillsaw fix --suggest`)" in output
     )
 
 
@@ -1281,13 +1269,10 @@ def test_text_fixable_summary_suggest_only(valid_plugin):
     violations = [
         v for v in _make_fixable_violations() if v.fix_confidence != AutofixConfidence.SAFE
     ]
+    output = format_text(violations, context, [], "0.0.0")
 
-    default = format_text(violations, context, [], "0.0.0")
-    assert "fixable with" not in default
-
-    widened = format_text(violations, context, [], "0.0.0", fix_level="warning")
-    assert "[?] 1 violation(s) fixable with `skillsaw fix --suggest`" in widened
-    assert "[*]" not in widened
+    assert "[?] 1 violation(s) fixable with `skillsaw fix --suggest`" in output
+    assert "[*]" not in output
 
 
 def test_text_fixable_summary_counts_only_shown_violations(valid_plugin):
@@ -1468,14 +1453,10 @@ def test_json_fixable_absent_when_unknown(valid_plugin):
 
 def test_html_fixable_marker(valid_plugin):
     context = RepositoryContext(valid_plugin)
+    output = format_html(_make_fixable_violations(), context, [], "1.0.0")
 
-    default = format_html(_make_fixable_violations(), context, [], "1.0.0")
-    assert 'title="fixable with skillsaw fix"' in default
-    assert "--suggest" not in default
-
-    widened = format_html(_make_fixable_violations(), context, [], "1.0.0", fix_level="warning")
-    assert 'title="fixable with skillsaw fix"' in widened
-    assert 'title="fixable with skillsaw fix --suggest"' in widened
+    assert 'title="fixable with skillsaw fix"' in output
+    assert 'title="fixable with skillsaw fix --suggest"' in output
 
 
 def test_html_info_fixable_marker_follows_scope(valid_plugin):

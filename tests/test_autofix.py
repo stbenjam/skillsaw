@@ -1219,9 +1219,6 @@ class TestFixCliOutput:
         docs = repo / "docs"
         docs.mkdir()
         (docs / "guide.md").write_text("# Guide\n\nDeployment steps live here.\n")
-        # Fix repairs what fail-on fails on — cover the warning-severity
-        # broken-link suggestion this repo is built to produce.
-        (repo / ".skillsaw.yaml").write_text('version: "0.20.0"\nfail-on: warning\n')
         return repo
 
     @staticmethod
@@ -1247,6 +1244,23 @@ class TestFixCliOutput:
         assert "? [.claude/commands/deploy.md]" in out
         assert str(repo) not in out, "fix output leaked absolute paths"
         assert "Run `skillsaw lint` to see remaining issues." in out
+
+    def test_demoted_rule_leaves_default_fix_scope(self, tmp_path, monkeypatch, capsys):
+        """A rule demoted to info drops out of what plain fix repairs, just
+        as it drops out of what plain lint shows."""
+        repo = self._make_repo(tmp_path, "repo")
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n'
+            "rules:\n"
+            "  content-broken-internal-reference:\n"
+            "    severity: info\n"
+        )
+        invalidate_read_caches()
+
+        out = self._run_cli(monkeypatch, capsys, repo)
+
+        assert "✓ [.claude/commands/deploy.md]" in out
+        assert "? [" not in out
 
     def test_multi_root_keeps_absolute_paths(self, tmp_path, monkeypatch, capsys):
         repo1 = self._make_repo(tmp_path, "repo-one")

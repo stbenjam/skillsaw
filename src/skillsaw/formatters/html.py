@@ -3,8 +3,8 @@
 import html
 from typing import List
 
-from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
-from . import fix_scope, get_counts, relative_path, should_show_info
+from ..rule import AutofixConfidence, Rule, RuleViolation, Severity, severities_at_or_above
+from . import get_counts, relative_path, should_show_info
 
 
 def format_html(
@@ -14,7 +14,7 @@ def format_html(
     version: str,
     verbose: bool = False,
     fail_level: str = "error",
-    fix_level: str = "error",
+    fix_level: str = "warning",
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
@@ -50,7 +50,7 @@ def format_html(
 
     # Markers mean "skillsaw fix repairs this", so they gate on the fix
     # scope — a shown-but-below-threshold finding stays unmarked.
-    scope = fix_scope(fix_level)
+    scope = severities_at_or_above(fix_level)
 
     def fix_marker(v: RuleViolation) -> str:
         if not v.fixable or v.severity not in scope:

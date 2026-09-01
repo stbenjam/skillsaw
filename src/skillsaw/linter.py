@@ -18,7 +18,14 @@ from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
 
-from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
+from .rule import (
+    Rule,
+    RuleViolation,
+    Severity,
+    AutofixResult,
+    AutofixConfidence,
+    severities_at_or_above,
+)
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
@@ -46,12 +53,6 @@ ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
 # exists to close.
 _UNEXCLUDABLE_RULE_IDS = frozenset({"invalid-config"})
 
-# Severities `fix()` generates fixes for, per threshold ("at or above").
-_FIXABLE_SEVERITIES = {
-    "error": frozenset({Severity.ERROR}),
-    "warning": frozenset({Severity.ERROR, Severity.WARNING}),
-    "info": frozenset(Severity),
-}
 
 # Config keys every rule accepts regardless of its config_schema. `enabled`
 # is validated at config load, `severity` at rule construction, and `exclude`
@@ -1290,9 +1291,7 @@ class Linter:
             Tuple of (remaining violations, autofix results)
         """
         threshold = "info" if severity_threshold is None else severity_threshold
-        if threshold not in _FIXABLE_SEVERITIES:
-            raise ValueError(f"Unknown severity threshold: {threshold}")
-        allowed_severities = _FIXABLE_SEVERITIES[threshold]
+        allowed_severities = severities_at_or_above(threshold)
 
         # Config warnings go through the same filter pipeline run() uses
         # (inline suppression, excludes, baseline) — but `checked` keeps the

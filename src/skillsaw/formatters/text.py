@@ -5,10 +5,10 @@ Text output formatter — human-readable terminal output with optional ANSI colo
 from pathlib import Path
 from typing import List, Optional
 
-from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
+from ..rule import AutofixConfidence, Rule, RuleViolation, Severity, severities_at_or_above
 from ..rule_docs import rule_doc_url
 from ..diagnostics import terminal_safe
-from . import fix_scope, get_counts, relative_path, should_show_info
+from . import get_counts, relative_path, should_show_info
 from skillsaw.paths import contained_resolve, safe_resolve
 
 
@@ -55,7 +55,7 @@ def format_text(
     color: bool = False,
     hyperlinks: bool = False,
     # Kept last so existing positional callers keep their bindings.
-    fix_level: str = "error",
+    fix_level: str = "warning",
 ) -> str:
     show_info = should_show_info(verbose, fail_level)
     red = "\033[91m" if color else ""
@@ -78,7 +78,7 @@ def format_text(
 
     # Markers mean "skillsaw fix repairs this", so they gate on the fix
     # scope — a shown-but-below-threshold finding stays unmarked.
-    scope = fix_scope(fix_level)
+    scope = severities_at_or_above(fix_level)
 
     def fix_marker(v: RuleViolation) -> str:
         """Ruff-style fixability marker: [*] safe, [?] needs --suggest."""

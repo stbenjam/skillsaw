@@ -44,7 +44,7 @@ skills installed from external `skills-lock.json` sources; those findings
 remain diagnostic even when `lint-external-content` is left at its default
 `true`.
 
-The JSON format carries the same information as an additive `fixable` boolean (plus `fix_confidence`: `safe` or `suggest` when fixable) on each violation. Fixability is per violation, not per rule — a rule that can only fix some shapes of a problem (e.g. `content-unlinked-internal-reference` only wraps references whose target file exists) marks only those violations. Because `skillsaw fix` batches several violations into one fix per file, its `Fixed N issue(s)` count can differ from the number of marked violations.
+The JSON format carries an additive `fixable` boolean (plus `fix_confidence`: `safe` or `suggest` when fixable) on each violation — whether a deterministic fix exists, independent of the current fix scope. Fixability is per violation, not per rule — a rule that can only fix some shapes of a problem (e.g. `content-unlinked-internal-reference` only wraps references whose target file exists) marks only those violations. Because `skillsaw fix` batches several violations into one fix per file, its `Fixed N issue(s)` count can differ from the number of marked violations.
 
 !!! note "Removed in 0.15"
     The deprecated `skillsaw lint --fix` flag was removed. `skillsaw fix` is the single entry point for autofixes.

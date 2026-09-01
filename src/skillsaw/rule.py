@@ -25,6 +25,24 @@ class Severity(Enum):
     INFO = "info"
 
 
+# The one severity ladder: every "at or above this level" set — the fix
+# scope, the fixable markers, and the summary counts — derives from here,
+# so the engine and the formatters cannot drift apart.
+_AT_OR_ABOVE = {
+    "error": frozenset({Severity.ERROR}),
+    "warning": frozenset({Severity.ERROR, Severity.WARNING}),
+    "info": frozenset(Severity),
+}
+
+
+def severities_at_or_above(level: str) -> frozenset:
+    """The set of severities at or above *level* ("error" < "warning" < "info")."""
+    try:
+        return _AT_OR_ABOVE[level]
+    except KeyError:
+        raise ValueError(f"Unknown severity threshold: {level}") from None
+
+
 class AutofixConfidence(Enum):
     SAFE = "safe"
     SUGGEST = "suggest"

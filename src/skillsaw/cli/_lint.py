@@ -10,7 +10,7 @@ from pathlib import Path
 from ..context import RepositoryContext, RepositoryType
 from ..formatters import format_report, get_counts, parse_output_spec
 from ..linter import Linter
-from ._config import _get_version, load_config, resolve_fail_level
+from ._config import _get_version, load_config, resolve_fail_level, resolve_fix_level
 from ._helpers import (
     _RuleProgress,
     _build_merged_context,
@@ -111,9 +111,7 @@ def _run_lint(args):
         print(f"Using config: {config_path}\n")
 
     fail_level = resolve_fail_level(args, config)
-    # What `skillsaw fix` will repair — the config's own threshold, so the
-    # fixable markers stay honest under a one-off --fail-on override.
-    fix_level = config.effective_fail_level()
+    fix_level = resolve_fix_level(args, config)
 
     baseline = None
     if not args.no_baseline:
