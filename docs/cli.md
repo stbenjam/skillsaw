@@ -46,7 +46,7 @@ Automatically fix lint violations
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover from the first path) |  |
 | `--dry-run` | Preview fixes without writing changes |  |
 | `--suggest` | Also apply suggested fixes (not just safe ones) |  |
-| `--severity` | Fix violations at this severity or above (default: warning — errors and warnings; a config-file fail-on of info expands the default to info). The CLI flag overrides the config file's strict/fail-on settings. (choices: error, warning, info) |  |
+| `--severity` | Fix violations at this severity or above (default: the severities your configuration reports). (choices: error, warning, info) |  |
 | `--rule` | Only run these rules and their validation dependencies (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |

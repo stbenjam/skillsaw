@@ -664,7 +664,6 @@ class LinterConfig:
             f.write("\n# Treat warnings as errors\n")
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
             f.write("\n# Fail on violations at this severity or above: error, warning, info\n")
-            f.write("# (info also expands the default 'skillsaw fix' scope to info)\n")
             f.write(f"fail-on: {self._yaml_value(self.fail_on)}\n")
 
     def _write_field(self, f, key: str, value: Any):

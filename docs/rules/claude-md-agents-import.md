@@ -61,10 +61,8 @@ checks that the import resolves.
 
 When `CLAUDE.md` is already a byte-for-byte copy (identical after trailing
 whitespace is stripped), `skillsaw fix --severity info --suggest` does this
-for you. The fix needs both opt-ins: this rule reports at info severity,
-which plain `skillsaw fix` leaves untouched, and the fix is SUGGEST, not
-SAFE — replacing a file's contents is a judgment call. Anything that is not
-an exact copy is reported only.
+for you. The fix is SUGGEST, not SAFE — replacing a file's contents is a
+judgment call — and anything that is not an exact copy is reported only.
 
 To require an import-only `CLAUDE.md`, set:
 

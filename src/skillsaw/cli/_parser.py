@@ -198,10 +198,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="fail_on",
         choices=list(_FAIL_ON_LEVELS),
         default=None,
-        help="Fix violations at this severity or above (default: warning — "
-        "errors and warnings; a config-file fail-on of info expands the "
-        "default to info). The CLI flag overrides the config file's "
-        "strict/fail-on settings.",
+        help="Fix violations at this severity or above (default: the "
+        "severities your configuration reports).",
     )
     fix_parser.add_argument(
         "--rule",
