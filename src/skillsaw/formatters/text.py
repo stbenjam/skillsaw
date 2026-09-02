@@ -84,6 +84,14 @@ def format_text(
     # Synthetic rule IDs (e.g. invalid-config) have no documentation page —
     # only link rules that actually ran as builtins.
     builtin_ids = {r.rule_id for r in rules if getattr(r, "_source", "builtin") == "builtin"}
+    # What `skillsaw explain` resolves: every builtin rule and the plugin
+    # rules that ran. A custom rule from `.skillsaw.yaml` and the linter's
+    # own ids (`invalid-config`) have no page to point at.
+    from ..rules.builtin import BUILTIN_RULE_REGISTRY
+
+    explainable_ids = set(BUILTIN_RULE_REGISTRY) | {
+        r.rule_id for r in rules if getattr(r, "_source", "builtin").startswith("plugin:")
+    }
 
     # Markers mean "skillsaw fix repairs this", so they gate on the fix
     # scope — a shown-but-below-threshold finding stays unmarked.
@@ -218,8 +226,12 @@ def format_text(
                 hint = f"{green}[*] safe autofix{reset}"
             elif "[?]" in markers:
                 hint = f"{green}[?] fix --suggest{reset}"
-            else:
+            elif rule_id in explainable_ids:
                 hint = f"{dim}skillsaw explain {safe_rule_id}{reset}"
+            elif any(v.source == "custom" for v in group):
+                hint = f"{dim}custom rule{reset}"
+            else:
+                hint = ""
             rows.append(
                 {
                     "id": safe_rule_id,
@@ -252,7 +264,8 @@ def format_text(
             # dropped rather than left as a gap in every row.
             if files_width:
                 cells.append(r["files"].ljust(files_width))
-            cells.append(r["hint"])
+            if r["hint"]:
+                cells.append(r["hint"])
             output.append("  " + "  ".join(cells))
 
     if errors == 0 and warnings == 0 and (fail_level != "info" or info == 0):

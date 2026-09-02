@@ -1632,6 +1632,32 @@ def test_text_top_rules_singular_file(valid_plugin):
     assert row.split()[:5] == ["content-section-length", "55", "warning", "1", "file"]
 
 
+def test_text_top_rules_hint_names_only_rules_explain_resolves(valid_plugin):
+    """`skillsaw explain` knows builtin and plugin rules; a custom rule and
+    the linter's own `invalid-config` id would only answer "Unknown rule"."""
+    from skillsaw.rules.builtin import BUILTIN_RULE_REGISTRY
+
+    context = RepositoryContext(valid_plugin)
+    custom = _repeat_violations("team-house-style", Severity.WARNING, 30)
+    for v in custom:
+        v.source = "custom"
+    violations = (
+        _repeat_violations("content-description-routing", Severity.WARNING, 40)
+        + custom
+        + _repeat_violations("invalid-config", Severity.WARNING, 20)
+    )
+    rules = [BUILTIN_RULE_REGISTRY["content-description-routing"]()]
+
+    output = format_text(violations, context, rules, "0.0.0")
+    rows = output.split("Top rules")[1].splitlines()[1:4]
+
+    assert "skillsaw explain content-description-routing" in rows[0]
+    assert rows[1].split()[0] == "team-house-style"
+    assert "custom rule" in rows[1] and "explain" not in rows[1]
+    assert rows[2].split()[0] == "invalid-config"
+    assert "explain" not in rows[2]
+
+
 def test_text_top_rules_counts_only_displayed_findings(valid_plugin):
     """Info findings are hidden without -v, so they neither trip the
     threshold nor appear in the block."""
