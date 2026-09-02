@@ -1,89 +1,58 @@
 # Triage findings by rule
 
-Run `skillsaw lint --format json -v` so info findings are included. Group
-`violations` by `rule_id` and sort the groups by size. For every cluster over
-10 percent of the findings or over 20 findings, read three to five of its real
-findings before deciding: a count says how loud a rule is, never whether it is
-right. Then put each cluster in one of three buckets.
+When onboarding an existing repository, a first scan may surface many findings. Running `skillsaw lint --format json -v` gives you the complete picture, including info-level guidance. Group the findings by `rule_id` and sort them by volume. For any group with more than 20 findings or making up over 10% of the total, review 3–5 sample findings to understand the pattern.
 
-## Fix now
+Sort each cluster into one of three practical buckets:
 
-Every `error`, and every finding with `"fixable": true` — `"safe"` fixes come
-from `skillsaw fix`, `"suggest"` fixes from `skillsaw fix --suggest` after a
-diff review. Small clusters whose samples are cheap, genuine corrections.
+## 1. Fix now
+Best for high-priority issues and quick wins:
+- All `error` severity findings
+- Findings with `"fixable": true` (apply safe fixes with `skillsaw fix`, or review suggested fixes with `skillsaw fix --suggest`)
+- Small groups of straightforward corrections
 
-## Baseline
+## 2. Baseline
+Best for valid findings that aren't urgent to fix immediately (such as wordy sections, missing evals, or legacy links). Recording them with `skillsaw baseline` lets CI pass immediately while preventing new regressions on future PRs.
 
-Real but not urgent: broken links, over-budget files, long sections, missing
-evals. `skillsaw baseline` records them as accepted debt, so CI fails only on
-new findings.
+## 3. Configure
+Best for intentional project conventions (such as generated data folders, custom directory layouts, or deliberate terminology choices). Configuring the rule in `.skillsaw.yaml` documents the convention once for all future files:
+1. **Rule options**: Check `skillsaw explain <rule-id>` for options like `exclude`, `limits`, or custom `groups`.
+2. **Severity**: Lower to `severity: info` to keep helpful feedback without failing CI builds.
+3. **Disable**: Use `enabled: false` only as a last resort for advisory content rules without relevant options.
 
-## Configure
+Always add a brief `#` comment in `.skillsaw.yaml` explaining the rationale.
 
-Structural for this repository: a naming or layout convention, a generated
-data directory, a terminology pair used on purpose, an advisory rule the
-maintainers will not act on. Configuration states the convention once; a
-baseline would re-record it for every file added later.
+> [!NOTE]
+> Keep security rules (`security-*`, `content-embedded-secrets`, `claude-settings-dangerous`), hook rules (`hooks-*`), MCP rules, and structural validity rules (`*-valid`, `claude-*-frontmatter`) enabled. Fix or baseline these rather than turning them off.
 
-Take the first rung that works:
+## Example walkthrough
 
-1. The rule's own options. `skillsaw explain <rule-id>` prints them —
-   `agentskill-unreferenced-files: exclude`, `context-budget: limits`,
-   `content-embedded-secrets: additional-placeholders`,
-   `content-inconsistent-terminology: groups`. They narrow the rule to this
-   repository and keep its other findings.
-2. `severity: info`, which keeps the signal without failing CI.
-3. `enabled: false`, only for an advisory content rule with no useful option.
+Imagine a marketplace with 1,018 skills and an initial scan showing 1,957 findings:
 
-Every entry carries a one-line `#` comment giving the reason.
-
-Never configure away hook rules (`hooks-*`), security rules (`security-*`,
-`content-embedded-secrets`, `claude-settings-dangerous`), MCP rules (`mcp-*`,
-`agent-plugin-mcp-valid`), or format validity rules (`*-valid`,
-`*-json-valid`, `claude-agent-frontmatter`, `claude-command-frontmatter`).
-A security finding that looks wrong is corrected in the file, not switched
-off.
-
-## Worked example
-
-A marketplace of 1,018 skills; first scan 1,957 findings, grade F.
-
-| Rule | Count | Bucket | Proposed action |
+| Rule | Count | Bucket | Action |
 | --- | --- | --- | --- |
-| `agentskill-unreferenced-files` | 1,018 | Configure | `exclude: ["_scores.json"]` |
-| `content-description-routing` | 299 | Baseline | Fix the skills the user names, baseline the rest |
-| `agentskill-valid` | 159 | Fix now | Fill or remove the empty `compatibility` key |
-| `content-embedded-secrets` | 1 | Fix now | Replace the sample token with `${JWT}` |
+| `agentskill-unreferenced-files` | 1,018 | Configure | Exclude ranking data: `exclude: ["_scores.json"]` |
+| `content-description-routing` | 299 | Baseline | Polish key skills now; baseline the rest for later |
+| `agentskill-valid` | 159 | Fix now | Add missing required fields |
+| `content-embedded-secrets` | 1 | Fix now | Replace sample API key with `${API_KEY}` placeholder |
 
-The samples decided the buckets. Every unreferenced file is `_scores.json`,
-generated ranking data no `SKILL.md` links — a convention, so the rule's
-exclusion, which leaves two genuine unreferenced files reported. The routing
-findings are correct bare-topic descriptions — 299 rewrites, so fix the
-important ones and baseline the rest. The 159 errors are one empty field —
-format validity never moves to configure. The lone secret is a sample JWT in
-a prompt; `${JWT}` reads as a placeholder and clears it, where disabling the
-rule would also hide the real token someone pastes next month.
-
+In `.skillsaw.yaml`:
 ```yaml
 rules:
-  # Every skill ships a generated _scores.json for the catalog ranker; it is
-  # data, not instructions, so no SKILL.md references it.
+  # Skill catalog ranking data is generated automatically and not referenced in SKILL.md
   agentskill-unreferenced-files:
     exclude:
       - "_scores.json"
 ```
 
-## Present the table
+## Presenting the plan to the user
 
-Show the clusters before changing anything, then ask:
+Share the summary table and confirm the plan with the user:
 
-> {total} findings group into {cluster count} rules. I read samples from the
-> {sampled count} largest and propose the table above: fix {fix count} now,
-> baseline {baseline count}, configure {configure count} through rule options
-> with a reason comment in `.skillsaw.yaml`. Security, hook, MCP, and
-> format-validity findings stay in fix or baseline. Proceed, or move a
-> cluster first?
+> We found {total} findings across {cluster count} rules. Here is a proposed plan:
+> - **Fix now**: {fix count} issues (errors and safe autofixes)
+> - **Baseline**: {baseline count} existing items to resolve over time
+> - **Configure**: {configure count} project-wide conventions in `.skillsaw.yaml`
+>
+> Would you like to proceed with this plan, or adjust any of the categories?
 
-The fix-now set drives the next steps, the configure set becomes
-`.skillsaw.yaml` edits, and the baseline set is the debt the baseline step
-records. Then return to the workflow.
+The fix-now set drives the next steps, the configure set becomes `.skillsaw.yaml` settings, and the baseline set is recorded in the baseline step.

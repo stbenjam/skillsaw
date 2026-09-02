@@ -1,30 +1,13 @@
-# The critic
+# Independent verification & critique
 
-One Opus subagent, launched after `CHECKLIST.md` exists, with the reports
-directory, the prior-fixes file, the development rules, and the maintainer's
-recorded decisions from this session. It is told to attack, not approve.
+Launch an independent subagent after `CHECKLIST.md` is compiled to review reports, previous fixes, development guidelines, and recent session decisions. The goal is to provide a fresh, objective check on all proposed changes.
 
-Required work:
+**Verification tasks:**
 
-1. Reproduce every Tier 1 item on a fixture or corpus repository. An item
-   that does not reproduce is demoted; an item that also fails on `main` or
-   on the last release is a bug, not a regression, and ranks accordingly.
-2. Attack every proposed fix: does it trade a false positive for a worse
-   false negative, does it contradict a deliberate earlier decision, is it
-   really the size claimed, would deletion beat qualification?
-3. Attack the prioritization by the three questions, weighing ecosystem
-   size, but treating a 100% false-positive rate on a new ERROR rule as a
-   bad first impression whatever the ecosystem.
-4. Hunt for what the audit missed: read the commit log since the tag for
-   user-visible changes with no checklist item, and lint five to ten corpus
-   repositories with `-v --fail-on info` looking at the top-volume rules.
-5. Judge the release call and name any behavior change that must appear in
-   the release notes before the tag.
+1. **Reproduce issues**: Test each Tier 1 item against sample fixtures or corpus repositories to ensure the problem is genuine and accurately diagnosed.
+2. **Review proposed fixes**: Ensure solutions resolve the root issue without introducing new false negatives, conflicting with established design patterns, or adding unnecessary complexity.
+3. **Verify prioritization**: Check that fixes are ranked by real-world impact and clarity, keeping high-confidence fixes at the top.
+4. **Check for gaps**: Review recent commits and top-volume findings across corpus repositories to make sure no important regressions were overlooked.
+5. **Release readiness check**: Confirm all user-facing changes and configuration updates are ready to be documented in the release notes.
 
-It returns an approved Tier 1 of at most ten, each with the exact fix it
-endorses, the tests it needs, and the false-negative risk it accepts, plus an
-ordered "next batch" list. Ship the approved list, in its order.
-
-Expect the critic to rewrite fixes. In the 0.20.0 sweep it replaced two,
-promoted three findings nobody had ranked, and set a release-notes gate on
-the tag; a checklist that comes back unchanged was not attacked.
+**Output**: Provide an approved Tier 1 list of up to 10 prioritized fixes with recommended solutions and test cases, along with an ordered list for subsequent batches.

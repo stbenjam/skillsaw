@@ -41,15 +41,9 @@ offering changes.
 
 ### 2. Triage findings by rule
 
-If the scan reported findings, run `skillsaw lint --format json -v` so info
-findings are included, group the violations by `rule_id`, and sort the groups
-by count. Read three to five real findings from every cluster holding more
-than 10 percent of the findings or more than 20 findings; counts alone never
-decide a cluster.
+When a scan produces findings, run `skillsaw lint --format json -v` to see all violations (including info-level ones). Group the results by `rule_id` and sort them by count. Sample 3–5 examples from any large cluster (e.g. >10% of total findings or >20 issues) to understand the root cause before deciding on an action.
 
-Read [triage](references/12-triage.md), which sorts each cluster into fix now,
-baseline, or configure and gives the table and question to put to the user
-before anything changes. Carry the agreed buckets into the steps below.
+Follow [triage](references/12-triage.md) to categorize each group into **Fix now**, **Baseline**, or **Configure**, and present a clear summary table to the user for confirmation before making changes. Carry the agreed buckets into the subsequent steps.
 
 ### 3. Apply safe fixes
 

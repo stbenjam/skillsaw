@@ -1,16 +1,12 @@
-# Build the corpus
+# Building the test corpus
 
-## Clone the shared corpus
+## Clone sample repositories
 
-Shallow-clone into `~/tmp/skillsaw-audit/corpus/<owner>_<repo>/` with
-`git clone --depth 1`, in a background script, before launching any agent.
-One shared corpus keeps every reviewer's numbers comparable.
+Shallow-clone a diverse set of real-world repositories into `~/tmp/skillsaw-audit/corpus/<owner>_<repo>/` using `git clone --depth 1`. Having a shared corpus ensures consistent and comparable testing across all reviewers.
 
-## Search for each new rule's file type
+## Gather target repositories
 
-Start from the reference collection and the largest marketplace for every
-ecosystem skillsaw supports, then add whatever `gh search code` finds for
-each new rule's file type — at least ten distinct repositories per rule:
+Include reference collections and popular repositories from each supported ecosystem, plus at least 10 repositories found via GitHub search for the specific file types being evaluated:
 
 ```bash
 gh search code --extension md "agent.md" path:.github/agents
@@ -19,20 +15,15 @@ gh search code filename:skills-lock.json
 gh search code path:.devin/rules
 ```
 
-A dedicated reviewer will add more for its own rule; that is expected. Tell
-every agent the corpus path and that a clone failure for a guessed repository
-name is normal.
+Individual rule reviewers may clone additional relevant repositories as needed.
 
-## Install the last release
+## Set up the previous release for comparison
 
-For differential runs, install the last release into its own venv:
+To spot regressions or changes in behavior, install the previous release in a separate virtual environment:
 
 ```bash
 uv venv ~/tmp/skillsaw-audit/venv-<last>
 uv pip install --python ~/tmp/skillsaw-audit/venv-<last>/bin/python skillsaw==<last>
 ```
 
-Compare per-rule counts with `--format json -v --fail-on info --no-baseline`
-on both versions. Every finding that appears only in the new version on an
-unchanged file is a candidate false positive; every finding that disappears
-is a candidate false negative or an intended fix.
+Run comparative scans with `--format json -v --fail-on info --no-baseline`. Comparing results helps identify new false positives (findings on unchanged files that shouldn't be there) and verifies intended fixes.

@@ -14,30 +14,27 @@ Detect the same directive stated more than once within a file
 
 ## Why
 
-Stating the same instruction more than once doesn't make a model follow
-it more reliably. Frontier-model prompting guidance (e.g. OpenAI's GPT-5.6
-prompting guide) is explicit: state each instruction once — repeated
-directives are noise the model must parse around, and overlapping
-restatements of one policy ("ask first" here, "wait for approval"
-there) cost reasoning effort without changing behavior. Every repeat
-also spends instruction budget that a distinct rule could have used
-(see `content-instruction-budget`).
+Stating the same instruction multiple times doesn't improve model
+adherence. Modern prompting guides (such as OpenAI's GPT-5.6 prompting guide)
+recommend stating each instruction once clearly. Repetitive directives add
+unnecessary tokens and can create conflicting nuances without improving
+behavior. Every repeat also uses instruction budget that could be used for
+other rules (see `content-instruction-budget`).
 
 The rule detects two forms of repetition within a single file:
 
 - **Repeated directives** — two imperative lines that are identical or
   nearly identical after normalization (markdown stripped, lowercased).
 - **Restated policies** — two different lines that match the same
-  phrase cluster. The built-in `approval` cluster covers
-  approval-related language: "ask first/before", "wait for approval",
-  "confirm before", "do not proceed without approval", and similar.
+  phrase cluster (such as the built-in `approval` cluster: "ask first/before",
+  "wait for approval", "confirm before", or "do not proceed without approval").
 
 Directives are compared line by line across sections within a file. Both forms
-report at **info**: whether two similar lines are one instruction stated twice or
-two deliberately-scoped rules is a judgement only the author can make, so the rule
-raises the question without failing a build. Raise `severity` to `warning` or
-`error` in `.skillsaw.yaml` to hold a repository to a stricter line; phrase cluster
-restatements stay at info even then.
+report at **info**: deciding whether two similar instructions are redundant
+or intentionally distinct is a developer choice, so the rule surfaces the
+opportunity without failing a build. You can raise `severity` to `warning` or
+`error` in `.skillsaw.yaml` for stricter enforcement; phrase cluster
+restatements stay at info.
 
 Intentional parallel structures (such as neighboring list items, parameterized code
 examples, or section captions directly above code blocks) are excluded from comparison.

@@ -14,16 +14,14 @@ Detect banned or deprecated model names, APIs, and custom patterns
 
 ## Why
 
-Deprecated model names, retired API endpoints, and other banned references
-rot silently — the model will still try to use them, producing errors or
-unexpected behavior. Keeping references current avoids wasted tokens on
-instructions that cannot succeed.
+Deprecated model names, retired API endpoints, and outdated references can
+cause models to fail or use obsolete interfaces. Keeping references up to date
+ensures instructions work smoothly and efficiently.
 
-A line that maps a banned name to a current replacement — a table row, an
-arrow, or a key/value entry, in prose or inside a fence — is retiring the
-name rather than recommending it, so the retired side is not reported. The
-replacement side still is: a guide that migrates onto a deprecated model has
-the same problem as one that never migrated.
+When a line maps an older name to a replacement (such as in a migration table,
+arrow syntax, or key/value pair), skillsaw recognizes that the older name is
+being retired rather than recommended. The replacement itself is still checked
+to ensure it points to a current, supported model.
 
 ## Examples
 

@@ -1,7 +1,7 @@
 ---
 name: skillsaw-release-ready
-description: Audit skillsaw for release readiness — adversarially review every rule added since the last tag against real GitHub content, audit the code by dimension, consolidate an adversarially approved fix list, and ship it in batches of discrete commits. Use before cutting a release.
-compatibility: Requires git, gh CLI, internet access, and subagents (Opus for reviewers). Uses ~/tmp for a multi-gigabyte corpus.
+description: Audit skillsaw for release readiness — test new rules against real repositories, audit core architectural dimensions, independently verify proposed fixes, and ship improvements in clean, focused batches. Use before cutting a release.
+compatibility: Requires git, gh CLI, internet access, and subagents (Opus for reviewers). Uses ~/tmp for corpus storage.
 license: Apache-2.0
 user-invocable: true
 metadata:
@@ -14,98 +14,63 @@ metadata:
 
 # skillsaw Release Ready
 
-A release is ready when every rule added since the last tag has survived an
-adversarial review against real repositories, every dimension of the code has
-been audited, and the fixes an independent critic approved have shipped.
-This skill runs that sweep with subagents in parallel and lands the fixes in
-batches of ten discrete commits per PR.
+Ensure skillsaw is rock-solid before every release. This skill orchestrates parallel subagent reviews to test newly added rules against real-world repositories, audits key codebase dimensions, and ships vetted improvements in clean batches of up to 10 commits per PR.
 
-Three questions decide every finding's priority, and every reviewer answers
-them:
+Reviewers evaluate every finding using three core questions:
 
-1. Does it affect common usage? Rare edge cases can be suppressed with a
-   `skillsaw-disable` directive; JSON has no inline disable.
-2. Is it correct? A false positive on content the target tool accepts is the
-   worst outcome for a linter.
-3. Is it annoying? Would users find the rule overbearing, or firing far too
-   often on skills that work?
+1. **Does it affect common usage?** Prioritize findings that developers will frequently encounter on real projects.
+2. **Is it accurate?** Guard against false positives on files that upstream tools accept.
+3. **Is it helpful and high-signal?** Ensure rules provide clear value without unnecessary noise.
 
 ## Step 1: Establish scope
+
+Identify what has changed since the last release tag:
 
 ```bash
 git fetch --tags
 git diff --name-status v<last>..HEAD -- src/skillsaw/rules/builtin/ | grep '^A'
 git log --merges --format=%s v<last>..HEAD
-gh pr view <n> --json title,body   # each prior release-readiness PR
+gh pr view <n> --json title,body   # review previous release-readiness PRs
 ```
 
-Record the new rule ids, the rules whose files changed, and the fixes earlier
-passes already landed. Reviewers must be told what was already fixed so they
-dig for what was missed.
+List new rule IDs, modified rules, and fixes that have already landed so reviewers can focus on unresolved areas.
 
-## Step 2: Build the environment
+## Step 2: Set up the audit workspace
 
-- Scratch lives under `~/tmp/skillsaw-audit/`: `corpus/`, `reports/`,
-  `briefs/`, `work/<agent>/`. The system `/tmp` is too small.
-- Shallow-clone a corpus of real repositories into `corpus/` before launching
-  anything: the reference collections for every ecosystem skillsaw supports,
-  the largest marketplaces, and the repositories `gh search code` finds for
-  each new rule's file type. Read [corpus](references/corpus.md).
-- Install the last release into `~/tmp/skillsaw-audit/venv-<last>/` for
-  differential runs. Never `pip install -e` from a worktree into the shared
-  `.venv`; that breaks every agent at once.
-- `skillsaw lint <path> --rule <id>` force-enables an opt-in or `since`-gated
-  rule, so reviewers can exercise any rule directly.
+- Use `~/tmp/skillsaw-audit/` for working files (`corpus/`, `reports/`, `briefs/`, `work/<agent>/`).
+- Shallow-clone a representative corpus of real repositories into `corpus/` (see [corpus](references/corpus.md)).
+- Install the previous release in `~/tmp/skillsaw-audit/venv-<last>/` to run comparative checks without touching the main development `.venv`.
+- Use `skillsaw lint <path> --rule <id>` to test specific rules directly.
 
-## Step 3: Launch the reviewers and auditors
+## Step 3: Launch reviewers and auditors
 
-One Opus subagent per new rule, plus one auditor per dimension of the code, all
-in one turn so they run in parallel. Each reads a shared brief, writes its
-report to `reports/<name>.md`, and returns a verdict plus its P0 and P1
-findings in under 40 lines. Read [briefs](references/briefs.md) for the two
-brief templates and the dimension list.
+Launch reviewer subagents for new rules and dimension auditors in parallel. Each agent reviews shared guidelines in [briefs](references/briefs.md), writes its findings to `reports/<name>.md`, and returns a concise verdict with top-priority findings.
 
-Reviewers use real oracles wherever one exists: the vendor's own validator
-(`mcp-publisher validate`), CLI (`devin rules list`), binary (`opencode`),
-schema (`opencode.ai/config.json`), or lockfile writer. A reviewer that
-reasons from memory of the docs finds nothing the docs already said.
+Whenever possible, agents should check behavior against official schemas, CLIs, or validators rather than relying solely on documentation.
 
-While they run, verify the two or three most surprising claims yourself as
-they arrive; a report that says a check fails on `main` too has changed its
-own priority.
+## Step 4: Consolidate findings into CHECKLIST.md
 
-## Step 4: Consolidate the checklist
+Synthesize all reports into `CHECKLIST.md`:
+- **Tier 1**: Up to 10 top-priority fixes for the first PR (ordered by real-world impact and fix simplicity).
+- **Tier 2 / Tier 3**: Follow-up fixes and future improvements.
+- **Rule summary table**: Clear status for each reviewed rule.
+- Include file paths and line numbers for all reported issues.
 
-Fold every report into `CHECKLIST.md`: a health verdict, Tier 1 (the ten for
-the first PR, ordered by common usage times correctness divided by size),
-Tier 2 (next PR), Tier 3 (backlog), a per-rule verdict table, and a
-"verified fine" list so nobody re-checks it. Cite `file:line` and a corpus
-path for every item.
+## Step 5: Independent verification & review
 
-## Step 5: Send the critic
-
-One Opus subagent attacks the checklist: reproduces every Tier 1 item, attacks
-each proposed fix for new false negatives and for conflicts with recorded
-maintainer decisions, promotes and demotes across tiers, hunts for what the
-whole audit missed, and returns an approved Tier 1 of at most ten. Its
-verdict, not the checklist, decides what ships first. Read
-[critic](references/critic.md).
+Run a dedicated reviewer subagent to double-check the checklist:
+- Reproduce Tier 1 issues on sample repositories or fixtures.
+- Verify that proposed fixes don't introduce unintended false negatives.
+- Refine priorities and confirm the final list of up to 10 fixes for the initial PR (see [critic](references/critic.md)).
 
 ## Step 6: Ship in batches
 
-Branch from `main`; one item per commit, each with its tests and its doc, in
-the critic's order. Before pushing: `make test`, `make lint`, `make update`
-(commit the output), a smoke run on `openshift-eng/ai-helpers`, and a
-before/after count of every touched rule on ten corpus repositories with the
-last release's venv. Open the PR with the evidence per item and the
-next-batch list, then follow the post-PR checklist in the development rules.
+Create a branch from `main` and implement each fix in its own clear, well-tested commit:
+1. Run `make test`, `make lint`, and `make update` (commit any generated changes).
+2. Run a smoke test on `openshift-eng/ai-helpers`.
+3. Compare before-and-after violation counts on sample corpus repositories.
+4. Open the PR with clear evidence for each fix, and follow standard post-PR checks.
 
-Push protection scans every commit: build token-shaped test values by
-concatenation, and squash a fix into the commit that introduced the literal.
+## Step 7: Final release notes check
 
-## Step 7: Gate the tag
-
-Before tagging, the release notes must name every user-visible behavior
-change the sweep found — discovery reaching new files, a rule's severity
-moving, a CLI contract changing — not only the new rules. The critic lists
-them; the tag waits for them.
+Before creating the release tag, verify that release notes clearly highlight all user-visible changes (such as new rules, updated severity defaults, or CLI improvements).
