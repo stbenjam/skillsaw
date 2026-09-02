@@ -745,6 +745,39 @@ class TestUnreferencedSkillFiles:
 
         assert by_rule(run_lint(repo)).get(self.RULE, []) == []
 
+    def test_directory_loaded_across_lines(self, tmp_path):
+        """A formatter may break `os.listdir(` and its argument across lines."""
+        repo = tmp_path / "wrapped-load"
+        skill = repo / ".claude" / "skills" / "ledger"
+        (skill / "data").mkdir(parents=True)
+        (skill / "scripts").mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: ledger\ndescription: Reconcile ledgers. Use when asked to reconcile.\n---\n"
+            "Run `scripts/load.py` first.\n"
+        )
+        (skill / "scripts" / "load.py").write_text(
+            'import os\n\nFIXTURES = sorted(\n    os.listdir(\n        "data"\n    )\n)\n'
+        )
+        (skill / "data" / "one.csv").write_text("account,balance\n")
+
+        assert by_rule(run_lint(repo)).get(self.RULE, []) == []
+
+    def test_lowercase_readme_is_read(self, tmp_path):
+        """A `readme.md` is excused as documentation, so what it links counts."""
+        repo = tmp_path / "lowercase-readme"
+        skill = repo / ".claude" / "skills" / "ledger"
+        (skill / "assets").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: ledger\ndescription: Reconcile ledgers. Use when asked to reconcile.\n---\n"
+            "Body.\n"
+        )
+        (skill / "readme.md").write_text(
+            "# Ledger\n\nStart from [the template](assets/template.csv).\n"
+        )
+        (skill / "assets" / "template.csv").write_text("account,balance\n")
+
+        assert by_rule(run_lint(repo)).get(self.RULE, []) == []
+
     def test_transitive_reference_counts(self, tmp_path):
         """SKILL.md links references/guide.md, which mentions release-weeks.md."""
         repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
@@ -1079,6 +1112,19 @@ class TestUnreferencedDirectoryCollapse:
         r = run_lint(repo)
         assert [v["file_path"] for v in self._found(r)] == ["quarterly-report/snapshots"]
         assert "8 stale" in r["stderr"]
+
+    def test_shrinking_a_baselined_pile_below_the_threshold_stays_quiet(self, tmp_path):
+        """Deleting dead files is an improvement: the per-file findings that
+        reappear under the threshold stay covered by the directory's
+        baselined ceiling, and nothing reads as stale."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert run_baseline(repo)["rc"] == 0
+        for name in ("ledger-2024-q1.csv", "ledger-2024-q2.csv", "ledger-2024-q3.csv"):
+            (repo / "quarterly-report" / "snapshots" / name).unlink()
+
+        r = run_lint(repo)
+        assert self._found(r) == []
+        assert "stale" not in r["stderr"]
 
     def test_threshold_is_configurable(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)

@@ -317,6 +317,35 @@ def _consume_constituents(
     return True
 
 
+def _consume_whole(
+    violation: RuleViolation,
+    ratchet_entries: Dict[str, BaselineEntry],
+    consumed_ratchet: set,
+    whole_counts: Counter,
+    root_path: Path,
+    file_cache: Dict[Path, Optional[List[str]]],
+) -> bool:
+    """Whether a baselined whole still covers this part.
+
+    The dual of ``_consume_constituents``: a pile baselined as one ratchet
+    entry shrinks below the count at which the rule consolidates, and the
+    per-file findings that reappear name the whole they would fold into.
+    They stay suppressed while their number holds under the baselined
+    value, and the entry reads as consumed rather than stale until the
+    next ``skillsaw baseline`` records them one by one.
+    """
+    whole = violation.consolidated_into
+    if whole is None:
+        return False
+    fp = fingerprint_violation(whole, root_path, _file_cache=file_cache)
+    entry = ratchet_entries.get(fp)
+    if entry is None:
+        return False
+    consumed_ratchet.add(fp)
+    whole_counts[fp] += 1
+    return not _is_worse(float(whole_counts[fp]), entry.value, entry.baseline_mode)
+
+
 def filter_baselined_violations(
     violations: List[RuleViolation],
     baseline: BaselineFile,
@@ -345,6 +374,7 @@ def filter_baselined_violations(
     file_cache: Dict[Path, Optional[List[str]]] = {}
     kept: List[RuleViolation] = []
     consumed_ratchet: set = set()
+    whole_counts: Counter = Counter()
 
     from .rules.builtin import rule_aliases
 
@@ -375,8 +405,13 @@ def filter_baselined_violations(
                 regular_budget[fp] -= 1
                 break
         else:
-            if not _consume_constituents(v, regular_budget, fingerprint_root, file_cache):
-                kept.append(v)
+            if _consume_constituents(v, regular_budget, fingerprint_root, file_cache):
+                continue
+            if _consume_whole(
+                v, ratchet_entries, consumed_ratchet, whole_counts, fingerprint_root, file_cache
+            ):
+                continue
+            kept.append(v)
 
     # Stale entries: unconsumed regular + unconsumed ratchet.
     remaining = dict(regular_budget)

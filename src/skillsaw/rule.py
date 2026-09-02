@@ -82,6 +82,11 @@ class RuleViolation:
     # the rule consolidated lists the parts; the whole stays baselined while
     # every part still is.
     constituents: Tuple["RuleViolation", ...] = field(default=(), repr=False, compare=False)
+    # The whole this finding would fold into when the rule consolidates:
+    # the dual of ``constituents``. A pile baselined as one finding may
+    # shrink until the rule reports its files one by one; those stay
+    # baselined under the whole's ceiling.
+    consolidated_into: Optional["RuleViolation"] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         if self.block is None and self.file_path is not None:
@@ -386,6 +391,7 @@ class Rule(ABC):
         fix_confidence: Optional[AutofixConfidence] = None,
         fingerprint_discriminator: Optional[str] = None,
         constituents: Tuple[RuleViolation, ...] = (),
+        consolidated_into: Optional[RuleViolation] = None,
     ) -> RuleViolation:
         """Create a violation for this rule.
 
@@ -395,7 +401,9 @@ class Rule(ABC):
         ``fingerprint_discriminator`` disambiguates sibling findings at the
         same path and line without changing identities for other rules.
         ``constituents`` are the findings a consolidated one stands in for,
-        so a baseline that lists them keeps suppressing the whole.
+        so a baseline that lists them keeps suppressing the whole;
+        ``consolidated_into`` is the whole a part would fold into, so a
+        baseline that lists the whole keeps suppressing the parts.
 
         ``fixable`` defaults from the rule: True when the rule overrides
         ``fix()`` and declares a class-level ``autofix_confidence``.  Rules
@@ -423,4 +431,5 @@ class Rule(ABC):
             fix_confidence=fix_confidence,
             fingerprint_discriminator=fingerprint_discriminator,
             constituents=constituents,
+            consolidated_into=consolidated_into,
         )

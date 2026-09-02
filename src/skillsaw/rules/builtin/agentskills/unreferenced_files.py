@@ -262,6 +262,11 @@ def _is_notice_file(lowered_name: str) -> bool:
     return False
 
 
+def _is_readme(name_lower: str) -> bool:
+    """Whether a (lowered) file name is a README in any extension."""
+    return (name_lower.rpartition(".")[0] or name_lower) == "readme"
+
+
 def _ends_with_call(text_lower: str, end: int) -> bool:
     """Whether ``text_lower[:end]`` ends with a directory-loading call name
     at an identifier boundary: ``os.listdir(`` and ``glob(`` count,
@@ -276,11 +281,12 @@ def _ends_with_call(text_lower: str, end: int) -> bool:
 
 
 class AgentSkillUnreferencedFilesRule(Rule):
+    """Detect bundled skill files that SKILL.md never references"""
+
     # Only the collapsed directory finding carries a value: its fingerprint is
     # then rule + directory + metric, stable while files enter and leave the
     # pile, and the baseline resurfaces it only when the pile grows.
     baseline_mode = "ceiling"
-    """Detect bundled skill files that SKILL.md never references"""
 
     repo_types = SKILL_REPO_TYPES
     since = "0.15.0"
@@ -367,9 +373,14 @@ class AgentSkillUnreferencedFilesRule(Rule):
             # it references suppresses findings about the skill's own
             # files. A symlink out of the owning Codex plugin would let an
             # arbitrary external document decide what this rule reports.
-            readme = contained_skill_file(context, skill_path, "README.md")
-            if readme is not None:
-                roots.append(readme)
+            # Every spelling the exclusion excuses (`readme.md`, `README.rst`)
+            # is read: a lowercase README's links must count, or the file is
+            # excused while what it references is reported.
+            for candidate in all_files:
+                if candidate.parent == skill_path and _is_readme(candidate.name.lower()):
+                    readme = contained_skill_file(context, skill_path, candidate.name)
+                    if readme is not None:
+                        roots.append(readme)
             openai_metadata = contained_skill_file(context, skill_path, "agents", "openai.yaml")
             if openai_metadata is not None and not context.is_path_excluded(openai_metadata):
                 roots.append(openai_metadata)
@@ -430,10 +441,16 @@ class AgentSkillUnreferencedFilesRule(Rule):
 
         violations: List[RuleViolation] = []
         reported: Set[str] = set()
+        wholes: Dict[str, RuleViolation] = {}
         for rel, file_path in unreferenced:
             rel_dir = rel.rpartition("/")[0]
             if rel_dir not in collapsed:
-                violations.append(self._file_violation(rel, file_path))
+                whole = None
+                if rel_dir:
+                    whole = wholes.get(rel_dir)
+                    if whole is None:
+                        whole = wholes[rel_dir] = self._directory_identity(skill_path, rel_dir)
+                violations.append(self._file_violation(rel, file_path, whole))
                 continue
             if rel_dir in reported:
                 continue
@@ -441,12 +458,31 @@ class AgentSkillUnreferencedFilesRule(Rule):
             violations.append(self._directory_violation(skill_path, rel_dir, by_dir[rel_dir]))
         return violations
 
-    def _file_violation(self, rel: str, file_path: Path) -> RuleViolation:
+    def _file_violation(
+        self, rel: str, file_path: Path, consolidated_into: Optional[RuleViolation] = None
+    ) -> RuleViolation:
         return self.violation(
             f"'{rel}' is never referenced from SKILL.md (directly or "
             "transitively) — unreferenced files are dead weight and "
             "can hide unreviewed behavior",
             file_path=file_path,
+            # A pile baselined as one finding may shrink below the collapse
+            # threshold; the per-file findings then name the whole they
+            # would fold into, and stay baselined under its ceiling.
+            consolidated_into=consolidated_into,
+        )
+
+    def _directory_identity(self, skill_path: Path, rel_dir: str) -> RuleViolation:
+        """The collapsed finding for *rel_dir*, as a baseline identity only.
+
+        Same rule, directory, and metric as ``_directory_violation``, so
+        the fingerprint is the one a baseline recorded for the pile.
+        """
+        return self.violation(
+            f"unreferenced files under '{rel_dir}/'",
+            file_path=skill_path / rel_dir,
+            value=0.0,
+            metric="unreferenced-directory",
         )
 
     def _directory_violation(
@@ -519,7 +555,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
         lowered = name.lower()
         if _is_notice_file(lowered):
             return True
-        if (lowered.rpartition(".")[0] or lowered) in ("readme", "changelog"):
+        if _is_readme(lowered) or (lowered.rpartition(".")[0] or lowered) == "changelog":
             return True
         rel_lower = rel.lower()
         if rel_lower.startswith(("evals/", "tests/")):
@@ -948,7 +984,9 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 and text_lower[end] in _QUOTES
             ):
                 before = start - 2
-                while before >= 0 and text_lower[before] in " \t":
+                # A formatter may break the call or the join across lines:
+                # ``os.listdir(\n    "data"\n)`` loads the directory too.
+                while before >= 0 and text_lower[before] in " \t\r\n":
                     before -= 1
                 if before >= 0:
                     if text_lower[before] == "/":
