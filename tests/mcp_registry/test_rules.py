@@ -1575,6 +1575,30 @@ class TestMcpRegistryNpmNameRule:
         member.write_text(json.dumps(data), encoding="utf-8")
         assert _for_rule(lint_rules(declared, NPM_NAME_RULE), NPM_NAME_RULE) == []
 
+    def test_workspace_globs_use_npm_path_semantics(self, tmp_path):
+        """`packages/*` names `packages/foo`, not `packages/foo/examples/demo`:
+        npm expands workspaces with a path-aware glob, where `*` never
+        crosses `/`. Only `**` spans directories."""
+        from skillsaw.rules.builtin.mcp_registry.npm_name_match import _workspace_glob_regex
+
+        star = _workspace_glob_regex("packages/*")
+        assert star.fullmatch("packages/foo")
+        assert star.fullmatch("packages/foo/examples/demo") is None
+        double = _workspace_glob_regex("packages/**")
+        assert double.fullmatch("packages/foo/examples/demo")
+        assert _workspace_glob_regex("apps/*/server").fullmatch("apps/web/server")
+        assert _workspace_glob_regex("apps/?").fullmatch("apps/a/b") is None
+
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps({"name": "@example/weather-mcp", "version": "1.2.3", "workspaces": ["*"]}),
+            encoding="utf-8",
+        )
+        # The only coordinate match sits two levels down; `*` does not reach
+        # it, so the container stays the nearest package and is checked.
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+        assert [finding.file_path for finding in findings] == [repo / "package.json"]
+
     def test_workspace_member_must_corroborate_the_server_repository(self, tmp_path):
         """A member with the published coordinates but another repository URL
         is someone else's package; ownership stays unresolved and the rule

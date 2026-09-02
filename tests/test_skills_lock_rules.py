@@ -554,6 +554,26 @@ def test_missing_computed_hash_is_a_warning(tmp_path: Path) -> None:
     assert [(v.severity, "computedHash" in v.message) for v in found] == [(Severity.WARNING, True)]
 
 
+@pytest.mark.parametrize("value", [42, {"sha256": "abc"}, ["abc"], True])
+def test_wrong_typed_computed_hash_is_still_an_error(tmp_path: Path, value: object) -> None:
+    """Absent is a warning; present with the wrong type is malformed."""
+    repo = tmp_path / "repo"
+    (repo / ".agents" / "skills" / "typed").mkdir(parents=True)
+    (repo / ".agents" / "skills" / "typed" / "SKILL.md").write_text(
+        "---\nname: typed\ndescription: Typed. Use when asked.\n---\nBody.\n"
+    )
+    _write_lock(
+        repo / "skills-lock.json",
+        {"version": 1, "skills": {"typed": _entry(computedHash=value)}},
+    )
+
+    found = SkillsLockValidRule().check(RepositoryContext(repo))
+
+    assert [(v.severity, v.message) for v in found] == [
+        (Severity.ERROR, "Skill 'typed' field 'computedHash' must be a string")
+    ]
+
+
 def test_self_installed_skill_is_the_repository_s_own_content(tmp_path: Path) -> None:
     """A repository that publishes a skill and installs it from its own GitHub
     coordinates records itself as the source. That entry describes authored

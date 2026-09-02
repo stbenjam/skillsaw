@@ -30,6 +30,15 @@ _DEFERRAL_RE = re.compile(
     r"single (?:source|place)|pointer|not a (?:second )?copy|instead)\b",
     re.IGNORECASE,
 )
+#: "Do not use CLAUDE.md; follow the instructions here" rejects CLAUDE.md
+#: with the same verb a deferral uses. "This file is a pointer, not a second
+#: copy" is the one negation that is itself a deferral, so it is removed
+#: before the negation check.
+_NEGATION_RE = re.compile(
+    r"\b(?:not|never|don'?t|no longer|instead of|rather than|ignore|avoid)\b",
+    re.IGNORECASE,
+)
+_NOT_A_COPY_RE = re.compile(r"\bnot a (?:second )?(?:copy|duplicate)\b", re.IGNORECASE)
 
 
 @dataclass
@@ -253,7 +262,12 @@ class ClaudeMdAgentsImportRule(Rule):
         lines = [line for line in body.splitlines() if line.strip()]
         if len(lines) > self._POINTER_MAX_PROSE_LINES:
             return False
-        return any("CLAUDE.md" in line and _DEFERRAL_RE.search(line) for line in lines)
+        return any(
+            "CLAUDE.md" in line
+            and _DEFERRAL_RE.search(line)
+            and not _NEGATION_RE.search(_NOT_A_COPY_RE.sub("", line))
+            for line in lines
+        )
 
     # -- check -----------------------------------------------------------
 

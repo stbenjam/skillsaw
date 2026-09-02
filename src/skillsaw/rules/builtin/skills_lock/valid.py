@@ -186,7 +186,7 @@ class SkillsLockValidRule(Rule):
         # A hand-maintained or older lockfile that omits it still works, so
         # the omission is a warning — a malformed digest stays an error below.
         computed_hash = entry.get("computedHash")
-        if not isinstance(computed_hash, str) or not computed_hash.strip():
+        if computed_hash is None or (isinstance(computed_hash, str) and not computed_hash.strip()):
             violations.append(
                 self.violation(
                     f"Skill '{shown_name}' has no 'computedHash'; `npx skills` cannot "
@@ -194,6 +194,16 @@ class SkillsLockValidRule(Rule):
                     file_path=path,
                     severity=Severity.WARNING,
                     fingerprint_discriminator=f"{discriminator}:computedHash-required",
+                )
+            )
+        elif not isinstance(computed_hash, str):
+            # Present but the wrong type is a malformed entry, not an absent
+            # digest: the CLI never writes a number or an object here.
+            violations.append(
+                self.violation(
+                    f"Skill '{shown_name}' field 'computedHash' must be a string",
+                    file_path=path,
+                    fingerprint_discriminator=f"{discriminator}:computedHash-format",
                 )
             )
 

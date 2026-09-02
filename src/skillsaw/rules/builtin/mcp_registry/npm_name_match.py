@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fnmatch
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,6 +69,30 @@ class _PackageCandidates:
                     by_coordinate.setdefault((name, package_version), []).append(manifest)
             self._by_coordinate = by_coordinate
         return self._by_coordinate.get((identifier, version), [])
+
+
+def _workspace_glob_regex(pattern: str) -> "re.Pattern[str]":
+    """Translate one npm workspace glob to a regex over a posix directory path."""
+    parts: List[str] = []
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if pattern.startswith("**", index):
+            index += 2
+            if pattern.startswith("/", index):
+                index += 1
+                parts.append("(?:.*/)?")
+            else:
+                parts.append(".*")
+            continue
+        if char == "*":
+            parts.append("[^/]*")
+        elif char == "?":
+            parts.append("[^/]")
+        else:
+            parts.append(re.escape(char))
+        index += 1
+    return re.compile("".join(parts))
 
 
 class McpRegistryNpmNameMatchRule(Rule):
@@ -305,13 +328,19 @@ class McpRegistryNpmNameMatchRule(Rule):
             # Only a directory the container actually declares is a member:
             # `workspaces: ["packages/*"]` does not make `examples/foo` one.
             member_dir = manifest_path.parent.relative_to(container_dir).as_posix()
-            if any(fnmatch.fnmatchcase(member_dir, pattern) for pattern in patterns):
+            if any(pattern.fullmatch(member_dir) for pattern in patterns):
                 members.append(manifest)
         return members[0] if len(members) == 1 else None
 
     @staticmethod
-    def _workspace_patterns(container: McpRegistryNpmPackageBlock) -> List[str]:
-        """The directory globs a ``workspaces`` field declares, in either shape."""
+    def _workspace_patterns(container: McpRegistryNpmPackageBlock) -> List["re.Pattern[str]"]:
+        """The directory globs a ``workspaces`` field declares, in either shape.
+
+        Compiled with npm's path-aware semantics (`@npmcli/map-workspaces`
+        expands them with `glob`): `*` and `?` never cross a `/`, and only
+        `**` spans directories — `packages/*` names `packages/foo`, not
+        `packages/foo/examples/demo`. `fnmatch` would let `*` cross `/`.
+        """
         data = container.raw_data
         value = data.get("workspaces") if isinstance(data, dict) else None
         if isinstance(value, dict):
@@ -319,7 +348,7 @@ class McpRegistryNpmNameMatchRule(Rule):
         if not isinstance(value, list):
             return []
         return [
-            pattern.strip().rstrip("/")
+            _workspace_glob_regex(pattern.strip().strip("/"))
             for pattern in value
             if isinstance(pattern, str) and pattern.strip()
         ]

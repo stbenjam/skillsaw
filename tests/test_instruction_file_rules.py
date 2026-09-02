@@ -750,6 +750,19 @@ class TestClaudeMdAgentsImportRule:
         )
         assert len(self._check(temp_dir)) == 1
 
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "Do not use CLAUDE.md; follow the instructions here.",
+            "Never read CLAUDE.md, it is stale.",
+            "Ignore CLAUDE.md and see this file instead.",
+        ],
+    )
+    def test_negated_deferral_to_claude_md_is_still_reported(self, temp_dir, line):
+        (temp_dir / "CLAUDE.md").write_text(AGENTS_BODY)
+        (temp_dir / "AGENTS.md").write_text(f"# Agents\n\n{line}\n")
+        assert len(self._check(temp_dir)) == 1
+
     def test_long_agents_md_that_merely_mentions_claude_md_is_still_reported(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(AGENTS_BODY)
         (temp_dir / "AGENTS.md").write_text(
