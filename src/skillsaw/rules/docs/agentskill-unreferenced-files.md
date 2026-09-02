@@ -42,6 +42,22 @@ routinely ship self-tests and fixtures), hidden files or directories,
 and symlinks (which are also never followed). The `exclude` option adds
 glob patterns on top of these defaults.
 
+## One finding per directory full of dead files
+
+More than `collapse_directory_threshold` (default 5) unreferenced files
+in one directory report as a single finding that names the directory
+and samples its contents:
+
+```
+⚠ [my-skill/data]: 12 unreferenced files under 'data/' (a.json, b.json,
+  c.json, and 9 more) — dead weight that can hide unreviewed behavior;
+  reference the directory from SKILL.md, or exclude it
+```
+
+A vendored schema tree is one decision for the author, not twelve, and
+one finding per file buries every other finding in the run. Set the
+option to `0` to report every file individually.
+
 ## Examples
 
 **Bad:**
@@ -90,3 +106,7 @@ rules:
     exclude:
       - "assets/fonts/*"
 ```
+
+A finding that names a directory rather than a file is asking the same
+question about the whole directory: reference it, delete it, or exclude
+it.

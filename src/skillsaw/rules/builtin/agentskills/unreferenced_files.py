@@ -103,6 +103,12 @@ followed). The ``exclude`` config option adds glob patterns on top of
 A skill-root README.md and OpenAI ``agents/openai.yaml`` additionally count
 as reference roots alongside SKILL.md: human-facing documentation and host
 metadata are both legitimate entrypoints into the package.
+
+A directory holding more than ``collapse_directory_threshold`` (default
+5) unreferenced files is reported once, naming the directory and a
+sample of its files, rather than once per file: a vendored schema tree
+or a generated data directory is one decision for the author, and one
+finding per file buries every other finding in the run.
 """
 
 import ast
@@ -196,6 +202,14 @@ _IMPORT_LINE_RE = re.compile(
 # simply yields no resolvable imports.
 _PY_FENCE_INFOS = {"", "python", "py", "python3"}
 
+# Above this many unreferenced files in one directory, the finding names the
+# directory instead of every file in it.  A vendored schema tree is one
+# decision for the author; one finding per file buries the rest of the run.
+_DEFAULT_COLLAPSE_THRESHOLD = 5
+
+# Files named in a collapsed directory finding before it says "and N more".
+_COLLAPSE_SAMPLE = 3
+
 # AST fields containing statement lists. Because import statements only appear
 # at statement level, walking only these containers reaches all imports while
 # avoiding traversal of expression subtrees.
@@ -248,6 +262,15 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 "testdata/, hidden files)"
             ),
         },
+        "collapse_directory_threshold": {
+            "type": "int",
+            "default": _DEFAULT_COLLAPSE_THRESHOLD,
+            "description": (
+                "Report one finding naming the directory when it holds more "
+                "than this many unreferenced files, instead of one finding "
+                "per file; 0 reports every file individually"
+            ),
+        },
     }
 
     @property
@@ -271,6 +294,9 @@ class AgentSkillUnreferencedFilesRule(Rule):
         # question about the same directories), so they are built once.
         self._dir_needle_cache: Dict[str, Tuple[Tuple[str, str, str], ...]] = {}
         directory_covers = self.setting("directory_mention_covers")
+        collapse_threshold = self.setting("collapse_directory_threshold")
+        if not isinstance(collapse_threshold, int) or isinstance(collapse_threshold, bool):
+            collapse_threshold = _DEFAULT_COLLAPSE_THRESHOLD
         exclude_patterns = self.setting("exclude")
         if not isinstance(exclude_patterns, list) or not all(
             isinstance(pattern, str) for pattern in exclude_patterns
@@ -307,12 +333,47 @@ class AgentSkillUnreferencedFilesRule(Rule):
             )
 
             skill_resolved = safe_resolve(skill_path) or skill_path
+            unreferenced: List[Tuple[str, Path]] = []
             for file_path in all_files:
                 if file_path in referenced:
                     continue
                 rel = (safe_resolve(file_path) or file_path).relative_to(skill_resolved).as_posix()
                 if self._is_excluded(rel, file_path.name, exclude_variants):
                     continue
+                unreferenced.append((rel, file_path))
+
+            violations.extend(self._report(skill_path, unreferenced, collapse_threshold))
+
+        return violations
+
+    # -- reporting -----------------------------------------------------------
+
+    def _report(
+        self,
+        skill_path: Path,
+        unreferenced: List[Tuple[str, Path]],
+        collapse_threshold: int,
+    ) -> List[RuleViolation]:
+        """One finding per dead file, or one per directory full of them.
+
+        A directory holding more than *collapse_threshold* unreferenced
+        files collapses to a single finding at the position of its first
+        file, so the surrounding findings keep their order.
+        """
+        by_dir: Dict[str, List[Tuple[str, Path]]] = {}
+        for rel, file_path in unreferenced:
+            by_dir.setdefault(rel.rpartition("/")[0], []).append((rel, file_path))
+        collapsed = (
+            {rel_dir for rel_dir, group in by_dir.items() if len(group) > collapse_threshold}
+            if collapse_threshold > 0
+            else set()
+        )
+
+        violations: List[RuleViolation] = []
+        reported: Set[str] = set()
+        for rel, file_path in unreferenced:
+            rel_dir = rel.rpartition("/")[0]
+            if rel_dir not in collapsed:
                 violations.append(
                     self.violation(
                         f"'{rel}' is never referenced from SKILL.md (directly or "
@@ -321,8 +382,31 @@ class AgentSkillUnreferencedFilesRule(Rule):
                         file_path=file_path,
                     )
                 )
-
+                continue
+            if rel_dir in reported:
+                continue
+            reported.add(rel_dir)
+            violations.append(self._directory_violation(skill_path, rel_dir, by_dir[rel_dir]))
         return violations
+
+    def _directory_violation(
+        self, skill_path: Path, rel_dir: str, group: List[Tuple[str, Path]]
+    ) -> RuleViolation:
+        names = sorted(file_path.name for _, file_path in group)
+        sample = ", ".join(names[:_COLLAPSE_SAMPLE])
+        if len(names) > _COLLAPSE_SAMPLE:
+            sample += f", and {len(names) - _COLLAPSE_SAMPLE} more"
+        label = f"{rel_dir}/" if rel_dir else "./"
+        return self.violation(
+            f"{len(names)} unreferenced files under '{label}' ({sample}) — dead "
+            "weight that can hide unreviewed behavior; reference the directory "
+            "from SKILL.md, or exclude it",
+            file_path=skill_path / rel_dir if rel_dir else skill_path,
+            # Stable across the directory's contents changing, so a
+            # baselined pile of dead files does not resurface every time
+            # one more lands in it.
+            fingerprint_discriminator=f"directory:{rel_dir or '.'}",
+        )
 
     # -- discovery -----------------------------------------------------------
 

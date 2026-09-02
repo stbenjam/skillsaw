@@ -884,6 +884,65 @@ class TestUnreferencedGlobLoadedDirectories:
         assert "ooxml-validator/license.txt" not in self._flagged(run_lint(repo))
 
 
+@pytest.mark.integration
+class TestUnreferencedDirectoryCollapse:
+    """A directory full of dead files reports once, naming the directory."""
+
+    RULE = "agentskill-unreferenced-files"
+    FIXTURE = "agentskills/unreferenced-directory-pile"
+
+    def _found(self, r):
+        return by_rule(r).get(self.RULE, [])
+
+    def test_pile_collapses_to_one_finding(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        collapsed = [v for v in self._found(run_lint(repo)) if v["file_path"].endswith("snapshots")]
+        assert len(collapsed) == 1
+        message = collapsed[0]["message"]
+        assert message.startswith("8 unreferenced files under 'snapshots/' (")
+        # Names a sample, then says how many it left out.
+        assert "ledger-2024-q1.csv, ledger-2024-q2.csv, ledger-2024-q3.csv, and 5 more" in message
+        # A directory has no line to point at.
+        assert collapsed[0]["line"] is None
+        assert collapsed[0]["severity"] == "warning"
+
+    def test_directory_below_threshold_stays_per_file(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        flagged = {v["file_path"] for v in self._found(run_lint(repo))}
+        assert flagged == {
+            "quarterly-report/snapshots",
+            "quarterly-report/notes/board-deck-order.md",
+            "quarterly-report/notes/pricing-changes.md",
+            "quarterly-report/notes/segment-definitions.md",
+        }
+
+    def test_threshold_is_configurable(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n    collapse_directory_threshold: 2\n"
+        )
+        flagged = {v["file_path"] for v in self._found(run_lint(repo, config=config))}
+        assert flagged == {"quarterly-report/snapshots", "quarterly-report/notes"}
+
+    def test_zero_threshold_reports_every_file(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n    collapse_directory_threshold: 0\n"
+        )
+        flagged = {v["file_path"] for v in self._found(run_lint(repo, config=config))}
+        assert len(flagged) == 11
+        assert "quarterly-report/snapshots/ledger-2024-q1.csv" in flagged
+        assert "quarterly-report/snapshots" not in flagged
+
+    def test_safe_autofix_fixture_is_unaffected(self, tmp_path):
+        """Collapsing must not disturb the SAFE-autofix idempotency fixture."""
+        repo = copy_fixture("autofix/safe-idempotency", tmp_path)
+        flagged = {v["file_path"] for v in self._found(run_lint(repo))}
+        assert flagged == {"skills/bad-name-alpha/references/usage.md"}
+
+
 # ── File Path Argument ──────────────────────────────────────────
 
 
