@@ -30,7 +30,7 @@ and plain prose:
 Path join operators and directory-reading calls indicate intentional directory loading; standalone words in configuration settings (like `"workload_manager": "slurm"`) do not match directories.
 
 Never flagged (all case-insensitive): SKILL.md itself, README and
-CHANGELOG in any extension, LICENSE* and NOTICE* files (such as
+CHANGELOG in any extension, `LICENSE*` and `NOTICE*` files (such as
 `LICENSE-MIT` or `license.txt`), test files and scaffolding (`evals/`,
 `tests/`, `test_*.py`, and `testdata/`), hidden files or directories,
 and symlinks. You can add more patterns using the `exclude` option.

@@ -885,6 +885,68 @@ class TestUnreferencedGlobLoadedDirectories:
 
 
 @pytest.mark.integration
+class TestUnreferencedExclusionsAreDocumentation:
+    """The built-in exclusions name documentation, not bundled code."""
+
+    RULE = "agentskill-unreferenced-files"
+
+    def _repo(self, tmp_path, files):
+        repo = tmp_path / "excl"
+        skill = repo / ".claude" / "skills" / "tool"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: tool\ndescription: A tool. Use when asked for the tool.\n---\n"
+            "Run `scripts/main.py`.\n"
+        )
+        (skill / "scripts").mkdir()
+        (skill / "scripts" / "main.py").write_text('print("hi")\n')
+        for rel, content in files.items():
+            path = skill / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        return repo
+
+    def _flagged(self, repo):
+        return {
+            v["file_path"].split("/tool/", 1)[1] for v in by_rule(run_lint(repo)).get(self.RULE, [])
+        }
+
+    def test_license_documents_are_excluded_but_license_code_is_not(self, tmp_path):
+        repo = self._repo(
+            tmp_path,
+            {
+                "license.txt": "MIT\n",
+                "LICENSE-APACHE": "Apache 2.0\n",
+                "NOTICE.md": "Third-party notices.\n",
+                "scripts/license_check.py": "import sys\n",
+                "scripts/notice_dispatch.py": "import sys\n",
+            },
+        )
+        assert self._flagged(repo) == {"scripts/license_check.py", "scripts/notice_dispatch.py"}
+
+    def test_test_scaffolding_exclusions_are_case_insensitive(self, tmp_path):
+        repo = self._repo(
+            tmp_path,
+            {
+                "Tests/Test_Helper.PY": "pass\n",
+                "TestData/sample.json": "{}\n",
+                "Evals/e.json": "{}\n",
+            },
+        )
+        assert self._flagged(repo) == set()
+
+    def test_a_helper_ending_in_a_loader_name_does_not_cover_a_directory(self, tmp_path):
+        repo = self._repo(
+            tmp_path,
+            {
+                "scripts/main.py": 'print(artifact_path("schemas"))\nprint(classpath("data"))\n',
+                "schemas/a.xsd": "<xs/>\n",
+                "data/b.json": "{}\n",
+            },
+        )
+        assert self._flagged(repo) == {"schemas/a.xsd", "data/b.json"}
+
+
 class TestUnreferencedDirectoryCollapse:
     """A directory full of dead files reports once, naming the directory."""
 
@@ -915,6 +977,49 @@ class TestUnreferencedDirectoryCollapse:
             "quarterly-report/notes/pricing-changes.md",
             "quarterly-report/notes/segment-definitions.md",
         }
+
+    def test_root_pile_stays_per_file(self, tmp_path):
+        """Files beside SKILL.md never collapse: "reference the directory" is
+        not a remedy the rule could accept for the skill root."""
+        repo = tmp_path / "root-pile"
+        skill = repo / ".claude" / "skills" / "flat"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: flat\ndescription: A flat skill. Use when asked to be flat.\n---\nBody.\n"
+        )
+        for index in range(8):
+            (skill / f"note-{index}.md").write_text(f"# Note {index}\n")
+
+        flagged = [v["file_path"] for v in self._found(run_lint(repo))]
+
+        assert len(flagged) == 8
+        assert all(path.endswith(".md") for path in flagged)
+
+    def test_collapsed_finding_fingerprint_survives_the_pile_changing(self, tmp_path):
+        """A baselined pile must not resurface because one more file landed
+        in it or a sampled name changed; the ratchet resurfaces it only when
+        the count grows past the baselined value."""
+        from skillsaw.baseline import fingerprint_violation
+        from skillsaw.context import RepositoryContext
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+        from skillsaw.utils import invalidate_read_caches
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        pile = repo / "quarterly-report" / "snapshots"
+
+        def collapsed():
+            found = AgentSkillUnreferencedFilesRule().check(RepositoryContext(repo))
+            return [v for v in found if v.file_path == pile]
+
+        before = collapsed()
+        assert [(v.value, v.metric) for v in before] == [(8.0, "unreferenced-directory")]
+        (pile / "ledger-2027-q1.csv").write_text("quarter,revenue\n")
+        invalidate_read_caches()
+        after = collapsed()
+        assert [v.value for v in after] == [9.0]
+        assert fingerprint_violation(before[0], repo) == fingerprint_violation(after[0], repo)
 
     def test_threshold_is_configurable(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)

@@ -234,7 +234,41 @@ def _iter_statements(tree: ast.Module) -> Iterable[ast.AST]:
                 stack.extend(children)
 
 
+_NOTICE_STEMS = ("license", "licence", "notice", "copying")
+_NOTICE_EXTENSIONS = ("", "txt", "md", "rst", "html")
+
+
+def _is_notice_file(lowered_name: str) -> bool:
+    """A license or notice document: LICENSE, LICENSE-MIT, licence.txt, NOTICE.
+
+    Documentation only — `license_check.py` is bundled code and stays in
+    scope for the rule. A hyphenated suffix (`LICENSE-APACHE`) is part of the
+    convention; an underscore or a code extension is not.
+    """
+    stem, _dot, extension = lowered_name.partition(".")
+    if extension not in _NOTICE_EXTENSIONS:
+        return False
+    return stem in _NOTICE_STEMS or stem.startswith(tuple(f"{s}-" for s in _NOTICE_STEMS))
+
+
+def _ends_with_call(text_lower: str, end: int) -> bool:
+    """Whether ``text_lower[:end]`` ends with a directory-loading call name
+    at an identifier boundary: ``os.listdir(`` and ``glob(`` count,
+    ``artifact_path(`` and ``classpath(`` do not."""
+    for call in _DIR_LOAD_CALLS:
+        if text_lower.endswith(call, 0, end):
+            start = end - len(call)
+            previous = text_lower[start - 1] if start > 0 else ""
+            if not (previous.isalnum() or previous == "_"):
+                return True
+    return False
+
+
 class AgentSkillUnreferencedFilesRule(Rule):
+    # Only the collapsed directory finding carries a value: its fingerprint is
+    # then rule + directory + metric, stable while files enter and leave the
+    # pile, and the baseline resurfaces it only when the pile grows.
+    baseline_mode = "ceiling"
     """Detect bundled skill files that SKILL.md never references"""
 
     repo_types = SKILL_REPO_TYPES
@@ -363,8 +397,14 @@ class AgentSkillUnreferencedFilesRule(Rule):
         by_dir: Dict[str, List[Tuple[str, Path]]] = {}
         for rel, file_path in unreferenced:
             by_dir.setdefault(rel.rpartition("/")[0], []).append((rel, file_path))
+        # The skill root never collapses: "reference the directory" is not a
+        # remedy for files beside SKILL.md, so those stay one finding each.
         collapsed = (
-            {rel_dir for rel_dir, group in by_dir.items() if len(group) > collapse_threshold}
+            {
+                rel_dir
+                for rel_dir, group in by_dir.items()
+                if rel_dir and len(group) > collapse_threshold
+            }
             if collapse_threshold > 0
             else set()
         )
@@ -396,16 +436,16 @@ class AgentSkillUnreferencedFilesRule(Rule):
         sample = ", ".join(names[:_COLLAPSE_SAMPLE])
         if len(names) > _COLLAPSE_SAMPLE:
             sample += f", and {len(names) - _COLLAPSE_SAMPLE} more"
-        label = f"{rel_dir}/" if rel_dir else "./"
         return self.violation(
-            f"{len(names)} unreferenced files under '{label}' ({sample}) — dead "
+            f"{len(names)} unreferenced files under '{rel_dir}/' ({sample}) — dead "
             "weight that can hide unreviewed behavior; reference the directory "
             "from SKILL.md, or exclude it",
-            file_path=skill_path / rel_dir if rel_dir else skill_path,
-            # Stable across the directory's contents changing, so a
-            # baselined pile of dead files does not resurface every time
-            # one more lands in it.
-            fingerprint_discriminator=f"directory:{rel_dir or '.'}",
+            file_path=skill_path / rel_dir,
+            # A ratchet: the fingerprint is rule + directory + metric, so a
+            # baselined pile does not resurface when its names change, only
+            # when it grows past the baselined count.
+            value=float(len(names)),
+            metric="unreferenced-directory",
         )
 
     # -- discovery -----------------------------------------------------------
@@ -455,15 +495,16 @@ class AgentSkillUnreferencedFilesRule(Rule):
         # weight was pure noise (5,009 corpus findings included plain
         # `license.txt` files).
         lowered = name.lower()
-        if lowered.startswith(("license", "notice")):
+        if _is_notice_file(lowered):
             return True
         if (lowered.rpartition(".")[0] or lowered) in ("readme", "changelog"):
             return True
-        if rel.startswith(("evals/", "tests/")):
+        rel_lower = rel.lower()
+        if rel_lower.startswith(("evals/", "tests/")):
             return True
-        if name.startswith("test_") and name.endswith(".py"):
+        if lowered.startswith("test_") and lowered.endswith(".py"):
             return True
-        if "testdata" in rel.split("/")[:-1]:
+        if "testdata" in rel_lower.split("/")[:-1]:
             return True
         # Same gitignore-style leading-**/ expansion as the global and
         # per-rule excludes (see RepositoryContext.pattern_variants, issue
@@ -888,9 +929,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 if before >= 0:
                     if text_lower[before] == "/":
                         return True
-                    if text_lower[before] == "(" and text_lower.endswith(
-                        _DIR_LOAD_CALLS, 0, before
-                    ):
+                    if text_lower[before] == "(" and _ends_with_call(text_lower, before):
                         return True
             start = text_lower.find(name, end)
         return False
