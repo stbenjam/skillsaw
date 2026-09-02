@@ -7,7 +7,7 @@ Detect the same directive stated more than once within a file
 
 | | |
 |---|---|
-| **Severity** | warning (auto) |
+| **Severity** | info (auto) |
 | **Autofix** | - |
 | **Since** | v0.17.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
@@ -32,9 +32,12 @@ The rule detects two forms of repetition within a single file:
   approval-related language: "ask first/before", "wait for approval",
   "confirm before", "do not proceed without approval", and similar.
 
-Directives are compared line by line across sections within a file. Repeated
-near-duplicate instructions report at **warning**, while phrase cluster restatements
-report at **info** as review prompts.
+Directives are compared line by line across sections within a file. Both forms
+report at **info**: whether two similar lines are one instruction stated twice or
+two deliberately-scoped rules is a judgement only the author can make, so the rule
+raises the question without failing a build. Raise `severity` to `warning` or
+`error` in `.skillsaw.yaml` to hold a repository to a stricter line; phrase cluster
+restatements stay at info even then.
 
 Intentional parallel structures (such as neighboring list items, parameterized code
 examples, or section captions directly above code blocks) are excluded from comparison.
@@ -84,7 +87,7 @@ Tune the rule in `.skillsaw.yaml`:
 ```yaml
 rules:
   content-repeated-directive:
-    severity: warning
+    severity: warning            # default is info; raise it to fail a build
     similarity-threshold: 0.9    # (0-1]; higher = only near-verbatim repeats fire
     min-directive-words: 5       # ignore directives shorter than this
     min-line-distance: 4         # don't compare directives closer than this
@@ -111,7 +114,7 @@ want in both places) with an inline directive:
 rules:
   content-repeated-directive:
     enabled: auto  # true | false | auto
-    severity: warning
+    severity: info
 ```
 
 | Parameter | Description | Default |

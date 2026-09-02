@@ -37,17 +37,41 @@ and plain prose:
 - Relative paths and bare filenames (`scripts/run.py` or `run.py`)
 - Case-insensitive filename matches
 - Directory mentions covering their contents (`references/` or `./assets`)
+- Directories a bundled script loads as a whole — globbed
+  (`schemas/*.xsd`), joined onto a base path
+  (`Path(__file__).parent / "schemas"`), or enumerated
+  (`os.listdir('data')`, `fs.readdirSync("assets")`)
 - Python imports resolved within the skill package
 
+The join operator and the call name are what turn a bare word into a
+path: a quoted word on its own is not one, so a config value such as
+`"workload_manager": "slurm"` never covers a `slurm/` directory.
 
-Never flagged: SKILL.md itself, README.md, CHANGELOG.md, LICENSE* and
-NOTICE* files (any suffix, e.g. `LICENSE-MIT`), files under `evals/`
-and `tests/` (eval/test scaffolding is consumed by external harnesses
-by convention, not referenced from the skill text), `test_*.py` files
-and anything under a `testdata/` directory at any depth (bundled
-scripts routinely ship self-tests and fixtures), hidden files or
-directories, and symlinks (which are also never followed). The
-`exclude` option adds glob patterns on top of these defaults.
+Never flagged (all case-insensitive): SKILL.md itself, README and
+CHANGELOG in any extension, LICENSE* and NOTICE* files (any suffix, so
+both `LICENSE-MIT` and `license.txt`), files under `evals/` and
+`tests/` (eval/test scaffolding is consumed by external harnesses by
+convention, not referenced from the skill text), `test_*.py` files and
+anything under a `testdata/` directory at any depth (bundled scripts
+routinely ship self-tests and fixtures), hidden files or directories,
+and symlinks (which are also never followed). The `exclude` option adds
+glob patterns on top of these defaults.
+
+## One finding per directory full of dead files
+
+More than `collapse_directory_threshold` (default 5) unreferenced files
+in one directory report as a single finding that names the directory
+and samples its contents:
+
+```
+⚠ [my-skill/data]: 12 unreferenced files under 'data/' (a.json, b.json,
+  c.json, and 9 more) — dead weight that can hide unreviewed behavior;
+  reference the directory from SKILL.md, or exclude it
+```
+
+A vendored schema tree is one decision for the author, not twelve, and
+one finding per file buries every other finding in the run. Set the
+option to `0` to report every file individually.
 
 ## Examples
 
@@ -71,6 +95,18 @@ my-skill/
     cleanup.py
 ```
 
+**Also good** — the script loads the directory, so its contents are not dead:
+
+```
+my-skill/
+  SKILL.md          # "Run `python scripts/validate.py doc.docx`"
+  scripts/
+    validate.py     # SCHEMAS = Path(__file__).parent / "schemas"
+    schemas/
+      wml.xsd
+      sml.xsd
+```
+
 ## How to fix
 
 Delete the unreferenced file, or mention it from SKILL.md (or from a
@@ -86,6 +122,10 @@ rules:
       - "assets/fonts/*"
 ```
 
+A finding that names a directory rather than a file is asking the same
+question about the whole directory: reference it, delete it, or exclude
+it.
+
 ## Configuration
 
 ```yaml
@@ -99,6 +139,7 @@ rules:
 |-----------|-------------|---------|
 | `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`, `./canvas-fonts`, or `assets/fonts` when the directory exists) as referencing every file under it | `true` |
 | `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names; a leading `**/` also matches at the skill root) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
+| `collapse_directory_threshold` | Report one finding naming the directory when it holds more than this many unreferenced files, instead of one finding per file; 0 reports every file individually | `5` |
 
 
 *Run `skillsaw explain agentskill-unreferenced-files` to see this documentation and the rule's effective configuration in your terminal.*

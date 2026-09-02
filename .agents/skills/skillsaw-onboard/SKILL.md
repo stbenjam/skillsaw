@@ -1,6 +1,6 @@
 ---
 name: skillsaw-onboard
-description: "Onboard a repository to skillsaw — run the linter, apply autofixes, manually fix remaining violations, set up CI, and create a baseline. Use when adopting skillsaw on a new or existing project."
+description: "Onboard a repository to skillsaw — run the linter, triage the findings by rule, apply autofixes, manually fix what remains, set up CI, and create a baseline. Use when adopting skillsaw on a new or existing project."
 compatibility: "Requires skillsaw (uvx skillsaw or pip install skillsaw). Optional: gh CLI for GitHub Actions setup."
 license: Apache-2.0
 metadata:
@@ -39,7 +39,19 @@ If no working skillsaw command is known, read
 [initial scan](references/02-initial-scan.md) and report its violations before
 offering changes.
 
-### 2. Apply safe fixes
+### 2. Triage findings by rule
+
+If the scan reported findings, run `skillsaw lint --format json -v` so info
+findings are included, group the violations by `rule_id`, and sort the groups
+by count. Read three to five real findings from every cluster holding more
+than 10 percent of the findings or more than 20 findings; counts alone never
+decide a cluster.
+
+Read [triage](references/12-triage.md), which sorts each cluster into fix now,
+baseline, or configure and gives the table and question to put to the user
+before anything changes. Carry the agreed buckets into the steps below.
+
+### 3. Apply safe fixes
 
 If the scan identifies safe deterministic fixes, ask:
 
@@ -49,7 +61,7 @@ If the scan identifies safe deterministic fixes, ask:
 
 If yes, read [autofix](references/03-autofix.md). If no, preserve the count.
 
-### 3. Make judgment-based fixes
+### 4. Make judgment-based fixes
 
 If violations remain, offer manual fixes and a baseline as alternatives. A
 baseline is especially useful when hundreds of findings would otherwise block
@@ -68,7 +80,7 @@ accept before continuing; pause onboarding if that cannot be done safely. Then
 preserve the accepted remaining set for the baseline decision. Do not require
 accepted findings to be fixed first.
 
-### 4. Baseline accepted violations
+### 5. Baseline accepted violations
 
 If reviewed violations remain, ask:
 
@@ -79,7 +91,7 @@ If reviewed violations remain, ask:
 
 If yes, read [baseline](references/05-baseline.md).
 
-### 5. Add configuration
+### 6. Add configuration
 
 If `.skillsaw.yaml` is missing, ask:
 
@@ -89,7 +101,7 @@ If `.skillsaw.yaml` is missing, ask:
 
 If yes, read [configuration](references/06-configuration.md).
 
-### 6. Add skillsaw CI
+### 7. Add skillsaw CI
 
 Ask:
 
@@ -100,7 +112,7 @@ Ask:
 
 If yes, read [CI](references/07-ci.md), using the named CI system.
 
-### 7. Add external link checking
+### 8. Add external link checking
 
 If GitHub Actions is available, ask separately:
 
@@ -114,7 +126,7 @@ If GitHub Actions is available, ask separately:
 
 If yes, read [external links](references/08-external-links.md).
 
-### 8. Add local commands
+### 9. Add local commands
 
 Ask:
 
@@ -124,7 +136,7 @@ Ask:
 
 If yes, read [Makefile](references/09-makefile.md).
 
-### 9. Add a grade badge
+### 10. Add a grade badge
 
 If the repository has a README, ask:
 
@@ -134,7 +146,7 @@ If the repository has a README, ask:
 
 If yes, read [badge](references/10-badge.md).
 
-### 10. Verify the result
+### 11. Verify the result
 
 After all accepted routes finish, always read
 [verification](references/11-verify.md).

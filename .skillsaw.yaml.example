@@ -64,6 +64,7 @@ rules:
     severity: warning
     # directory_mention_covers: true
     # exclude: []
+    # collapse_directory_threshold: 5
 
   # SKILL.md must have valid frontmatter with name and description
   agentskill-valid:
@@ -213,6 +214,7 @@ rules:
     # banned: []
     # skip-builtins: false
     # regex-timeout: 2.0
+    # report-migrations: false
 
   # Detect markdown links where the target file does not exist
   content-broken-internal-reference:
@@ -326,7 +328,7 @@ rules:
   # Detect the same directive stated more than once within a file
   content-repeated-directive:
     enabled: auto
-    severity: warning
+    severity: info
     # similarity-threshold: 0.85
     # min-directive-words: 4
     # min-line-distance: 4
