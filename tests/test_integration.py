@@ -4843,6 +4843,15 @@ class TestContentRepeatedDirective:
         assert cluster["line"] == 28
         assert "line 15" in cluster["message"]
 
+    def test_findings_are_advisory(self, tmp_path):
+        """Repetition is advice — it reports at info and leaves CI green."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-repeated-directive", [])
+        assert vs and all(v["severity"] == "info" for v in vs)
+        assert r["rc"] == 0, f"advisory findings must not fail a lint, got rc={r['rc']}"
+
     def test_inline_suppression_silences_finding(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         claude = repo / "CLAUDE.md"

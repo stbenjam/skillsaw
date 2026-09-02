@@ -3084,7 +3084,8 @@ class TestContentRepeatedDirectiveRule:
     def test_rule_metadata(self):
         rule = ContentRepeatedDirectiveRule()
         assert rule.rule_id == "content-repeated-directive"
-        assert rule.default_severity() == Severity.WARNING
+        # Advice, not correctness — it must not redden a default CI run.
+        assert rule.default_severity() == Severity.INFO
 
     def test_detects_exact_duplicate_directive(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
