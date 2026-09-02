@@ -2,6 +2,7 @@
 Rule: claude-md-agents-import
 """
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -19,6 +20,16 @@ from skillsaw.rule import (
 from skillsaw.utils import has_generated_marker, read_text
 
 from ._helpers import iter_instruction_imports, iter_markdown_instruction_imports
+
+#: How a pointer stub defers to CLAUDE.md: "See CLAUDE.md", "all rules are
+#: maintained in CLAUDE.md", "this file is a pointer". A line that merely
+#: names the file ("keep CLAUDE.md synchronized") does not match.
+_DEFERRAL_RE = re.compile(
+    r"\b(?:see|read|refer(?:s)? to|follow|consult|use|open|check|maintained in|"
+    r"lives? in|kept in|defined in|documented in|found in|source of truth|"
+    r"single (?:source|place)|pointer|not a (?:second )?copy|instead)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -235,12 +246,14 @@ class ClaudeMdAgentsImportRule(Rule):
                 return True
         # Raw lines, not prose_lines(): a stub names the file in a code span
         # (`CLAUDE.md`) as often as in plain text, and prose blanking would
-        # hide it.
+        # hide it. A bare mention is not enough — "keep CLAUDE.md in sync"
+        # is the opposite of deferring to it — so the line must also read
+        # as a deferral.
         body = agents.read_body(strip_code_blocks=False) or ""
         lines = [line for line in body.splitlines() if line.strip()]
         if len(lines) > self._POINTER_MAX_PROSE_LINES:
             return False
-        return any("CLAUDE.md" in line for line in lines)
+        return any("CLAUDE.md" in line and _DEFERRAL_RE.search(line) for line in lines)
 
     # -- check -----------------------------------------------------------
 

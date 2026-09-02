@@ -741,6 +741,15 @@ class TestClaudeMdAgentsImportRule:
         )
         assert self._check(temp_dir) == []
 
+    def test_short_agents_md_that_only_mentions_claude_md_is_still_reported(self, temp_dir):
+        """A mention is not a deferral: "keep CLAUDE.md synchronized" says the
+        opposite of "read CLAUDE.md instead"."""
+        (temp_dir / "CLAUDE.md").write_text(AGENTS_BODY)
+        (temp_dir / "AGENTS.md").write_text(
+            "# Agents\n\nRun `make test`. Keep CLAUDE.md synchronized with this file.\n"
+        )
+        assert len(self._check(temp_dir)) == 1
+
     def test_long_agents_md_that_merely_mentions_claude_md_is_still_reported(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(AGENTS_BODY)
         (temp_dir / "AGENTS.md").write_text(
