@@ -231,7 +231,12 @@ class McpRegistryNpmNameMatchRule(Rule):
             # container is never published; the member is the package.
             member = self._unique_workspace_member(root, nearest_boundary, exact)
             if member is not None:
-                return member
+                # The member must corroborate the server's repository the same
+                # way the nearest boundary would have to; a member pointing at
+                # another repository is someone else's package.
+                return (
+                    member if self._nearest_repository_matches(root, member, repository) else None
+                )
             return (
                 nearest_boundary
                 if self._nearest_repository_matches(root, nearest_boundary, repository)

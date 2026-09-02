@@ -1575,6 +1575,24 @@ class TestMcpRegistryNpmNameRule:
         member.write_text(json.dumps(data), encoding="utf-8")
         assert _for_rule(lint_rules(declared, NPM_NAME_RULE), NPM_NAME_RULE) == []
 
+    def test_workspace_member_must_corroborate_the_server_repository(self, tmp_path):
+        """A member with the published coordinates but another repository URL
+        is someone else's package; ownership stays unresolved and the rule
+        stays silent, as it does for a nearest boundary that disagrees."""
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps(
+                {"name": "@example/weather-mcp", "version": "1.2.3", "workspaces": ["packages/*"]}
+            ),
+            encoding="utf-8",
+        )
+        member = repo / "packages" / "weather" / "package.json"
+        data = json.loads(member.read_text(encoding="utf-8"))
+        data["repository"] = "github:someone-else/weather"
+        member.write_text(json.dumps(data), encoding="utf-8")
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
     def test_workspace_member_must_match_a_declared_workspace_glob(self, tmp_path):
         """A manifest under `examples/` with the published coordinates is not a
         member of `workspaces: ["packages/*"]`; the container stays the
