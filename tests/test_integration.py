@@ -7538,3 +7538,30 @@ class TestUnrecognizedRepositoryWarning:
         stderr = run_lint(empty)["stderr"]
         assert self.WARNING in stderr
         assert "Expected: agent skills (SKILL.md)" in stderr
+
+
+@pytest.mark.integration
+class TestQuietStderrOnRealContent:
+    """Things a repository can contain that must not leak noise or tracebacks
+    onto stderr during an ordinary lint."""
+
+    def test_bundled_python_with_an_invalid_escape_emits_no_syntax_warning(self, tmp_path):
+        """`agentskill-unreferenced-files` parses bundled scripts with `ast`.
+        A `"\\d"` in one of them made CPython print `<unknown>:N:
+        SyntaxWarning` in the middle of the lint output (3 of 103 corpus
+        repositories)."""
+        repo = tmp_path / "skill-with-script"
+        skill = repo / ".claude" / "skills" / "greet"
+        (skill / "scripts").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: greet\ndescription: Greet the user by name. Use when the user asks "
+            "for a greeting.\n---\n\nRun `scripts/helper.py` to build the greeting.\n"
+        )
+        (skill / "scripts" / "helper.py").write_text(
+            'import re\n\nPATTERN = re.compile("\\d+ greetings")\n'
+        )
+
+        r = run_lint(repo)
+
+        assert "SyntaxWarning" not in r["stderr"]
+        assert "<unknown>" not in r["stderr"]

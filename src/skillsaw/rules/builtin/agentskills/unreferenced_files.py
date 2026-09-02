@@ -93,6 +93,7 @@ metadata are both legitimate entrypoints into the package.
 """
 
 import ast
+import warnings
 import fnmatch
 import os
 import re
@@ -572,7 +573,12 @@ class AgentSkillUnreferencedFilesRule(Rule):
         if "import" not in text:
             return imports  # Quick check: skip parsing if "import" is not present in text
         try:
-            tree = ast.parse(text)
+            # A bundled script with an invalid escape (`"\\d"`) makes
+            # ast.parse emit `<unknown>:N: SyntaxWarning` on stderr — noise
+            # about the skill's helper, in the middle of the lint output.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                tree = ast.parse(text)
         except (SyntaxError, ValueError):
             for match in _IMPORT_LINE_RE.finditer(text):
                 if match.group(3) is not None:  # import a.b, c
