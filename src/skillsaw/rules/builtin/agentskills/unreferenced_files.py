@@ -235,20 +235,31 @@ def _iter_statements(tree: ast.Module) -> Iterable[ast.AST]:
 
 
 _NOTICE_STEMS = ("license", "licence", "notice", "copying")
-_NOTICE_EXTENSIONS = ("", "txt", "md", "rst", "html")
+_CODE_EXTENSIONS = frozenset(
+    "py js ts mjs cjs jsx tsx sh bash zsh rb go rs java kt c cc cpp h hpp cs php pl "
+    "swift scala ps1 bat cmd lua".split()
+)
 
 
 def _is_notice_file(lowered_name: str) -> bool:
-    """A license or notice document: LICENSE, LICENSE-MIT, licence.txt, NOTICE.
+    """A license or notice document: LICENSE, LICENSES, LICENSE-MIT,
+    LICENSE.APACHE, licence.txt, NOTICE.
 
-    Documentation only — `license_check.py` is bundled code and stays in
-    scope for the rule. A hyphenated suffix (`LICENSE-APACHE`) is part of the
-    convention; an underscore or a code extension is not.
+    Documentation only — `license_check.py` and `notice_dispatch.py` are
+    bundled code and stay in scope. The stem may be plural or carry a `-` or
+    `.` suffix; an underscore continuation or a code extension is a program.
     """
-    stem, _dot, extension = lowered_name.partition(".")
-    if extension not in _NOTICE_EXTENSIONS:
+    extension = lowered_name.rpartition(".")[2] if "." in lowered_name else ""
+    if extension in _CODE_EXTENSIONS:
         return False
-    return stem in _NOTICE_STEMS or stem.startswith(tuple(f"{s}-" for s in _NOTICE_STEMS))
+    for stem in _NOTICE_STEMS:
+        if lowered_name.startswith(stem):
+            rest = lowered_name[len(stem) :]
+            if rest.startswith("s"):
+                rest = rest[1:]
+            if rest == "" or rest[0] in "-.":
+                return True
+    return False
 
 
 def _ends_with_call(text_lower: str, end: int) -> bool:
