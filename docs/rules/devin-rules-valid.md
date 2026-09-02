@@ -26,10 +26,12 @@ Devin Desktop limits a workspace rule to 12,000 characters. Unknown
 frontmatter keys are accepted so a new upstream field does not make an
 otherwise valid rule fail.
 
-Devin's documented bare glob scalar, such as `globs: **/*.test.ts`, is
-accepted even though strict YAML reserves a leading `*` for aliases. This
-exception applies only to the top-level `globs` value; unrelated malformed
-YAML is still reported.
+Devin's documented bare glob scalar, such as `globs: **/*.test.ts`, parses
+even though strict YAML reserves a leading `*` for aliases. This exception
+applies only to the top-level `globs` value; unrelated malformed YAML is
+still reported. The scalar itself is an error: Devin Desktop may accept a
+single string, but the Devin CLI fails to load the rule ("expected a
+sequence"). A YAML list is the one form both hosts read.
 
 ## Severity
 
@@ -72,8 +74,8 @@ Preserve backward compatibility for existing response fields.
 - Set `trigger` to `always_on`, `manual`, `model_decision`, `agent`, or
   `glob`, or omit it and let Devin infer the mode from `globs` or
   `description`.
-- For `glob`, provide a non-empty string or list of repository-relative
-  patterns. Remove absolute paths and `..` path segments.
+- For `glob`, provide a non-empty YAML list of repository-relative patterns.
+  Remove absolute paths and `..` path segments.
 - For `model_decision`, add a non-empty string `description` that explains
   when the rule applies.
 - Split or shorten a rule that exceeds `max-characters` (12,000 by default),

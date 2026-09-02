@@ -170,7 +170,7 @@ class SkillsLockValidRule(Rule):
         shown_name = safe_display(name)
         violations: List[RuleViolation] = []
 
-        for field in ("source", "sourceType", "computedHash"):
+        for field in ("source", "sourceType"):
             value = entry.get(field)
             if not isinstance(value, str) or not value.strip():
                 violations.append(
@@ -180,6 +180,32 @@ class SkillsLockValidRule(Rule):
                         fingerprint_discriminator=f"{discriminator}:{field}-required",
                     )
                 )
+
+        # The CLI reads `computedHash` only to detect drift (`skills check`
+        # / `sync`); `list`, `add` and `update` process an entry without it.
+        # A hand-maintained or older lockfile that omits it still works, so
+        # the omission is a warning — a malformed digest stays an error below.
+        computed_hash = entry.get("computedHash")
+        if computed_hash is None or (isinstance(computed_hash, str) and not computed_hash.strip()):
+            violations.append(
+                self.violation(
+                    f"Skill '{shown_name}' has no 'computedHash'; `npx skills` cannot "
+                    "detect drift for it until the lockfile is regenerated",
+                    file_path=path,
+                    severity=Severity.WARNING,
+                    fingerprint_discriminator=f"{discriminator}:computedHash-required",
+                )
+            )
+        elif not isinstance(computed_hash, str):
+            # Present but the wrong type is a malformed entry, not an absent
+            # digest: the CLI never writes a number or an object here.
+            violations.append(
+                self.violation(
+                    f"Skill '{shown_name}' field 'computedHash' must be a string",
+                    file_path=path,
+                    fingerprint_discriminator=f"{discriminator}:computedHash-format",
+                )
+            )
 
         source = entry.get("source")
         source_type = entry.get("sourceType")

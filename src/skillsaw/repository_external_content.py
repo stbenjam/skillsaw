@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Mapping, Optional, Set, Tuple
 
@@ -18,6 +20,11 @@ from .utils import read_json_strict
 
 if TYPE_CHECKING:
     from .discovery.detect import RepositoryScan
+
+
+#: ``[remote "origin"]`` url line of a ``.git/config``; only the url matters.
+_GIT_REMOTE_URL_RE = re.compile(r"^\s*url\s*=\s*(\S+)", re.MULTILINE)
+_GIT_ORIGIN_SECTION_RE = re.compile(r'\[remote "origin"\](.*?)(?=^\[|\Z)', re.DOTALL | re.MULTILINE)
 
 
 class RepositoryExternalContentMixin:
@@ -70,6 +77,7 @@ class RepositoryExternalContentMixin:
             return set(cached)
 
         repository_root = safe_resolve(self.root_path) or self.root_path
+        own_repository = self._github_repository_of(repository_root)
         projects: List[Tuple[Path, Set[str]]] = []
         for lockfile in self._repository_scan().skills_lock_files:
             project_root = safe_resolve(lockfile.parent)
@@ -91,6 +99,7 @@ class RepositoryExternalContentMixin:
                     resolved_lockfile,
                     lock_root=project_root,
                     repository_root=repository_root,
+                    own_repository=own_repository,
                 )
                 if parsed_names is not None:
                     external_names = parsed_names
@@ -119,10 +128,39 @@ class RepositoryExternalContentMixin:
         return set(roots)
 
     @staticmethod
+    def _github_repository_of(root: Path) -> Optional[str]:
+        """``owner/repo`` of *root*'s GitHub origin remote, read from
+        ``.git/config`` — a filesystem read, never a git invocation. ``None``
+        when there is no ordinary ``.git`` directory or no GitHub origin."""
+        config = root / ".git" / "config"
+        if not safe_is_file(config):
+            return None
+        try:
+            text = config.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        section = _GIT_ORIGIN_SECTION_RE.search(text)
+        if section is None:
+            return None
+        url = _GIT_REMOTE_URL_RE.search(section.group(1))
+        if url is None:
+            return None
+        return skills_lock_format.github_owner_repo(url.group(1))
+
+    @staticmethod
     def _external_names_from_lock(
-        lockfile: Path, *, lock_root: Path, repository_root: Path
+        lockfile: Path,
+        *,
+        lock_root: Path,
+        repository_root: Path,
+        own_repository: Optional[str] = None,
     ) -> Optional[Set[str]]:
-        """Return externally sourced install names, or ``None`` if malformed."""
+        """Externally sourced install names, or ``None`` if malformed.
+
+        An entry whose GitHub source is *own_repository* — the repository
+        installing a skill from itself — is the repository's own authored
+        content and is never external.
+        """
         data, error = read_json_strict(lockfile)
         if error or not isinstance(data, dict):
             return None
@@ -135,6 +173,7 @@ class RepositoryExternalContentMixin:
             if isinstance(name, str)
             and isinstance(entry, Mapping)
             and skills_lock_format.entry_has_valid_provenance(entry)
+            and not skills_lock_format.entry_names_repository(entry, own_repository)
             and skills_lock_format.entry_is_external(
                 entry,
                 lock_root=lock_root,
@@ -176,6 +215,7 @@ class RepositoryExternalContentMixin:
                 resolved_lockfile,
                 lock_root=project_root,
                 repository_root=project_root,
+                own_repository=self._github_repository_of(project_root),
             )
             return (
                 external_names is not None

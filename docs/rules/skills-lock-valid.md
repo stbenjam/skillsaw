@@ -25,8 +25,10 @@ This rule follows the project-lock structure implemented by the CLI's
 [`src/local-lock.ts`](https://github.com/vercel-labs/skills/blob/main/src/local-lock.ts):
 
 - the root is an object with numeric `version` and an object-valued `skills`;
-- each skill has non-empty `source`, `sourceType`, and `computedHash` strings;
-- `computedHash` is a lowercase, 64-character SHA-256 hex digest;
+- each skill has non-empty `source` and `sourceType` strings;
+- `computedHash`, when present, is a lowercase, 64-character SHA-256 hex
+  digest. The CLI reads it only to detect drift, so an entry without one is
+  a warning rather than an error;
 - optional `sourceUrl`, `ref`, `skillPath`, and `wellKnownDigest` fields have
   the string shape their consumers expect;
 - optional `subagents` is an array of strings. An empty string is valid here:
@@ -78,6 +80,7 @@ Warnings identify a lockfile that remains readable but is not portable or may
 not restore correctly:
 
 - a schema version newer than this skillsaw release;
+- an entry without `computedHash`, which `npx skills check` cannot verify;
 - a bare `git` or `gitlab` shorthand without the `sourceUrl` the CLI's update
   path needs;
 - an absolute local source path;

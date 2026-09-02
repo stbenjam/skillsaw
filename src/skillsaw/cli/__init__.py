@@ -33,9 +33,30 @@ def _warn_deprecated_command(command: str) -> None:
     )
 
 
+def _tolerate_unencodable_output() -> None:
+    """Never let a report die on a codepoint the console cannot encode.
+
+    A report quotes whatever the repository holds — an em dash, a check
+    mark, a lone surrogate escape — and a redirected Windows console or a
+    ``PYTHONIOENCODING=cp1252`` environment cannot encode all of it. With
+    the default ``strict`` handler the whole run ends in a traceback and no
+    ``--output`` file is written. Replacing the unencodable character keeps
+    the report and its exit code; the character shows as ``?``.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
 def main():
     from ._helpers import install_warning_display
 
+    _tolerate_unencodable_output()
     install_warning_display()
 
     if len(sys.argv) > 1 and sys.argv[1] in _DEPRECATED_COMMANDS:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +14,7 @@ from skillsaw.discovery import (
 )
 from skillsaw.formats.codex import codex_declared_skill_dirs
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
+from skillsaw.utils import read_json
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +32,15 @@ class PluginDiscovery:
 def load_marketplace(root: Path) -> Optional[Dict[str, Any]]:
     """Load the root Claude marketplace mapping when it is readable."""
     path = root / ".claude-plugin" / "marketplace.json"
-    try:
-        with path.open() as stream:
-            data = json.load(stream)
-            return data if isinstance(data, dict) else None
-    except (json.JSONDecodeError, OSError):
+    # read_json, not json.load: a manifest nested thousands deep or holding
+    # an integer past the digit limit raises RecursionError / bare
+    # ValueError, and this runs while RepositoryContext is still being
+    # built — outside the rule-execution guard, where it would abort the
+    # whole lint with a traceback. read_json turns both into a parse error.
+    if not safe_exists(path):
         return None
+    data, _error = read_json(path)
+    return data if isinstance(data, dict) else None
 
 
 def marketplace_plugin_root(data: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -102,14 +105,10 @@ def plugin_name(path: Path, metadata: Dict[Path, Dict[str, Any]]) -> str:
     """Return the manifest, marketplace, or directory name for a plugin."""
     manifest = path / ".claude-plugin" / "plugin.json"
     if manifest.exists():
-        try:
-            with manifest.open() as stream:
-                data = json.load(stream)
-            name = data.get("name") if isinstance(data, dict) else None
-            if isinstance(name, str) and name:
-                return name
-        except (json.JSONDecodeError, OSError):
-            pass
+        data, _error = read_json(manifest)
+        name = data.get("name") if isinstance(data, dict) else None
+        if isinstance(name, str) and name:
+            return name
     name = metadata.get(safe_resolve(path) or path, {}).get("name")
     return name if isinstance(name, str) else path.name
 
@@ -123,13 +122,9 @@ def plugin_metadata(
     metadata: Dict[str, Any] = {}
     manifest = path / ".claude-plugin" / "plugin.json"
     if manifest.exists():
-        try:
-            with manifest.open() as stream:
-                data = json.load(stream)
-            if isinstance(data, dict):
-                metadata = data
-        except (json.JSONDecodeError, OSError):
-            pass
+        data, _error = read_json(manifest)
+        if isinstance(data, dict):
+            metadata = data
     resolved = safe_resolve(path) or path
     for source in (fallback.get(resolved, {}), entries.get(resolved, {})):
         for key, value in source.items():

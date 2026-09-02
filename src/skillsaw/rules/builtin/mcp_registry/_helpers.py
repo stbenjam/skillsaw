@@ -48,10 +48,25 @@ _URL_TEMPLATE_VARIABLE = re.compile(r"\{([^{}\s]+)\}")
 _URI = re.compile(r"\A[A-Za-z][A-Za-z0-9+.-]*:" r"[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*\Z")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _CLEAN_SUBFOLDER = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
+# A whole-value placeholder a release pipeline substitutes before publishing:
+# every spelling real repositories commit — `${VERSION}`, `$version`,
+# `{{ version }}`, `<<VERSION>>`, `<version>`, `__VERSION__`, `_VERSION_`,
+# `%VERSION%`, `@VERSION@`. Each begins with a character no real version,
+# identifier or digest can start with, and the whole value is the token:
+# `v${VERSION}` and `${VERSION}-rc` are values with a placeholder inside.
+_PLACEHOLDER_IDENT = r"[A-Za-z_][A-Za-z0-9_.-]*"
 _RELEASE_SOURCE_PLACEHOLDER = re.compile(
-    r"\A(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|"
-    r"\{\{[A-Za-z_][A-Za-z0-9_]*\}\}|"
-    r"<<[A-Za-z_][A-Za-z0-9_]*>>)\Z"
+    r"\A(?:"
+    rf"\$\{{\s*{_PLACEHOLDER_IDENT}\s*\}}"
+    rf"|\${_PLACEHOLDER_IDENT}"
+    rf"|\{{\{{\s*{_PLACEHOLDER_IDENT}\s*\}}\}}"
+    rf"|<<\s*{_PLACEHOLDER_IDENT}\s*>>"
+    rf"|<{_PLACEHOLDER_IDENT}>"
+    rf"|__{_PLACEHOLDER_IDENT}__"
+    rf"|_{_PLACEHOLDER_IDENT}_"
+    rf"|%{_PLACEHOLDER_IDENT}%"
+    rf"|@{_PLACEHOLDER_IDENT}@"
+    r")\Z"
 )
 _TRADITIONAL_IPV4_WIDTHS = ((), (32,), (8, 24), (8, 8, 16), (8, 8, 8, 8))
 

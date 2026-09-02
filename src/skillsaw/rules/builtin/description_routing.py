@@ -14,6 +14,7 @@ from skillsaw.rules.builtin.content_analysis import (
     OpenCodeCommandBlock,
     SkillBlock,
 )
+from skillsaw.blocks import DevinSkillBlock
 from skillsaw.rules.builtin.utils import read_frontmatter_commented
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -174,6 +175,7 @@ class DescriptionRoutingRule(Rule):
         violations: List[RuleViolation] = []
         for block_type in (
             SkillBlock,
+            DevinSkillBlock,
             AgentBlock,
             CopilotAgentBlock,
             OpenCodeAgentBlock,
@@ -182,6 +184,11 @@ class DescriptionRoutingRule(Rule):
         ):
             for block in self.dependency_scoped_find(context, block_type):
                 if block.frontmatter_error:
+                    continue
+                # Devin's native skill dialect makes frontmatter optional —
+                # the name defaults from the directory — so a skill without
+                # one has no description to judge, not a missing one.
+                if block_type is DevinSkillBlock and not block.has_frontmatter:
                     continue
                 if (
                     block_type is SkillBlock
