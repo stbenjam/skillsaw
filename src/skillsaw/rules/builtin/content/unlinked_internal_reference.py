@@ -9,6 +9,7 @@ from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation,
 from skillsaw.context import RepositoryContext
 from skillsaw.markdown_doc import MarkdownCodeSpan, MarkdownDoc, file_span, splice
 from skillsaw.rules.builtin.content_analysis import (
+    blank_long_tokens,
     gather_all_content_blocks,
 )
 from skillsaw.utils import read_text
@@ -99,7 +100,7 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 continue
             if _IMPORT_LINE_RE.match(doc.line(seg.body_line)):
                 continue
-            for match in self._PATH_LIKE_RE.finditer(seg.text):
+            for match in self._PATH_LIKE_RE.finditer(blank_long_tokens(seg.text)):
                 path_str = match.group(0)
                 # Skip paths abutting parens (link syntax / parentheticals).
                 if match.start() > 0 and seg.text[match.start() - 1] == "(":

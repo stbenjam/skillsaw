@@ -7,9 +7,12 @@ Tests for the performance helpers added with the benchmark framework:
 """
 
 import re
+import time
 from pathlib import Path
 
 import pytest
+
+from skillsaw.context import RepositoryContext
 
 from skillsaw.rules.builtin.content_analysis import (
     _gate_pattern,
@@ -423,3 +426,77 @@ class TestFindCache:
         assert len(context.lint_tree.find(FrontmatterField)) == 2
         context.rebuild_lint_tree()
         assert len(context.lint_tree.find(FrontmatterField)) == 2
+
+
+class TestAdversarialInputStaysLinear:
+    """Shapes a repository can contain that used to cost seconds to hours."""
+
+    def test_imperative_regex_is_linear_on_a_whitespace_run(self):
+        """A 20 KB single-line HTML comment is blanked to spaces for prose; the
+        old `^\\s*[-*]?\\s*` backtracked O(n^2) on it (54 s per line)."""
+        from skillsaw.rules.builtin.content_analysis import InstructionBudgetAnalyzer
+
+        pattern = InstructionBudgetAnalyzer._IMPERATIVE_RE
+        started = time.perf_counter()
+        assert pattern.match(" " * 200_000) is None
+        assert time.perf_counter() - started < 1.0
+        assert pattern.match("  - Always run the tests")
+        assert pattern.match("* never commit secrets")
+        assert pattern.match("Ensure the build passes")
+        assert pattern.match("The build always passes") is None
+
+    def test_path_regexes_are_bounded_on_a_slash_heavy_line(self, tmp_path):
+        """One 50 KB token of `a/b/` with no extension took 11 s in
+        content-unlinked-internal-reference; a token that long is not a
+        reference anyone wrote."""
+        from skillsaw.rules.builtin.content.actionability_score import (
+            ContentActionabilityScoreRule,
+        )
+        from skillsaw.rules.builtin.content.unlinked_internal_reference import (
+            ContentUnlinkedInternalReferenceRule,
+        )
+
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("# Guide\n")
+        (tmp_path / "CLAUDE.md").write_text(
+            "# Project\n\nRead docs/guide.md first.\n\n" + "a/b/" * 12_500 + "\n"
+        )
+        context = RepositoryContext(tmp_path)
+
+        started = time.perf_counter()
+        unlinked = ContentUnlinkedInternalReferenceRule().check(context)
+        ContentActionabilityScoreRule().check(context)
+        assert time.perf_counter() - started < 2.0
+        # The real reference on the short line is still found.
+        assert [v.line for v in unlinked] == [3]
+
+    def test_frontmatter_alias_dag_is_walked_once(self, tmp_path):
+        """`str(value)` renders a YAML alias DAG as a tree — 9^levels leaves
+        from a 430-byte file; seven levels took 8.6 s in embedded-secrets and
+        encoded-payload. Each container is visited once now."""
+        from skillsaw.rules.builtin.content.embedded_secrets import ContentEmbeddedSecretsRule
+        from skillsaw.rules.builtin.content_analysis import iter_frontmatter_strings
+        from skillsaw.rules.builtin.security.encoded_payload import SecurityEncodedPayloadRule
+
+        levels = "\n".join(
+            f"a{index}: &a{index} [{', '.join([f'*a{index - 1}'] * 9)}]" for index in range(1, 9)
+        )
+        skill = tmp_path / ".claude" / "skills" / "laughs"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: laughs\ndescription: Laughs. Use when asked to laugh.\n"
+            "a0: &a0 [lol]\n" + levels + "\n---\nBody.\n"
+        )
+        context = RepositoryContext(tmp_path)
+
+        started = time.perf_counter()
+        ContentEmbeddedSecretsRule().check(context)
+        SecurityEncodedPayloadRule().check(context)
+        assert time.perf_counter() - started < 2.0
+
+        shared = ["leaf"]
+        assert list(iter_frontmatter_strings({"k": [shared, shared, {"inner": shared}]})) == [
+            "k",
+            "leaf",
+            "inner",
+        ]

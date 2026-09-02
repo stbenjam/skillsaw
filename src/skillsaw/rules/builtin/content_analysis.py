@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 # Re-exported for backward compatibility — the canonical home is
 # ``skillsaw.blocks``.  Rules and tests import these block types from here.
@@ -640,8 +640,12 @@ class RedundancyDetector:
 
 
 class InstructionBudgetAnalyzer:
+    # `[^\S\n]*` twice with an optional bullet between them is one
+    # whitespace consumer, not two: the old `^\s*[-*]?\s*` shared a
+    # whitespace run between two `\s*` and backtracked O(n^2) on a long
+    # run — a 20 KB HTML comment blanked to spaces cost 54 s per line.
     _IMPERATIVE_RE = re.compile(
-        r"^\s*[-*]?\s*(?:always|never|do not|don't|ensure|make sure|use|run|create|add|remove|check|set|write|read|call|return|throw|avoid|prefer|include|exclude|follow|implement|test|validate|verify|handle|log|format|configure|install|update|delete|move|copy|import|export|define|declare|initialize|override|extend|wrap|deploy|build|commit|push|pull|merge|rebase|review)\b",
+        r"^[^\S\n]*(?:[-*][^\S\n]*)?(?:always|never|do not|don't|ensure|make sure|use|run|create|add|remove|check|set|write|read|call|return|throw|avoid|prefer|include|exclude|follow|implement|test|validate|verify|handle|log|format|configure|install|update|delete|move|copy|import|export|define|declare|initialize|override|extend|wrap|deploy|build|commit|push|pull|merge|rebase|review)\b",
         re.IGNORECASE,
     )
     BUDGET = 150
@@ -666,3 +670,56 @@ class InstructionBudgetAnalyzer:
             budget_remaining=max(0, remaining),
             over_budget=total > self.BUDGET,
         )
+
+
+#: A whitespace-free run longer than this is not a path reference anyone
+#: wrote; blanking it keeps the path regexes linear on adversarial lines.
+LONG_TOKEN_LIMIT = 256
+_LONG_TOKEN_RE = re.compile(r"\S{257,}")
+
+
+def blank_long_tokens(text: str) -> str:
+    """Replace whitespace-free runs longer than :data:`LONG_TOKEN_LIMIT` with
+    spaces of the same length, so offsets into *text* stay valid.
+
+    The path-like regexes (`[\\w._-]+(?:/[\\w._-]+)+\\.\\w{1,10}`) are quadratic
+    on one long slash-heavy token without an extension: every start
+    position scans to the end and fails. Real references are short; a
+    50 KB token is a payload.
+    """
+    if len(text) <= LONG_TOKEN_LIMIT:
+        return text
+    return _LONG_TOKEN_RE.sub(lambda match: " " * (match.end() - match.start()), text)
+
+
+def iter_frontmatter_strings(value: Any, _seen: Optional[Set[int]] = None) -> Iterator[str]:
+    """Yield every string embedded in a frontmatter value, each container once.
+
+    Nested lists and mappings are walked (mapping keys included): a payload
+    in ``allowed-tools: [Ba<ZWSP>sh]`` never surfaces through ``str(value)``
+    because ``repr`` backslash-escapes format characters.
+
+    Containers already visited are skipped by ``id``. That terminates the
+    self-referential structures YAML anchor/alias cycles build, and it
+    keeps a shared DAG linear: ``str()`` of ``a2: &a2 [*a1, *a1, …]`` over
+    ``a1: &a1 [*a0, …]`` renders every alias as a copy — 9^levels leaves
+    from a 430-byte file — where this walk visits each list once.
+    """
+    if isinstance(value, str):
+        yield value
+        return
+    if not isinstance(value, (dict, list, tuple)):
+        return
+    if _seen is None:
+        _seen = set()
+    if id(value) in _seen:
+        return
+    _seen.add(id(value))
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str):
+                yield key
+            yield from iter_frontmatter_strings(item, _seen)
+    else:
+        for item in value:
+            yield from iter_frontmatter_strings(item, _seen)
