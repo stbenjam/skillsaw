@@ -10,4 +10,4 @@ Launch an independent subagent after `CHECKLIST.md` is compiled to review report
 4. **Check for gaps**: Review recent commits and top-volume findings across corpus repositories to make sure no important regressions were overlooked.
 5. **Release readiness check**: Confirm all user-facing changes and configuration updates are ready to be documented in the release notes.
 
-**Output**: Provide an approved Tier 1 list of up to 10 prioritized fixes with recommended solutions and test cases, along with an ordered list for subsequent batches.
+**Output**: Reject an item that does not reproduce, and demote one whose fix would regress or add complexity, before writing the list. Then provide an approved Tier 1 list of up to 10 prioritized fixes with recommended solutions and test cases, along with an ordered list for subsequent batches.

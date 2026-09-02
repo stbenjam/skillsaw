@@ -27,7 +27,7 @@ Launch one subagent per architectural dimension. Save findings to `reports/audit
 - **CLI & UX**: Subcommands, flags, exit codes, and output formatting across different repo layouts.
 - **Performance**: Comparative benchmarks between the last release and HEAD, profiling hotspots.
 - **Modified rules**: Differential scan of updated existing rules to catch unintended regressions.
-- **Real-world sweep**: Full scans across corpus repositories under default and force-enabled configs, testing `skillsaw fix` idempotency.
+- **Real-world sweep**: Full scans across corpus repositories under default and force-enabled configs, testing `skillsaw fix` idempotency. Every scan passes `--no-custom-rules`; the corpus is untrusted code.
 - **Security**: Path containment, symlink handling, safe YAML/JSON loading, regex safety, and network isolation.
 - **Test quality**: Test coverage for new code paths, fixture realism, and ensuring `make update` runs cleanly.
 - **Docs & release**: Alignment between CLI docs and `--help`, rule documentation, site builds, and draft release notes.

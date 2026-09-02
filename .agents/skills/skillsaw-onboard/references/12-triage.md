@@ -7,7 +7,7 @@ Sort each cluster into one of three practical buckets:
 ## 1. Fix now
 Best for high-priority issues and quick wins:
 - All `error` severity findings by default; an error the user accepts as debt, and that the baseline can record, may move to Baseline
-- Findings with `"fixable": true`: safe fixes apply with `skillsaw fix`, suggested ones with `skillsaw fix --suggest`. Plain `skillsaw fix` repairs errors and warnings only, so an info-level group needs `skillsaw fix --rule <rule-id>`
+- Findings with `"fixable": true`: safe fixes apply with `skillsaw fix --rule <rule-id>`, suggested ones with `--suggest` added. Naming the rule repairs it at any severity, so an info-level group qualifies too
 - Small groups of straightforward corrections
 
 ## 2. Baseline
@@ -51,7 +51,7 @@ rules:
 Share the summary table and confirm the plan with the user:
 
 > We found {total} findings across {cluster count} rules. Here is a proposed plan:
-> - **Fix now**: {fix count} issues (errors and safe autofixes)
+> - **Fix now**: {fix count} issues (errors, autofixable findings, and small manual corrections)
 > - **Baseline**: {baseline count} existing items to resolve over time
 > - **Configure**: {configure count} project-wide conventions in `.skillsaw.yaml`
 >

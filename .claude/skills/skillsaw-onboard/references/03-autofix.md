@@ -1,8 +1,10 @@
 # Run deterministic autofixes
 
-Run `skillsaw fix` to apply safe deterministic fixes, then lint again. Plain
-`skillsaw fix` repairs errors and warnings only; for a **Fix now** group at
-info severity, add `--rule <rule-id>`, which fixes that rule at any severity.
-Tell the user which files changed, summarize the resulting diff, and report how
-many violations were fixed and how many remain. Retain those counts for the
-final summary, then return to the workflow.
+Run `skillsaw fix` naming every rule in the **Fix now** bucket, one
+`--rule <rule-id>` per rule, then lint again. Naming the rules keeps the fix
+inside the confirmed plan, since a finding the user chose to baseline or
+configure is left alone, and repairs a named rule at any severity, so an
+info-level group needs nothing more. Tell the user which files changed,
+summarize the resulting diff, and report how many violations were fixed and
+how many remain. Retain those counts for the final summary, then return to the
+workflow.

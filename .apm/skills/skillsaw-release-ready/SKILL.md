@@ -40,7 +40,7 @@ List new rule IDs, modified rules, and fixes that have already landed so reviewe
 - Use `~/tmp/skillsaw-audit/` for working files (`corpus/`, `reports/`, `briefs/`, `work/<agent>/`).
 - Shallow-clone a representative corpus of real repositories into `corpus/` (see [corpus](references/corpus.md)).
 - Install the previous release in `~/tmp/skillsaw-audit/venv-<last>/` to run comparative checks without touching the main development `.venv`.
-- Use `skillsaw lint <path> --rule <id>` to test specific rules directly.
+- Use `skillsaw lint <path> --no-custom-rules --rule <id>` to test specific rules directly. Pass `--no-custom-rules` on every corpus scan: a cloned repository's `.skillsaw.yaml` can name Python files under `custom-rules`, and the linter would run them.
 
 ## Step 3: Launch reviewers and auditors
 

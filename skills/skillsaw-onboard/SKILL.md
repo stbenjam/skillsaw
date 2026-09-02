@@ -63,7 +63,7 @@ adoption or the user wants to move forward from a clean starting point. Ask:
 
 > {count} violations remain and need judgment rather than a mechanical fix. I
 > can inspect and fix them now, or review them as accepted existing debt and
-> baseline them in the next step so onboarding can move forward while CI catches
+> baseline them in step 6 so onboarding can move forward while CI catches
 > new findings. Which path would you prefer?
 
 If the user chooses fixes, read [manual fixes](references/04-manual-fixes.md).
@@ -74,18 +74,7 @@ accept before continuing; pause onboarding if that cannot be done safely. Then
 preserve the accepted remaining set for the baseline decision. Do not require
 accepted findings to be fixed first.
 
-### 5. Baseline accepted violations
-
-If reviewed violations remain, ask:
-
-> {count} reviewed violations remain. A baseline records them in
-> `.skillsaw-baseline.json` as accepted debt so CI fails only on new
-> violations; it does not fix them, and the file can shrink as they are fixed.
-> Should I create or update that baseline?
-
-If yes, read [baseline](references/05-baseline.md).
-
-### 6. Add or update configuration
+### 5. Add or update configuration
 
 If the triage plan placed any rule in **Configure**, read
 [configuration](references/06-configuration.md) without asking again; the
@@ -97,6 +86,17 @@ missing, ask:
 > behavior remains at the defaults until it is customized. Should I create it?
 
 If yes, read [configuration](references/06-configuration.md).
+
+### 6. Baseline accepted violations
+
+If reviewed violations remain, ask:
+
+> {count} reviewed violations remain. A baseline records them in
+> `.skillsaw-baseline.json` as accepted debt so CI fails only on new
+> violations; it does not fix them, and the file can shrink as they are fixed.
+> Should I create or update that baseline?
+
+If yes, read [baseline](references/05-baseline.md).
 
 ### 7. Add skillsaw CI
 
