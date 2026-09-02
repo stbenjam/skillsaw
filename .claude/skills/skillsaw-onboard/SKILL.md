@@ -45,13 +45,14 @@ Run `skillsaw lint --format json -v` to see all violations, including the info-l
 
 Follow [triage](references/12-triage.md) to categorize each group into **Fix now**, **Baseline**, or **Configure**, and present a clear summary table to the user for confirmation before making changes. Carry the agreed buckets into the subsequent steps.
 
-### 3. Apply safe fixes
+### 3. Apply autofixes
 
-If the scan identifies safe deterministic fixes, ask:
+If the **Fix now** bucket holds autofixable findings, ask:
 
-> The scan found safe deterministic fixes for {count} violations. Applying them
-> will edit the affected context files; I will show the changes and lint again
-> afterward. Should I apply those fixes now?
+> The plan includes autofixes for {count} violations: {safe count} safe and
+> {suggest count} suggested. Applying them will edit the affected context
+> files; I will show the changes and lint again afterward. Should I apply
+> those fixes now?
 
 If yes, read [autofix](references/03-autofix.md). If no, preserve the count.
 

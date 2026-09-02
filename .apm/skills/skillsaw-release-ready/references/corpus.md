@@ -26,4 +26,11 @@ uv venv ~/tmp/skillsaw-audit/venv-<last>
 uv pip install --python ~/tmp/skillsaw-audit/venv-<last>/bin/python skillsaw==<last>
 ```
 
-Run comparative scans with `--format json -v --fail-on info --no-baseline`. Comparing results helps identify new false positives (findings on unchanged files that shouldn't be there) and verifies intended fixes.
+Name the executable on each side, or both scans run the development checkout:
+
+```bash
+~/tmp/skillsaw-audit/venv-<last>/bin/skillsaw lint <repo> --no-custom-rules --format json -v --fail-on info --no-baseline
+.venv/bin/skillsaw lint <repo> --no-custom-rules --format json -v --fail-on info --no-baseline
+```
+
+Comparing results helps identify new false positives (findings on unchanged files that shouldn't be there) and verifies intended fixes.

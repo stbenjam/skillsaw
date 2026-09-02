@@ -65,9 +65,14 @@ Rules with ratchet behavior:
 | `context-budget` | token count | ceiling (can't increase) |
 | `content-instruction-budget` | instruction count | ceiling (can't increase) |
 | `content-actionability-score` | actionability score | floor (can't decrease) |
+| `agentskill-unreferenced-files` | unreferenced files in a collapsed directory | ceiling (can't increase) |
 
-All other rules use fingerprint matching — the violation is suppressed
-as long as the source line content hasn't changed.
+Every other finding, including that rule's per-file ones, uses fingerprint
+matching — the violation is suppressed as long as the source line content
+hasn't changed. A directory finding and the per-file findings it stands in
+for cover each other: a baseline that lists the files keeps suppressing the
+directory, and one that lists the directory keeps suppressing the files
+while they stay under its count.
 
 ## Ignoring the Baseline
 
