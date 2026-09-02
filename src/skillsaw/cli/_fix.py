@@ -80,6 +80,9 @@ def _run_fix(args):
             )
         finally:
             rule_progress.clear()
+        # The rename pass below replaces the linter; keep the first pass's
+        # failed writes or a partial fix could still report success.
+        path_failures = list(linter.fix_failures)
 
         if not dry_run and any(f.rule_id == "agentskill-name" for f in path_applied):
             context = RepositoryContext(
@@ -101,10 +104,11 @@ def _run_fix(args):
             )
             path_applied.extend(rename_applied)
             path_suggested.extend(rename_suggested)
+            path_failures.extend(linter.fix_failures)
 
         applied.extend((f, context.root_path) for f in path_applied)
         suggested.extend((f, context.root_path) for f in path_suggested)
-        failed.extend((f, error, context.root_path) for f, error in linter.fix_failures)
+        failed.extend((f, error, context.root_path) for f, error in path_failures)
 
         # fix output only lists fixes, so the deprecation notices carried in
         # the violations list would otherwise never reach the user.
