@@ -44,7 +44,19 @@ _KNOWN_FIELDS = frozenset(
         "hooks",
     }
 )
-_AGENT_TOOL_ALIASES = frozenset({"agent", "custom-agent", "task"})
+# Every documented spelling of the subagent tool: `agent` and `custom-agent`
+# in the Copilot coding-agent docs, `Task` from the Claude-family alias list,
+# and `runSubagent` / `agent/runSubagent` in VS Code's subagent docs. The
+# `agent/` namespace is open-ended, so any tool under it counts.
+_AGENT_TOOL_ALIASES = frozenset({"agent", "custom-agent", "task", "runsubagent"})
+_AGENT_TOOL_NAMESPACE = "agent/"
+
+
+def _is_agent_tool(name: str) -> bool:
+    lowered = name.casefold()
+    return lowered in _AGENT_TOOL_ALIASES or lowered.startswith(_AGENT_TOOL_NAMESPACE)
+
+
 _QUALIFIED_MODEL = re.compile(r"^\S(?:.*\S)?\s+\([^)]+\)$")
 
 
@@ -207,12 +219,13 @@ class CopilotAgentValidRule(Rule):
         supports_agents = target != "github-copilot"
         if supports_agents and agents_valid and agent_names and "tools" in data and tools_valid:
             restricted = "*" not in tool_names
-            if restricted and not (_AGENT_TOOL_ALIASES & {name.casefold() for name in tool_names}):
+            if restricted and not any(_is_agent_tool(name) for name in tool_names):
                 violations.append(
                     self._finding(
                         block,
                         "A non-empty 'agents' list requires the 'agent' tool (or a compatible "
-                        "'custom-agent'/'Task' alias) when 'tools' is restricted",
+                        "'custom-agent'/'Task'/'runSubagent'/'agent/*' alias) when 'tools' "
+                        "is restricted",
                         line=_key_line(data, "agents"),
                         discriminator="agents:tool",
                     )
@@ -316,8 +329,10 @@ class CopilotAgentValidRule(Rule):
             return
         value = data["description"]
         # Empty descriptions are content-quality findings owned by
-        # content-description-routing. Only a non-string is a schema defect.
-        if not isinstance(value, str):
+        # content-description-routing — including a bare `description:`
+        # key, which YAML reads as null. Only a non-string value is a
+        # schema defect; an error here would hide the routing warning.
+        if value is not None and not isinstance(value, str):
             violations.append(
                 self._finding(
                     block,

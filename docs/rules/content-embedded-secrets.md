@@ -24,18 +24,23 @@ even after removal and may be harvested by automated scanners.
 Two classes of match are handled differently:
 
 - **Structured token formats** (`AKIA…`, `ghp_…`, `sk-ant-…`, private-key
-  blocks, JWTs, …) are high-confidence and reported unless the complete
-  candidate is an exact, audited documentation literal. The canonical AWS
-  documentation access-key ID and a standalone `-----BEGIN RSA PRIVATE KEY-----`
-  header are permitted; close variants and standard PEM blocks with inline or
-  nearby key material still report. The context scan is bounded by physical
-  lines and characters so hostile files cannot force unbounded repeated work.
+  blocks, JWTs, …) are high-confidence and scanned everywhere in the file,
+  fenced code included. They are reported unless the complete candidate is
+  an exact, audited documentation literal (the canonical AWS documentation
+  access-key ID, the jwt.io example token), or the value contains a run of
+  one repeated character — `ghp_xxxxxxxx…` is the documentation idiom for a
+  token, and no real token has that shape. A PEM header is documentation
+  until key material follows it: `-----BEGIN OPENSSH PRIVATE KEY-----` in a
+  list of patterns to detect is fine; the same header with base64 lines after
+  it still reports. The context scan is bounded by physical lines and
+  characters so hostile files cannot force unbounded repeated work.
 - **Generic credential assignments** (`password = "…"`, `api_key: "…"`,
-  `secret_key`, `access_token`) are gated to avoid flagging documentation
-  examples:
+  `secret_key`, `access_token`) are scanned in prose only — a
+  `password: "SecurePass123!"` inside a fenced code block is a teaching
+  example — and are gated to avoid flagging documentation examples:
     - *Placeholder allowlist*: values containing obvious substring markers
       (`example`, `placeholder`, `dummy`, `changeme`, `your-…`, …), template
-      syntax (`<your-key>`, `${VAR}`, `{{ var }}`), or a single repeated
+      syntax (`<your-key>`, `${VAR}`, `$(cmd)`, `{{ var }}`), or a single repeated
       character are skipped. Extend the substring list with
       `additional-placeholders`.
     - *Audited examples*: exact values (`hunter2`, `sk_live_abc123xyz789`,

@@ -104,7 +104,8 @@ _KNOWN_SECRET_EXAMPLE_VALUE_CASEFOLDS = frozenset(
 # suppress it; the env/file forms name their scheme, which no credential
 # does by accident.
 _TEMPLATE_SYNTAX = re.compile(
-    r"<[A-Za-z][A-Za-z0-9 _./-]{2,}>|\$\{[^}]*\}|\{\{[^}]*\}\}|\{(?:env|file):[^}]*\}"
+    r"<[A-Za-z][A-Za-z0-9 _./-]{2,}>|\$\{[^}]*\}|\$\([^)]*\)|\{\{[^}]*\}\}"
+    r"|\{(?:env|file):[^}]*\}"
 )
 
 # Bare $VAR env-var interpolation. Matched greedily and confirmed in code:

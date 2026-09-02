@@ -331,7 +331,6 @@ class TestSupplyChainHooks:
         assert "hooks-dangerous" in rule_ids(r)
         sc = by_rule(r)["hooks-dangerous"]
         assert len(sc) >= 2
-        assert any("dotfile directory" in v["message"] for v in sc)
         assert any("downloads and executes" in v["message"] for v in sc)
 
     def test_frontmatter_hooks_malicious_detected(self, tmp_path):
@@ -342,7 +341,6 @@ class TestSupplyChainHooks:
         assert "hooks-dangerous" in rule_ids(r)
         sc = by_rule(r)["hooks-dangerous"]
         assert any("downloads and executes" in v["message"] for v in sc)
-        assert any("dotfile directory" in v["message"] for v in sc)
         # Line points at the frontmatter hooks: key, not the whole file.
         assert all(v["line"] for v in sc)
 
@@ -2088,7 +2086,6 @@ class TestCursorRules:
 
         found = by_rule(run_lint(repo, "-v"))["content-unlinked-internal-reference"]
         assert [v["fixable"] for v in found] == [False]
-        assert "autofixable" not in found[0]["message"]
 
         # And the fix really does stand down rather than rewriting the JSON.
         _run_fix(repo)
@@ -3536,11 +3533,12 @@ class TestOpenCode:
         assert "playwright" in message, "a server only in the 1.x flat layout must be seen"
 
     def test_malformed_shapes_are_warnings_not_errors(self, tmp_path):
-        """A shape defect leaves the rest of the file loading, so none is an error.
+        """A shape OpenCode's loader rejects makes it refuse to start.
 
-        The only error this rule raises is a top level that is not an
-        object; the sibling test pins it. Everything else an OpenCode
-        config can fail at is owned by `mcp-valid-json`.
+        Those take the rule's severity (error by default). A setting that
+        merely loads twice — both spellings of one key, a server declared in
+        both layouts, an editor-only `$schema` — stays a warning. Everything
+        else an OpenCode config can fail at is owned by `mcp-valid-json`.
         """
         repo = copy_fixture("opencode/malformed-shapes", tmp_path)
         found = by_rule(run_lint(repo))["opencode-config-valid"]
@@ -3563,9 +3561,44 @@ class TestOpenCode:
             for v in by_rule(run_lint(repo))["mcp-valid-json"]
         )
 
-        # Every defect in this fixture is a shape problem, and a shape
-        # problem leaves the rest of the file loading.
-        assert {v["severity"] for v in found} == {"warning"}
+        severity = {v["message"]: v["severity"] for v in found}
+        assert severity["'agents.not-an-object' must be an object"] == "error"
+        assert severity["'agent' must be a JSON object mapping names to definitions"] == "error"
+        assert severity["MCP server 'bad-maps' 'environment' must be an object"] == "error"
+        assert severity[
+            "MCP server 'no-connection' with type 'remote' must have a 'url' field"
+        ] == ("error")
+        assert severity["'$schema' must be a URL string"] == "warning"
+        assert [
+            s for m, s in severity.items() if "'declared-twice' is declared under both" in m
+        ] == ["warning"]
+
+    def test_a_server_with_a_boolean_enabled_loads_as_a_toggle(self, tmp_path):
+        """The 1.x `mcp` union has a bare `{enabled: boolean}` branch that
+        ignores excess properties, so a broken server carrying `enabled`
+        loads silently and never starts — a warning. Without `enabled` the
+        same shape makes OpenCode refuse to start."""
+        repo = self._opencode_repo(
+            tmp_path,
+            "toggle",
+            '{"mcp": {"tolerated": {"type": "local", "enabled": true},'
+            ' "fatal": {"type": "local"}}}',
+        )
+
+        found = by_rule(run_lint(repo))["opencode-config-valid"]
+        assert {(v["severity"], v["message"]) for v in found} == {
+            ("warning", "MCP server 'tolerated' with type 'local' must have a 'command' field"),
+            ("error", "MCP server 'fatal' with type 'local' must have a 'command' field"),
+        }
+
+    def test_configured_severity_applies_to_fatal_shapes(self, tmp_path):
+        repo = self._opencode_repo(tmp_path, "sev", '{"mcp": {"fatal": {"type": "local"}}}')
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n  opencode-config-valid:\n    severity: warning\n"
+        )
+
+        found = by_rule(run_lint(repo))["opencode-config-valid"]
+        assert [v["severity"] for v in found] == ["warning"]
 
     def test_a_bare_enabled_toggle_is_not_a_missing_transport(self, tmp_path):
         """`{"enabled": false}` is the one v1 server form that carries no type."""
@@ -3600,11 +3633,13 @@ class TestOpenCode:
             ("error", "OpenCode configuration must be a JSON object")
         ]
 
-    def test_a_non_object_mcp_section_is_a_warning(self, tmp_path):
+    def test_a_non_object_mcp_section_is_an_error(self, tmp_path):
         repo = self._opencode_repo(tmp_path, "mcpshape", '{"mcp": ["playwright"]}')
 
-        messages = [v["message"] for v in by_rule(run_lint(repo))["opencode-config-valid"]]
-        assert messages == ["'mcp' must be a JSON object"]
+        found = by_rule(run_lint(repo))["opencode-config-valid"]
+        assert [(v["severity"], v["message"]) for v in found] == [
+            ("error", "'mcp' must be a JSON object")
+        ]
 
     def test_a_mirrored_schema_url_is_information_not_a_defect(self, tmp_path):
         """A vendored copy is legitimate, so it is a note rather than a finding."""
@@ -3853,7 +3888,6 @@ class TestApm:
         assert "hooks-dangerous" in rule_ids(r)
         sc = by_rule(r)["hooks-dangerous"]
         assert any("downloads and executes" in v["message"] for v in sc)
-        assert any("dotfile directory" in v["message"] for v in sc)
 
 
 # ── Promptfoo ────────────────────────────────────────────────────
@@ -5072,6 +5106,14 @@ class TestDescriptionRouting:
             "passive-must-whenever",
             "passive-should-before",
             "use-only-when",
+            # Phrasings real authors write, seeded from the Agent Skills
+            # reference content that once warned.
+            "activates-when-asked",
+            "trigger-label",
+            "load-this-skill-whenever",
+            "use-after-opening-pr",
+            "claude-should-use-whenever",
+            "applies-when-touching",
         }
         discovered = {Path(path).name for path in result["out"]["stats"]["skills"]}
         flagged = {
@@ -5386,6 +5428,28 @@ class TestUnlinkedInternalReferenceAutofix:
     def _run_fix(self, path, *extra_args):
         # --rule names the rule explicitly, so it fixes at any severity.
         return run_cli(["fix", "--rule", "content-unlinked-internal-reference", *extra_args, path])
+
+    def test_message_never_promises_a_fix_the_default_run_skips(self, tmp_path):
+        """The rule is INFO, below the default fix scope, so a plain
+        `skillsaw fix` leaves it alone. The message must not say otherwise;
+        the fixable flag and the `[*]` marker are what carry fixability, and
+        `--rule` is the documented way to apply it."""
+        repo = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
+        before = (repo / "CLAUDE.md").read_text()
+
+        found = by_rule(run_lint(repo))["content-unlinked-internal-reference"]
+        assert found
+        assert all(v["fixable"] for v in found)
+        assert not any("autofixable" in v["message"] for v in found)
+        text = run_lint(repo, fmt="text", verbose=True)["stdout"]
+        assert "autofixable" not in text
+        assert "(content-unlinked-internal-reference) [*]" not in text
+
+        assert run_cli(["fix", str(repo)]).returncode == 0
+        assert (repo / "CLAUDE.md").read_text() == before
+
+        assert self._run_fix(repo).returncode == 0
+        assert (repo / "CLAUDE.md").read_text() != before
 
     def test_fix_duplicate_paths_via_cli(self, tmp_path):
         """CLI fix wraps duplicate bare paths without double-wrapping."""
@@ -6267,11 +6331,15 @@ class TestLintFixLoop:
                 assert v["fixable"] is False
                 assert "fix_confidence" not in v
 
-        # content-unlinked-internal-reference: fixable iff the target exists.
+        # content-unlinked-internal-reference: every reported reference has an
+        # existing target, so each is fixable — and the message never says so;
+        # the fixable flag and the [*] marker carry that.
         unlinked = grouped["content-unlinked-internal-reference"]
-        assert any(v["fixable"] for v in unlinked)
+        assert unlinked
         for v in unlinked:
-            assert v["fixable"] == ("autofixable" in v["message"])
+            assert v["fixable"] is True
+            assert v["fix_confidence"] == "safe"
+            assert "autofixable" not in v["message"]
 
         # Rules without an autofix report fixable: false, no confidence.
         for v in grouped["agentskill-unreferenced-files"]:
@@ -7411,3 +7479,38 @@ class TestYamlMergeKeyConfig:
 
         assert r["rc"] == 0
         assert all(v["rule_id"] != "invalid-config" for v in violations(r))
+
+
+@pytest.mark.integration
+class TestUnrecognizedRepositoryWarning:
+    """The warning names a directory skillsaw found nothing in — never one it
+    then lints. A repository recognized by an instruction format alone
+    (Cursor, Cline, Copilot, …) has no repo type but is not unrecognized."""
+
+    WARNING = "doesn't appear to be a recognized repository"
+
+    def test_editor_only_repositories_are_not_warned_about(self, tmp_path):
+        cursor = copy_fixture("cursor-rules/clean", tmp_path)
+        assert self.WARNING not in run_lint(cursor)["stderr"]
+
+        cline = tmp_path / "cline"
+        (cline / ".clinerules").mkdir(parents=True)
+        (cline / ".clinerules" / "style.md").write_text(
+            "# Style\n\nPrefer small, focused pull requests with a clear description.\n"
+        )
+        assert self.WARNING not in run_lint(cline)["stderr"]
+
+    def test_root_agents_md_is_a_recognized_repository(self, tmp_path):
+        repo = tmp_path / "agents-only"
+        repo.mkdir()
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test` before opening a PR.\n")
+        assert self.WARNING not in run_lint(repo)["stderr"]
+
+    def test_empty_directory_is_still_warned_about(self, tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        (empty / "README.md").write_text("# Nothing agentic here\n")
+
+        stderr = run_lint(empty)["stderr"]
+        assert self.WARNING in stderr
+        assert "Expected: agent skills (SKILL.md)" in stderr

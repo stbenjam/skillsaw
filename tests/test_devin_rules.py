@@ -47,6 +47,46 @@ def test_valid_devin_rule_activation_modes(tmp_path):
     assert DevinRulesValidRule().check(RepositoryContext(tmp_path)) == []
 
 
+def test_devin_rule_trigger_is_optional(tmp_path):
+    """`devin rules list` infers the mode: globs -> glob-activated,
+    description -> agent-decidable. Neither is a defect."""
+    _devin_rule(
+        tmp_path,
+        "globs-only.md",
+        "---\nglobs:\n  - src/**/*.ts\n---\nPrefer named exports.\n",
+    )
+    _devin_rule(
+        tmp_path,
+        "description-only.md",
+        "---\ndescription: Apply when touching the payments service.\n---\nUse idempotency keys.\n",
+    )
+
+    assert DevinRulesValidRule().check(RepositoryContext(tmp_path)) == []
+
+
+def test_devin_rule_without_activation_is_informational(tmp_path):
+    """A rule with no trigger, globs, or description is manual (`@rule`)."""
+    _devin_rule(tmp_path, "manual-style.md", "Run the release checklist before tagging.\n")
+
+    found = DevinRulesValidRule().check(RepositoryContext(tmp_path))
+
+    assert [(v.severity, v.line) for v in found] == [(Severity.INFO, None)]
+    assert "never activates on its own" in found[0].message
+    assert found[0].message.endswith("@manual-style")
+
+
+def test_devin_rule_inferred_glob_mode_still_checks_globs(tmp_path):
+    _devin_rule(
+        tmp_path,
+        "escaping.md",
+        "---\nglobs:\n  - ../shared/**\n---\nRule body.\n",
+    )
+
+    found = DevinRulesValidRule().check(RepositoryContext(tmp_path))
+
+    assert [(v.severity, v.line) for v in found] == [(Severity.ERROR, 3)]
+
+
 def test_devin_documented_unquoted_glob_scalar_is_valid(tmp_path):
     _devin_rule(
         tmp_path,
@@ -99,7 +139,8 @@ def test_devin_rule_activation_errors_have_field_lines(tmp_path):
     ]
     assert [v.line for v in by_file["glob.md"]] == [4, 5, 6]
     assert [v.line for v in by_file["model.md"]] == [3]
-    assert by_file["missing.md"][0].line is None
+    # A description alone makes the rule agent-decidable; nothing to report.
+    assert "missing.md" not in by_file
 
 
 def test_devin_rule_reports_malformed_yaml_and_size_limit(tmp_path):

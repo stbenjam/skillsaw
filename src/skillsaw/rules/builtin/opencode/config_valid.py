@@ -5,7 +5,7 @@ Rule: opencode-config-valid
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Set, Tuple
+from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.blocks import OpenCodeConfigBlock, OpenCodeMcpBlock
 from skillsaw.context import HAS_OPENCODE, RepositoryContext
@@ -401,7 +401,6 @@ class OpenCodeConfigValidRule(Rule):
                     self.violation(
                         f"'{key}' must be a JSON object mapping names to definitions",
                         file_path=path,
-                        severity=Severity.WARNING,
                     )
                 )
         return violations
@@ -422,7 +421,6 @@ class OpenCodeConfigValidRule(Rule):
                     self.violation(
                         f"'{where}' must be an object",
                         file_path=path,
-                        severity=Severity.WARNING,
                     )
                 )
                 continue
@@ -445,7 +443,6 @@ class OpenCodeConfigValidRule(Rule):
                     self.violation(
                         f"'{where}.{key}' must be a string",
                         file_path=path,
-                        severity=Severity.WARNING,
                     )
                 )
         for key in ("disable", "disabled"):
@@ -454,7 +451,6 @@ class OpenCodeConfigValidRule(Rule):
                     self.violation(
                         f"'{where}.{key}' must be a boolean",
                         file_path=path,
-                        severity=Severity.WARNING,
                     )
                 )
         return violations
@@ -470,25 +466,22 @@ class OpenCodeConfigValidRule(Rule):
                     self.violation(
                         f"'{where}' must be an object",
                         file_path=path,
-                        severity=Severity.WARNING,
                     )
                 )
                 continue
             # ``template`` is the only required key on a command entry
             # (``required: ["template"]`` in the published schema), and it
             # is the prompt the command runs. A JSON entry has no body to
-            # supply it the way a ``.opencode/commands/*.md`` file does, so
-            # an absent key and an empty one are the same defect: a command
-            # that appears in the menu and does nothing.
+            # supply it the way a ``.opencode/commands/*.md`` file does, and
+            # OpenCode refuses to load a project configuration that omits it.
             template = entry.get("template")
             if not isinstance(template, str) or not template.strip():
                 violations.append(
                     self.violation(
                         f"'{where}.template' must be a non-empty string — it is the "
-                        "prompt the command runs, and a command entry without one "
-                        "is inert",
+                        "prompt the command runs, and OpenCode refuses to load a "
+                        "configuration whose command has none",
                         file_path=path,
-                        severity=Severity.WARNING,
                     )
                 )
             if section == "commands":
@@ -498,7 +491,6 @@ class OpenCodeConfigValidRule(Rule):
                             self.violation(
                                 f"'{where}.{key}' must be a string",
                                 file_path=path,
-                                severity=Severity.WARNING,
                             )
                         )
                 if "subtask" in entry and not isinstance(entry["subtask"], bool):
@@ -506,7 +498,6 @@ class OpenCodeConfigValidRule(Rule):
                         self.violation(
                             f"'{where}.subtask' must be a boolean",
                             file_path=path,
-                            severity=Severity.WARNING,
                         )
                     )
                 if "model" in entry and _lower_model_selection(entry["model"]) is None:
@@ -515,7 +506,6 @@ class OpenCodeConfigValidRule(Rule):
                             f"'{where}.model' must be a provider/model string or a "
                             "model selection object",
                             file_path=path,
-                            severity=Severity.WARNING,
                         )
                     )
         return violations
@@ -532,7 +522,6 @@ class OpenCodeConfigValidRule(Rule):
                 self.violation(
                     "'mcp' must be a JSON object",
                     file_path=path,
-                    severity=Severity.WARNING,
                 )
             ]
         violations: List[RuleViolation] = []
@@ -561,7 +550,6 @@ class OpenCodeConfigValidRule(Rule):
                     self.violation(
                         f"MCP server '{shown}' configuration must be an object",
                         file_path=path,
-                        severity=Severity.WARNING,
                     )
                 )
                 continue
@@ -571,8 +559,18 @@ class OpenCodeConfigValidRule(Rule):
     def _check_mcp_server(
         self, shown: str, server: Dict[str, Any], path: Path
     ) -> List[RuleViolation]:
-        """One server entry: transport, connection field, and the maps around it."""
+        """One server entry: transport, connection field, and the maps around it.
+
+        A shape OpenCode's loader rejects makes it refuse to start, so those
+        findings take the rule's severity. The one tolerated case is a server
+        carrying a boolean ``enabled``: the 1.x ``mcp`` union has a bare
+        ``{enabled: boolean}`` toggle branch that ignores excess properties,
+        so a broken server with ``enabled`` loads silently as a toggle and
+        simply never starts — a warning, not a startup failure.
+        """
         violations: List[RuleViolation] = []
+        tolerated = isinstance(server.get("enabled"), bool)
+        shape_severity = Severity.WARNING if tolerated else None
 
         unknown = oc.unknown_keys(server, self._accepted_keys(oc.MCP_SERVER_KEYS))
         if unknown:
@@ -606,7 +604,7 @@ class OpenCodeConfigValidRule(Rule):
                     self.violation(
                         f"MCP server '{shown}' '{key}' must be a boolean",
                         file_path=path,
-                        severity=Severity.WARNING,
+                        severity=shape_severity,
                     )
                 )
 
@@ -617,11 +615,11 @@ class OpenCodeConfigValidRule(Rule):
                     "(1.x) or an object of "
                     f"{'/'.join(sorted(oc.MCP_TIMEOUT_KEYS))} (2.0)",
                     file_path=path,
-                    severity=Severity.WARNING,
+                    severity=shape_severity,
                 )
             )
 
-        violations.extend(self._check_mcp_maps(shown, server, path))
+        violations.extend(self._check_mcp_maps(shown, server, path, shape_severity))
 
         server_type = server.get("type")
         if server_type is None:
@@ -633,7 +631,7 @@ class OpenCodeConfigValidRule(Rule):
                         f"MCP server '{shown}' is missing 'type' — must be one of: "
                         f"{', '.join(sorted(oc.MCP_SERVER_TYPES))}",
                         file_path=path,
-                        severity=Severity.WARNING,
+                        severity=shape_severity,
                     )
                 )
             return violations
@@ -652,7 +650,7 @@ class OpenCodeConfigValidRule(Rule):
                     f"{safe_display(repr(server_type))} — must be one of: "
                     f"{', '.join(sorted(oc.MCP_SERVER_TYPES))}",
                     file_path=path,
-                    severity=Severity.WARNING,
+                    severity=shape_severity,
                 )
             )
             return violations
@@ -664,7 +662,7 @@ class OpenCodeConfigValidRule(Rule):
                     f"MCP server '{shown}' with type '{server_type}' must have a "
                     f"'{required}' field",
                     file_path=path,
-                    severity=Severity.WARNING,
+                    severity=shape_severity,
                 )
             )
         elif required == "command":
@@ -682,7 +680,7 @@ class OpenCodeConfigValidRule(Rule):
                         f"MCP server '{shown}' 'command' must be a non-empty array of "
                         'strings, e.g. ["npx", "-y", "pkg"]',
                         file_path=path,
-                        severity=Severity.WARNING,
+                        severity=shape_severity,
                     )
                 )
         elif not isinstance(server["url"], str) or not server["url"].strip():
@@ -690,7 +688,7 @@ class OpenCodeConfigValidRule(Rule):
                 self.violation(
                     f"MCP server '{shown}' 'url' must be a non-empty string",
                     file_path=path,
-                    severity=Severity.WARNING,
+                    severity=shape_severity,
                 )
             )
         # A credential-bearing ``url`` is deliberately *not* checked here.
@@ -701,7 +699,11 @@ class OpenCodeConfigValidRule(Rule):
         return violations
 
     def _check_mcp_maps(
-        self, shown: str, server: Dict[str, Any], path: Path
+        self,
+        shown: str,
+        server: Dict[str, Any],
+        path: Path,
+        severity: Optional[Severity] = None,
     ) -> List[RuleViolation]:
         """Shape only, for ``environment``, ``headers`` and ``oauth``.
 
@@ -728,7 +730,7 @@ class OpenCodeConfigValidRule(Rule):
                 self.violation(
                     f"MCP server '{shown}' '{key}' must be an object",
                     file_path=path,
-                    severity=Severity.WARNING,
+                    severity=severity,
                 )
             )
         return violations

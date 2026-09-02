@@ -14,7 +14,6 @@ Cursor lifecycle hook is just as dangerous as one in `hooks.json`.
 
 This rule flags hook commands that:
 
-- execute scripts from dotfile directories (a common hiding spot)
 - chain a download into execution (`curl ... | sh`, `wget ... | bash`)
 - obfuscate their payload (`eval`, `base64 -d`)
 - make network requests

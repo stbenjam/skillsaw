@@ -1,9 +1,8 @@
 """
 Rule: hooks-dangerous
 
-Flags hook commands that match dangerous patterns: executing scripts from
-dotfile directories, download-and-execute, obfuscation, and suspicious
-runtimes or network access.
+Flags hook commands that match dangerous patterns: download-and-execute,
+obfuscation, and suspicious runtimes or network access.
 """
 
 import re
@@ -52,7 +51,6 @@ _ENV_PREFIX = (
 )
 _INTERPRETER_CMD = rf"{_ENV_PREFIX}(?:\S+/)?{_INTERPRETERS}"
 _SUDO = r"(?:sudo\s+)?"
-_DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|devin|github|windsurf)"
 
 # What separates one command from the next. A newline is a separator every
 # shell honours, and hook commands arrive as JSON strings where a multi-line
@@ -79,15 +77,6 @@ _CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\||&|(?:\$\(|<\())"
 # the wrapper scan exponential). A target starting with `<`/`>` is a shell
 # syntax error anyway, so refusing it loses nothing real.
 _REDIRECTION = r"(?:\d*(?:>>|<<|[><])\s*(?![<>])\S+\s+|\d*&\d*\s+)*"
-
-_SCRIPT_FROM_DOTFILES_RE = re.compile(
-    rf"""{_CMD_BOUNDARY}\s*{_REDIRECTION}
-        {_SUDO}                              # optional sudo
-        (?:{_INTERPRETER_CMD})\s+(?:run\s+)? # interpreter [run]
-        (?:\S+/)?{_DOTFILE_DIRS}/\S+         # path under dotfile dir
-    """,
-    re.VERBOSE,
-)
 
 # Words that may sit between a command boundary and the executable without
 # changing which program runs: POSIX wrappers (`command`, `exec`, `time`,
@@ -451,13 +440,6 @@ def dangerous_command_descriptions(command: str) -> List[str]:
     """Return messages for dangerous patterns in a command."""
     lower_command = command.lower()
     relevant = (
-        ".claude",
-        ".vscode",
-        ".cursor",
-        ".codex",
-        ".devin",
-        ".github",
-        ".windsurf",
         "curl",
         "wget",
         "ncat",
@@ -475,9 +457,6 @@ def dangerous_command_descriptions(command: str) -> List[str]:
     raw_command = command
     command = _mask_quoted_separators(raw_command)
     findings: List[str] = []
-
-    if _SCRIPT_FROM_DOTFILES_RE.search(command):
-        findings.append("executes a script from a dotfile directory")
 
     if ("curl" in lower_command or "wget" in lower_command) and _downloads_and_executes(
         raw_command
@@ -517,9 +496,8 @@ class HooksDangerousRule(Rule):
     @property
     def description(self) -> str:
         return (
-            "Flags hook commands that execute scripts from dotfile directories, "
-            "download-and-execute chains (curl|sh), obfuscation (eval/base64), "
-            "or perform network requests"
+            "Flags hook commands that chain a download into execution (curl|sh), "
+            "obfuscate their payload (eval/base64), or perform network requests"
         )
 
     def default_severity(self) -> Severity:

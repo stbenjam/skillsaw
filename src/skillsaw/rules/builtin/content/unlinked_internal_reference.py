@@ -153,8 +153,6 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 # there is no span in the enclosing file to splice into.
                 fixable = not cf.diagnostic_only
                 msg = f"Unlinked path reference: '{path_str}' — consider wrapping in link syntax [{path_str}]({path_str})"
-                if fixable:
-                    msg += " (file exists, autofixable)"
                 violations.append(self.violation(msg, block=cf, line=body_line, fixable=fixable))
         return violations
 
@@ -164,7 +162,7 @@ class ContentUnlinkedInternalReferenceRule(Rule):
         patterns = self.setting("patterns")
         fixes_by_file: Dict[Path, List[tuple]] = defaultdict(list)
         for v in violations:
-            if not v.file_path or "autofixable" not in v.message or v.block is None:
+            if not v.file_path or not v.fixable or v.block is None:
                 continue
             path_str = v.message.split("'")[1]
             fixes_by_file[v.file_path].append((path_str, v))

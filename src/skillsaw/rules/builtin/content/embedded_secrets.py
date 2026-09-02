@@ -41,6 +41,20 @@ _REFERENCE_MAX_BITS = 4.0
 # contiguous access-key-shaped value that repository push protection rejects.
 _AWS_DOCUMENTATION_ACCESS_KEY_ID_PARTS = ("AKIAIOSF", "ODNN7EXAMPLE")
 _RSA_PRIVATE_KEY_HEADER = "-----BEGIN RSA PRIVATE KEY-----"
+# Every PEM private-key header the structured detector matches. A header is
+# documentation until key material follows it: security skills list the
+# headers they scan for, and a header line alone leaks nothing.
+_PEM_PRIVATE_KEY_HEADER_RE = re.compile(r"\A-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----\Z")
+# The jwt.io example token (HS256, secret "your-256-bit-secret"), reproduced
+# verbatim across API documentation.
+_JWT_IO_EXAMPLE_TOKEN = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ."
+    "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+)
+# A run of one repeated character eight or more long. Random token material
+# never contains one; `ghp_xxxxxxxx…` and `AIzaSyXXXX…` placeholders always do.
+_REPEATED_CHARACTER_RUN_RE = re.compile(r"(.)\1{7,}")
 
 # Exact literals audited from public documentation corpora, compared
 # case-insensitively after trimming surrounding whitespace. These are values,
@@ -53,6 +67,7 @@ _KNOWN_EXAMPLE_VALUES = KNOWN_SECRET_EXAMPLE_VALUES | frozenset(
         "sk_live_abc123def456",
         "django-insecure-...",
         _RSA_PRIVATE_KEY_HEADER,
+        _JWT_IO_EXAMPLE_TOKEN,
     }
 )
 _KNOWN_EXAMPLE_VALUE_CASEFOLDS = frozenset(value.casefold() for value in _KNOWN_EXAMPLE_VALUES)
@@ -227,16 +242,18 @@ def _rsa_private_key_der_prefix_status(material: str) -> Tuple[bool, bool]:
     return True, True
 
 
-def _pem_context_segments(candidate: str) -> Tuple[List[Optional[str]], bool, bool]:
+def _pem_context_segments(
+    candidate: str, end_marker: str = _PEM_END_MARKER
+) -> Tuple[List[Optional[str]], bool, bool]:
     """Classify one bounded physical PEM-context line.
 
     Returns normalized base64-shaped logical lines, ``None`` for non-payload
-    logical lines, whether the RSA end marker was reached, and whether legacy
-    PEM encryption metadata was present. Empty lines and exact metadata are
+    logical lines, whether *end_marker* was reached, and whether legacy PEM
+    encryption metadata was present. Empty lines and exact metadata are
     neutral.
     """
     bounded = candidate[:_PEM_LOOKAHEAD_CHARS_PER_LINE]
-    marker_index = bounded.find(_PEM_END_MARKER)
+    marker_index = bounded.find(end_marker)
     reached_end_marker = marker_index >= 0
     if reached_end_marker:
         bounded = bounded[:marker_index]
@@ -315,6 +332,51 @@ def _pem_material_progress(state: _PemMaterialState, candidate: str) -> Tuple[bo
         if detected:
             return reached_end_marker, True
     return reached_end_marker, False
+
+
+def _pem_material_follows_header(
+    lines: List[str],
+    line_index: int,
+    match: re.Match,
+    budget: _PemScanBudget,
+) -> bool:
+    """Whether a non-RSA PEM header introduces base64 key material.
+
+    The RSA detector confirms a DER prefix; other key encodings have no one
+    prefix to confirm, so credible material is a base64 run at least
+    ``_PEM_KEY_MATERIAL_MIN_CHARS`` long before the matching end marker.
+    Any non-payload line resets the run, so a list of headers a security
+    skill scans for never accumulates material from its neighbours.
+    """
+    header = match.group(0)
+    end_marker = header.replace("-----BEGIN ", "-----END ", 1)
+    remainder = lines[line_index][match.end() :]
+    remainder_truncated = len(remainder) > _PEM_LOOKAHEAD_CHARS_PER_LINE
+    lookahead_end = min(len(lines), line_index + 1 + _PEM_LOOKAHEAD_PHYSICAL_LINES)
+    candidates = [remainder] + lines[line_index + 1 : lookahead_end]
+    material = 0
+    for position, candidate in enumerate(candidates):
+        truncated = (
+            remainder_truncated
+            if position == 0
+            else (len(candidate) > _PEM_LOOKAHEAD_CHARS_PER_LINE)
+        )
+        candidate = candidate[:_PEM_LOOKAHEAD_CHARS_PER_LINE]
+        if not budget.claim(candidate):
+            return True
+        segments, reached_end_marker, _metadata = _pem_context_segments(candidate, end_marker)
+        for segment in segments:
+            if segment is None:
+                material = 0
+                continue
+            material += len(segment.rstrip("="))
+            if material >= _PEM_KEY_MATERIAL_MIN_CHARS:
+                return True
+        if reached_end_marker:
+            return False
+        if truncated:
+            return True
+    return False
 
 
 def _is_rsa_header_delimiter(character: str) -> bool:
@@ -453,21 +515,35 @@ class ContentEmbeddedSecretsRule(Rule):
         match: re.Match,
         pem_budget: Optional[_PemScanBudget] = None,
     ) -> bool:
-        """Keep structured-token exceptions exact and PEM-material aware."""
-        value = match.group(0)
-        if not _is_known_example_value(value):
-            return True
+        """Keep structured-token exceptions exact and PEM-material aware.
 
+        A structured token is high-confidence, so the only exemptions are
+        an audited documentation literal, a PEM header with no key material
+        after it, and a run of one repeated character — the shape every
+        ``ghp_xxxx…`` placeholder has and no real token does. Substring
+        placeholder markers deliberately do not apply here: a real token can
+        contain ``test`` or ``fake`` by chance, and a structured match is
+        the detector that finds real leaks.
+        """
+        value = match.group(0)
         line = lines[line_index]
         previous_char = line[match.start() - 1 : match.start()]
         next_char = line[match.end() : match.end() + 1]
-        if value == _RSA_PRIVATE_KEY_HEADER:
+        if _PEM_PRIVATE_KEY_HEADER_RE.match(value):
             if not _is_rsa_header_delimiter(previous_char) or not _is_rsa_header_delimiter(
                 next_char
             ):
                 # The header is embedded in a larger token, not standalone.
                 return True
-            return cls._pem_key_material_follows(lines, line_index, match, pem_budget)
+            if value == _RSA_PRIVATE_KEY_HEADER:
+                return cls._pem_key_material_follows(lines, line_index, match, pem_budget)
+            if pem_budget is None:
+                pem_budget = _PemScanBudget(_PEM_SCAN_MAX_CHARS_PER_BLOB)
+            return _pem_material_follows_header(lines, line_index, match, pem_budget)
+        if _REPEATED_CHARACTER_RUN_RE.search(value):
+            return False
+        if not _is_known_example_value(value):
+            return True
 
         # AWS access-key IDs contain only uppercase letters and digits. Syntax
         # such as '=' or quotes delimits the known documentation value, while
@@ -493,8 +569,17 @@ class ContentEmbeddedSecretsRule(Rule):
         threshold: float,
         markers: Tuple[str, ...],
         line_overrides: Optional[Dict[int, str]] = None,
+        prose: Optional[str] = None,
     ):
-        """Yield ``(line_num, desc)`` for at most one violation per line."""
+        """Yield ``(line_num, desc)`` for at most one violation per line.
+
+        Structured tokens are scanned in *text*, the complete body: a real
+        ``ghp_…`` token inside a fenced block is a real leak. The generic
+        ``key = "value"`` patterns are scanned in *prose* — the same body with
+        fences, code spans and comments blanked, line count preserved — so a
+        ``password: "SecurePass123!"`` teaching example in a code sample is
+        not reported. *prose* defaults to *text* for bodies without markdown.
+        """
         active = patterns_matching_anywhere(text, self._PATTERNS)
         if not active:
             return
@@ -504,12 +589,14 @@ class ContentEmbeddedSecretsRule(Rule):
         # (a payload could plant a U+2028 to point the finding elsewhere).
         # read_body() has already normalized CRLF.
         lines = text.split("\n")
+        prose_lines = lines if prose is None else prose.split("\n")
         pem_budget = _PemScanBudget(_PEM_SCAN_MAX_CHARS_PER_BLOB)
         for body_line, normalized_line in (line_overrides or {}).items():
             if 1 <= body_line <= len(lines):
                 lines[body_line - 1] = normalized_line
         for line_index, line in enumerate(lines):
             line_num = line_index + 1
+            prose_line = prose_lines[line_index] if line_index < len(prose_lines) else line
             for pattern, desc, is_generic in active:
                 if not is_generic:
                     if any(
@@ -521,7 +608,7 @@ class ContentEmbeddedSecretsRule(Rule):
                     continue
                 if any(
                     self._generic_match_reportable(m.group(1), threshold, markers)
-                    for m in pattern.finditer(line)
+                    for m in pattern.finditer(prose_line)
                 ):
                     yield line_num, desc
                     break
@@ -539,7 +626,10 @@ class ContentEmbeddedSecretsRule(Rule):
                 if _RSA_PRIVATE_KEY_HEADER in body
                 else None
             )
-            for line_num, desc in self._scan_text(body, threshold, markers, ordered_list_lines):
+            prose = cf.read_body(strip_code_blocks=True)
+            for line_num, desc in self._scan_text(
+                body, threshold, markers, ordered_list_lines, prose=prose
+            ):
                 violations.append(
                     self.violation(
                         f"Potential secret detected: {desc}",

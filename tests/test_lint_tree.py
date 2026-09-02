@@ -397,6 +397,31 @@ def test_tree_contains_nested_devin_content_without_duplicates(temp_dir):
     assert [block.path for block in tree.find(InstructionBlock)].count(global_rule) == 1
 
 
+def test_lowercase_agents_md_is_a_documentation_page_without_devin_evidence(temp_dir):
+    """Only Devin Desktop reads ``agents.md`` case-insensitively. A repository
+    with a root CLAUDE.md and a ``docs/agents.md`` documenting its SDK agent
+    classes has no instruction file at that path."""
+    from skillsaw.blocks import AgentsMdBlock, ClaudeMdBlock
+
+    (temp_dir / "CLAUDE.md").write_text("# Project\n\nRun `make test` before pushing.\n")
+    docs_page = temp_dir / "docs" / "agents.md"
+    docs_page.parent.mkdir()
+    docs_page.write_text("# Agents\n\nThe `Agent` class wraps a model and its tools.\n")
+
+    context = RepositoryContext(temp_dir)
+    tree = context.lint_tree
+
+    assert "HAS_DEVIN" not in context.detected_formats
+    assert "HAS_AGENTS_MD" not in context.detected_formats
+    assert [block.path for block in tree.find(ClaudeMdBlock)] == [temp_dir / "CLAUDE.md"]
+    assert tree.find(AgentsMdBlock) == []
+
+    # The same page is an instruction file once the repository is a Devin one.
+    (temp_dir / ".devin" / "rules").mkdir(parents=True)
+    tree = RepositoryContext(temp_dir).lint_tree
+    assert [block.path for block in tree.find(AgentsMdBlock)] == [docs_page]
+
+
 def test_nearest_tool_root_determines_nested_skill_dialect(temp_dir):
     from skillsaw.blocks import DevinSkillBlock, SkillBlock
 

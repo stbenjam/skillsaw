@@ -3,7 +3,7 @@
 
 # hooks-dangerous
 
-Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests
+Flags hook commands that chain a download into execution (curl|sh), obfuscate their payload (eval/base64), or perform network requests
 
 | | |
 |---|---|
@@ -28,7 +28,6 @@ Cursor lifecycle hook is just as dangerous as one in `hooks.json`.
 
 This rule flags hook commands that:
 
-- execute scripts from dotfile directories (a common hiding spot)
 - chain a download into execution (`curl ... | sh`, `wget ... | bash`)
 - obfuscate their payload (`eval`, `base64 -d`)
 - make network requests
