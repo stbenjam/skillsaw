@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, List, Set, Tuple
 
+from skillsaw.discovery.detect import WALK_SKIP_DIRS
 from skillsaw.paths import (
     contained_resolve,
     has_parent_traversal,
@@ -89,6 +90,11 @@ def contained_instruction_globs(
 
         for entry in entries:
             candidate = directory / entry.name
+            # ``**`` and other wildcards never walk into vendored or VCS
+            # directories — `**/*.md` is meant to gather the repository's own
+            # prose, not `node_modules/**` and `.git/**` — while a component
+            # that names such a directory literally still descends.
+            vendored = entry.name in WALK_SKIP_DIRS
             child_states: Set[Tuple[int, int]] = set()
             for pattern_index, part_index in closure:
                 if pattern_index in failed:
@@ -98,7 +104,10 @@ def contained_instruction_globs(
                     continue
                 component = parts[part_index]
                 if component == "**":
-                    child_states.add((pattern_index, part_index))
+                    if not vendored:
+                        child_states.add((pattern_index, part_index))
+                    continue
+                if vendored and component != entry.name:
                     continue
                 if not fnmatch.fnmatch(entry.name, component):
                     continue

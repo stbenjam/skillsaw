@@ -1283,7 +1283,7 @@ def test_text_fixable_summary_counts_only_shown_violations(valid_plugin):
         RuleViolation(
             rule_id="content-unlinked-internal-reference",
             severity=Severity.INFO,
-            message="Unlinked path reference: 'docs/x.md' (file exists, autofixable)",
+            message="Unlinked path reference: 'docs/x.md' — consider wrapping in link syntax [docs/x.md](docs/x.md)",
             file_path=Path("SKILL.md"),
             line=3,
             fixable=True,
@@ -1310,7 +1310,7 @@ def test_text_fixable_summary_counts_only_in_scope(valid_plugin):
         RuleViolation(
             rule_id="content-unlinked-internal-reference",
             severity=Severity.INFO,
-            message="Unlinked path reference: 'docs/x.md' (file exists, autofixable)",
+            message="Unlinked path reference: 'docs/x.md' — consider wrapping in link syntax [docs/x.md](docs/x.md)",
             file_path=Path("SKILL.md"),
             line=3,
             fixable=True,
@@ -1333,7 +1333,7 @@ def test_text_fixable_summary_info_threshold_widens_default_scope(valid_plugin):
         RuleViolation(
             rule_id="content-unlinked-internal-reference",
             severity=Severity.INFO,
-            message="Unlinked path reference: 'docs/x.md' (file exists, autofixable)",
+            message="Unlinked path reference: 'docs/x.md' — consider wrapping in link syntax [docs/x.md](docs/x.md)",
             file_path=Path("SKILL.md"),
             line=3,
             fixable=True,
@@ -1400,7 +1400,7 @@ def test_text_lint_only_info_threshold_shows_finding_unmarked(valid_plugin):
         RuleViolation(
             rule_id="content-unlinked-internal-reference",
             severity=Severity.INFO,
-            message="Unlinked path reference: 'docs/x.md' (file exists, autofixable)",
+            message="Unlinked path reference: 'docs/x.md' — consider wrapping in link syntax [docs/x.md](docs/x.md)",
             file_path=Path("SKILL.md"),
             line=3,
             fixable=True,

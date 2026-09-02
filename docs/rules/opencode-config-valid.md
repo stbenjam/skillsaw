@@ -15,11 +15,12 @@ opencode.json and opencode.jsonc must parse and use keys and MCP server shapes O
 ## Why
 
 `opencode.json` is where an OpenCode project declares its MCP servers, its
-agents and its slash commands. It ships in the repository, and every one of
-those settings fails quietly: OpenCode reads the file, does not find the key
-it wanted, and carries on with a default. An MCP server whose `command` was
-written as a string rather than an argv array simply never starts, and
-nothing says so.
+agents and its slash commands. It ships in the repository, so a shape its
+loader rejects stops OpenCode from starting for everyone on the team, and a
+misspelled key fails quietly: OpenCode does not find the key it wanted and
+carries on with a default. An MCP server whose `command` was
+written as a string rather than an argv array makes OpenCode refuse to
+start at all.
 
 OpenCode configuration schemas have evolved: 1.x spellings (`agent`, `command`,
 `permission`, flat MCP server declarations) and 2.0 spellings (`agents`, `commands`,
@@ -35,25 +36,33 @@ rules such as [`mcp-prohibited`](mcp-prohibited.md).
 
 ## Severity
 
-Errors:
-- The top-level document is not an object.
-- The file contains syntax errors preventing parsing (comments and trailing commas in `.jsonc` are supported).
-- Committed credentials or secrets detected in MCP server URLs, headers, or environment mappings.
+Errors — OpenCode refuses to load a project configuration with any of
+these, so `opencode` exits before it starts:
 
-Shape problems are warnings, because the rest of the file still loads: a
-missing or unknown `type`, a `command` that is not a non-empty array of
-strings, a non-string or empty `url`, an `environment`, `headers` or `oauth`
-that is not an object — `oauth: false` is the documented way to switch OAuth
-off, so that one is valid — a `timeout` that is neither a number nor an
-object of `startup`/`catalog`/`execution`/`request`, a non-boolean
-`enabled`/`disabled`, an agent or command entry that is not an object, a
-`template` that is not a non-empty string, both spellings of one renamed key
-(including the 1.x and 2.0 OAuth field names), and a server declared under
-both layouts at once.
+- The top-level document is not an object, or the file has syntax errors
+  (comments and trailing commas in `.jsonc` are supported).
+- An agent or command section that is not an object, an entry that is not
+  an object, a `template` that is not a non-empty string, or an entry field
+  of the wrong type.
+- An MCP server with a missing or unknown `type`, a `command` that is not a
+  non-empty array of strings, a non-string or empty `url`, an `environment`,
+  `headers` or `oauth` that is not an object (`oauth: false` is the
+  documented way to switch OAuth off), a `timeout` that is neither a number
+  nor an object of `startup`/`catalog`/`execution`/`request`, or a
+  non-boolean `enabled`/`disabled`.
+- Committed credentials or secrets detected in MCP server URLs, headers, or
+  environment mappings.
 
-Two `$schema` findings are also warnings: a `$schema` that is not a string,
-and one pointing at `https://opencode.ai/tui.json`, which describes
-`tui.json` rather than this file.
+The one shape OpenCode tolerates is a server carrying a boolean `enabled`:
+the 1.x `mcp` union has a bare `{"enabled": …}` toggle branch that ignores
+other properties, so a broken server with `enabled` loads as a toggle and
+simply never starts. Its shape findings are warnings.
+
+Warnings — the file loads, but one setting is dead: both spellings of one
+renamed key (including the 1.x and 2.0 OAuth field names), a server declared
+under both layouts at once, a `$schema` that is not a string, and a `$schema`
+pointing at `https://opencode.ai/tui.json`, which describes `tui.json` rather
+than this file.
 
 Information-level findings never fail a build:
 

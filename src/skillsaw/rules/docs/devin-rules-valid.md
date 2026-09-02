@@ -19,9 +19,14 @@ YAML is still reported.
 
 ## Severity
 
-Malformed YAML, a missing or unsupported trigger, invalid activation data,
-and a rule over the configured character limit are errors because Devin may
-ignore the rule or be unable to activate it as intended.
+Malformed YAML, an unsupported trigger, invalid activation data, and a rule
+over the configured character limit are errors because Devin may ignore the
+rule or be unable to activate it as intended.
+
+`trigger` is optional. Without it Devin infers the mode: `globs` makes the
+rule glob-activated, a `description` makes it agent-decidable, and a rule
+with neither is manual (`@rule`). A rule that never activates on its own is
+reported at info level.
 
 ## Examples
 
@@ -51,7 +56,8 @@ Preserve backward compatibility for existing response fields.
 ## How to fix
 
 - Set `trigger` to `always_on`, `manual`, `model_decision`, `agent`, or
-  `glob`.
+  `glob`, or omit it and let Devin infer the mode from `globs` or
+  `description`.
 - For `glob`, provide a non-empty string or list of repository-relative
   patterns. Remove absolute paths and `..` path segments.
 - For `model_decision`, add a non-empty string `description` that explains

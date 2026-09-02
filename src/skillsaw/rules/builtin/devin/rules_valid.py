@@ -86,13 +86,7 @@ class DevinRulesValidRule(Rule):
 
             trigger_field = block.field("trigger")
             if trigger_field is None:
-                violations.append(
-                    self.violation(
-                        "Missing required 'trigger' activation field",
-                        file_path=block.path,
-                        block=block,
-                    )
-                )
+                violations.extend(self._check_inferred_activation(block))
                 continue
 
             trigger = trigger_field.value
@@ -124,6 +118,34 @@ class DevinRulesValidRule(Rule):
                 violations.extend(self._check_model_description(block))
 
         return violations
+
+    def _check_inferred_activation(self, block: DevinRuleBlock) -> List[RuleViolation]:
+        """A rule without ``trigger`` still activates the way Devin infers it.
+
+        Devin reads ``trigger`` as optional and infers the mode the way
+        Cursor does: ``globs`` makes the rule glob-activated, a
+        ``description`` makes it agent-decidable, and a rule with neither
+        is manual. Only the inferred mode's own field is checked, and a
+        rule that never activates on its own is information, not an error —
+        ``@rule`` invocation is a supported way to use it.
+        """
+        if block.field("globs") is not None:
+            return self._check_globs(block)
+        description = block.field("description")
+        if description is not None and isinstance(description.value, str):
+            if description.value.strip():
+                return []
+        return [
+            self.violation(
+                "Rule never activates on its own: set 'trigger: always_on', add "
+                "'globs' to auto-attach, or add a 'description' so the agent can "
+                "request it. Ignore this if the rule is meant to be invoked "
+                "manually with @" + block.path.stem,
+                file_path=block.path,
+                block=block,
+                severity=Severity.INFO,
+            )
+        ]
 
     def _check_model_description(self, block: DevinRuleBlock) -> List[RuleViolation]:
         field = block.field("description")

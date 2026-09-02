@@ -232,8 +232,13 @@ def test_collection_items_and_handoffs_report_their_own_lines(tmp_path):
     assert lines["'handoffs[0].model' must be qualified as 'Model Name (vendor)'"] == 13
 
 
-@pytest.mark.parametrize("alias", ["agent", "custom-agent", "Task"])
+@pytest.mark.parametrize(
+    "alias",
+    ["agent", "custom-agent", "Task", "runSubagent", "agent/runSubagent", "agent/customTool"],
+)
 def test_agents_accept_compatible_tool_aliases(tmp_path, alias):
+    """Every documented spelling of the subagent tool, including VS Code's
+    `runSubagent` and the open-ended `agent/*` namespace."""
     _write_agent(
         tmp_path,
         "description: Coordinates specialist agents\n"
@@ -242,6 +247,20 @@ def test_agents_accept_compatible_tool_aliases(tmp_path, alias):
     )
 
     assert _check(tmp_path) == []
+
+
+def test_bare_description_key_is_owned_by_description_routing(tmp_path):
+    """GitHub's "Create an agent" scaffold leaves `description:` blank, which
+    YAML reads as null. That is an empty description — the routing rule's
+    finding — not a schema type error that would hide it."""
+    _write_agent(tmp_path, "name: Reviewer\ndescription:")
+    context = RepositoryContext(tmp_path)
+
+    assert CopilotAgentValidRule().check(context) == []
+    found = DescriptionRoutingRule().check(context)
+    assert [v.message for v in found] == [
+        "Description is empty; explain what the building block does"
+    ]
 
 
 def test_restricted_tools_require_an_agent_alias(tmp_path):
