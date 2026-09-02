@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -284,18 +285,39 @@ class McpRegistryNpmNameMatchRule(Rule):
         container_dir = safe_resolve(container.path.parent)
         if container_dir is None:
             return None
+        patterns = cls._workspace_patterns(container)
         members = []
         for manifest in exact:
             if manifest is container:
                 continue
             manifest_path = safe_resolve(manifest.path)
             if (
-                manifest_path is not None
-                and manifest_path.is_relative_to(container_dir)
-                and manifest_path.is_relative_to(root)
+                manifest_path is None
+                or not manifest_path.is_relative_to(container_dir)
+                or not manifest_path.is_relative_to(root)
             ):
+                continue
+            # Only a directory the container actually declares is a member:
+            # `workspaces: ["packages/*"]` does not make `examples/foo` one.
+            member_dir = manifest_path.parent.relative_to(container_dir).as_posix()
+            if any(fnmatch.fnmatchcase(member_dir, pattern) for pattern in patterns):
                 members.append(manifest)
         return members[0] if len(members) == 1 else None
+
+    @staticmethod
+    def _workspace_patterns(container: McpRegistryNpmPackageBlock) -> List[str]:
+        """The directory globs a ``workspaces`` field declares, in either shape."""
+        data = container.raw_data
+        value = data.get("workspaces") if isinstance(data, dict) else None
+        if isinstance(value, dict):
+            value = value.get("packages")
+        if not isinstance(value, list):
+            return []
+        return [
+            pattern.strip().rstrip("/")
+            for pattern in value
+            if isinstance(pattern, str) and pattern.strip()
+        ]
 
     @staticmethod
     def _is_private_root_container(
