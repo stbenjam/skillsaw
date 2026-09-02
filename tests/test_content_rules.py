@@ -2650,7 +2650,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         rule = ContentUnlinkedInternalReferenceRule()
         violations = rule.check(context)
         assert len(violations) == 1
-        assert "autofixable" in violations[0].message
+        assert violations[0].fixable is True
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
         assert fixes[0].confidence == AutofixConfidence.SAFE
@@ -2763,7 +2763,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         violations = rule.check(context)
         assert len(violations) == 1
         assert "src/real.py" in violations[0].message
-        assert "autofixable" in violations[0].message
+        assert violations[0].fixable is True
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
         fixed = fixes[0].fixed_content

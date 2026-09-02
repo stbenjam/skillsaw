@@ -2086,7 +2086,6 @@ class TestCursorRules:
 
         found = by_rule(run_lint(repo, "-v"))["content-unlinked-internal-reference"]
         assert [v["fixable"] for v in found] == [False]
-        assert "autofixable" not in found[0]["message"]
 
         # And the fix really does stand down rather than rewriting the JSON.
         _run_fix(repo)
@@ -5384,6 +5383,28 @@ class TestUnlinkedInternalReferenceAutofix:
         # --rule names the rule explicitly, so it fixes at any severity.
         return run_cli(["fix", "--rule", "content-unlinked-internal-reference", *extra_args, path])
 
+    def test_message_never_promises_a_fix_the_default_run_skips(self, tmp_path):
+        """The rule is INFO, below the default fix scope, so a plain
+        `skillsaw fix` leaves it alone. The message must not say otherwise;
+        the fixable flag and the `[*]` marker are what carry fixability, and
+        `--rule` is the documented way to apply it."""
+        repo = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
+        before = (repo / "CLAUDE.md").read_text()
+
+        found = by_rule(run_lint(repo))["content-unlinked-internal-reference"]
+        assert found
+        assert all(v["fixable"] for v in found)
+        assert not any("autofixable" in v["message"] for v in found)
+        text = run_lint(repo, fmt="text", verbose=True)["stdout"]
+        assert "autofixable" not in text
+        assert "(content-unlinked-internal-reference) [*]" not in text
+
+        assert run_cli(["fix", str(repo)]).returncode == 0
+        assert (repo / "CLAUDE.md").read_text() == before
+
+        assert self._run_fix(repo).returncode == 0
+        assert (repo / "CLAUDE.md").read_text() != before
+
     def test_fix_duplicate_paths_via_cli(self, tmp_path):
         """CLI fix wraps duplicate bare paths without double-wrapping."""
         repo = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
@@ -6264,11 +6285,15 @@ class TestLintFixLoop:
                 assert v["fixable"] is False
                 assert "fix_confidence" not in v
 
-        # content-unlinked-internal-reference: fixable iff the target exists.
+        # content-unlinked-internal-reference: every reported reference has an
+        # existing target, so each is fixable — and the message never says so;
+        # the fixable flag and the [*] marker carry that.
         unlinked = grouped["content-unlinked-internal-reference"]
-        assert any(v["fixable"] for v in unlinked)
+        assert unlinked
         for v in unlinked:
-            assert v["fixable"] == ("autofixable" in v["message"])
+            assert v["fixable"] is True
+            assert v["fix_confidence"] == "safe"
+            assert "autofixable" not in v["message"]
 
         # Rules without an autofix report fixable: false, no confidence.
         for v in grouped["agentskill-unreferenced-files"]:
