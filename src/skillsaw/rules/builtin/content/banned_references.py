@@ -43,9 +43,12 @@ _MODEL_NAME_RE = re.compile(
 _ARROW_RE = re.compile(r"(?:^|(?<=\s))(?:-{1,3}>|={1,3}>|→|⇒|➜|⟶)(?=\s|$)")
 
 # The left side of a key/value mapping: a bare identifier, optionally
-# quoted and optionally preceded by a list or comment marker.  A colon is
-# far too common in prose to split on without this guard.
-_MAPPING_KEY_RE = re.compile(r"^[\s\-*#>+]*[\"'`]?[\w./-]+[\"'`]?\s*$")
+# quoted or emphasized (`- **claude-2**:`) and optionally preceded by a
+# list, ordered-list, or comment marker.  A colon is far too common in
+# prose to split on without this guard.
+_MAPPING_KEY_RE = re.compile(
+    r"^[\s\-*#>+]*(?:\d+[.)]\s+)?[*_]{0,2}[\"'`]?[\w./-]+[\"'`]?[*_]{0,2}\s*$"
+)
 
 _PIPE_RE = re.compile(r"\|")
 

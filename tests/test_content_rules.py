@@ -1567,6 +1567,11 @@ class TestContentBannedReferencesRule:
         body = "`claude-2` | `claude-sonnet-5`\n"
         assert self._messages(temp_dir, body) == []
 
+    def test_markdown_formatted_mapping_keys_are_migrations(self, temp_dir):
+        """A bold key or an ordered-list prefix is still a key/value mapping."""
+        body = "- **claude-2**: **gpt-5-mini**\n\n1. claude-2: gpt-5-mini\n"
+        assert self._messages(temp_dir, body) == []
+
     def test_shell_pipeline_is_not_a_migration_row(self, temp_dir):
         """Two cells split on a pipe are a row only when each is one token."""
         body = "Run `grep claude-2 | grep o3` to find stale configs.\n"
