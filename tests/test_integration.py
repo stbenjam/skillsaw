@@ -727,6 +727,24 @@ class TestUnreferencedSkillFiles:
         flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
         assert "log-analyzer/scripts/analyze.py" not in flagged
 
+    def test_relative_mention_from_a_mixed_case_directory(self, tmp_path):
+        """Matching is case-insensitive on both sides: a source under
+        ``References/`` reaches ``References/Child/`` as ``./Child``."""
+        repo = tmp_path / "mixed-case"
+        skill = repo / ".claude" / "skills" / "ledger"
+        (skill / "References" / "Child").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: ledger\ndescription: Reconcile ledgers. Use when asked to reconcile.\n---\n"
+            "Read [the guide](References/guide.md) first.\n"
+        )
+        (skill / "References" / "guide.md").write_text(
+            "# Guide\n\nFixture ledgers live in ./Child and load at run time.\n"
+        )
+        for name in ("one.csv", "two.csv"):
+            (skill / "References" / "Child" / name).write_text("account,balance\n")
+
+        assert by_rule(run_lint(repo)).get(self.RULE, []) == []
+
     def test_transitive_reference_counts(self, tmp_path):
         """SKILL.md links references/guide.md, which mentions release-weeks.md."""
         repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
@@ -1020,6 +1038,47 @@ class TestUnreferencedDirectoryCollapse:
         after = collapsed()
         assert [v.value for v in after] == [9.0]
         assert fingerprint_violation(before[0], repo) == fingerprint_violation(after[0], repo)
+
+    @pytest.mark.parametrize(
+        "config_text",
+        [
+            'version: "0.20.0"\nexclude:\n  - "**/snapshots/**"\n',
+            "rules:\n  agentskill-unreferenced-files:\n    exclude:\n"
+            '      - "quarterly-report/snapshots/*.csv"\n',
+        ],
+        ids=["global", "per-rule-repo-relative"],
+    )
+    def test_excluded_files_never_form_a_pile(self, tmp_path, config_text):
+        """The linter drops a per-file finding whose path matches an exclude,
+        but a collapsed finding names the directory, which a file pattern
+        never matches — so excluded files must leave before the count."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(config_text)
+        flagged = {v["file_path"] for v in self._found(run_lint(repo, config=config))}
+        assert not any("snapshots" in path for path in flagged)
+        assert "quarterly-report/notes/pricing-changes.md" in flagged
+
+    def test_baseline_written_before_collapsing_still_suppresses_the_pile(self, tmp_path):
+        """Upgrading must not fail CI on an unchanged repository: the
+        per-file entries an older baseline holds keep suppressing the
+        collapsed finding, and read as stale only once the pile grows."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n    collapse_directory_threshold: 0\n"
+        )
+        assert run_baseline(repo)["rc"] == 0
+        config.unlink()
+
+        r = run_lint(repo)
+        assert self._found(r) == []
+        assert "stale" not in r["stderr"]
+
+        (repo / "quarterly-report" / "snapshots" / "ledger-2027-q1.csv").write_text("q,r\n")
+        r = run_lint(repo)
+        assert [v["file_path"] for v in self._found(r)] == ["quarterly-report/snapshots"]
+        assert "8 stale" in r["stderr"]
 
     def test_threshold_is_configurable(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)

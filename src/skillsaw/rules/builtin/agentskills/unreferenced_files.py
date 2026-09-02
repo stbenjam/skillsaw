@@ -385,6 +385,14 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 rel = (safe_resolve(file_path) or file_path).relative_to(skill_resolved).as_posix()
                 if self._is_excluded(rel, file_path.name, exclude_variants):
                     continue
+                # The linter drops a per-file finding whose path matches a
+                # global or per-rule exclude, but a collapsed finding names
+                # the directory, which those patterns never match — so the
+                # excluded files leave here, before the pile is counted.
+                if context.is_path_excluded(file_path) or (
+                    exclude_patterns and context.matches_patterns(file_path, exclude_patterns)
+                ):
+                    continue
                 unreferenced.append((rel, file_path))
 
             violations.extend(self._report(skill_path, unreferenced, collapse_threshold))
@@ -425,20 +433,21 @@ class AgentSkillUnreferencedFilesRule(Rule):
         for rel, file_path in unreferenced:
             rel_dir = rel.rpartition("/")[0]
             if rel_dir not in collapsed:
-                violations.append(
-                    self.violation(
-                        f"'{rel}' is never referenced from SKILL.md (directly or "
-                        "transitively) — unreferenced files are dead weight and "
-                        "can hide unreviewed behavior",
-                        file_path=file_path,
-                    )
-                )
+                violations.append(self._file_violation(rel, file_path))
                 continue
             if rel_dir in reported:
                 continue
             reported.add(rel_dir)
             violations.append(self._directory_violation(skill_path, rel_dir, by_dir[rel_dir]))
         return violations
+
+    def _file_violation(self, rel: str, file_path: Path) -> RuleViolation:
+        return self.violation(
+            f"'{rel}' is never referenced from SKILL.md (directly or "
+            "transitively) — unreferenced files are dead weight and "
+            "can hide unreviewed behavior",
+            file_path=file_path,
+        )
 
     def _directory_violation(
         self, skill_path: Path, rel_dir: str, group: List[Tuple[str, Path]]
@@ -457,6 +466,9 @@ class AgentSkillUnreferencedFilesRule(Rule):
             # when it grows past the baselined count.
             value=float(len(names)),
             metric="unreferenced-directory",
+            # A baseline written before piles collapsed lists these files one
+            # by one; the pile stays baselined while every one of them is.
+            constituents=tuple(self._file_violation(rel, file_path) for rel, file_path in group),
         )
 
     # -- discovery -----------------------------------------------------------
@@ -503,8 +515,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
         # Case-insensitive, and independent of extension: a lowercase
         # `license.txt` or a `README.rst` is the same human-facing file as
         # the spelling the convention suggests, and flagging it as dead
-        # weight was pure noise (5,009 corpus findings included plain
-        # `license.txt` files).
+        # weight was pure noise.
         lowered = name.lower()
         if _is_notice_file(lowered):
             return True
@@ -576,8 +587,10 @@ class AgentSkillUnreferencedFilesRule(Rule):
             # The mentioning file's directory, as a skill-relative POSIX
             # string: relative needles are string slices off it, not
             # ``os.path.relpath`` round-trips through ``Path`` (the audit
-            # profile spent 53 s of 116 s building those).
-            source_dir_rel = self._skill_relative_dir(resolved_source, skill_resolved)
+            # profile spent 53 s of 116 s building those).  Lowered like
+            # every candidate, or a source under ``References/`` could never
+            # reach ``References/img/x.png`` as ``img/x.png``.
+            source_dir_rel = self._skill_relative_dir(resolved_source, skill_resolved).lower()
 
             # Markdown links, resolved relative to the linking file.  Link
             # syntax only means anything in markdown sources; scripts and

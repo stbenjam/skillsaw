@@ -291,6 +291,32 @@ def _is_worse(current_value: float, baseline_value: float, mode: str) -> bool:
     return False
 
 
+def _consume_constituents(
+    violation: RuleViolation,
+    regular_budget: Counter,
+    root_path: Path,
+    file_cache: Dict[Path, Optional[List[str]]],
+) -> bool:
+    """Whether every finding *violation* consolidates is baselined.
+
+    A baseline written before a rule began reporting a pile of findings as
+    one lists the parts. The whole is then as accepted as its parts, and
+    consuming their entries keeps them from reading as stale until the
+    baseline is next regenerated, which records the whole instead. One
+    missing part means the pile grew, and the whole reports as new.
+    """
+    if not violation.constituents:
+        return False
+    needed = Counter(
+        fingerprint_violation(part, root_path, _file_cache=file_cache)
+        for part in violation.constituents
+    )
+    if any(regular_budget[fp] < count for fp, count in needed.items()):
+        return False
+    regular_budget.subtract(needed)
+    return True
+
+
 def filter_baselined_violations(
     violations: List[RuleViolation],
     baseline: BaselineFile,
@@ -349,7 +375,8 @@ def filter_baselined_violations(
                 regular_budget[fp] -= 1
                 break
         else:
-            kept.append(v)
+            if not _consume_constituents(v, regular_budget, fingerprint_root, file_cache):
+                kept.append(v)
 
     # Stale entries: unconsumed regular + unconsumed ratchet.
     remaining = dict(regular_budget)

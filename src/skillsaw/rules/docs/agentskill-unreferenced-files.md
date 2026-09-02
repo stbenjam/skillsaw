@@ -47,6 +47,8 @@ When a directory contains more unreferenced files than `collapse_directory_thres
 
 This keeps your lint report clean and focused. To report every file individually, set `collapse_directory_threshold: 0`.
 
+Files matched by a global or per-rule `exclude` never count toward the threshold. A baseline written before findings were consolidated lists the files one by one; it keeps suppressing the directory finding until the pile grows, and the next `skillsaw baseline` records the directory instead.
+
 ## Examples
 
 **Bad:**
