@@ -251,8 +251,8 @@ def _run_lint(args):
         color=color,
         hyperlinks=hyperlinks_enabled(sys.stdout, color),
     )
-    print(stdout_output)
-
+    # Write the requested report files before printing: a stdout the
+    # console cannot render must not cost the files the user asked for.
     report_cache = {}
     for output_path, fmt in output_formats.items():
         if fmt not in report_cache:
@@ -276,6 +276,8 @@ def _run_lint(args):
         except (OSError, ValueError) as e:
             print(f"Error: Failed to write report to '{out_path}': {e}", file=sys.stderr)
             sys.exit(1)
+
+    print(stdout_output)
 
     # Advisory violations (deprecation notices) display like warnings but
     # never affect the exit code — a skillsaw upgrade must not break strict

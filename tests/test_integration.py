@@ -2197,6 +2197,30 @@ class TestCursorRules:
         assert "\\ud800" in proc.stdout
         assert "content-hook-candidate" in proc.stdout
 
+    def test_report_survives_a_console_that_cannot_encode_its_symbols(self, tmp_path):
+        """A redirected Windows console (cp1252) cannot encode the report's
+        check marks and dashes. The run must still finish, keep its exit
+        code, and write the `--output` file — not die in a traceback."""
+        repo = tmp_path / "ascii-repo"
+        (repo / ".claude" / "commands").mkdir(parents=True)
+        (repo / ".claude" / "commands" / "hi.md").write_text(
+            "---\ndescription: Say hello to the user\n---\nSay hello.\n"
+        )
+        report = tmp_path / "report.json"
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "skillsaw", "lint", str(repo), "--output", str(report)],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONIOENCODING": "cp1252"},
+        )
+
+        assert "UnicodeEncodeError" not in proc.stderr
+        assert "Traceback" not in proc.stderr
+        assert proc.returncode in (0, 1), proc.stderr
+        assert report.exists()
+        assert "checks passed" in proc.stdout or "Summary" in proc.stdout
+
     def test_tree_output_survives_a_hostile_hook_event_name(self, tmp_path):
         """`skillsaw tree` prints straight to the terminal, unlike a report.
 
