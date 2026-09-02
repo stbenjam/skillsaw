@@ -11,6 +11,15 @@ from ..diagnostics import terminal_safe
 from . import get_counts, relative_path, should_show_info
 from skillsaw.paths import contained_resolve, safe_resolve
 
+# Below this many displayed findings the severity totals already say where
+# the work is; above it a first run scrolls past and needs a triage aid.
+TOP_RULES_THRESHOLD = 50
+
+# Five rows is the whole point — a longer list is another wall of text.
+TOP_RULES_LIMIT = 5
+
+_SEVERITY_RANK = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
+
 
 def format_duration(seconds: float) -> str:
     """Human-friendly duration: 450ms, 2.3s, 1m 12s."""
@@ -186,6 +195,65 @@ def format_text(
             f"  {green}[?] {suggest_fixable} violation(s) fixable with"
             f" `skillsaw fix --suggest`{reset}"
         )
+
+    # Where the findings are concentrated. The totals above say how much
+    # there is; these rows say which few rules produced it and what to do
+    # about each, so a first run over a large repository is triageable
+    # without scrolling back through hundreds of lines.
+    if len(shown) >= TOP_RULES_THRESHOLD:
+        grouped = {}
+        for v in shown:
+            grouped.setdefault(v.rule_id, []).append(v)
+        ranked = sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0]))
+        ranked = ranked[:TOP_RULES_LIMIT]
+
+        severity_color = {Severity.ERROR: red, Severity.WARNING: yellow, Severity.INFO: blue}
+        rows = []
+        for rule_id, group in ranked:
+            severity = min(group, key=lambda v: _SEVERITY_RANK[v.severity]).severity
+            files = len({v.file_path for v in group if v.file_path is not None})
+            markers = {fix_marker(v).strip() for v in group}
+            safe_rule_id = terminal_safe(rule_id)
+            if "[*]" in markers:
+                hint = f"{green}[*] safe autofix{reset}"
+            elif "[?]" in markers:
+                hint = f"{green}[?] fix --suggest{reset}"
+            else:
+                hint = f"{dim}skillsaw explain {safe_rule_id}{reset}"
+            rows.append(
+                {
+                    "id": safe_rule_id,
+                    "rule_id": rule_id,
+                    "count": f"{len(group):,}",
+                    "severity": severity,
+                    "files": f"{files:,} file{'' if files == 1 else 's'}" if files else "",
+                    "hint": hint,
+                }
+            )
+
+        id_width = max(len(r["id"]) for r in rows)
+        count_width = max(len(r["count"]) for r in rows)
+        severity_width = max(len(r["severity"].value) for r in rows)
+        files_width = max(len(r["files"]) for r in rows)
+
+        top_total = sum(len(group) for _, group in ranked)
+        output.append(f"\n{bold}Top rules{reset} ({top_total:,} of {len(shown):,} findings):")
+        for r in rows:
+            # Pad from the plain id — an OSC 8 link carries invisible bytes
+            # that would throw the column alignment off.
+            id_cell = r["id"]
+            if hyperlinks and r["rule_id"] in builtin_ids:
+                id_cell = _osc8(rule_doc_url(r["rule_id"]), id_cell)
+            id_cell += " " * (id_width - len(r["id"]))
+            severity_cell = severity_color[r["severity"]]
+            severity_cell += f"{r['severity'].value.ljust(severity_width)}{reset}"
+            cells = [id_cell, r["count"].rjust(count_width), severity_cell]
+            # Whole-repository findings carry no path, so the column is
+            # dropped rather than left as a gap in every row.
+            if files_width:
+                cells.append(r["files"].ljust(files_width))
+            cells.append(r["hint"])
+            output.append("  " + "  ".join(cells))
 
     if errors == 0 and warnings == 0 and (fail_level != "info" or info == 0):
         output.append(f"\n{green}{bold}✓ All checks passed!{reset}")

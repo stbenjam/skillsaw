@@ -7583,3 +7583,42 @@ class TestQuietStderrOnRealContent:
 
         assert "SyntaxWarning" not in r["stderr"]
         assert "<unknown>" not in r["stderr"]
+
+
+@pytest.mark.integration
+class TestTopRulesBlock:
+    """A first run over a repository with hundreds of findings needs to say
+    where they are concentrated, not just how many there are."""
+
+    def test_large_repo_text_output_ends_with_top_rules(self, tmp_path):
+        repo = copy_fixture("large-skill-library", tmp_path)
+
+        r = run_lint(repo, fmt="text", verbose=False)
+
+        assert "Top rules (62 of 62 findings):" in r["stdout"]
+        rows = r["stdout"].split("Top rules")[1].splitlines()[1:]
+        assert [row.split()[0] for row in rows] == [
+            "content-broken-internal-reference",
+            "content-description-routing",
+            "agentskill-name",
+        ]
+        # Counts, severities, distinct files, and the fix hint for the one
+        # rule `skillsaw fix` can repair.
+        assert rows[0].split()[1:5] == ["42", "warning", "16", "files"]
+        assert rows[2].split()[1:] == ["4", "error", "4", "files", "[*]", "safe", "autofix"]
+        assert "skillsaw explain content-description-routing" in rows[1]
+
+    def test_small_repo_has_no_top_rules_block(self, tmp_path):
+        repo = copy_fixture("agentskills", tmp_path)
+
+        r = run_lint(repo, fmt="text", verbose=True)
+
+        assert "Warnings:" in r["stdout"]
+        assert "Top rules" not in r["stdout"]
+
+    def test_machine_readable_formats_are_unchanged(self, tmp_path):
+        repo = copy_fixture("large-skill-library", tmp_path)
+
+        for fmt in ("json", "sarif", "html", "code-climate", "gitlab"):
+            r = run_lint(repo, fmt=fmt, verbose=False)
+            assert "Top rules" not in r["stdout"]
