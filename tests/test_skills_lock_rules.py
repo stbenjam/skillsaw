@@ -531,3 +531,75 @@ def test_targeted_fix_never_rewrites_an_external_lock_managed_skill(
     assert violations[0]["fixable"] is False
     assert result.returncode == 0
     assert external.read_text() == original
+
+
+def test_missing_computed_hash_is_a_warning(tmp_path: Path) -> None:
+    """`npx skills list`/`add`/`update` process an entry without `computedHash`;
+    only the drift check needs it. A hand-maintained lockfile is not broken."""
+    repo = tmp_path / "repo"
+    (repo / ".agents" / "skills" / "hashless").mkdir(parents=True)
+    (repo / ".agents" / "skills" / "hashless" / "SKILL.md").write_text(
+        "---\nname: hashless\ndescription: Installed by hand. Use when asked to demo.\n---\nDemo.\n"
+    )
+    _write_lock(
+        repo / "skills-lock.json",
+        {
+            "version": 1,
+            "skills": {"hashless": {"source": "example/skills", "sourceType": "github"}},
+        },
+    )
+
+    found = SkillsLockValidRule().check(RepositoryContext(repo))
+
+    assert [(v.severity, "computedHash" in v.message) for v in found] == [(Severity.WARNING, True)]
+
+
+def test_self_installed_skill_is_the_repository_s_own_content(tmp_path: Path) -> None:
+    """A repository that publishes a skill and installs it from its own GitHub
+    coordinates records itself as the source. That entry describes authored
+    content: the authored copy is not external, and autofix may touch it.
+    An entry from any other repository is still external."""
+    repo = tmp_path / "clonecn"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".git" / "config").write_text(
+        '[core]\n\trepositoryformatversion = 0\n[remote "origin"]\n'
+        "\turl = git@github.com:hunvreus/CloneCN.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+    )
+    for name in ("clonecn", "external-dep"):
+        (repo / "skills" / name).mkdir(parents=True)
+        (repo / "skills" / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Does {name} things. Use when asked.\n---\nBody.\n"
+        )
+    _write_lock(
+        repo / "skills-lock.json",
+        {
+            "version": 1,
+            "skills": {
+                "clonecn": _entry(source="hunvreus/clonecn", skillPath="skills/clonecn/SKILL.md"),
+                "external-dep": _entry(source="someone-else/skills"),
+            },
+        },
+    )
+
+    nodes = {node.path.name: node for node in RepositoryContext(repo).lint_tree.find(SkillNode)}
+
+    assert not nodes["clonecn"].externally_sourced
+    assert nodes["external-dep"].externally_sourced
+
+
+def test_self_source_detection_needs_a_git_origin(tmp_path: Path) -> None:
+    """Without a `.git/config` there is nothing to compare the source with, so
+    the entry keeps its external verdict — the established behaviour."""
+    repo = tmp_path / "tarball"
+    (repo / "skills" / "clonecn").mkdir(parents=True)
+    (repo / "skills" / "clonecn" / "SKILL.md").write_text(
+        "---\nname: clonecn\ndescription: Clones things. Use when asked.\n---\nBody.\n"
+    )
+    _write_lock(
+        repo / "skills-lock.json",
+        {"version": 1, "skills": {"clonecn": _entry(source="hunvreus/clonecn")}},
+    )
+
+    nodes = {node.path.name: node for node in RepositoryContext(repo).lint_tree.find(SkillNode)}
+
+    assert nodes["clonecn"].externally_sourced

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Optional
 
 from skillsaw.paths import is_absolute_path, safe_resolve
 
@@ -91,3 +91,53 @@ def entry_is_external(
         candidate = lock_root / candidate
     resolved = safe_resolve(candidate)
     return resolved is None or not resolved.is_relative_to(repository_root)
+
+
+_GITHUB_SOURCE_PREFIXES = (
+    "https://github.com/",
+    "http://github.com/",
+    "ssh://git@github.com/",
+    "git@github.com:",
+    "github:",
+    "github.com/",
+)
+
+
+def github_owner_repo(source: str) -> Optional[str]:
+    """``owner/repo`` (lower-cased) for a GitHub source in any spelling the
+    CLI accepts — bare ``owner/repo``, ``github:owner/repo``, an HTTPS or SSH
+    URL, with or without ``.git`` and a ``#ref``/``@ref`` suffix. ``None``
+    for anything else."""
+    value = source.strip()
+    lowered = value.lower()
+    for prefix in _GITHUB_SOURCE_PREFIXES:
+        if lowered.startswith(prefix):
+            value = value[len(prefix) :]
+            break
+    else:
+        if "://" in value or value.startswith("git@"):
+            return None
+    value = value.split("#", 1)[0].split("@", 1)[0].strip("/")
+    parts = value.split("/")
+    if len(parts) < 2 or not parts[0] or not parts[1] or parts[0].startswith("."):
+        return None
+    repo = parts[1][:-4] if parts[1].lower().endswith(".git") else parts[1]
+    return f"{parts[0]}/{repo}".lower()
+
+
+def entry_names_repository(entry: Mapping[str, object], owner_repo: Optional[str]) -> bool:
+    """Whether a GitHub lock entry's source is *owner_repo* — the repository
+    under lint installing a skill from itself.
+
+    A repository that publishes a skill and also installs it with
+    ``npx skills add <its own repo>`` records its own coordinates in the
+    lock. That entry describes the repository's own authored content, not
+    an external dependency, so provenance must not mark the authored copy
+    external and refuse to fix it.
+    """
+    if owner_repo is None or entry.get("sourceType") != "github":
+        return False
+    source = entry.get("source")
+    if not isinstance(source, str):
+        return False
+    return github_owner_repo(source) == owner_repo
