@@ -4818,6 +4818,52 @@ class TestInstructionDrift:
 
 
 @pytest.mark.integration
+class TestContentBannedReferencesMigration:
+    """End-to-end tests for content-banned-references on a migration guide.
+
+    The fixture SKILL.md retires three model ids twice — once in a prose
+    replacement table, once in a Python ``MODEL_MIGRATIONS`` dict — and
+    still names four retired ids for real: one pinned in a YAML config
+    example and three in a stale routing table.
+    """
+
+    FIXTURE = "content/banned-references-migration"
+    SKILL = ".claude/skills/model-upgrade/SKILL.md"
+
+    def _lines(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-banned-references", [])
+        assert all(v["file_path"] == self.SKILL for v in vs), vs
+        return sorted({v["line"] for v in vs})
+
+    def test_migration_rows_are_not_reported(self, tmp_path):
+        """A row that maps a retired id to a current one is retiring it."""
+        # 17-19: the replacement table.  28-30: the MODEL_MIGRATIONS dict.
+        assert not {17, 18, 19, 28, 29, 30} & set(self._lines(tmp_path))
+
+    def test_pinned_and_stale_ids_still_reported(self, tmp_path):
+        """A retired id that is not being replaced is still a live reference."""
+        # 46: 'model: claude-2' pinned in a YAML config example.
+        # 60-61: a routing table that names retired ids on both sides.
+        assert self._lines(tmp_path) == [46, 60, 61]
+
+    def test_report_migrations_opt_in_restores_them(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n'
+            "rules:\n"
+            "  content-banned-references:\n"
+            "    report-migrations: true\n"
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        lines = sorted({v["line"] for v in by_rule(r).get("content-banned-references", [])})
+        assert lines == [17, 18, 19, 28, 29, 30, 46, 60, 61]
+
+
+@pytest.mark.integration
 class TestContentRepeatedDirective:
     """End-to-end tests for content-repeated-directive.
 

@@ -1,7 +1,7 @@
 """Content banned references rule"""
 
 import re
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -18,6 +18,35 @@ from skillsaw.rules.builtin.content_analysis import (
 # careless config can't raise the ceiling to something useless.
 _DEFAULT_REGEX_TIMEOUT = 2.0
 _MAX_REGEX_TIMEOUT = 10.0
+
+# ── Migration rows ──────────────────────────────────────────────
+#
+# A line that pairs a retired name with its replacement is retiring the
+# name, not recommending it.  The three shapes that say so are a
+# column-separated row ("| `claude-2` | `claude-sonnet-5` |"), an arrow
+# ("claude-2 -> claude-sonnet-5"), and a key/value mapping ("claude-2":
+# "claude-sonnet-5").  All three read the same way inside a fence and in
+# prose, so the shape alone decides — no fence or table parse is needed.
+
+# A model identifier: hyphen-joined segments carrying a version, optionally
+# namespaced ("anthropic/claude-sonnet-5").  The digit requirement is what
+# separates a model name from ordinary hyphenated English ("best-in-class",
+# "fast-response") that would otherwise pass for a replacement.
+_MODEL_NAME_RE = re.compile(
+    r"(?:[A-Za-z][\w.]*/)?(?=[\w./-]*\d)[A-Za-z][\w.]+(?:-[\w.]+)+",
+)
+
+# Arrows, requiring whitespace (or a line edge) on both sides so a Python
+# return annotation's ``-> str`` still reads as an arrow while a C-style
+# ``a->b`` does not split anything.
+_ARROW_RE = re.compile(r"(?:^|(?<=\s))(?:-{1,3}>|={1,3}>|→|⇒|➜|⟶)(?=\s|$)")
+
+# The left side of a key/value mapping: a bare identifier, optionally
+# quoted and optionally preceded by a list or comment marker.  A colon is
+# far too common in prose to split on without this guard.
+_MAPPING_KEY_RE = re.compile(r"^[\s\-*#>+]*[\"'`]?[\w./-]+[\"'`]?\s*$")
+
+_PIPE_RE = re.compile(r"\|")
 
 
 class ContentBannedReferencesRule(Rule):
@@ -59,6 +88,14 @@ class ContentBannedReferencesRule(Rule):
                 "Per-pattern wall-clock budget (seconds) for custom banned "
                 "patterns; guards against catastrophic-backtracking regexes "
                 f"(clamped to {_MAX_REGEX_TIMEOUT:g}s max)"
+            ),
+        },
+        "report-migrations": {
+            "type": "bool",
+            "default": False,
+            "description": (
+                "Report a banned name even on a line that maps it to a "
+                "current replacement (a table row, arrow, or key/value entry)"
             ),
         },
     }
@@ -103,15 +140,74 @@ class ContentBannedReferencesRule(Rule):
             return 0.0
         return min(value, _MAX_REGEX_TIMEOUT)
 
-    def _scan(self, cf, body: str, patterns: List[Tuple[re.Pattern, str]]) -> List[RuleViolation]:
+    def _operands(self, line: str) -> List[Tuple[int, int]]:
+        """Spans of *line* split on whichever mapping separator it uses.
+
+        Empty when the line maps nothing.  Precedence runs from the most
+        explicit separator to the least: a column-separated row, then an
+        arrow, then a single key/value colon.
+        """
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 3:
+            return self._split_at(line, [m.span() for m in _PIPE_RE.finditer(line)])
+        arrows = [m.span() for m in _ARROW_RE.finditer(line)]
+        if arrows:
+            return self._split_at(line, arrows)
+        colon = line.find(":")
+        if colon > 0 and _MAPPING_KEY_RE.match(line[:colon]):
+            return self._split_at(line, [(colon, colon + 1)])
+        return []
+
+    @staticmethod
+    def _split_at(line: str, separators: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        spans: List[Tuple[int, int]] = []
+        cursor = 0
+        for start, end in separators:
+            spans.append((cursor, start))
+            cursor = end
+        spans.append((cursor, len(line)))
+        return spans
+
+    def _migration_cutoff(self, line: str, deprecated: List[Tuple[re.Pattern, str]]) -> int:
+        """Index before which a banned name on *line* is being retired.
+
+        Returns the offset of the operand naming the replacement, or -1
+        when the line maps no banned name to a current model.
+        """
+        operands = self._operands(line)
+        if len(operands) < 2:
+            return -1
+        for start, end in reversed(operands[1:]):
+            for match in _MODEL_NAME_RE.finditer(line, start, end):
+                name = match.group()
+                if not any(pattern.search(name) for pattern, _ in deprecated):
+                    return start
+        return -1
+
+    def _scan(
+        self,
+        cf,
+        body: str,
+        patterns: List[Tuple[re.Pattern, str]],
+        deprecated: Optional[List[Tuple[re.Pattern, str]]],
+    ) -> List[RuleViolation]:
         active = patterns_matching_anywhere(body, patterns)
         if not active:
             return []
         out: List[RuleViolation] = []
         for line_num, line in enumerate(body.splitlines(), 1):
+            cutoff = None
             for pattern, msg in active:
-                if pattern.search(line):
-                    out.append(self.violation(f"Banned reference: {msg}", block=cf, line=line_num))
+                if not pattern.search(line):
+                    continue
+                if deprecated is not None:
+                    # Only lines that actually name something banned are
+                    # worth the mapping analysis.
+                    if cutoff is None:
+                        cutoff = self._migration_cutoff(line, deprecated)
+                    if cutoff >= 0 and all(m.end() <= cutoff for m in pattern.finditer(line)):
+                        continue
+                out.append(self.violation(f"Banned reference: {msg}", block=cf, line=line_num))
         return out
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -120,20 +216,27 @@ class ContentBannedReferencesRule(Rule):
         if not builtin and not config:
             return []
         timeout = self._regex_timeout()
+        # A replacement has to be a model skillsaw does not already know to be
+        # retired, so a table that migrates onto a deprecated name still
+        # reports the name it migrates onto.  Only the curated built-ins vet
+        # the replacement: config patterns are project vocabulary rather than
+        # deprecation knowledge, and running them here would escape the
+        # per-pattern time budget.
+        deprecated = None if self.setting("report-migrations") else builtin
         violations: List[RuleViolation] = []
         for cf in gather_all_content_blocks(context):
             body = cf.read_body(strip_code_blocks=False)
             if not body:
                 continue
             # Trusted built-ins run without a budget.
-            violations.extend(self._scan(cf, body, builtin))
+            violations.extend(self._scan(cf, body, builtin, deprecated))
             # Each untrusted config pattern is bounded independently so one
             # catastrophic-backtracking regex can't hang lint (issue #316) and
             # so the offending pattern can be named in the diagnostic.
             for pat, msg in config:
                 try:
                     with regex_timeout(timeout):
-                        violations.extend(self._scan(cf, body, [(pat, msg)]))
+                        violations.extend(self._scan(cf, body, [(pat, msg)], deprecated))
                 except RegexTimeout:
                     violations.append(
                         self.violation(

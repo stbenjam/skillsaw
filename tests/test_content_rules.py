@@ -1492,6 +1492,68 @@ class TestContentBannedReferencesRule:
         assert elapsed < 5.0
         assert any("Skipped banned pattern" in v.message for v in violations)
 
+    def _messages(self, temp_dir, body, config=None):
+        (temp_dir / "CLAUDE.md").write_text(body)
+        rule = ContentBannedReferencesRule(config or {})
+        return [v.message for v in rule.check(RepositoryContext(temp_dir))]
+
+    def test_mapping_entry_retiring_a_name_is_not_reported(self, temp_dir):
+        body = (
+            "```python\n" "MODEL_MIGRATIONS = {\n" '    "claude-2": "claude-sonnet-5",\n' "}\n```\n"
+        )
+        assert self._messages(temp_dir, body) == []
+
+    def test_table_row_retiring_a_name_is_not_reported(self, temp_dir):
+        body = (
+            "| Retired id | Retired on | Replacement |\n"
+            "| --- | --- | --- |\n"
+            "| `claude-3-opus-20240229` | 2026-01-05 | `claude-opus-4-8` |\n"
+        )
+        assert self._messages(temp_dir, body) == []
+
+    def test_arrow_retiring_a_name_is_not_reported(self, temp_dir):
+        body = "Rewrite `gpt-3.5-turbo` -> `gpt-5-mini` before the cutover.\n"
+        assert self._messages(temp_dir, body) == []
+
+    def test_pinned_id_in_a_fenced_config_is_reported(self, temp_dir):
+        body = "```yaml\nservice: summarizer\nmodel: claude-2\n```\n"
+        assert self._messages(temp_dir, body) == ["Banned reference: claude-2 is deprecated"]
+
+    def test_replacement_side_is_still_reported(self, temp_dir):
+        """Migrating onto a deprecated id reports the id being adopted."""
+        body = '    "claude-2": "claude-3-haiku",\n'
+        assert sorted(self._messages(temp_dir, body)) == [
+            "Banned reference: claude-2 is deprecated",
+            "Banned reference: claude-3-haiku is deprecated",
+        ]
+
+    def test_recommendation_table_is_not_a_migration(self, temp_dir):
+        """A table pairing two retired ids recommends both — report both."""
+        body = (
+            "| Request kind | Model | Fallback |\n"
+            "| --- | --- | --- |\n"
+            "| Short answers | `claude-3-haiku` | `claude-3-opus` |\n"
+        )
+        assert sorted(self._messages(temp_dir, body)) == [
+            "Banned reference: claude-3-haiku is deprecated",
+            "Banned reference: claude-3-opus is deprecated",
+        ]
+
+    def test_hyphenated_prose_is_not_a_replacement(self, temp_dir):
+        """A cell of ordinary hyphenated English must not pass for a model id."""
+        body = "| Model | Notes |\n| --- | --- |\n| `claude-3-opus` | best-in-class reasoning |\n"
+        assert self._messages(temp_dir, body) == ["Banned reference: claude-3-opus is deprecated"]
+
+    def test_return_annotation_is_not_a_migration(self, temp_dir):
+        body = "```python\n" 'def call(model: str = "gpt-3.5-turbo") -> str:\n' "    ...\n```\n"
+        assert self._messages(temp_dir, body) == ["Banned reference: gpt-3.5 is deprecated"]
+
+    def test_report_migrations_restores_the_finding(self, temp_dir):
+        body = "```python\n" '    "claude-2": "claude-sonnet-5",\n' "```\n"
+        assert self._messages(temp_dir, body, {"report-migrations": True}) == [
+            "Banned reference: claude-2 is deprecated"
+        ]
+
     def test_timeout_is_clamped_and_zero_disables(self, temp_dir):
         rule = ContentBannedReferencesRule({"regex-timeout": 999})
         assert rule._regex_timeout() == 10.0
