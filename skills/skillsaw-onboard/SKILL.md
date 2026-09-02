@@ -85,9 +85,12 @@ If reviewed violations remain, ask:
 
 If yes, read [baseline](references/05-baseline.md).
 
-### 6. Add configuration
+### 6. Add or update configuration
 
-If `.skillsaw.yaml` is missing, ask:
+If the triage plan placed any rule in **Configure**, read
+[configuration](references/06-configuration.md) without asking again; the
+user confirmed those settings in step 2. Otherwise, if `.skillsaw.yaml` is
+missing, ask:
 
 > This repository has no `.skillsaw.yaml`. I can add the default tracked
 > configuration so rule settings and exclusions have an explicit place; lint

@@ -1,7 +1,7 @@
 ---
 name: skillsaw-release-ready
 description: Audit skillsaw for release readiness — test new rules against real repositories, audit core architectural dimensions, independently verify proposed fixes, and ship improvements in clean, focused batches. Use before cutting a release.
-compatibility: Requires git, gh CLI, internet access, and subagents (Opus for reviewers). Uses ~/tmp for corpus storage.
+compatibility: Requires git, gh CLI, uv, internet access, and subagents (Opus for reviewers). Uses ~/tmp for corpus storage.
 license: Apache-2.0
 user-invocable: true
 metadata:
@@ -65,11 +65,12 @@ Run a dedicated reviewer subagent to double-check the checklist:
 
 ## Step 6: Ship in batches
 
-Create a branch from `main` and implement each fix in its own clear, well-tested commit:
+Bring `main` up to date with upstream first (`git remote -v` names `stbenjam/skillsaw`; fetch it and merge its `main`), then branch from it and implement each fix in its own clear, well-tested commit:
 1. Run `make test`, `make lint`, and `make update` (commit any generated changes).
-2. Run a smoke test on `openshift-eng/ai-helpers`.
-3. Compare before-and-after violation counts on sample corpus repositories.
-4. Open the PR with clear evidence for each fix, and follow standard post-PR checks.
+2. When the batch touches a content rule, the lint tree, or `utils.py` read paths, save a benchmark on `main` with `make benchmark-save` and run `make benchmark-compare` on the branch; violation counts cannot show a runtime regression.
+3. Run a smoke test on `openshift-eng/ai-helpers`.
+4. Compare before-and-after violation counts on sample corpus repositories.
+5. Open the PR with clear evidence for each fix, and follow standard post-PR checks.
 
 ## Step 7: Final release notes check
 

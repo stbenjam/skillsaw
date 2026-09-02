@@ -7,11 +7,13 @@ Sort each cluster into one of three practical buckets:
 ## 1. Fix now
 Best for high-priority issues and quick wins:
 - All `error` severity findings by default; an error the user accepts as debt, and that the baseline can record, may move to Baseline
-- Findings with `"fixable": true` (apply safe fixes with `skillsaw fix`, or review suggested fixes with `skillsaw fix --suggest`)
+- Findings with `"fixable": true`: safe fixes apply with `skillsaw fix`, suggested ones with `skillsaw fix --suggest`. Plain `skillsaw fix` repairs errors and warnings only, so an info-level group needs `skillsaw fix --rule <rule-id>`
 - Small groups of straightforward corrections
 
 ## 2. Baseline
 Best for valid findings that aren't urgent to fix immediately (such as wordy sections, missing evals, or legacy links). Recording them with `skillsaw baseline` lets CI pass immediately while preventing new regressions on future PRs.
+
+Only errors and warnings can go here: `skillsaw baseline` never records info findings. An info cluster the project wants gone belongs in Configure; one it can live with needs no action, since info findings fail CI only under `fail-on: info`.
 
 ## 3. Configure
 Best for intentional project conventions (such as generated data folders, custom directory layouts, or deliberate terminology choices). Configuring the rule in `.skillsaw.yaml` documents the convention once for all future files:
