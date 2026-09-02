@@ -5106,6 +5106,14 @@ class TestDescriptionRouting:
             "passive-must-whenever",
             "passive-should-before",
             "use-only-when",
+            # Phrasings real authors write, seeded from the Agent Skills
+            # reference content that once warned.
+            "activates-when-asked",
+            "trigger-label",
+            "load-this-skill-whenever",
+            "use-after-opening-pr",
+            "claude-should-use-whenever",
+            "applies-when-touching",
         }
         discovered = {Path(path).name for path in result["out"]["stats"]["skills"]}
         flagged = {

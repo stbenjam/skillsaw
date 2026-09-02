@@ -17,29 +17,63 @@ from skillsaw.rules.builtin.content_analysis import (
 from skillsaw.rules.builtin.utils import read_frontmatter_commented
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
+# A selection clause at the start of a sentence: an optional subject
+# ("you", "Claude", "the agent"), an optional modal, a selection verb, and
+# the condition that follows it. Real authors write "Use when …", "Load this
+# skill whenever …", "Claude should use this skill after …" and "Invoke it
+# for …" interchangeably; the rule is advice, so the vocabulary errs wide.
 _ACTIVE_USE_TRIGGER_RE = re.compile(
-    r"(?:^|[.!?—]\s+)(?:(?:you )?(?:must|should) )?"
-    r"(?:use(?: this(?: (?:skill|agent))?| it)?|invoke this(?: (?:skill|agent))?)"
+    r"(?:^|[.!?—:]\s+)"
+    r"(?:(?:you|claude|the agent|the assistant|an agent|agents) )?"
+    r"(?:(?:must|should|can|may) )?"
+    r"(?:(?:use|invoke|load|run|call|apply|activate)(?: this(?: (?:skill|agent|rule|command))?| it)?)"
     r"(?: proactively)? "
-    r"(?:when(?:ever)?|if|before|for|to)\b"
+    r"(?:when(?:ever)?|if|before|after|during|once|for|to)\b"
 )
 _PASSIVE_USE_TRIGGER_RE = re.compile(
-    r"(?:^|[.!?—]\s+)(?:this (?:skill|agent) )?(?:must|should) be used "
-    r"(?:when(?:ever)?|if|before)\b"
+    r"(?:^|[.!?—:]\s+)(?:this (?:skill|agent|rule|command) )?(?:must|should) be "
+    r"(?:used|invoked|loaded|applied) (?:when(?:ever)?|if|before|after|during|once|for)\b"
 )
-_FOR_TRIGGER_RE = re.compile(r"(?:^|[.!?—]\s+)for (?:requests|tasks)\b")
+_FOR_TRIGGER_RE = re.compile(r"(?:^|[.!?—:]\s+)for (?:requests|tasks)\b")
 _EXPLANATORY_USER_TRIGGER_RE = re.compile(
     r"\b(?:what happens|what to expect) (?:when (?:the user|users)|if the user)\b"
 )
+# Substring markers, matched on the lower-cased, whitespace-collapsed
+# description. The labelled forms ("Trigger:", "Triggers —") are how the
+# Agent Skills reference content introduces its activation clause.
 _TRIGGER_MARKERS = (
     "use when",
     "use only when",
+    "use after",
+    "use during",
+    "use once",
+    "use whenever",
     "when the user",
     "when users",
+    "when a user",
+    "whenever the user",
+    "when asked",
+    "whenever asked",
     "when you need",
     "triggers on",
     "triggered by",
+    "triggered when",
+    "trigger when",
+    "triggers when",
+    "activates when",
+    "activate when",
+    "activates on",
+    "applies when",
+    "apply when",
+    "applies to",
+    "trigger:",
+    "triggers:",
+    "trigger —",
+    "triggers —",
+    "trigger -",
+    "triggers -",
     "if the user",
+    "if asked",
 )
 _RESTATEMENT_FILLER = {"a", "an", "the", "command", "agent", "skill"}
 #: OpenCode directories whose files are primary agents by location alone —
