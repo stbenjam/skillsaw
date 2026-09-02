@@ -74,8 +74,8 @@ Preserve backward compatibility for existing response fields.
 - Set `trigger` to `always_on`, `manual`, `model_decision`, `agent`, or
   `glob`, or omit it and let Devin infer the mode from `globs` or
   `description`.
-- For `glob`, provide a non-empty string or list of repository-relative
-  patterns. Remove absolute paths and `..` path segments.
+- For `glob`, provide a non-empty YAML list of repository-relative patterns.
+  Remove absolute paths and `..` path segments.
 - For `model_decision`, add a non-empty string `description` that explains
   when the rule applies.
 - Split or shorten a rule that exceeds `max-characters` (12,000 by default),
