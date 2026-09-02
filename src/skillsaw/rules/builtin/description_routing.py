@@ -223,10 +223,14 @@ class DescriptionRoutingRule(Rule):
                     # Copilot's dedicated schema rule owns wrong-typed
                     # descriptions. Treating the same value as an empty
                     # content description here would emit two diagnoses for
-                    # one defect. Other formats have no schema owner and keep
-                    # the established routing finding.
-                    if block_type is CopilotAgentBlock and self.surface_rule_enabled(
-                        "copilot-agent-valid"
+                    # one defect. A bare `description:` key is null, which
+                    # is not a type defect but an empty description, and
+                    # stays here. Other formats have no schema owner and
+                    # keep the established routing finding.
+                    if (
+                        block_type is CopilotAgentBlock
+                        and description is not None
+                        and self.surface_rule_enabled("copilot-agent-valid")
                     ):
                         continue
                     violations.append(
