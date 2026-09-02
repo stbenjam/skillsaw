@@ -37,10 +37,11 @@ fingerprinting works and configuration options.
     |---|---|---|
     | :material-numeric-1-circle:{ .step-icon } | **Install** | Adds skillsaw to your project |
     | :material-numeric-2-circle:{ .step-icon } | **Lint** | Runs a full scan of your repo |
-    | :material-numeric-3-circle:{ .step-icon } | **Autofix** | Applies deterministic fixes automatically |
-    | :material-numeric-4-circle:{ .step-icon } | **Manual fix** | Your agent resolves remaining violations interactively |
-    | :material-numeric-5-circle:{ .step-icon } | **CI** | Sets up CI to lint on every PR |
-    | :material-numeric-6-circle:{ .step-icon } | **Baseline** | Accepts any leftover violations so you start clean |
+    | :material-numeric-3-circle:{ .step-icon } | **Triage** | Groups the findings by rule and proposes fix, baseline, or configure for each cluster |
+    | :material-numeric-4-circle:{ .step-icon } | **Autofix** | Applies deterministic fixes automatically |
+    | :material-numeric-5-circle:{ .step-icon } | **Manual fix** | Your agent resolves remaining violations interactively |
+    | :material-numeric-6-circle:{ .step-icon } | **CI** | Sets up CI to lint on every PR |
+    | :material-numeric-7-circle:{ .step-icon } | **Baseline** | Accepts any leftover violations so you start clean |
 
 === "Claude Code"
 

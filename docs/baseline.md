@@ -16,6 +16,11 @@ skillsaw baseline
 The baseline file should be committed to your repository so that all
 contributors share the same accepted set of violations.
 
+Triage a large first scan by rule before baselining it. A cluster that is
+one repository-wide convention belongs in
+[`.skillsaw.yaml`](configuration.md#rule-options), not in the debt file,
+which would need a fresh entry for every file added later.
+
 ## How It Works
 
 Once a `.skillsaw-baseline.json` file exists (next to `.skillsaw.yaml` or
