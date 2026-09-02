@@ -6,7 +6,7 @@ Sort each cluster into one of three practical buckets:
 
 ## 1. Fix now
 Best for high-priority issues and quick wins:
-- All `error` severity findings
+- All `error` severity findings by default; an error the user accepts as debt, and that the baseline can record, may move to Baseline
 - Findings with `"fixable": true` (apply safe fixes with `skillsaw fix`, or review suggested fixes with `skillsaw fix --suggest`)
 - Small groups of straightforward corrections
 

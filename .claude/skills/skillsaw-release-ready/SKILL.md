@@ -28,7 +28,7 @@ Identify what has changed since the last release tag:
 
 ```bash
 git fetch --tags
-git diff --name-status v<last>..HEAD -- src/skillsaw/rules/builtin/ | grep '^A'
+git diff --name-status v<last>..HEAD -- src/skillsaw/rules/builtin/ | grep -E '^[AM]'
 git log --merges --format=%s v<last>..HEAD
 gh pr view <n> --json title,body   # review previous release-readiness PRs
 ```
