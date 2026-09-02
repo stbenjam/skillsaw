@@ -2197,6 +2197,30 @@ class TestCursorRules:
         assert "\\ud800" in proc.stdout
         assert "content-hook-candidate" in proc.stdout
 
+    def test_report_survives_a_console_that_cannot_encode_its_symbols(self, tmp_path):
+        """A redirected Windows console (cp1252) cannot encode the report's
+        check marks and dashes. The run must still finish, keep its exit
+        code, and write the `--output` file — not die in a traceback."""
+        repo = tmp_path / "ascii-repo"
+        (repo / ".claude" / "commands").mkdir(parents=True)
+        (repo / ".claude" / "commands" / "hi.md").write_text(
+            "---\ndescription: Say hello to the user\n---\nSay hello.\n"
+        )
+        report = tmp_path / "report.json"
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "skillsaw", "lint", str(repo), "--output", str(report)],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONIOENCODING": "cp1252"},
+        )
+
+        assert "UnicodeEncodeError" not in proc.stderr
+        assert "Traceback" not in proc.stderr
+        assert proc.returncode in (0, 1), proc.stderr
+        assert report.exists()
+        assert "checks passed" in proc.stdout or "Summary" in proc.stdout
+
     def test_tree_output_survives_a_hostile_hook_event_name(self, tmp_path):
         """`skillsaw tree` prints straight to the terminal, unlike a report.
 
@@ -5451,6 +5475,24 @@ class TestUnlinkedInternalReferenceAutofix:
         assert self._run_fix(repo).returncode == 0
         assert (repo / "CLAUDE.md").read_text() != before
 
+    @pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs a denied write")
+    def test_a_failed_write_is_reported_and_fails_the_run(self, tmp_path):
+        """`fix` used to print "No auto-fixable violations found." and exit 0
+        after every write failed with a permission error."""
+        repo = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
+        before = (repo / "CLAUDE.md").read_text()
+        repo.chmod(0o555)
+        try:
+            result = self._run_fix(repo)
+        finally:
+            repo.chmod(0o755)
+
+        assert result.returncode == 1
+        assert "Failed to apply 1 fix(es)" in result.stderr
+        assert "CLAUDE.md" in result.stderr
+        assert "No auto-fixable violations found" not in result.stdout
+        assert (repo / "CLAUDE.md").read_text() == before
+
     def test_fix_duplicate_paths_via_cli(self, tmp_path):
         """CLI fix wraps duplicate bare paths without double-wrapping."""
         repo = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
@@ -7514,3 +7556,30 @@ class TestUnrecognizedRepositoryWarning:
         stderr = run_lint(empty)["stderr"]
         assert self.WARNING in stderr
         assert "Expected: agent skills (SKILL.md)" in stderr
+
+
+@pytest.mark.integration
+class TestQuietStderrOnRealContent:
+    """Things a repository can contain that must not leak noise or tracebacks
+    onto stderr during an ordinary lint."""
+
+    def test_bundled_python_with_an_invalid_escape_emits_no_syntax_warning(self, tmp_path):
+        """`agentskill-unreferenced-files` parses bundled scripts with `ast`.
+        A `"\\d"` in one of them made CPython print `<unknown>:N:
+        SyntaxWarning` in the middle of the lint output (3 of 103 corpus
+        repositories)."""
+        repo = tmp_path / "skill-with-script"
+        skill = repo / ".claude" / "skills" / "greet"
+        (skill / "scripts").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: greet\ndescription: Greet the user by name. Use when the user asks "
+            "for a greeting.\n---\n\nRun `scripts/helper.py` to build the greeting.\n"
+        )
+        (skill / "scripts" / "helper.py").write_text(
+            'import re\n\nPATTERN = re.compile("\\d+ greetings")\n'
+        )
+
+        r = run_lint(repo)
+
+        assert "SyntaxWarning" not in r["stderr"]
+        assert "<unknown>" not in r["stderr"]

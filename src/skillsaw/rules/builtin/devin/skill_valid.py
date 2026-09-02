@@ -7,6 +7,7 @@ from typing import Any, List, Optional
 from skillsaw.blocks import DevinSkillBlock
 from skillsaw.context import HAS_DEVIN, RepositoryContext
 from skillsaw.formats import devin
+from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.utils import yaml_path_line_lookup
 
@@ -199,16 +200,28 @@ class DevinSkillValidRule(Rule):
                 )
             ]
 
-        violations: List[RuleViolation] = []
-        for index, trigger in enumerate(value):
-            if isinstance(trigger, str) and trigger in devin.SKILL_TRIGGERS:
-                continue
-            violations.append(
-                self.violation(
-                    f"'triggers[{index}]' must be 'user' or 'model'",
-                    file_path=block.path,
-                    line=line_for(f"triggers[{index}]") or field.field_line,
-                    block=block,
-                )
+        # One finding per field, naming the offending values. An author who
+        # wrote activation phrases instead of the two enum values has made
+        # one mistake, not one per phrase — a 40-line list was 40 identical
+        # errors that said nothing about what was actually written.
+        bad = [
+            (index, trigger)
+            for index, trigger in enumerate(value)
+            if not (isinstance(trigger, str) and trigger in devin.SKILL_TRIGGERS)
+        ]
+        if not bad:
+            return []
+        shown = ", ".join(
+            safe_display(repr(trigger)) if isinstance(trigger, str) else type(trigger).__name__
+            for _index, trigger in bad[:3]
+        )
+        if len(bad) > 3:
+            shown += f", … ({len(bad)} values)"
+        return [
+            self.violation(
+                f"'triggers' must list only 'user' and/or 'model'; got {shown}",
+                file_path=block.path,
+                line=line_for(f"triggers[{bad[0][0]}]") or field.field_line,
+                block=block,
             )
-        return violations
+        ]

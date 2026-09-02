@@ -22,6 +22,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
     FrontmatterField,
+    iter_frontmatter_strings,
 )
 
 # Family a: invisible / zero-width characters.
@@ -88,36 +89,9 @@ def _rgi_flag_offsets(text: str) -> FrozenSet[int]:
     return frozenset(offsets)
 
 
-def _iter_strings(value: Any, _seen: Optional[Set[int]] = None) -> Iterator[str]:
-    """Yield every string embedded in a frontmatter value.
-
-    Nested lists and mappings are walked (mapping keys included): a payload
-    in ``allowed-tools: [Ba<ZWSP>sh]`` never surfaces through ``str(value)``
-    because ``repr`` backslash-escapes format characters.
-
-    Containers already visited are skipped by ``id`` so self-referential
-    structures built from YAML anchor/alias cycles (``metadata: &m\\n
-    nested: *m`` — legal YAML that PyYAML constructs as a dict containing
-    itself) terminate instead of raising ``RecursionError``.
-    """
-    if isinstance(value, str):
-        yield value
-        return
-    if not isinstance(value, (dict, list, tuple)):
-        return
-    if _seen is None:
-        _seen = set()
-    if id(value) in _seen:
-        return
-    _seen.add(id(value))
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if isinstance(key, str):
-                yield key
-            yield from _iter_strings(item, _seen)
-    else:
-        for item in value:
-            yield from _iter_strings(item, _seen)
+# One walker for every rule that reads frontmatter values, so a YAML alias
+# DAG is visited once everywhere (see content_analysis.iter_frontmatter_strings).
+_iter_strings = iter_frontmatter_strings
 
 
 def _joiner_suspicious(text: str, index: int) -> bool:

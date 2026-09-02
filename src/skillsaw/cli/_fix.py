@@ -48,6 +48,7 @@ def _run_fix(args):
 
     applied = []
     suggested = []
+    failed = []
     deprecation_messages = []
     for fix_path in paths:
         context = RepositoryContext(
@@ -79,6 +80,9 @@ def _run_fix(args):
             )
         finally:
             rule_progress.clear()
+        # The rename pass below replaces the linter; keep the first pass's
+        # failed writes or a partial fix could still report success.
+        path_failures = list(linter.fix_failures)
 
         if not dry_run and any(f.rule_id == "agentskill-name" for f in path_applied):
             context = RepositoryContext(
@@ -100,9 +104,11 @@ def _run_fix(args):
             )
             path_applied.extend(rename_applied)
             path_suggested.extend(rename_suggested)
+            path_failures.extend(linter.fix_failures)
 
         applied.extend((f, context.root_path) for f in path_applied)
         suggested.extend((f, context.root_path) for f in path_suggested)
+        failed.extend((f, error, context.root_path) for f, error in path_failures)
 
         # fix output only lists fixes, so the deprecation notices carried in
         # the violations list would otherwise never reach the user.
@@ -147,7 +153,7 @@ def _run_fix(args):
                     else:
                         print(f"      {line}")
                 print(f"      {c['dim']}{'─' * 40}{c['reset']}")
-    else:
+    elif not failed:
         if suggested:
             print("No safe fixes found.")
         else:
@@ -165,5 +171,16 @@ def _run_fix(args):
 
     if applied and not dry_run:
         print("\nRun `skillsaw lint` to see remaining issues.")
+
+    if failed:
+        # A write that failed is not a fix that was applied. Say so, and
+        # exit non-zero: "No auto-fixable violations found." over a
+        # read-only tree was a lie the exit code agreed with.
+        print(f"\n{c['red']}Failed to apply {len(failed)} fix(es):{c['reset']}", file=sys.stderr)
+        for fix, error, root in failed:
+            print(
+                f"  ✗ [{_display(fix.file_path, root)}] {fix.description}: {error}", file=sys.stderr
+            )
+        sys.exit(1)
 
     sys.exit(0)

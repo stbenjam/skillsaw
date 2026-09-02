@@ -181,8 +181,26 @@ class DevinRulesValidRule(Rule):
                     block=block,
                 )
             ]
+        violations: List[RuleViolation] = []
+        if isinstance(field.value, str):
+            # Devin's docs show `globs: "src/**/*.tsx"` and Devin Desktop may
+            # accept it, but the Devin CLI fails to load the rule with
+            # "invalid type: string, expected a sequence" — silently, in
+            # `devin rules list` errors nobody reads. The YAML list is the one
+            # form both hosts read, so the scalar is an error. The pattern
+            # itself is still checked below so a bad glob is reported too.
+            violations.append(
+                self.violation(
+                    "'globs' must be a YAML list of strings — Devin Desktop may accept a "
+                    "single string, but the Devin CLI fails to load the rule "
+                    '("expected a sequence")',
+                    file_path=block.path,
+                    line=field.field_line,
+                    block=block,
+                )
+            )
         if not patterns:
-            return [
+            return violations + [
                 self.violation(
                     "'globs' must contain at least one pattern",
                     file_path=block.path,
@@ -191,7 +209,6 @@ class DevinRulesValidRule(Rule):
                 )
             ]
 
-        violations: List[RuleViolation] = []
         line_for = yaml_path_line_lookup(block.read_frontmatter_text(), line_offset=1)
         for index, pattern in enumerate(patterns):
             where = f"globs[{index}]" if len(patterns) > 1 else "globs"

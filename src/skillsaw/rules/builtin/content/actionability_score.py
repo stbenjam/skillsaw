@@ -7,6 +7,7 @@ from typing import Dict, List
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    blank_long_tokens,
     gather_all_content_blocks,
 )
 
@@ -92,7 +93,9 @@ class ContentActionabilityScoreRule(Rule):
             # needs a dot or a backtick — most prose lines have neither.
             cmd_lines = sum(1 for line in lines if "`" in line and self._COMMAND_RE.search(line))
             path_lines = sum(
-                1 for line in lines if ("." in line or "`" in line) and self._PATH_RE.search(line)
+                1
+                for line in lines
+                if ("." in line or "`" in line) and self._PATH_RE.search(blank_long_tokens(line))
             )
 
             verb_ratio = verb_lines / total

@@ -531,3 +531,166 @@ def test_targeted_fix_never_rewrites_an_external_lock_managed_skill(
     assert violations[0]["fixable"] is False
     assert result.returncode == 0
     assert external.read_text() == original
+
+
+def test_missing_computed_hash_is_a_warning(tmp_path: Path) -> None:
+    """`npx skills list`/`add`/`update` process an entry without `computedHash`;
+    only the drift check needs it. A hand-maintained lockfile is not broken."""
+    repo = tmp_path / "repo"
+    (repo / ".agents" / "skills" / "hashless").mkdir(parents=True)
+    (repo / ".agents" / "skills" / "hashless" / "SKILL.md").write_text(
+        "---\nname: hashless\ndescription: Installed by hand. Use when asked to demo.\n---\nDemo.\n"
+    )
+    _write_lock(
+        repo / "skills-lock.json",
+        {
+            "version": 1,
+            "skills": {"hashless": {"source": "example/skills", "sourceType": "github"}},
+        },
+    )
+
+    found = SkillsLockValidRule().check(RepositoryContext(repo))
+
+    assert [(v.severity, "computedHash" in v.message) for v in found] == [(Severity.WARNING, True)]
+
+
+@pytest.mark.parametrize("value", [42, {"sha256": "abc"}, ["abc"], True])
+def test_wrong_typed_computed_hash_is_still_an_error(tmp_path: Path, value: object) -> None:
+    """Absent is a warning; present with the wrong type is malformed."""
+    repo = tmp_path / "repo"
+    (repo / ".agents" / "skills" / "typed").mkdir(parents=True)
+    (repo / ".agents" / "skills" / "typed" / "SKILL.md").write_text(
+        "---\nname: typed\ndescription: Typed. Use when asked.\n---\nBody.\n"
+    )
+    _write_lock(
+        repo / "skills-lock.json",
+        {"version": 1, "skills": {"typed": _entry(computedHash=value)}},
+    )
+
+    found = SkillsLockValidRule().check(RepositoryContext(repo))
+
+    assert [(v.severity, v.message) for v in found] == [
+        (Severity.ERROR, "Skill 'typed' field 'computedHash' must be a string")
+    ]
+
+
+def test_self_installed_skill_is_the_repository_s_own_content(tmp_path: Path) -> None:
+    """A repository that publishes a skill and installs it from its own GitHub
+    coordinates records itself as the source. That entry describes authored
+    content: the authored copy is not external, and autofix may touch it.
+    An entry from any other repository is still external."""
+    repo = tmp_path / "clonecn"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".git" / "config").write_text(
+        '[core]\n\trepositoryformatversion = 0\n[remote "origin"]\n'
+        "\turl = git@github.com:hunvreus/CloneCN.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+    )
+    for name in ("clonecn", "external-dep"):
+        (repo / "skills" / name).mkdir(parents=True)
+        (repo / "skills" / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Does {name} things. Use when asked.\n---\nBody.\n"
+        )
+    _write_lock(
+        repo / "skills-lock.json",
+        {
+            "version": 1,
+            "skills": {
+                "clonecn": _entry(source="hunvreus/clonecn", skillPath="skills/clonecn/SKILL.md"),
+                "external-dep": _entry(source="someone-else/skills"),
+            },
+        },
+    )
+
+    nodes = {node.path.name: node for node in RepositoryContext(repo).lint_tree.find(SkillNode)}
+
+    assert not nodes["clonecn"].externally_sourced
+    assert nodes["external-dep"].externally_sourced
+
+
+def test_hashless_remote_entry_still_marks_its_install_external(tmp_path: Path) -> None:
+    """A missing `computedHash` is only a warning, so the entry must still
+    count as provenance: the installed dependency is not the repository's to
+    autofix. A malformed digest is a different matter — the CLI never writes
+    one, so that entry proves nothing and provenance fails open."""
+    repo = tmp_path / "repo"
+    for name in ("hashless", "malformed"):
+        (repo / ".agents" / "skills" / name).mkdir(parents=True)
+        (repo / ".agents" / "skills" / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Does {name}. Use when asked.\n---\nBody.\n"
+        )
+    _write_lock(
+        repo / "skills-lock.json",
+        {
+            "version": 1,
+            "skills": {
+                "hashless": {"source": "example/skills", "sourceType": "github"},
+                "malformed": _entry(computedHash="not-a-sha256"),
+            },
+        },
+    )
+
+    nodes = {node.path.name: node for node in RepositoryContext(repo).lint_tree.find(SkillNode)}
+
+    assert nodes["hashless"].externally_sourced
+    assert not nodes["malformed"].externally_sourced
+
+
+def test_self_source_detection_needs_a_git_origin(tmp_path: Path) -> None:
+    """Without a `.git/config` there is nothing to compare the source with, so
+    the entry keeps its external verdict — the established behaviour."""
+    repo = tmp_path / "tarball"
+    (repo / "skills" / "clonecn").mkdir(parents=True)
+    (repo / "skills" / "clonecn" / "SKILL.md").write_text(
+        "---\nname: clonecn\ndescription: Clones things. Use when asked.\n---\nBody.\n"
+    )
+    _write_lock(
+        repo / "skills-lock.json",
+        {"version": 1, "skills": {"clonecn": _entry(source="hunvreus/clonecn")}},
+    )
+
+    nodes = {node.path.name: node for node in RepositoryContext(repo).lint_tree.find(SkillNode)}
+
+    assert nodes["clonecn"].externally_sourced
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("hunvreus/clonecn", "hunvreus/clonecn"),
+        ("github:Hunvreus/CloneCN", "hunvreus/clonecn"),
+        ("https://github.com/hunvreus/clonecn.git", "hunvreus/clonecn"),
+        ("git@github.com:hunvreus/clonecn.git", "hunvreus/clonecn"),
+        ("https://github.com/hunvreus/clonecn/tree/main/skills#ref", "hunvreus/clonecn"),
+        ("hunvreus/clonecn@v1", "hunvreus/clonecn"),
+        ("github.com/hunvreus/clonecn", "hunvreus/clonecn"),
+        ("https://gitlab.com/group/project", None),
+        ("git@gitlab.com:group/project.git", None),
+        ("./skills/local", None),
+        ("clonecn", None),
+        ("/", None),
+    ],
+)
+def test_github_owner_repo_normalizes_every_source_spelling(source, expected) -> None:
+    assert skills_lock.github_owner_repo(source) == expected
+
+
+def test_own_repository_needs_an_origin_url(tmp_path: Path) -> None:
+    """A `.git/config` without an origin remote, or an origin without a url,
+    identifies nothing; an unreadable config is the same as none."""
+    from skillsaw.repository_external_content import RepositoryExternalContentMixin
+
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    assert RepositoryExternalContentMixin._github_repository_of(repo) is None
+
+    (repo / ".git" / "config").write_text("[core]\n\tbare = false\n")
+    assert RepositoryExternalContentMixin._github_repository_of(repo) is None
+
+    (repo / ".git" / "config").write_text('[remote "origin"]\n\tfetch = +refs/heads/*\n')
+    assert RepositoryExternalContentMixin._github_repository_of(repo) is None
+
+    (repo / ".git" / "config").write_text(
+        '[remote "upstream"]\n\turl = git@github.com:other/repo.git\n'
+        '[remote "origin"]\n\turl = https://github.com/Owner/Repo.git\n'
+    )
+    assert RepositoryExternalContentMixin._github_repository_of(repo) == "owner/repo"

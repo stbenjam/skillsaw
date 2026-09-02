@@ -51,7 +51,26 @@ def _for_rule(findings, rule_id):
 
 
 class TestMcpRegistrySchemaRule:
-    @pytest.mark.parametrize("value", ["${VERSION}", "{{VERSION}}", "<<Version>>"])
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "${VERSION}",
+            "{{VERSION}}",
+            "<<Version>>",
+            # Spellings committed by real publishers that a release pipeline
+            # substitutes: rhel-lightspeed ("$version"), docker-hardened-images
+            # ("_VERSION_"), ai-raccoon ("__VERSION__").
+            "$version",
+            "_VERSION_",
+            "__VERSION__",
+            "{{ version }}",
+            "<< VERSION >>",
+            "<version>",
+            "%VERSION%",
+            "@VERSION@",
+            "${package.version}",
+        ],
+    )
     def test_release_source_placeholder_forms_are_exact(self, value):
         assert is_release_source_placeholder(value)
 
@@ -67,6 +86,12 @@ class TestMcpRegistrySchemaRule:
             "<<Version>>extra",
             "latest",
             "*",
+            "1.0.0",
+            "_",
+            "__",
+            "$",
+            "<>",
+            "@1.2.3@",
             None,
         ],
     )
@@ -1521,6 +1546,109 @@ class TestMcpRegistryNpmNameRule:
         assert len(findings) == 1
         assert findings[0].file_path == package_path
         assert "mcpname" in findings[0].message.lower()
+
+    def test_workspace_container_with_the_published_coordinates_defers_to_its_member(
+        self, tmp_path
+    ):
+        """pulsemcp/mcp-servers: `experimental/tailscale/package.json` is an
+        npm-workspaces container sharing the published name and version
+        with `local/package.json`, which npm publishes and which carries
+        `mcpName`. The container is never published; the member is checked."""
+        container = {
+            "name": "@example/weather-mcp",
+            "version": "1.2.3",
+            "workspaces": ["packages/*"],
+        }
+
+        missing = copy_fixture("mcp-registry/root-server-nested-package", tmp_path / "missing")
+        (missing / "package.json").write_text(json.dumps(container), encoding="utf-8")
+        findings = _for_rule(lint_rules(missing, NPM_NAME_RULE), NPM_NAME_RULE)
+        assert [finding.file_path for finding in findings] == [
+            missing / "packages" / "weather" / "package.json"
+        ]
+
+        declared = copy_fixture("mcp-registry/root-server-nested-package", tmp_path / "declared")
+        (declared / "package.json").write_text(json.dumps(container), encoding="utf-8")
+        member = declared / "packages" / "weather" / "package.json"
+        data = json.loads(member.read_text(encoding="utf-8"))
+        data["mcpName"] = "io.github.example/weather"
+        member.write_text(json.dumps(data), encoding="utf-8")
+        assert _for_rule(lint_rules(declared, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
+    def test_workspace_globs_use_npm_path_semantics(self, tmp_path):
+        """`packages/*` names `packages/foo`, not `packages/foo/examples/demo`:
+        npm expands workspaces with a path-aware glob, where `*` never
+        crosses `/`. Only `**` spans directories."""
+        from skillsaw.rules.builtin.mcp_registry.npm_name_match import _workspace_glob_regex
+
+        star = _workspace_glob_regex("packages/*")
+        assert star.fullmatch("packages/foo")
+        assert star.fullmatch("packages/foo/examples/demo") is None
+        double = _workspace_glob_regex("packages/**")
+        assert double.fullmatch("packages/foo/examples/demo")
+        assert _workspace_glob_regex("apps/*/server").fullmatch("apps/web/server")
+        assert _workspace_glob_regex("apps/?").fullmatch("apps/a/b") is None
+
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps({"name": "@example/weather-mcp", "version": "1.2.3", "workspaces": ["*"]}),
+            encoding="utf-8",
+        )
+        # The only coordinate match sits two levels down; `*` does not reach
+        # it, so the container stays the nearest package and is checked.
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+        assert [finding.file_path for finding in findings] == [repo / "package.json"]
+
+    def test_workspace_member_must_corroborate_the_server_repository(self, tmp_path):
+        """A member with the published coordinates but another repository URL
+        is someone else's package; ownership stays unresolved and the rule
+        stays silent, as it does for a nearest boundary that disagrees."""
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps(
+                {"name": "@example/weather-mcp", "version": "1.2.3", "workspaces": ["packages/*"]}
+            ),
+            encoding="utf-8",
+        )
+        member = repo / "packages" / "weather" / "package.json"
+        data = json.loads(member.read_text(encoding="utf-8"))
+        data["repository"] = "github:someone-else/weather"
+        member.write_text(json.dumps(data), encoding="utf-8")
+
+        assert _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE) == []
+
+    def test_workspace_member_must_match_a_declared_workspace_glob(self, tmp_path):
+        """A manifest under `examples/` with the published coordinates is not a
+        member of `workspaces: ["packages/*"]`; the container stays the
+        nearest package and is checked itself."""
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps(
+                {"name": "@example/weather-mcp", "version": "1.2.3", "workspaces": ["apps/*"]}
+            ),
+            encoding="utf-8",
+        )
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert [finding.file_path for finding in findings] == [repo / "package.json"]
+
+    def test_non_private_workspace_root_does_not_block_the_check(self, tmp_path):
+        """FusionAuth/fusionauth-mcp-api: a workspaces root without
+        `private: true` used to stop the search before the nested package."""
+        repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)
+        (repo / "package.json").write_text(
+            json.dumps(
+                {"name": "weather-workspace", "version": "0.0.0", "workspaces": ["packages/*"]}
+            ),
+            encoding="utf-8",
+        )
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert [finding.file_path for finding in findings] == [
+            repo / "packages" / "weather" / "package.json"
+        ]
 
     def test_unique_exact_coordinate_crosses_private_root_workspace(self, tmp_path):
         repo = copy_fixture("mcp-registry/root-server-nested-package", tmp_path)

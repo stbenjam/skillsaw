@@ -11,6 +11,7 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    iter_frontmatter_strings,
     gather_all_content_blocks,
     patterns_matching_anywhere,
     FrontmatterField,
@@ -638,7 +639,9 @@ class ContentEmbeddedSecretsRule(Rule):
                     )
                 )
         for fld in context.lint_tree.find(FrontmatterField):
-            text = str(fld.value) if fld.value is not None else ""
+            # Every embedded string once: str(value) renders a YAML alias DAG as
+            # a tree, 9^levels leaves from a 430-byte frontmatter block.
+            text = "\n".join(iter_frontmatter_strings(fld.value))
             if not text:
                 continue
             ordered_list_lines = (
