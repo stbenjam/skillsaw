@@ -5475,6 +5475,24 @@ class TestUnlinkedInternalReferenceAutofix:
         assert self._run_fix(repo).returncode == 0
         assert (repo / "CLAUDE.md").read_text() != before
 
+    @pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs a denied write")
+    def test_a_failed_write_is_reported_and_fails_the_run(self, tmp_path):
+        """`fix` used to print "No auto-fixable violations found." and exit 0
+        after every write failed with a permission error."""
+        repo = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
+        before = (repo / "CLAUDE.md").read_text()
+        repo.chmod(0o555)
+        try:
+            result = self._run_fix(repo)
+        finally:
+            repo.chmod(0o755)
+
+        assert result.returncode == 1
+        assert "Failed to apply 1 fix(es)" in result.stderr
+        assert "CLAUDE.md" in result.stderr
+        assert "No auto-fixable violations found" not in result.stdout
+        assert (repo / "CLAUDE.md").read_text() == before
+
     def test_fix_duplicate_paths_via_cli(self, tmp_path):
         """CLI fix wraps duplicate bare paths without double-wrapping."""
         repo = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)

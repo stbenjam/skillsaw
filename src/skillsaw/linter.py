@@ -15,7 +15,7 @@ import re
 import sys
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Type, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, TYPE_CHECKING
 from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
@@ -1456,6 +1456,9 @@ class Linter:
         Returns:
             Tuple of (applied fixes, suggested-but-not-applied fixes).
         """
+        #: (fix, error) for every write that failed in this run; the CLI
+        #: reports them and exits non-zero rather than claiming success.
+        self.fix_failures: List[Tuple[AutofixResult, str]] = []
         from .rules.builtin.utils import invalidate_read_caches
 
         all_applied: List[AutofixResult] = []
@@ -1487,6 +1490,7 @@ class Linter:
                 independent,
                 confidence,
                 root_path=self.context.root_path,
+                failures=self.fix_failures,
             )
             all_applied.extend(applied)
 
@@ -1512,6 +1516,7 @@ class Linter:
         fixes: List[AutofixResult],
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
         root_path: Optional[Path] = None,
+        failures: Optional[List[Tuple[AutofixResult, str]]] = None,
     ) -> List[AutofixResult]:
         """
         Write fix results to disk.
@@ -1522,6 +1527,10 @@ class Linter:
                         (SAFE = only safe,
                          SUGGEST = safe + suggest)
             root_path: Trusted repository boundary for atomic writes
+            failures: When given, every fix whose write failed is appended
+                      with the OS error text, so a caller can report it
+                      instead of announcing success over a file it never
+                      changed
 
         Returns:
             List of fixes that were actually applied
@@ -1588,6 +1597,8 @@ class Linter:
                     fix.file_path,
                     exc,
                 )
+                if failures is not None:
+                    failures.append((fix, str(exc)))
                 continue
 
             if fix.on_apply is not None:
