@@ -212,6 +212,36 @@ class ClaudeMdAgentsImportRule(Rule):
         claude_lines = self._normalized(claude_body)
         return bool(claude_lines) and claude_lines == self._normalized(agents_body)
 
+    #: An AGENTS.md this short that names CLAUDE.md is a pointer, not a
+    #: second copy: "See CLAUDE.md for all project rules."
+    _POINTER_MAX_PROSE_LINES = 12
+
+    def _agents_points_at_claude(self, agents: AgentsMdBlock, claude: ClaudeMdBlock) -> bool:
+        """Whether the pair already has one source of truth — in CLAUDE.md.
+
+        The reverse arrangement: AGENTS.md imports ``@CLAUDE.md``, or is a
+        short stub that names CLAUDE.md and defers to it. Either way the
+        team already made the choice this rule recommends, in the other
+        direction, and telling CLAUDE.md to import AGENTS.md would create a
+        cycle.
+        """
+        claude_resolved = claude.resolved_path
+        if claude_resolved is None:
+            return False
+        doc = agents.markdown
+        base = agents.path.parent
+        for import_ref in iter_markdown_instruction_imports(doc):
+            if self._is_sibling_import(import_ref.path, base, claude_resolved):
+                return True
+        # Raw lines, not prose_lines(): a stub names the file in a code span
+        # (`CLAUDE.md`) as often as in plain text, and prose blanking would
+        # hide it.
+        body = agents.read_body(strip_code_blocks=False) or ""
+        lines = [line for line in body.splitlines() if line.strip()]
+        if len(lines) > self._POINTER_MAX_PROSE_LINES:
+            return False
+        return any("CLAUDE.md" in line for line in lines)
+
     # -- check -----------------------------------------------------------
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -229,6 +259,8 @@ class ClaudeMdAgentsImportRule(Rule):
                 # and there is no content to move anywhere.
                 continue
             if ignore_generated and has_generated_marker(body):
+                continue
+            if self._agents_points_at_claude(agents, claude):
                 continue
 
             shape = self._shape(claude, agents.resolved_path)
