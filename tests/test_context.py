@@ -1454,3 +1454,20 @@ class TestPathMatchesPatterns:
             assert context.matches_patterns(temp_dir / rel, ["**/generated/**"])
 
         assert expanded == ["**/templates/**", "**/generated/**"]
+
+
+def test_hostile_marketplace_manifest_is_a_parse_error_not_a_traceback(temp_dir):
+    """A `.claude-plugin/marketplace.json` nested thousands deep, or a
+    plugin.json holding an integer past the digit limit, raised out of
+    RepositoryContext construction — outside the rule-execution guard — as a
+    raw RecursionError / ValueError traceback. Discovery reads manifests
+    through read_json, which turns both into a parse error."""
+    (temp_dir / ".claude-plugin").mkdir()
+    (temp_dir / ".claude-plugin" / "marketplace.json").write_text("[" * 100_000 + "]" * 100_000)
+    (temp_dir / "plugins" / "demo" / ".claude-plugin").mkdir(parents=True)
+    (temp_dir / "plugins" / "demo" / ".claude-plugin" / "plugin.json").write_text("1" * 10_000)
+
+    context = RepositoryContext(temp_dir)
+
+    assert context.repo_type is not None
+    assert context.lint_tree is not None
