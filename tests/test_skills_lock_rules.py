@@ -603,3 +603,46 @@ def test_self_source_detection_needs_a_git_origin(tmp_path: Path) -> None:
     nodes = {node.path.name: node for node in RepositoryContext(repo).lint_tree.find(SkillNode)}
 
     assert nodes["clonecn"].externally_sourced
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("hunvreus/clonecn", "hunvreus/clonecn"),
+        ("github:Hunvreus/CloneCN", "hunvreus/clonecn"),
+        ("https://github.com/hunvreus/clonecn.git", "hunvreus/clonecn"),
+        ("git@github.com:hunvreus/clonecn.git", "hunvreus/clonecn"),
+        ("https://github.com/hunvreus/clonecn/tree/main/skills#ref", "hunvreus/clonecn"),
+        ("hunvreus/clonecn@v1", "hunvreus/clonecn"),
+        ("github.com/hunvreus/clonecn", "hunvreus/clonecn"),
+        ("https://gitlab.com/group/project", None),
+        ("git@gitlab.com:group/project.git", None),
+        ("./skills/local", None),
+        ("clonecn", None),
+        ("/", None),
+    ],
+)
+def test_github_owner_repo_normalizes_every_source_spelling(source, expected) -> None:
+    assert skills_lock.github_owner_repo(source) == expected
+
+
+def test_own_repository_needs_an_origin_url(tmp_path: Path) -> None:
+    """A `.git/config` without an origin remote, or an origin without a url,
+    identifies nothing; an unreadable config is the same as none."""
+    from skillsaw.repository_external_content import RepositoryExternalContentMixin
+
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    assert RepositoryExternalContentMixin._github_repository_of(repo) is None
+
+    (repo / ".git" / "config").write_text("[core]\n\tbare = false\n")
+    assert RepositoryExternalContentMixin._github_repository_of(repo) is None
+
+    (repo / ".git" / "config").write_text('[remote "origin"]\n\tfetch = +refs/heads/*\n')
+    assert RepositoryExternalContentMixin._github_repository_of(repo) is None
+
+    (repo / ".git" / "config").write_text(
+        '[remote "upstream"]\n\turl = git@github.com:other/repo.git\n'
+        '[remote "origin"]\n\turl = https://github.com/Owner/Repo.git\n'
+    )
+    assert RepositoryExternalContentMixin._github_repository_of(repo) == "owner/repo"
