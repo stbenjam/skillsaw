@@ -223,6 +223,14 @@ class McpRegistryNpmNameMatchRule(Rule):
                 break
             directory = directory.parent
         if nearest_boundary is not None and self._coordinates_match(nearest_boundary, reference):
+            # An npm-workspaces container can carry the published package's
+            # own name and version (`experimental/tailscale/package.json`
+            # declaring `workspaces: ["local"]` beside `local/package.json`,
+            # which is what npm publishes and what carries `mcpName`). The
+            # container is never published; the member is the package.
+            member = self._unique_workspace_member(root, nearest_boundary, exact)
+            if member is not None:
+                return member
             return (
                 nearest_boundary
                 if self._nearest_repository_matches(root, nearest_boundary, repository)
@@ -230,10 +238,13 @@ class McpRegistryNpmNameMatchRule(Rule):
             )
 
         # Do not search across a package boundary that identifies a different
-        # artifact. A private root package may be a workspace container, but
-        # nested or publishable boundaries remain authoritative.
-        if nearest_boundary is not None and not self._is_private_root_container(
-            root, nearest_boundary
+        # artifact. A workspace container — a private root package, or any
+        # manifest declaring `workspaces` — is not an artifact; nested or
+        # publishable boundaries remain authoritative.
+        if (
+            nearest_boundary is not None
+            and not self._is_private_root_container(root, nearest_boundary)
+            and not self._declares_workspaces(nearest_boundary)
         ):
             return None
 
@@ -253,6 +264,38 @@ class McpRegistryNpmNameMatchRule(Rule):
         if not isinstance(data, dict) or data.get("name") != reference.identifier:
             return False
         return data.get("version") == reference.version
+
+    @staticmethod
+    def _declares_workspaces(manifest: McpRegistryNpmPackageBlock) -> bool:
+        """Whether *manifest* is an npm-workspaces container."""
+        data = manifest.raw_data
+        return isinstance(data, dict) and isinstance(data.get("workspaces"), (list, dict))
+
+    @classmethod
+    def _unique_workspace_member(
+        cls,
+        root: Path,
+        container: McpRegistryNpmPackageBlock,
+        exact: List[McpRegistryNpmPackageBlock],
+    ) -> Optional[McpRegistryNpmPackageBlock]:
+        """The one manifest below a workspaces container with the same coordinates."""
+        if not cls._declares_workspaces(container):
+            return None
+        container_dir = safe_resolve(container.path.parent)
+        if container_dir is None:
+            return None
+        members = []
+        for manifest in exact:
+            if manifest is container:
+                continue
+            manifest_path = safe_resolve(manifest.path)
+            if (
+                manifest_path is not None
+                and manifest_path.is_relative_to(container_dir)
+                and manifest_path.is_relative_to(root)
+            ):
+                members.append(manifest)
+        return members[0] if len(members) == 1 else None
 
     @staticmethod
     def _is_private_root_container(
@@ -370,7 +413,11 @@ class McpRegistryNpmNameMatchRule(Rule):
         directory = manifest_path.parent.parent
         while directory.is_relative_to(root):
             boundary = candidates.at(safe_resolve(directory / "package.json"))
-            if boundary is not None and not cls._is_private_root_container(root, boundary):
+            if (
+                boundary is not None
+                and not cls._is_private_root_container(root, boundary)
+                and not cls._declares_workspaces(boundary)
+            ):
                 return False
             if directory == root:
                 break
