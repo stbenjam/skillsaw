@@ -88,14 +88,22 @@ def test_devin_rule_inferred_glob_mode_still_checks_globs(tmp_path):
     assert [(v.severity, v.line) for v in found] == [(Severity.ERROR, 3)]
 
 
-def test_devin_documented_unquoted_glob_scalar_is_valid(tmp_path):
+def test_devin_documented_unquoted_glob_scalar_parses_but_is_an_error(tmp_path):
+    """Devin Desktop may accept `globs: **/*.test.ts`; the Devin CLI fails to
+    load it ("expected a sequence"). The scalar parses — nothing else in
+    the file is reported — and the scalar itself is an error: a YAML list
+    is the one form both hosts read."""
     _devin_rule(
         tmp_path,
         "documented-glob.md",
         "---\ntrigger: glob\nglobs: **/*.test.ts # documented syntax\n---\nUse test helpers.\n",
     )
 
-    assert DevinRulesValidRule().check(RepositoryContext(tmp_path)) == []
+    found = DevinRulesValidRule().check(RepositoryContext(tmp_path))
+
+    assert [(v.severity, v.line) for v in found] == [(Severity.ERROR, 3)]
+    assert "must be a YAML list" in found[0].message
+    assert "expected a sequence" in found[0].message
 
 
 def test_devin_glob_fallback_does_not_hide_unrelated_malformed_yaml(tmp_path):
