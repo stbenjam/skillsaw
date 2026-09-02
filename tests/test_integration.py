@@ -798,6 +798,92 @@ class TestUnreferencedSkillFiles:
         assert self.RULE not in rule_ids(r)
 
 
+@pytest.mark.integration
+class TestUnreferencedGlobLoadedDirectories:
+    """A directory a bundled script loads as a whole is referenced.
+
+    The fixture mirrors anthropics/skills' office skills: a validator
+    joins `"schemas"` onto a base path and globs `reports/*.j2`, so every
+    file under those directories is loaded at runtime even though nothing
+    names it.
+    """
+
+    RULE = "agentskill-unreferenced-files"
+    FIXTURE = "agentskills/unreferenced-glob-loaded"
+
+    def _flagged(self, r):
+        return {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+
+    def test_only_the_dead_directory_is_flagged(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert self._flagged(run_lint(repo)) == {"ooxml-validator/scripts/legacy/old_parser.py"}
+
+    def test_joined_directory_covers_schemas_no_script_names(self, tmp_path):
+        """`Path(__file__).parent.parent / "schemas"` covers the whole tree.
+
+        Two of the schemas are named by nothing at all — not by the
+        validator's mapping, not by another schema's import — so turning
+        directory coverage off is what brings them back. That is the proof
+        the directory load, and not a filename mention, is covering them.
+        """
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert not (
+            self._flagged(run_lint(repo))
+            & {
+                "ooxml-validator/scripts/schemas/iso/shared-math.xsd",
+                "ooxml-validator/scripts/schemas/iso/vml-main.xsd",
+            }
+        )
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n    directory_mention_covers: false\n"
+        )
+        assert self._flagged(run_lint(repo, config=config)) == {
+            "ooxml-validator/scripts/legacy/old_parser.py",
+            "ooxml-validator/scripts/reports/failures.html.j2",
+            "ooxml-validator/scripts/reports/summary.html.j2",
+            "ooxml-validator/scripts/schemas/iso/shared-math.xsd",
+            "ooxml-validator/scripts/schemas/iso/vml-main.xsd",
+        }
+
+    def test_globbed_directory_covers_report_shells(self, tmp_path):
+        """`HERE.glob("reports/*.j2")` names the directory, not the files."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert not (
+            self._flagged(run_lint(repo))
+            & {
+                "ooxml-validator/scripts/reports/failures.html.j2",
+                "ooxml-validator/scripts/reports/summary.html.j2",
+            }
+        )
+
+    def test_bare_word_is_not_a_directory_load(self, tmp_path):
+        """SKILL.md's English "Legacy" must not cover scripts/legacy/."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        skill_md = (repo / "ooxml-validator" / "SKILL.md").read_text()
+        assert "Legacy flat-file exports" in skill_md
+        assert "ooxml-validator/scripts/legacy/old_parser.py" in self._flagged(run_lint(repo))
+
+    def test_quoted_word_alone_is_not_a_directory_load(self, tmp_path):
+        """A JSON value spelled like a directory name never covers it.
+
+        `dgallitelli/aws-hyperpod-skill` ships `"workload_manager":
+        "slurm"` beside an `orchestrators/slurm/` directory; the quoted
+        word is a config value, not a path.
+        """
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        skill = repo / "ooxml-validator"
+        (skill / "scripts" / "validators" / "base.py").write_text(
+            '"""Validate document parts."""\n\n' 'MODE = {"parser": "legacy", "strict": False}\n'
+        )
+        assert "ooxml-validator/scripts/legacy/old_parser.py" in self._flagged(run_lint(repo))
+
+    def test_lowercase_license_never_flagged(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert (repo / "ooxml-validator" / "license.txt").is_file()
+        assert "ooxml-validator/license.txt" not in self._flagged(run_lint(repo))
+
+
 # ── File Path Argument ──────────────────────────────────────────
 
 

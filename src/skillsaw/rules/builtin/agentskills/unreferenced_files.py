@@ -58,6 +58,18 @@ to a directory that actually exists in the skill.  A bare word with no
 path markers (the English word "references") is never a directory
 mention.  Links may target the bare directory path.
 
+**Directories loaded as a whole count too.**  A directory is covered by
+its bare name when a bundled script globs it (``schemas/*.xsd``), joins
+it onto a base path (``Path(__file__).parent / "schemas"``), or hands
+it to a call that enumerates a directory (``os.listdir('data')``,
+``fs.readdirSync("assets")``, ``glob("schemas")``, ``Path("data")``) —
+every file in such a directory is loaded at runtime.
+anthropics/skills' ``docx`` skill reaches 117 ``.xsd`` schemas exactly
+that way, through ``scripts/office/validators/base.py``.  The join
+operator and the call name are what make a bare word a path: a quoted
+word on its own is not one, so a JSON value (``"workload_manager":
+"slurm"``) never covers a ``slurm/`` directory.
+
 **Python imports are followed.**  When a reachable file is a ``.py``
 file, its imports are parsed (``ast.parse``, with a line-based regex
 fallback for sources the parser rejects) and dotted module paths are
@@ -75,8 +87,9 @@ way — instructional SKILL.md fences like ``from core.gif_builder
 import GIFBuilder`` reference the module as surely as a script's own
 import does.
 
-Built-in exclusions (never flagged): SKILL.md itself, README.md,
-CHANGELOG.md, LICENSE* / NOTICE* (any suffix), everything under evals/
+Built-in exclusions (never flagged, all case-insensitive): SKILL.md
+itself, README / CHANGELOG (any extension), LICENSE* / NOTICE* (any
+suffix — including a lowercase ``license.txt``), everything under evals/
 and tests/ (eval and test scaffolding is consumed by external harnesses
 by convention — e.g. auth0/agent-skills ships evals.json/graders.ts
 under tests/ that nothing in the skill references), ``test_*.py`` files
@@ -130,6 +143,35 @@ _DIR_AFTER = r"(?![A-Za-z0-9_.-])"
 # is a file mention, and "assets/fonts/extra" mentions a subdirectory, not
 # assets/fonts.
 _DIR_BARE_AFTER = r"(?![A-Za-z0-9_./-])"
+# A nested directory's bare name ("schemas" for scripts/office/schemas) is
+# only a path when it *starts* a path token, so "/" joins the excluded
+# preceding characters: "http://schemas.openxmlformats.org/" and
+# "vendor/schemas/x" must not cover this skill's schemas/ directory.
+_DIR_NAME_BEFORE = r"(?<![A-Za-z0-9_./-])"
+# A directory loaded as a whole by a bundled script: its bare name as a
+# quoted segment joined onto a base path (`Path(__file__).parent /
+# "schemas"`) or handed to a call that enumerates a directory
+# (`os.listdir('data')`, `fs.readdirSync("assets")`, `Path("schemas")`).
+# The join operator and the call name are what make it a path — a bare
+# quoted word on its own is not.  A JSON value like `"workload_manager":
+# "slurm"` must never cover a `slurm/` directory.
+# Scanned with ``str.find`` rather than a regex: an alternation of verbs
+# in front of the name has no literal to anchor on, so the engine walks
+# every position of every source, and this rule already dominates the
+# slowest repo in the corpus.
+_QUOTES = "\"'`"
+_DIR_LOAD_CALLS = (
+    "listdir",
+    "scandir",
+    "readdir",
+    "readdirsync",
+    "opendir",
+    "glob",
+    "iglob",
+    "rglob",
+    "globsync",
+    "path",
+)
 
 # Matched against a case-folded href: URI schemes are case-insensitive
 # (RFC 3986 §3.1), so `DATA:image/png;base64,...` and `HTTPS://host/x` are
@@ -224,7 +266,10 @@ class AgentSkillUnreferencedFilesRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         # Per-run regex cache: needles (paths/filenames) repeat across the
         # markdown sources of a skill and across skills sharing file names.
-        self._pattern_cache: Dict[Tuple[str, str], re.Pattern] = {}
+        self._pattern_cache: Dict[Tuple[str, str, str], re.Pattern] = {}
+        # Needle specs repeat across sources (every source asks the same
+        # question about the same directories), so they are built once.
+        self._dir_needle_cache: Dict[str, Tuple[Tuple[str, str, str], ...]] = {}
         directory_covers = self.setting("directory_mention_covers")
         exclude_patterns = self.setting("exclude")
         if not isinstance(exclude_patterns, list) or not all(
@@ -320,9 +365,15 @@ class AgentSkillUnreferencedFilesRule(Rule):
         """Return whether a bundled path matches built-in or configured exclusions."""
         if rel == "SKILL.md":
             return True
-        if name in ("README.md", "CHANGELOG.md"):
+        # Case-insensitive, and independent of extension: a lowercase
+        # `license.txt` or a `README.rst` is the same human-facing file as
+        # the spelling the convention suggests, and flagging it as dead
+        # weight was pure noise (5,009 corpus findings included plain
+        # `license.txt` files).
+        lowered = name.lower()
+        if lowered.startswith(("license", "notice")):
             return True
-        if name.startswith(("LICENSE", "NOTICE")):
+        if (lowered.rpartition(".")[0] or lowered) in ("readme", "changelog"):
             return True
         if rel.startswith(("evals/", "tests/")):
             return True
@@ -353,7 +404,12 @@ class AgentSkillUnreferencedFilesRule(Rule):
         resolved_of = {f: (safe_resolve(f) or f) for f in all_files}
         resolved_files = set(resolved_of.values())
         rel_of = {f: resolved_of[f].relative_to(skill_resolved).as_posix() for f in all_files}
-        all_dirs = self._candidate_dirs(rel_of.values())
+        # Per-skill, not per (source, candidate) pair: needles and their
+        # lowered spellings are identical for every source that asks.
+        needles_of = {f: (rel_of[f].lower(), f.name.lower()) for f in all_files}
+        files_by_dir = self._files_by_dir(all_files, rel_of)
+        all_dirs = set(files_by_dir)
+        dir_specs = {rel_dir: self._dir_specs(rel_dir) for rel_dir in all_dirs}
         block_by_path = {block.resolved_path: block for block in skill_node.find(ContentBlock)}
 
         root_paths = {(safe_resolve(root) or root) for root in roots}
@@ -381,12 +437,18 @@ class AgentSkillUnreferencedFilesRule(Rule):
             text_lower = text.lower()
 
             newly_referenced: List[Path] = []
+            # The mentioning file's directory, as a skill-relative POSIX
+            # string: relative needles are string slices off it, not
+            # ``os.path.relpath`` round-trips through ``Path`` (the audit
+            # profile spent 53 s of 116 s building those).
+            source_dir_rel = self._skill_relative_dir(resolved_source, skill_resolved)
 
             # Markdown links, resolved relative to the linking file.  Link
             # syntax only means anything in markdown sources; scripts and
             # data files contribute raw-text mentions below.  Python sources
             # additionally reference the modules they import.
             direct_targets: Set[Path] = set()
+            newly_covered: Set[str] = set()
             suffix = source.suffix.lower()
             if suffix == ".md":
                 block = block_by_path.get(resolved_source)
@@ -394,7 +456,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 link_files, link_dirs = self._link_targets(doc, source.parent, skill_resolved)
                 direct_targets.update(link_files)
                 if directory_covers:
-                    covered_dirs.update(link_dirs)
+                    newly_covered.update(link_dirs)
                 direct_targets.update(
                     self._fence_import_targets(
                         doc, text, resolved_source.parent, skill_resolved, resolved_files
@@ -409,22 +471,27 @@ class AgentSkillUnreferencedFilesRule(Rule):
             for candidate in all_files:
                 if candidate in referenced:
                     continue
+                rel_lower, name_lower = needles_of[candidate]
                 if resolved_of[candidate] in direct_targets or self._text_mentions(
-                    text_lower, candidate, rel_of[candidate], source.parent, skill_resolved
+                    text_lower, rel_lower, name_lower, source_dir_rel
                 ):
                     referenced.add(candidate)
                     newly_referenced.append(candidate)
 
             # Directory mentions in prose/code cover their contents.
             if directory_covers:
-                for rel_dir in all_dirs - covered_dirs:
-                    if self._dir_mentioned(text_lower, rel_dir, source.parent, skill_resolved):
-                        covered_dirs.add(rel_dir)
-                for candidate in all_files:
-                    if candidate in referenced:
+                for rel_dir in all_dirs:
+                    if rel_dir in covered_dirs or rel_dir in newly_covered:
                         continue
-                    rel = rel_of[candidate]
-                    if any(rel.startswith(d + "/") for d in covered_dirs):
+                    if self._dir_mentioned(text_lower, dir_specs[rel_dir], rel_dir, source_dir_rel):
+                        newly_covered.add(rel_dir)
+                for rel_dir in sorted(newly_covered):
+                    if rel_dir in covered_dirs:
+                        continue
+                    covered_dirs.add(rel_dir)
+                    for candidate in files_by_dir.get(rel_dir, ()):
+                        if candidate in referenced:
+                            continue
                         referenced.add(candidate)
                         newly_referenced.append(candidate)
 
@@ -445,13 +512,26 @@ class AgentSkillUnreferencedFilesRule(Rule):
         return referenced
 
     @staticmethod
-    def _candidate_dirs(rels: Iterable[str]) -> Set[str]:
-        dirs: Set[str] = set()
-        for rel in rels:
-            parts = rel.split("/")[:-1]
+    def _files_by_dir(all_files: List[Path], rel_of: Dict[Path, str]) -> Dict[str, List[Path]]:
+        """Every candidate directory mapped to the files anywhere beneath it.
+
+        Covering a directory then costs one dict lookup instead of a scan
+        of every bundled file against every covered directory.
+        """
+        by_dir: Dict[str, List[Path]] = {}
+        for candidate in all_files:
+            parts = rel_of[candidate].split("/")[:-1]
             for i in range(1, len(parts) + 1):
-                dirs.add("/".join(parts[:i]))
-        return dirs
+                by_dir.setdefault("/".join(parts[:i]), []).append(candidate)
+        return by_dir
+
+    @staticmethod
+    def _skill_relative_dir(resolved_source: Path, skill_resolved: Path) -> str:
+        """The mentioning file's directory, skill-relative; "" at the root."""
+        try:
+            return resolved_source.relative_to(skill_resolved).as_posix().rpartition("/")[0]
+        except ValueError:
+            return ""
 
     @staticmethod
     def _link_targets(
@@ -650,68 +730,143 @@ class AgentSkillUnreferencedFilesRule(Rule):
     def _text_mentions(
         self,
         text_lower: str,
-        candidate: Path,
-        rel: str,
-        source_dir: Path,
-        skill_resolved: Path,
+        rel_lower: str,
+        name_lower: str,
+        source_dir_rel: str,
     ) -> bool:
-        """Whether the (pre-lowered) source text mentions *candidate*.
+        """Whether the (pre-lowered) source text mentions the candidate.
 
         Matching is case-insensitive: needles are lowered against the
         caller's once-per-source lowered blob, so ``FORMS.md`` in prose
         covers ``forms.md`` on disk.
         """
-        needles = {rel.lower(), candidate.name.lower()}
-        source_rel = self._relative_needle(candidate, source_dir, skill_resolved)
-        if source_rel:
-            needles.add(source_rel.lower())
-        return any(
-            needle in text_lower and self._pattern(needle, _FILE_AFTER).search(text_lower)
-            for needle in needles
+        if self._matches(text_lower, rel_lower, _FILE_AFTER, _MENTION_BEFORE):
+            return True
+        if name_lower != rel_lower and self._matches(
+            text_lower, name_lower, _FILE_AFTER, _MENTION_BEFORE
+        ):
+            return True
+        source_rel = self._relative_under(rel_lower, source_dir_rel)
+        return (
+            source_rel is not None
+            and source_rel != name_lower
+            and self._matches(text_lower, source_rel, _FILE_AFTER, _MENTION_BEFORE)
         )
 
     def _dir_mentioned(
-        self, text_lower: str, rel_dir: str, source_dir: Path, skill_resolved: Path
+        self,
+        text_lower: str,
+        dir_spec: Tuple[str, Tuple[Tuple[str, str, str], ...]],
+        rel_dir: str,
+        source_dir_rel: str,
     ) -> bool:
         """Whether the (pre-lowered) source text mentions the directory.
 
+        *dir_spec* holds the directory's bare name and the skill-relative
+        needles, built once per skill; only the needle relative to the
+        mentioning file's own directory depends on the source.
         Case-insensitive, like ``_text_mentions``.
         """
-        rels = {rel_dir.lower()}
-        source_rel = self._relative_needle(skill_resolved / rel_dir, source_dir, skill_resolved)
-        if source_rel:
-            rels.add(source_rel.lower())
-        needles: Set[Tuple[str, str]] = set()
-        for rel in rels:
-            needles.add((rel + "/", _DIR_AFTER))
-            # Slash-less path-ish forms of an existing directory also count:
-            # "Search the ./canvas-fonts directory" or a nested "assets/fonts".
-            # A bare word with no path markers ("data") never covers data/.
-            needles.add(("./" + rel, _DIR_BARE_AFTER))
-            if "/" in rel:
-                needles.add((rel, _DIR_BARE_AFTER))
+        name, specs = dir_spec
+        if any(self._matches(text_lower, needle, after, before) for needle, after, before in specs):
+            return True
+        if self._loaded_as_quoted_segment(text_lower, name):
+            return True
+        source_rel = self._relative_under(rel_dir.lower(), source_dir_rel)
+        if source_rel is None:
+            return False
         return any(
-            needle in text_lower and self._pattern(needle, after).search(text_lower)
-            for needle, after in needles
+            self._matches(text_lower, needle, after, before)
+            for needle, after, before in self._path_dir_specs(source_rel)
         )
 
     @staticmethod
-    def _relative_needle(target: Path, source_dir: Path, skill_resolved: Path) -> Optional[str]:
-        """Path of *target* relative to the mentioning file's directory.
+    def _loaded_as_quoted_segment(text_lower: str, name: str) -> bool:
+        """Whether a quoted *name* is joined onto a path or enumerated.
+
+        ``Path(__file__).parent / "schemas"`` and ``os.listdir('data')``
+        load the whole directory; ``"workload_manager": "slurm"`` is a
+        config value that happens to spell a directory name.  The join
+        operator and the call name are the difference.
+        """
+        start = text_lower.find(name)
+        while start != -1:
+            end = start + len(name)
+            if (
+                start
+                and text_lower[start - 1] in _QUOTES
+                and end < len(text_lower)
+                and text_lower[end] in _QUOTES
+            ):
+                before = start - 2
+                while before >= 0 and text_lower[before] in " \t":
+                    before -= 1
+                if before >= 0:
+                    if text_lower[before] == "/":
+                        return True
+                    if text_lower[before] == "(" and text_lower.endswith(
+                        _DIR_LOAD_CALLS, 0, before
+                    ):
+                        return True
+            start = text_lower.find(name, end)
+        return False
+
+    def _dir_specs(self, rel_dir: str) -> Tuple[str, Tuple[Tuple[str, str, str], ...]]:
+        """The directory's bare name and the needles covering it as a whole."""
+        lowered = rel_dir.lower()
+        specs = list(self._path_dir_specs(lowered))
+        name = lowered.rpartition("/")[2]
+        if name != lowered:
+            # A nested directory is also reached by its bare name when a
+            # script globs it (`schemas/*.xsd`) — a top-level directory's
+            # bare name is already covered by the path forms above.
+            specs.append((name + "/", _DIR_AFTER, _DIR_NAME_BEFORE))
+        return name, tuple(specs)
+
+    def _path_dir_specs(self, rel: str) -> Tuple[Tuple[str, str, str], ...]:
+        """Path-ish needles for a (lowered) directory path, memoized."""
+        cached = self._dir_needle_cache.get(rel)
+        if cached is None:
+            specs = [
+                (rel + "/", _DIR_AFTER, _MENTION_BEFORE),
+                # Slash-less path-ish forms of an existing directory also
+                # count: "Search the ./canvas-fonts directory" or a nested
+                # "assets/fonts".  A bare word with no path markers ("data")
+                # is never a path-ish mention.
+                ("./" + rel, _DIR_BARE_AFTER, _MENTION_BEFORE),
+            ]
+            if "/" in rel:
+                specs.append((rel, _DIR_BARE_AFTER, _MENTION_BEFORE))
+            cached = tuple(specs)
+            self._dir_needle_cache[rel] = cached
+        return cached
+
+    @staticmethod
+    def _relative_under(rel: str, source_dir_rel: str) -> Optional[str]:
+        """*rel* rewritten relative to the mentioning file's directory.
 
         Lets ``references/a.md`` reference ``references/img/x.png`` as
-        ``img/x.png``.  Upward (``..``) paths are skipped — the skill-relative
-        needle already matches inside them.
+        ``img/x.png``.  ``None`` when the target is not under that
+        directory — an upward (``..``) path never matched anyway, and at
+        the skill root the relative needle equals the skill-relative one.
         """
-        rel = Path(os.path.relpath(target, source_dir)).as_posix()
-        if rel.startswith(".."):
+        if not source_dir_rel:
             return None
-        return rel
+        if rel == source_dir_rel:
+            return "."  # a source's own directory, mentioned as "./"
+        prefix = source_dir_rel + "/"
+        return rel[len(prefix) :] if rel.startswith(prefix) else None
 
-    def _pattern(self, needle: str, after: str) -> re.Pattern:
-        key = (needle, after)
+    def _matches(self, text_lower: str, needle: str, after: str, before: str) -> bool:
+        """Boundary-aware search, gated on a plain substring check first."""
+        return needle in text_lower and bool(
+            self._pattern(needle, after, before).search(text_lower)
+        )
+
+    def _pattern(self, needle: str, after: str, before: str) -> re.Pattern:
+        key = (needle, after, before)
         pattern = self._pattern_cache.get(key)
         if pattern is None:
-            pattern = re.compile(_MENTION_BEFORE + re.escape(needle) + after)
+            pattern = re.compile(before + re.escape(needle) + after)
             self._pattern_cache[key] = pattern
         return pattern
