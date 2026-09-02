@@ -7479,3 +7479,38 @@ class TestYamlMergeKeyConfig:
 
         assert r["rc"] == 0
         assert all(v["rule_id"] != "invalid-config" for v in violations(r))
+
+
+@pytest.mark.integration
+class TestUnrecognizedRepositoryWarning:
+    """The warning names a directory skillsaw found nothing in — never one it
+    then lints. A repository recognized by an instruction format alone
+    (Cursor, Cline, Copilot, …) has no repo type but is not unrecognized."""
+
+    WARNING = "doesn't appear to be a recognized repository"
+
+    def test_editor_only_repositories_are_not_warned_about(self, tmp_path):
+        cursor = copy_fixture("cursor-rules/clean", tmp_path)
+        assert self.WARNING not in run_lint(cursor)["stderr"]
+
+        cline = tmp_path / "cline"
+        (cline / ".clinerules").mkdir(parents=True)
+        (cline / ".clinerules" / "style.md").write_text(
+            "# Style\n\nPrefer small, focused pull requests with a clear description.\n"
+        )
+        assert self.WARNING not in run_lint(cline)["stderr"]
+
+    def test_root_agents_md_is_a_recognized_repository(self, tmp_path):
+        repo = tmp_path / "agents-only"
+        repo.mkdir()
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test` before opening a PR.\n")
+        assert self.WARNING not in run_lint(repo)["stderr"]
+
+    def test_empty_directory_is_still_warned_about(self, tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        (empty / "README.md").write_text("# Nothing agentic here\n")
+
+        stderr = run_lint(empty)["stderr"]
+        assert self.WARNING in stderr
+        assert "Expected: agent skills (SKILL.md)" in stderr

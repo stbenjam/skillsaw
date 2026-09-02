@@ -166,15 +166,25 @@ def _run_lint(args):
             sys.exit(1)
 
         # After Linter construction plugin repo type detectors have run, so
-        # a repository recognized only by a plugin is not warned about.
-        if context.repo_type == RepositoryType.UNKNOWN and not context.plugin_repo_types:
+        # a repository recognized only by a plugin is not warned about. A
+        # repository recognized by an instruction format alone (Cursor,
+        # Copilot, Cline, Kiro, OpenCode, Devin, a root AGENTS.md, …) has no
+        # repo type either, but it is recognized: it is about to be linted.
+        if (
+            context.repo_type == RepositoryType.UNKNOWN
+            and not context.plugin_repo_types
+            and not context.detected_formats
+            and not context.lint_tree.children
+        ):
             print(
                 "Warning: Directory doesn't appear to be a recognized repository",
                 file=sys.stderr,
             )
             print(
-                "Expected: an Agent Plugins plugin.json, .claude-plugin/plugin.json, "
-                "plugins/ directory, or SKILL.md (agentskills.io)\n",
+                "Expected: agent skills (SKILL.md), a Claude Code or Codex plugin or "
+                "marketplace, an Agent Plugins or APM package, an MCP Registry "
+                "server.json, or instruction files such as CLAUDE.md, AGENTS.md, or "
+                "an editor's rules directory\n",
                 file=sys.stderr,
             )
 
