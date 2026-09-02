@@ -53,9 +53,17 @@ def is_instruction_filename(name: str) -> bool:
 
 def is_devin_only_instruction_filename(name: str) -> bool:
     """Whether *name* identifies Devin rather than a portable format."""
-    return name in DEVIN_ONLY_INSTRUCTION_FILENAMES or (
-        name.lower() == "agents.md" and name != "AGENTS.md"
-    )
+    return name in DEVIN_ONLY_INSTRUCTION_FILENAMES
+
+
+def is_desktop_agents_spelling(name: str) -> bool:
+    """Whether *name* is ``AGENTS.md`` in a spelling only Devin Desktop reads.
+
+    ``docs/agents.md`` is ordinarily a documentation page, so this spelling
+    is attached only when the repository carries other Devin evidence; it
+    is never evidence on its own.
+    """
+    return name.lower() == "agents.md" and name != "AGENTS.md"
 
 
 def is_devin_native_skill_dir(path: Path) -> bool:

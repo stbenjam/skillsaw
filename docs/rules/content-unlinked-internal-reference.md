@@ -37,9 +37,9 @@ See [src/config.ts](src/config.ts) for the shared configuration.
 
 ## How to fix
 
-Wrap the bare path in markdown link syntax: `[path](path)`. When the
-violation message says "file exists, autofixable", the autofix handles
-it. Paths without a resolvable local target are ignored.
+Wrap the bare path in markdown link syntax: `[path](path)`. The autofix
+handles every reference whose target exists on disk. Paths without a
+resolvable local target are ignored.
 
 ## Configuration
 

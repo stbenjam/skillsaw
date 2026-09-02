@@ -571,8 +571,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             state.add_block(parent, readme, ReadmeBlock, owner=owner)
 
     # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
+    # Only Devin Desktop reads ``agents.md`` case-insensitively, so that
+    # spelling is an instruction file only where the repository carries other
+    # Devin evidence; elsewhere ``docs/agents.md`` is a documentation page.
+    devin_desktop = "HAS_DEVIN" in context.detected_formats
     for f in context.instruction_files:
         if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
+            continue
+        if not devin_desktop and devin.is_desktop_agents_spelling(f.name):
             continue
         # APM writes .apm/instructions/ out to .github/instructions/. The
         # authored source attaches below; the copy attaches content-suppressed

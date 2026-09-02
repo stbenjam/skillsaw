@@ -429,7 +429,7 @@ rules:
     enabled: auto
     severity: error
 
-  # Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests
+  # Flags hook commands that chain a download into execution (curl|sh), obfuscate their payload (eval/base64), or perform network requests
   hooks-dangerous:
     enabled: auto
     severity: error

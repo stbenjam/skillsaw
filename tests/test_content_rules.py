@@ -668,7 +668,7 @@ class TestContentEmbeddedSecretsRule:
         assert violations == []
 
     def test_detects_aws_key(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAZZZZZZZZZZZZZZZZ\n")  # notsecret
+        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAQ3F7J2K9L1M4N8P6\n")  # notsecret
         violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
         assert len(violations) == 1
 
@@ -1059,8 +1059,8 @@ class TestContentEmbeddedSecretsRule:
             ("xoxr-123456789012-abcdefghij", "Slack refresh token"),
             (_STRIPE_SK, "Stripe secret key"),
             (_STRIPE_RK, "Stripe restricted key"),
-            ("AIzaSyATESTFAKEKEYDONOTUSE0000000000000", "Google API key"),  # notsecret
-            ("SK00000000000000000000000000000000", "Twilio API key"),  # notsecret
+            ("AIzaSyD4k9Lm2Qp7Rt8Vw3Xy6Zb1Cd5Ef0Gh2Jk", "Google API key"),  # notsecret
+            ("SK" + "3f7a9c2e" * 4, "Twilio API key"),
             (
                 "SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijk",  # notsecret
                 "SendGrid API key",
@@ -1071,10 +1071,22 @@ class TestContentEmbeddedSecretsRule:
                 "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456",  # notsecret
                 "JSON Web Token",
             ),
-            ("-----BEGIN PRIVATE KEY-----", "Private key"),
-            ("-----BEGIN EC PRIVATE KEY-----", "Private key"),
-            ("-----BEGIN DSA PRIVATE KEY-----", "Private key"),
-            ("-----BEGIN OPENSSH PRIVATE KEY-----", "Private key"),
+            (
+                "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7",
+                "Private key",
+            ),
+            (
+                "-----BEGIN EC PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7",
+                "Private key",
+            ),
+            (
+                "-----BEGIN DSA PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7",
+                "Private key",
+            ),
+            (
+                "-----BEGIN OPENSSH PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7",
+                "Private key",
+            ),
             ("secret_key = 'abcdefghijklmnopqrstuvwxyz'", "Hardcoded secret key"),
             ("access_token = 'abcdefghijklmnopqrstuvwxyz'", "Hardcoded access token"),
         ],
@@ -1241,11 +1253,107 @@ class TestContentEmbeddedSecretsRule:
 
     def test_structured_tokens_not_entropy_gated(self, temp_dir):
         """High-confidence token formats fire even for low-entropy bodies."""
-        (temp_dir / "CLAUDE.md").write_text("Use token ghp_" + "a" * 40 + "\n")  # notsecret
+        (temp_dir / "CLAUDE.md").write_text("Use token ghp_" + "abcd" * 10 + "\n")  # notsecret
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
         assert "GitHub personal access token" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "token",
+        [
+            "ghp_" + "x" * 36,
+            "sk_live_" + "x" * 24,
+            "AIzaSy" + "X" * 33,
+            "xoxb-" + "0" * 10 + "-" + "X" * 12,
+            "sk-ant-api03-" + "x" * 20,
+        ],
+        ids=["github", "stripe", "google", "slack", "anthropic"],
+    )
+    def test_repeated_character_placeholder_tokens_are_exempt(self, temp_dir, token):
+        """`ghp_xxxx…` is the documentation idiom for a token, not a token."""
+        (temp_dir / "CLAUDE.md").write_text(f"Export the token: {token}\n")
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_structured_token_with_placeholder_word_still_fires(self, temp_dir):
+        """Substring markers never exempt a structured token: a real token can
+        contain ``test`` by chance, and this detector is the one that finds
+        real leaks."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use ghp_testAbCdEfGhIjKlMnOpQrStUvWxYz0123456789\n"  # notsecret
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert [v.message for v in violations] == [
+            "Potential secret detected: GitHub personal access token"
+        ]
+
+    def test_jwt_io_example_token_is_exempt(self, temp_dir):
+        example = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ."
+            "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        )
+        (temp_dir / "CLAUDE.md").write_text(f"A JWT looks like {example}\n")
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_generic_assignment_inside_fenced_code_is_not_reported(self, temp_dir):
+        """A ``password:`` line in a code sample is a teaching example."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Configure the database:\n\n" "```yaml\n" 'password: "SecurePass123!"\n' "```\n"
+        )
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_generic_assignment_in_prose_is_still_reported(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text('Log in with password = "SecurePass123!"\n')
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert [v.message for v in violations] == ["Potential secret detected: Hardcoded password"]
+
+    def test_structured_token_inside_fenced_code_is_still_reported(self, temp_dir):
+        """A real token in a fence is a real leak; only generic patterns read prose."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "```bash\n"
+            "export GITHUB_TOKEN=ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789\n"  # notsecret
+            "```\n"
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert [(v.line, v.message) for v in violations] == [
+            (2, "Potential secret detected: GitHub personal access token")
+        ]
+
+    def test_shell_substitution_is_not_a_literal(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            'Create the user with --password="$(openssl rand -base64 24)"\n'
+        )
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    @pytest.mark.parametrize(
+        "header",
+        [
+            "-----BEGIN PRIVATE KEY-----",
+            "-----BEGIN EC PRIVATE KEY-----",
+            "-----BEGIN OPENSSH PRIVATE KEY-----",
+        ],
+    )
+    def test_pem_header_without_material_is_documentation(self, temp_dir, header):
+        """A security skill listing the headers it scans for leaks nothing."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Patterns to detect:\n\n"
+            f'- regex: "{header}"\n'
+            '- regex: "-----BEGIN RSA PRIVATE KEY-----"\n'
+            '- regex: "AKIA[0-9A-Z]{16}"\n'
+        )
+        assert ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_pem_header_followed_by_material_is_reported(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+            "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\n"
+            "-----END OPENSSH PRIVATE KEY-----\n"
+        )
+        violations = ContentEmbeddedSecretsRule().check(RepositoryContext(temp_dir))
+        assert [(v.line, v.message) for v in violations] == [
+            (1, "Potential secret detected: Private key")
+        ]
 
     def test_entropy_threshold_configurable(self, temp_dir):
         # Distinct repo dirs: the utils read cache is keyed by path, so
@@ -2542,7 +2650,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         rule = ContentUnlinkedInternalReferenceRule()
         violations = rule.check(context)
         assert len(violations) == 1
-        assert "autofixable" in violations[0].message
+        assert violations[0].fixable is True
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
         assert fixes[0].confidence == AutofixConfidence.SAFE
@@ -2655,7 +2763,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         violations = rule.check(context)
         assert len(violations) == 1
         assert "src/real.py" in violations[0].message
-        assert "autofixable" in violations[0].message
+        assert violations[0].fixable is True
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
         fixed = fixes[0].fixed_content
