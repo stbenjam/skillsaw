@@ -6,6 +6,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.agentskills.valid import AgentSkillValidRule
 from skillsaw.rules.builtin.devin.rules_valid import DevinRulesValidRule
+from skillsaw.rules.builtin.description_routing import DescriptionRoutingRule
 from skillsaw.rules.builtin.devin.skill_valid import DevinSkillValidRule
 
 
@@ -348,3 +349,54 @@ def test_agent_precedence_is_informational(tmp_path):
     assert found[0].severity is Severity.INFO
     assert found[0].line == 2
     assert "uses the named 'agent' profile" in found[0].message
+
+
+def test_native_skill_bad_triggers_is_one_finding_naming_the_values(tmp_path):
+    """Activation phrases instead of the two enum values are one mistake, not
+    one error per phrase — a 40-line list was 40 identical errors."""
+    _native_skill(
+        tmp_path,
+        "deploy",
+        "---\ntriggers:\n  - deploy the app\n  - ship it\n  - release\n  - user\n---\nDeploy.\n",
+    )
+
+    found = DevinSkillValidRule().check(RepositoryContext(tmp_path))
+
+    assert len(found) == 1
+    assert found[0].line == 3
+    assert found[0].message == (
+        "'triggers' must list only 'user' and/or 'model'; got 'deploy the app', 'ship it', 'release'"
+    )
+
+
+def test_native_skill_bad_triggers_message_truncates_long_lists(tmp_path):
+    values = "".join(f"  - phrase {index}\n" for index in range(12))
+    _native_skill(tmp_path, "many", f"---\ntriggers:\n{values}---\nBody.\n")
+
+    found = DevinSkillValidRule().check(RepositoryContext(tmp_path))
+
+    assert len(found) == 1
+    assert found[0].message.endswith("… (12 values)")
+
+
+def test_native_skills_get_description_routing_when_they_carry_frontmatter(tmp_path):
+    """`.devin/skills` follows the Agent Skills standard for descriptions, so
+    the shared routing advice applies — but Devin makes frontmatter optional,
+    and a skill without one has no description to judge."""
+    _native_skill(
+        tmp_path,
+        "review",
+        "---\ndescription: Reviews code.\n---\nReview the current changes.\n",
+    )
+    _native_skill(tmp_path, "bare", "Review the current changes.\n")
+    _native_skill(
+        tmp_path,
+        "routed",
+        "---\ndescription: Reviews a diff for correctness defects. Use when asked to "
+        "review a pull request.\n---\nReview.\n",
+    )
+
+    found = DescriptionRoutingRule().check(RepositoryContext(tmp_path))
+
+    assert [(v.file_path.parent.name, v.line) for v in found] == [("review", 2)]
+    assert "when to use" in found[0].message
