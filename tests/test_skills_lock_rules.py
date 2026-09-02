@@ -587,6 +587,34 @@ def test_self_installed_skill_is_the_repository_s_own_content(tmp_path: Path) ->
     assert nodes["external-dep"].externally_sourced
 
 
+def test_hashless_remote_entry_still_marks_its_install_external(tmp_path: Path) -> None:
+    """A missing `computedHash` is only a warning, so the entry must still
+    count as provenance: the installed dependency is not the repository's to
+    autofix. A malformed digest is a different matter — the CLI never writes
+    one, so that entry proves nothing and provenance fails open."""
+    repo = tmp_path / "repo"
+    for name in ("hashless", "malformed"):
+        (repo / ".agents" / "skills" / name).mkdir(parents=True)
+        (repo / ".agents" / "skills" / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Does {name}. Use when asked.\n---\nBody.\n"
+        )
+    _write_lock(
+        repo / "skills-lock.json",
+        {
+            "version": 1,
+            "skills": {
+                "hashless": {"source": "example/skills", "sourceType": "github"},
+                "malformed": _entry(computedHash="not-a-sha256"),
+            },
+        },
+    )
+
+    nodes = {node.path.name: node for node in RepositoryContext(repo).lint_tree.find(SkillNode)}
+
+    assert nodes["hashless"].externally_sourced
+    assert not nodes["malformed"].externally_sourced
+
+
 def test_self_source_detection_needs_a_git_origin(tmp_path: Path) -> None:
     """Without a `.git/config` there is nothing to compare the source with, so
     the entry keeps its external verdict — the established behaviour."""

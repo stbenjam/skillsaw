@@ -53,13 +53,19 @@ def entry_has_valid_provenance(entry: Mapping[str, object]) -> bool:
     source = entry.get("source")
     source_type = entry.get("sourceType")
     computed_hash = entry.get("computedHash")
+    # The CLI reads `computedHash` only to detect drift, so an entry without
+    # one is still an installed dependency — and its content is still not
+    # the repository's to autofix. Only a malformed digest marks the entry
+    # as one the CLI cannot have written.
+    hash_ok = computed_hash is None or (
+        isinstance(computed_hash, str) and bool(COMPUTED_HASH_RE.fullmatch(computed_hash))
+    )
     return (
         isinstance(source, str)
         and bool(source.strip())
         and isinstance(source_type, str)
         and bool(source_type.strip())
-        and isinstance(computed_hash, str)
-        and bool(COMPUTED_HASH_RE.fullmatch(computed_hash))
+        and hash_ok
     )
 
 
