@@ -33,7 +33,7 @@ _MAX_REGEX_TIMEOUT = 10.0
 # separates a model name from ordinary hyphenated English ("best-in-class",
 # "fast-response") that would otherwise pass for a replacement.
 _MODEL_NAME_RE = re.compile(
-    r"(?:[A-Za-z][\w.]*/)?(?=[\w./-]*\d)[A-Za-z][\w.]+(?:-[\w.]+)+",
+    r"(?:[A-Za-z][\w.]*/)?(?=[\w./-]*\d)[A-Za-z][\w.]+(?:-[\w.]+)*",
 )
 
 # Arrows, requiring whitespace (or a line edge) on both sides so a Python
@@ -148,8 +148,12 @@ class ContentBannedReferencesRule(Rule):
         arrow, then a single key/value colon.
         """
         stripped = line.strip()
-        if stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 3:
-            return self._split_at(line, [m.span() for m in _PIPE_RE.finditer(line)])
+        # A pipe row may omit its outer delimiters; two non-empty cells is a
+        # row either way.
+        if "|" in stripped:
+            cells = self._split_at(line, [m.span() for m in _PIPE_RE.finditer(line)])
+            if sum(1 for start, end in cells if line[start:end].strip()) >= 2:
+                return cells
         arrows = [m.span() for m in _ARROW_RE.finditer(line)]
         if arrows:
             return self._split_at(line, arrows)
@@ -233,10 +237,13 @@ class ContentBannedReferencesRule(Rule):
             # Each untrusted config pattern is bounded independently so one
             # catastrophic-backtracking regex can't hang lint (issue #316) and
             # so the offending pattern can be named in the diagnostic.
+            # A configured pattern is project policy, not deprecation
+            # knowledge: `forbidden-model: gpt-5-mini` is still a use of the
+            # forbidden name, so migration suppression never applies to it.
             for pat, msg in config:
                 try:
                     with regex_timeout(timeout):
-                        violations.extend(self._scan(cf, body, [(pat, msg)], deprecated))
+                        violations.extend(self._scan(cf, body, [(pat, msg)], None))
                 except RegexTimeout:
                     violations.append(
                         self.violation(

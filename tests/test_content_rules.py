@@ -1554,6 +1554,23 @@ class TestContentBannedReferencesRule:
             "Banned reference: claude-2 is deprecated"
         ]
 
+    def test_configured_ban_is_never_treated_as_a_migration(self, temp_dir):
+        """A custom pattern is project policy, not deprecation knowledge:
+        mapping the forbidden name onto a current model is still a use."""
+        body = "forbidden-mode: gpt-5-mini\n"
+        config = {"banned": [{"pattern": "forbidden-mode", "message": "forbidden-mode is banned"}]}
+        assert self._messages(temp_dir, body, config) == [
+            "Banned reference: forbidden-mode is banned"
+        ]
+
+    def test_pipe_row_without_outer_delimiters_is_a_migration(self, temp_dir):
+        body = "`claude-2` | `claude-sonnet-5`\n"
+        assert self._messages(temp_dir, body) == []
+
+    def test_single_token_replacement_is_a_current_model(self, temp_dir):
+        body = "claude-2 -> o3\n"
+        assert self._messages(temp_dir, body) == []
+
     def test_timeout_is_clamped_and_zero_disables(self, temp_dir):
         rule = ContentBannedReferencesRule({"regex-timeout": 999})
         assert rule._regex_timeout() == 10.0
