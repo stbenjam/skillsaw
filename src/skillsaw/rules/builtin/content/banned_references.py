@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    blank_long_tokens,
     RegexTimeout,
     gather_all_content_blocks,
     patterns_matching_anywhere,
@@ -148,11 +149,14 @@ class ContentBannedReferencesRule(Rule):
         arrow, then a single key/value colon.
         """
         stripped = line.strip()
-        # A pipe row may omit its outer delimiters; two non-empty cells is a
-        # row either way.
+        # A pipe row may omit its outer delimiters, but then every cell must
+        # be one token: `grep claude-2 | grep o3` is a shell pipeline, not a
+        # migration.
         if "|" in stripped:
             cells = self._split_at(line, [m.span() for m in _PIPE_RE.finditer(line)])
-            if sum(1 for start, end in cells if line[start:end].strip()) >= 2:
+            filled = [cell for cell in (line[start:end].strip() for start, end in cells) if cell]
+            delimited = stripped.startswith("|") or stripped.endswith("|")
+            if len(filled) >= 2 and (delimited or all(len(cell.split()) == 1 for cell in filled)):
                 return cells
         arrows = [m.span() for m in _ARROW_RE.finditer(line)]
         if arrows:
@@ -182,7 +186,14 @@ class ContentBannedReferencesRule(Rule):
         if len(operands) < 2:
             return -1
         for start, end in reversed(operands[1:]):
-            for match in _MODEL_NAME_RE.finditer(line, start, end):
+            operand = line[start:end]
+            # Linear: a replacement carries a digit and is never longer than
+            # a token. Without these two checks the lookahead in
+            # _MODEL_NAME_RE rescans a long digit-free operand from every
+            # position, and one such line stalls the lint.
+            if not any(ch.isdigit() for ch in operand):
+                continue
+            for match in _MODEL_NAME_RE.finditer(blank_long_tokens(operand)):
                 name = match.group()
                 if not any(pattern.search(name) for pattern, _ in deprecated):
                     return start

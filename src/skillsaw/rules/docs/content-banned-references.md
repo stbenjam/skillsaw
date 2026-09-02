@@ -4,10 +4,12 @@ Deprecated model names, retired API endpoints, and outdated references can
 cause models to fail or use obsolete interfaces. Keeping references up to date
 ensures instructions work smoothly and efficiently.
 
-When a line maps an older name to a replacement (such as in a migration table,
-arrow syntax, or key/value pair), skillsaw recognizes that the older name is
-being retired rather than recommended. The replacement itself is still checked
-to ensure it points to a current, supported model.
+When a line maps a name from skillsaw's built-in deprecation list to a
+replacement (such as in a migration table, arrow syntax, or key/value pair),
+skillsaw recognizes that the older name is being retired rather than
+recommended. The replacement itself is still checked to ensure it points to a
+current, supported model. Patterns you configure under `banned` are always
+reported: they express your own policy, not a deprecation.
 
 ## Examples
 

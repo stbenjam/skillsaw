@@ -1567,6 +1567,23 @@ class TestContentBannedReferencesRule:
         body = "`claude-2` | `claude-sonnet-5`\n"
         assert self._messages(temp_dir, body) == []
 
+    def test_shell_pipeline_is_not_a_migration_row(self, temp_dir):
+        """Two cells split on a pipe are a row only when each is one token."""
+        body = "Run `grep claude-2 | grep o3` to find stale configs.\n"
+        assert self._messages(temp_dir, body) != []
+
+    def test_long_digit_free_operand_is_linear(self):
+        """The replacement lookahead must not rescan a long operand from
+        every position: one such line would stall the whole lint."""
+        import time
+
+        rule = ContentBannedReferencesRule()
+        deprecated = rule._builtin_patterns()
+        for line in ("claude-2 -> " + "a" * 80_000, "claude-2 -> 1" + "a" * 80_000):
+            started = time.perf_counter()
+            assert rule._migration_cutoff(line, deprecated) == -1
+            assert time.perf_counter() - started < 1.0
+
     def test_single_token_replacement_is_a_current_model(self, temp_dir):
         body = "claude-2 -> o3\n"
         assert self._messages(temp_dir, body) == []
