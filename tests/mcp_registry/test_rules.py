@@ -51,7 +51,26 @@ def _for_rule(findings, rule_id):
 
 
 class TestMcpRegistrySchemaRule:
-    @pytest.mark.parametrize("value", ["${VERSION}", "{{VERSION}}", "<<Version>>"])
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "${VERSION}",
+            "{{VERSION}}",
+            "<<Version>>",
+            # Spellings committed by real publishers that a release pipeline
+            # substitutes: rhel-lightspeed ("$version"), docker-hardened-images
+            # ("_VERSION_"), ai-raccoon ("__VERSION__").
+            "$version",
+            "_VERSION_",
+            "__VERSION__",
+            "{{ version }}",
+            "<< VERSION >>",
+            "<version>",
+            "%VERSION%",
+            "@VERSION@",
+            "${package.version}",
+        ],
+    )
     def test_release_source_placeholder_forms_are_exact(self, value):
         assert is_release_source_placeholder(value)
 
@@ -67,6 +86,12 @@ class TestMcpRegistrySchemaRule:
             "<<Version>>extra",
             "latest",
             "*",
+            "1.0.0",
+            "_",
+            "__",
+            "$",
+            "<>",
+            "@1.2.3@",
             None,
         ],
     )
