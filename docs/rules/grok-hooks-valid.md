@@ -46,6 +46,12 @@ here costs every hook in the file, including the ones under other events.
 
 - Invalid JSON, or a non-finite number (`NaN`, `Infinity`, `-Infinity`),
   which Grok's parser does not accept.
+- A UTF-8 byte-order mark at the start of the file. Grok's reader does not
+  strip one and refuses the whole file; most editors and every JSON viewer
+  hide the mark, so the file looks correct everywhere you would go to check
+  it. Only Grok is reported for this — no other host skillsaw supports has
+  been measured, and reporting one that tolerates a BOM would be a false
+  positive.
 - No top-level `hooks` object, or one that is not an object.
 - An event whose value is not an array, a matcher group that is not an
   object, a group with no `hooks` key or a non-array one, or a handler that
@@ -55,17 +61,26 @@ here costs every hook in the file, including the ones under other events.
   are strings, `timeout` is a non-negative integer, and `env` is an object
   whose values are strings. `"timeout": "30"`, `30.0`, `-1` and `true` each
   cost the file. A large `timeout` is fine — `Stop` and `SubagentStop`
-  default to 600 seconds because gates run test suites.
+  default to 600 seconds because gates run test suites — up to
+  `18446744073709551615`. Grok reads the field as a 64-bit unsigned integer
+  and JSON has no integer width, so one digit past that refuses the file
+  exactly as `30.0` does.
 
 **Warnings** — the file loads and something in it does not fire.
 
 - An unrecognized event name. Grok skips the entries under it so the rest of
   the file still loads, which is why a typo is invisible at runtime.
 - A `matcher` that does not compile. Grok compiles matchers with Rust's
-  regex engine, which differs from Python's at the edges (no lookarounds or
-  backreferences, plus Unicode classes and set operators Python lacks), so
-  skillsaw checks the syntax the two dialects share and warns rather than
-  errors. A matcher longer than 1,000 characters is left alone: Grok sets no
+  regex engine, which differs from Python's in both directions, so skillsaw
+  checks both and warns rather than errors. Unicode classes, the
+  character-class set operators and the `(?<name>...)` capture group are
+  Rust's spelling: skillsaw rewrites them rather than calling a working
+  matcher broken. Look-around (`(?=`, `(?!`, `(?<=`,
+  `(?<!`) and backreferences (`\1`, `\k<name>`, `(?P=name)`) are the other
+  direction — Python compiles them and Rust does not, so skillsaw names the
+  construct instead of waiting for a compile error that never comes. The
+  rest is the syntax the two dialects share. A matcher longer than 1,000
+  characters is left alone: Grok sets no
   length limit, so length is not a defect, and a hooks file is untrusted
   input that the syntax check has no reason to scan without a bound.
 - A `command` handler with no `command`, an `http` handler with no `url`, or

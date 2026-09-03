@@ -73,9 +73,42 @@ _RUST_UNICODE_CLASS = re.compile(r"\\[pP](?:\{[^}]{0,64}\}|[A-Za-z])")
 #: ``[\w--\d]``, ``[a-g~~b-h]``. Python has no equivalent syntax.
 _RUST_CLASS_SET_OPERATOR = re.compile(r"&&|--|~~")
 
+#: A Rust named capture group: ``(?<tool>Bash|Write)``, which Grok Build
+#: 1.0.13 loads. Python spells the same thing ``(?P<tool>...)`` and raises
+#: "unknown extension ?<t" on Rust's — so without this rewrite a working
+#: matcher is reported as broken.
+#:
+#: The ``(?![=!])`` is the seam with :data:`_RUST_UNSUPPORTED_CANDIDATE`:
+#: ``(?<=`` and ``(?<!`` are look-behind, which Rust does *not* have, and
+#: those two spellings are that table's to report. The two must agree on
+#: which ``(?<`` is which, or a look-behind is silently rewritten into a
+#: group name and passes.
+_RUST_NAMED_GROUP = re.compile(r"\(\?<(?![=!])")
+
+#: The two constructs the compile check alone cannot see: Python's ``re``
+#: accepts them and Rust's ``regex`` crate — a finite-automaton engine —
+#: refuses them, so the host drops the matcher group while ``re.compile``
+#: reports nothing. Verified against Grok Build 1.0.13, where ``(?<=x)y`` and
+#: ``(a)\1`` each dropped their group.
+#:
+#: Group openings: the four look-around spellings, and ``(?P=name)``, which
+#: is Python's named backreference. ``(?<name>...)`` is a *named group* in
+#: Rust and is deliberately absent — only ``(?<=`` and ``(?<!`` are
+#: look-around. Escapes: ``\1``…``\9`` and ``\k<name>``.
+#:
+#: A match here is a *candidate*, not a verdict: :func:`_rust_unsupported`
+#: re-walks the pattern to drop one that is escaped (``\(?=``) or inside a
+#: character class (``[(?=]``), both of which are literal text.
+_RUST_UNSUPPORTED_CANDIDATE = re.compile(r"\(\?(?:<[=!]|[=!]|P=)|\\(?:[1-9]|k<)")
+
+#: What :func:`rust_matcher_error` reports for each, phrased to follow the
+#: hosts' "does not compile: ".
+_NO_LOOK_AROUND = "Rust's regex has no look-around"
+_NO_BACKREFERENCES = "Rust's regex has no backreferences"
+
 #: Longest matcher :func:`rust_matcher_error` will compile-check. A hooks
-#: file is untrusted input and the check translates the matcher — two regex
-#: passes and a character walk — before handing it to ``re.compile``, whose
+#: file is untrusted input and the check translates the matcher — a few
+#: regex passes and a character walk — before handing it to ``re.compile``, whose
 #: own parser is where a pathological pattern gets expensive. A real matcher
 #: names tools (``Write|Edit|Bash``), so the cap is orders of magnitude above
 #: anything an author writes. Past it the caller is told *nothing* rather
@@ -89,18 +122,23 @@ def _to_python_regex(pattern: str) -> str:
 
     Muse Code and Grok Build both compile a hook matcher with the Rust
     ``regex`` crate, whose dialect is not Python's: it has no look-around and
-    no backreferences, and it adds two constructs a hooks file plausibly
-    reaches — Unicode character classes and the character-class set
-    operators. Python raises on both, so compiling the pattern as written
-    would call a working matcher broken. Skipping such a pattern instead
-    would drop every other defect in it: ``(\\pL`` leaves a group unclosed,
-    which costs the matcher group whatever engine reads it.
+    no backreferences (:func:`_rust_unsupported` owns that direction), and it
+    has three constructs a hooks file plausibly reaches that Python spells
+    differently or not at all — Unicode character classes, the
+    character-class set operators, and the ``(?<name>...)`` capture group.
+    Python raises on each, so compiling the pattern as written would call a
+    working matcher broken. Skipping such a pattern instead would drop every
+    other defect in it: ``(\\pL`` leaves a group unclosed, which costs the
+    matcher group whatever engine reads it.
 
     So the Rust-only atoms are substituted rather than the check skipped —
-    ``\\p{...}`` and its short forms become ``\\w``, the set operators are
-    dropped — and what is left is the structure both dialects share.
+    ``\\p{...}`` and its short forms become ``\\w``, ``(?<name>`` becomes
+    Python's ``(?P<name>``, the set operators are dropped — and what is left
+    is the structure both dialects share.
     """
     substituted = _RUST_UNICODE_CLASS.sub(r"\\w", pattern)
+    if "(?<" in substituted:
+        substituted = _RUST_NAMED_GROUP.sub("(?P<", substituted)
     if "[" not in substituted:
         return substituted
 
@@ -131,6 +169,53 @@ def _to_python_regex(pattern: str) -> str:
     return "".join(out)
 
 
+def _rust_unsupported(pattern: str) -> Optional[str]:
+    """Why Rust refuses *pattern* where Python would compile it, if it does.
+
+    Look-around and backreferences are the whole list: everything else Python
+    accepts is either shared with Rust or already caught by the compile.
+
+    :data:`_RUST_UNSUPPORTED_CANDIDATE` is the gate, so a matcher without one
+    of those runs never reaches the walk. A hit is then confirmed by walking
+    the pattern the way :func:`_to_python_regex` does — escapes consumed
+    whole, character-class depth tracked — because ``\\(?=`` and ``[(?=]`` are
+    literal text in both dialects and reporting either would be a false
+    positive. The walk is deliberately simple, so it misses a construct a
+    fuller parser would see (a backreference inside a class, say). Under-
+    reporting leaves the matcher checked exactly as it was before; over-
+    reporting would call a working matcher broken.
+    """
+    if _RUST_UNSUPPORTED_CANDIDATE.search(pattern) is None:
+        return None
+
+    depth = 0
+    index = 0
+    end = len(pattern)
+    while index < end:
+        char = pattern[index]
+        if char == "\\":
+            if not depth:
+                following = pattern[index + 1 : index + 2]
+                if following and following in "123456789":
+                    return _NO_BACKREFERENCES
+                if following == "k" and pattern[index + 2 : index + 3] == "<":
+                    return _NO_BACKREFERENCES
+            index += 2
+            continue
+        if char == "[":
+            depth += 1
+        elif char == "]" and depth:
+            depth -= 1
+        elif char == "(" and not depth:
+            opening = pattern[index + 1 : index + 4]
+            if opening.startswith(("?=", "?!", "?<=", "?<!")):
+                return _NO_LOOK_AROUND
+            if opening.startswith("?P="):
+                return _NO_BACKREFERENCES
+        index += 1
+    return None
+
+
 def rust_matcher_error(matcher: str) -> Optional[str]:
     """Why *matcher* fails to compile as a Rust regex, if it does.
 
@@ -139,9 +224,17 @@ def rust_matcher_error(matcher: str) -> Optional[str]:
     accepts and Python does not. A host that compiles hook matchers with the
     Rust ``regex`` crate — Muse Code, Grok Build — drops the matcher group
     when this returns a string, and nothing else in the file.
+
+    Two verdicts, because the dialects diverge in both directions. Python
+    rejecting the pattern is one; the other is a construct Python *accepts*
+    and Rust does not — look-around and backreferences — which the compile
+    can never see, so :func:`_rust_unsupported` runs first.
     """
     if len(matcher) > RUST_MATCHER_MAX_LENGTH:
         return None
+    unsupported = _rust_unsupported(matcher)
+    if unsupported is not None:
+        return unsupported
     try:
         # Rewritten, not skipped: a pattern carrying a Rust-only atom still
         # has the structure both dialects share, and an unclosed group costs

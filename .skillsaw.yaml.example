@@ -446,6 +446,11 @@ rules:
     enabled: auto
     severity: error
 
+  # .grok/agents/*.md must declare a name and a description in frontmatter
+  grok-agent-valid:
+    enabled: auto
+    severity: error
+
   # .grok/hooks/*.json must use Grok's hook events, handler types and fields
   grok-hooks-valid:
     enabled: auto

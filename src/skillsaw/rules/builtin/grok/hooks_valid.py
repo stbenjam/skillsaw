@@ -79,6 +79,22 @@ class GrokHooksValidRule(Rule):
         known_events = self._known_events()
 
         for block in context.lint_tree.find(GrokHooksBlock):
+            # First, and instead of everything below. skillsaw reads with
+            # ``utf-8-sig`` and sees a valid document; Grok's reader does
+            # not strip the mark and refuses the file whole — ``grok inspect
+            # --json`` loaded zero hooks from a BOM-prefixed file that was
+            # otherwise correct. Every shape finding under it would be about
+            # a document Grok never parsed.
+            if block.has_utf8_bom():
+                violations.append(
+                    self.violation(
+                        f"{block.path.name} starts with a UTF-8 byte-order mark; "
+                        "Grok reads none of the file",
+                        file_path=block.path,
+                    )
+                )
+                continue
+
             if block.parse_error:
                 violations.append(
                     self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)
@@ -341,10 +357,21 @@ def _field_type_problem(key: str, value: Any) -> Optional[str]:
         # ``bool`` is an ``int`` subclass, and ``timeout: true`` is not a
         # duration however permissively you read it. A float, a numeric
         # string and a negative are not durations either — Grok refuses the
-        # file for each. A large value is fine: ``Stop`` and
-        # ``SubagentStop`` default to 600 seconds and gates run test suites.
+        # file for each. A large value is fine, up to the ``u64`` the field
+        # deserializes into: ``Stop`` and ``SubagentStop`` default to 600
+        # seconds and gates run test suites, but JSON has no integer width,
+        # so one digit past :data:`grok.TIMEOUT_MAX` costs the whole file
+        # exactly as a float does.
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            return None
+            if value <= grok.TIMEOUT_MAX:
+                return None
+            # Its own message: "must be a non-negative integer" would be
+            # true of this value and send the author looking for a defect
+            # that is not there.
+            return (
+                f"must be at most {grok.TIMEOUT_MAX} (Grok reads it as a "
+                f"64-bit unsigned integer), got {safe_display(repr(value))}"
+            )
         return f"must be a non-negative integer, got {safe_display(repr(value))}"
     if expected is dict:
         if not isinstance(value, dict):

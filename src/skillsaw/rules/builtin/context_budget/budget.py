@@ -14,6 +14,7 @@ from skillsaw.rules.builtin.content_analysis import (
     CopilotPromptBlock,
     CursorCommandBlock,
     DevinSkillBlock,
+    GrokCommandBlock,
     OpenCodeCommandBlock,
 )
 
@@ -150,6 +151,7 @@ class ContextBudgetRule(Rule):
             CursorCommandBlock: "command-description",
             CopilotPromptBlock: "command-description",
             OpenCodeCommandBlock: "command-description",
+            GrokCommandBlock: "command-description",
         }
         for block_type, category in desc_categories.items():
             warn_limit, error_limit = limits.get(category, (None, None))

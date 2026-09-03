@@ -56,7 +56,9 @@ that matrix before changing a rule here.
   `StopCancelled`, `Notification`, `SubagentStart`, `SubagentStop`, `PreCompact`,
   `PostCompact`.
 - **Aliases**, all normalized and all accepted — a missing one is a false "unknown
-  event" on a working file: `SubagentEnd`; the `snake_case` spelling of all 16 names;
+  event" on a working file: `SubagentEnd`; the `snake_case` spelling of all 16 names —
+  the 15 events above plus `subagent_end`, which is itself an alias for
+  `SubagentStop`;
   the `camelCase` spelling of every event **except** `userPromptSubmit`, which is not
   accepted; and Cursor's per-operation names (`beforeShellExecution`,
   `beforeMCPExecution`, `beforeReadFile` → `PreToolUse`; `afterShellExecution`,

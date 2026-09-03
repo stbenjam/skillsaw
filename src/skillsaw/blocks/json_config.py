@@ -8,6 +8,7 @@ content-quality rules never see them.  Dedicated rules locate them with
 
 from __future__ import annotations
 
+import codecs
 import math
 from itertools import islice
 from dataclasses import dataclass, field
@@ -280,6 +281,26 @@ class JsonConfigBlock(LintTarget):
         content = read_text(self.path)
         return len(content) // 4 if content else 0
 
+    def has_utf8_bom(self) -> bool:
+        """Whether the file on disk opens with a UTF-8 byte-order mark.
+
+        skillsaw reads with ``utf-8-sig``, which drops a BOM without a word,
+        so the parsed document looks perfectly valid and every shape check
+        passes. A host whose reader does not strip one sees ``\\ufeff{`` and
+        refuses the file — verified for Grok Build 1.0.13, where ``grok
+        inspect --json`` loads zero hooks from a BOM-prefixed file that is
+        otherwise correct. So the answer belongs to the host: only a rule
+        for one that is known to refuse it should ask.
+
+        Three bytes off the front rather than the cached text, because the
+        cache is exactly what already dropped the mark.
+        """
+        try:
+            with open(self.path, "rb") as handle:
+                return handle.read(3) == codecs.BOM_UTF8
+        except OSError:
+            return False
+
     def first_non_finite(self) -> Optional[Tuple[str, float]]:
         """The first ``NaN``/``Infinity`` in this document, as ``(path, value)``.
 
@@ -519,6 +540,15 @@ class _InlineJsonPayload:
 
     def estimate_tokens(self) -> int:
         return _inline_payload_token_count(self.inline_data)
+
+    def has_utf8_bom(self) -> bool:
+        """Never: this config has no file of its own.
+
+        ``path`` is the manifest that carries the payload, so the base
+        implementation would answer a question about a *different* document
+        and report the inline hooks for a mark on the file around them.
+        """
+        return False
 
     # LintTarget compares by (type, resolved path), which assumes the path
     # identifies the config. It does not here: a manifest can declare an

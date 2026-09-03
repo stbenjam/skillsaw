@@ -12,6 +12,7 @@ records the matrix; re-run it before changing a verdict here.
 
 from __future__ import annotations
 
+import codecs
 import json
 import time
 
@@ -23,6 +24,7 @@ from skillsaw.linter import Linter
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.grok import GrokHooksValidRule
 from tests.grok._helpers import (
+    HOOKS_JSON,
     at,
     check,
     copy_fixture,
@@ -337,6 +339,81 @@ def test_a_large_timeout_is_not_a_defect(tmp_path) -> None:
     assert check(repo) == []
 
 
+def test_the_largest_timeout_grok_deserializes_is_accepted(tmp_path) -> None:
+    """`timeout` is a Rust `u64`, and JSON has no integer width, so the
+    boundary is exact. `18446744073709551615` loads in Grok Build 1.0.13."""
+    repo = repo_with_hooks(
+        tmp_path,
+        "u64-max",
+        hooks_doc("Stop", {"type": "command", "command": "make test", "timeout": 2**64 - 1}),
+    )
+
+    assert check(repo) == []
+
+
+def test_one_past_the_u64_ceiling_costs_the_whole_file(tmp_path) -> None:
+    """`18446744073709551616` refuses the document, the same as `30.0` — so
+    it earns the file-scoped ERROR and its own message, because "must be a
+    non-negative integer" would be true of it."""
+    repo = repo_with_hooks(
+        tmp_path,
+        "u64-overflow",
+        hooks_doc("Stop", {"type": "command", "command": "make test", "timeout": 2**64}),
+    )
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert violations[0].severity == Severity.ERROR
+    assert violations[0].message == (
+        "Hook Stop[0].hooks[0] 'timeout' must be at most 18446744073709551615 "
+        "(Grok reads it as a 64-bit unsigned integer), got 18446744073709551616"
+    )
+
+
+# ── Bytes Python accepts and Grok's reader does not ──────────────
+
+
+def test_a_utf8_bom_rejects_the_whole_file(tmp_path) -> None:
+    """skillsaw reads with `utf-8-sig`, which strips the mark, so the parsed
+    document is valid and every shape check passes. Grok's reader does not
+    strip it: `grok inspect --json` loaded zero hooks from this file."""
+    repo = write_repo(tmp_path / "bom")
+    path = write_hooks(repo, HOOKS_JSON)
+    path.write_bytes(codecs.BOM_UTF8 + path.read_bytes())
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert violations[0].severity == Severity.ERROR
+    assert violations[0].message == (
+        "hooks.json starts with a UTF-8 byte-order mark; Grok reads none of the file"
+    )
+    assert violations[0].line is None
+
+
+def test_a_utf8_bom_costs_every_other_finding_in_the_file(tmp_path) -> None:
+    """Grok never parses the document, so a shape finding under the mark
+    would be about a file it did not read."""
+    repo = write_repo(tmp_path / "bom-and-more")
+    path = write_hooks(
+        repo,
+        hooks_doc("Stop", {"type": "command", "command": "make lint", "timeout": "10"}),
+    )
+    path.write_bytes(codecs.BOM_UTF8 + path.read_bytes())
+
+    assert [v.message for v in check(repo)] == [
+        "hooks.json starts with a UTF-8 byte-order mark; Grok reads none of the file"
+    ]
+
+
+def test_the_same_file_without_the_mark_is_clean(tmp_path) -> None:
+    """The mark is the whole defect — the bytes after it are a valid file."""
+    repo = repo_with_hooks(tmp_path, "no-bom", HOOKS_JSON)
+
+    assert check(repo) == []
+
+
 # ── Tokens Python accepts and Grok's parser does not ─────────────
 
 
@@ -523,6 +600,11 @@ def test_an_unknown_event_is_still_shape_checked(tmp_path) -> None:
         r"\pL",
         "[a-z&&[^aeiou]]",
         r"[\w--\d]",
+        # Rust's named capture group. Python spells it `(?P<tool>...)` and
+        # raises "unknown extension ?<t" on this one, so the rewrite has to
+        # cover it — and must not swallow `(?<=` / `(?<!`, which are
+        # look-behind and reported above.
+        "(?<tool>Bash|Write)",
     ],
 )
 def test_the_matchers_python_cannot_compile_but_grok_can(tmp_path, matcher) -> None:
@@ -554,6 +636,47 @@ def test_a_rust_only_atom_does_not_waive_the_rest_of_the_pattern(tmp_path, match
     )
 
     assert only(check(repo), "does not compile").severity == Severity.WARNING
+
+
+@pytest.mark.parametrize(
+    ("matcher", "detail"),
+    [
+        (r"(?<=x)y", "Rust's regex has no look-around"),
+        ("(?=Write)Write", "Rust's regex has no look-around"),
+        (r"(a)\1", "Rust's regex has no backreferences"),
+        ("(?P<n>a)(?P=n)", "Rust's regex has no backreferences"),
+    ],
+)
+def test_a_construct_python_accepts_and_rust_refuses_is_named(tmp_path, matcher, detail) -> None:
+    """Compiling with `re` cannot see these. Python accepts look-around and
+    backreferences; Rust, a finite-automaton engine, has neither, and Grok
+    drops the matcher group without a word. Verified against Grok Build
+    1.0.13: `(?<=x)y` and `(a)\\1` each lost their group."""
+    repo = repo_with_hooks(
+        tmp_path,
+        f"unsupported-{abs(hash(matcher))}",
+        hooks_doc("PreToolUse", {"type": "command", "command": "./audit.sh"}, matcher=matcher),
+    )
+
+    violations = check(repo)
+
+    assert len(violations) == 1
+    assert violations[0].severity == Severity.WARNING
+    assert violations[0].message.endswith(f"does not compile: {detail}")
+
+
+@pytest.mark.parametrize("matcher", [r"\(?=", "[(?=]"])
+def test_a_look_around_run_that_is_only_literal_text_is_not_reported(tmp_path, matcher) -> None:
+    """`\\(?=` is an optional literal paren and `[(?=]` is a character class:
+    both dialects read the run as text, so naming a construct here would call
+    a working matcher broken."""
+    repo = repo_with_hooks(
+        tmp_path,
+        f"literal-{abs(hash(matcher))}",
+        hooks_doc("PreToolUse", {"type": "command", "command": "./audit.sh"}, matcher=matcher),
+    )
+
+    assert check(repo) == []
 
 
 def test_an_oversized_matcher_is_never_scanned(tmp_path) -> None:

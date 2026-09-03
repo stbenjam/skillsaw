@@ -10,6 +10,7 @@ linter exists to catch.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +31,7 @@ from tests.grok._helpers import (
     lint_json,
     messages,
     relative,
+    violations_for,
     write_hooks,
     write_repo,
 )
@@ -47,6 +49,15 @@ from tests.grok._helpers import (
         "agents/reviewer.md",
         "config.toml",
         "lsp.json",
+        # Configuration skillsaw parses nothing from and attaches nothing
+        # for. Still evidence: a repository whose only Grok artifact is a
+        # sandbox policy is a Grok repository, and `unknown` would be wrong
+        # about it. Nothing is attached, so there is no attachment for this
+        # to disagree with.
+        "workflows/nightly.md",
+        "roles/reviewer.md",
+        "personas/terse.md",
+        "sandbox.toml",
     ],
 )
 def test_any_one_piece_of_the_project_layer_detects_grok(temp_dir, marker) -> None:
@@ -187,6 +198,81 @@ def test_the_directories_grok_reads_flat_are_attached_flat(temp_dir) -> None:
     assert relative(repo, tree.find(SkillBlock)) == [".grok/skills/group/nested-skill/SKILL.md"]
 
 
+def test_a_skill_under_a_package_project_layer_is_discovered(tmp_path) -> None:
+    """A monorepo crate carries its own `.grok/skills/`, and it counts.
+
+    `CONVENTIONAL_SKILL_DIRS` names only the root-relative spelling, and the
+    generic skill walk never reaches a nested one because it skips hidden
+    directories — so the nested root is handed to discovery explicitly, the
+    way Devin's already is. Without that the package skill is silently
+    uncounted and unlinted while the prose beside it attaches normally.
+    """
+    repo = copy_fixture("grok/project-monorepo", tmp_path)
+
+    context = RepositoryContext(repo)
+
+    assert RepositoryType.AGENTSKILLS in context.repo_types
+    assert relative(repo, context.lint_tree.find(SkillBlock)) == [
+        ".grok/skills/release-notes/SKILL.md",
+        "packages/tiler/.grok/skills/schema-diff/SKILL.md",
+    ]
+    assert relative(repo, context.lint_tree.find(GrokRuleBlock)) == [
+        ".grok/rules/workspace.md",
+        "packages/tiler/.grok/rules/tiler.md",
+    ]
+
+
+def test_the_skill_rules_reach_a_package_skill(temp_dir) -> None:
+    """Discovery is half of it: the block has to earn the skill rule set the
+    same as one at the repository root, or the fix moves the silence rather
+    than removing it."""
+    repo = write_repo(temp_dir / "package-skill")
+    skill = repo / "packages" / "tiler" / ".grok" / "skills" / "schema-diff"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: Schema Diff\n"
+        "description: Use when comparing the PostGIS schema in a branch "
+        "against the one on main, before reviewing a migration.\n"
+        "---\n\n# Schema diff\n\nDiff the two dumps and read the migration.\n"
+    )
+
+    report = lint_json(repo, returncode=1)
+
+    assert [v["file_path"] for v in violations_for(report, "agentskill-name")] == [
+        "packages/tiler/.grok/skills/schema-diff/SKILL.md"
+    ]
+
+
+def test_an_unreadable_hooks_directory_is_recorded_rather_than_dropped(
+    temp_dir, monkeypatch
+) -> None:
+    """A directory that cannot be read looks exactly like an empty one, so
+    the tree has to say so — otherwise the run is green over hooks nothing
+    scanned. The rest of the layer still attaches."""
+    repo = write_repo(temp_dir / "unreadable-hooks")
+    write_hooks(repo, HOOKS_JSON)
+    rules = repo / ".grok" / "rules"
+    rules.mkdir()
+    (rules / "style.md").write_text("# House style\n\nUse tabs in Makefiles.\n")
+    real_glob = Path.glob
+
+    def refuse_the_hooks_directory(self, pattern, *args, **kwargs):
+        if self.name == "hooks":
+            raise OSError(13, "Permission denied")
+        return real_glob(self, pattern, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "glob", refuse_the_hooks_directory)
+    context = RepositoryContext(repo)
+
+    assert context.lint_tree.find(GrokHooksBlock) == []
+    assert relative(repo, context.lint_tree.find(GrokRuleBlock)) == [".grok/rules/style.md"]
+    assert [
+        error
+        for error in context.lint_tree_errors
+        if error.startswith("Could not read") and ".grok/hooks" in error
+    ]
+
+
 def test_a_hooks_file_in_a_plugin_directory_is_not_attached(temp_dir) -> None:
     """`.grok/plugins/` holds installed plugins. Their content is Grok's
     plugin discovery to find, not the project layer's."""
@@ -230,14 +316,25 @@ def test_a_hooks_file_shared_by_symlink_is_attached_once(temp_dir) -> None:
 
 
 def test_the_summary_reports_the_repository_as_grok(tmp_path) -> None:
-    """A repository configured only through `.grok/` used to report
-    `unknown`; a tool's configuration is what the repository is."""
+    """A repository configured only through `.grok/` reports `grok-project`
+    rather than `unknown`; a tool's configuration is what the repository is."""
     repo = copy_fixture("grok/project-clean", tmp_path)
 
     result = run_cli(["lint", repo])
 
     assert result.returncode == 0
     assert "Repo type: agents-md, agentskills, grok-project" in result.stdout
+
+
+def test_the_summary_counts_a_skill_under_a_package_project_layer(tmp_path) -> None:
+    """`Skills:` is what a reader checks to see their content was found, so a
+    package skill has to reach the count and not only the tree."""
+    repo = copy_fixture("grok/project-monorepo", tmp_path)
+
+    result = run_cli(["lint", repo])
+
+    assert result.returncode == 0
+    assert "Skills:    2" in result.stdout
 
 
 def test_the_json_report_lists_grok_among_the_repo_types(tmp_path) -> None:

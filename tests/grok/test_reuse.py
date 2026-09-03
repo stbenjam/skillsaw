@@ -170,17 +170,83 @@ def test_the_security_rules_scan_grok_prose(temp_dir) -> None:
     assert SecurityInvisibleUnicodeRule().check(context)
 
 
+# ── The description rules read the routing metadata ──────────────
+
+
+def test_description_routing_reaches_grok_commands_and_agents(temp_dir) -> None:
+    """`content-description-routing` is the exception to "attaching the block
+    is enough": it walks an explicit list of block types and gates on
+    `repo_types`, so a Grok-only repository earns it only once both name Grok.
+    """
+    repo = write_repo(temp_dir / "descriptions")
+    commands = repo / ".grok" / "commands"
+    commands.mkdir(parents=True)
+    commands.joinpath("x.md").write_text(
+        '---\ndescription: ""\n---\n\n# Tile check\n\nRender one tile and report its size.\n'
+    )
+    agents = repo / ".grok" / "agents"
+    agents.mkdir(parents=True)
+    agents.joinpath("y.md").write_text(
+        "---\nname: migration-reviewer\n---\n\n"
+        "# Migration reviewer\n\nRead the migration and report what it changes.\n"
+    )
+
+    # Red because `grok-agent-valid` reports the same agent at ERROR: Grok
+    # will not register it. That is the loader's verdict; this rule's is
+    # about what the model can route on, and both are worth saying — the
+    # Claude pair (`claude-agent-frontmatter`) has always behaved this way.
+    found = violations_for(lint_json(repo, returncode=1), "content-description-routing")
+
+    assert sorted((v["file_path"], v["message"]) for v in found) == [
+        (".grok/agents/y.md", "Description is missing; explain what this agent does"),
+        (".grok/commands/x.md", "Description is empty; explain what the building block does"),
+    ]
+
+
+def test_a_grok_command_keeps_the_exemption_from_trigger_phrasing(temp_dir) -> None:
+    """A command's description is the blurb `grok` shows in its picker, not a
+    selector the model routes on — the same reason Claude and OpenCode
+    commands are exempt. A subagent *is* routed by its description, so it is
+    not."""
+    repo = write_repo(temp_dir / "trigger-phrasing")
+    commands = repo / ".grok" / "commands"
+    commands.mkdir(parents=True)
+    commands.joinpath("tile-check.md").write_text(
+        "---\ndescription: Render one tile and report its size and feature count\n---\n\n"
+        "# Tile check\n\nRun `make test-tiles` and report the failures.\n"
+    )
+    agents = repo / ".grok" / "agents"
+    agents.mkdir(parents=True)
+    agents.joinpath("migration-reviewer.md").write_text(
+        "---\nname: migration-reviewer\n"
+        "description: Reviews PostGIS migrations against the schema diff.\n---\n\n"
+        "# Migration reviewer\n\nRead the migration and report what it changes.\n"
+    )
+
+    found = violations_for(lint_json(repo), "content-description-routing")
+
+    assert [(v["file_path"], v["message"]) for v in found] == [
+        (
+            ".grok/agents/migration-reviewer.md",
+            "Description does not say when to use this agent; include trigger phrasing "
+            "such as 'Use when ...'",
+        )
+    ]
+
+
 # ── The noise gate ───────────────────────────────────────────────
 
 
-def test_the_broken_fixture_reports_nothing_outside_its_two_rules(tmp_path) -> None:
+def test_the_broken_fixture_reports_nothing_outside_the_rules_it_is_for(tmp_path) -> None:
     """A new rule that starts firing on ordinary Grok content lands here
-    first. `hooks-dangerous` is the one finding that is not this rule's."""
+    first. `hooks-dangerous` is the one finding that belongs to neither Grok
+    rule — everything else in the fixture is deliberate."""
     repo = copy_fixture("grok/project-broken", tmp_path)
 
     report = lint_json(repo, returncode=1)
 
     assert {v["rule_id"] for v in report["violations"]} == {
+        "grok-agent-valid",
         "grok-hooks-valid",
         "hooks-dangerous",
     }

@@ -211,7 +211,7 @@ RULE_GROUPS = [
     (
         "Grok Build",
         "grok",
-        ["grok-hooks-valid"],
+        ["grok-agent-valid", "grok-hooks-valid"],
         "Validates `.grok/hooks/*.json`, the project hooks Grok Build loads and "
         "silently refuses when they are malformed. What a defect costs depends "
         "on where it is: a wrong-typed field or a handler with no `type` "
@@ -220,11 +220,14 @@ RULE_GROUPS = [
         "drops that handler — none of it reported, because `grok inspect` "
         "emits no configuration warning for any of them. Grok accepts several "
         "spellings of every event, including Cursor's, so a shared hooks file "
-        "is not reported for the spelling it uses. Grok reads AGENTS.md for "
+        "is not reported for the spelling it uses. `grok-agent-valid` covers the "
+        "other surface Grok refuses in silence: a `.grok/agents/*.md` subagent "
+        "missing the `name` or `description` its loader registers it by. Grok "
+        "reads AGENTS.md for "
         "portable instructions and portable Agent Skills from `.grok/skills/`, "
-        "and its rules, commands and agents get the content and security rules "
-        "every format shares, so no Grok-specific instruction format is "
-        "validated. Enabled automatically when a `.grok/` project layer "
+        "and its rules, commands and agent prose get the content and security "
+        "rules every format shares, so no Grok-specific instruction format "
+        "is validated. Enabled automatically when a `.grok/` project layer "
         "exists.",
     ),
     (

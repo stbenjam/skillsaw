@@ -2,9 +2,10 @@ r"""Grok Build repository-context vocabulary, in one place.
 
 Grok Build is xAI's terminal coding agent. A checkout configures it through
 ``.grok/``: portable Agent Skills in ``skills/``, always-on prose in
-``rules/``, slash commands in ``commands/``, subagents in ``agents/``,
-MCP servers in ``mcp.json``, and lifecycle hooks in ``hooks/*.json``. Only
-the hooks file has a shape no other rule already validates, so the
+``rules/``, slash commands in ``commands/``, subagents in ``agents/``, and
+lifecycle hooks in ``hooks/*.json``. MCP servers are *not* configured here
+— see :data:`CONFIG_FILENAME`. Two of those surfaces have a shape no other
+rule already validates, the hooks files and the subagents, so the
 Grok-specific facts live here rather than spread through rule code.
 
 Sources:
@@ -13,7 +14,7 @@ Sources:
   alias table, handler fields, the reserved environment variables, the
   matcher-per-event table), ``12-project-rules.md``, ``08-skills.md``,
   ``04-slash-commands.md``, ``16-subagents.md``, ``26-config-reference.md``.
-* The shipped executable [S], whose hook loader is
+* Strings read from the shipped executable, whose hook loader is
   ``crates/codegen/xai-grok-hooks/src/config.rs``. Its diagnostics name the
   handler contract directly: ``command handler requires a 'command' field``,
   ``http handler requires a 'url' field``, ``hooks: skipped unrecognized
@@ -102,10 +103,23 @@ SKILLS_DIR_NAME = "skills"
 #: ``config.toml`` ``[mcp_servers]``, ``~/.claude.json``,
 #: ``.cursor/mcp.json`` and the repository-root ``.mcp.json`` — skillsaw
 #: already attaches the last of those — and a ``.grok/mcp.json`` placed in a
-#: trusted project loaded nothing [V]. Attaching it would lint a file Grok
-#: never reads.
+#: trusted project loaded nothing when verified against the binary. Attaching
+#: it would lint a file Grok never reads.
 CONFIG_FILENAME = "config.toml"
 LSP_FILENAME = "lsp.json"
+
+#: The rest of the project layer, on the same footing as
+#: :data:`CONFIG_FILENAME`: Grok configuration nothing here parses or
+#: attaches, listed because *existence* is what makes a directory Grok's.
+#: A repository whose only Grok artifact is a sandbox policy is a Grok
+#: repository, and the summary saying ``unknown`` would be wrong about it.
+#: Adding one costs a line here and in ``_TOOL_EVIDENCE``, and nothing
+#: else — detection and attachment stay in agreement because neither
+#: attaches anything for these.
+WORKFLOWS_DIR_NAME = "workflows"
+ROLES_DIR_NAME = "roles"
+PERSONAS_DIR_NAME = "personas"
+SANDBOX_FILENAME = "sandbox.toml"
 
 #: Project-scoped plugins, relative to :data:`TOOL_DIR_NAME`. An install
 #: location rather than authored configuration: Grok's own plugin discovery
@@ -140,8 +154,11 @@ HOOK_EVENTS = frozenset(
 #: accepting all of them is a correctness requirement: a missing entry turns
 #: a working hooks file into a false "unknown event".
 #:
-#: * ``snake_case`` for all 16 names — the wire spelling Grok also uses in
-#:   ``GROK_HOOK_EVENT`` and in the hook's stdin envelope.
+#: * ``snake_case`` for all 16 names: the 15 events in :data:`HOOK_EVENTS`
+#:   plus ``subagent_end``, which is not a sixteenth event but the
+#:   snake_case spelling of the ``SubagentEnd`` alias below. This is the
+#:   wire spelling Grok also uses in ``GROK_HOOK_EVENT`` and in the hook's
+#:   stdin envelope.
 #: * ``camelCase``, which covers every event **except**
 #:   ``userPromptSubmit`` — that one spelling is not accepted, verified
 #:   alongside the thirteen that are.
@@ -214,10 +231,11 @@ HOOK_REQUIRED_FIELDS: Mapping[str, str] = {
 #: The JSON type Grok accepts for each handler field it knows. A wrong type
 #: here refuses the whole document, so this table is the whole-file check;
 #: which fields a type *needs* is :data:`HOOK_REQUIRED_FIELDS`. ``timeout``
-#: is additionally a non-negative integer — ``1.5``, ``-1``, ``true`` and
-#: ``"30"`` each cost every hook in the file, while a large one is accepted
-#: and is not a defect (``Stop`` and ``SubagentStop`` default to 600
-#: seconds). ``env`` is a map of strings; a non-string value refuses the
+#: is additionally a non-negative integer no larger than
+#: :data:`TIMEOUT_MAX` — ``1.5``, ``-1``, ``true`` and ``"30"`` each cost
+#: every hook in the file. A merely *large* one is fine and is not a defect
+#: (``Stop`` and ``SubagentStop`` default to 600 seconds, because gates run
+#: test suites). ``env`` is a map of strings; a non-string value refuses the
 #: document too.
 HANDLER_FIELDS: Mapping[str, Any] = {
     "type": str,
@@ -226,6 +244,14 @@ HANDLER_FIELDS: Mapping[str, Any] = {
     "timeout": int,
     "env": dict,
 }
+
+#: The largest ``timeout`` Grok's deserializer accepts. The field is a Rust
+#: ``u64``, and JSON has no integer width, so the boundary is exact and
+#: sharp: ``18446744073709551615`` loads, ``18446744073709551616`` refuses
+#: the whole file — both verified against Grok Build 1.0.13. A number that
+#: wide is a generated or pasted value rather than a duration anyone meant,
+#: which is the only way it reaches a hooks file at all.
+TIMEOUT_MAX = 2**64 - 1
 
 #: Environment variables the hook runner injects into every hook process. A
 #: value declared for one of these in a handler's ``env`` is dropped at load
