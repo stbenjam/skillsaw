@@ -123,10 +123,16 @@ class GrokMarketplaceJsonValidRule(Rule):
                 )
                 continue
             violations.extend(self._check_name(entry, index, catalog))
-            source_violations, target = self._check_source(
+            source_violations, target, installs = self._check_source(
                 entry, index, catalog, marketplace_root, resolved_root
             )
             violations.extend(source_violations)
+            if not installs:
+                # An entry Grok drops installs nothing, so it can collide
+                # with nothing. Counting it would report a duplicate name
+                # beside the defect that is already the whole reason the
+                # entry is gone.
+                continue
             resolved = self._resolved_name(entry, target)
             if resolved is not None:
                 by_name.setdefault(resolved, []).append(index)
@@ -178,13 +184,20 @@ class GrokMarketplaceJsonValidRule(Rule):
         catalog: Path,
         marketplace_root: Path,
         resolved_root: Optional[Path],
-    ) -> Tuple[List[RuleViolation], Optional[Path]]:
-        """Validate an entry's source; return it and the local directory it names."""
+    ) -> Tuple[List[RuleViolation], Optional[Path], bool]:
+        """Validate an entry's source.
+
+        Returns the findings, the local directory the source names, and
+        whether Grok installs anything from the entry at all — a dropped
+        entry creates no installation ambiguity, so it takes no part in the
+        duplicate-name accounting above.
+        """
         source = entry.get("source")
         if source is None:
             return (
                 [self.violation(f"plugins[{index}] missing required 'source'", file_path=catalog)],
                 None,
+                False,
             )
         if not isinstance(source, (str, dict)):
             return (
@@ -195,18 +208,27 @@ class GrokMarketplaceJsonValidRule(Rule):
                     )
                 ],
                 None,
+                False,
             )
         if isinstance(source, str) and not source:
             return (
                 [self.violation(f"plugins[{index}].source is an empty path", file_path=catalog)],
                 None,
+                False,
             )
 
         local = grok.grok_local_source_path(source)
         if local is not None:
-            return self._check_local(local, index, catalog, marketplace_root, resolved_root)
+            violations, target = self._check_local(
+                local, index, catalog, marketplace_root, resolved_root
+            )
+            return violations, target, target is not None
         if grok.is_url_source(source):
-            return self._check_url(source, index, catalog), None
+            # Every other url defect still installs: an unpinned or
+            # oddly-cased ``sha`` clones, so those entries still collide.
+            url = source.get("url")
+            installs = isinstance(url, str) and bool(url)
+            return self._check_url(source, index, catalog), None, installs
         # An object naming neither a directory here nor a repository to
         # clone. A warning rather than an error: the loader keys on the
         # fields rather than on a type, so a source shape added upstream
@@ -220,6 +242,7 @@ class GrokMarketplaceJsonValidRule(Rule):
                 )
             ],
             None,
+            False,
         )
 
     def _check_local(
@@ -250,6 +273,21 @@ class GrokMarketplaceJsonValidRule(Rule):
                     self.violation(
                         f"plugins[{index}].source: '{safe_display(value)}' is not a "
                         "directory under the marketplace root",
+                        file_path=catalog,
+                    )
+                ],
+                None,
+            )
+        if grok.grok_marker_escapes(target):
+            # Discovery drops a directory whose ``.grok-plugin`` marker or
+            # manifest resolves outside it, so no plugin node is built and
+            # none of the plugin checks run — the entry installs another
+            # plugin's manifest and nothing here would otherwise say so.
+            return (
+                [
+                    self.violation(
+                        f"plugins[{index}].source: '{safe_display(value)}' has a "
+                        f"'{grok.PLUGIN_DIR_NAME}' that resolves outside it",
                         file_path=catalog,
                     )
                 ],

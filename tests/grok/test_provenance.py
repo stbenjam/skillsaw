@@ -108,6 +108,21 @@ def test_a_directory_the_catalog_does_not_list_is_unclaimed(temp_dir) -> None:
     assert not context.provenance(repo / "plugins" / "unlisted").ecosystems
 
 
+def test_a_nameless_catalog_entry_claims_nothing(temp_dir) -> None:
+    """Grok drops an entry with no usable ``name``, so its target is content
+    Grok never installs: claiming it would switch an unmarked plugin's
+    Claude-scoped rules off and attach Grok configuration for nothing."""
+    repo = write_repo(temp_dir / "nameless-entry")
+    write_catalog(
+        repo, {"plugins": [{"description": "No name.", "source": "./plugins/tide-charts"}]}
+    )
+    (repo / "plugins" / "tide-charts").mkdir(parents=True)
+
+    context = RepositoryContext(repo)
+
+    assert not context.provenance(repo / "plugins" / "tide-charts").ecosystems
+
+
 def test_a_claude_catalog_is_not_a_grok_catalog(temp_dir) -> None:
     """``.claude-plugin/marketplace.json`` is a documented Grok fallback and
     still Claude's file: the two schemas differ, so linting one against both

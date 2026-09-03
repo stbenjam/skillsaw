@@ -142,14 +142,16 @@ def local_catalog(*paths: str) -> Dict[str, Any]:
 
     Alternates the two discriminator spellings the official catalog uses —
     ``{"type": "local"}`` and the bare string — so a claim test cannot pass
-    by reading only one of them.
+    by reading only one of them. Every entry is named, because a nameless
+    one is an entry Grok drops and discovery claims nothing for: ``"./"``
+    has no basename, so it borrows the marketplace's own word for itself.
     """
     plugins = []
     for index, path in enumerate(paths):
         source: Any = {"type": "local", "path": path} if index % 2 == 0 else path
         plugins.append(
             {
-                "name": Path(path).name,
+                "name": Path(path).name or "harbour-root",
                 "description": f"Local plugin at {path}.",
                 "source": source,
             }

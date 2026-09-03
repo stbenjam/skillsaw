@@ -40,8 +40,8 @@ from skillsaw.utils import read_json_strict
 
 # Grok reads a marketplace catalog from ``<root>/.grok-plugin/marketplace.json``
 # and a plugin manifest from ``<plugin>/.grok-plugin/plugin.json``. Each has a
-# fallback chain — ``formats.grok.CATALOG_PATHS`` and ``MANIFEST_PATHS``, which
-# run in opposite orders — and skillsaw claims only the ``.grok-plugin``
+# fallback chain — ``formats.grok.CATALOG_PATHS`` and ``MANIFEST_PATHS``, whose
+# orders differ — and skillsaw claims only the ``.grok-plugin``
 # spelling of either: a directory whose one declaration is Claude's is a Claude
 # plugin, and claiming it for Grok as well would put every Claude plugin in the
 # repository under two ecosystems' format rules.
@@ -93,10 +93,21 @@ def enumerate_grok_catalogs(
     """
 
     def _keep(path: Path) -> bool:
-        # A catalog resolving outside the checkout is not this repository's
-        # to read, and exclusions are applied here rather than at each
-        # reader so an excluded catalog claims nothing either.
-        return contained_resolve(path, containment_root) is not None and not is_excluded(path)
+        # Two boundaries, for two different reasons. The checkout, because a
+        # catalog resolving outside it is not this repository's to read. And
+        # its own marketplace root, the same per-package boundary
+        # ``discover_grok_plugins._add`` enforces for a manifest:
+        # ``pkg-a/.grok-plugin -> ../pkg-b/.grok-plugin`` stays in the
+        # checkout, and keeping it would file pkg-b's catalog findings at
+        # pkg-a's path and deduplicate pkg-b's own candidate away.
+        # Exclusions are applied here rather than at each reader, so an
+        # excluded catalog claims nothing either.
+        if contained_resolve(path, containment_root) is None or is_excluded(path):
+            return False
+        marketplace_root = safe_resolve(path.parent.parent)
+        return (
+            marketplace_root is not None and contained_resolve(path, marketplace_root) is not None
+        )
 
     found: List[Path] = []
     seen: Set[Path] = set()
@@ -137,6 +148,11 @@ def grok_local_sources(catalog_files: Iterable[Path]) -> List[Path]:
     which is the boundary Grok enforces and the catalog rule reports: a
     wider one would claim a sibling package for Grok and take it out of
     every other ecosystem's format scope.
+
+    An entry with no usable ``name`` declares nothing either: Grok drops it,
+    so claiming its target would switch an otherwise unmarked plugin's
+    Claude-scoped rules off and attach Grok configuration for content Grok
+    never installs.
     """
     resolved: List[Path] = []
     for catalog in catalog_files:
@@ -151,6 +167,9 @@ def grok_local_sources(catalog_files: Iterable[Path]) -> List[Path]:
             continue
         for entry in entries:
             if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
                 continue
             path = grok_local_source_path(entry.get("source"))
             if path is None:

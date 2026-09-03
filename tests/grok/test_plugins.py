@@ -621,6 +621,23 @@ def test_an_excluded_catalog_drops_the_plugins_it_claimed(temp_dir) -> None:
     assert not context.provenance(plugin).grok
 
 
+def test_an_exclusion_invalidates_the_cached_owner_set(temp_dir) -> None:
+    """``grok_plugin_owning`` reads a set cached beside the root list, so the
+    exclude reset has to drop both — a stale set would keep answering with an
+    owner the lint tree no longer builds."""
+    repo = _excludable_repo(temp_dir, "excluded-owner-set")
+    mcp = repo / "plugins" / "almanac" / ".mcp.json"
+
+    context = RepositoryContext(repo)
+    assert context.grok_plugin_owning(mcp) == safe_resolve(repo / "plugins" / "almanac")
+
+    context.exclude_patterns = [".grok-plugin/**"]
+    context.apply_excludes()
+
+    assert context.grok_plugin_root_set() == set()
+    assert context.grok_plugin_owning(mcp) is None
+
+
 def test_an_excluded_catalog_prunes_the_skills_it_claimed(temp_dir) -> None:
     """Otherwise the skill attaches as a standalone node and keeps linting
     the content the exclusion removed."""
@@ -885,6 +902,38 @@ def test_a_declared_directory_inside_a_nested_plugin_does_not_steal_its_prose(te
     assert [block.plugin_owner for block in commands] == [safe_resolve(inner)]
 
 
+def test_declared_hooks_and_mcp_inside_a_nested_plugin_stay_the_nested_plugins(
+    temp_dir,
+) -> None:
+    """The same boundary as the declared prose above, on the two executable
+    files: attaching them to the outer plugin first would let
+    ``_attached_as_hooks``/``_attached_as_mcp`` suppress the nested plugin's
+    own attach, and the file would arrive under the wrong owner."""
+    repo = write_repo(temp_dir / "nested-executables")
+    outer = write_plugin(
+        repo / "plugins" / "tide-charts",
+        {
+            **MANIFEST,
+            "hooks": "bundled/almanac/hooks/hooks.json",
+            "mcpServers": "bundled/almanac/.mcp.json",
+        },
+    )
+    inner = write_plugin(outer / "bundled" / "almanac", {**MANIFEST, "name": "almanac"})
+    (inner / "hooks").mkdir()
+    (inner / "hooks" / "hooks.json").write_text(HOOKS_JSON, encoding="utf-8")
+    (inner / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"tides": {"command": "serve"}}}), encoding="utf-8"
+    )
+
+    tree = RepositoryContext(repo).lint_tree
+    hooks = tree.find(GrokPluginHooksBlock)
+    mcp = tree.find(GrokMcpBlock)
+
+    assert relative(repo, hooks) == ["plugins/tide-charts/bundled/almanac/hooks/hooks.json"]
+    assert relative(repo, mcp) == ["plugins/tide-charts/bundled/almanac/.mcp.json"]
+    assert [block.plugin_owner for block in hooks + mcp] == [safe_resolve(inner)] * 2
+
+
 def test_a_dual_manifest_plugin_keeps_claudes_reading_of_an_empty_command(temp_dir) -> None:
     """The other half of the usable-connection tightening: the shared block
     a Claude declaration keeps carries Claude's presence-only check, and the
@@ -974,20 +1023,104 @@ def test_a_repo_root_grok_plugin_gets_the_tightened_mcp_checks(temp_dir) -> None
     context = RepositoryContext(repo)
 
     assert context.provenance(repo).grok_only
-    assert messages(McpValidJsonRule().check(context)) == [
-        "Invalid JSON: 'NaN' at mcpServers.counted.retries is not valid JSON"
+    assert messages(McpValidJsonRule().check(context)) == ["NaN is not valid JSON"]
+
+
+def test_a_repo_root_grok_plugin_reports_a_duplicated_key(temp_dir) -> None:
+    """The lenient block collapsed the second ``x``; Grok's parser refuses
+    the document, so the strict re-read is what names it."""
+    repo = write_plugin(write_repo(temp_dir / "root-plugin-duplicate"), MANIFEST)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers": {"x": {"command": "a"}, "x": {"command": "b"}}}',
+        encoding="utf-8",
+    )
+
+    assert messages(McpValidJsonRule().check(RepositoryContext(repo))) == [
+        'duplicate JSON object key: "x"'
     ]
 
 
-def test_a_repo_root_grok_plugin_with_readable_json_reports_the_empty_command(temp_dir) -> None:
+def test_a_repo_root_grok_plugin_keeps_the_reserved_name_check(temp_dir) -> None:
+    """``<repo>/.mcp.json`` is Claude Code's project-scope configuration,
+    read because of where it sits. Grok reading it too is a tightening, not
+    a subtraction: the reserved name stays reported and the unusable command
+    is added."""
     repo = write_plugin(write_repo(temp_dir / "root-plugin-usable"), MANIFEST)
     (repo / ".mcp.json").write_text(
         json.dumps({"mcpServers": {"empty": {"command": ""}, "workspace": {"command": "serve"}}}),
         encoding="utf-8",
     )
 
-    assert messages(McpValidJsonRule().check(RepositoryContext(repo))) == [
-        "MCP server 'empty' 'command' must be a non-empty string"
+    found = messages(McpValidJsonRule().check(RepositoryContext(repo)))
+
+    assert "MCP server 'empty' 'command' must be a non-empty string" in found
+    assert any("'workspace' is reserved" in message for message in found)
+
+
+def test_a_claude_plugin_under_a_grok_only_root_keeps_its_results(temp_dir) -> None:
+    """``grok_plugin_owning`` is nearest-Grok-root-first, so a nested Claude
+    plugin inherits the outer claim. Its ``.mcp.json`` is still Claude's
+    file."""
+    repo = write_plugin(write_repo(temp_dir / "nested-claude"), MANIFEST)
+    plugin = repo / "plugins" / "tide-charts"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "tide-charts"}), encoding="utf-8"
+    )
+    (plugin / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"workspace": {"command": ""}}}), encoding="utf-8"
+    )
+
+    context = RepositoryContext(repo)
+    found = messages(McpValidJsonRule().check(context))
+
+    assert context.in_grok_only_plugin(plugin / ".mcp.json")
+    assert any("'workspace' is reserved" in message for message in found)
+
+
+def test_a_dual_codex_and_grok_plugin_keeps_the_reserved_name_check(temp_dir) -> None:
+    """``grok_only`` is true of a dual Codex/Grok directory too, and Codex
+    still reads the conventional ``.mcp.json`` there."""
+    repo = write_plugin(write_repo(temp_dir / "codex-and-grok"), MANIFEST)
+    (repo / ".codex-plugin").mkdir()
+    (repo / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "tide-charts"}), encoding="utf-8"
+    )
+    (repo / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"workspace": {"command": "serve"}}}), encoding="utf-8"
+    )
+
+    context = RepositoryContext(repo)
+
+    assert context.provenance(repo).grok_only
+    assert any(
+        "'workspace' is reserved" in message
+        for message in messages(McpValidJsonRule().check(context))
+    )
+
+
+def test_a_copilot_agent_under_a_grok_only_root_does_not_crash_the_rule(temp_dir) -> None:
+    """``CopilotAgentMcpBlock`` is a frontmatter-embedded ``McpConfigRole``
+    with no file to re-read: the provenance branch must not reach it, or the
+    rule loses every finding in the repository to a rule-execution-error."""
+    repo = write_plugin(write_repo(temp_dir / "root-plugin-copilot"), MANIFEST)
+    agents = repo / ".github" / "agents"
+    agents.mkdir(parents=True)
+    (agents / "reviewer.md").write_text(
+        "---\nname: reviewer\ndescription: Review a pull request for the harbour team.\n"
+        "mcp-servers:\n  charts:\n    command: ''\n---\n\nReview the diff.\n",
+        encoding="utf-8",
+    )
+    (repo / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"empty": {"command": ""}}}), encoding="utf-8"
+    )
+
+    context = RepositoryContext(repo)
+
+    assert context.in_grok_only_plugin(agents / "reviewer.md")
+    assert sorted(messages(McpValidJsonRule().check(context))) == [
+        "MCP server 'charts' 'command' must be a non-empty string",
+        "MCP server 'empty' 'command' must be a non-empty string",
     ]
 
 

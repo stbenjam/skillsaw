@@ -431,7 +431,8 @@ marketplace/
 
 Grok looks for a catalog at `.grok-plugin/marketplace.json`, then
 `.claude-plugin/marketplace.json`, then a root-level `marketplace.json`, and
-reads exactly one — the reverse of the plugin-manifest order above. skillsaw
+reads exactly one. The root spelling is last here and first in the
+plugin-manifest order above; the two lookups share no ordering. skillsaw
 claims the first for Grok and leaves `.claude-plugin/marketplace.json` to the
 Claude `marketplace-*` rules, because the two schemas disagree: Claude
 requires `owner`, while a Grok entry carries `category` and a `source` in one

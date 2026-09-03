@@ -63,17 +63,6 @@ Run `make deploy-staging`.
 Add the missing section heading(s) listed in the violation message.
 Each section is a `##` heading with the exact name shown.
 
-## Another ecosystem's plugins
-
-This is a Claude-format convention. A directory claimed only by another
-ecosystem — OpenAI Codex or Grok Build, through a
-`.codex-plugin/plugin.json`, a `.grok-plugin/plugin.json`, or a
-local-source listing in either's catalog, with no `.claude-plugin` marker
-and no Claude marketplace listing — is exempt: Claude never loads it, so Claude command section
-conventions do not apply to its commands/. A dual-manifest
-directory keeps this check, and the ecosystem-neutral content and
-security rules read every plugin's files regardless of provenance.
-
 ## Configuration
 
 ```yaml

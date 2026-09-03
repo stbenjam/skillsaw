@@ -50,7 +50,7 @@ zones with 95 rules, then applies deterministic autofixes.
     ---
 
     Schema and syntax validation across [supported ecosystems](repo-types.md): Agent Skills,
-    Claude Code, OpenAI Codex, Agent Plugins v1, Copilot custom agents, OpenCode, Muse Code, APM, and MCP Registry.
+    Claude Code, OpenAI Codex, Grok Build, Agent Plugins v1, Copilot custom agents, OpenCode, Muse Code, APM, and MCP Registry.
 
 -   :wrench:{ .lg .middle } **Deterministic Autofixes**
 

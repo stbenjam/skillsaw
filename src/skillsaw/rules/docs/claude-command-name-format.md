@@ -26,14 +26,3 @@ my-plugin:deploy
 
 Update the Name section to include the plugin name prefix followed by
 a colon and the command name: `plugin-name:command-name`.
-
-## Another ecosystem's plugins
-
-This is a Claude-format convention. A directory claimed only by another
-ecosystem — OpenAI Codex or Grok Build, through a
-`.codex-plugin/plugin.json`, a `.grok-plugin/plugin.json`, or a
-local-source listing in either's catalog, with no `.claude-plugin` marker
-and no Claude marketplace listing — is exempt: Claude never loads it, so the `plugin:command`
-Name-section format does not apply to its commands/. A dual-manifest
-directory keeps this check, and the ecosystem-neutral content and
-security rules read every plugin's files regardless of provenance.

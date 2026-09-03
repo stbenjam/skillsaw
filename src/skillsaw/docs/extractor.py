@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -15,6 +15,7 @@ from skillsaw.formats.codex import (
     is_remote_source,
 )
 from skillsaw.formats.grok import (
+    SHA_RE,
     grok_local_source_path,
     grok_plugin_name,
     is_url_source as is_grok_url_source,
@@ -501,10 +502,13 @@ def _grok_marketplace_doc(
     """
     name: Optional[str] = None
     listed: List[PluginDoc] = []
-    # Keyed on the path each doc is addressed by — a plugin directory for a
-    # local entry, the plugin name for a url one — so two catalogs listing
-    # the same plugin publish it once.
-    seen: Set[Path] = set()
+    # Keyed on what identifies the entry: the resolved plugin directory for
+    # a local one, so two catalogs listing the same directory publish it
+    # once, and the catalog file plus the name for a remote one, because two
+    # independently discovered marketplaces may each ship a plugin of that
+    # name pointing at a different repository — which the validator permits
+    # and the renderer already allocates collision-safe filenames for.
+    seen: Set[object] = set()
     by_path = {r: p for p in plugins if (r := safe_resolve(p.path)) is not None}
     for path in context.grok_marketplace_paths():
         # Strict, as discovery and the catalog rule read it: a document
@@ -524,10 +528,13 @@ def _grok_marketplace_doc(
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            doc = _grok_entry_doc(entry, marketplace_root, by_path)
-            if doc is None or doc.path in seen:
+            found = _grok_entry_doc(entry, marketplace_root, by_path, path)
+            if found is None:
                 continue
-            seen.add(doc.path)
+            key, doc = found
+            if key in seen:
+                continue
+            seen.add(key)
             category = entry.get("category")
             if isinstance(category, str) and category and not doc.category:
                 doc.category = category
@@ -541,12 +548,15 @@ def _grok_entry_doc(
     entry: dict,
     marketplace_root: Path,
     by_path: Dict[Path, PluginDoc],
-) -> Optional[PluginDoc]:
-    """The doc one catalog entry lists, local or remote.
+    catalog: Path,
+) -> Optional[Tuple[object, PluginDoc]]:
+    """The doc one catalog entry lists, local or remote, and its dedup key.
 
-    A local entry names a directory that was extracted above; a url entry
-    has no directory in this checkout and so no lint-tree node, and what
-    the entry itself declares is all there is to list.
+    A local entry names a directory that was extracted above and is keyed on
+    it; a url entry has no directory in this checkout and so no lint-tree
+    node, and what the entry itself declares is all there is to list — keyed
+    on its own catalog and name, so two marketplaces may each publish a
+    plugin of that name.
     """
     local = grok_local_source_path(entry.get("source"))
     if local is not None:
@@ -555,7 +565,10 @@ def _grok_entry_doc(
         # loosely would match a sibling package the walk found on its own
         # and publish it as this catalog's listing.
         resolved = contained_resolve(marketplace_root / local, marketplace_root)
-        return by_path.get(resolved) if resolved is not None else None
+        if resolved is None:
+            return None
+        doc = by_path.get(resolved)
+        return (resolved, doc) if doc is not None else None
     source = entry.get("source")
     if not is_grok_url_source(source):
         return None
@@ -564,16 +577,24 @@ def _grok_entry_doc(
         # A url entry with no repository to clone installs nothing;
         # grok-marketplace-json-valid reports it.
         return None
+    sha = source.get("sha")
+    if sha is not None and not (isinstance(sha, str) and SHA_RE.fullmatch(sha)):
+        # An absent ``sha`` clones the default branch, which installs. A
+        # present one the installer cannot use — a branch name, a tag, an
+        # abbreviation, a non-string — refuses the install outright, so
+        # publishing a page for it advertises a plugin nobody can get.
+        return None
     name = entry.get("name")
     if not isinstance(name, str) or not name:
         return None
-    return PluginDoc(
+    doc = PluginDoc(
         name=name,
         path=Path(name),
         description=str(entry.get("description", "") or ""),
         version=str(v) if (v := entry.get("version")) is not None else "",
         category=str(entry.get("category", "") or ""),
     )
+    return (catalog, name), doc
 
 
 def _extract_agent_plugins(

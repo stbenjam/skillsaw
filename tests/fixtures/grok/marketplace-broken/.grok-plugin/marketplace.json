@@ -35,7 +35,7 @@
     },
     {
       "name": "escaping",
-      "description": "The same name a second time, shadowing the entry above.",
+      "description": "Sediment sampling checklists, cloned instead of vendored.",
       "category": "productivity",
       "source": {
         "source": "url",
@@ -50,6 +50,16 @@
       "source": {
         "source": "url",
         "url": "https://github.com/harbour-example/annotations.git",
+        "sha": "4b7c1e9a02d5f38c6b149e07aa2135c8de640f7b"
+      }
+    },
+    {
+      "name": "drifted",
+      "description": "The same name a second time, shadowing the entry above.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/annotations-mirror.git",
         "sha": "4b7c1e9a02d5f38c6b149e07aa2135c8de640f7b"
       }
     },

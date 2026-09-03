@@ -220,6 +220,63 @@ def test_skills_the_plugin_ships_and_the_index_omits_are_reported(temp_dir) -> N
     )
 
 
+def test_a_skill_nested_under_the_conventional_directory_is_walked(temp_dir) -> None:
+    """Measured against 1.0.13: the walk is recursive, so a skill several
+    directories down is one the plugin ships and an index omitting it has
+    drifted."""
+    repo = marketplace(
+        temp_dir,
+        "nested-skill",
+        {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
+        index({"almanac": {"components": {"skills": []}}}),
+        manifest={"name": "almanac"},
+    )
+    nested = repo / "plugins" / "almanac" / "skills" / "coastal" / "ebb-window"
+    nested.mkdir(parents=True)
+    (nested / "SKILL.md").write_text(skill_doc("ebb-window"), encoding="utf-8")
+
+    assert (
+        "skills only the plugin ships: almanac/ebb-window" in only(check(repo), "disagrees").message
+    )
+
+
+def test_a_declared_path_that_is_itself_a_skill_is_walked(temp_dir) -> None:
+    """Measured: a declared root holding its own ``SKILL.md`` is a skill, not
+    merely a folder of them."""
+    repo = marketplace(
+        temp_dir,
+        "declared-is-a-skill",
+        {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
+        index({"almanac": {"components": {"skills": [{"name": "ebb-window"}]}}}),
+        manifest={"name": "almanac", "skills": ["./bundled/ebb-window"]},
+    )
+    declared = repo / "plugins" / "almanac" / "bundled" / "ebb-window"
+    declared.mkdir(parents=True)
+    (declared / "SKILL.md").write_text(skill_doc("ebb-window"), encoding="utf-8")
+
+    assert check(repo) == []
+
+
+def test_the_skill_drift_lists_stop_collecting_past_the_sample(temp_dir) -> None:
+    """A catalog is repository content: many entries naming one directory
+    would otherwise cross-multiply into an unbounded list, so past the cap
+    the message says "and more" rather than a count it cannot stand by."""
+    entries = [{"name": f"almanac-{n}", "source": "./plugins/almanac"} for n in range(6)]
+    repo = marketplace(
+        temp_dir,
+        "capped-drift",
+        {"plugins": entries},
+        index({f"almanac-{n}": {"components": {"skills": []}} for n in range(6)}),
+        skills=("tide-window",),
+    )
+
+    message = only(check(repo), "disagrees").message
+
+    assert "skills only the plugin ships: " in message
+    assert message.endswith(", and more")
+    assert "and 2 more" not in message
+
+
 def test_check_components_off_keeps_the_name_and_sha_checks(temp_dir) -> None:
     repo = marketplace(
         temp_dir,

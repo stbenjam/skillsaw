@@ -203,6 +203,39 @@ def test_a_local_source_that_does_not_resolve_is_an_error(temp_dir, path, expect
     assert any(expected in message for message in at(check(repo), Severity.ERROR))
 
 
+def test_a_source_whose_plugin_marker_escapes_is_an_error(temp_dir) -> None:
+    """Discovery drops a directory whose ``.grok-plugin`` resolves elsewhere,
+    so no plugin node is built and none of the plugin checks run — the entry
+    would otherwise be silently lost."""
+    repo = catalog_repo(
+        temp_dir,
+        "escaping-marker-source",
+        {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
+    )
+    write_plugin(repo / "plugins" / "tide-charts", {"name": "tide-charts"})
+    (repo / "plugins" / "almanac").mkdir(parents=True)
+    (repo / "plugins" / "almanac" / ".grok-plugin").symlink_to(
+        repo / "plugins" / "tide-charts" / ".grok-plugin"
+    )
+
+    assert at(check(repo), Severity.ERROR) == [
+        "plugins[0].source: './plugins/almanac' has a '.grok-plugin' that resolves outside it"
+    ]
+
+
+def test_an_entry_grok_drops_is_not_counted_as_a_duplicate(temp_dir) -> None:
+    """A dropped entry installs nothing, so it collides with nothing: one
+    finding for the defect, and no duplicate beside it."""
+    repo = catalog_repo(
+        temp_dir,
+        "dropped-not-duplicated",
+        {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}, {"name": "almanac"}]},
+        plugins=[("plugins/almanac", {"name": "almanac"})],
+    )
+
+    assert at(check(repo), Severity.ERROR) == ["plugins[1] missing required 'source'"]
+
+
 def test_an_empty_source_string_is_an_error(temp_dir) -> None:
     repo = catalog_repo(temp_dir, "empty-source", {"plugins": [{"name": "a", "source": ""}]})
 

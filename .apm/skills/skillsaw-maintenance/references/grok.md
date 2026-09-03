@@ -127,8 +127,9 @@ a git repository.
 - **Manifest resolution**: `plugin.json` > `.grok-plugin/plugin.json` >
   `.claude-plugin/plugin.json`, first match wins. **Catalog resolution**:
   `.grok-plugin/marketplace.json` > `.claude-plugin/marketplace.json` >
-  `./marketplace.json`, exactly one read, never merged — the **reverse** order. The two
-  lookups share no ordering, so do not derive one from the other.
+  `./marketplace.json`, exactly one read, never merged. The root spelling is last here
+  and first in the manifest order; the two lookups share no ordering, so do not derive
+  one from the other.
 - **skillsaw claims only the `.grok-plugin/` spelling of either.** The others are
   another ecosystem's declaration, and adopting them would put every Claude plugin and
   every portable package under Grok's format rules too.
@@ -192,8 +193,10 @@ a git repository.
   (`src/skillsaw/repository_provenance.py`) adding `"grok"`, plus `grok_only`, which
   `_declares_containment` reads to draw the package-containment boundary: a Grok plugin
   contains its own files, and a directory Claude also declares stays on Claude's looser
-  reading. `is_grok_only_plugin` and `in_grok_only_plugin` are the per-path views of it,
-  reserved — no rule consults them yet.
+  reading. `is_grok_only_plugin` and `in_grok_only_plugin` are the per-path views of it;
+  `mcp-valid-json` reads the second where the block class cannot answer — a repo-root
+  plugin's conventional `.mcp.json` is attached before any plugin cluster runs — and
+  only ever *tightens* a check there.
 - Lint tree — `GrokPluginNode`, `GrokPluginConfigNode`, `GrokMarketplaceConfigNode` and
   `GrokMarketplaceIndexNode` in `src/skillsaw/lint_target.py`; `GrokPluginHooksBlock`,
   `GrokMcpBlock`, `GrokInlineHooksBlock` and `GrokInlineMcpBlock` in

@@ -1451,6 +1451,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # — ``_claim_attached_hooks`` finds it and records the
             # declaration rather than adding a second block.
             for declared_hooks in grok.grok_declared_hook_files(plugin_path):
+                # The same predicate the declared prose above uses: a
+                # manifest may name a file inside a nested claimed plugin,
+                # and claiming it here would take it from the plugin that
+                # ships it — ``_attached_as_hooks`` then suppresses the
+                # nested attach and the file arrives under the wrong owner.
+                if not _inside_plugin(declared_hooks, resolved_plugin):
+                    continue
                 if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
                     continue
                 state.add_parser_block(
@@ -1467,6 +1474,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             ):
                 _add_contained_plugin_block(node, native_mcp, mcp_cls, owner=resolved_plugin)
             for declared_mcp in grok.grok_declared_mcp_files(plugin_path):
+                if not _inside_plugin(declared_mcp, resolved_plugin):
+                    continue
                 if _shadowed_by_agent_plugin_mcp(
                     declared_mcp, agent_plugin_mcp
                 ) or _attached_as_mcp(state, declared_mcp):

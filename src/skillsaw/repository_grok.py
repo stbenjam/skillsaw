@@ -39,6 +39,7 @@ class RepositoryGrokMixin:
         _grok_catalog_paths: Optional[List[Path]]
         _grok_claims: Optional[Set[Path]]
         _grok_roots: Optional[List[Path]]
+        _grok_root_set: Optional[Set[Path]]
         _grok_discovery_enabled: bool
         _grok_plugin_forced: bool
         _grok_marketplace_forced: bool
@@ -75,6 +76,7 @@ class RepositoryGrokMixin:
         self._grok_catalog_paths = None
         self._grok_claims = None
         self._grok_roots = None
+        self._grok_root_set = None
         self.grok_plugins = self._discover_grok_plugins() if self._grok_discovery_enabled else []
 
     def _grok_marker_dirs(self) -> List[Path]:
@@ -214,6 +216,18 @@ class RepositoryGrokMixin:
             )
         return self._grok_roots
 
+    def grok_plugin_root_set(self) -> Set[Path]:
+        """:meth:`grok_plugin_roots` as a set, cached beside it.
+
+        ``grok_plugin_owning`` runs per consulted path and asks only for
+        membership. Rebuilding the set there would make one MCP block's
+        ownership question cost a hash insertion per plugin in the
+        repository.
+        """
+        if self._grok_root_set is None:
+            self._grok_root_set = set(self.grok_plugin_roots())
+        return self._grok_root_set
+
     def _reset_grok_caches(self, filtering: bool = False) -> None:
         """Drop every cached Grok view; re-run discovery when excludes narrowed.
 
@@ -228,6 +242,7 @@ class RepositoryGrokMixin:
         self._grok_catalog_paths = None
         self._grok_claims = None
         self._grok_roots = None
+        self._grok_root_set = None
         if filtering and self._grok_discovery_enabled:
             self.grok_plugins = self._discover_grok_plugins()
             self._prune_skills_of_dropped_grok_plugins(before)

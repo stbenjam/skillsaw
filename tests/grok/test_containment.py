@@ -365,6 +365,75 @@ def test_a_component_symlinked_out_of_the_plugin_does_not_make_it_installable(te
     ]
 
 
+def test_a_skills_directory_symlinked_out_does_not_make_it_installable(temp_dir) -> None:
+    """The directory guard, made observable: the outside directory holds a
+    child that resolves back *into* the plugin, so without containment
+    before ``iterdir()`` the listing would find a real in-plugin skill and
+    call the directory installable."""
+    outside = _outside(temp_dir)
+    (outside / "skills").mkdir()
+    repo = write_repo(temp_dir / "repo")
+    write_catalog(repo, local_catalog("./plugins/almanac"))
+    plugin = repo / "plugins" / "almanac"
+    (plugin / "kept" / "ebb-window").mkdir(parents=True)
+    (plugin / "kept" / "ebb-window" / "SKILL.md").write_text(
+        "---\nname: ebb-window\ndescription: Find the ebb windows a tow can be moved in.\n"
+        "---\n\n# Ebb\n",
+        encoding="utf-8",
+    )
+    (outside / "skills" / "ebb-window").symlink_to(plugin / "kept" / "ebb-window")
+    (plugin / "skills").symlink_to(outside / "skills")
+
+    found = run_rule(GrokPluginStructureRule, repo)
+
+    assert [v.message for v in found] == [
+        "Grok installs nothing from 'almanac/': no .grok-plugin/plugin.json and none of "
+        "skills/<name>/SKILL.md, agents/*.md, hooks/hooks.json or .mcp.json"
+    ]
+
+
+def test_a_skill_md_symlinked_out_of_the_checkout_is_not_read_by_the_parity_walk(
+    temp_dir,
+) -> None:
+    """The second guard in ``_record``: the skill *directory* is contained,
+    and only its ``SKILL.md`` leaves — which is the arm that reaches
+    ``read_text``."""
+    outside = _outside(temp_dir)
+    (outside / "SKILL.md").write_text(
+        "---\nname: borrowed\ndescription: Out of the checkout entirely.\n---\n\n# Borrowed\n",
+        encoding="utf-8",
+    )
+    repo = write_repo(temp_dir / "repo")
+    write_catalog(repo, local_catalog("./plugins/almanac"))
+    write_catalog(
+        repo,
+        {"version": 1, "plugins": {"almanac": {"components": {"skills": []}}}},
+        filename="plugin-index.json",
+    )
+    plugin = write_plugin(repo / "plugins" / "almanac", {"name": "almanac"})
+    (plugin / "skills" / "borrowed").mkdir(parents=True)
+    (plugin / "skills" / "borrowed" / "SKILL.md").symlink_to(outside / "SKILL.md")
+
+    assert run_rule(GrokMarketplaceIndexParityRule, repo) == []
+
+
+def test_a_catalog_symlinked_into_another_package_is_not_that_packages(temp_dir) -> None:
+    """``pkg-a/.grok-plugin -> ../pkg-b/.grok-plugin`` stays in the checkout,
+    so repository containment alone keeps it — and pkg-b's own catalog is
+    then deduplicated away behind pkg-a's path."""
+    repo = write_repo(temp_dir / "repo")
+    write_catalog(repo / "packages" / "pkg-b", local_catalog("./plugins/almanac"))
+    write_plugin(repo / "packages" / "pkg-b" / "plugins" / "almanac", {"name": "almanac"})
+    (repo / "packages" / "pkg-a").mkdir(parents=True)
+    (repo / "packages" / "pkg-a" / ".grok-plugin").symlink_to(
+        repo / "packages" / "pkg-b" / ".grok-plugin"
+    )
+
+    catalogs = relative(repo, RepositoryContext(repo).lint_tree.find(GrokMarketplaceConfigNode))
+
+    assert catalogs == ["packages/pkg-b/.grok-plugin/marketplace.json"]
+
+
 def test_a_stray_index_symlinked_out_of_the_marketplace_is_not_attached(temp_dir) -> None:
     """The fallback locations are held to the same boundary as the one Grok
     reads."""

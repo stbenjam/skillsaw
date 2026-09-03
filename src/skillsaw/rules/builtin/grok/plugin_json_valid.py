@@ -14,7 +14,7 @@ the scope.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
@@ -58,8 +58,8 @@ class GrokPluginJsonValidRule(Rule):
             "type": "bool",
             "default": True,
             "description": (
-                "Warn when a declared skills, commands or agents path replaces a "
-                "populated conventional directory"
+                "Warn when a declared skills, commands or agents path drops components "
+                "the conventional directory would have loaded"
             ),
         },
     }
@@ -225,7 +225,11 @@ class GrokPluginJsonValidRule(Rule):
                     resolved.append(contained)
 
             if check_overrides:
-                violations.extend(self._check_override(field, resolved, manifest, plugin_dir, root))
+                violations.extend(
+                    self._check_override(
+                        field, resolved, manifest, plugin_dir, root, declares=bool(declared)
+                    )
+                )
 
         return violations
 
@@ -250,6 +254,7 @@ class GrokPluginJsonValidRule(Rule):
         manifest: Path,
         plugin_dir: Path,
         root: Path,
+        declares: bool,
     ) -> List[RuleViolation]:
         """An override replaces the conventional directory, never extends it.
 
@@ -258,59 +263,109 @@ class GrokPluginJsonValidRule(Rule):
         so a plugin that validates against it still loses everything under
         the conventional directory at runtime.
 
-        What counts as a loss is what the conventional scan would *load*: a
-        child directory holding ``SKILL.md``, or a flat ``*.md`` for the two
-        prose fields. A directory holding a README, a ``.gitkeep`` or a
-        nested tree Grok never reads loses nothing to an override, and a
-        declaration that covers the conventional directory — as itself or as
-        an ancestor — displaces nothing either.
+        What counts as a loss is what the conventional scan would *load*,
+        and the two scans have different shapes — measured against 1.0.13
+        and recorded in :data:`grok.COMPONENT_PATHS`. ``skills`` is walked
+        recursively, so every directory holding a ``SKILL.md`` at any depth
+        loads and a declaration anywhere above one keeps it. ``commands``
+        and ``agents`` are flat, so only a ``*.md`` directly inside the
+        declared directory loads and only that directory covers it. A
+        directory holding a README or a ``.gitkeep`` loses nothing either
+        way.
+
+        *declares* rather than a non-empty *declared*: a field whose every
+        path escaped the plugin or does not exist still replaces the
+        conventional directory, so the whole of it is lost and the loss is
+        worth naming beside the per-path warning.
         """
-        if field not in _OVERRIDE_FIELDS or not declared:
+        if field not in _OVERRIDE_FIELDS or not declares:
             return []
         conventional_name = grok.COMPONENT_PATHS[field][0]
         conventional = plugin_dir / conventional_name
+        # Indexed, not scanned per component: a manifest is repository
+        # content, so a catalog-sized declaration list beside a
+        # catalog-sized conventional directory would otherwise be quadratic.
+        covered = set(declared)
+        recursive = field == "skills"
         dropped = sorted(
             component.name
             for component in self._conventional_components(conventional, field, root)
-            if not any(
-                component == covered or component.is_relative_to(covered) for covered in declared
-            )
+            if not self._covered_by(component, covered, root, recursive)
         )
         if not dropped:
             return []
         return [
             self.violation(
-                f"'{field}' replaces '{conventional_name}/'; Grok loads nothing under it, "
-                f"including '{safe_display(dropped[0])}'",
+                f"'{field}' replaces '{conventional_name}/'; Grok stops loading "
+                f"'{safe_display(dropped[0])}'",
                 file_path=manifest,
                 severity=Severity.WARNING,
             )
         ]
 
-    def _conventional_components(self, directory: Path, field: str, root: Path) -> List[Path]:
-        """Resolved components the conventional one-level scan would load.
+    @staticmethod
+    def _covered_by(component: Path, declared: Set[Path], root: Path, recursive: bool) -> bool:
+        """Whether a declared path's own scan still loads *component*.
 
-        Contained before it is listed: an override beside a ``skills``
-        symlinked out of the plugin displaces nothing Grok would have
-        loaded, and listing it would read a directory outside the checkout.
+        The flat fields need the declared directory to *be* the component's
+        parent; the recursive one takes any ancestor, itself included. The
+        walk up stops at the plugin root, so the cost is the component's
+        depth rather than the size of the declaration list.
         """
+        if not recursive:
+            return component.parent in declared
+        current = component
+        while True:
+            if current in declared:
+                return True
+            if current == root or current.parent == current:
+                return False
+            current = current.parent
+
+    def _conventional_components(self, directory: Path, field: str, root: Path) -> List[Path]:
+        """Resolved components the conventional scan would load.
+
+        Contained before it is listed or stat'd: an override beside a
+        ``skills`` symlinked out of the plugin displaces nothing Grok would
+        have loaded, and listing it would read a directory outside the
+        checkout.
+        """
+        if field != "skills":
+            return [
+                resolved
+                for child in self._children(directory, root)
+                if child.suffix == ".md"
+                and (resolved := contained_resolve(child, root)) is not None
+                and safe_is_file(child)
+            ]
+        # Recursive, and the directory itself counts: measured, ``skills/``
+        # holding its own ``SKILL.md`` loads as a skill and one at
+        # ``skills/a/b/c/SKILL.md`` loads too, with no pruning at the first
+        # hit. Iterative, and deduplicated on the resolved directory, so a
+        # symlink cycle inside the plugin cannot loop.
+        found: List[Path] = []
+        seen: Set[Path] = set()
+        stack: List[Path] = [directory]
+        while stack:
+            current = stack.pop()
+            resolved = contained_resolve(current, root)
+            if resolved is None or resolved in seen or not safe_is_dir(current):
+                continue
+            seen.add(resolved)
+            if safe_is_file(current / grok.SKILL_FILENAME):
+                found.append(resolved)
+            stack.extend(self._children(current, root))
+        return found
+
+    @staticmethod
+    def _children(directory: Path, root: Path) -> List[Path]:
+        """Entries of *directory*, or none when it escapes *root* or cannot be listed."""
         if contained_resolve(directory, root) is None or not safe_is_dir(directory):
             return []
         try:
-            children = sorted(directory.iterdir())
+            return sorted(directory.iterdir())
         except OSError:
             return []
-        found: List[Path] = []
-        for child in children:
-            loadable = (
-                safe_is_file(child / grok.SKILL_FILENAME)
-                if field == "skills"
-                else child.suffix == ".md" and safe_is_file(child)
-            )
-            resolved = contained_resolve(child, root) if loadable else None
-            if resolved is not None:
-                found.append(resolved)
-        return found
 
     def _check_metadata(self, data: Dict[str, Any], manifest: Path) -> List[RuleViolation]:
         """Metadata the marketplace browser shows. Nothing here stops a load."""

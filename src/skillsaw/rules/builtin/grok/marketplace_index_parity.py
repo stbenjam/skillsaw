@@ -29,7 +29,7 @@ from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_re
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.utils import parse_frontmatter, read_text, strict_json
 
-from ._helpers import GROK_MARKETPLACE_REPO_TYPES, sample
+from ._helpers import GROK_MARKETPLACE_REPO_TYPES, SAMPLE_LIMIT, sample
 
 
 @dataclass(frozen=True)
@@ -61,8 +61,10 @@ class _Drift:
     """Every disagreement found between one catalog and one index."""
 
     # Sets, not lists: ``parts()`` deduplicates and sorts, so nothing
-    # downstream reads order or multiplicity, and a catalog and an index
-    # both sized by the repository cannot multiply into an unbounded list.
+    # downstream reads order or multiplicity. The six entry-keyed fields are
+    # bounded by the catalog that way; the two skill fields are not, because
+    # their keys are ``entry/skill`` pairs and many entries may name one
+    # plugin directory. Those two are capped instead — see :meth:`add_skill`.
     missing_from_index: Set[str] = field(default_factory=set)
     unknown_in_index: Set[str] = field(default_factory=set)
     malformed_in_index: Set[str] = field(default_factory=set)
@@ -72,20 +74,43 @@ class _Drift:
     skills_index_only: Set[str] = field(default_factory=set)
     skills_disk_only: Set[str] = field(default_factory=set)
 
+    @staticmethod
+    def add_skill(names: Set[str], value: str) -> None:
+        """Record one skill drift, collecting no more than are rendered.
+
+        A catalog is repository content, and these keys are
+        ``entry/skill`` pairs: ten thousand entries all sourcing one plugin
+        directory cross-multiply with that plugin's skills into a set with
+        no bound and no wall-clock budget. ``parts()`` renders the capped
+        lists as "and more" rather than a count, since past the cap the
+        count is a floor.
+        """
+        if len(names) <= SAMPLE_LIMIT:
+            names.add(value)
+
     def parts(self) -> List[str]:
         labelled = (
-            ("not in the index", self.missing_from_index),
-            ("not in the catalog", self.unknown_in_index),
-            ("entries that are not objects", self.malformed_in_index),
-            ("'sha' in the catalog only", self.sha_catalog_only),
-            ("'sha' in the index only", self.sha_index_only),
-            ("'sha' differs", self.sha_differs),
-            ("skills only the index lists", self.skills_index_only),
-            ("skills only the plugin ships", self.skills_disk_only),
+            ("not in the index", self.missing_from_index, False),
+            ("not in the catalog", self.unknown_in_index, False),
+            ("entries that are not objects", self.malformed_in_index, False),
+            ("'sha' in the catalog only", self.sha_catalog_only, False),
+            ("'sha' in the index only", self.sha_index_only, False),
+            ("'sha' differs", self.sha_differs, False),
+            ("skills only the index lists", self.skills_index_only, True),
+            ("skills only the plugin ships", self.skills_disk_only, True),
         )
         # Deduplicated by the sets above: a catalog listing one name twice
         # is one defect for grok-marketplace-json-valid, not two here.
-        return [f"{label}: {sample(sorted(names))}" for label, names in labelled if names]
+        return [
+            f"{label}: {self._render(names, capped)}" for label, names, capped in labelled if names
+        ]
+
+    @staticmethod
+    def _render(names: Set[str], capped: bool) -> str:
+        ordered = sorted(names)
+        if capped and len(ordered) > SAMPLE_LIMIT:
+            return f"{sample(ordered[:SAMPLE_LIMIT])}, and more"
+        return sample(ordered)
 
 
 class GrokMarketplaceIndexParityRule(Rule):
@@ -106,6 +131,13 @@ class GrokMarketplaceIndexParityRule(Rule):
         },
     }
 
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(config)
+        #: One skill walk per plugin directory, reseeded by every
+        #: :meth:`check`. Per instance, never on the class: a shared default
+        #: would carry one repository's walk into the next.
+        self._skills_by_dir: Dict[Path, List[_Skill]] = {}
+
     @property
     def rule_id(self) -> str:
         return "grok-marketplace-index-parity"
@@ -122,9 +154,9 @@ class GrokMarketplaceIndexParityRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         # One walk per plugin directory for the whole run: a directory a
-        # dozen catalog entries resolve to is read once. Reset here, so
-        # nothing survives into the next run.
-        self.__dict__["_skills_by_dir"] = {}
+        # dozen catalog entries resolve to is read once. Rebound here rather
+        # than cleared, so nothing survives into the next run.
+        self._skills_by_dir = {}
 
         for catalog_node in context.lint_tree.find(GrokMarketplaceConfigNode):
             index_nodes = catalog_node.find(GrokMarketplaceIndexNode)
@@ -251,69 +283,72 @@ class GrokMarketplaceIndexParityRule(Rule):
         disk = self._disk_skills(entry.plugin_dir)
         matched = {name for skill in disk for name in skill.names & index_names}
         for name in sorted(index_names - matched):
-            drift.skills_index_only.add(f"{entry.display}/{name}")
+            drift.add_skill(drift.skills_index_only, f"{entry.display}/{name}")
         for skill in disk:
             if not skill.names & index_names:
-                drift.skills_disk_only.add(f"{entry.display}/{skill.display}")
+                drift.add_skill(drift.skills_disk_only, f"{entry.display}/{skill.display}")
 
     def _disk_skills(self, plugin_dir: Optional[Path]) -> List[_Skill]:
-        """Skills the plugin on disk ships, as the index generator sees them.
+        """Skills the plugin on disk ships, as either reader loads them.
 
-        Mirrors ``plugin_catalog.py``, which is what writes the file this
-        rule compares against: the conventional ``skills/`` is scanned one
-        level deep, a declared ``skills`` path is a skill directory *itself*
-        rather than a folder of them, and the two are unioned rather than
-        one replacing the other. The runtime disagrees on both counts — it
-        replaces the conventional directory and scans one level under the
-        declared one — so a skill either reader loads is carried here, and
-        drift is reported only for a name neither produces.
+        Two readers write and consume this listing and they disagree about
+        the conventional directory: ``plugin_catalog.py``, which generates
+        the file this rule compares against, unions the declared paths with
+        ``skills/``, while the runtime replaces it. Both are walked, so a
+        skill either one loads is carried here and drift is reported only
+        for a name neither produces.
+
+        The walk itself is the runtime's, measured against 1.0.13: a root —
+        conventional or declared — is a skill directory *itself* when it
+        holds a ``SKILL.md``, and every directory under it at any depth is
+        one too, with no pruning at the first hit.
         """
         if plugin_dir is None:
             return []
-        # Through ``__dict__`` rather than an attribute: ``check()`` seeds
-        # it per run, and a caller that reaches the walk another way gets an
-        # instance-local map rather than an ``AttributeError`` or a default
-        # shared across instances.
-        cache: Dict[Path, List[_Skill]] = self.__dict__.setdefault("_skills_by_dir", {})
-        memo = cache.get(plugin_dir)
+        # ``_local_dir`` already resolved this, so it is the containment
+        # root the walk below is held to. Resolved before the lookup as
+        # well as before the store, so both sides of the memo key on the
+        # same path however the caller spelled it.
+        plugin_dir = safe_resolve(plugin_dir) or plugin_dir
+        memo = self._skills_by_dir.get(plugin_dir)
         if memo is not None:
             return memo
         found: Dict[Path, _Skill] = {}
-        # ``_local_dir`` already resolved this, so it is the containment
-        # root the walk below is held to.
-        plugin_dir = safe_resolve(plugin_dir) or plugin_dir
+        seen: Set[Path] = set()
 
-        def _record(directory: Path) -> None:
+        def _walk(directory: Path) -> None:
             # Contained against the plugin, not merely resolvable: Grok
             # drops a skill directory that leaves the plugin root, and this
-            # walk stats and reads the SKILL.md it finds.
-            resolved = contained_resolve(directory, plugin_dir)
-            if resolved is None or resolved in found:
-                return
-            skill_md = directory / grok.SKILL_FILENAME
-            if contained_resolve(skill_md, plugin_dir) is None or not safe_is_file(skill_md):
-                return
-            found[resolved] = _Skill(
-                display=directory.name,
-                names=self._skill_names(skill_md, directory),
-            )
+            # walk stats and reads the SKILL.md it finds. Iterative and
+            # deduplicated on the resolved directory, so a symlink cycle
+            # inside the plugin cannot loop.
+            stack = [directory]
+            while stack:
+                current = stack.pop()
+                resolved = contained_resolve(current, plugin_dir)
+                if resolved is None or resolved in seen or not safe_is_dir(current):
+                    continue
+                seen.add(resolved)
+                skill_md = current / grok.SKILL_FILENAME
+                if (
+                    resolved not in found
+                    and contained_resolve(skill_md, plugin_dir) is not None
+                    and safe_is_file(skill_md)
+                ):
+                    found[resolved] = _Skill(
+                        display=current.name,
+                        names=self._skill_names(skill_md, current),
+                    )
+                try:
+                    stack.extend(sorted(current.iterdir()))
+                except OSError:
+                    continue
 
-        def _record_children(directory: Path) -> None:
-            if contained_resolve(directory, plugin_dir) is None:
-                return
-            try:
-                children = sorted(directory.iterdir())
-            except OSError:
-                return
-            for child in children:
-                _record(child)
-
-        _record_children(plugin_dir / grok.COMPONENT_PATHS["skills"][0])
+        _walk(plugin_dir / grok.COMPONENT_PATHS["skills"][0])
         for declared in grok.grok_declared_skill_dirs(plugin_dir):
-            _record(declared)
-            _record_children(declared)
+            _walk(declared)
         skills = list(found.values())
-        cache[plugin_dir] = skills
+        self._skills_by_dir[plugin_dir] = skills
         return skills
 
     def _skill_names(self, skill_md: Path, directory: Path) -> FrozenSet[str]:

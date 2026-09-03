@@ -504,6 +504,10 @@ class GrokPluginConfigNode(LintTarget):
     """
 
     #: Directories a manifest may sit in, as opposed to the plugin root.
+    #: Literal rather than derived from ``formats.grok.MANIFEST_PATHS``, and
+    #: deliberately: this module is the tree's own vocabulary and imports
+    #: nothing but ``diagnostics`` and ``paths``, so every node type stays
+    #: constructible without loading an ecosystem's format module.
     _MANIFEST_PARENTS: ClassVar[Tuple[str, ...]] = (".grok-plugin", ".claude-plugin")
 
     @property

@@ -552,14 +552,18 @@ class RepositoryContext(
             # ecosystem has positive evidence explaining the directory. A
             # portable Agent Plugins claim counts only when it lives under
             # plugins/ itself — a package declared at the repository root
-            # says nothing about why plugins/ exists.
+            # says nothing about why plugins/ exists. Grok's catalog is asked
+            # of the root for the same reason, and Codex's is root-anchored
+            # already: a package's own catalog at
+            # ``packages/foo/.grok-plugin/marketplace.json`` explains that
+            # package's directory, not the repository's.
             resolved_plugins = safe_resolve(plugins_dir)
             agent_plugin_claims_plugins_dir = resolved_plugins is not None and any(
                 claim.is_relative_to(resolved_plugins) for claim in self._agent_plugin_claim_set()
             )
             return (
                 not self.codex_catalog_exists()
-                and not self.grok_catalog_exists()
+                and not self.grok_root_catalog_exists()
                 and not agent_plugin_claims_plugins_dir
             )
         return any(

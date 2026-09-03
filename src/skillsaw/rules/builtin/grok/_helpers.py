@@ -57,9 +57,13 @@ def escape_reason(value: str, root: Path, root_label: str) -> Optional[str]:
 
 
 def sample(names: Iterable[str], limit: int = SAMPLE_LIMIT) -> str:
-    """*names* rendered for a message, bounded to *limit* with a count."""
-    ordered: List[str] = [safe_display(name) for name in names]
-    shown = ", ".join(ordered[:limit])
+    """*names* rendered for a message, bounded to *limit* with a count.
+
+    Sliced before it is rendered: ``safe_display`` walks each string, and
+    only *limit* of them are ever shown.
+    """
+    ordered: List[str] = list(names)
+    shown = ", ".join(safe_display(name) for name in ordered[:limit])
     remaining = len(ordered) - limit
     if remaining > 0:
         shown += f", and {remaining} more"
@@ -68,4 +72,4 @@ def sample(names: Iterable[str], limit: int = SAMPLE_LIMIT) -> str:
 
 def is_semver(value: str) -> bool:
     """Whether *value* is a Semantic Versioning 2.0.0 string."""
-    return SEMVER.match(value) is not None
+    return SEMVER.fullmatch(value) is not None

@@ -898,15 +898,16 @@ class GrokMcpBlock(McpBlock):
     """A ``.mcp.json`` only Grok Build reads.
 
     A Grok-only plugin's conventional file, or one its manifest names in
-    ``mcpServers``. The block class is how a Grok-tightened check finds its
-    own files, so it is chosen only when no other ecosystem claims the
-    plugin: a dual-manifest directory keeps the shared :class:`McpBlock` the
-    Claude or Codex branch attached, since two block classes over one file
-    would report each of its servers twice.
+    ``mcpServers``. A declared path is Grok's whatever else claims the
+    directory, since only the Grok manifest names it. The conventional file
+    is the exception: a dual-manifest directory keeps the shared
+    :class:`McpBlock` the Claude or Codex branch attached, since two block
+    classes over one file would report each of its servers twice.
 
-    Claude's built-in server names are not reserved here — Claude never
-    reads a Grok-only file — and a connection field must be usable rather
-    than merely present. The second is measured: a plugin ``.mcp.json``
+    Claude's built-in server names are not reserved here — Claude reads
+    neither a Grok-only plugin's conventional file nor a path only Grok's
+    manifest names — and a connection field must be usable rather than
+    merely present. The second is measured: a plugin ``.mcp.json``
     holding ``{"empty": {"command": ""}, "nourl": {"type": "http"},
     "good": {"command": "echo"}}`` lost ``nourl`` outright and loaded
     ``empty`` with an empty target, a server nothing can spawn. This is a

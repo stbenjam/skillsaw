@@ -15,10 +15,12 @@ plugin validate` calls the manifest valid either way.
 
 A finding names the manifest Grok actually reads, which is not always
 `.grok-plugin/plugin.json`. Grok resolves the first of `plugin.json`,
-`.grok-plugin/plugin.json`, `.claude-plugin/plugin.json` that exists — the
-**reverse** of the catalog order — so on a plugin carrying more than one, or
-on a manifest-less directory a catalog claims, the file to open is the one
-the finding names.
+`.grok-plugin/plugin.json`, `.claude-plugin/plugin.json` that exists. The
+catalog order is `.grok-plugin/marketplace.json`, then
+`.claude-plugin/marketplace.json`, then a root-level `marketplace.json` — a
+different order, so neither can be derived from the other. On a plugin
+carrying more than one manifest, or on a manifest-less directory a catalog
+claims, the file to open is the one the finding names.
 
 ## Severity
 
@@ -54,11 +56,16 @@ conventional `skills/` does not rescue it.
 - `hooks` or `mcpServers` given as an array. Each is *one* path or *one*
   inline object: a list-valued `hooks` loaded as an empty inline document
   with no target, and a list-valued `mcpServers` loaded no servers at all.
-- A `skills`, `commands` or `agents` override while the conventional
-  directory beside it holds files. Grok **replaces** the conventional
-  directory rather than adding to it, so `"skills": ["extra"]` drops
-  everything under `skills/`. The official catalog tool unions the two, so a
-  plugin that passes it still loses them at runtime.
+- A `skills`, `commands` or `agents` override that drops something the
+  conventional directory beside it would have loaded, which the finding
+  names. Grok **replaces** the conventional directory rather than adding to
+  it, so `"skills": ["extra"]` drops everything under `skills/`; listing the
+  conventional directory alongside the override keeps it. What counts as
+  loadable is measured: `skills/` is walked recursively and every directory
+  holding a `SKILL.md` is a skill, while `commands/` and `agents/` are flat
+  `*.md`. A directory holding only a README or a `.gitkeep` loses nothing.
+  The official catalog tool unions the two, so a plugin that passes it still
+  loses them at runtime.
 
 **Info** — metadata the marketplace browser shows.
 
@@ -128,8 +135,7 @@ rules:
     check-paths-exist: false
 ```
 
-A repository that keeps its conventional directories deliberately empty —
-or ships nothing under them — loses nothing to an override, and can drop
+A repository that replaces a conventional directory deliberately can drop
 that finding alone:
 
 ```yaml

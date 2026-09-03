@@ -35,14 +35,3 @@ my-plugin:deploy
 Add a YAML frontmatter block at the top of the command file with a
 `description` field. `skillsaw fix` can add the missing frontmatter
 automatically.
-
-## Another ecosystem's plugins
-
-This is a Claude-format convention. A directory claimed only by another
-ecosystem — OpenAI Codex or Grok Build, through a
-`.codex-plugin/plugin.json`, a `.grok-plugin/plugin.json`, or a
-local-source listing in either's catalog, with no `.claude-plugin` marker
-and no Claude marketplace listing — is exempt: Claude never loads it, so Claude command
-frontmatter requirements do not apply to its commands/. A dual-manifest
-directory keeps this check, and the ecosystem-neutral content and
-security rules read every plugin's files regardless of provenance.

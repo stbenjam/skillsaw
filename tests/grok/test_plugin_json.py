@@ -11,6 +11,7 @@ records it.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -218,9 +219,7 @@ def test_an_override_beside_a_populated_conventional_directory_warns(broken) -> 
     found = only(check(broken), "replaces")
 
     assert found.severity == Severity.WARNING
-    assert found.message == (
-        "'skills' replaces 'skills/'; Grok loads nothing under it, including 'chart-margins'"
-    )
+    assert found.message == ("'skills' replaces 'skills/'; Grok stops loading 'chart-margins'")
 
 
 def test_naming_the_conventional_directory_alongside_the_override_is_clean(temp_dir) -> None:
@@ -399,7 +398,7 @@ def test_a_commands_or_agents_override_warns_like_skills(temp_dir, field) -> Non
         (plugin / directory / "note.md").write_text("---\ndescription: A note\n---\n\n# Note\n")
 
     assert at(check(repo), Severity.WARNING) == [
-        f"'{field}' replaces '{field}/'; Grok loads nothing under it, including 'note.md'"
+        f"'{field}' replaces '{field}/'; Grok stops loading 'note.md'"
     ]
 
 
@@ -468,9 +467,9 @@ def test_an_override_beside_a_directory_grok_loads_nothing_from_is_clean(
     temp_dir, field, contents
 ) -> None:
     """A conventional directory holding a README, a ``.gitkeep`` or a nested
-    tree loads nothing, so an override displaces nothing. The conventional
-    scan is one level deep and reads ``SKILL.md`` for skills, flat ``*.md``
-    for the two prose fields."""
+    tree of prose loads nothing, so an override displaces nothing. Measured
+    against 1.0.13: ``commands`` and ``agents`` are flat ``*.md``, so
+    ``agents/draft/notes.md`` is not a component at all."""
     repo = write_repo(temp_dir / f"empty-of-components-{field}")
     plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, field: f"desk-{field}"})
     (plugin / f"desk-{field}").mkdir()
@@ -489,6 +488,99 @@ def test_a_declaration_covering_the_conventional_directory_displaces_nothing(tem
     plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "skills": "./skills"})
     (plugin / "skills" / "tide-window").mkdir(parents=True)
     (plugin / "skills" / "tide-window" / "SKILL.md").write_text(SKILL, encoding="utf-8")
+
+    assert [m for m in messages(check(repo)) if "replaces" in m] == []
+
+
+def test_a_nested_skill_the_declaration_does_not_cover_is_dropped(temp_dir) -> None:
+    """Measured against 1.0.13: the conventional ``skills/`` walk is
+    recursive, so ``skills/coastal/chart-margins/SKILL.md`` loads and an
+    override that does not cover it drops it."""
+    repo = write_repo(temp_dir / "nested-skill")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "skills": "./extra"})
+    for directory in ("extra/tide-legend", "skills/coastal/chart-margins"):
+        (plugin / directory).mkdir(parents=True)
+        (plugin / directory / "SKILL.md").write_text(SKILL, encoding="utf-8")
+
+    assert at(check(repo), Severity.WARNING) == [
+        "'skills' replaces 'skills/'; Grok stops loading 'chart-margins'"
+    ]
+
+
+def test_a_declaration_above_a_nested_skill_keeps_it(temp_dir) -> None:
+    """The other side of the same walk: a declared ancestor still reaches a
+    skill several directories down, so nothing is dropped."""
+    repo = write_repo(temp_dir / "nested-covered")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "skills": "./skills"})
+    (plugin / "skills" / "coastal" / "chart-margins").mkdir(parents=True)
+    (plugin / "skills" / "coastal" / "chart-margins" / "SKILL.md").write_text(
+        SKILL, encoding="utf-8"
+    )
+
+    assert [m for m in messages(check(repo)) if "replaces" in m] == []
+
+
+def test_a_declared_path_that_is_itself_a_skill_directory_displaces_it(temp_dir) -> None:
+    """Measured: ``{"skills": ["./skills/tide-window"]}`` beside
+    ``skills/tide-window/SKILL.md`` loads that skill, so it is not dropped —
+    while its sibling is."""
+    repo = write_repo(temp_dir / "declared-is-a-skill")
+    plugin = write_plugin(
+        repo / "plugins" / "tide-charts", {**MANIFEST, "skills": ["./skills/tide-window"]}
+    )
+    for directory in ("skills/tide-window", "skills/chart-margins"):
+        (plugin / directory).mkdir(parents=True)
+        (plugin / directory / "SKILL.md").write_text(SKILL, encoding="utf-8")
+
+    assert at(check(repo), Severity.WARNING) == [
+        "'skills' replaces 'skills/'; Grok stops loading 'chart-margins'"
+    ]
+
+
+def test_a_partial_override_names_only_what_stops_loading(temp_dir) -> None:
+    """Two of three declared, so the message must not claim the whole
+    directory is gone."""
+    repo = write_repo(temp_dir / "partial-override")
+    plugin = write_plugin(
+        repo / "plugins" / "tide-charts",
+        {**MANIFEST, "skills": ["./skills/tide-window", "./skills/chart-margins"]},
+    )
+    for directory in ("skills/tide-window", "skills/chart-margins", "skills/berth-depths"):
+        (plugin / directory).mkdir(parents=True)
+        (plugin / directory / "SKILL.md").write_text(SKILL, encoding="utf-8")
+
+    assert at(check(repo), Severity.WARNING) == [
+        "'skills' replaces 'skills/'; Grok stops loading 'berth-depths'"
+    ]
+
+
+def test_a_declaration_that_resolves_nowhere_still_names_the_loss(temp_dir) -> None:
+    """Every declared path is missing, so the field loads nothing at all —
+    and it still replaces the conventional directory."""
+    repo = write_repo(temp_dir / "all-declarations-dead")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "skills": ["./nope"]})
+    (plugin / "skills" / "tide-window").mkdir(parents=True)
+    (plugin / "skills" / "tide-window" / "SKILL.md").write_text(SKILL, encoding="utf-8")
+
+    assert at(check(repo), Severity.WARNING) == [
+        "'skills': './nope' is not in the plugin",
+        "'skills' replaces 'skills/'; Grok stops loading 'tide-window'",
+    ]
+
+
+def test_a_conventional_directory_symlinked_out_is_never_listed(temp_dir) -> None:
+    """Not merely 'nothing is dropped': without the directory guard the
+    listing reaches outside the checkout, and a child that resolves back in
+    would be counted."""
+    repo = write_repo(temp_dir / "listed-outside")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "skills": "./extra"})
+    for directory in ("extra/tide-window", "kept/ebb-window"):
+        (plugin / directory).mkdir(parents=True)
+        (plugin / directory / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    outside = temp_dir / "outside" / "skills"
+    outside.mkdir(parents=True)
+    (outside / "ebb-window").symlink_to(plugin / "kept" / "ebb-window")
+    (plugin / "skills").symlink_to(outside)
 
     assert [m for m in messages(check(repo)) if "replaces" in m] == []
 
@@ -533,8 +625,14 @@ def test_a_declared_value_the_loader_has_no_arm_for_is_left_alone(
         assert found == ["'skills': 'ok' is not in the plugin"]
 
 
-def test_an_unreadable_conventional_directory_reports_no_override(temp_dir) -> None:
-    """The scan cannot say what would be lost, so it says nothing."""
+def test_an_unreadable_conventional_directory_reports_no_override(temp_dir, monkeypatch) -> None:
+    """The scan cannot say what would be lost, so it says nothing.
+
+    The refusal is injected at the enumeration boundary rather than through
+    ``chmod(0o000)``: root and any process holding ``CAP_DAC_OVERRIDE`` read
+    a mode-000 directory anyway, so the permission form passes vacuously in
+    a root container and then fails on the assertion.
+    """
     repo = write_repo(temp_dir / "unreadable-conventional")
     plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "skills": "./extra"})
     (plugin / "extra" / "tide-window").mkdir(parents=True)
@@ -542,10 +640,14 @@ def test_an_unreadable_conventional_directory_reports_no_override(temp_dir) -> N
     conventional = plugin / "skills"
     (conventional / "tide-window").mkdir(parents=True)
     (conventional / "tide-window" / "SKILL.md").write_text(SKILL, encoding="utf-8")
-    conventional.chmod(0o000)
-    try:
-        found = [m for m in messages(check(repo)) if "replaces" in m]
-    finally:
-        conventional.chmod(0o755)
+    denied = conventional.resolve()
+    real_iterdir = Path.iterdir
 
-    assert found == []
+    def refuse(self):
+        if self.resolve() == denied:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", refuse)
+
+    assert [m for m in messages(check(repo)) if "replaces" in m] == []

@@ -35,14 +35,3 @@ Add a YAML frontmatter block with `name` (matching the filename stem)
 and `description` (imperative, stating what the agent does and when to
 invoke it). `skillsaw fix` can add missing frontmatter fields
 automatically.
-
-## Another ecosystem's plugins
-
-This is a Claude-format convention. A directory claimed only by another
-ecosystem — OpenAI Codex or Grok Build, through a
-`.codex-plugin/plugin.json`, a `.grok-plugin/plugin.json`, or a
-local-source listing in either's catalog, with no `.claude-plugin` marker
-and no Claude marketplace listing — is exempt: Claude never loads it, so Claude agent
-frontmatter requirements do not apply to its agents/. A dual-manifest
-directory keeps this check, and the ecosystem-neutral content and
-security rules read every plugin's files regardless of provenance.

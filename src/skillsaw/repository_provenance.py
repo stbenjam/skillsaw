@@ -135,6 +135,8 @@ class RepositoryProvenanceMixin:
 
         def grok_plugin_roots(self) -> List[Path]: ...
 
+        def grok_plugin_root_set(self) -> Set[Path]: ...
+
         def is_codex_installed_plugin(self, plugin_dir: Path) -> bool: ...
 
     def provenance(self, plugin_dir: Path) -> PluginProvenance:
@@ -239,18 +241,20 @@ class RepositoryProvenanceMixin:
     def is_grok_only_plugin(self, plugin_dir: Path) -> bool:
         """Grok-claimed with no Claude declaration.
 
-        Reserved: the per-directory view of
-        :attr:`PluginProvenance.grok_only`, which the containment boundary
-        reads through ``_declares_containment``. Nothing consults this one.
+        The per-directory view of :attr:`PluginProvenance.grok_only`, which
+        the containment boundary reads through ``_declares_containment``.
+        :meth:`in_grok_only_plugin` is the path-side question a rule asks.
         """
         return self.provenance(plugin_dir).grok_only
 
     def in_grok_only_plugin(self, path: Path) -> bool:
         """Whether *path* sits inside a Grok-only plugin, nearest owner first.
 
-        Reserved, like :meth:`is_grok_only_plugin`: the Grok-tightened MCP
-        checks are expressed on the block class instead, so nothing consults
-        this yet.
+        ``mcp-valid-json`` reads this where the block class cannot answer: a
+        repo-root plugin's conventional ``.mcp.json`` is attached by the
+        generic root attach as the shared ``McpBlock``, before any plugin
+        cluster runs. It only ever *tightens* a check there — see the
+        "Conditional strictness is not a skip" rule.
         """
         owner = self.grok_plugin_owning(path)
         return owner is not None and self.provenance(owner).grok_only
@@ -262,7 +266,7 @@ class RepositoryProvenanceMixin:
         itself a plugin contains nested ones, so an outer match would let
         content escape the plugin that actually ships it.
         """
-        roots = set(self.grok_plugin_roots())
+        roots = self.grok_plugin_root_set()
         if not roots:
             return None
         resolved = safe_resolve(path)

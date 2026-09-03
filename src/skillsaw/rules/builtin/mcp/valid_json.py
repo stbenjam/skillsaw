@@ -9,13 +9,13 @@ from pathlib import Path
 from skillsaw.blocks import (
     AgentPluginMcpBlock,
     CopilotAgentMcpBlock,
+    JsonConfigBlock,
     McpConfigRole,
     OpenCodeMcpBlock,
-    json_token,
 )
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
-from skillsaw.utils import is_finite_number
+from skillsaw.utils import is_finite_number, read_json_strict
 from skillsaw.lint_target import PluginNode
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.secret_detection import (
@@ -206,23 +206,36 @@ class McpValidJsonRule(Rule):
                 or context.in_codex_only_plugin(block.path)
                 or grok_only
             )
-            # Claude never reads a Grok-only plugin's file, so its built-in
-            # server names are not reserved there.
-            check_reserved = block.claude_builtins_reserved and not grok_only
-            if grok_only and not block.strict_json:
-                # The same document Grok's parser refuses outright. A
-                # leniently-parsed block reached the shape walk with a value
-                # ``serde_json`` never produced, so the defect is the file.
-                non_finite = block.first_non_finite()
-                if non_finite is not None:
-                    token_path, value = non_finite
-                    violations.append(
-                        self.violation(
-                            f"Invalid JSON: '{json_token(value)}' at "
-                            f"{safe_display(token_path)} is not valid JSON",
-                            file_path=block.path,
-                        )
-                    )
+            # A tightening only, never a subtraction: ``check_reserved`` stays
+            # on the block class. ``<repo>/.mcp.json`` is Claude Code's
+            # project-scope configuration, read because of where it sits and
+            # not because a manifest declared anything, and a Claude or Codex
+            # plugin nested under a Grok-claimed root is still its own host's
+            # file. Two hosts reading one file want the union of their checks.
+            # The block class already exempts what Claude never reads:
+            # ``GrokMcpBlock`` sets ``claude_builtins_reserved = False``.
+            check_reserved = block.claude_builtins_reserved
+            if (
+                grok_only
+                and isinstance(block, JsonConfigBlock)
+                and not (block.strict_json or block.jsonc)
+            ):
+                # The same document Grok's parser refuses outright. This block
+                # was parsed leniently, so it reached the shape walk carrying
+                # a duplicate key ``json.loads`` collapsed or a bare
+                # ``NaN``/``Infinity`` no JSON host produces; the strict
+                # reader names whichever it is, and the defect is the file.
+                #
+                # ``isinstance`` because the loop reaches every
+                # :class:`McpConfigRole`, and a frontmatter-embedded one
+                # (``CopilotAgentMcpBlock``) has no file to re-read and none
+                # of this machinery. ``jsonc`` is asked separately because it
+                # leaves ``strict_json`` at its default while parsing
+                # strictly, and re-reading a commented file as plain JSON
+                # would report the comments its host accepts.
+                _, strict_error = read_json_strict(block.path)
+                if strict_error is not None:
+                    violations.append(self.violation(strict_error, file_path=block.path))
                     continue
             # Hosts spell the wrapper key differently (VS Code uses
             # ``servers``); the block knows its own.

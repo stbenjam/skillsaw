@@ -760,6 +760,83 @@ class TestGrokExtractor:
         # catalog's entry.
         assert [p.name for p in docs.plugins] == ["tide-charts"]
 
+    def test_a_remote_entry_pinned_to_something_unusable_is_not_published(self, temp_dir):
+        """An absent ``sha`` clones the default branch and installs. A branch
+        name is refused at installation, so publishing a page for it
+        advertises a plugin nobody can get."""
+        (temp_dir / ".grok-plugin").mkdir(parents=True)
+        (temp_dir / ".grok-plugin" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "harbour-plugins",
+                    "plugins": [
+                        {
+                            "name": "unpinned",
+                            "source": {
+                                "source": "url",
+                                "url": "https://example.invalid/unpinned.git",
+                            },
+                        },
+                        {
+                            "name": "branch-pinned",
+                            "source": {
+                                "source": "url",
+                                "url": "https://example.invalid/branch.git",
+                                "sha": "main",
+                            },
+                        },
+                        {
+                            "name": "number-pinned",
+                            "source": {
+                                "source": "url",
+                                "url": "https://example.invalid/number.git",
+                                "sha": 12345,
+                            },
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert docs.marketplace is not None
+        assert [p.name for p in docs.marketplace.plugins] == ["unpinned"]
+
+    def test_two_catalogs_may_each_publish_a_remote_plugin_of_one_name(self, temp_dir):
+        """The validator permits matching names across separate
+        marketplaces, and the renderer allocates collision-safe filenames —
+        so keying the dedup on the name alone would drop the second."""
+        for package, host in (("pkg-a", "a"), ("pkg-b", "b")):
+            (temp_dir / package / ".grok-plugin").mkdir(parents=True)
+            (temp_dir / package / ".grok-plugin" / "marketplace.json").write_text(
+                json.dumps(
+                    {
+                        "name": f"harbour-{package}",
+                        "plugins": [
+                            {
+                                "name": "bathymetry",
+                                "description": f"Depth overlays from {host}.",
+                                "source": {
+                                    "source": "url",
+                                    "url": f"https://{host}.invalid/bathymetry.git",
+                                },
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert docs.marketplace is not None
+        assert [p.description for p in docs.marketplace.plugins] == [
+            "Depth overlays from a.",
+            "Depth overlays from b.",
+        ]
+
     def test_a_grok_catalog_beside_a_claude_one_is_published_too(self, temp_dir):
         """The branches are additive: an if/elif chain would publish the
         Claude catalog and drop the Grok one entirely."""

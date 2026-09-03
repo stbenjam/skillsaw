@@ -364,9 +364,9 @@ SKILL_FILENAME = "SKILL.md"
 #: Where a marketplace's catalog may live, in the order Grok resolves them.
 #: Exactly one is read, never merged — verified by building a repository
 #: carrying two catalogs listing different plugins and reading back ``grok
-#: plugin list --json --available``. This is the **reverse** of
-#: :data:`MANIFEST_PATHS`: the two lookups share no ordering, so a rule that
-#: picks "the catalog" must use the right one.
+#: plugin list --json --available``. The root spelling is *last* here and
+#: *first* in :data:`MANIFEST_PATHS`; the two lookups share no ordering, so a
+#: rule that picks "the catalog" must use the right one.
 #:
 #: skillsaw claims only the first for Grok. The second is Claude's file —
 #: the schemas differ, so linting one against both would contradict itself —
@@ -432,6 +432,14 @@ MANIFEST_KEYS = frozenset(
 #: it, which is what ``grok-plugin-json-valid`` warns about. skillsaw's skill
 #: walk visits the conventional directory either way, so the skills that
 #: warning names as dropped are still linted.
+#:
+#: What a path *loads* differs by field, measured against 1.0.13. ``skills``
+#: is walked recursively from the declared or conventional root, and the root
+#: itself is a skill when it holds a ``SKILL.md``: ``{"skills":
+#: ["./skills/postiz"]}`` loaded ``postiz``, ``{"skills": "./"}`` loaded a
+#: root ``SKILL.md``, and ``skills/a/b/c/SKILL.md`` loaded under a bare
+#: ``skills/``, with no pruning at the first hit. ``commands`` and ``agents``
+#: are flat — only a ``*.md`` directly inside the directory loads.
 #:
 #: ``lspServers`` is vocabulary only — no public schema and no LSP entries
 #: in the official marketplace, so nothing calibrates a rule.
