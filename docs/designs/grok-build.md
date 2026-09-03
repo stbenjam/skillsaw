@@ -95,16 +95,19 @@ cases that reject the whole file.
 | A group that is not an object, or has no `hooks` array | Whole file | ERROR |
 | A `matcher` that is not a string | Whole file | ERROR |
 | A handler that is not an object, or has no `type` | Whole file | ERROR |
-| A known field of the wrong JSON type | Whole file | ERROR |
+| A `type` of `null`, which reads as no `type` | Whole file | ERROR |
+| A known field of the wrong JSON type (`null` excepted) | Whole file | ERROR |
 | A `timeout` above `2**64-1` | Whole file | ERROR |
 | A `matcher` that does not compile | That matcher group | WARNING |
 | An unknown event name | That event's entries | WARNING |
 | A `command` handler with no `command` | That handler | WARNING |
 | An `http` handler with no `url` | That handler | WARNING |
+| A `command` of `null`, or a `url` of `null` on `http` | That handler | WARNING |
 | A `type` other than `command` / `http` | That handler | WARNING |
 | `env` naming a runner-reserved variable | Stripped; the handler runs | INFO |
 | `matcher` on `Stop` / `UserPromptSubmit` | Kept, never consulted | INFO |
 | An unknown handler, group or top-level key | Tolerated | — |
+| A `null` `timeout`, `env`, `matcher` or unneeded `url` | Read as absent | — |
 
 The whole-file cases are why the rule is ERROR: one mistyped `timeout` silently
 costs the author *every* hook in the file, including the ones under other

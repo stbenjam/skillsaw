@@ -68,7 +68,7 @@ def strict_json(path: Path) -> Tuple[Optional[Any], Optional[str]]:
 #: 64 characters, and an unbounded run inside an untrusted matcher is work
 #: this check has no reason to accept. A longer run simply does not match, so
 #: the ``\p`` survives into ``re.compile`` and is reported as it was before.
-_RUST_UNICODE_CLASS = re.compile(r"\\[pP](?:\{[^}]{0,64}\}|[A-Za-z])")
+_RUST_UNICODE_CLASS = re.compile(r"\\[pP](?:\{[^}]{1,64}\}|[A-Za-z])")
 
 #: Rust's character-class set operators: ``[a-z&&[^aeiou]]``,
 #: ``[\w--\d]``, ``[a-g~~b-h]``. Python has no equivalent syntax.
@@ -209,7 +209,7 @@ def _rust_unsupported(pattern: str) -> Optional[str]:
     literal text in both dialects and reporting either would be a false
     positive. The walk is deliberately simple, so it misses a construct a
     fuller parser would see (a backreference inside a class, say). Under-
-    reporting leaves the matcher checked exactly as it was before; over-
+    reporting leaves the compile as the only check on that matcher; over-
     reporting would call a working matcher broken.
     """
     if _RUST_UNSUPPORTED_CANDIDATE.search(pattern) is None:

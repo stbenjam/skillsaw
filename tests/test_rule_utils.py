@@ -5,13 +5,15 @@
 directly rather than through either rule, so the length-cap boundary is
 covered independently of whatever pattern size those rules' own tests use:
 every construct Rust accepts and Python does not, every construct Python
-accepts and Rust does not (correctly named), the ``(?<name>...)`` /
+accepts and Rust does not together with the name the helper reports for it,
+the ``(?<name>...)`` /
 ``(?<=``/``(?<!`` seam the helper's docstring calls out, the length cap, and
 the ``\\z`` anchor rewrite.
 """
 
 from __future__ import annotations
 
+import re
 import warnings
 
 import pytest
@@ -50,8 +52,10 @@ def test_a_posix_class_prints_no_interpreter_warning() -> None:
     emitting `FutureWarning: Possible nested set`. A warning is not an
     exception, so the compile's `except` cannot catch it and it would land
     in the middle of the lint report."""
-    # `re` caches by pattern, so a spelling no other test compiles is what
-    # makes this reach the parser at all.
+    # `re` warns only when it parses, and caches by pattern — so the cache
+    # is dropped here rather than the test resting on this spelling being
+    # the only one in the suite.
+    re.purge()
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert rust_matcher_error(r"[[:digit:]]{2}") is None
@@ -116,6 +120,16 @@ def test_look_around_spelled_as_literal_text_is_not_reported(pattern) -> None:
     """An escaped `(` or a character class containing `(`, `?` and `=` is
     literal text in both dialects, not the look-around construct."""
     assert rust_matcher_error(pattern) is None
+
+
+def test_an_empty_unicode_property_is_not_rewritten_into_a_working_class() -> None:
+    """`\\p{}` names no property, and Rust rejects it (verified: Grok 1.0.13
+    drops the hook). Rewriting it to `\\w` would call it valid; left alone,
+    Python's compile reports the bad escape. A misspelled name (`\\p{Foo}`)
+    is still rewritten and passes: naming every Unicode property Rust knows
+    is a table this helper does not keep."""
+    assert rust_matcher_error(r"\p{}") is not None
+    assert rust_matcher_error(r"\p{L}+") is None
 
 
 # ── The length cap ─────────────────────────────────────────────────────

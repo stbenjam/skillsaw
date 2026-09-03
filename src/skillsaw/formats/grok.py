@@ -49,19 +49,23 @@ author nothing.
   value is not an array; a matcher group that is not an object; a group
   with no ``hooks`` key or a non-array one; a ``matcher`` that is not a
   string, which never reaches the regex compiler; a handler that is not an
-  object; a handler with no ``type``; and any field in
+  object; a handler with no ``type``, or a ``null`` one; and any field in
   :data:`HANDLER_FIELDS` carrying the wrong JSON type, including a
-  ``timeout`` above :data:`TIMEOUT_MAX`. One mistyped ``timeout`` costs the
-  author every hook in the file.
+  ``timeout`` above :data:`TIMEOUT_MAX`. A ``null`` is not one of those
+  wrong types — Grok reads it as the key being absent, so it costs whatever
+  omitting the key costs, and ``type`` is the only field whose ``null``
+  reaches this bullet. One mistyped ``timeout`` costs the author every hook
+  in the file.
 * **That matcher group** — a ``matcher`` string that does not compile.
 * **That event's entries** — an event name outside :data:`HOOK_EVENTS` and
   :data:`HOOK_EVENT_ALIASES`. The rest of the file loads.
-* **That handler** — a ``command`` handler with no ``command``, an ``http``
-  handler with no ``url``, or a ``type`` outside
-  :data:`HOOK_HANDLER_TYPES`. Sibling handlers still run.
+* **That handler** — a ``command`` handler with no ``command`` or a ``null``
+  one, an ``http`` handler with no ``url`` or a ``null`` one, or a ``type``
+  outside :data:`HOOK_HANDLER_TYPES`. Sibling handlers still run.
 * **Tolerated** — an unknown key on a handler, on a matcher group
   (``description``), or at the top level; an empty ``hooks`` array; an
-  empty ``matcher``.
+  empty ``matcher``; a ``null`` ``timeout``, ``env`` or ``matcher``, and a
+  ``null`` in any other field the handler's type does not require.
 
 ``matcher`` is a regex Grok compiles at load time with Rust's ``regex``
 crate — verified by loading ``\p{L}+`` and ``[a-z&&[^aeiou]]``, which

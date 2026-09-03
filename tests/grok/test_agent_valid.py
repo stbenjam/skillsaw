@@ -3,8 +3,9 @@
 Verified against Grok Build 1.0.13 in an isolated ``GROK_HOME``: an agent
 file missing ``name`` or ``description``, or carrying malformed YAML, does
 not appear in ``grok inspect --json``; one carrying both does, including
-when the description is the empty string and when extra keys sit beside
-them. Nothing is printed either way, which is why the rule exists.
+when the description is the empty string or YAML ``null``, and when extra
+keys sit beside them. Nothing is printed either way, which is why the rule
+exists.
 """
 
 from __future__ import annotations
@@ -159,6 +160,13 @@ def test_frontmatter_that_is_not_a_mapping_of_keys_is_the_same_finding(
             # false positive. Whether an empty description routes anything is
             # `content-description-routing`'s question, not the loader's.
             "an empty description still registers",
+        ),
+        (
+            "---\nname: migration-reviewer\ndescription:\n---\n\n# Reviewer\n\nRead it.\n",
+            # Grok 1.0.13 listed this agent in `grok inspect --json` beside
+            # the one carrying `description: ""`, so a YAML null satisfies
+            # the loader the same way an empty string does.
+            "a null description still registers",
         ),
         (
             "---\nname: migration-reviewer\n"

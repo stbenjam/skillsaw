@@ -56,7 +56,8 @@ here costs every hook in the file, including the ones under other events.
 - An event whose value is not an array, a matcher group that is not an
   object, a group with no `hooks` key or a non-array one, or a handler that
   is not an object.
-- A handler with no `type`. There is no default.
+- A handler with no `type`, or a `null` one. There is no default, and Grok
+  reads a `null` as the key being absent.
 - A `matcher` that is not a string — a list or an object, say. Grok's field
   is a string; anything else never reaches the regex compiler.
 - A known field carrying the wrong JSON type: `type`, `command` and `url`
@@ -66,7 +67,11 @@ here costs every hook in the file, including the ones under other events.
   default to 600 seconds because gates run test suites — up to
   `18446744073709551615`. Grok reads the field as a 64-bit unsigned integer
   and JSON has no integer width, so one digit past that refuses the file
-  exactly as `30.0` does.
+  exactly as `30.0` does. A JSON `null` is not one of those wrong types: it
+  is the key being absent, and costs whatever omitting the key costs —
+  nothing for `timeout`, `env` or a field the handler's type does not
+  require, and one handler for a `command` handler's `command` or an `http`
+  handler's `url`.
 
 **Warnings** — the file loads and something in it does not fire.
 
@@ -86,9 +91,9 @@ here costs every hook in the file, including the ones under other events.
   characters is left alone: Grok sets no
   length limit, so length is not a defect, and a hooks file is untrusted
   input that the syntax check has no reason to scan without a bound.
-- A `command` handler with no `command`, an `http` handler with no `url`, or
-  a `type` other than `command` and `http`. Each drops that one handler;
-  siblings in the same group still run.
+- A `command` handler with no `command` or a `null` one, an `http` handler
+  with no `url` or a `null` one, or a `type` other than `command` and
+  `http`. Each drops that one handler; siblings in the same group still run.
 - An empty `hooks` object or event array — valid, and it configures nothing.
 
 **Info** — the file loads, the hook runs, and one thing in it is ignored.

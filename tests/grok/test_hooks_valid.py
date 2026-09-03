@@ -937,6 +937,90 @@ def test_reserved_env_names_are_reported_and_the_rest_are_not(tmp_path) -> None:
     assert {v.severity for v in violations} == {Severity.INFO}
 
 
+# ── JSON `null` ──────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("field", ["timeout", "env", "url"])
+def test_a_null_field_the_handler_does_not_need_is_not_a_finding(tmp_path, field) -> None:
+    """Grok reads a `null` as the key being absent, not as a wrong type:
+    each of these loaded the handler and its sibling in 1.0.13."""
+    repo = repo_with_hooks(
+        tmp_path,
+        f"null-{field}",
+        hooks_doc("PreToolUse", {"type": "command", "command": "./audit.sh", field: None}),
+    )
+
+    assert check(repo) == []
+
+
+def test_a_null_matcher_is_an_omitted_matcher(tmp_path) -> None:
+    """The group loaded and so did its sibling, so a `null` here is not the
+    non-string matcher that costs the file."""
+    repo = repo_with_hooks(
+        tmp_path,
+        "null-matcher",
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": None,
+                            "hooks": [{"type": "command", "command": "./audit.sh"}],
+                        }
+                    ]
+                }
+            }
+        ),
+    )
+
+    assert check(repo) == []
+
+
+@pytest.mark.parametrize(
+    ("handler", "message"),
+    [
+        (
+            {"type": "command", "command": None},
+            "Hook PreCompact[0].hooks[0] is missing 'command'",
+        ),
+        ({"type": "http", "url": None}, "Hook PreCompact[0].hooks[0] is missing 'url'"),
+    ],
+)
+def test_a_null_required_field_drops_that_handler_alone(tmp_path, handler, message) -> None:
+    """Grok dropped the handler and kept its sibling, exactly as omitting the
+    field does, so this takes the handler-scoped path at its severity."""
+    repo = repo_with_hooks(
+        tmp_path,
+        f"null-required-{abs(hash(message))}",
+        hooks_doc("PreCompact", handler, {"type": "command", "command": "./snapshot.sh"}),
+    )
+
+    violations = check(repo)
+
+    assert messages(violations) == [message]
+    assert violations[0].severity == Severity.WARNING
+
+
+def test_a_null_type_costs_the_whole_file(tmp_path) -> None:
+    """Both handlers were dropped, the same as a missing `type`, so the
+    verdict is the file-scoped one and the sibling earns no finding of its
+    own."""
+    repo = repo_with_hooks(
+        tmp_path,
+        "null-type",
+        hooks_doc(
+            "PostToolUse",
+            {"type": None, "command": "./audit.sh"},
+            {"type": "command", "command": "./snapshot.sh"},
+        ),
+    )
+
+    violations = check(repo)
+
+    assert messages(violations) == ["Hook PostToolUse[0].hooks[0] is missing 'type'"]
+    assert violations[0].severity == Severity.ERROR
+
+
 # ── extra-events ─────────────────────────────────────────────────
 
 
@@ -1062,3 +1146,11 @@ def test_the_alias_table_is_the_one_the_matrix_measured() -> None:
     }
     assert "userPromptSubmit" not in grok.HOOK_EVENT_ALIASES
     assert set(grok.HOOK_EVENT_ALIASES.values()) <= grok.HOOK_EVENTS
+
+
+def test_the_vocabulary_tables_agree_with_each_other() -> None:
+    """Guards the next edit that adds a handler type, a field or an event to
+    one table and not the one beside it."""
+    assert set(grok.HOOK_REQUIRED_FIELDS) == grok.HOOK_HANDLER_TYPES
+    assert set(grok.HOOK_REQUIRED_FIELDS.values()) <= set(grok.HANDLER_FIELDS)
+    assert grok.MATCHER_IGNORED_EVENTS <= grok.HOOK_EVENTS

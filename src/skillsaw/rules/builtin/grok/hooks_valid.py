@@ -229,11 +229,11 @@ class _FileCheck:
         return violations
 
     def _check_matcher(self, where: str, event: str, group: Dict[str, Any]) -> List[RuleViolation]:
-        """``matcher`` is an optional regex; a non-string one refuses the file."""
-        if "matcher" not in group:
+        """``matcher`` is optional; ``null`` omits it, any other non-string refuses the file."""
+        matcher = group.get("matcher")
+        if matcher is None:
             return []
 
-        matcher = group["matcher"]
         if not isinstance(matcher, str):
             return [
                 self._violation(
@@ -280,6 +280,14 @@ class _FileCheck:
         """
         if not isinstance(handler, dict):
             return [self._violation(f"Hook {where} must be an object")]
+
+        # A JSON ``null`` is the key being absent, and costs whatever
+        # omitting it costs: verified against Grok Build 1.0.13, where a null
+        # ``timeout``, ``env`` or ``url`` loaded the handler, a null
+        # ``command`` dropped that handler alone, and a null ``type`` cost
+        # every handler in the file. Dropping them here gives all three
+        # verdicts to the checks below, which already own them.
+        handler = {key: value for key, value in handler.items() if value is not None}
 
         violations = self._check_field_types(where, handler)
 

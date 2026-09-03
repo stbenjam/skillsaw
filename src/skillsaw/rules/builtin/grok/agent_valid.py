@@ -39,7 +39,8 @@ from skillsaw.rules.builtin.content_analysis import GrokAgentBlock
 
 #: The keys Grok's subagent loader requires, in the order they are reported.
 #: An *empty* value satisfies each: verified against Grok Build 1.0.13, where
-#: an agent carrying ``description: ""`` still registered. So the check is
+#: an agent carrying ``description: ""`` still registered, as did one whose
+#: ``description:`` was YAML ``null``. So the check is
 #: presence of the key, not the usefulness of what is under it —
 #: ``content-description-routing`` owns the quality of a description that is
 #: there, and reporting an empty one twice would be one defect with two

@@ -49,14 +49,18 @@ that matrix before changing a rule here.
     no top-level `hooks` object, or one that is not an object; an event whose value is
     not an array; a matcher group that is not an object; a group with no `hooks` key or
     a non-array one; a `matcher` that is not a string, which never reaches the regex
-    compiler; a handler that is not an object; a handler with no `type`; any
-    known handler field carrying the wrong JSON type — including a `timeout` above
-    `2**64-1`, the field's own `u64` ceiling, which fails the same way as a float or a
-    negative even though the value is a plain non-negative integer.
+    compiler; a handler that is not an object; a handler with no `type`, or a `null`
+    one; any known handler field carrying the wrong JSON type — including a `timeout`
+    above `2**64-1`, the field's own `u64` ceiling, which fails the same way as a float
+    or a negative even though the value is a plain non-negative integer. A JSON `null`
+    is not one of those wrong types: Grok reads it as the key being absent, so `type`
+    is the only field whose `null` costs the file.
   - *That group*: a `matcher` string that does not compile.
   - *That event's entries*: a name outside the events and aliases below.
-  - *That handler*: a `command` handler with no `command`, an `http` handler with no
-    `url`, a `type` outside `command`/`http`.
+  - *That handler*: a `command` handler with no `command` or a `null` one, an `http`
+    handler with no `url` or a `null` one, a `type` outside `command`/`http`.
+  - *Tolerated*: a `null` `timeout`, `env` or `matcher`, and a `null` in any field the
+    handler's type does not require — each is the key being absent.
 - **Events** (15): `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`,
   `PostToolUse`, `PostToolUseFailure`, `PermissionDenied`, `Stop`, `StopFailure`,
   `StopCancelled`, `Notification`, `SubagentStart`, `SubagentStop`, `PreCompact`,
@@ -76,7 +80,8 @@ that matrix before changing a rule here.
   (strings); `timeout` (non-negative integer — a float, a negative, a bool and a
   numeric string each refuse the file, while a large value is fine because `Stop` and
   `SubagentStop` default to 600 seconds); `env` (an object of strings). A wrong type on
-  any of them refuses the file; a key outside the table is tolerated.
+  any of them refuses the file; a `null` is read as the key being absent; a key outside
+  the table is tolerated.
 - **Matchers**: compiled at load with Rust's `regex` crate — verified by loading
   `\p{L}+` and `[a-z&&[^aeiou]]`, which Python's `re` rejects, and by watching
   `(?<=x)y` and `(a)\1` drop their groups. `""` and `"*"` are catch-alls, not patterns.
@@ -89,7 +94,9 @@ that matrix before changing a rule here.
 - **The rest of the layer**: `.grok/skills/**/SKILL.md` (walked recursively),
   `.grok/rules/*.md`, `.grok/commands/*.md` and `.grok/agents/*.md` (each read **flat**
   — a nested file is not loaded). A `.grok/commands/<n>.md` is loaded as a project
-  *skill*, which is why `grok inspect` lists it among the skills.
+  *skill*, which is why `grok inspect` lists it among the skills. The skill-location
+  table in `08-skills.md` calls that directory "legacy command markdown", which is
+  where `GrokCommandBlock`'s docstring gets the word.
 - **Subagent frontmatter**: `.grok/agents/*.md` needs `name` and `description` in
   frontmatter or Grok's loader drops the subagent and reports nothing — it is on
   disk and simply absent from the agent list. An empty value for either key still

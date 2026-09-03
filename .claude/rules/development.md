@@ -264,7 +264,9 @@ the tree; add its skill directory to `CONVENTIONAL_SKILL_DIRS` in the
 package can carry its own `<dir>/skills/` — `CONVENTIONAL_SKILL_DIRS` is
 root-anchored and reaches only the repository root's copy; add a
 `RepositoryType` member in `repository_types.py`,
-list it in `TOOL_REPO_TYPES`, and key its evidence by that member's value in
+list it in `TOOL_REPO_TYPES`, give it a slot in
+`RepositoryContext._TYPE_PRIORITY` (`context.py`) or the JSON and SARIF
+reports' `repo_type` falls through to `unknown`; key its evidence by that member's value in
 `_TOOL_EVIDENCE` (or a `marker()` check) in `tool_types()` — **detection
 must agree with attachment**, or the lint tree grows blocks no gated rule
 ever looks at; add block classes whose `category` encodes the budget role (`command`
