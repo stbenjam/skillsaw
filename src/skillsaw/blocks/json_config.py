@@ -18,6 +18,7 @@ from typing import Any, ClassVar, Dict, Iterator, List, Mapping, Optional, Set, 
 
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
+from skillsaw.repository_types import RepositoryType
 from skillsaw.utils import commented_key_line, read_text, read_json, read_json_strict, read_jsonc
 
 
@@ -800,6 +801,38 @@ class McpServerConfig:
         )
 
 
+@dataclass(frozen=True)
+class McpShapeDeferral:
+    """How ``mcp-valid-json`` stands its own shape walk down for one dialect.
+
+    The shared walk reads a document the way the Claude family writes it.
+    A host that spells MCP differently has a format rule of its own, and
+    running both would report a correct file as invalid — so the block
+    declares the deferral rather than the rule naming block classes.
+
+    *repo_type* is the type gating that format rule. The tree role is
+    deliberately ``--type``-invariant while every format rule is
+    ``repo_types``-gated, so a deferral conditioned on it falls back to the
+    shared walk under a forced ``--type`` rather than leaving the file
+    validated by nothing. ``None`` defers whatever ``--type`` says, for a
+    document the shared walk cannot read at all — a fallback that reported
+    a correct file would be worse than no fallback.
+
+    *keeps_dialect_neutral_checks* is False only where the owning rule
+    already makes those findings itself.
+
+    *syntax_error_rule* names the rule that reports "this file does not
+    parse" for itself, so one defect gets one finding. ``None`` leaves that
+    finding with ``mcp-valid-json``, where no ``version:`` pin can reach it;
+    naming a rule falls back to the same place whenever a pin or a forced
+    ``--type`` gates that rule off.
+    """
+
+    repo_type: Optional[RepositoryType] = None
+    keeps_dialect_neutral_checks: bool = True
+    syntax_error_rule: Optional[str] = None
+
+
 class McpConfigRole:
     """Host-neutral interface shared by JSON and embedded-YAML MCP nodes."""
 
@@ -856,6 +889,14 @@ class McpConfigRole:
     #: ``stdio``. Keeping the alias on the block lets the shared validator
     #: remain host-neutral.
     type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({})
+    #: Whether another rule owns this document's shape; see
+    #: :class:`McpShapeDeferral`. ``None`` — every Claude-family location —
+    #: keeps the shared shape walk.
+    shape_deferral: ClassVar[Optional[McpShapeDeferral]] = None
+    #: The syntax this document is written in, named in a parse-error
+    #: finding. Announcing a TOML failure as invalid JSON would send the
+    #: author to the wrong parser.
+    syntax_name: ClassVar[str] = "JSON"
 
     def server_entries(self) -> List[Tuple[str, Any]]:
         """Every declared server as ``(name, value)``, in document order.
@@ -913,7 +954,18 @@ class McpBlock(JsonConfigBlock, McpConfigRole):
 
 @dataclass(eq=False)
 class AgentPluginMcpBlock(McpBlock):
-    """Portable Agent Plugins ``mcp.json`` configuration."""
+    """Portable Agent Plugins ``mcp.json`` configuration.
+
+    A closed, versioned schema with different defaults and failure
+    boundaries, so ``agent-plugin-mcp-valid`` validates this file whole —
+    including the checks no dialect changes — and ``mcp-valid-json`` stands
+    down entirely rather than duplicating them.
+    """
+
+    shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
+        repo_type=RepositoryType.AGENT_PLUGIN,
+        keeps_dialect_neutral_checks=False,
+    )
 
     def tree_label(self) -> str:
         return "mcp.json (agent plugin MCP)"
@@ -1076,6 +1128,9 @@ class OpenCodeMcpBlock(McpBlock):
     """
 
     servers_key: ClassVar[str] = "mcp"
+    shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
+        repo_type=RepositoryType.OPENCODE
+    )
     # OpenCode's config has a documented top-level key for everything from
     # ``model`` to ``keybinds``. A document with no ``mcp`` key declares no
     # servers; reading the whole config as a server map would turn every

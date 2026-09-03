@@ -1,0 +1,8 @@
+[mcp_servers.lockgate]
+command = "bin/lockgate"
+args = ["mcp"]
+
+# Plural. The table loads nothing, and the file drops out of the permission
+# sources entirely, so nothing marks its absence.
+[permissions]
+allow = ["Bash(make test)"]

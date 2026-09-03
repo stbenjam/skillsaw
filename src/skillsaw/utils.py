@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple
 
 import yaml
+
+try:  # Python 3.11+
+    import tomllib as _tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on the 3.9/3.10 floor
+    import tomli as _tomllib  # type: ignore[no-redef]
+
 from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
@@ -837,6 +843,47 @@ def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         # PyYAML can surface parser-adjacent failures as a bare ValueError;
         # Python's integer-string digit limit is one example. Treat it like
         # every other invalid document instead of aborting tree construction.
+        return None, str(e)
+    except RecursionError:
+        # Same hazard as read_json — see the note there.
+        return None, _TOO_DEEP
+
+
+@_file_cache.cached
+def read_toml(file_path: Path) -> Tuple[Optional[dict], Optional[str]]:
+    """Cached TOML file read. Returns ``(data, error)``.
+
+    ``tomllib`` on Python 3.11+ and its ``tomli`` predecessor below that —
+    the same parser either way, since CPython vendored ``tomli`` as
+    ``tomllib``.
+
+    Two elements, not three: no position is available on every supported
+    interpreter. Stdlib ``tomllib`` gained ``TOMLDecodeError.lineno`` only
+    in 3.14, so 3.11 through 3.13 carry none, while the 3.9/3.10 floor's
+    ``tomli`` 2.2.1 does expose it — and one contract across both parsers
+    is worth more than a line number on some legs. A caller reports at file
+    level the way the JSON readers do; the parser's own message usually
+    carries the position
+    ("Cannot overwrite a value (at line 2, column 6)"), which is what an
+    author needs from a field this contract cannot fill.
+
+    The BOM and position contracts are this reader's, not any one caller's:
+    a leading UTF-8 BOM is stripped by :func:`read_text` before the parser
+    sees it, where ``tomllib`` would refuse one. Whether the host reading a
+    given file refuses it is that host's question — Grok Build's Rust reader
+    is unmeasured — so this accepts the file rather than inventing a
+    verdict, and a rule that knows better may say so.
+    """
+    content = read_text(file_path)
+    if content is None:
+        return None, f"Failed to read {file_path.name}"
+    try:
+        return _tomllib.loads(content), None
+    except _tomllib.TOMLDecodeError as e:
+        return None, str(e)
+    except ValueError as e:
+        # The digit-limit hazard read_json documents: an integer literal past
+        # the interpreter's limit raises bare ValueError, not the decode error.
         return None, str(e)
     except RecursionError:
         # Same hazard as read_json — see the note there.

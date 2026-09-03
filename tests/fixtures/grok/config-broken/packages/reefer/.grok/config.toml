@@ -1,0 +1,5 @@
+# The field is type, not transport. This one is ignored and the server falls
+# back to whatever command and url say.
+[mcp_servers.reefer]
+transport = "stdio"
+command = "bin/reefer"

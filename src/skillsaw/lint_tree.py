@@ -46,6 +46,7 @@ from .blocks import (
     GeminiMdBlock,
     GrokAgentBlock,
     GrokCommandBlock,
+    GrokConfigBlock,
     GrokHooksBlock,
     GrokInlineHooksBlock,
     GrokInlineMcpBlock,
@@ -921,6 +922,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # and unreadable-directory guards ``_add_glob`` gets.
         for hooks_file in _readable_matches(grok_dir / grok.HOOKS_DIR_NAME, grok.HOOKS_GLOB):
             _add_project_hooks(state, root, hooks_file, GrokHooksBlock)
+        # ``config.toml`` is where a Grok project declares its MCP servers —
+        # there is no ``.grok/mcp.json`` — so it is attached under its own
+        # parser role rather than as prose, and one block per resolved file.
+        state.add_parser_block(root, grok_dir / grok.CONFIG_FILENAME, GrokConfigBlock)
 
     # Antigravity project configuration and rules from .agents/ and .agent/
     for agents_dir_name in (".agents", ".agent"):
