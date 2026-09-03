@@ -12,7 +12,6 @@ from skillsaw.config import LinterConfig, find_config
 from skillsaw.context import (
     RepositoryContext,
     RepositoryType,
-    HAS_CURSOR,
     INSTRUCTION_REPO_TYPES,
 )
 
@@ -250,20 +249,20 @@ def test_auto_without_repo_types_always_enabled(valid_plugin):
     assert config.is_rule_enabled("some-rule", context, None) is True
 
 
-def test_auto_with_legacy_formats_enabled_when_tool_detected(temp_dir):
-    """DEPRECATED ``formats`` still gates a third-party rule: the label
-    folds into the repository type it names."""
+def test_auto_with_tool_repo_type_enabled_when_tool_detected(temp_dir):
+    """A rule declaring a tool repository type activates where that tool
+    is configured."""
     (temp_dir / ".cursor" / "rules").mkdir(parents=True)
     context = RepositoryContext(temp_dir)
     config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
-    assert config.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is True
+    assert config.is_rule_enabled("test-rule", context, {RepositoryType.CURSOR}) is True
 
 
-def test_auto_with_legacy_formats_disabled_when_tool_missing(temp_dir):
+def test_auto_with_tool_repo_type_disabled_when_tool_missing(temp_dir):
     """The other half: no `.cursor/`, no activation."""
     context = RepositoryContext(temp_dir)
     config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
-    assert config.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is False
+    assert config.is_rule_enabled("test-rule", context, {RepositoryType.CURSOR}) is False
 
 
 def test_auto_with_either_declared_repo_type_matching(temp_dir):
@@ -275,23 +274,21 @@ def test_auto_with_either_declared_repo_type_matching(temp_dir):
         config.is_rule_enabled(
             "test-rule",
             context,
-            {RepositoryType.MARKETPLACE},
-            INSTRUCTION_REPO_TYPES,
+            {RepositoryType.MARKETPLACE} | INSTRUCTION_REPO_TYPES,
         )
         is True
     )
 
 
-def test_auto_with_repo_types_and_legacy_formats_both_missing(temp_dir):
-    """Neither declaration matches, so the rule stays off."""
+def test_auto_with_no_declared_repo_type_matching(temp_dir):
+    """No declared type matches, so the rule stays off."""
     context = RepositoryContext(temp_dir)
     config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
     assert (
         config.is_rule_enabled(
             "test-rule",
             context,
-            {RepositoryType.MARKETPLACE},
-            {HAS_CURSOR},
+            {RepositoryType.MARKETPLACE, RepositoryType.CURSOR},
         )
         is False
     )
@@ -301,10 +298,10 @@ def test_explicit_enabled_overrides_auto_detection(temp_dir):
     """Test that explicit enabled: true/false in config overrides auto"""
     context = RepositoryContext(temp_dir)
     config = LinterConfig(rules={"test-rule": {"enabled": False}})
-    assert config.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is False
+    assert config.is_rule_enabled("test-rule", context, {RepositoryType.CURSOR}) is False
 
     config2 = LinterConfig(rules={"test-rule": {"enabled": True}})
-    assert config2.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is True
+    assert config2.is_rule_enabled("test-rule", context, {RepositoryType.CURSOR}) is True
 
 
 def test_format_specific_rules_default_to_auto():
@@ -355,8 +352,7 @@ def test_no_config_skips_version_gate(temp_dir):
     assert config.is_rule_enabled(
         "content-weak-language",
         context,
-        repo_types=None,
-        formats=frozenset({"HAS_CLAUDE_MD"}),
+        repo_types=frozenset({RepositoryType.CLAUDE_MD}),
         since_version="0.7.0",
     )
 

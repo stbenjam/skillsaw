@@ -269,7 +269,7 @@ class TestActivation:
         context = RepositoryContext(tmp_path)
         rule = rule_cls({})
         enabled = LinterConfig.default().is_rule_enabled(
-            rule.rule_id, context, repo_types=rule.repo_types, formats=rule.formats
+            rule.rule_id, context, repo_types=rule.repo_types
         )
         assert enabled is False
 
@@ -584,7 +584,7 @@ class TestMarketplaceTypeActivation:
 
         assert (
             LinterConfig.default().is_rule_enabled(
-                rule.rule_id, context, repo_types=rule.repo_types, formats=rule.formats
+                rule.rule_id, context, repo_types=rule.repo_types
             )
             is True
         )

@@ -37,7 +37,7 @@ catch issues early. Re-running the test matrix is recommended when updating thes
     that is not an object; or any recognized handler field containing an unexpected JSON type.
   - *Matcher group*: A matcher group containing unsupported keys beyond `matcher` and
     `hooks`; or a `matcher` regular expression that fails to compile.
-  - *Event entries*: An unrecognized or unsupported event name (case-sensitive).
+  - *Event entries*: An unrecognized event name (case-sensitive).
   - *Individual handler*: A missing or unsupported `type`; a missing or empty `command`;
     providing only Windows commands without a fallback POSIX `command`; unknown handler
     keys; unsupported options like `if`, `condition`, `shell`, `rewakeMessage`, or

@@ -9,7 +9,6 @@ free of any import from the context layer.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, Optional, Set
 
 
 class RepositoryType(Enum):
@@ -116,55 +115,3 @@ INSTRUCTION_REPO_TYPES = frozenset(
         RepositoryType.CODERABBIT,
     }
 )
-
-#: DEPRECATED alias kept for one release for third-party rules that import it.
-ALL_INSTRUCTION_FORMATS = INSTRUCTION_REPO_TYPES
-
-
-# DEPRECATED format labels. A rule declares where it applies with
-# ``repo_types``; ``Rule.formats`` and these constants are kept for one
-# release so a third-party rule plugin written against the old spelling
-# still activates. Gating unions a legacy declaration into the rule's
-# repository types through this table.
-HAS_CURSOR = "HAS_CURSOR"
-HAS_COPILOT = "HAS_COPILOT"
-HAS_CLINE = "HAS_CLINE"
-HAS_DEVIN = "HAS_DEVIN"
-HAS_GEMINI = "HAS_GEMINI"
-HAS_QWEN = "HAS_QWEN"
-HAS_AGENTS_MD = "HAS_AGENTS_MD"
-HAS_KIRO = "HAS_KIRO"
-HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
-HAS_CODERABBIT = "HAS_CODERABBIT"
-HAS_OPENCODE = "HAS_OPENCODE"
-HAS_SKILLS_LOCK = "HAS_SKILLS_LOCK"
-
-_LEGACY_FORMAT_LABELS: Dict[str, RepositoryType] = {
-    HAS_CURSOR: RepositoryType.CURSOR,
-    HAS_COPILOT: RepositoryType.COPILOT,
-    HAS_CLINE: RepositoryType.CLINE,
-    HAS_DEVIN: RepositoryType.DEVIN,
-    HAS_GEMINI: RepositoryType.GEMINI,
-    HAS_QWEN: RepositoryType.QWEN,
-    HAS_AGENTS_MD: RepositoryType.AGENTS_MD,
-    HAS_KIRO: RepositoryType.KIRO,
-    HAS_CLAUDE_MD: RepositoryType.CLAUDE_MD,
-    HAS_CODERABBIT: RepositoryType.CODERABBIT,
-    HAS_OPENCODE: RepositoryType.OPENCODE,
-    HAS_SKILLS_LOCK: RepositoryType.SKILLS_LOCK,
-}
-
-
-def merge_legacy_formats(repo_types, formats) -> Optional[Set[Any]]:
-    """A rule's repository types, with any legacy ``formats`` folded in.
-
-    ``None`` means "applies everywhere" and only survives when both
-    declarations are absent. Anything that is not a known label passes
-    through unchanged — a repository type reads as itself, and an
-    unrecognized label matches nothing, which is what it did before.
-    """
-    if formats is None:
-        return set(repo_types) if repo_types is not None else None
-    merged: Set[Any] = set(repo_types) if repo_types is not None else set()
-    merged.update(_LEGACY_FORMAT_LABELS.get(label, label) for label in formats)
-    return merged

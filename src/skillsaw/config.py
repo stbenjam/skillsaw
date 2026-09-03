@@ -9,7 +9,7 @@ import re
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from skillsaw.paths import safe_resolve
 from skillsaw.utils import commented_key_line, read_yaml_commented
@@ -429,7 +429,6 @@ class LinterConfig:
         rule_id: str,
         context: "RepositoryContext",
         repo_types=None,
-        formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
         default_enabled: Any = None,
         deprecated: Optional[str] = None,
@@ -441,8 +440,6 @@ class LinterConfig:
             rule_id: Rule identifier
             context: Repository context
             repo_types: Set of RepositoryType values the rule applies to (None = all)
-            formats: DEPRECATED legacy format labels the rule requires; folded
-                into ``repo_types`` for matching (None = all)
             since_version: Minimum config version required for this rule
             default_enabled: Class-level default (``Rule.default_enabled``) for
                 rules outside the builtin registry — plugin rules
@@ -456,7 +453,6 @@ class LinterConfig:
             rule_id,
             context,
             repo_types,
-            formats,
             since_version,
             default_enabled=default_enabled,
             deprecated=deprecated,
@@ -468,7 +464,6 @@ class LinterConfig:
         rule_id: str,
         context: "RepositoryContext",
         repo_types=None,
-        formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
         default_enabled: Any = None,
         deprecated: Optional[str] = None,
@@ -542,12 +537,8 @@ class LinterConfig:
         enabled = rule_config.get("enabled", fallback_enabled)
 
         if enabled == "auto":
-            # A rule declares where it applies with ``repo_types``. A legacy
-            # ``formats`` declaration from a third-party plugin folds into
-            # the same set, so there is one match to make.
-            from .repository_types import merge_legacy_formats
-
-            applies_to = merge_legacy_formats(repo_types, formats)
+            # A rule declares where it applies with ``repo_types``.
+            applies_to = set(repo_types) if repo_types is not None else None
             if applies_to is None:
                 return True, "enabled: auto (applies to all repo types)"
             # ``applies_to`` may mix RepositoryType members with string names
@@ -558,7 +549,7 @@ class LinterConfig:
             if matched_types:
                 matched = sorted(getattr(t, "value", t) for t in matched_types)
                 return True, f"enabled: auto — detected repo type: {', '.join(matched)}"
-            return False, "enabled: auto — no matching repo type or format detected"
+            return False, "enabled: auto — no matching repo type detected"
 
         if bool(enabled):
             return True, "enabled by default"

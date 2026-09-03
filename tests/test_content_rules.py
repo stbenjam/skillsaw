@@ -5653,7 +5653,6 @@ class TestContentMcpToolNameRule:
                 rule.rule_id,
                 context,
                 repo_types=rule.repo_types,
-                formats=rule.formats,
                 since_version=rule.since,
             )
             assert enabled is False
@@ -5666,7 +5665,6 @@ class TestContentMcpToolNameRule:
             rule.rule_id,
             context,
             repo_types=rule.repo_types,
-            formats=rule.formats,
             since_version=rule.since,
         )
 

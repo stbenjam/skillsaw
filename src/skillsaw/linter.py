@@ -319,7 +319,6 @@ class Linter:
                 rule_id,
                 self.context,
                 instance.repo_types,
-                instance.formats,
                 since_version=instance.since,
                 deprecated=instance.deprecated,
             ):
@@ -407,7 +406,6 @@ class Linter:
                 rule_instance.rule_id,
                 self.context,
                 rule_instance.repo_types,
-                rule_instance.formats,
                 since_version=rule_instance.since,
                 deprecated=rule_instance.deprecated,
             ):
@@ -544,16 +542,15 @@ class Linter:
                 # LinterConfig.default() is generated from, so their
                 # class-level default (Rule.default_enabled — True, False,
                 # or "auto") is supplied directly. Semantics match builtins:
-                # "auto" follows repo_types/formats detection, False is
+                # "auto" follows repo_types detection, False is
                 # opt-in via config.
                 try:
-                    # repo_types/formats/since/default_enabled are read from
+                    # repo_types/since/default_enabled are read from
                     # the plugin's class here — same fault isolation as above.
                     enabled = bool(self._rule_ids) or self.config.is_rule_enabled(
                         rid,
                         self.context,
                         rule_instance.repo_types,
-                        rule_instance.formats,
                         since_version=rule_instance.since,
                         default_enabled=rule_instance.default_enabled,
                         deprecated=rule_instance.deprecated,
@@ -740,7 +737,6 @@ class Linter:
                         rule_instance.rule_id,
                         self.context,
                         rule_instance.repo_types,
-                        rule_instance.formats,
                         since_version=rule_instance.since,
                         deprecated=rule_instance.deprecated,
                     ):

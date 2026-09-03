@@ -144,11 +144,6 @@ class Rule(ABC):
     # means every repository. Members of ``RepositoryType`` (a plugin rule
     # may also name a plugin-contributed type by string).
     repo_types = None
-    # DEPRECATED alias kept for one release: third-party rules written
-    # against the old ``HAS_*`` format labels still activate, because gating
-    # folds a declaration here into ``repo_types``. New rules declare
-    # ``repo_types``.
-    formats = None
     config_schema = {}
     # Third-party rules with a partially migrated config_schema can set this
     # to False: declared options are still type-checked, while undeclared

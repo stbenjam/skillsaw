@@ -262,18 +262,6 @@ def test_an_explicit_type_override_survives_apply_excludes(tmp_path):
     assert context.repo_types == {RepositoryType.MUSE}
 
 
-def test_the_deprecated_detected_formats_property_maps_the_types(tmp_path):
-    """Kept for one release so third-party code reading it keeps working."""
-    from skillsaw.context import HAS_CLAUDE_MD, HAS_CURSOR
-
-    (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
-
-    formats = RepositoryContext(tmp_path).detected_formats
-
-    assert HAS_CLAUDE_MD in formats
-    assert HAS_CURSOR not in formats
-
-
 def test_severity_enum_matches():
     # default_severity() must return a Severity for every rule
     for cls in BUILTIN_RULES:

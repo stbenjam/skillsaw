@@ -123,7 +123,6 @@ def _enabled_reason(repo):
         rule.rule_id,
         RepositoryContext(repo),
         rule.repo_types,
-        rule.formats,
         rule.since,
         default_enabled=rule.default_enabled,
     )
@@ -153,7 +152,7 @@ class TestActivation:
         enabled, reason = _enabled_reason(repo)
 
         assert enabled is False
-        assert reason == "enabled: auto — no matching repo type or format detected"
+        assert reason == "enabled: auto — no matching repo type detected"
 
     def test_a_committed_project_hooks_file_turns_it_on(self, tmp_path):
         """No plugin, no marketplace — only ``.codex/hooks.json``."""

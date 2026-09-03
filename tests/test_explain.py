@@ -130,7 +130,7 @@ def test_explain_effective_repo_type_no_match(temp_dir):
     (temp_dir / ".skillsaw.yaml").write_text("version: '99.0.0'\n")
     result = run_explain("claude-marketplace-registration", str(temp_dir))
     assert result.returncode == 0
-    assert "no matching repo type or format detected" in result.stdout
+    assert "no matching repo type detected" in result.stdout
 
 
 def test_explain_nonexistent_path_fails(temp_dir):
@@ -174,10 +174,10 @@ def test_rule_enabled_reason_matches_is_rule_enabled(temp_dir, config_yaml):
     for rule_class in BUILTIN_RULES:
         rule = rule_class()
         enabled = config.is_rule_enabled(
-            rule.rule_id, context, rule.repo_types, rule.formats, since_version=rule.since
+            rule.rule_id, context, rule.repo_types, since_version=rule.since
         )
         reason_enabled, reason = config.rule_enabled_reason(
-            rule.rule_id, context, rule.repo_types, rule.formats, since_version=rule.since
+            rule.rule_id, context, rule.repo_types, since_version=rule.since
         )
         assert enabled == reason_enabled, rule.rule_id
         assert reason, rule.rule_id

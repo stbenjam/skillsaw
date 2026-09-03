@@ -6,7 +6,8 @@ A type describes either how the repository *packages* its content — a
 marketplace, a plugin, an APM project — or which *tool* it is configured
 for. Both are the same kind of fact: if the checkout holds a tool's
 configuration, that tool's rules run and `Repo type:` says so. Every value
-below is also accepted by `--type`, which overrides detection entirely.
+below is also accepted by `--type`, which replaces built-in detection; a
+repository type contributed by an installed rule plugin is still detected.
 
 The tool types sort below the packaging types, so the single "primary" type
 in the JSON report's `repo_type` field is unchanged: a marketplace that also
@@ -340,7 +341,8 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 
 | Tool | Type | Files linted |
 | --- | --- | --- |
-| **Portable** | `agents-md`, `claude-md`, `gemini`, `qwen` | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
+| **Portable** | `agents-md`, `claude-md`, `gemini`, `qwen` | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md` |
+| **Portable skills** | `agentskills` | `.agents/skills/*/SKILL.md` and the other conventional skill directories |
 | **Vercel skills CLI** | `skills-lock` | Every `skills-lock.json`, plus matching installed skill payloads unless `lint-external-content: false` |
 | **Cursor** | `cursor` | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
 | **Copilot / VS Code** | `copilot` | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |

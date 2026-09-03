@@ -315,6 +315,28 @@ def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
     )
 
 
+def _add_project_hooks(
+    state: _TreeBuildState,
+    root: LintTarget,
+    path: Path,
+    block_cls: type,
+) -> None:
+    """Attach a project-layer hooks file unless another host already has it.
+
+    ``.cursor/hooks.json``, ``.codex/hooks.json`` and ``.muse/hooks.json``
+    are three names for one shape, and a repository supporting several tools
+    commonly symlinks them to a single file. Each host's loop runs
+    independently, so without this the one resolved file gets a block per
+    host and the security rules report each of its commands once per block.
+    Whichever host reaches it first keeps it: the security rules read every
+    hooks class alike, and the later host's shape rule simply does not see a
+    file that host chose to share.
+    """
+    if _attached_as_hooks(state, path):
+        return
+    state.add_parser_block(root, path, block_cls)
+
+
 def _claim_attached_hooks(
     state: _TreeBuildState,
     root: LintTarget,
@@ -761,7 +783,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         )
         _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
         state.add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
-        state.add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
+        _add_project_hooks(state, root, cursor_dir / "hooks.json", CursorHooksBlock)
 
     for github_dir in context.agent_tool_dirs(".github"):
         # A compiled Copilot copy duplicates its ``.apm/`` source for the
@@ -801,10 +823,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # Codex loads project hooks from `.codex/hooks.json` in the active project.
     for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
-        state.add_parser_block(root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
+        _add_project_hooks(state, root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
-        state.add_parser_block(root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
+        _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
 
     # Committed project memory: notes and documentation stored in `.agents/memory/`.
     # MEMORY.md acts as the primary index, while topic markdown files contain

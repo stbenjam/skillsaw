@@ -31,26 +31,11 @@ from .repository_scan import RepositoryScanMixin
 
 # Re-exported here: ``skillsaw.context`` has always been the import site for
 # the repository vocabulary, and rules and plugins read it from there.
-from . import repository_types
 from .repository_types import (  # noqa: F401
-    ALL_INSTRUCTION_FORMATS,
-    HAS_AGENTS_MD,
-    HAS_CLAUDE_MD,
-    HAS_CLINE,
-    HAS_CODERABBIT,
-    HAS_COPILOT,
-    HAS_CURSOR,
-    HAS_DEVIN,
-    HAS_GEMINI,
-    HAS_KIRO,
-    HAS_OPENCODE,
-    HAS_QWEN,
-    HAS_SKILLS_LOCK,
     INSTRUCTION_REPO_TYPES,
     SKILL_REPO_TYPES,
     TOOL_REPO_TYPES,
     RepositoryType,
-    merge_legacy_formats,
 )
 
 if TYPE_CHECKING:
@@ -468,20 +453,6 @@ class RepositoryContext(
             self.repo_types.discard(RepositoryType.UNKNOWN)
         elif not self.repo_types:
             self.repo_types.add(RepositoryType.UNKNOWN)
-
-    @property
-    def detected_formats(self) -> Set[str]:
-        """DEPRECATED: the legacy ``HAS_*`` labels for the detected types.
-
-        Format labels and repository types were one concept described twice.
-        Kept for one release so third-party code reading this attribute
-        keeps working; read ``repo_types`` instead.
-        """
-        return {
-            label
-            for label, repo_type in repository_types._LEGACY_FORMAT_LABELS.items()
-            if repo_type in self.repo_types
-        }
 
     def _detect_types(self) -> Set[RepositoryType]:
         """Detect all applicable repository types.

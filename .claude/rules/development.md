@@ -268,8 +268,8 @@ for on-demand prompts, `instruction` for always-on prose, `agent` for
 subagents); attach them in the editor-directory loop in `build_lint_tree`.
 Structural rules for the tool declare
 `repo_types = frozenset({RepositoryType.<TOOL>})` and iterate their own
-block type — never `provenance_scope`, which is for shared node types only,
-and never the deprecated `Rule.formats`. Prefer subclassing a shared block
+block type — never `provenance_scope`, which is for shared node types only.
+Prefer subclassing a shared block
 (`VsCodeMcpBlock(McpBlock)`) over editing existing rule files, so the
 security rules pick the tool up without a visit.
 
