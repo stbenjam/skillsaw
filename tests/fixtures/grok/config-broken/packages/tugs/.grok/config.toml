@@ -1,0 +1,6 @@
+[mcp_servers.tugs]
+command = ""
+args = ["mcp"]
+
+[permission]
+deny = ["Bash(psql *)"]

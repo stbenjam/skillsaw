@@ -198,21 +198,77 @@ unparseable, so the failure scopes measured on `.grok/hooks/*.json` are not
 evidence about it. `hooks-dangerous` and `hooks-prohibited` read the shared
 base and see both.
 
-**PR 3 — `.grok/config.toml`.** The highest-signal config check there is: only
-`[mcp_servers]`, `[plugins]`, `[permission]` and `[mcp] max_output_bytes` are
-honored at project scope, and everything else a developer writes there is
-silently ignored — a project config declaring `[model]`, `[ui]` and `[sandbox]`
-alongside the four loaded the four and reported no warning. Separate because it
-needs a TOML parser: `tomllib` is stdlib only from Python 3.11 while skillsaw
-supports 3.9, so it carries a new conditional `tomli` dependency that deserves
-its own argument.
+**PR 3 — `.grok/config.toml`.** The highest-signal config check
+there is: only `[mcp_servers]`, `[plugins]`, `[permission]` and `[mcp]
+max_output_bytes` are honored at project scope, and everything else a developer
+writes there is silently ignored — a project config declaring `[model]`, `[ui]`
+and `[sandbox]` alongside the four loaded the four and reported no warning.
+Separate because it needs a TOML parser, and that is a real new runtime
+dependency on a four-dependency project.
+
+The argument for it: `tomllib` is stdlib from Python 3.11 and skillsaw's floor
+is 3.9, so the dependency is `tomli>=2.0,<3; python_version < '3.11'` — the same
+parser, since CPython vendored `tomli` as `tomllib`, installed only on the two
+oldest versions and absent from every modern install. It is pure Python, makes
+no network calls, and reads files the linter already opens. The alternative is
+writing a TOML parser, which trades a vendored upstream for a hand-rolled one
+on both supply chain and correctness.
+
+The parser lands with the reader (`read_toml()` in `utils.py`, file-level errors
+because TOML gives no structured position), the block (`GrokConfigBlock` in
+`blocks/grok.py`, a direct `LintTarget` the way `OpenAIMetadataBlock` is), the
+attach in the `.grok/` project loop, and the vocabulary in `formats/grok.py`.
+The block carries `McpConfigRole`, so `mcp-prohibited` reads a `[mcp_servers]`
+table as servers with no edit of its own; `mcp-valid-json` keeps only its
+dialect-neutral checks there, because every shape check it makes reads the
+document as JSON.
+
+The role derives a transport the way Grok does, which is not the way a JSON
+host does: a non-empty `command` wins even beside a `url`, a `url` alone is
+HTTP unless `type = "sse"`, and a table with neither is dropped by Grok and so
+exposes no server — the config rule reports it instead. `type` is otherwise
+advisory, and `transport` is not an alias for it.
+
+What the project layer honors is narrower than the reference implies.
+`[mcp_servers]` and `[permission]` were measured loading; `[plugins]` and
+`[mcp] max_output_bytes` produce no observable at either scope and are carried
+as documented, not measured. And the silence is total: `configWarnings` is a
+user-layer diagnostic, so nothing tells an author that a project `[model]`,
+`[hooks]` or `[permissions]` table did nothing. The exception is
+`mcpConfigProblems`, which Grok does produce for a project-scope server shape —
+so the rules add their signal on the ignored tables and on `[permission]`,
+where `rules` is discarded whenever `allow`, `deny` or `ask` sits beside it and
+nothing says so.
+
+Two rules split that along the line the evidence draws. `grok-config-valid`
+(ERROR) owns the file Grok cannot read: a parse error costs every table in it,
+including the ones above the error, and Grok exits 0 with an empty stderr when
+it happens. Everything under that — a server naming nothing to start, a
+wrong-typed `args` or `env`, a non-array `allow`, a `rules` array discarded
+because a list key sits beside it — costs one server or one key and is a
+hardcoded warning, because the tables beside it still load whatever severity
+the rule is configured to. A wrong-typed *entry* inside those arrays splits
+the same way and was measured separately: a non-string in `allow`/`deny`/`ask`
+costs that entry, while a non-table in `rules` costs the whole array, so the
+two findings say which. `grok-config-project-scope` (WARNING) owns what the
+project layer cannot contribute at all: a top-level table or scalar outside the
+four, with a "use this instead" hint for `[hooks]` — the one refusal with
+somewhere else in the repository to go — the measured `[plugins] paths`
+refusal, and one finding each
+for the spellings that load nothing — `[[mcp.servers]]`, `[mcp-servers]`,
+`[mcpServers]`, `[permissions]`, `transport` inside a server, `defaultMode`
+inside `[permission]`. It reports no unrecognized key inside `[plugins]` or
+`[mcp]`, because nothing was measured there in either direction and its
+`extra-tables` option — which names a table a newer Grok honors, so a release
+widening the project layer needs no skillsaw release to stop reporting it —
+reaches top-level names only.
 
 ## Deliberately out of scope
 
 | Surface | Why |
 |---|---|
 | `.grok/workflows/*.rhai` | Needs a Rhai parser; a regex over a scripting language generates false positives |
-| `.grok/sandbox.toml` | TOML dependency, and the semantics misfire easily — `read_only`/`read_write` are literal directory grants, not globs |
-| `.grok/roles/*.toml`, `.grok/personas/*.toml` | TOML dependency; the formats are less settled |
+| `.grok/sandbox.toml` | The semantics misfire easily — `read_only`/`read_write` are literal directory grants, not globs |
+| `.grok/roles/*.toml`, `.grok/personas/*.toml` | The formats are less settled |
 | `.grok/lsp.json` | No public schema to calibrate against. Detection evidence only |
 | `~/.grok/` runtime state, `trusted_folders.toml`, `known_marketplaces.json` | Host-machine state, not repository-resident |

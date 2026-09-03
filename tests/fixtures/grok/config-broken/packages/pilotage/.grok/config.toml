@@ -1,0 +1,4 @@
+[plugins]
+# Honoured only from the user's own config. A project file's paths entry is
+# ignored whether it is relative or absolute.
+paths = ["./.grok/plugins/pilot-charts"]

@@ -451,6 +451,17 @@ rules:
     enabled: auto
     severity: error
 
+  # .grok/config.toml must only carry settings a project file contributes
+  grok-config-project-scope:
+    enabled: auto
+    severity: warning
+    # extra-tables: []
+
+  # .grok/config.toml must parse, and its servers and permissions must load
+  grok-config-valid:
+    enabled: auto
+    severity: error
+
   # .grok/hooks/*.json must use Grok's hook events, handler types and fields
   grok-hooks-valid:
     enabled: auto

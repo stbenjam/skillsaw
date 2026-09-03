@@ -1,0 +1,7 @@
+[permission]
+allow = ["Bash(make test)"]
+
+# A misreading of [mcp_servers.<name>]. Loads no server, and says nothing.
+[[mcp.servers]]
+name = "bollard"
+command = "bin/bollard"
