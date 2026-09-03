@@ -67,6 +67,18 @@ AGENT_TOOL_DIR_NAMES = frozenset(
 # counted but never linted, or found but never counted.
 NESTED_TOOL_SKILL_DIRS = (*devin.TOOL_DIR_NAMES, grok.TOOL_DIR_NAME)
 
+# Reserved marker directories an *ecosystem* uses to declare a plugin or a
+# catalog, as opposed to a tool's configuration directory above. Grok Build's
+# ``.grok-plugin`` is here because a monorepo package can be a plugin or a
+# marketplace of its own, and the one walk is what finds those without a
+# second traversal. Recorded in the same ``tool_dirs`` mapping and read
+# through ``agent_tool_dirs``; kept a separate name so the editor-tool
+# vocabulary above keeps meaning editor tools.
+PLUGIN_MARKER_DIR_NAMES = frozenset({grok.PLUGIN_DIR_NAME})
+
+#: Every directory name the walk records, from both sets above.
+SCANNED_DIR_NAMES = AGENT_TOOL_DIR_NAMES | PLUGIN_MARKER_DIR_NAMES
+
 
 @dataclass
 class RepositoryScan:
@@ -99,7 +111,7 @@ LEGACY_EDITOR_FILES = (".cursorrules", ".clinerules")
 def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     """Walk *root* once, collecting instruction files and editor directories."""
     found = {root / name for name in root_names if (root / name).exists()}
-    tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
+    tool_dirs: Dict[str, List[Path]] = {name: [] for name in SCANNED_DIR_NAMES}
     legacy_editor: Dict[str, List[Path]] = {name: [] for name in LEGACY_EDITOR_FILES}
     mcp_registry_files: List[Path] = []
     package_json_files: List[Path] = []
@@ -154,7 +166,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
             # Instruction files keep the historical behaviour — the sweep
             # above already collected them — but a tool directory is a new
             # claim, so vendored trees stay out of it.
-            if name in AGENT_TOOL_DIR_NAMES and not vendored:
+            if name in SCANNED_DIR_NAMES and not vendored:
                 tool_dirs[name].append(here / name)
     return RepositoryScan(
         instruction_files=tuple(sorted(found)),

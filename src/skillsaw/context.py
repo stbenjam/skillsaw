@@ -24,6 +24,7 @@ from .discovery.excludes import path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
 from .repository_external_content import RepositoryExternalContentMixin
+from .repository_grok import RepositoryGrokMixin
 from .repository_mcp_registry import RepositoryMcpRegistryMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 from .repository_scan import RepositoryScanMixin
@@ -57,6 +58,7 @@ class RepositoryContext(
     RepositoryScanMixin,
     RepositoryMcpRegistryMixin,
     RepositoryExternalContentMixin,
+    RepositoryGrokMixin,
     RepositoryProvenanceMixin,
 ):
     """Detected repository metadata used during linting."""
@@ -74,6 +76,8 @@ class RepositoryContext(
         # convention is a Codex plugin first, not an agentskills.io repo.
         RepositoryType.CODEX_MARKETPLACE,
         RepositoryType.CODEX_PLUGIN,
+        RepositoryType.GROK_MARKETPLACE,
+        RepositoryType.GROK_PLUGIN,
         RepositoryType.AGENT_PLUGIN,
         RepositoryType.AGENTSKILLS,
         RepositoryType.MCP_REGISTRY,
@@ -198,6 +202,7 @@ class RepositoryContext(
         self.agent_plugins: List[Path] = (
             self._discover_agent_plugins() if self._agent_plugin_discovery_enabled else []
         )
+        self._init_grok(repo_types)
         # An explicit ``--type`` answers "how is this content packaged", and
         # ``_refresh_tool_types()`` keeps it authoritative for that half while
         # still folding in the tools the checkout configures.
@@ -435,6 +440,7 @@ class RepositoryContext(
         self._codex_evidence = None
         self._agent_plugin_claims = None
         self._agent_plugin_roots = None
+        self._reset_grok_caches(filtering=bool(self.exclude_patterns))
         self._contained_plugin_roots = self._mcp_registry_paths = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
@@ -509,6 +515,10 @@ class RepositoryContext(
             types.add(RepositoryType.CODEX_PLUGIN)
         if self.agent_plugins:
             types.add(RepositoryType.AGENT_PLUGIN)
+        if self.has_grok_marketplace():
+            types.add(RepositoryType.GROK_MARKETPLACE)
+        if self.grok_plugins:
+            types.add(RepositoryType.GROK_PLUGIN)
         if self.mcp_registry_server_paths():
             types.add(RepositoryType.MCP_REGISTRY)
 
@@ -547,7 +557,11 @@ class RepositoryContext(
             agent_plugin_claims_plugins_dir = resolved_plugins is not None and any(
                 claim.is_relative_to(resolved_plugins) for claim in self._agent_plugin_claim_set()
             )
-            return not self.codex_catalog_exists() and not agent_plugin_claims_plugins_dir
+            return (
+                not self.codex_catalog_exists()
+                and not self.grok_catalog_exists()
+                and not agent_plugin_claims_plugins_dir
+            )
         return any(
             not (provenance := self.provenance(item)).ecosystems or provenance.claude
             for item in children
@@ -670,7 +684,9 @@ class RepositoryContext(
         holds only Claude-style directories and reports zero for a
         manifest-only Codex catalog or a portable Agent Plugins collection.
         """
-        return merge_plugin_dirs(self.plugins, self.codex_plugins, self.agent_plugins)
+        return merge_plugin_dirs(
+            self.plugins, self.codex_plugins, self.agent_plugins, self.grok_plugins
+        )
 
     def codex_marketplace_paths(self) -> List[Path]:
         """Every discovered Codex marketplace manifest."""
@@ -837,6 +853,7 @@ class RepositoryContext(
                 if not self.provenance(plugin).agent_plugin or self.provenance(plugin).claude
             ],
             codex_plugins=self.codex_plugins,
+            grok_plugins=self.grok_plugins,
             # Declaration-invariant roots keep portable skills visible under
             # an unrelated ``--type`` override while still enforcing their
             # fixed immediate-child discovery semantics.

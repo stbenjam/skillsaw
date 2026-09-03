@@ -67,6 +67,15 @@ first (`plugin.json` > `.grok-plugin/plugin.json` >
 a fallback, so a plain Claude plugin directory is simultaneously a Grok plugin.
 That is exactly the situation `RepositoryContext.provenance()` exists for.
 
+skillsaw claims only `.grok-plugin/` for Grok, of the three. The other two
+spellings are another ecosystem's declaration, and adopting them would put
+every Claude plugin and every portable package under Grok's format rules as
+well — a dual claim over content whose author declared one host. The catalog
+has its own chain, `.grok-plugin/marketplace.json` >
+`.claude-plugin/marketplace.json` > `./marketplace.json`, of which exactly
+one is read; note it runs the *opposite* way from the manifest chain, so the
+two lookups share no ordering.
+
 ## The hook failure model
 
 The hooks rule is the larger of the two Grok-specific structural checks (the
@@ -158,7 +167,17 @@ security rule. No new rule was written for any of that.
 and four rules over `.grok-plugin/plugin.json`, `marketplace.json` and
 `plugin-index.json`. Separate because provenance is the part that can break
 other ecosystems' results, and it should be reviewed against the dual-manifest
-evidence on its own.
+evidence on its own — which is also why it lands in two pieces: the leg
+first, with the fixtures and the attachment and reuse tests, then the rules
+over the nodes it builds.
+
+One thing the leg does not do is hand plugin hooks to `grok-hooks-valid`. A
+plugin's `hooks/hooks.json` gets its own block class, because Grok loads it
+through a different adapter and 1.0.13 publishes no observable for that path:
+a plugin's hooks file reports one opaque entry whether it is valid, empty or
+unparseable, so the failure scopes measured on `.grok/hooks/*.json` are not
+evidence about it. `hooks-dangerous` and `hooks-prohibited` read the shared
+base and see both.
 
 **PR 3 — `.grok/config.toml`.** The highest-signal config check there is: only
 `[mcp_servers]`, `[plugins]`, `[permission]` and `[mcp] max_output_bytes` are

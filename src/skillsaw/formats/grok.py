@@ -78,7 +78,24 @@ the configuration and ignored at dispatch.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional
+
+# ``inline_documents`` unpacks the "a path, an array of paths, or the object
+# itself" manifest shape Claude Code defined and both Codex and Grok
+# inherited. It lives beside the reader that needed it first rather than
+# being copied here, so one fix covers both ecosystems.
+from .codex import inline_documents
+from ..paths import (
+    contained_resolve,
+    safe_exists,
+    safe_is_dir,
+    safe_is_file,
+    safe_is_symlink,
+    safe_resolve,
+)
+from ..utils import read_json
 
 #: The project directory Grok Build reads. Grok loads the ``.grok/`` layer
 #: of the project it is started in, which in a monorepo is as often a
@@ -304,3 +321,336 @@ WILDCARD_MATCHERS = frozenset({"", "*"})
 def normalize_event(event: str) -> str:
     """The event *event* dispatches as, following Grok's alias table."""
     return HOOK_EVENT_ALIASES.get(event, event)
+
+
+# -- Plugins and the marketplace ----------------------------------------------
+#
+# A plugin is a directory holding any of ``skills/``, ``commands/``,
+# ``agents/``, ``hooks/hooks.json``, ``.mcp.json`` and ``.lsp.json``, plus an
+# optional manifest that renames those paths or adds metadata. A marketplace
+# is a repository listing plugins in ``.grok-plugin/marketplace.json``, with
+# an optional ``plugin-index.json`` catalog beside it.
+#
+# Sources: the user guide shipped with 1.0.13 (``09-plugins.md``); the
+# official catalog tooling at ``xai-org/plugin-marketplace@66f42b6`` —
+# ``scripts/plugin_catalog.py`` for component resolution and
+# ``scripts/validate-catalog.py`` for the catalog contract; and the manifest
+# precedence and name boundaries measured against the binary with ``grok
+# plugin validate``.
+
+#: The reserved directory Grok's own plugin and marketplace files live in.
+#: ``.claude-plugin`` is a documented fallback Grok reads, and is
+#: deliberately *not* Grok's marker: a directory carrying only that one is a
+#: Claude plugin the Claude rules already own.
+PLUGIN_DIR_NAME = ".grok-plugin"
+
+#: What each defect costs, measured against 1.0.13 rather than read off the
+#: docs, because the loader reports none of it — ``grok plugin install``
+#: prints success for a plugin the runtime then loads nothing from.
+#:
+#: * **The whole plugin directory** — a ``plugin.json`` that fails to parse,
+#:   or a ``name`` that is missing, non-string, or outside
+#:   :data:`PLUGIN_NAME_RE`. The conventional ``skills/`` does not rescue it:
+#:   discovery skips the directory and ``grok inspect`` reports no plugin.
+#: * **That component list only** — a declared path that escapes the plugin
+#:   root or does not exist. Containment is real, not incidental: a target
+#:   that exists outside the plugin is still dropped. A declared
+#:   ``skills``/``commands``/``agents`` path *replaces* the conventional
+#:   directory rather than adding to it, so an override silently costs
+#:   everything under ``skills/``.
+#: * **Those hooks or servers only** — ``hooks`` or ``mcpServers`` naming a
+#:   path that does not exist, or a malformed inline object. The plugin and
+#:   its sibling components survive.
+#: * **Nothing** — a ``name`` disagreeing with the directory name (the
+#:   manifest name wins everywhere), a non-semver ``version``, an unknown
+#:   key, and a path field given as a bare string instead of an array.
+#:
+#: A manifest is optional: a directory holding ``skills/``, ``agents/``,
+#: ``hooks/hooks.json`` or ``.mcp.json`` installs without one, under a
+#: synthesized ``<dir>-<hash>`` name. ``commands/`` alone and ``.lsp.json``
+#: alone are discovered but refused by ``grok plugin install``.
+
+#: Filenames inside :data:`PLUGIN_DIR_NAME`. ``plugin.json`` describes one
+#: plugin; ``marketplace.json`` is the catalog Grok reads; ``plugin-index.json``
+#: is the optional display catalog beside it, whose ``sha`` values a
+#: ``require_sha`` deployment installs from.
+PLUGIN_MANIFEST = "plugin.json"
+MARKETPLACE_FILENAME = "marketplace.json"
+PLUGIN_INDEX_FILENAME = "plugin-index.json"
+
+#: Where a marketplace's catalog may live, in the order Grok resolves them.
+#: Exactly one is read, never merged — verified by building a repository
+#: carrying two catalogs listing different plugins and reading back ``grok
+#: plugin list --json --available``. This is the **reverse** of
+#: :data:`MANIFEST_PATHS`: the two lookups share no ordering, so a rule that
+#: picks "the catalog" must use the right one.
+#:
+#: skillsaw claims only the first for Grok. The second is Claude's file —
+#: the schemas differ, so linting one against both would contradict itself —
+#: and the third is a bare root filename no ecosystem reserves.
+CATALOG_PATHS = (
+    (PLUGIN_DIR_NAME, MARKETPLACE_FILENAME),
+    (".claude-plugin", MARKETPLACE_FILENAME),
+    (MARKETPLACE_FILENAME,),
+)
+
+#: Where a plugin's manifest may live, in the order Grok resolves them —
+#: verified by building plugins carrying each combination and reading back
+#: ``grok plugin validate``: a plugin with all three resolved to the root
+#: one, ``.grok-plugin`` + ``.claude-plugin`` resolved to ``.grok-plugin``,
+#: and a ``.claude-plugin``-only plugin loaded. The official
+#: ``plugin_catalog.py`` lists the last two in the same order.
+MANIFEST_PATHS = (
+    (PLUGIN_MANIFEST,),
+    (PLUGIN_DIR_NAME, PLUGIN_MANIFEST),
+    (".claude-plugin", PLUGIN_MANIFEST),
+)
+
+#: Every manifest key Grok's loader reads. Unknown keys are tolerated, so
+#: this is the vocabulary a rule may check the *shape* of, never a
+#: whitelist to report against.
+MANIFEST_KEYS = frozenset(
+    {
+        "name",
+        "version",
+        "description",
+        "author",
+        "homepage",
+        "repository",
+        "license",
+        "keywords",
+        "logo",
+        "skills",
+        "commands",
+        "agents",
+        "hooks",
+        "mcpServers",
+        "lspServers",
+    }
+)
+
+#: Each component's conventional path, the manifest key that overrides it,
+#: and whether the path names a directory. Grok discovers components from
+#: these locations with no manifest at all.
+#:
+#: The two readers disagree about what a manifest key then does, and the
+#: binary is the one that matters: the official ``plugin_catalog.py`` unions
+#: the declared paths with the conventional directory, while the runtime
+#: **replaces** it — ``"skills": ["custom"]`` loaded ``custom`` and nothing
+#: from ``skills/``. So a plugin that validates against the catalog tool
+#: still loses everything under the conventional directory when Grok loads
+#: it, which is what ``grok-plugin-json-valid`` warns about. skillsaw's skill
+#: walk visits the conventional directory either way, so the skills that
+#: warning names as dropped are still linted.
+#:
+#: ``lspServers`` has no rule yet — recorded so the vocabulary is complete.
+COMPONENT_PATHS = {
+    "skills": ("skills", True),
+    "commands": ("commands", True),
+    "agents": ("agents", True),
+    "hooks": ("hooks/hooks.json", False),
+    "mcpServers": (".mcp.json", False),
+    "lspServers": (".lsp.json", False),
+}
+
+#: The plugin name Grok accepts, measured against the binary rather than
+#: read off the docs: ``-lead``, ``trail-``, ``UPPER``, ``under_score``,
+#: ``dot.name`` and ``""`` are rejected, while ``123``, ``a``, ``a--b`` and
+#: 64 characters are accepted and 65 are not. The loader's own message is
+#: "must be 1-64 chars, lowercase alphanumeric + hyphens, no leading/trailing
+#: hyphens".
+PLUGIN_NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+PLUGIN_NAME_MAX_LENGTH = 64
+
+#: The ``sha`` a url source must pin. The official validator requires 40
+#: lowercase hex — "a vendor force-push or repo compromise immediately ships
+#: to every user" — while the installer accepts 40 or 64 (SHA-256) and is
+#: **case-insensitive**: an uppercase 40-hex value passed straight through
+#: to fetch-by-sha when measured. So this matches what the runtime pins, and
+#: only a branch, a tag, an abbreviation or an absent value is unpinned. A
+#: rule enforcing the validator's lowercase is stricter than the runtime and
+#: owes that its own, softer finding.
+SHA_LENGTHS = frozenset({40, 64})
+SHA_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
+
+
+def grok_local_source_path(source: Any) -> Optional[str]:
+    """Relative path of a marketplace entry's local source, or ``None``.
+
+    The loader keys on ``path`` alone, verified by installing from six
+    catalogs differing only in this field: ``{"type": "local", "path": …}``,
+    ``{"source": "local", "path": …}``, the bare string ``"./plugins/x"``,
+    an object with **no discriminator at all**, and one with a **bogus**
+    ``type`` all installed identically. Requiring a discriminator is
+    therefore a false positive on catalogs that work.
+
+    A ``url`` is what makes an entry remote. The official catalog's
+    subdirectory form — ``{"source": "url", "url": …, "sha": …, "path":
+    "plugins/mongodb"}`` — carries a ``path`` that names a directory inside
+    the *cloned* repository, so reading it as a local source would resolve
+    a plugin directory the checkout does not have.
+    """
+    if isinstance(source, str):
+        return source or None
+    if not isinstance(source, dict) or is_url_source(source):
+        return None
+    path = source.get("path")
+    return path if isinstance(path, str) and path else None
+
+
+def is_url_source(source: Any) -> bool:
+    """Whether *source* names a remote repository to clone.
+
+    ``{"source": "url", ...}`` is the spelling the official catalog and
+    validator use; a bare ``url`` key is read the same way, since that is
+    what turns the entry's ``path`` into a subdirectory of the clone rather
+    than a directory in this checkout.
+    """
+    return isinstance(source, dict) and ("url" in source or source.get("source") == "url")
+
+
+def grok_manifest_path(plugin_dir: Path) -> Optional[Path]:
+    """The manifest *plugin_dir* resolves to, following :data:`MANIFEST_PATHS`.
+
+    Contained: a manifest resolving outside the plugin is another plugin's,
+    and Grok skips it too ("manifest path escapes plugin root; skipping").
+    """
+    root = safe_resolve(plugin_dir)
+    if root is None:
+        return None
+    for parts in MANIFEST_PATHS:
+        candidate = plugin_dir.joinpath(*parts)
+        if contained_resolve(candidate, root) is None:
+            continue
+        if safe_is_file(candidate):
+            return candidate
+    return None
+
+
+def grok_manifest(plugin_dir: Path) -> Dict[str, Any]:
+    """A Grok plugin's parsed manifest, or ``{}`` when absent or unparseable.
+
+    Uses the shared cached reader: strips a UTF-8 BOM, and repeated reads
+    cost nothing.
+    """
+    path = grok_manifest_path(plugin_dir)
+    if path is None:
+        return {}
+    data, error = read_json(path)
+    return data if not error and isinstance(data, dict) else {}
+
+
+def grok_plugin_name(plugin_dir: Path) -> str:
+    """Name a Grok plugin declares, falling back to its directory name."""
+    name = grok_manifest(plugin_dir).get("name")
+    return name if isinstance(name, str) and name else plugin_dir.name
+
+
+def grok_declared_paths(plugin_dir: Path, field: str, want_dir: bool) -> List[Path]:
+    """Contained paths a Grok manifest names in *field*.
+
+    ``skills``, ``commands``, ``agents``, ``hooks`` and ``mcpServers`` each
+    accept a path or an array of paths; ``hooks`` and ``mcpServers`` also
+    accept the object itself, which :func:`grok_inline_hooks` and
+    :func:`grok_inline_mcp` read. Paths escaping the plugin root are
+    dropped — Grok drops them too, silently, which is what makes them worth
+    reporting elsewhere rather than following here.
+    """
+    declared = grok_manifest(plugin_dir).get(field)
+    candidates = declared if isinstance(declared, list) else [declared]
+    root = safe_resolve(plugin_dir)
+    if root is None:
+        return []
+    found: List[Path] = []
+    for item in candidates:
+        if not isinstance(item, str) or not item:
+            continue
+        candidate = contained_resolve(plugin_dir / item, root)
+        if candidate is None:
+            continue
+        if candidate == root and not want_dir:
+            continue
+        if safe_is_dir(candidate) if want_dir else safe_is_file(candidate):
+            found.append(candidate)
+    return found
+
+
+def grok_declared_skill_dirs(plugin_dir: Path) -> List[Path]:
+    """Skill directories a Grok manifest declares through ``skills``."""
+    return grok_declared_paths(plugin_dir, "skills", want_dir=True)
+
+
+def grok_declared_hook_files(plugin_dir: Path) -> List[Path]:
+    """Hook files a Grok manifest declares through ``hooks``."""
+    return grok_declared_paths(plugin_dir, "hooks", want_dir=False)
+
+
+def grok_declared_mcp_files(plugin_dir: Path) -> List[Path]:
+    """MCP config files a Grok manifest declares through ``mcpServers``."""
+    return grok_declared_paths(plugin_dir, "mcpServers", want_dir=False)
+
+
+def grok_inline_hooks(plugin_dir: Path) -> List[Dict[str, Any]]:
+    """Hooks a Grok manifest declares inline, in hooks.json shape.
+
+    The path forms are :func:`grok_declared_hook_files`; this is the object
+    form, which carries the same executable commands — the binary logs
+    "plugin uses inline hooks in manifest" when it loads one. One document
+    per object and never a merge, so every occurrence reaches the security
+    rules with its own commands.
+    """
+    return inline_documents(grok_manifest(plugin_dir).get("hooks"), "hooks")
+
+
+def grok_inline_mcp(plugin_dir: Path) -> List[Dict[str, Any]]:
+    """MCP servers a Grok manifest declares inline.
+
+    The counterpart of :func:`grok_inline_hooks` for ``mcpServers``, logged
+    as "plugin uses inline mcpServers in manifest". Both ``{"mcpServers":
+    {...}}`` and a bare server map are accepted, matching what
+    ``McpBlock.servers`` reads.
+    """
+    return inline_documents(grok_manifest(plugin_dir).get("mcpServers"), "mcpServers")
+
+
+def grok_manifest_is_contained(plugin_dir: Path) -> bool:
+    """Whether *plugin_dir* carries a Grok manifest of its own.
+
+    ``.grok-plugin/plugin.json`` only, never the ``.claude-plugin`` or root
+    fallbacks: those are another ecosystem's declaration, and reading them
+    as Grok evidence would make every Claude plugin a Grok plugin too.
+    Containment is checked the way discovery checks it, so a marker or a
+    manifest symlinked out of the plugin is not this plugin's.
+    """
+    root = safe_resolve(plugin_dir)
+    if root is None:
+        return False
+    marker = plugin_dir / PLUGIN_DIR_NAME
+    if contained_resolve(marker, root) is None:
+        return False
+    manifest = marker / PLUGIN_MANIFEST
+    if contained_resolve(manifest, root) is None:
+        return False
+    return safe_is_file(manifest)
+
+
+def grok_marker_escapes(plugin_dir: Path) -> bool:
+    """Whether *plugin_dir*'s ``.grok-plugin`` marker points out of the plugin.
+
+    The containment half of :func:`grok_manifest_is_contained`, asked
+    without requiring the manifest to exist: a directory carrying no marker
+    at all does not escape, so a catalog claim over it still stands. A
+    marker (or a ``plugin.json`` inside it) that resolves elsewhere is
+    another plugin's, and no claim may adopt it.
+    """
+    root = safe_resolve(plugin_dir)
+    if root is None:
+        # Containment cannot be proven, so fail closed.
+        return True
+    marker = plugin_dir / PLUGIN_DIR_NAME
+    if not (safe_exists(marker) or safe_is_symlink(marker)):
+        return False
+    if contained_resolve(marker, root) is None:
+        return True
+    manifest = marker / PLUGIN_MANIFEST
+    return safe_exists(manifest) and contained_resolve(manifest, root) is None

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
+from .formats.grok import grok_manifest_is_contained, grok_marker_escapes
 from .paths import safe_exists, safe_resolve
 
 if TYPE_CHECKING:
@@ -23,8 +24,9 @@ class PluginProvenance:
     """Who claims a plugin directory, decided once and read everywhere.
 
     The single source of truth for every ecosystem-provenance question:
-    which ecosystems declared the directory (``claude``, ``codex``, or
-    ``agent-plugin``), and whether it is vendor-installed content. Rules and
+    which ecosystems declared the directory (``claude``, ``codex``,
+    ``agent-plugin``, or ``grok``), and whether it is vendor-installed
+    content. Rules and
     the lint tree consult this record so two call sites cannot disagree about
     ownership and a directory cannot fall between per-ecosystem attach paths.
 
@@ -73,6 +75,22 @@ class PluginProvenance:
     def agent_plugin(self) -> bool:
         return "agent-plugin" in self.ecosystems
 
+    @property
+    def grok(self) -> bool:
+        return "grok" in self.ecosystems
+
+    @property
+    def grok_only(self) -> bool:
+        """Grok claims the directory and Claude does not.
+
+        The same shape as :attr:`codex_only`, and for the same reason: the
+        predicate asks whether Claude's looser reading of hooks and MCP
+        still governs the directory, and only a Claude declaration answers
+        yes. It gates the Grok-tightened checks, never a skip — a
+        dual-manifest directory keeps its established Claude results.
+        """
+        return self.grok and not self.claude
+
 
 class RepositoryProvenanceMixin:
     """Cached provenance and containment behavior for RepositoryContext.
@@ -110,7 +128,11 @@ class RepositoryProvenanceMixin:
 
         def _agent_plugin_root_set(self) -> Set[Path]: ...
 
+        def _grok_claim_set(self) -> Set[Path]: ...
+
         def codex_plugin_roots(self) -> List[Path]: ...
+
+        def grok_plugin_roots(self) -> List[Path]: ...
 
         def is_codex_installed_plugin(self, plugin_dir: Path) -> bool: ...
 
@@ -133,6 +155,8 @@ class RepositoryProvenanceMixin:
           source listing in any Codex catalog.
         * ``agent-plugin`` — a contained package carrying an Agent Plugins
           schema identifier in root ``plugin.json``.
+        * ``grok`` — a contained ``.grok-plugin/plugin.json``, or a local
+          source listing in any Grok catalog.
 
         Filesystem-first and independent of ``--type``: an override changes
         what discovery walks, not what the author declared.
@@ -180,6 +204,19 @@ class RepositoryProvenanceMixin:
             ecosystems.add("codex")
         if resolved is not None and resolved in self._agent_plugin_claim_set():
             ecosystems.add("agent-plugin")
+        if grok_manifest_is_contained(plugin_dir) or (
+            resolved is not None
+            and resolved in self._grok_claim_set()
+            # A catalog claim is a declaration about a directory, never a
+            # licence to read through it — the marker gets the same
+            # containment check discovery applies. ``.claude-plugin`` and a
+            # root ``plugin.json`` are deliberately not evidence here even
+            # though Grok reads both: each is another ecosystem's
+            # declaration, and adopting it would put every Claude plugin
+            # under Grok's format rules too.
+            and not grok_marker_escapes(plugin_dir)
+        ):
+            ecosystems.add("grok")
         record = PluginProvenance(
             ecosystems=frozenset(ecosystems),
             installed=self.is_codex_installed_plugin(plugin_dir),
@@ -197,6 +234,37 @@ class RepositoryProvenanceMixin:
         still read its prose either way.
         """
         return self.provenance(plugin_dir).codex_only
+
+    def is_grok_only_plugin(self, plugin_dir: Path) -> bool:
+        """Grok-claimed with no Claude declaration.
+
+        The Grok counterpart of :meth:`is_codex_only_plugin`, for the
+        conditional strictness the Grok-tightened checks apply.
+        """
+        return self.provenance(plugin_dir).grok_only
+
+    def in_grok_only_plugin(self, path: Path) -> bool:
+        """Whether *path* sits inside a Grok-only plugin, nearest owner first."""
+        owner = self.grok_plugin_owning(path)
+        return owner is not None and self.provenance(owner).grok_only
+
+    def grok_plugin_owning(self, path: Path) -> Optional[Path]:
+        """The Grok plugin *path* sits in, nearest first, or ``None``.
+
+        Nearest rather than first, as with Codex: a repository root that is
+        itself a plugin contains nested ones, so an outer match would let
+        content escape the plugin that actually ships it.
+        """
+        roots = set(self.grok_plugin_roots())
+        if not roots:
+            return None
+        resolved = safe_resolve(path)
+        if resolved is None:
+            return None
+        for candidate in (resolved, *resolved.parents):
+            if candidate in roots:
+                return candidate
+        return None
 
     def in_format_scope(self, node: "LintTarget", ecosystem: str) -> bool:
         """Whether *ecosystem*'s format conventions govern *node*.

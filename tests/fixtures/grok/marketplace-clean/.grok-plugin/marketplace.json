@@ -1,0 +1,39 @@
+{
+  "name": "harbour-plugins",
+  "description": "Survey tooling for the harbour field team",
+  "owner": {
+    "name": "Harbour Tools",
+    "email": "tools@harbour.example"
+  },
+  "plugins": [
+    {
+      "name": "tide-charts",
+      "description": "NOAA tide predictions turned into shoreline survey windows.",
+      "category": "productivity",
+      "source": {
+        "type": "local",
+        "path": "./plugins/tide-charts"
+      },
+      "homepage": "https://harbour.example/tide-charts",
+      "keywords": [
+        "tides",
+        "noaa"
+      ]
+    },
+    {
+      "name": "almanac",
+      "description": "Sunrise, sunset and civil twilight for a survey date.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/almanac.git",
+        "sha": "1f9d0c73a86b24e5107cad3f88b90250e6c147da"
+      },
+      "homepage": "https://github.com/harbour-example/almanac",
+      "keywords": [
+        "almanac",
+        "daylight"
+      ]
+    }
+  ]
+}

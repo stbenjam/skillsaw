@@ -328,9 +328,135 @@ already lints; there is no `.grok/mcp.json`.
 
 Grok reads `AGENTS.md` and `CLAUDE.md` for portable instructions, both of
 which carry their own repository types, so a `.grok/` directory is the only
-marker that is Grok Build's alone. `.grok/plugins/` is an install location
-for project-scoped plugins rather than authored configuration, so it is
-neither evidence nor linted here.
+marker that is Grok Build's alone. `.grok/plugins/` holds project-scoped
+plugins rather than project configuration, so it is not evidence for this
+type; a plugin there is found by the plugin discovery below, like any other.
+
+## Grok Build Plugin
+
+Directories with a `.grok-plugin/plugin.json` manifest, plus every local
+source a Grok catalog declares:
+
+```text
+my-plugin/
+├── .grok-plugin/
+│   └── plugin.json       # Optional to Grok, and the marker skillsaw claims
+├── skills/
+│   └── my-skill/
+│       └── SKILL.md
+├── commands/
+├── agents/
+├── hooks/
+│   └── hooks.json        # Optional
+├── .mcp.json             # Optional: bundled MCP servers
+└── .lsp.json             # Optional: not read yet
+```
+
+Grok resolves a manifest from `plugin.json`, then `.grok-plugin/plugin.json`,
+then `.claude-plugin/plugin.json`, and reads the first it finds. skillsaw
+claims only the middle one for Grok. The other two are another ecosystem's
+declaration — a root `plugin.json` is the Agent Plugins entrypoint, and
+`.claude-plugin/` is Claude's — and claiming them would put every Claude
+plugin and every portable package under Grok's rules as well. A directory
+carrying both `.grok-plugin/plugin.json` and `.claude-plugin/plugin.json` is
+both a Grok plugin and a Claude plugin, and each ecosystem's rules apply
+independently.
+
+A manifest is optional to Grok: a directory holding `skills/`, `agents/`,
+`hooks/hooks.json` or `.mcp.json` loads without one. skillsaw still needs a
+declaration to attribute the directory to Grok, so a manifest-less plugin is
+claimed only when a Grok catalog lists it as a local source.
+
+`hooks` and `mcpServers` accept a path or the object inline; `skills`,
+`commands` and `agents` accept a path or an array of paths. All forms are
+followed, because a hook written inline runs exactly like one in a file:
+
+| Field | Default location | Also followed |
+|---|---|---|
+| `hooks` | `hooks/hooks.json` | a declared path, an inline object |
+| `mcpServers` | `.mcp.json` | a declared path, an inline server map |
+| `skills` | `skills/` | declared directory paths |
+| `commands`, `agents` | `commands/`, `agents/` | declared directory paths |
+
+Paths that leave the plugin root are not followed. Grok drops them too, and
+silently: a declared `skills` path pointing outside the plugin loads zero
+skills while `grok plugin validate` still calls the manifest valid.
+
+Two rules cover the packaging itself.
+[`grok-plugin-json-valid`](rules/grok-plugin-json-valid.md) validates the
+manifest, and its severities carry the blast radius: a manifest that fails
+to load makes Grok skip the whole directory — `skills/` does not rescue it,
+and `grok plugin install` still prints success — while a declared path that
+escapes or does not exist costs that component list alone.
+[`grok-plugin-structure`](rules/grok-plugin-structure.md) covers the
+directory: with no manifest and none of `skills/`, `agents/`,
+`hooks/hooks.json` or `.mcp.json`, the installer refuses it. `commands/`
+alone and `.lsp.json` alone do not count, measured against the binary.
+
+A plugin's `hooks/hooks.json` is scanned by
+[`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md), and its `.mcp.json` by
+[`mcp-valid-json`](rules/mcp-valid-json.md) and
+[`mcp-prohibited`](rules/mcp-prohibited.md) — inline declarations included.
+`grok-hooks-valid` deliberately does *not* see them: Grok loads plugin hooks
+through a different adapter from the project layer's, and that adapter
+publishes nothing observable about which entries survived, so the failure
+scopes that rule reports were measured on `.grok/hooks/*.json` and apply
+there only.
+
+## Grok Build Marketplace
+
+Repositories with a Grok catalog at `.grok-plugin/marketplace.json`:
+
+```text
+marketplace/
+├── .grok-plugin/
+│   ├── marketplace.json    # The index Grok reads
+│   └── plugin-index.json   # Optional display catalog, read from beside it
+└── plugins/
+    ├── plugin-one/
+    │   └── .grok-plugin/plugin.json
+    └── plugin-two/
+        └── .grok-plugin/plugin.json
+```
+
+Grok looks for a catalog at `.grok-plugin/marketplace.json`, then
+`.claude-plugin/marketplace.json`, then a root-level `marketplace.json`, and
+reads exactly one — the reverse of the plugin-manifest order above. skillsaw
+claims the first for Grok and leaves `.claude-plugin/marketplace.json` to the
+Claude `marketplace-*` rules, because the two schemas disagree: Claude
+requires `owner`, while a Grok entry carries `category` and a `source` in one
+of three shapes. Put a Grok catalog at `.grok-plugin/marketplace.json`.
+
+An entry's `source` names either a directory in this repository or a remote
+repository to clone. The local forms are `{"type": "local", "path": "./x"}`
+and the bare string `"./x"` — and, measured against the binary, an object
+with no discriminator or a misspelled one, because the loader keys on `path`
+alone. A `url` is what makes an entry remote, and its own `path` then names a
+subdirectory of the clone rather than a directory here. Local sources are
+resolved against the marketplace root, so a package that is a marketplace of
+its own resolves against the package. Sources that escape the repository are
+dropped.
+
+`plugin-index.json` beside the catalog is what the marketplace browser reads
+before anything is installed, and a `require_sha` deployment installs from
+the `sha` values it publishes. skillsaw attaches it under its catalog.
+
+[`grok-marketplace-json-valid`](rules/grok-marketplace-json-valid.md)
+validates the catalog. A catalog Grok cannot parse is discarded whole and
+discovery falls back to scanning `plugins/`, so the repository looks healthy
+while everything catalogued from anywhere else disappears; an entry with no
+`name`, no `source`, or a path that does not resolve is dropped one at a
+time, silently. [`grok-marketplace-index-parity`](rules/grok-marketplace-index-parity.md)
+compares `plugin-index.json` against the catalog beside it — a `sha` that
+has drifted blanks that plugin's component listing — and reports nothing
+when there is no index.
+
+A Grok catalog explains its own `plugins/` directory, so a Grok-only
+marketplace is not reported as a Claude marketplace with a missing manifest.
+Both Grok packaging types are independent of the Claude and Codex types — a
+repository commonly ships more than one catalog or manifest, and skillsaw
+detects each.
 
 ## OpenAI Codex project configuration
 

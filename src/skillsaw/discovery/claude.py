@@ -13,6 +13,7 @@ from skillsaw.discovery import (
     exact_name_exists,
 )
 from skillsaw.formats.codex import codex_declared_skill_dirs
+from skillsaw.formats.grok import grok_declared_skill_dirs
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 from skillsaw.utils import read_json
 
@@ -206,6 +207,7 @@ def discover_skills(
     agentskills: bool,
     plugins: Iterable[Path],
     codex_plugins: Iterable[Path],
+    grok_plugins: Iterable[Path],
     agent_plugins: Iterable[Path],
     recursive_agent_plugins: Iterable[Path],
     in_apm_compiled_dir: Callable[[Path], bool],
@@ -322,11 +324,19 @@ def discover_skills(
         path = plugin / "skills"
         if path.is_dir():
             walk(path)
-    for plugin in codex_plugins:
+
+    def contained_plugin_skills(plugin: Path, declared: Iterable[Path]) -> None:
+        """Walk one package's skill components without leaving the package.
+
+        Codex and Grok Build share this contract: the conventional
+        ``skills/`` directory plus whatever the manifest declares, every
+        resolved path forced back inside the plugin root. One body for both
+        so a containment fix cannot land on only one ecosystem.
+        """
         plugin_root = safe_resolve(plugin)
         if plugin_root is None:
-            continue
-        for path in (plugin / "skills", *codex_declared_skill_dirs(plugin)):
+            return
+        for path in (plugin / "skills", *declared):
             if not path.is_dir():
                 continue
             if exact_name_exists(path, "SKILL.md"):
@@ -340,6 +350,11 @@ def discover_skills(
                     discovered.add(resolved)
             else:
                 walk(path, plugin_root)
+
+    for plugin in codex_plugins:
+        contained_plugin_skills(plugin, codex_declared_skill_dirs(plugin))
+    for plugin in grok_plugins:
+        contained_plugin_skills(plugin, grok_declared_skill_dirs(plugin))
     for plugin in agent_plugin_packages:
         for skill in agent_plugins_discovery.discover_agent_plugin_skills(plugin):
             resolved = safe_resolve(skill)

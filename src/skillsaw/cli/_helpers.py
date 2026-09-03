@@ -98,6 +98,7 @@ class _MergedContext:
         plugin_repo_types=frozenset(),
         codex_plugins=(),
         agent_plugins=(),
+        grok_plugins=(),
     ):
         self.root_path = root_path
         self.repo_types = repo_types
@@ -106,10 +107,13 @@ class _MergedContext:
         self.plugin_repo_types = set(plugin_repo_types)
         self.codex_plugins = list(codex_plugins)
         self.agent_plugins = list(agent_plugins)
+        self.grok_plugins = list(grok_plugins)
 
     def distinct_plugin_dirs(self):
         """Same contract as :meth:`RepositoryContext.distinct_plugin_dirs`."""
-        return merge_plugin_dirs(self.plugins, self.codex_plugins, self.agent_plugins)
+        return merge_plugin_dirs(
+            self.plugins, self.codex_plugins, self.agent_plugins, self.grok_plugins
+        )
 
     @property
     def repo_type(self):
@@ -141,6 +145,7 @@ def _build_merged_context(contexts):
     skills = []
     codex_plugins = []
     agent_plugins = []
+    grok_plugins = []
     for ctx in contexts:
         repo_types |= ctx.repo_types
         plugin_repo_types |= ctx.plugin_repo_types
@@ -148,6 +153,7 @@ def _build_merged_context(contexts):
         skills.extend(ctx.skills)
         codex_plugins.extend(ctx.codex_plugins)
         agent_plugins.extend(ctx.agent_plugins)
+        grok_plugins.extend(ctx.grok_plugins)
     return _MergedContext(
         root_path,
         repo_types,
@@ -156,6 +162,7 @@ def _build_merged_context(contexts):
         plugin_repo_types,
         codex_plugins,
         agent_plugins,
+        grok_plugins,
     )
 
 

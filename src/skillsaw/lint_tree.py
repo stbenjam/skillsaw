@@ -43,6 +43,10 @@ from .blocks import (
     GrokAgentBlock,
     GrokCommandBlock,
     GrokHooksBlock,
+    GrokInlineHooksBlock,
+    GrokInlineMcpBlock,
+    GrokMcpBlock,
+    GrokPluginHooksBlock,
     GrokRuleBlock,
     HooksBlock,
     InstructionBlock,
@@ -103,6 +107,10 @@ from .lint_target import (
     CodexPluginConfigNode,
     CodexPluginNode,
     DevinSkillNode,
+    GrokMarketplaceConfigNode,
+    GrokMarketplaceIndexNode,
+    GrokPluginConfigNode,
+    GrokPluginNode,
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
@@ -315,6 +323,25 @@ def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
         return False
     return any(
         claimed == resolved and issubclass(block_cls, HooksBlock)
+        for claimed, block_cls in state.seen_roles
+    )
+
+
+def _attached_as_mcp(state: _TreeBuildState, path: Path) -> bool:
+    """Whether *path* is already in the tree under some MCP class.
+
+    The counterpart of :func:`_attached_as_hooks`, and needed for the same
+    reason: every MCP class is read by the same security and policy rules,
+    so a second block for one file reports each of its servers twice. The
+    generic root attach runs before the plugin pass and places the
+    repository root's ``.mcp.json``, which for a repo-root plugin is that
+    plugin's own conventional file under a different class.
+    """
+    resolved = state.resolve_repo_path(path)
+    if resolved is None:
+        return False
+    return any(
+        claimed == resolved and issubclass(block_cls, McpBlock)
         for claimed, block_cls in state.seen_roles
     )
 
@@ -597,7 +624,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         return agent_plugin_mcp is not None and safe_resolve(path) == agent_plugin_mcp
 
     def _add_contained_plugin_block(
-        parent: CodexPluginConfigNode | AgentPluginConfigNode,
+        parent: CodexPluginConfigNode | GrokPluginConfigNode | AgentPluginConfigNode,
         p: Path,
         block_cls: type,
         owner: Path | None = None,
@@ -1088,9 +1115,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if not _is_excluded(codex_marketplace_json):
             root.children.append(CodexMarketplaceConfigNode(path=codex_marketplace_json))
 
+    # --- Grok marketplace configs ---
+    # The optional plugin-index.json hangs off its catalog rather than off
+    # the tree root: a parity check needs the pair, and the child edge is
+    # what supplies it without a second filesystem probe. An index with no
+    # catalog beside it attaches nowhere, which is right — it is a display
+    # catalog for a marketplace, and on its own there is nothing to drift
+    # from.
+    for grok_marketplace_json in context.grok_marketplace_paths():
+        if _is_excluded(grok_marketplace_json):
+            continue
+        catalog_node = GrokMarketplaceConfigNode(path=grok_marketplace_json)
+        index_json = grok_marketplace_json.parent / grok.PLUGIN_INDEX_FILENAME
+        if safe_is_file(index_json) and not _is_excluded(index_json):
+            catalog_node.children.append(GrokMarketplaceIndexNode(path=index_json))
+        root.children.append(catalog_node)
+
     # --- Plugins (build first so skills can nest inside them) ---
     plugin_nodes: dict[Path, PluginNode] = {}
     codex_plugin_nodes: dict[Path, CodexPluginNode] = {}
+    grok_plugin_nodes: dict[Path, GrokPluginNode] = {}
     agent_plugin_nodes: dict[Path, AgentPluginNode] = {}
     marketplace_dir = context.root_path / "plugins"
     marketplace_node: MarketplaceNode | None = None
@@ -1112,8 +1156,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for candidate in (
         *context.plugins,
         *context.codex_plugins,
+        *context.grok_plugins,
         *context.agent_plugins,
         *sorted(p for p in context._codex_claim_set() if not context.is_path_excluded(p)),
+        *sorted(p for p in context._grok_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._agent_plugin_claim_set() if not context.is_path_excluded(p)),
     ):
         resolved_candidate = safe_resolve(candidate)
@@ -1154,11 +1200,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if prov.claude:
             container = PluginNode(path=plugin_path)
             plugin_nodes[resolved_plugin] = container
-        elif resolved_plugin == root.resolved_path and (prov.codex or is_agent_plugin):
+        elif resolved_plugin == root.resolved_path and (prov.codex or prov.grok or is_agent_plugin):
             container = root
         elif prov.codex:
             container = CodexPluginNode(path=plugin_path)
             codex_plugin_nodes[resolved_plugin] = container
+        elif prov.grok:
+            container = GrokPluginNode(path=plugin_path)
+            grok_plugin_nodes[resolved_plugin] = container
         elif is_agent_plugin:
             container = AgentPluginNode(path=plugin_path)
             agent_plugin_nodes[resolved_plugin] = container
@@ -1296,6 +1345,66 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 node.children.append(inline_block)
             container.children.append(node)
 
+        # Grok manifest cluster, for any directory Grok claims (dual
+        # directories hang it off their PluginNode). Not gated on the
+        # manifest existing: Grok treats one as optional, so a claimed
+        # directory without one is a plugin whose components come from the
+        # conventional paths, and the node is what a manifest rule reads.
+        if prov.grok:
+            manifest = grok.grok_manifest_path(plugin_path) or plugin_path.joinpath(
+                grok.PLUGIN_DIR_NAME, grok.PLUGIN_MANIFEST
+            )
+            node = GrokPluginConfigNode(path=manifest)
+            node.plugin_owner = resolved_plugin
+            # Whichever host already reads these files keeps its block
+            # class: one block per file, or the security rules report every
+            # command in it twice, and a dual-manifest plugin's established
+            # Claude results have to stand. Grok's own classes are for the
+            # files only Grok reads, which is every file in a Grok-only
+            # plugin — including a path the manifest declares, since that
+            # path may be the conventional file under another name.
+            if prov.claude:
+                hooks_cls, mcp_cls = ClaudeHooksBlock, McpBlock
+            elif prov.codex:
+                hooks_cls, mcp_cls = CodexHooksBlock, McpBlock
+            else:
+                hooks_cls, mcp_cls = GrokPluginHooksBlock, GrokMcpBlock
+            # Grok discovers ``hooks/hooks.json`` and ``.mcp.json`` with no
+            # manifest at all, so a plugin ships executable hooks and
+            # spawnable servers without declaring either. Plugin hooks get
+            # ``GrokPluginHooksBlock`` rather than the project layer's
+            # class: Grok loads them through a different adapter whose
+            # per-entry failure scope 1.0.13 publishes no observable for, so
+            # ``grok-hooks-valid``'s measured verdicts do not cover them.
+            _add_contained_plugin_block(
+                node, plugin_path / "hooks" / "hooks.json", hooks_cls, owner=resolved_plugin
+            )
+            for declared_hooks in grok.grok_declared_hook_files(plugin_path):
+                if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
+                    continue
+                state.add_parser_block(node, declared_hooks, hooks_cls, owner=resolved_plugin)
+            for inline_hooks in grok.grok_inline_hooks(plugin_path):
+                inline_hooks_block = GrokInlineHooksBlock(path=manifest, inline_data=inline_hooks)
+                inline_hooks_block.plugin_owner = resolved_plugin
+                node.children.append(inline_hooks_block)
+            native_mcp = plugin_path / ".mcp.json"
+            if not (
+                _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp)
+                or _attached_as_mcp(state, native_mcp)
+            ):
+                _add_contained_plugin_block(node, native_mcp, mcp_cls, owner=resolved_plugin)
+            for declared_mcp in grok.grok_declared_mcp_files(plugin_path):
+                if _shadowed_by_agent_plugin_mcp(
+                    declared_mcp, agent_plugin_mcp
+                ) or _attached_as_mcp(state, declared_mcp):
+                    continue
+                state.add_parser_block(node, declared_mcp, mcp_cls, owner=resolved_plugin)
+            for inline_mcp in grok.grok_inline_mcp(plugin_path):
+                inline_mcp_block = GrokInlineMcpBlock(path=manifest, inline_data=inline_mcp)
+                inline_mcp_block.plugin_owner = resolved_plugin
+                node.children.append(inline_mcp_block)
+            container.children.append(node)
+
         # Agent Plugins manifest cluster. A forced ``--type agent-plugin``
         # seeds this even when plugin.json is absent, so the validity rule can
         # report the missing entrypoint. The optional mcp.json is attached
@@ -1361,6 +1470,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             node = (
                 plugin_nodes.get(candidate)
                 or codex_plugin_nodes.get(candidate)
+                or grok_plugin_nodes.get(candidate)
                 or agent_plugin_nodes.get(candidate)
             )
             if node is not None:

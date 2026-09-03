@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tides": {
+      "type": "http",
+      "url": "https://tides.harbour.example/mcp"
+    }
+  }
+}
