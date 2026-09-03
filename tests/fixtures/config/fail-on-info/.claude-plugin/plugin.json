@@ -1,5 +1,5 @@
 {
-  "name": "fail-on-info-test",
+  "name": "fail_on_info_test",
   "description": "Test fail-on info exit codes",
   "version": "1.0.0",
   "author": {"name": "Test"}

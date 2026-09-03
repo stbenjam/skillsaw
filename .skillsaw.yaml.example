@@ -149,11 +149,6 @@ rules:
     enabled: auto
     severity: warning
 
-  # Plugin should have a README.md file
-  claude-plugin-readme:
-    enabled: auto
-    severity: warning
-
   # .claude/rules/ files must be markdown with valid optional paths frontmatter
   claude-rules-valid:
     enabled: auto

@@ -58,7 +58,6 @@ RULE_GROUPS = [
             "claude-plugin-json-required",
             "claude-plugin-json-valid",
             "claude-plugin-naming",
-            "claude-plugin-readme",
             "claude-command-naming",
             "claude-command-frontmatter",
             "claude-command-sections",
@@ -337,12 +336,14 @@ RULE_GROUPS = [
             "content-critical-position",
             "content-actionability-score",
             "skill-frontmatter",
+            "claude-plugin-readme",
         ],
         "These rules are deprecated and will be removed in a future release. "
         "They no longer run under `enabled: auto`; set `enabled: true` in "
         "`.skillsaw.yaml` to keep running one during the transition. The "
         "content rules encoded attention-era heuristics that newer models no "
-        "longer need; `skill-frontmatter` is replaced by `agentskill-valid`.",
+        "longer need; `skill-frontmatter` is replaced by `agentskill-valid`; "
+        "`claude-plugin-readme` can be enforced as a custom rule if needed.",
     ),
 ]
 

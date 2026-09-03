@@ -251,7 +251,6 @@ class TestSinglePlugin:
         ids = rule_ids(r)
         assert "claude-plugin-json-valid" in ids
         assert "claude-plugin-naming" in ids
-        assert "claude-plugin-readme" in ids
         assert "claude-command-naming" in ids
         assert "claude-command-frontmatter" in ids
         assert "claude-agent-frontmatter" in ids
@@ -4774,7 +4773,7 @@ class TestExitCodes:
         r = run_lint(repo, "--output", str(out_file), verbose=False, fmt="text")
         assert r["rc"] == 1
         html = out_file.read_text()
-        assert "claude-plugin-readme" in html
+        assert "claude-plugin-naming" in html
         assert '<span class="count-item count-info">Info:' in html
 
     def test_fail_on_info_includes_info_in_sarif_output(self, tmp_path):

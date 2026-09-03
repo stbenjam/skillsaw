@@ -10,7 +10,6 @@ Validates the Claude Code formats: plugin manifests (`.claude-plugin/plugin.json
 | [`claude-plugin-json-required`](claude-plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - |
 | [`claude-plugin-json-valid`](claude-plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - |
 | [`claude-plugin-naming`](claude-plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - |
-| [`claude-plugin-readme`](claude-plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - |
 | [`claude-command-naming`](claude-command-naming.md) | Command files should use kebab-case naming | warning | auto |
 | [`claude-command-frontmatter`](claude-command-frontmatter.md) | Command files must have valid frontmatter with description | error | auto |
 | [`claude-command-sections`](claude-command-sections.md) | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - |

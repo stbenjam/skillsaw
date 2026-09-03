@@ -3,17 +3,22 @@
 
 # claude-plugin-readme
 
+!!! warning "Deprecated"
+    Deprecated since v0.20.0 and will be removed in a future release. This rule no longer runs under `enabled: auto`; set `enabled: true` explicitly to keep it during the transition.
+
+    A missing README.md does not affect plugin execution or validity. Repositories requiring README documentation can enforce it with a custom rule.
+
 Plugin should have a README.md file
 
 *Formerly known as `plugin-readme`. The legacy name still works in configs, `--rule`/`--skip-rule`, suppression comments, and baselines.*
 
 | | |
 |---|---|
-| **Severity** | warning (auto) |
+| **Severity** | warning (deprecated) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
 | **Repo Types** | marketplace, single-plugin |
-| **Category** | [Claude Code](claude.md) |
+| **Category** | [Deprecated](deprecated.md) |
 
 ## Why
 
@@ -51,7 +56,7 @@ what the plugin does, how to install it, and how to use its commands.
 ```yaml
 rules:
   claude-plugin-readme:
-    enabled: auto  # true | false | auto
+    enabled: true  # true | false | auto
     severity: warning
 ```
 
