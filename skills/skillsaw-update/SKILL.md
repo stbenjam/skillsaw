@@ -61,9 +61,10 @@ If yes, read [pins](references/03-pins.md). If no, preserve the locations.
 
 ### 4. Triage findings from new rules
 
-If the new version reports findings from added rules, read
-[triage](references/04-triage.md) and present its summary table for
-confirmation before making changes. Carry the agreed buckets forward.
+If the new version reports findings from added rules or removed-rule cleanup
+requires handling, read [triage](references/04-triage.md) and present its
+summary table for confirmation before making changes. Carry the agreed buckets
+forward.
 
 ### 5. Verify the result
 

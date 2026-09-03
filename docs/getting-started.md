@@ -79,7 +79,8 @@ fingerprinting works and configuration options.
 When a new skillsaw release is out, the **`/skillsaw-update`** skill walks
 your agent through the upgrade: it installs the newest version, reports which
 rules are new and what they find in your repository, and bumps pinned
-versions in GitHub Actions workflows, Makefile targets, and pre-commit hooks.
+versions in GitHub Actions workflows, Makefile targets, pre-commit hooks,
+GitLab CI configurations, and Dockerfiles.
 
 ## Installation
 
