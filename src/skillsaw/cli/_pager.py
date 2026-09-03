@@ -8,10 +8,10 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping, Sequence, TextIO
 
 
-def should_use_pager(args, stream=sys.stdout) -> bool:
+def should_use_pager(args, stream: TextIO | None = None) -> bool:
     """Determine whether output should be directed to a pager.
 
     Paging is enabled when:
@@ -35,6 +35,9 @@ def should_use_pager(args, stream=sys.stdout) -> bool:
         return False
     if pager_opt is True:
         return True
+
+    if stream is None:
+        stream = sys.stdout
 
     # Auto-detection
     try:
@@ -84,7 +87,7 @@ def resolve_pager_command(
         if not raw_cmd:
             return None
         try:
-            cmd_parts = shlex.split(raw_cmd)
+            cmd_parts = shlex.split(raw_cmd, posix=sys.platform != "win32")
         except ValueError:
             return None
         if not cmd_parts:
@@ -114,9 +117,12 @@ def page_text(
     text: str,
     pager_cmd: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
-    stream=sys.stdout,
+    stream: TextIO | None = None,
 ) -> None:
     """Feed text to a pager process."""
+    if stream is None:
+        stream = sys.stdout
+
     if not text.endswith("\n"):
         text += "\n"
 
@@ -163,8 +169,11 @@ def page_text(
                 pass
 
 
-def _write_fallback(text: str, stream=sys.stdout) -> None:
+def _write_fallback(text: str, stream: TextIO | None = None) -> None:
     """Write text directly to stream, handling broken pipes safely."""
+    if stream is None:
+        stream = sys.stdout
+
     if not text.endswith("\n"):
         text += "\n"
     try:
@@ -177,8 +186,11 @@ def _write_fallback(text: str, stream=sys.stdout) -> None:
             pass
 
 
-def display_paged(text: str, args, stream=sys.stdout) -> None:
+def display_paged(text: str, args, stream: TextIO | None = None) -> None:
     """Display text using a pager if appropriate, otherwise write directly."""
+    if stream is None:
+        stream = sys.stdout
+
     if should_use_pager(args, stream=stream):
         resolved = resolve_pager_command()
         if resolved is not None:
