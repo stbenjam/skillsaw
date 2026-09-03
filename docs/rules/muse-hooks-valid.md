@@ -81,9 +81,11 @@ The softer checks are the ones where the file still loads and does something:
 - a `matcher` that does not compile as a regex, at `warning` — Muse compiles
   matchers with Rust's `regex` crate, whose dialect is not Python's: it has
   no look-around and no backreferences, and it adds Unicode classes
-  (`\p{L}`) and the class-set operators `&&`, `--` and `~~`. The compile
-  check is skipped on a pattern using that Rust-only syntax, and the finding
-  stays a warning because the two dialects part ways elsewhere too;
+  (`\p{L}`) and the class-set operators `&&`, `--` and `~~`. Those atoms are
+  rewritten to their nearest Python spelling before the compile check, so a
+  pattern carrying one is still checked for the structure both dialects
+  share — `(\pL` leaves a group unclosed either way. The finding stays a
+  warning because the two dialects part ways elsewhere too;
 - a handler with only `commandWindows`, at `warning` — it runs on Windows and
   does nothing anywhere else.
 

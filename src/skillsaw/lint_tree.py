@@ -40,6 +40,7 @@ from .blocks import (
     DevinSkillBlock,
     ExtraBlock,
     GeminiMdBlock,
+    HooksBlock,
     InstructionBlock,
     McpBlock,
     McpRegistryNpmPackageBlock,
@@ -292,6 +293,26 @@ class _TreeBuildState:
             containment_root=containment_root,
         )
         parent.children.append(block)
+
+
+def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
+    """Whether *path* is already in the tree under some hooks class.
+
+    Every hooks class is read by the same security rules, so which one a
+    file arrived under does not matter here — a second block for it would
+    report each of its commands twice. The generic root attach and the
+    Claude branch both run before a Codex manifest's declared files, and a
+    manifest may name any of the files they placed: the project layer's
+    ``.codex/hooks.json``, the conventional ``hooks/hooks.json``, or
+    another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``.
+    """
+    resolved = state.resolve_repo_path(path)
+    if resolved is None:
+        return False
+    return any(
+        claimed == resolved and issubclass(block_cls, HooksBlock)
+        for claimed, block_cls in state.seen_roles
+    )
 
 
 def _attach_apm_skills(
@@ -1053,12 +1074,29 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # A repo-root package shares conventional config paths with the
             # repository, so ownership is decided here once.
             root_plugin_owner = resolved_plugin
-            # Only ``.mcp.json`` needs re-tagging: the generic root attach
-            # never adds a HooksBlock (hooks/hooks.json attaches under the
-            # Codex cluster with containment).
-            claimed = {safe_resolve(plugin_path / ".mcp.json")} - {None}
+            # ``.mcp.json`` and hooks both need re-tagging. The generic root
+            # attach runs first and adds them untagged: ``.codex/hooks.json``
+            # from the project layer — which for a repo-root plugin is that
+            # plugin's own layer — and any hooks file the manifest declares
+            # by path. The declared-files loop below then sees one block for
+            # the file already and leaves it, so this is the only place the
+            # owner can be recorded, and without it ``skillsaw docs`` lists
+            # the plugin without its hooks. (``hooks/hooks.json`` needs
+            # nothing: it attaches under the Codex cluster with containment.)
+            claimed_mcp = {safe_resolve(plugin_path / ".mcp.json")} - {None}
+            claimed_hooks: Set[Optional[Path]] = set()
+            if prov.codex:
+                claimed_hooks = {
+                    safe_resolve(path)
+                    for path in (
+                        plugin_path / CODEX_DIR_NAME / CODEX_HOOKS_FILENAME,
+                        *codex_declared_hook_files(plugin_path),
+                    )
+                } - {None}
             for child in root.children:
-                if isinstance(child, McpBlock) and safe_resolve(child.path) in claimed:
+                if isinstance(child, McpBlock) and safe_resolve(child.path) in claimed_mcp:
+                    child.plugin_owner = resolved_plugin
+                elif isinstance(child, HooksBlock) and safe_resolve(child.path) in claimed_hooks:
                     child.plugin_owner = resolved_plugin
 
         _add_plugin_prose(container, plugin_path, resolved_plugin)
@@ -1130,18 +1168,16 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # A declared file is Codex's for the same reason: nothing but the
             # Codex manifest names it, so no other host loads it, even in a
             # dual-manifest plugin whose conventional ``hooks/hooks.json``
-            # stayed Claude's above. The one exception is that same
-            # conventional file when the manifest also declares it — already
-            # attached as a ``ClaudeHooksBlock``, and re-attaching it under
-            # Codex's class would report every command in it twice.
+            # stayed Claude's above. The exception is a file some earlier
+            # attach already put in the tree as hooks — that same
+            # conventional file when the manifest also declares it, the
+            # project layer's ``.codex/hooks.json``, or another tool's file
+            # a manifest points at. One block per file, or the security
+            # rules report every command in it twice.
             for declared_hooks in codex_declared_hook_files(plugin_path):
-                declared_resolved = state.resolve_repo_path(declared_hooks)
-                declared_cls = (
-                    ClaudeHooksBlock
-                    if (declared_resolved, ClaudeHooksBlock) in state.seen_roles
-                    else CodexHooksBlock
-                )
-                state.add_parser_block(node, declared_hooks, declared_cls, owner=resolved_plugin)
+                if _attached_as_hooks(state, declared_hooks):
+                    continue
+                state.add_parser_block(node, declared_hooks, CodexHooksBlock, owner=resolved_plugin)
             for inline_hooks in codex_inline_hooks(plugin_path):
                 inline_block = CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks)
                 inline_block.plugin_owner = resolved_plugin

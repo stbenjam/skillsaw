@@ -533,6 +533,42 @@ def test_a_pattern_neither_engine_can_compile_is_still_reported(tmp_path) -> Non
     assert "Muse drops this matcher group" in violation.message
 
 
+@pytest.mark.parametrize(
+    "matcher",
+    [
+        # A Rust-only atom is rewritten to its nearest Python spelling
+        # rather than waiving the pattern: what is left here is an unclosed
+        # group and an unclosed character class, which Rust rejects too.
+        r"(\pL",
+        r"[\w--\d",
+    ],
+)
+def test_a_rust_only_atom_does_not_waive_the_rest_of_the_pattern(tmp_path, matcher) -> None:
+    """The dialect allowance covers the atom, not the structure around it."""
+    repo = write_repo(tmp_path / f"rust-atom-{abs(hash(matcher))}")
+    (repo / ".muse").mkdir()
+    (repo / ".muse" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": matcher,
+                            "hooks": [{"type": "command", "command": "./audit.sh"}],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    violation = only(check(repo), "does not compile as a regex")
+
+    assert violation.severity == Severity.WARNING
+    assert "Rust's regex engine" in violation.message
+    assert "Muse drops this matcher group" in violation.message
+
+
 def test_a_pathological_pattern_does_not_crash_the_rule(tmp_path) -> None:
     """Deep nesting raises RecursionError, not re.error, and a rule that
     let it escape would cost every other finding in the file."""

@@ -51,26 +51,54 @@ _RUST_UNICODE_CLASS = re.compile(r"\\[pP](?:\{[^}]*\}|[A-Za-z])")
 
 #: Rust's character-class set operators: ``[a-z&&[^aeiou]]``,
 #: ``[\w--\d]``, ``[a-g~~b-h]``. Python has no equivalent syntax.
-_RUST_CLASS_SET_OPERATORS = ("&&", "--", "~~")
+_RUST_CLASS_SET_OPERATOR = re.compile(r"&&|--|~~")
 
 
-def _uses_rust_only_regex_syntax(pattern: str) -> bool:
-    """Whether *pattern* uses regex syntax only Rust's engine has.
+def _to_python_regex(pattern: str) -> str:
+    """*pattern* with Rust-only atoms rewritten to Python-compatible ones.
 
     Muse compiles a matcher with the Rust ``regex`` crate, whose dialect is
     not Python's: it has no look-around and no backreferences, and it adds
     two constructs a hooks file plausibly reaches — Unicode character
     classes and the character-class set operators. Python raises on both,
-    so compiling such a pattern here and reporting the exception would call
-    a working matcher broken. Deliberately generous — a missed defect in a
-    ``warning`` costs less than a false one.
+    so compiling the pattern as written would call a working matcher
+    broken. Skipping such a pattern instead would drop every other defect
+    in it: ``(\\pL`` leaves a group unclosed, which costs the matcher group
+    whatever engine reads it.
+
+    So the Rust-only atoms are substituted rather than the check skipped —
+    ``\\p{...}`` and its short forms become ``\\w``, the set operators are
+    dropped — and what is left is the structure both dialects share.
     """
-    if _RUST_UNICODE_CLASS.search(pattern):
-        return True
-    opened = pattern.find("[")
-    if opened == -1:
-        return False
-    return any(operator in pattern[opened:] for operator in _RUST_CLASS_SET_OPERATORS)
+    substituted = _RUST_UNICODE_CLASS.sub(r"\\w", pattern)
+    if "[" not in substituted:
+        return substituted
+
+    # The set operators only mean anything inside a character class: ``a--b``
+    # outside one is three literal characters in either dialect. Escapes are
+    # consumed whole so a ``\[`` does not open a class.
+    out: List[str] = []
+    depth = 0
+    index = 0
+    end = len(substituted)
+    while index < end:
+        char = substituted[index]
+        if char == "\\":
+            out.append(substituted[index : index + 2])
+            index += 2
+            continue
+        if depth:
+            operator = _RUST_CLASS_SET_OPERATOR.match(substituted, index)
+            if operator is not None:
+                index = operator.end()
+                continue
+        if char == "[":
+            depth += 1
+        elif char == "]" and depth:
+            depth -= 1
+        out.append(char)
+        index += 1
+    return "".join(out)
 
 
 class MuseHooksValidRule(Rule):
@@ -422,11 +450,14 @@ class _FileCheck:
                 )
             ]
 
-        if matcher in _WILDCARD_MATCHERS or _uses_rust_only_regex_syntax(matcher):
+        if matcher in _WILDCARD_MATCHERS:
             return []
 
         try:
-            re.compile(matcher)
+            # Rewritten, not skipped: a pattern carrying a Rust-only atom
+            # still has the structure both dialects share, and an unclosed
+            # group costs the matcher group whatever engine reads it.
+            re.compile(_to_python_regex(matcher))
         except (re.error, RecursionError, OverflowError) as err:
             # A warning, not an error: Python's dialect is not Rust's, and a
             # rule that crashed here would cost every other finding in the
