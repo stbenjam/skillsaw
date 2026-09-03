@@ -1,28 +1,15 @@
 """
 Rule: grok-config-project-scope
 
-``config.toml`` is one file read at four layers, and the project layer is
-the narrow one: a ``.grok/config.toml`` in a checkout contributes
-``[mcp_servers]``, ``[permission]``, ``[plugins]`` and ``[mcp]
-max_output_bytes``, and everything else an author writes there is dropped.
+Grok Build reads configuration across multiple layers (system, user, project,
+and local). A project-level ``.grok/config.toml`` is designed to share team-wide
+settings: ``[mcp_servers]``, ``[permission]``, ``[plugins]``, and ``[mcp]
+max_output_bytes``.
 
-Dropped in silence, which is the whole reason for the rule.
-``configWarnings`` is a user-layer diagnostic, so no observable Grok offers
-mentions an ignored table, an ignored key, or a table name spelled the way
-another host spells it. The file loads, the tables Grok knows take effect,
-and the rest is gone.
-
-The honored set lives in ``skillsaw.formats.grok`` and holds both the
-measured half and the documented half, because reporting a table the
-reference endorses would be a false positive on a file the docs bless. What
-the rule reports inside one of those tables is a measured refusal and
-nothing else, for the same reason: an unknown-key finding there would rest
-on no measurement and would fire on a working config the first time Grok
-adds a key.
-
-Only :class:`GrokConfigBlock` is iterated, a node type that exists only
-where Grok's project layer does, so the rule declares no
-``provenance_scope``.
+Personal preferences (such as themes, models, sandboxing, and web search) belong
+in user-level configuration (``~/.grok/config.toml``). This rule checks that
+project configuration files contain only settings recognized at project scope,
+helping teams keep their shared configuration clean and intentional.
 """
 
 from typing import Any, Dict, List, Mapping, Set, Sized
@@ -79,8 +66,6 @@ class GrokConfigProjectScopeRule(Rule):
         return ".grok/config.toml must only carry settings a project file contributes"
 
     def default_severity(self) -> Severity:
-        # The file loads and the setting does not, with no diagnostic
-        # anywhere. Nothing breaks; something the author wrote is gone.
         return Severity.WARNING
 
     def _honored_tables(self) -> Set[str]:

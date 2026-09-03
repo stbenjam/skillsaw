@@ -15,103 +15,70 @@
 
 ## Why
 
-`.grok-plugin/marketplace.json` is the catalog Grok Build reads to list and
-install plugins. It fails in two ways, and the second hides the first.
+`.grok-plugin/marketplace.json` is the catalog Grok Build uses to discover, list,
+and install plugins across repositories.
 
-A catalog Grok cannot read — unparseable JSON, a top-level array, or a
-`plugins` object where an array belongs — is discarded whole, and discovery
-then **falls back to scanning `plugins/`**. In a conventionally laid-out
-repository that produces almost the same list, so the marketplace looks
-healthy while every plugin outside `plugins/` has vanished. A repository
-keeping third-party plugins under `external_plugins/` loses exactly those.
-`grok plugin marketplace add --debug` prints nothing about it.
+Validating your marketplace catalog ensures that every listed plugin can be
+cleanly discovered and installed:
 
-An entry defect is quieter. A missing `name`, a missing `source`, a `path`
-that does not resolve, and a `path` escaping the marketplace root each drop
-that one entry with no diagnostic at add or list time. The plugin simply
-never appears.
+- When a catalog is well-formed, Grok lists all declared plugins. If the file has
+  syntax errors or an invalid `plugins` array, Grok falls back to searching only
+  the default `plugins/` directory, which can cause plugins located in other
+  directories to be missed.
+- For individual entries, specifying valid `name`, `source`, and directory
+  paths ensures each plugin is registered properly in the catalog.
+- For remote Git sources, pinning entries with a commit `sha` ensures reproducible,
+  secure installations for everyone using your marketplace.
 
-This rule validates the Grok schema only. `.claude-plugin/marketplace.json`
-is a different schema and stays with
+This rule validates `.grok-plugin/marketplace.json`. Catalogs targeting Claude
+Code (`.claude-plugin/marketplace.json`) are checked separately by
 [`claude-marketplace-json-valid`](claude-marketplace-json-valid.md).
 
 ## Severity
 
-The split follows [`codex-marketplace-json-valid`](codex-marketplace-json-valid.md):
-structural defects that cost a plugin are errors; shape rules that come
-from an upstream validator rather than from the runtime are warnings.
+Findings distinguish between structural errors and upstream recommendations:
 
-**Errors** — the catalog or the entry is lost.
+**Errors** — issues that prevent the catalog or specific plugin entries from loading:
 
-- Invalid JSON — including a bare `NaN`, `Infinity` or `-Infinity` token and
-  a duplicated key, both of which Grok's parser refuses — a catalog that is
-  not an object, a missing `plugins`, or a `plugins` that is not an array.
-- A catalog file that is not there at all, under an explicit
-  `--type grok-marketplace`. Nothing else would say so: without the override
-  a repository with no catalog is simply not a marketplace.
-- An entry that is not an object.
-- A `source` that is neither a path string nor an object, and a `source`
-  that is the empty string.
-- A url source with no usable `url` to clone, whether the key is absent,
-  `null`, or empty.
-- An entry `name` missing, not a string, or empty.
-- Two entries resolving to the same name. The name that matters is the
-  **resolved** one: a local entry named `Bad Name!` pointing at
-  `plugins/canary` surfaces as `canary` and collides with an entry named
-  `canary`. Grok does not deduplicate them, and install fails with
-  `Multiple marketplaces provide a plugin named "canary"` whose two
-  suggested qualifiers are identical, so the plugin becomes uninstallable by
-  name. Counted per catalog: two independent marketplaces in one monorepo
-  shipping the same name is a packaging choice, not a defect.
-- A local `source.path` that is not a directory under the marketplace root — the
-  directory holding `.grok-plugin/`, which in a monorepo package is the
-  package. This is
-  the highest-frequency authoring mistake here and nothing in the toolchain
-  reports it: `marketplace add` succeeds, `plugin list --available` shows
-  nothing, and `plugin install` says the plugin does not exist.
-- A local `source.path` that is absolute, contains `..`, or resolves
-  outside the marketplace root through a symlink.
-- A url source with no `sha`. Grok falls back to an unpinned `git clone`, so
-  a vendor force-push or repo compromise immediately ships to every user.
-- A url source whose `sha` is not a string (the entry is dropped) or is not
-  40 or 64 hex characters (the install is refused outright, with `git commit
-  SHA must be 40 or 64 hexadecimal characters`).
+- Invalid JSON syntax, non-finite numbers (`NaN`, `Infinity`, `-Infinity`), or
+  duplicate keys.
+- Catalog missing a top-level `plugins` array.
+- Missing catalog file when explicitly linting with `--type grok-marketplace`.
+- Plugin entries that are not JSON objects.
+- Missing or invalid `source` (must be a path string or source object).
+- Missing, empty, or non-string plugin entry `name`.
+- Duplicate resolved plugin names within the same catalog.
+- Local `source.path` pointing to a directory that does not exist within the
+  marketplace repository.
+- Local `source.path` that is absolute, contains `..`, or resolves outside the
+  repository.
+- Remote Git source missing a commit `sha` (unpinned clone).
+- Remote Git source with an invalid `sha` (must be a 40- or 64-character hex
+  string).
 
-**Warnings** — the entry may still work, and the requirement comes from
-upstream rather than from a measurement.
+**Warnings** — catalog format advisories:
 
-- A url source `path` that is absolute, contains `..`, or uses backslashes.
-  The requirement is the upstream `validate-catalog.py`'s; it was not
-  verified at runtime here, because doing so needs a network install.
-- A `source` object naming neither a local `path` nor a `url`. A warning
-  rather than an error so a source shape added upstream never breaks a
-  catalog that works.
+- Remote Git source `path` containing backslashes or `..`.
+- A `source` object that specifies neither `path` nor `url`.
 
-**Info**
+**Info** — style and upstream compatibility tips:
 
-- A `sha` the installer accepts and the upstream validator does not: 64 hex
-  characters, or any casing but lowercase. Both install — an uppercase
-  40-hex value passed straight through to fetch-by-sha when measured — and
-  `validate-catalog.py` in `xai-org/plugin-marketplace` requires 40
-  lowercase, so a submission prepared for that CI gets one advisory rather
-  than an error.
+- A commit `sha` using uppercase hex characters or a 64-character SHA-256 hash.
+  While Grok Build's runtime accepts both, official marketplace submission
+  validators (such as `xai-org/plugin-marketplace`) recommend 40-character
+  lowercase SHA-1 hashes.
 
-## What is never reported
+## What is not reported
 
-- **A source discriminator.** The loader keys on `path` alone.
-  `{"type": "local", "path": …}`, `{"source": "local", …}`, the bare string
-  `"./plugins/x"`, an object with **no** discriminator, and an object with a
-  **bogus** `type` all installed identically when measured. Requiring one
-  would be the single largest false-positive risk in this rule.
-- **A top-level catalog `name`.** A catalog without one behaves identically,
-  and a local marketplace is named after its directory regardless.
-- **An entry `name`'s format.** The value is overridden by the plugin's own
-  manifest name, so `Bad Name!` loads.
-- **Unknown keys**, at the catalog or the entry level.
+- **Source discriminators**: Grok automatically detects whether a source is local
+  or remote by the presence of `path` or `url`, so explicit `type` tags are
+  optional.
+- **Top-level catalog name**: optional in marketplace catalogs.
+- **Unknown metadata keys**: custom catalog or entry metadata is preserved.
 
 ## Examples
 
-**Bad** — the clone is unpinned, and the local entry points at nothing:
+**Bad** — unpinned Git source and missing local plugin directory:
 
 ```json
 {
@@ -128,7 +95,7 @@ upstream rather than from a measurement.
 }
 ```
 
-**Good:**
+**Good** — pinned remote Git source and valid local path:
 
 ```json
 {
@@ -154,22 +121,14 @@ upstream rather than from a measurement.
 
 ## How to fix
 
-- Pin every url source to a 40-character lowercase commit id. Grok also
-  installs a 64-character or uppercase one, and the upstream validator
-  refuses it — which is what the advisory above says.
-- Point every local `source.path` at a directory that is in this repository,
-  resolved against the *marketplace root* — the directory holding
-  `.grok-plugin/`, which in a monorepo package is the package.
-- Give every entry a `name`, and make sure no two entries resolve to the
-  same one. When an entry points at a local plugin, the name that counts is
-  the one in that plugin's manifest.
-- Put a Grok catalog at `.grok-plugin/marketplace.json`. Grok reads exactly
-  one catalog — `.grok-plugin/marketplace.json`, then
-  `.claude-plugin/marketplace.json`, then a root-level `marketplace.json` —
-  and never merges them.
+- Pin remote Git sources with a 40-character lowercase commit hash.
+- Ensure local `source.path` references point to existing directories relative
+  to the marketplace root.
+- Give each entry a unique `name`.
+- Place your Grok marketplace catalog at `.grok-plugin/marketplace.json`.
 
-A marketplace that deliberately tracks a moving branch can drop the pinning
-requirement, at the cost the finding names:
+If your marketplace intentionally tracks a branch rather than pinned commits,
+you can relax the commit SHA requirement:
 
 ```yaml
 rules:

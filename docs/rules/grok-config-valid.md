@@ -15,83 +15,64 @@
 
 ## Why
 
-`.grok/config.toml` is where a Grok Build project declares its MCP servers
-and its permission rules. Both are committed, so both are shared by everyone
-working on the project — and both fail quietly.
+`.grok/config.toml` configures project-level settings for Grok Build, such as
+shared MCP servers and tool permission rules.
 
-A malformed file is the sharp one. Grok loads *nothing* from it, including
-the tables written above the error, and it does not complain: the process
-exits 0, stderr is empty, and the only trace is a `configSources[].note` of
-`"parse error"` inside `grok inspect`. A file that lost its `[permission]`
-table to a stray bracket looks exactly like a file that never had one.
+If the configuration contains a TOML syntax error or invalid server and
+permission tables, Grok Build may skip loading the file or ignore individual
+settings during sessions. For example, a syntax error prevents the entire file
+from loading, while an invalid server entry or malformed permission list can
+cause specific configurations to be skipped.
 
-Below that, Grok is silent in one half and not the other. A server table it
-cannot load raises `mcpConfigProblems`, so those findings restate a verdict
-Grok also gives — at lint time, in CI, rather than the next time somebody
-runs `grok inspect`. A `[permission]` table it cannot read raises **nothing
-at all**, at any scope: a non-array `allow`, or a `rules` array discarded
-because a list key sits beside it, produces no diagnostic anywhere. That is
-where this rule is the only thing that will tell you.
+This rule validates the syntax and structure of `.grok/config.toml` to help
+ensure your MCP servers and permissions work reliably for all collaborators.
 
-Which tables a project file may carry at all is a different question, and
-belongs to
-[`grok-config-project-scope`](grok-config-project-scope.md). The commands the
-servers name are scanned by [`mcp-prohibited`](mcp-prohibited.md).
+To verify which tables are appropriate for a project configuration file versus
+user configuration, see
+[`grok-config-project-scope`](grok-config-project-scope.md). Server commands
+are also scanned for security by [`mcp-prohibited`](mcp-prohibited.md).
 
 ## Severity
 
-A finding's severity is how much of the file the defect costs.
+Findings distinguish between whole-file syntax errors and table-level issues:
 
-**Error** — nothing in the file loads.
+**Error** — issues that prevent the TOML file from parsing:
 
-- Invalid TOML: a syntax error, a key set twice in one table, or a `[table]`
-  header written twice. TOML gives no structured position, so the finding is
-  at file level and quotes the parser's own message, which usually carries
-  the line and column.
+- Invalid TOML syntax, duplicate keys within a table, or duplicate `[table]`
+  headers.
 
-**Warnings** — the file loads, and one server or one permission key does
-not. The severity is the blast radius rather than the rule's verdict, so it
-stays a warning whatever severity the rule is configured to: the tables
-beside the defect load either way.
+**Warnings** — the file parses, but specific servers or permission settings
+cannot be loaded:
 
-- `mcp_servers` set to something that is not a table. That table contributes
-  no servers; `[permission]` beside it is untouched.
-- A `[mcp_servers.<name>]` entry that is not a table, or that names nothing
-  Grok can start — neither a `command` nor a `url`, an empty one of either,
-  or either field carrying something other than a string. Grok drops that
-  server alone, order-independent, and its siblings still load.
-- A server field whose TOML type Grok's deserializer refuses: `args` that is
-  not an array of strings, or `env` / `headers` that is not a table of
-  strings. That server does not load.
-- `[permission]` `allow`, `deny` or `ask` set to something other than an
-  array. Grok reads nothing from that key.
-- An entry in `allow`, `deny` or `ask` that is not a string. Grok drops that
-  entry and loads the ones beside it, so the finding names the positions.
-- `[permission]` `rules` set to something other than an array of tables —
-  either a wrong type on the key, or a non-table entry inside it. The entry
-  case is the sharper one: it costs the whole array, and two valid rules
-  beside a single bad entry loaded nothing at all.
-- `[permission]` `rules` written alongside any of `allow`, `deny` or `ask`.
-  Grok discards **every** verbose rule when a compact list key is present,
-  in any order, so a file carrying both loses the whole `rules` array.
+- `mcp_servers` is not a TOML table.
+- A `[mcp_servers.<name>]` entry that is not a table, or does not specify an
+  executable `command` or `url` string. Other configured servers will still
+  load.
+- A server field with an incompatible data type: `args` that is not an array
+  of strings, or `env` / `headers` that is not a table of string values.
+- Permission lists (`allow`, `deny`, `ask`) that are not arrays.
+- Individual entries in `allow`, `deny`, or `ask` that are not strings.
+- `[permission] rules` that is not an array of tables, or contains invalid
+  entries.
+- `[permission] rules` specified alongside `allow`, `deny`, or `ask`. Grok
+  prioritizes compact permission lists (`allow`/`deny`/`ask`) over verbose
+  `rules` tables when both are present, so compact lists take precedence.
 
 ## What is not reported
 
-- **An unknown field inside a server table.** Grok warns about it through
-  `mcpConfigProblems` and loads the server anyway, so it is not a defect
-  this rule calls the file broken over.
-- **An unknown key inside `[permission]`.** Same reason, and
-  `grok-config-project-scope` covers the one spelling that is a real
-  mistake, `defaultMode`.
-- **The content of a `command` or a `url`.** Grok validates neither:
-  `url = "not a url"` loads as an HTTP server.
-- **A server with `enabled = false`.** It is configuration that works, and
-  the command it names is still committed.
+- **Unknown fields inside a server table**: Grok logs these via
+  `mcpConfigProblems` and loads the server normally.
+- **Unknown keys inside `[permission]`**: Grok ignores unknown keys; scope
+  mismatches like `defaultMode` are covered by
+  [`grok-config-project-scope`](grok-config-project-scope.md).
+- **The URL or command target content**: whether an endpoint is live is a
+  runtime concern.
+- **Servers with `enabled = false`**: disabled servers are valid configurations.
 
 ## Examples
 
-**Bad** — the unclosed array costs the `[permission]` table too, and nothing
-says so:
+**Bad** — a syntax error in one server prevents the rest of the file from
+parsing:
 
 ```toml
 [mcp_servers.gateway]
@@ -102,8 +83,8 @@ args = ["mcp"
 allow = ["Bash(make test)"]
 ```
 
-**Bad** — the server names nothing to start, and the verbose rules are
-discarded because `allow` sits beside them:
+**Bad** — a server missing both `command` and `url`, and mixing `allow` with
+`rules`:
 
 ```toml
 [mcp_servers.quayside]
@@ -115,8 +96,7 @@ allow = ["Bash(make test)"]
 rules = [{ action = "deny", tool = "Bash", pattern = "psql *" }]
 ```
 
-**Good** — each server names one transport, and the permission table picks
-one spelling:
+**Good** — well-formed MCP servers and concise permission lists:
 
 ```toml
 [mcp_servers.berths]
@@ -136,20 +116,13 @@ deny = ["Bash(psql *)"]
 
 ## How to fix
 
-- Run the file through a TOML parser before committing it, and check
-  `grok inspect` for a `"parse error"` note if a table you wrote has no
-  effect.
-- Give every `[mcp_servers.<name>]` a non-empty `command` or a non-empty
-  `url`. A `command` wins even when both are set; a `url` alone is HTTP
-  unless `type = "sse"`.
-- Keep `args` an array of strings, and `env` and `headers` tables of
+- Ensure `.grok/config.toml` is valid TOML syntax.
+- Provide a non-empty `command` or `url` for each server under
+  `[mcp_servers.<name>]`.
+- Keep `args` as an array of strings, and `env` and `headers` as tables of
   strings.
-- Pick one permission spelling. Move the verbose `rules` entries into
-  `allow` / `deny` / `ask` as compact rule strings, or delete the list keys
-  and keep `rules` — a file with both keeps only the list keys.
-- Keep every `allow` / `deny` / `ask` entry a rule string and every `rules`
-  entry a table. Mixing the two spellings inside one array is what costs the
-  whole `rules` array.
+- Choose either compact lists (`allow`, `deny`, `ask`) or verbose `rules`
+  tables under `[permission]`. Using compact lists is recommended for brevity.
 
 ## Configuration
 

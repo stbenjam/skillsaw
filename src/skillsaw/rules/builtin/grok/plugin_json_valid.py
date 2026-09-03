@@ -1,16 +1,9 @@
 """
 Rule: grok-plugin-json-valid
 
-The shape of a Grok Build plugin manifest, and severity that carries what
-each defect costs. A manifest that fails to load takes the whole plugin
-directory with it — the conventional ``skills/`` does not rescue it — while
-a declared path that escapes or does not exist costs that component list
-alone. Both are silent: ``grok plugin install`` prints success for a plugin
-``grok inspect`` then shows nothing from.
-
-Only :class:`GrokPluginConfigNode` is iterated, a node type only Grok
-populates, so the rule declares no ``provenance_scope``: the node is already
-the scope.
+Validates `.grok-plugin/plugin.json` manifests for Grok Build plugins.
+Ensures manifests have valid JSON syntax, required plugin names, valid
+semantic versions, and existing component path references.
 """
 
 from pathlib import Path
@@ -73,9 +66,6 @@ class GrokPluginJsonValidRule(Rule):
         return ".grok-plugin/plugin.json must be valid JSON with a name Grok's loader accepts"
 
     def default_severity(self) -> Severity:
-        # Discovery skips the whole plugin directory over either defect this
-        # severity covers, and says nothing: install reports success, and
-        # ``grok inspect`` reports no plugin.
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
