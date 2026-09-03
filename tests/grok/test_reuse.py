@@ -23,7 +23,9 @@ from skillsaw.blocks import (
     gather_all_content_blocks,
 )
 from skillsaw.context import RepositoryContext
+from skillsaw.rule import Severity
 from skillsaw.rules.builtin.agentskills import AgentSkillNameRule, AgentSkillValidRule
+from skillsaw.rules.builtin.context_budget import ContextBudgetRule
 from skillsaw.rules.builtin.hooks.dangerous import HooksDangerousRule
 from skillsaw.rules.builtin.hooks.prohibited import HooksProhibitedRule
 from skillsaw.rules.builtin.security.hidden_instructions import SecurityHiddenInstructionsRule
@@ -168,6 +170,27 @@ def test_the_security_rules_scan_grok_prose(temp_dir) -> None:
 
     assert SecurityHiddenInstructionsRule().check(context)
     assert SecurityInvisibleUnicodeRule().check(context)
+
+
+def test_a_grok_command_description_is_held_to_the_command_budget(temp_dir) -> None:
+    """`context-budget` walks an explicit block-type map, so `.grok/commands/`
+    earns the limit only because `GrokCommandBlock` is named there."""
+    repo = write_repo(temp_dir / "budget-command")
+    commands = repo / ".grok" / "commands"
+    commands.mkdir(parents=True)
+    long_description = "x" * (201 * 4)
+    commands.joinpath("tile-check.md").write_text(
+        f'---\ndescription: "{long_description}"\n---\n\n# Tile check\n\nRun it.\n'
+    )
+
+    found = [
+        v
+        for v in ContextBudgetRule().check(RepositoryContext(repo))
+        if v.metric == "command-description"
+    ]
+
+    assert [v.file_path.name for v in found] == ["tile-check.md"]
+    assert found[0].severity == Severity.WARNING
 
 
 # ── The description rules read the routing metadata ──────────────

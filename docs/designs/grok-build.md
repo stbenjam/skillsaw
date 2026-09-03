@@ -64,9 +64,11 @@ That is exactly the situation `RepositoryContext.provenance()` exists for.
 
 ## The hook failure model
 
-The hooks rule is the only Grok-specific structural check, and its whole value
-is the failure-scope model. Grok's file format is the nested shape Claude Code
-defined, and its loader's behaviour when something is wrong is not.
+The hooks rule is the larger of the two Grok-specific structural checks (the
+other is `grok-agent-valid`, over `.grok/agents/*.md` frontmatter), and its
+whole value is the failure-scope model. Grok's file format is the nested
+shape Claude Code defined, and its loader's behaviour when something is
+wrong is not.
 
 **Method.** An isolated `GROK_HOME` with one hook file per case under
 `$GROK_HOME/hooks/` — user scope, always trusted, so no folder-trust gate —
@@ -80,6 +82,7 @@ cases that reject the whole file.
 
 | Input | Scope of the loss | Severity |
 |---|---|---|
+| A UTF-8 byte-order mark at the start of the file | Whole file | ERROR |
 | Malformed JSON | Whole file | ERROR |
 | `NaN` / `Infinity` / `-Infinity` anywhere | Whole file | ERROR |
 | No top-level `hooks` object, or a non-object one | Whole file | ERROR |
@@ -87,6 +90,7 @@ cases that reject the whole file.
 | A group that is not an object, or has no `hooks` array | Whole file | ERROR |
 | A handler that is not an object, or has no `type` | Whole file | ERROR |
 | A known field of the wrong JSON type | Whole file | ERROR |
+| A `timeout` above `2**64-1` | Whole file | ERROR |
 | A `matcher` that does not compile | That matcher group | WARNING |
 | An unknown event name | That event's entries | WARNING |
 | A `command` handler with no `command` | That handler | WARNING |
@@ -125,11 +129,11 @@ Three pull requests, in dependency order, because the three halves have
 genuinely different review surfaces.
 
 **PR 1 — project surfaces and hooks.** Detection, attachment, the reuse that
-follows from it, and `grok-hooks-valid`. This is the one that converts
-`Skills: 0` into full skill, content and security coverage for `.grok/`: the
-single line adding `.grok/skills` to `CONVENTIONAL_SKILL_DIRS` earns ten skill
-rules, and attaching the prose earns every content and security rule. No new
-rule was written for any of that.
+follows from it, `grok-hooks-valid` and `grok-agent-valid`. This is the one
+that converts `Skills: 0` into full skill, content and security coverage for
+`.grok/`: the single line adding `.grok/skills` to `CONVENTIONAL_SKILL_DIRS`
+earns ten skill rules, and attaching the prose earns every content and
+security rule. No new rule was written for any of that.
 
 **PR 2 — plugins and marketplace.** The provenance leg, `discovery/grok.py`,
 and four rules over `.grok-plugin/plugin.json`, `marketplace.json` and

@@ -189,12 +189,19 @@ def test_the_directories_grok_reads_flat_are_attached_flat(temp_dir) -> None:
         "---\nname: nested-skill\ndescription: A skill nested under a category directory.\n"
         "---\n\nDo the thing.\n"
     )
+    # `hooks/` is a flat glob too: a file in a subdirectory, and a file under
+    # another extension, are both ignored rather than merged.
+    nested_hooks = repo / ".grok" / "hooks" / "sub"
+    nested_hooks.mkdir(parents=True)
+    (nested_hooks / "x.json").write_text('{"hooks": {}}')
+    (repo / ".grok" / "hooks" / "notes.md").write_text("# Not a hooks file\n")
 
     tree = RepositoryContext(repo).lint_tree
 
     assert tree.find(GrokRuleBlock) == []
     assert tree.find(GrokCommandBlock) == []
     assert tree.find(GrokAgentBlock) == []
+    assert tree.find(GrokHooksBlock) == []
     assert relative(repo, tree.find(SkillBlock)) == [".grok/skills/group/nested-skill/SKILL.md"]
 
 

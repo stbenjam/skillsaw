@@ -8,11 +8,12 @@ file counts as invalid JSON: Claude Code's parser rejects the whole file.
 
 The event names, the handler types (`command`, `http`, `mcp_tool`,
 `prompt`, `agent`) and the per-handler fields checked here are Claude
-Code's. Codex and Muse Code read the same nested shape with vocabularies of
-their own, and Cursor reads a flat per-event list of `command` and `prompt`
-entries; each host's files are validated by its own rule —
-[`codex-hooks-valid`](codex-hooks-valid.md),
-[`muse-hooks-valid`](muse-hooks-valid.md) and
+Code's. Codex, Muse Code and Grok Build read the same nested shape with
+vocabularies of their own, and Cursor reads a flat per-event list of
+`command` and `prompt` entries; each host's files are validated by its own
+rule — [`codex-hooks-valid`](codex-hooks-valid.md),
+[`muse-hooks-valid`](muse-hooks-valid.md),
+[`grok-hooks-valid`](grok-hooks-valid.md) and
 [`cursor-hooks-valid`](cursor-hooks-valid.md).
 
 This rule was called `hooks-json-valid` before that split. The old name

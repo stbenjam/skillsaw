@@ -282,21 +282,28 @@ root, `<repo>/.agents/memory/`, which is where Muse documents it.
 
 ## Grok Build
 
-Repositories with a `.grok/` directory, the project layer
-[Grok Build](https://github.com/xai-org/grok-build) reads. skillsaw finds one
-at the repository root and in any subpackage, because Grok reads the `.grok/`
-layer of the project it is started in.
+Repositories with a `.grok/` project layer — a `.grok/` directory carrying
+any of `rules/`, `skills/`, `agents/`, `commands/`, `hooks/`, `config.toml`,
+`lsp.json`, `workflows/`, `roles/`, `personas/` or `sandbox.toml` — the
+layer [Grok Build](https://github.com/xai-org/grok-build) reads. An empty
+`.grok/` is not detected. skillsaw finds a project layer at the repository
+root and in any subpackage, because Grok reads the `.grok/` layer of the
+project it is started in.
 
-Everything in that layer is linted by rules that already existed:
+Most of what is attached is linted by rules that already existed:
 `.grok/skills/*/SKILL.md` are portable Agent Skills and get the full skill
 rule set, and `.grok/rules/*.md`, `.grok/commands/*.md` and
 `.grok/agents/*.md` get the shared content and security rules. Grok reads
 each of those three directories at the top level only, so a file nested a
 directory deeper is not attached either — it is not context Grok loads.
-`.grok/skills/` is the exception and is walked in full.
+`.grok/skills/` is the exception and is walked in full. `config.toml`,
+`lsp.json`, `sandbox.toml`, `workflows/`, `roles/` and `personas/` are
+detection evidence only today — nothing under them is read or linted yet;
+covering them is later work (see the
+[Grok Build design record](https://github.com/stbenjam/skillsaw/blob/main/docs/designs/grok-build.md)).
 
-The one Grok-specific structure is its hooks.
-[`grok-hooks-valid`](rules/grok-hooks-valid.md) validates every
+Two things in that layer are Grok's own structure, on top of the shared
+rules above. [`grok-hooks-valid`](rules/grok-hooks-valid.md) validates every
 `.grok/hooks/*.json` — Grok merges the whole directory, so a repository may
 have several — against Grok's events, alias table and handler fields. This
 matters more than it sounds: Grok refuses a whole file over one wrong-typed
@@ -305,6 +312,10 @@ group and a skipped handler all look like a hook that had nothing to do. The
 commands themselves are scanned by
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md).
+[`grok-agent-valid`](rules/grok-agent-valid.md) covers the other one: a
+`.grok/agents/*.md` whose frontmatter is missing, malformed, or without
+`name` or `description` is dropped by Grok, and the subagent never appears
+in the agent list.
 
 Two things in that layer decide whether a file loads at all, and neither
 changes what skillsaw lints. Grok gates hooks, MCP and LSP on folder trust —

@@ -12,6 +12,6 @@ misses.
 
 1. Read the migration and its header comment.
 2. Find every column, index and constraint it adds, changes or drops.
-3. Search `crates/` for code that reads each of those columns.
+3. Search `waypoint/` for code that reads each of those columns.
 
 Report each statement that no code reads.

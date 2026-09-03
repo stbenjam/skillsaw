@@ -327,6 +327,36 @@ def test_a_non_string_type_is_one_finding_not_two(tmp_path) -> None:
     assert violations[1].message == "Hook Stop[0].hooks[1] is missing 'command'"
 
 
+@pytest.mark.parametrize("matcher", [["read_file"], {"tool": "read_file"}, 42])
+def test_a_non_string_matcher_rejects_the_whole_file(tmp_path, matcher) -> None:
+    """An unhashable one must not reach the wildcard set membership test:
+    `["x"] in frozenset(...)` raises, and a raising rule reports nothing."""
+    repo = repo_with_hooks(
+        tmp_path,
+        f"matcher-type-{abs(hash(repr(matcher)))}",
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": matcher,
+                            "hooks": [{"type": "command", "command": "./audit.sh"}],
+                        }
+                    ]
+                }
+            }
+        ),
+    )
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert violations[0].message == (
+        f"Hook PreToolUse[0] 'matcher' must be a string, got {type(matcher).__name__}"
+    )
+    assert violations[0].severity == Severity.ERROR
+
+
 def test_a_large_timeout_is_not_a_defect(tmp_path) -> None:
     """`Stop` and `SubagentStop` default to 600 seconds because gates run test
     suites, so a long one is the documented shape, not a mistake."""
@@ -954,3 +984,23 @@ def test_extra_events_is_configurable_through_a_config_file(tmp_path) -> None:
 
     assert not [v for v in found if "PreToolUseFailure" in v["message"]]
     assert [v for v in found if "must be a non-negative integer" in v["message"]]
+
+
+# ── Configured severity ───────────────────────────────────────────
+
+
+def test_a_configured_severity_moves_the_file_scoped_findings_only(tmp_path) -> None:
+    """The ERRORs follow the user's override; the scope-derived WARNING and
+    INFO are the rule's verdict on blast radius, not its severity, and stay
+    put whatever the user configures."""
+    repo = copy_fixture("grok/project-broken", tmp_path)
+    (repo / ".skillsaw.yaml").write_text(
+        'version: "99.0.0"\nrules:\n  grok-hooks-valid:\n    severity: warning\n'
+    )
+
+    found = violations_for(lint_json(repo, returncode=1), "grok-hooks-valid")
+
+    # The two file-scope ERRORs join the five already-WARNING findings; the
+    # two hardcoded INFO findings are untouched.
+    assert {v["severity"] for v in found} == {"warning", "info"}
+    assert len([v for v in found if v["severity"] == "info"]) == 2

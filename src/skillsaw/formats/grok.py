@@ -40,14 +40,18 @@ worth reporting, because ``grok inspect --json`` reported
 ``configWarnings: null`` for every failing case: the runtime tells the
 author nothing.
 
-* **Whole file** — malformed JSON; a bare ``NaN``, ``Infinity`` or
+* **Whole file** — a UTF-8 byte-order mark at the start of the file, which
+  ``serde_json`` refuses and Python's ``utf-8-sig`` decoding hides (verified:
+  ``grok inspect --json`` loaded zero hooks from an otherwise-correct file
+  with a leading BOM); malformed JSON; a bare ``NaN``, ``Infinity`` or
   ``-Infinity`` token, which Python's ``json`` accepts as a float and
   ``serde_json`` refuses; no top-level ``hooks`` object; an event whose
   value is not an array; a matcher group that is not an object; a group
   with no ``hooks`` key or a non-array one; a handler that is not an
   object; a handler with no ``type``; and any field in
-  :data:`HANDLER_FIELDS` carrying the wrong JSON type. One mistyped
-  ``timeout`` costs the author every hook in the file.
+  :data:`HANDLER_FIELDS` carrying the wrong JSON type, including a
+  ``timeout`` above :data:`TIMEOUT_MAX`. One mistyped ``timeout`` costs the
+  author every hook in the file.
 * **That matcher group** — a ``matcher`` string that does not compile.
 * **That event's entries** — an event name outside :data:`HOOK_EVENTS` and
   :data:`HOOK_EVENT_ALIASES`. The rest of the file loads.

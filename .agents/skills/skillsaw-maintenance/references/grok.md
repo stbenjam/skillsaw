@@ -5,8 +5,8 @@
 
 Grok Build is xAI's terminal coding agent. A checkout configures it through `.grok/`.
 Most of that layer is shared convention other tools read too — portable Agent Skills,
-Markdown prose, `AGENTS.md` — so the one thing skillsaw validates that is Grok's alone
-is its lifecycle hooks.
+Markdown prose, `AGENTS.md` — so what skillsaw validates that is Grok's alone is its
+lifecycle hooks and its subagent frontmatter.
 
 ## Upstream source(s)
 - The user guide shipped with 1.0.13: `10-hooks.md` (events, the Cursor alias table,
@@ -42,11 +42,16 @@ that matrix before changing a rule here.
   unknown handler keys.
 - **Failure scope** is the thing to get right, because it is what the diagnostic is
   worth:
-  - *Whole file*: malformed JSON; a bare `NaN`/`Infinity`/`-Infinity`; no top-level
-    `hooks` object, or one that is not an object; an event whose value is not an array;
-    a matcher group that is not an object; a group with no `hooks` key or a non-array
-    one; a handler that is not an object; a handler with no `type`; any known handler
-    field carrying the wrong JSON type.
+  - *Whole file*: a UTF-8 byte-order mark at the start of the file (`grok inspect
+    --json` loaded zero hooks from an otherwise-correct file with a leading BOM;
+    skillsaw reads with `utf-8-sig` and would see a valid document, so this is
+    checked before anything else); malformed JSON; a bare `NaN`/`Infinity`/`-Infinity`;
+    no top-level `hooks` object, or one that is not an object; an event whose value is
+    not an array; a matcher group that is not an object; a group with no `hooks` key or
+    a non-array one; a handler that is not an object; a handler with no `type`; any
+    known handler field carrying the wrong JSON type — including a `timeout` above
+    `2**64-1`, the field's own `u64` ceiling, which fails the same way as a float or a
+    negative even though the value is a plain non-negative integer.
   - *That group*: a `matcher` string that does not compile.
   - *That event's entries*: a name outside the events and aliases below.
   - *That handler*: a `command` handler with no `command`, an `http` handler with no
@@ -84,6 +89,13 @@ that matrix before changing a rule here.
   `.grok/rules/*.md`, `.grok/commands/*.md` and `.grok/agents/*.md` (each read **flat**
   — a nested file is not loaded). A `.grok/commands/<n>.md` is loaded as a project
   *skill*, which is why `grok inspect` lists it among the skills.
+- **Subagent frontmatter**: `.grok/agents/*.md` needs `name` and `description` in
+  frontmatter or Grok's loader drops the subagent and reports nothing — it is on
+  disk and simply absent from the agent list. An empty value for either key still
+  registers; the loader checks presence, not content. Extra keys are tolerated.
+  `.grok/commands/*.md` is deliberately not held to the same demand — Grok loads a
+  frontmatter-less command file, naming it from the filename, so the same check
+  there would be a false positive on a file that works.
 - **Trust gate**: hooks, MCP and LSP require folder trust (`/hooks-trust`, `--trust`,
   or `GROK_FOLDER_TRUST=0`); skills, rules, commands and agents load unconditionally.
   Trust is recorded in `~/.grok/trusted_folders.toml`, outside the repository, so it
@@ -95,6 +107,9 @@ that matrix before changing a rule here.
 
 ## skillsaw rules that map
 - Hooks — `src/skillsaw/rules/builtin/grok/`: `grok-hooks-valid`.
+- Subagents — `src/skillsaw/rules/builtin/grok/`: `grok-agent-valid`, the `name` and
+  `description` Grok's loader registers a `.grok/agents/*.md` by. An empty value
+  satisfies it; presence is the whole test.
 - Vocabulary (events, aliases, handler fields, reserved env, failure scopes) — one
   module, `src/skillsaw/formats/grok.py`, so a behavior change is an edit there rather
   than a hunt through rule code.
@@ -126,6 +141,8 @@ re-verify empirically with the canary matrix above:
 - `HANDLER_FIELDS` (the typed table) and `RESERVED_ENV_VARS`.
 - `MATCHER_IGNORED_EVENTS` = `{"Stop", "UserPromptSubmit"}`.
 - `WILDCARD_MATCHERS` = `{"", "*"}` — `*` is special-cased by Grok, not compiled.
+- `REQUIRED_FIELDS` = `("name", "description")` in `rules/builtin/grok/agent_valid.py` —
+  the keys Grok's subagent loader requires; an empty value still registers.
 
 ## Not covered yet
 Deliberate gaps, each with the reason it is a separate piece of work:

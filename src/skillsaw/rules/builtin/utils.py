@@ -99,12 +99,15 @@ _RUST_NAMED_GROUP = re.compile(r"\(\?<(?![=!])")
 #: A match here is a *candidate*, not a verdict: :func:`_rust_unsupported`
 #: re-walks the pattern to drop one that is escaped (``\(?=``) or inside a
 #: character class (``[(?=]``), both of which are literal text.
-_RUST_UNSUPPORTED_CANDIDATE = re.compile(r"\(\?(?:<[=!]|[=!]|P=)|\\(?:[1-9]|k<)")
+_RUST_UNSUPPORTED_CANDIDATE = re.compile(r"\(\?(?:<[=!]|[=!]|P=)|\\(?:[1-9]|k<|Z)")
 
 #: What :func:`rust_matcher_error` reports for each, phrased to follow the
 #: hosts' "does not compile: ".
 _NO_LOOK_AROUND = "Rust's regex has no look-around"
 _NO_BACKREFERENCES = "Rust's regex has no backreferences"
+#: Rust's end-of-text anchor is ``\z`` alone; Python's ``\Z`` spelling is an
+#: unrecognized escape there (verified: Grok 1.0.13 drops the hook).
+_NO_UPPER_Z = "Rust's regex has no \\Z anchor (write \\z)"
 
 #: Longest matcher :func:`rust_matcher_error` will compile-check. A hooks
 #: file is untrusted input and the check translates the matcher — a few
@@ -123,28 +126,37 @@ def _to_python_regex(pattern: str) -> str:
     Muse Code and Grok Build both compile a hook matcher with the Rust
     ``regex`` crate, whose dialect is not Python's: it has no look-around and
     no backreferences (:func:`_rust_unsupported` owns that direction), and it
-    has three constructs a hooks file plausibly reaches that Python spells
-    differently or not at all — Unicode character classes, the
-    character-class set operators, and the ``(?<name>...)`` capture group.
-    Python raises on each, so compiling the pattern as written would call a
-    working matcher broken. Skipping such a pattern instead would drop every
-    other defect in it: ``(\\pL`` leaves a group unclosed, which costs the
-    matcher group whatever engine reads it.
+    has four constructs a hooks file plausibly reaches that Python spells
+    differently, not at all, or only on newer interpreters — Unicode
+    character classes, the character-class set operators, the
+    ``(?<name>...)`` capture group, and the ``\\z`` end-of-string anchor.
+    Python raises on each unrewritten (``\\z`` on every Python before
+    3.14), so compiling the pattern as written would call a working matcher
+    broken. Skipping such a pattern instead would drop every other defect in
+    it: ``(\\pL`` leaves a group unclosed, which costs the matcher group
+    whatever engine reads it.
 
     So the Rust-only atoms are substituted rather than the check skipped —
     ``\\p{...}`` and its short forms become ``\\w``, ``(?<name>`` becomes
-    Python's ``(?P<name>``, the set operators are dropped — and what is left
-    is the structure both dialects share.
+    Python's ``(?P<name>``, the set operators are dropped, an unescaped
+    ``\\z`` becomes ``\\Z`` (the same anchor, accepted on every supported
+    Python) — and what is left is the structure both dialects share. The
+    reverse spelling is not shared: Rust has no ``\\Z``, and
+    :func:`_rust_unsupported` reports one before the rewrite would mask it.
     """
     substituted = _RUST_UNICODE_CLASS.sub(r"\\w", pattern)
     if "(?<" in substituted:
         substituted = _RUST_NAMED_GROUP.sub("(?P<", substituted)
-    if "[" not in substituted:
+    if "[" not in substituted and "\\z" not in substituted:
         return substituted
 
     # The set operators only mean anything inside a character class: ``a--b``
-    # outside one is three literal characters in either dialect. Escapes are
-    # consumed whole so a ``\[`` does not open a class.
+    # outside one is three literal characters in either dialect. ``\z`` is
+    # rewritten only outside a class: inside one neither dialect accepts it
+    # (Grok 1.0.13 drops the hook, Python raises ``bad escape``), so it is
+    # left for the compile to report. Escapes are consumed whole so a
+    # ``\[`` does not open a class and a preceding backslash (``\\z``, a
+    # literal backslash then ``z``) is never mistaken for the anchor.
     out: List[str] = []
     depth = 0
     index = 0
@@ -152,7 +164,11 @@ def _to_python_regex(pattern: str) -> str:
     while index < end:
         char = substituted[index]
         if char == "\\":
-            out.append(substituted[index : index + 2])
+            following = substituted[index + 1 : index + 2]
+            if not depth and following == "z":
+                out.append("\\Z")
+            else:
+                out.append(substituted[index : index + 2])
             index += 2
             continue
         if depth:
@@ -172,8 +188,9 @@ def _to_python_regex(pattern: str) -> str:
 def _rust_unsupported(pattern: str) -> Optional[str]:
     """Why Rust refuses *pattern* where Python would compile it, if it does.
 
-    Look-around and backreferences are the whole list: everything else Python
-    accepts is either shared with Rust or already caught by the compile.
+    Look-around, backreferences and the ``\\Z`` anchor are the whole list:
+    everything else Python accepts is either shared with Rust or already
+    caught by the compile.
 
     :data:`_RUST_UNSUPPORTED_CANDIDATE` is the gate, so a matcher without one
     of those runs never reaches the walk. A hit is then confirmed by walking
@@ -200,6 +217,8 @@ def _rust_unsupported(pattern: str) -> Optional[str]:
                     return _NO_BACKREFERENCES
                 if following == "k" and pattern[index + 2 : index + 3] == "<":
                     return _NO_BACKREFERENCES
+                if following == "Z":
+                    return _NO_UPPER_Z
             index += 2
             continue
         if char == "[":
@@ -227,8 +246,8 @@ def rust_matcher_error(matcher: str) -> Optional[str]:
 
     Two verdicts, because the dialects diverge in both directions. Python
     rejecting the pattern is one; the other is a construct Python *accepts*
-    and Rust does not — look-around and backreferences — which the compile
-    can never see, so :func:`_rust_unsupported` runs first.
+    and Rust does not — look-around, backreferences, ``\\Z`` — which the
+    compile can never see, so :func:`_rust_unsupported` runs first.
     """
     if len(matcher) > RUST_MATCHER_MAX_LENGTH:
         return None

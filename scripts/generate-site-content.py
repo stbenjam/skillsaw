@@ -241,8 +241,9 @@ RULE_GROUPS = [
         "Validates hook configuration. The security rules scan every hook a repository "
         "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
         "Codex's `.codex/hooks.json` and plugin hooks, Muse Code's `.muse/hooks.json`, "
-        "Cursor's `.cursor/hooks.json`, and skill, Claude-agent, and Copilot-agent "
-        "frontmatter (`hooks:` key) — for supply-chain attack patterns (inspired by the "
+        "Grok Build's `.grok/hooks/*.json`, Cursor's `.cursor/hooks.json`, and skill, "
+        "Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain "
+        "attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (
@@ -854,7 +855,7 @@ def generate_research_page(research):
 
 
 # The hero sentence's rule count, anchored on the words that lead into it:
-# "…structural flaws, and content dead zones with 89 rules, then applies
+# "…structural flaws, and content dead zones with N rules, then applies
 # deterministic autofixes." The whitespace before "zones" is captured rather
 # than matched literally because the sentence wraps across two source lines,
 # and rewriting the count must not reflow the paragraph.

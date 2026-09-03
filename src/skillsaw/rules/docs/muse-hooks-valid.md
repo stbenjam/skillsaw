@@ -48,13 +48,13 @@ A finding's severity is how much of the file the defect costs.
 - A `matcher` that does not compile. Muse compiles matchers with Rust's
   regex engine, which differs from Python's in both directions, so skillsaw
   checks both and warns rather than errors. Unicode classes, the
-  character-class set operators and the `(?<name>...)` capture group are
-  Rust's spelling: skillsaw rewrites them rather than calling a working
-  matcher broken. Look-around (`(?=`, `(?!`, `(?<=`,
-  `(?<!`) and backreferences (`\1`, `\k<name>`, `(?P=name)`) are the other
-  direction — Python compiles them and Rust does not, so skillsaw names the
-  construct instead of waiting for a compile error that never comes. The
-  rest is the syntax the two dialects share. A matcher longer than 1,000
+  character-class set operators, the `(?<name>...)` capture group and the
+  `\z` anchor are Rust's spelling: skillsaw rewrites them rather than
+  calling a working matcher broken. Look-around (`(?=`, `(?!`, `(?<=`,
+  `(?<!`), backreferences (`\1`, `\k<name>`, `(?P=name)`) and the `\Z`
+  anchor are the other direction — Python compiles them and Rust does not,
+  so skillsaw names the construct instead of waiting for a compile error
+  that never comes. The rest is the syntax the two dialects share. A matcher longer than 1,000
   characters is left alone: Muse sets no
   length limit, so length is not a defect, and a hooks file is untrusted
   input that the syntax check has no reason to scan without a bound.

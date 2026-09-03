@@ -22,7 +22,8 @@ rule inventories hooks in plugin `hooks/hooks.json` (Claude and Codex,
 including Codex's manifest-declared and inline hooks), APM's compiled
 copy, `.claude/settings*.json`, **skill/agent frontmatter** (`hooks:` key),
 `<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`,
-`.muse/hooks.json`, and Cursor's `.cursor/hooks.json`.
+`.muse/hooks.json`, Grok Build's `.grok/hooks/*.json`, and Cursor's
+`.cursor/hooks.json`.
 
 Not every hook spawns a process. Claude Code also dispatches `http`,
 `mcp_tool`, `prompt` and `agent` handlers, and Codex dispatches `mcp_tool`
@@ -31,7 +32,8 @@ A handler is inventoried whichever host's file it sits in — an `http`
 handler in `.muse/hooks.json` is reported even though Muse runs only
 `command` handlers, because the entry is in the repository and a reviewer
 reads the file. Whether a given host actually dispatches it is what that
-host's shape rule (`muse-hooks-valid`, `cursor-hooks-valid`) reports.
+host's shape rule (`muse-hooks-valid`, `grok-hooks-valid`,
+`cursor-hooks-valid`) reports.
 
 A prompt handler is named by its text: `prompt:<text>` in the nested shape
 Claude Code defines, and the same spelling for a Cursor `type: "prompt"`
