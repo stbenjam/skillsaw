@@ -21,7 +21,11 @@ from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_local_source_path,  # noqa: F401 - compatibility re-export
 )
-from .discovery.excludes import path_matches_patterns, pattern_variants as _pattern_variants
+from .discovery.excludes import (
+    is_root_or_ancestor_excluded,
+    path_matches_patterns,
+    pattern_variants as _pattern_variants,
+)
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
 from .repository_external_content import RepositoryExternalContentMixin
@@ -388,7 +392,11 @@ class RepositoryContext(
             self.codex_plugins = [p for p in self.codex_plugins if not self.is_path_excluded(p)]
             self.agent_plugins = [p for p in self.agent_plugins if not self.is_path_excluded(p)]
             self.antigravity_plugins = [p for p in self.antigravity_plugins if not self.is_path_excluded(p)]
-            self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
+            self.skills = [
+                p
+                for p in self.skills
+                if not is_root_or_ancestor_excluded(p, self.root_path, self.is_path_excluded)
+            ]
             self.instruction_files = [
                 p for p in self.instruction_files if not self.is_path_excluded(p)
             ]
@@ -433,6 +441,8 @@ class RepositoryContext(
                 self.skills = [
                     skill for skill in self.skills if not self._under_any(skill, dropped_roots)
                 ]
+        if not self.skills and self._overridden_types is None:
+            self.repo_types.discard(RepositoryType.AGENTSKILLS)
         # The claim set folds in both plugin roots and catalog sources, and
         # excludes can drop either — always recompute on the next consult.
         # The unconditional clear is also load-bearing for __init__ ordering:
@@ -498,6 +508,7 @@ class RepositoryContext(
                 promptfoo_named_files=scan.promptfoo_named_files,
                 promptfoo_eval_files=scan.promptfoo_eval_files,
                 tool_dirs=scan.tool_dirs,
+                is_excluded=self.is_path_excluded,
             )
         }
 
@@ -884,6 +895,7 @@ class RepositoryContext(
                 for name in detect_discovery.NESTED_TOOL_SKILL_DIRS
                 for directory in self.agent_tool_dirs(name)
             ),
+            is_excluded=self.is_path_excluded,
         )
 
     def __str__(self):
