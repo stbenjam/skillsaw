@@ -93,18 +93,23 @@ def inline_documents(declared: Any, key: str) -> List[Dict[str, Any]]:
 # the readers below need no repository state at all.
 CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
 
-#: The project directory Codex reads, and the committed hook configuration
-#: file within it.
+#: The project directory Codex reads, and the one committed file skillsaw
+#: lints inside it. Named here so discovery and the lint tree spell the
+#: location once, the way the Muse leg reads ``muse.TOOL_DIR_NAME``.
 CODEX_DIR_NAME = ".codex"
 CODEX_HOOKS_FILENAME = "hooks.json"
 
 # -- Lifecycle hooks ----------------------------------------------------------
 #
-# Reference: https://developers.openai.com/codex/hooks
-# Codex supports lifecycle hook definitions using a structured hooks.json
-# schema, specifying events, handler types (command, mcp_tool), and options.
+# Source: https://developers.openai.com/codex/hooks (read 2026-09-02). Codex
+# adopted Claude Code's nested hooks.json shape — ``{hooks: {Event:
+# [{matcher?, hooks: [{type, ...}]}]}}`` — with its own event list, handler
+# types, and per-handler fields. ``codex-hooks-valid`` reads these; the
+# security rules read the shape through ``HooksBlock.events`` and need none
+# of them.
 
-#: Events supported by Codex hooks.
+#: Events Codex dispatches hooks on. An unknown event is an entry Codex
+#: never runs.
 CODEX_HOOK_EVENTS = frozenset(
     {
         "SessionStart",
@@ -122,21 +127,23 @@ CODEX_HOOK_EVENTS = frozenset(
     }
 )
 
-#: Handler types supported by Codex hooks.
+#: Handler types Codex runs.
 CODEX_HOOK_HANDLER_TYPES = frozenset({"command", "mcp_tool"})
 
-#: Handler types from other hosts (such as Claude Code) that Codex parses
-#: without executing.
+#: Handler types Codex parses and skips: the entry loads without error and
+#: never runs. Claude Code runs them, so a shared hooks file may carry one
+#: deliberately.
 CODEX_HOOK_SKIPPED_HANDLER_TYPES = frozenset({"prompt", "agent"})
 
-#: Required fields per handler type.
+#: Required fields per handler type, each a string.
 CODEX_HOOK_REQUIRED_FIELDS: Mapping[str, Tuple[str, ...]] = {
     "command": ("command",),
     "mcp_tool": ("server", "tool"),
 }
 
-#: Optional fields per handler type and their expected types.
-#: ``timeout`` is in seconds; ``additionalContextLimit`` caps context size.
+#: Optional fields per handler type and the JSON types Codex accepts.
+#: ``timeout`` is in seconds; ``additionalContextLimit`` caps the context a
+#: command hook may return before Codex spills it to disk.
 CODEX_HOOK_OPTIONAL_FIELDS: Mapping[str, Mapping[str, Any]] = {
     "command": {
         "commandWindows": str,
@@ -152,7 +159,8 @@ CODEX_HOOK_OPTIONAL_FIELDS: Mapping[str, Mapping[str, Any]] = {
     },
 }
 
-#: Events that support matcher filtering.
+#: Events whose ``matcher`` filters something. On any other event the field
+#: is accepted and ignored — ``UserPromptSubmit`` is documented as such.
 CODEX_HOOK_MATCHER_EVENTS = frozenset(
     {
         "PermissionRequest",
@@ -167,10 +175,10 @@ CODEX_HOOK_MATCHER_EVENTS = frozenset(
     }
 )
 
-#: Events that do not support mcp_tool handlers.
+#: Events that reject ``mcp_tool`` handlers.
 CODEX_HOOK_NO_MCP_TOOL_EVENTS = frozenset({"SessionEnd"})
 
-#: Events that enforce a short timeout (up to 3 seconds).
+#: Events whose hooks default to a one-second timeout and cap at three.
 CODEX_HOOK_SHORT_TIMEOUT_EVENTS = frozenset({"SessionEnd", "Interrupt"})
 CODEX_HOOK_SHORT_TIMEOUT_MAX_SECONDS = 3
 

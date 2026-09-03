@@ -162,7 +162,7 @@ _NETWORK_FETCH_RE = re.compile(
     rf"{_CMD_WRAPPERS}{_ENV_PREFIX}(?:\S+/)?(?:curl|wget|nc|ncat)\b"
 )
 
-#: Fast keyword checks for POSIX download and execution utilities.
+#: Cheap substring gate for the POSIX patterns above.
 _POSIX_TOKENS = (
     "curl",
     "wget",

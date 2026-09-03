@@ -16,27 +16,28 @@ Claude Code hooks.json must be valid JSON with proper hook configuration structu
 
 ## Why
 
-In Claude Code, `hooks.json` allows you to automate tasks and run helpful
-commands in response to agent lifecycle events. Because hooks execute
-automatically in the background, formatting mistakes, unexpected JSON values, or
-misconfigured handlers can cause a hook to be skipped without surfacing an error
-in the terminal. For example, non-standard numeric tokens like bare `NaN` or
-`Infinity` will cause Claude Code's parser to reject the entire file.
+A Claude Code `hooks.json` configures commands that run automatically on
+agent events. Invalid JSON, unknown event types, or misconfigured handler
+objects will cause hooks to fail silently — the command never runs and no
+error is surfaced to the user. A bare `NaN` or `Infinity` anywhere in the
+file counts as invalid JSON: Claude Code's parser rejects the whole file.
 
-This rule validates your Claude Code hook files to ensure event names, handler
-types (`command`, `http`, `mcp_tool`, `prompt`, `agent`), and required options
-are set up correctly.
+The event names, the handler types (`command`, `http`, `mcp_tool`,
+`prompt`, `agent`) and the per-handler fields checked here are Claude
+Code's. Codex and Muse Code read the same nested shape with vocabularies of
+their own, and Cursor reads a flat per-event list of `command` and `prompt`
+entries; each host's files are validated by its own rule —
+[`codex-hooks-valid`](codex-hooks-valid.md),
+[`muse-hooks-valid`](muse-hooks-valid.md) and
+[`cursor-hooks-valid`](cursor-hooks-valid.md).
 
-Host-specific hook configurations for other tools are validated by their
-dedicated rules:
-- [`codex-hooks-valid`](codex-hooks-valid.md) for OpenAI Codex
-- [`muse-hooks-valid`](muse-hooks-valid.md) for Muse Code
-- [`cursor-hooks-valid`](cursor-hooks-valid.md) for Cursor
-
-This rule was previously known as `hooks-json-valid` before host-specific checks
-were introduced. The earlier rule name remains supported as an alias for backwards
-compatibility, and a baseline recorded under it keeps applying here: this rule's
-messages are unchanged from the ones it recorded.
+This rule was called `hooks-json-valid` before that split. The old name
+still works everywhere a rule is named — config, `--rule`/`--skip-rule` and
+suppression comments — and resolves to this rule alone, so
+`hooks-json-valid: {enabled: false}` in a Codex project no longer covers
+Codex's hooks: configure [`codex-hooks-valid`](codex-hooks-valid.md) by its
+own id. A baseline recorded under the old name keeps applying here: this
+rule's messages are unchanged from the ones it recorded.
 
 The checks that moved to [`codex-hooks-valid`](codex-hooks-valid.md) were
 re-worded, and a hooks file's baseline fingerprint hashes the message text —
@@ -44,15 +45,14 @@ JSON carries no line numbers to hash instead. An old baseline therefore carries
 over to that rule only for the four file-level verdicts whose wording survived;
 its page lists them.
 
-For security, the commands themselves are scanned by
-[`hooks-dangerous`](hooks-dangerous.md) for risky execution patterns, and can be
-inventoried with an explicit allowlist using
+The commands themselves are scanned by
+[`hooks-dangerous`](hooks-dangerous.md) and, when you want every hook
+reviewed rather than only the risky-looking ones,
 [`hooks-prohibited`](hooks-prohibited.md).
 
 ## Examples
 
-**Needs improvement** — hook handlers must be wrapped in a matcher group with a
-`hooks` array:
+**Bad:**
 
 ```json
 {
@@ -62,7 +62,7 @@ inventoried with an explicit allowlist using
 }
 ```
 
-**Good** — a properly structured matcher group and command handler:
+**Good:**
 
 ```json
 {
@@ -80,12 +80,11 @@ inventoried with an explicit allowlist using
 
 ## How to fix
 
-Follow the suggestions in the finding message to address the structural issue:
-- Event values should be arrays of matcher group objects.
-- Each matcher group object requires a `hooks` array.
-- Each handler inside `hooks` needs a valid `type` field.
-- Type-specific fields (`command`, `url`, `prompt`, `server`/`tool`) should
-  match the declared handler type.
+Fix the structural issue identified in the violation message. Common
+problems: event values must be arrays of config objects, each config
+must have a `hooks` array, each handler needs a `type` field, and
+type-specific fields (`command`, `url`, `prompt`) must match the
+handler type.
 
 ## Configuration
 

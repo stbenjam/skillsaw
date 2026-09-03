@@ -155,9 +155,12 @@ class Rule(ABC):
     # --rule / --skip-rule, inline suppression directives, baseline
     # matching, and ``skillsaw explain``.
     aliases: tuple = ()
-    # Former rule IDs matched during baseline comparison. When a rule is
-    # split into smaller rules, listing old IDs here ensures existing
-    # baselines continue to match without re-triggering historical findings.
+    # Former rule IDs whose baseline fingerprints this rule's findings also
+    # match — for a rule split out of another. Unlike ``aliases``, this
+    # never resolves config, CLI, or suppression names: the new rule is
+    # configured, selected, and suppressed by its own ID. It exists so an
+    # upgrade does not resurface a finding a baseline recorded under the ID
+    # the check used to be reported by.
     baseline_aliases: tuple = ()
     # Version in which the rule was deprecated (e.g. "0.18.0"); None means
     # active. A deprecated rule no longer runs under ``enabled: auto`` —
@@ -197,9 +200,12 @@ class Rule(ABC):
     # nodes whose provenance_dir() is claimed exclusively by other
     # ecosystems, so a Codex-only plugin is exempt from Claude manifest,
     # frontmatter, and naming requirements. Dual-manifest and unclaimed
-    # directories stay in scope. MCP rules with conditional strictness check
-    # RepositoryContext.in_codex_only_plugin(), while hook rules validate
-    # host-specific subclasses directly.
+    # directories stay in scope. Conditional-strictness rules — the
+    # ecosystem-tightened MCP shape checks — stay None and consult
+    # RepositoryContext.in_codex_only_plugin() instead: tightening is
+    # their semantic, not a skip. Hooks need neither mechanism; the tree
+    # builder types each hooks file by the host that reads it, and each
+    # host's shape rule iterates its own block class.
     provenance_scope: Optional[str] = None
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"

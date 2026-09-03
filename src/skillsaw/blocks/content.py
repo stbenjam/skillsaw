@@ -60,12 +60,17 @@ class QwenMdBlock(InstructionBlock):
 
 @dataclass(eq=False)
 class AgentMemoryIndexBlock(FileContentBlock):
-    """Represents `.agents/memory/MEMORY.md`, the primary index for project memory.
+    """``.agents/memory/MEMORY.md`` — the index of committed project memory.
 
-    This index serves as an entry point for persistent team knowledge and project
-    notes, providing concise references to topic files under `.agents/memory/`.
-    Agents like Muse Code load this index at session startup to discover relevant
-    context.
+    Team notes checked into the repository for whatever agent reads it, the
+    shared counterpart of Claude Code's per-developer auto memory. The index
+    is the entry point: one line per topic file by convention, loaded whole
+    by the agents that read it — Muse Code injects it at session start, even
+    in an untrusted workspace, alongside the paths of the other Markdown
+    files in the directory.
+
+    Not an :class:`InstructionBlock`: the instruction-file rules check
+    conventions of the CLAUDE.md family that a memory index does not follow.
     """
 
     category: str = "memory"
@@ -73,11 +78,13 @@ class AgentMemoryIndexBlock(FileContentBlock):
 
 @dataclass(eq=False)
 class AgentMemoryBlock(FileContentBlock):
-    """Represents an individual topic file within `.agents/memory/`.
+    """A topic file under ``.agents/memory/``.
 
-    Topic files store on-demand project knowledge and context that coding agents
-    consult when relevant questions or tasks arise. These files are evaluated
-    by content and security rules just like other context files.
+    Listed rather than loaded with the index — Muse Code lists the path of
+    every Markdown file in the directory at session start, whether or not
+    the index mentions it, and reads the file when a topic comes up — so it
+    is on-demand prose that still lands whole in a context window. Every
+    content and security rule reads it.
     """
 
     category: str = "memory"

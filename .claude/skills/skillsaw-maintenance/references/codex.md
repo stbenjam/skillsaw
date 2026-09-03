@@ -35,11 +35,12 @@ hedge (see Sync notes).
 - Third-party schema (unofficial, one author's reading — useful for cross-checking,
   not authoritative): https://github.com/typeforged/codex-plugin-marketplace
 - Hooks: https://developers.openai.com/codex/hooks — hook sources, lifecycle events,
-  handler types, and per-handler options. While prose docs don't link directly to a
-  JSON Schema, the generated schema can be found at
+  handler types, and per-handler fields. No JSON Schema is linked from the prose; the
+  generated schema lives at
   https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated (see Sync
-  notes). It is best to inspect this schema at the git tag of the target Codex release
-  rather than unreleased `main` to ensure alignment with shipped features.
+  notes). Read it at the tag of the Codex release skillsaw supports, never on `main`:
+  `main` carries fields no release ships, and syncing from it makes `codex-hooks-valid`
+  enforce a field the shipped release does not have.
 
 ## What to check
 - **Manifest paths**: `.codex-plugin/plugin.json` and `$REPO_ROOT/.agents/plugins/marketplace.json`.
@@ -129,12 +130,12 @@ Hand-copied value sets that drift — re-check each against upstream:
   (`HEX_COLOR_RE`), applied at `:522-527` — the validator publishes no schema, so
   this regex is the only statement of the rule and can drift silently.
 - The `CODEX_HOOK_*` constants in `formats/codex.py` (events, handler types,
-  required/optional per-handler fields, matcher-supported events, events rejecting
-  `mcp_tool`, and short-timeout events), referenced by `codex/hooks_valid.py`:
-  review against https://developers.openai.com/codex/hooks and the generated schema under
-  `codex-rs/hooks/schema/generated` (checked at the supported release's tag) during syncs.
-  Note that inline `[hooks]` tables in `config.toml` are currently not linted — skillsaw
-  focuses on `hooks.json` files and plugin-manifest hook declarations.
+  required/optional per-handler fields, which events honor `matcher`, which reject
+  `mcp_tool`, and the `SessionEnd`/`Interrupt` short-timeout events), read by
+  `codex/hooks_valid.py`: re-check against https://developers.openai.com/codex/hooks
+  and the generated schema under `codex-rs/hooks/schema/generated`, read at the
+  supported release's tag rather than on `main`, on every sync. `config.toml` inline `[hooks]` tables are not yet linted — only `hooks.json`
+  files and plugin-manifest-declared or inline manifest hooks are.
 
 Deliberate non-checks — do not "fix" these without a spec change. Each records what
 upstream requires and why skillsaw does not enforce it.

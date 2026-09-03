@@ -478,16 +478,21 @@ a line.
 
 ### Committed project memory
 
-The `.agents/memory/` directory offers a convenient, tool-agnostic way for teams to
-share durable project knowledge with coding agents. It serves as a version-controlled
-team counterpart to local, per-user memory stores. Muse Code and other tools read
-this folder, loading `MEMORY.md` as an index at session start and referencing
-individual topic files as questions arise.
+`.agents/memory/` holds notes a team checks into the repository for whatever
+agent reads it — the shared counterpart of Claude Code's per-developer auto
+memory. The convention belongs to no tool: projects were committing it
+before Muse Code shipped, and Muse reads it the way it reads `AGENTS.md`,
+injecting `MEMORY.md` in full at session start (even in an untrusted
+workspace) alongside the paths of the other Markdown files in the directory,
+which it reads on demand. The index is one line per topic by convention;
+Muse lists every Markdown file there whether or not the index mentions it.
 
-skillsaw includes the repository root's `.agents/memory/` in the lint tree to ensure
-your team notes remain high quality. The index and topic files are scanned with skillsaw's content quality
-and security rules, and tracked under the `memory` budget category so instructions
-remain focused, accurate, and within recommended token limits.
+skillsaw therefore attaches the directory at the repository root
+unconditionally, and it is evidence of no tool in particular. The index and
+the topic files beside it are agent context, so they get every content and
+security rule, and both are budgeted under the `memory` category — the index
+because a reader loads it whole, a topic file because a reader loads it
+whole once the topic comes up.
 
 ### OpenCode and APM
 

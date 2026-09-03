@@ -1,9 +1,8 @@
 """
 Rule: hooks-prohibited
 
-Enforces policy controls requiring explicit allowlisting of hook handlers.
-Like mcp-prohibited, this rule helps teams monitor and govern automation hooks
-across the repository.
+Policy rule: hooks are not allowed unless explicitly allowlisted.
+Mirrors the mcp-prohibited pattern.
 """
 
 from typing import Dict, List
@@ -25,17 +24,21 @@ from skillsaw.rules.builtin.content_analysis import (
 
 
 def _handler_identity(handler: HookHandler) -> str:
-    """Format an allowlist identifier for non-command hook handlers.
+    """The allowlist spelling for a handler that runs no shell command.
 
-    While command handlers are identified by their command string, non-command
-    handlers (such as HTTP requests, MCP tool calls, prompt injections, and subagents)
-    use structured identities:
-      - mcp_tool:<server>/<tool>
-      - http:<url>
-      - prompt:<prompt>
-      - agent:<prompt>
+    A command handler is named by the command it spawns. The other handler
+    types run something too — Claude Code dispatches ``http``, ``mcp_tool``,
+    ``prompt`` and ``agent`` handlers, and Codex ``mcp_tool`` ones — so a
+    policy gate over what fires on a lifecycle event has to name them as
+    well, and an allowlist needs a spelling stable enough to enumerate:
+    ``mcp_tool:<server>/<tool>``, ``http:<url>``, ``prompt:<prompt>``,
+    ``agent:<prompt>``.
 
-    If specific payload properties are missing, this falls back to the handler type.
+    A handler missing its payload falls back to the bare type. That is the
+    coarsest possible entry — allowlisting ``http`` permits every payloadless
+    ``http`` handler in the repository — but such a handler is malformed and
+    the host's own shape rule reports it; inventing a placeholder payload
+    would put a spelling in the allowlist that no valid handler ever matches.
     """
     kind = handler.type
     if kind == "mcp_tool":
@@ -136,9 +139,25 @@ class HooksProhibitedRule(Rule):
                                 )
                         continue
 
-                    # Non-command handlers (HTTP requests, MCP tools, prompts, agents)
-                    # also trigger on events, so they are checked against the allowlist.
+                    # A handler that spawns no process still fires on the
+                    # event: Claude Code calls an ``http`` endpoint, invokes
+                    # an ``mcp_tool``, injects a ``prompt``, runs an
+                    # ``agent``; Codex invokes an ``mcp_tool``. Skipping them
+                    # let a whole class of hook past a policy that says every
+                    # hook needs review.
+                    #
+                    # Reported whatever host owns the file, without asking
+                    # whether that host dispatches the type. This is an
+                    # inventory of what the repository declares, and the
+                    # events here arrive from four hosts plus settings,
+                    # frontmatter and Copilot agents — a per-host handler
+                    # table threaded through all of them would buy a
+                    # narrower report at the cost of a hook going unlisted
+                    # every time a host learns a new type. "Muse drops this
+                    # handler" is muse-hooks-valid's sentence to say.
                     if not handler.type:
+                        # No type at all: no host dispatches it, and the
+                        # host's shape rule reports the handler.
                         continue
 
                     identity = _handler_identity(handler)
@@ -172,16 +191,21 @@ class HooksProhibitedRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        # Check all host-specific hook blocks (Claude, Codex, Muse, Cursor),
-        # each representing its configuration as HookEventConfig.
+        # Every host's hooks file is a HooksBlock — Claude, Codex, Muse,
+        # Cursor — and each renders its own shape as HookEventConfig.
         hook_blocks = context.lint_tree.find(HooksBlock)
         for block in hook_blocks:
             if block.parse_error:
                 continue
             violations.extend(self._check_events(block.events, block.path))
 
-        # Cursor prompt hooks are validated here using the prompt:<text> identity
-        # format consistent with other prompt hook allowlist entries.
+        # Cursor's prompt hooks are the one handler kind ``events`` does not
+        # render — its override drops them, so the loop above never sees one
+        # and cannot double-report what this loop finds. They are reported
+        # here instead because a hook that injects text is still a hook the
+        # project did not have before, and by the same ``prompt:<text>``
+        # identity a nested-shape prompt handler carries, so one allowlist
+        # entry reads the same whichever host's file the prompt sits in.
         allowlist = self.setting("allowlist")
         for block in context.lint_tree.find(CursorHooksBlock):
             if block.parse_error:

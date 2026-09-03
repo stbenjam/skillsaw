@@ -94,7 +94,8 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
         # directory in the repository, and constructing the pathlib view of
         # every one of them to read a string costs more than the walk.
         if os.path.basename(dirpath) == muse.TOOL_DIR_NAME:
-            # Skip Muse scratch worktree directories so files are not scanned multiple times.
+            # Muse's per-agent worktrees are whole checkouts of this
+            # repository; walking them would attach every file twice.
             dirnames[:] = [name for name in dirnames if name not in muse.SCRATCH_DIR_NAMES]
         # Slice relative directory parts from dirpath to avoid repeatedly calling
         # Path.relative_to() for every directory and file during the walk.
@@ -211,12 +212,17 @@ _TOOL_EVIDENCE = {
             ("plugin", True),
         ),
     ),
-    # Muse Code project hooks in `.muse/hooks.json`.
+    # ``hooks.json`` is the only committed file Muse reads from ``.muse/``;
+    # ``worktrees/`` is child-agent scratch.
     "muse": (
         muse.TOOL_DIR_NAME,
         ((muse.HOOKS_FILENAME, False),),
     ),
-    # Codex project-level hooks in `.codex/hooks.json`.
+    # ``hooks.json`` is the only committed project-layer configuration
+    # skillsaw reads from ``.codex/``. ``.codex/plugins/`` is an install
+    # location — vendor-managed content that Codex's own plugin discovery
+    # finds and that the Codex plugin rules gate on repository type — so it
+    # is deliberately not evidence here.
     "codex-project": (
         codex.CODEX_DIR_NAME,
         ((codex.CODEX_HOOKS_FILENAME, False),),
@@ -332,7 +338,10 @@ def tool_types(
             # only a model and an MCP server has no ``.opencode/`` at all.
             or marker("opencode.json") or marker("opencode.jsonc"),
         ),
-        # Tool markers based on committed configuration files.
+        # ``.muse/hooks.json`` is the only thing in a checkout that is Muse
+        # Code's alone. Committed ``.agents/memory/`` notes are a shared
+        # convention Muse reads — projects were committing them before Muse
+        # shipped — so they are no more evidence of Muse than AGENTS.md is.
         ("muse", tool_marker("muse")),
         ("codex-project", tool_marker("codex-project")),
         ("gemini", marker("GEMINI.md")),

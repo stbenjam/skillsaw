@@ -14,18 +14,20 @@ Flags hook commands that chain a download into execution (curl|sh), obfuscate th
 
 ## Why
 
-Hooks run shell commands automatically during agent events, providing powerful
-automation throughout your development workflow. Because these commands execute
-automatically without interactive prompts, it is important to keep them safe from
-supply-chain risks (such as the 2025 Shai-Hulud npm incident, which hid
-download-and-execute payloads in lifecycle scripts).
+Hooks execute arbitrary shell commands automatically whenever a matching
+agent event fires — no human review, every session. That makes them the
+highest-value target in an agent repository for supply-chain attacks:
+the 2025 Shai-Hulud npm compromise used exactly this pattern, hiding
+download-and-execute payloads in lifecycle hooks.
 
-Hooks can be declared in many places across a project: Claude and Codex plugin
-`hooks/hooks.json` (including Codex manifest-declared and inline hooks), APM's
-compiled files, `.claude/settings*.json`, **skill and agent frontmatter**
-(`hooks:` YAML key), `<repo>/.codex/hooks.json`, `.muse/hooks.json`, and Cursor's
-`.cursor/hooks.json`. This rule scans every configured hook to help keep your
-repository safe.
+Hooks can be declared in plugin `hooks/hooks.json` (Claude and Codex
+plugins, including Codex's manifest-declared and inline hooks), APM's
+compiled copy, `.claude/settings*.json`, **skill and agent frontmatter**
+(the `hooks:` YAML key, same schema as settings hooks),
+`<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`,
+`.muse/hooks.json`, and Cursor's `.cursor/hooks.json`. This rule scans
+every one of them — a `curl | sh` hook hidden in SKILL.md frontmatter or
+in a Cursor lifecycle hook is just as dangerous as one in `hooks.json`.
 
 This rule flags hook commands that:
 
@@ -40,9 +42,8 @@ design — a project that ships PowerShell hooks should enable
 [`hooks-prohibited`](hooks-prohibited.md), which reviews every hook regardless of
 the language it is written in.
 
-Ordinary setup commands, such as downloading a specific archive to disk
-(`curl -o tool.zip https://...`), remain fully supported and unflagged.
-
+A fetch on its own is not flagged — `curl -o tool.zip https://...` is an
+ordinary install step.
 
 ## Examples
 

@@ -3,10 +3,10 @@
 <!-- Repo-root-relative src/... paths below are intentionally kept as prose, not navigable links. -->
 <!-- skillsaw-disable content-unlinked-internal-reference -->
 
-Muse Code is Meta's terminal coding agent. Within a project repository, Muse Code
-defines committed project hooks in `.muse/hooks.json`. Muse also reads shared
-conventions including `AGENTS.md`, `.agents/skills`, and committed notes under
-`.agents/memory/`, which are supported by skillsaw across multiple tools.
+Muse Code is Meta's terminal coding agent. The one thing skillsaw lints that is Muse's
+alone is committed project hooks. Muse also reads `AGENTS.md`, `.agents/skills` and the
+committed `.agents/memory/` notes, but those are shared conventions other tools read
+too — see the memory section below.
 
 ## Upstream source(s)
 - https://dev.meta.ai/docs/muse-code/extending#hooks — hook sources, lifecycle events,
@@ -16,13 +16,13 @@ conventions including `AGENTS.md`, `.agents/skills`, and committed notes under
 - https://dev.meta.ai/docs/muse-code/configuration#agents-md — instruction file search
   order.
 
-While upstream documentation lists lifecycle events and file locations, full configuration
-examples are not yet published. The structure and failure scopes documented below were
-carefully verified against Muse Code 1.0.2 (`1.0.2-R2040.1`) using a 73-case empirical
-test matrix: testing one scenario per workspace with variations in `.muse/hooks.json`,
-logging output via `muse exec --provider echo`. Because Muse runs hooks silently during
-headless execution without printing error messages, `muse-hooks-valid` helps developers
-catch issues early. Re-running the test matrix is recommended when updating these rules.
+The docs name the events and the file locations but publish no example of a hooks
+file, so the shape and the failure scopes below were verified against Muse Code 1.0.2
+(`1.0.2-R2040.1`) with a 73-case canary matrix: one scratch workspace per case, each
+`.muse/hooks.json` carrying a single variation, every handler writing a token to a log
+file, run under `muse exec --provider echo`. The loader emits no diagnostic in headless
+runs — a rejected file, group, event or handler simply never fires — which is why
+`muse-hooks-valid` exists. Re-run that matrix before changing a rule here.
 
 ## What to check
 - **Hooks file**: `<project-root>/.muse/hooks.json` — user hooks live in
@@ -31,17 +31,20 @@ catch issues early. Re-running the test matrix is recommended when updating thes
 - **Shape**: the nested form Claude Code defined —
   `{"hooks": {Event: [{matcher?, hooks: [handler, ...]}, ...]}}`. Top-level keys other
   than `hooks` are ignored; `hooks` must be an object.
-- **Failure scopes** describe the exact impact of an invalid configuration:
-  - *Whole file*: An event value that is not an array; a matcher group that is not an
-    object; a non-string group `matcher`; a missing or non-array `hooks` list; a handler
-    that is not an object; or any recognized handler field containing an unexpected JSON type.
-  - *Matcher group*: A matcher group containing unsupported keys beyond `matcher` and
-    `hooks`; or a `matcher` regular expression that fails to compile.
-  - *Event entries*: An unrecognized event name (case-sensitive).
-  - *Individual handler*: A missing or unsupported `type`; a missing or empty `command`;
-    providing only Windows commands without a fallback POSIX `command`; unknown handler
-    keys; unsupported options like `if`, `condition`, `shell`, `rewakeMessage`, or
-    `rewakeSummary`; or setting `once: true` or `asyncRewake: true`.
+- **Failure scope** is the thing to get right, because it is what the diagnostic is
+  worth:
+  - *Whole file*: an event whose value is not an array; a matcher group that is not an
+    object; a non-string group `matcher`; a group with no `hooks` key or a non-array
+    one; a handler that is not an object; any known handler field carrying the wrong
+    JSON type.
+  - *That group*: a group carrying any key outside `matcher`/`hooks`, whatever its
+    value; a `matcher` string that does not compile.
+  - *That event's entries*: an event name Muse does not dispatch (case-sensitive).
+  - *That handler*: missing `type`; an unknown `type` string; `command` missing, empty
+    or whitespace; only `commandWindows`/`command_windows`; a key Muse does not know;
+    `if`/`condition`/`shell`/`rewakeMessage`/`rewakeSummary` with a string value;
+    `once: true` or `asyncRewake: true`. `once: false`, `asyncRewake: false` and
+    `silent` with any value are accepted silently.
 - **Events** (13 documented): `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
   `PermissionRequest`, `PostToolUse`, `PreLLMCall`, `PostLLMCall`, `PreCompact`,
   `PostCompact`, `SubagentStart`, `SubagentStop`, `Stop`, `SessionEnd`. Four more —
@@ -59,13 +62,16 @@ catch issues early. Re-running the test matrix is recommended when updating thes
   undocumented); `silent` (anything). A wrong type on any of them rejects the file; a
   key outside the table drops the handler.
 - **Memory layout**: `<repo>/.agents/memory/` — a `MEMORY.md` index (one line per
-  topic file by convention) alongside individual topic Markdown files. Muse loads
-  `MEMORY.md` into context at session start and provides the paths of other topic files
-  in the directory (up to 48 files) for on-demand reference.
-
-  Committed project memory is a tool-agnostic open convention that provides version-controlled
-  team memory across different AI coding tools. Because it is shared, skillsaw attaches
-  the directory unconditionally and applies standard content and security rules.
+  topic file, by convention) plus one Markdown file per topic. Muse injects
+  `MEMORY.md` in full at every session start, even in an untrusted workspace — the
+  docs themselves flag this as a prompt-injection surface — and lists the paths of
+  the other Markdown files in the directory, whether or not the index mentions them,
+  up to 48; beyond that cap a file is never surfaced. **This is not Muse's
+  convention.**
+  Projects were committing `.agents/memory/` before Muse Code shipped, describing it as
+  tool-agnostic team memory complementing Claude Code's per-developer auto memory, and
+  Muse adopted it the way it adopted `AGENTS.md`. skillsaw treats it as shared:
+  unconditionally attached, evidence of no tool.
 - **Instruction file search order**: `AGENTS.md`, `CLAUDE.md`, `.agents/AGENTS.md`,
   `.claude/CLAUDE.md` — the first that exists wins for that directory level; a deeper
   level's file wins over a shallower one. Nothing Muse-specific is needed for this: the
@@ -96,10 +102,11 @@ empirically if the docs still omit an example:
 - `HOOK_HANDLER_TYPES` = `{"command"}`.
 - `MATCHER_GROUP_FIELDS` = `{"matcher", "hooks"}` — any other key at that level drops
   the group.
-- `HANDLER_FIELDS` (typed fields table), `UNSUPPORTED_HANDLER_FIELDS` (recognized but
-  unsupported string fields), and `UNSUPPORTED_WHEN_TRUE` (`once`, `asyncRewake`) in
-  `formats/muse.py`. Fields that Muse parses and explicitly rejects are distinguished
-  from entirely unrecognized keys to provide helpful, specific guidance.
+- `HANDLER_FIELDS` (the typed table), `UNSUPPORTED_HANDLER_FIELDS` (present with a
+  string value) and `UNSUPPORTED_WHEN_TRUE` (`once`, `asyncRewake`) in
+  `formats/muse.py`. Fields Muse parses and then refuses the handler for are distinct
+  from fields it never recognizes at all — both drop the handler, but the diagnostic
+  differs.
 - The memory listing cap (48 Markdown files) is a documented Muse behavior with no
   constant of its own; it is recorded here rather than in code because no rule reads
   it.

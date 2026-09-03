@@ -343,11 +343,20 @@ def _claim_attached_hooks(
     path: Path,
     owner: Path,
 ) -> bool:
-    """Associate an already-attached hooks file with its declaring plugin owner.
+    """Claim an already-attached hooks file for *owner*, if there is one.
 
-    When a plugin manifest declares a hooks file that was already added to the root
-    lint tree (such as `.codex/hooks.json`), this links the file with its plugin
-    owner without creating duplicate tree entries.
+    Answers "is this file already in the tree?" for the declared-files loop
+    and, when it is, records the plugin that declared it. Nothing but the
+    manifest names such a file, so the declaration is the only evidence of
+    ownership there is — and without it ``skillsaw docs`` lists the plugin
+    without its hooks. An attach that already recorded an owner (the Claude
+    branch, the Codex cluster's conventional file) keeps it.
+
+    Only the tree root is scanned, which is where every ownerless attach
+    puts a hooks block: the project layer's ``.codex/hooks.json`` and
+    another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``. Scanning
+    the subtree would mean ``find()`` mid-build, whose per-node memo the
+    attaches still to come would invalidate.
     """
     if not _attached_as_hooks(state, path):
         return False
@@ -821,16 +830,25 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for vscode_dir in context.agent_tool_dirs(".vscode"):
         state.add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
 
-    # Codex loads project hooks from `.codex/hooks.json` in the active project.
+    # Codex loads project hooks from the ``.codex/`` layer of the project it
+    # is started in, plugin or not — and in a monorepo that is as often a
+    # package as the repository root, so a package's own layer is live
+    # configuration. The walk-backed lookup finds both, which is also what
+    # ``RepositoryType.CODEX_PROJECT`` detection reads: detection agrees with
+    # attachment.
     for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
         _add_project_hooks(state, root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
 
-    # Committed project memory: notes and documentation stored in `.agents/memory/`.
-    # MEMORY.md acts as the primary index, while topic markdown files contain
-    # detailed context that coding assistants can consult.
+    # Committed project memory: notes a team checks in for whatever agent
+    # reads the checkout. The index is loaded whole and every other Markdown
+    # file in the directory on demand — which is why the glob below takes
+    # them all, index entry or not — so all of it is agent context and gets
+    # every content and security rule — unconditionally, because content is
+    # content whether or not a reader for it is configured here. One
+    # directory, at the root, where the convention puts it.
     memory_dir = context.root_path.joinpath(*AGENT_MEMORY_DIR)
     state.add_block(root, memory_dir / AGENT_MEMORY_INDEX, AgentMemoryIndexBlock)
     _add_glob(root, memory_dir, "**/*.md", AgentMemoryBlock)
@@ -1118,8 +1136,16 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # A repo-root package shares conventional config paths with the
             # repository, so ownership is decided here once.
             root_plugin_owner = resolved_plugin
-            # Re-tag root configurations (.mcp.json and .codex/hooks.json) with
-            # the root plugin owner when appropriate.
+            # ``.mcp.json`` and the project layer's ``.codex/hooks.json``
+            # need re-tagging. The generic root attach runs first and adds
+            # them untagged, and for a repo-root plugin that project layer
+            # is the plugin's own — but no manifest names either file, so
+            # nothing downstream claims them and this is the only place the
+            # owner can be recorded. A hooks file the manifest *does*
+            # declare needs nothing here: ``_claim_attached_hooks`` tags it
+            # in the declared-files loop below, wherever the plugin sits in
+            # the tree. (``hooks/hooks.json`` needs nothing either: it
+            # attaches under the Codex cluster with containment.)
             claimed_mcp = {safe_resolve(plugin_path / ".mcp.json")} - {None}
             claimed_hooks: Set[Optional[Path]] = set()
             if prov.codex:
@@ -1181,14 +1207,34 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # can ship executable hooks without declaring them — the same
             # supply-chain surface as a Claude plugin's hooks.
             #
-            # Attach conventional hooks typed by ecosystem provenance: CodexHooksBlock
-            # for Codex-only plugins, or ClaudeHooksBlock for dual-manifest plugins.
+            # Typed by provenance, because the block class picks the shape
+            # rule. Only Codex reads a Codex-only plugin's hooks, so they
+            # are ``codex-hooks-valid``'s. A dual-manifest plugin's
+            # conventional file is read by both hosts and keeps the Claude
+            # block the Claude branch attached above: one block per file, so
+            # the security rules report each command once, and Claude's
+            # results for it stand (``TestDualManifestBackwardCompat``).
             hooks_cls = CodexHooksBlock if prov.codex_only else ClaudeHooksBlock
             _add_contained_plugin_block(
                 node, plugin_path / "hooks" / "hooks.json", hooks_cls, owner=resolved_plugin
             )
-            # Attach explicitly declared or inline hooks defined in the Codex manifest,
-            # reusing already-attached blocks where possible to avoid duplicate findings.
+            # A manifest may point ``hooks`` at other files, or write them
+            # inline; both carry the same executable commands. Inline
+            # payloads have no file of their own, so they borrow the
+            # manifest path — and only Codex reads that manifest, so they
+            # are Codex's whatever else claims the directory.
+            #
+            # A declared file is Codex's for the same reason: nothing but the
+            # Codex manifest names it, so no other host loads it, even in a
+            # dual-manifest plugin whose conventional ``hooks/hooks.json``
+            # stayed Claude's above. The exception is a file some earlier
+            # attach already put in the tree as hooks — that same
+            # conventional file when the manifest also declares it, the
+            # project layer's ``.codex/hooks.json``, or another tool's file
+            # a manifest points at. That block is claimed rather than
+            # re-attached: one block per file, or the security rules report
+            # every command in it twice, but the declaration is still what
+            # tells ``skillsaw docs`` whose hooks those are.
             for declared_hooks in codex_declared_hook_files(plugin_path):
                 if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
                     continue

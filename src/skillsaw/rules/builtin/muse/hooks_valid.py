@@ -16,15 +16,17 @@ from skillsaw.formats import muse
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import MuseHooksBlock
 
-#: Matchers Muse treats as catch-all wildcards rather than compiling as a regex.
-#: Muse's documentation explicitly uses "*" as a wildcard pattern.
+#: Matchers Muse treats as "everything" rather than compiling as a pattern.
+#: ``"*"`` is not a valid regex — reporting it would be a false positive on
+#: the spelling Muse's own documentation uses for a catch-all.
 _WILDCARD_MATCHERS = frozenset({"", "*"})
 
-#: Handler types supported by Muse, formatted for display.
+#: The handler types Muse runs, rendered for a message.
 _ACCEPTED_TYPES = ", ".join(f"'{name}'" for name in sorted(muse.HOOK_HANDLER_TYPES))
 
-#: Maximum number of specific locations to show in a consolidated finding
-#: to keep diagnostic output focused and readable.
+#: How many group or handler locations a consolidated finding names before
+#: it stops listing them. A file copied from Claude Code carries the same
+#: stray key in every group, and thirty findings for one habit is noise.
 _MAX_LOCATIONS = 4
 
 #: Unicode character classes: ``\p{Greek}``, ``\pL`` and their negations.
@@ -51,17 +53,20 @@ _RUST_CLASS_SET_OPERATOR = re.compile(r"&&|--|~~")
 
 
 def _to_python_regex(pattern: str) -> str:
-    """Rewrite Rust-specific regex constructs into Python-compatible forms.
+    """*pattern* with Rust-only atoms rewritten to Python-compatible ones.
 
-    Muse compiles matchers using the Rust ``regex`` crate. While Python's
-    ``re`` module supports standard regex syntax, Rust also permits Unicode
-    classes (such as ``\\p{Greek}`` or ``\\pL``) and class set operators
-    (``&&``, ``--``, ``~~``) that would otherwise cause Python's regex parser
-    to raise a syntax error.
+    Muse compiles a matcher with the Rust ``regex`` crate, whose dialect is
+    not Python's: it has no look-around and no backreferences, and it adds
+    two constructs a hooks file plausibly reaches — Unicode character
+    classes and the character-class set operators. Python raises on both,
+    so compiling the pattern as written would call a working matcher
+    broken. Skipping such a pattern instead would drop every other defect
+    in it: ``(\\pL`` leaves a group unclosed, which costs the matcher group
+    whatever engine reads it.
 
-    To validate structural regex correctness without raising false positives
-    on supported Rust patterns, this helper normalizes Rust-specific tokens
-    into standard equivalents before testing pattern syntax.
+    So the Rust-only atoms are substituted rather than the check skipped —
+    ``\\p{...}`` and its short forms become ``\\w``, the set operators are
+    dropped — and what is left is the structure both dialects share.
     """
     substituted = _RUST_UNICODE_CLASS.sub(r"\\w", pattern)
     if "[" not in substituted:
@@ -138,19 +143,24 @@ class MuseHooksValidRule(Rule):
 
     def default_severity(self) -> Severity:
         # Every defect this rule reports is a hook that does not run, and
-        # Hooks that fail to load are skipped without warnings in headless runs,
-        # so default to ERROR to prevent silent automation failures.
+        # Muse says nothing about any of them in a headless run.
         return Severity.ERROR
 
     def _declared(self, option: str) -> Set[str]:
-        """Safely extract string values from a list-valued configuration option."""
+        """The string members of a list-valued config option.
+
+        The declared type is not enforced when the config loads, so
+        ``extra-events: 42`` arrives here as an int. Iterating it would raise
+        ``TypeError`` and cost every structural finding in the file over one
+        bad config line; a value of the wrong shape contributes nothing.
+        """
         value = self.setting(option) or []
         if not isinstance(value, (list, tuple, set, frozenset)):
             return set()
         return {item for item in value if isinstance(item, str)}
 
     def _known_events(self) -> Set[str]:
-        """Return recognized lifecycle events, including built-in and user-configured events."""
+        """Muse's documented events, its undocumented ones, and the project's."""
         return (
             set(muse.HOOK_EVENTS)
             | set(muse.UNDOCUMENTED_HOOK_EVENTS)
@@ -158,11 +168,15 @@ class MuseHooksValidRule(Rule):
         )
 
     def _known_handler_fields(self) -> Set[str]:
-        """Return recognized handler fields, including built-in and user-configured fields."""
+        """Muse's handler fields plus any the project declares.
+
+        A declared field is accepted, never type-checked: skillsaw does not
+        know what Muse expects of a field it has not heard of.
+        """
         return set(muse.HANDLER_FIELDS) | self._declared("extra-handler-fields")
 
     def _known_group_keys(self) -> Set[str]:
-        """Return recognized matcher group keys, including built-in and user-configured keys."""
+        """Muse's matcher-group keys plus any the project declares."""
         return set(muse.MATCHER_GROUP_FIELDS) | self._declared("extra-group-keys")
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -188,8 +202,13 @@ class MuseHooksValidRule(Rule):
                 )
                 continue
 
-            # Verify standard JSON numeric tokens. Non-standard values like
-            # NaN or Infinity cause serde_json to reject the file at parse time.
+            # Before the shape walk, and instead of it. ``MuseHooksBlock``
+            # parses leniently so a duplicate key cannot hide executable
+            # surface from the security rules, and Python's ``json`` throws
+            # in the bare tokens ``NaN``, ``Infinity`` and ``-Infinity``
+            # along the way. Muse reads the file with ``serde_json``, which
+            # accepts none of them and refuses the document — so the defect
+            # is the file, not the field, and one finding says so.
             found = block.first_non_finite()
             if found is not None:
                 path, value = found
@@ -207,10 +226,11 @@ class MuseHooksValidRule(Rule):
 
 
 class _FileCheck:
-    """Validates a single hooks file.
+    """One hooks file, walked once.
 
-    Unrecognized keys are consolidated to keep diagnostic reports focused
-    and avoid repetitive messages across multiple groups or handlers.
+    Stray keys are collected rather than reported where they are found: a
+    file copied from Claude Code carries the same ``description`` in every
+    matcher group, and one finding per group buries the rest of the report.
     """
 
     def __init__(self, rule: MuseHooksValidRule, block: MuseHooksBlock) -> None:
@@ -260,7 +280,7 @@ class _FileCheck:
         return violations
 
     def _check_hooks(self, data: Dict[str, Any]) -> List[RuleViolation]:
-        """Validate the top-level 'hooks' object containing lifecycle event mappings."""
+        """``hooks`` holds every event Muse dispatches on; other keys are ignored."""
         if "hooks" not in data:
             return [self._violation("Missing 'hooks' object")]
 
@@ -279,7 +299,7 @@ class _FileCheck:
         return violations
 
     def _check_event_name(self, event: str) -> List[RuleViolation]:
-        """Verify that the lifecycle event name is recognized and supported by Muse Code."""
+        """An event Muse does not dispatch skips its entries; the file loads."""
         shown = safe_display(event)
 
         if event in muse.UNDOCUMENTED_HOOK_EVENTS:
@@ -306,7 +326,7 @@ class _FileCheck:
         return [self._violation(f"Unknown hook event '{shown}'", Severity.WARNING)]
 
     def _check_groups(self, event: str, groups: Any) -> List[RuleViolation]:
-        """Validate that each event maps to a list of matcher groups."""
+        """Each event holds an array of matcher groups, or the file is rejected."""
         if not isinstance(groups, list):
             return [
                 self._violation(
@@ -332,7 +352,7 @@ class _FileCheck:
         return violations
 
     def _check_group(self, where: str, group: Dict[str, Any]) -> List[RuleViolation]:
-        """Validate the structure of a single matcher group."""
+        """A matcher group carries a ``matcher`` and a ``hooks`` array, nothing else."""
         for key in group:
             if key not in self.known_group_keys:
                 self.group_keys.setdefault(str(key), []).append(where)
@@ -359,7 +379,7 @@ class _FileCheck:
         return violations
 
     def _check_matcher(self, where: str, group: Dict[str, Any]) -> List[RuleViolation]:
-        """Validate that the 'matcher' pattern is a valid regular expression."""
+        """``matcher`` is an optional regex; a non-string one rejects the file."""
         if "matcher" not in group:
             return []
 
@@ -379,7 +399,9 @@ class _FileCheck:
             return []
 
         try:
-            # Test regex compilation against normalized pattern syntax.
+            # Rewritten, not skipped: a pattern carrying a Rust-only atom
+            # still has the structure both dialects share, and an unclosed
+            # group costs the matcher group whatever engine reads it.
             re.compile(_to_python_regex(matcher))
         except (re.error, RecursionError, OverflowError) as err:
             # A warning, not an error: Muse compiles matchers with Rust's
@@ -395,7 +417,7 @@ class _FileCheck:
         return []
 
     def _check_handler(self, where: str, handler: Any) -> List[RuleViolation]:
-        """Validate the configuration and options of an individual hook handler."""
+        """One handler: its type, something to run, and the fields Muse knows."""
         if not isinstance(handler, dict):
             return [self._violation(f"Hook {where} must be an object")]
 
@@ -403,13 +425,18 @@ class _FileCheck:
         handler_type = handler.get("type")
 
         if not isinstance(handler_type, str):
-            # If 'type' is missing or not a string, report if absent and stop further handler checks.
+            # Absent, or present with a wrong-typed value the field check
+            # above already reported as a whole-file problem. Either way
+            # there is no runnable handler left to say anything more about.
             if "type" not in handler:
                 violations.append(self._violation(f"Hook {where} is missing 'type'"))
             return violations
 
         if handler_type not in muse.HOOK_HANDLER_TYPES:
-            # If the handler type is unsupported by Muse, report it directly without cascading errors for child fields.
+            # Dropped on its type; reporting what it does or does not run as
+            # well is several findings for one dead handler — and another
+            # host's handler carries that host's fields, which are not
+            # "unknown keys" so much as evidence of the type problem.
             violations.append(self._unknown_handler_type(where, handler_type))
             return violations
 
@@ -419,12 +446,18 @@ class _FileCheck:
         return violations
 
     def _check_field_types(self, where: str, handler: Dict[str, Any]) -> List[RuleViolation]:
-        """Validate that recognized handler fields match their expected JSON data types."""
+        """A known field carrying the wrong JSON type rejects the whole file.
+
+        Runs whatever the handler's ``type`` says: the file is refused at
+        parse time, before anything decides which handlers to keep.
+        """
         violations: List[RuleViolation] = []
         for key, value in handler.items():
             name = str(key)
             if name not in muse.HANDLER_FIELDS:
-                # Custom or undeclared fields are skipped for strict type checking.
+                # Unknown, or declared through ``extra-handler-fields`` — in
+                # which case it is accepted and skillsaw has no idea what
+                # type Muse wants for it.
                 continue
             problem = _field_type_problem(name, value)
             if problem is not None:
@@ -432,7 +465,7 @@ class _FileCheck:
         return violations
 
     def _collect_unknown_fields(self, where: str, handler: Dict[str, Any]) -> None:
-        """Collect unrecognized handler field names for consolidated reporting."""
+        """Note keys Muse does not know, for one consolidated finding."""
         for key in handler:
             name = str(key)
             if name not in self.known_handler_fields:
@@ -446,12 +479,15 @@ class _FileCheck:
         )
 
     def _check_command(self, where: str, handler: Dict[str, Any]) -> List[RuleViolation]:
-        """Ensure the command handler specifies a runnable command."""
+        """A command handler needs something to run on this platform."""
         if "command" not in handler:
             windows = next(
                 (key for key in ("commandWindows", "command_windows") if key in handler), None
             )
             if windows is not None:
+                # The handler loads and its Windows command runs there; on
+                # every other platform it is a hook that silently does
+                # nothing, which is not what the file looks like it says.
                 return [
                     self._violation(
                         f"Hook {where} has '{windows}' but no 'command'", Severity.WARNING
@@ -460,13 +496,16 @@ class _FileCheck:
             return [self._violation(f"Hook {where} is missing 'command'")]
 
         command = handler["command"]
-        # Verify that the command string contains non-whitespace content to execute.
+        # A non-string ``command`` rejects the file and the field-type check
+        # already said so. Present is still not the same as runnable: ``""``
+        # and ``"  "`` both satisfy a key-existence check while naming
+        # nothing to spawn, and those cost only the handler.
         if isinstance(command, str) and not command.strip():
             return [self._violation(f"Hook {where} 'command' is empty")]
         return []
 
     def _check_unsupported_fields(self, where: str, handler: Dict[str, Any]) -> List[RuleViolation]:
-        """Check for handler options that are recognized by Muse but not supported during execution."""
+        """Fields Muse parses and then refuses the handler for."""
         violations: List[RuleViolation] = []
         for key, value in handler.items():
             if key in muse.UNSUPPORTED_HANDLER_FIELDS and isinstance(value, str):
@@ -477,7 +516,11 @@ class _FileCheck:
 
 
 def _field_type_problem(key: str, value: Any) -> Optional[str]:
-    """Check if a field value matches the expected JSON type for the given key."""
+    """How *value* fails the JSON type Muse accepts for *key*, if it does.
+
+    ``object``-typed entries are the fields Muse parses without a documented
+    value set, so nothing here can say what a wrong one looks like.
+    """
     expected = muse.HANDLER_FIELDS[key]
     if expected is object:
         return None

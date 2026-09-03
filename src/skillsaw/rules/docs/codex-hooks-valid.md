@@ -72,8 +72,8 @@ accepts it and ignores it.
 
 ## Examples
 
-**Needs improvement** — an event Codex does not dispatch, and a prompt
-handler it parses and skips:
+**Bad** — an event Codex does not dispatch, and a prompt handler it parses
+and skips:
 
 ```json
 {
@@ -88,8 +88,7 @@ handler it parses and skips:
 }
 ```
 
-**Good** — a command hook filtered by `matcher`, and a structured MCP tool
-hook:
+**Good** — a command hook filtered by `matcher`, and an MCP tool hook:
 
 ```json
 {

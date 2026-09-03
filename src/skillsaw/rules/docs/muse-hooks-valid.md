@@ -65,8 +65,8 @@ it appears.
 
 ## Examples
 
-**Needs improvement** — an unexpected key drops the first matcher group, and
-an unsupported Claude Code handler is dropped with it:
+**Bad** — an unexpected key drops the first matcher group, and an
+unsupported Claude Code handler is dropped with it:
 
 ```json
 {

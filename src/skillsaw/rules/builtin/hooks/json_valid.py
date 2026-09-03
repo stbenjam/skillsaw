@@ -1,8 +1,15 @@
 """
-Rule: claude-hooks-valid — validates the structure of Claude Code hook configurations.
+Rule: claude-hooks-valid — the structure of a Claude Code hooks file.
 
-Validates hook event names, handler types (command, http, mcp_tool, prompt, agent),
-and associated options defined by Claude Code.
+Every vocabulary below is Claude Code's: the event list (``Setup``,
+``InstructionsLoaded``, ``PermissionDenied``, ``TeammateIdle`` and the rest),
+the handler types (``command``, ``http``, ``mcp_tool``, ``prompt``,
+``agent``), and the per-handler fields (``url``, ``headers``,
+``allowedEnvVars``, ``asyncRewake``, ``model``). No other host reads that
+set — Codex runs only ``command`` and ``mcp_tool`` handlers on a shorter
+event list, Muse Code and Cursor have their own — so the rule iterates
+:class:`ClaudeHooksBlock` and leaves each of those to its own rule
+(``codex-hooks-valid``, ``muse-hooks-valid``, ``cursor-hooks-valid``).
 """
 
 from typing import List
@@ -108,7 +115,14 @@ def _format_type_name(expected_type):
 
 
 class ClaudeHooksValidRule(Rule):
-    """Validate Claude Code hooks.json files against supported events and options."""
+    """Check a Claude Code hooks.json against Claude Code's hook vocabulary.
+
+    Iterates :class:`ClaudeHooksBlock` — a Claude plugin's
+    ``hooks/hooks.json``, APM's compiled copy, and a dual-manifest
+    (Claude + Codex) plugin's hooks file, whose established results are
+    Claude's. Files only another host reads carry their own event names,
+    handler types and fields, and are validated by that host's rule.
+    """
 
     default_enabled = True
 
