@@ -162,6 +162,38 @@ def test_fence_state_tracking_with_nested_unclosed_fence():
 
 
 # ---------------------------------------------------------------------------
+# inject_stats
+# ---------------------------------------------------------------------------
+
+
+def test_inject_stats_rewrites_only_the_hero_count(tmp_path):
+    """The count is rewritten in place because the marker is consumed on the
+    first run — so the pattern has to name the sentence it belongs to, or an
+    unrelated count on the page is rewritten with the rule total."""
+    index = tmp_path / "index.md"
+    index.write_text(
+        "It catches dead zones with <!-- RULE_COUNT --> rules, then autofixes.\n"
+        "The runbooks plugin adds 5 rules of its own.\n"
+    )
+
+    site_content.inject_stats(index, [object()] * 42)
+
+    assert index.read_text() == (
+        "It catches dead zones with 42 rules, then autofixes.\n"
+        "The runbooks plugin adds 5 rules of its own.\n"
+    )
+
+
+def test_inject_stats_is_idempotent_after_the_marker_is_gone(tmp_path):
+    index = tmp_path / "index.md"
+    index.write_text("It catches dead zones with 42 rules, then autofixes.\n")
+
+    site_content.inject_stats(index, [object()] * 43)
+
+    assert index.read_text() == "It catches dead zones with 43 rules, then autofixes.\n"
+
+
+# ---------------------------------------------------------------------------
 # guides_coverage_errors
 # ---------------------------------------------------------------------------
 

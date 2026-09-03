@@ -62,6 +62,8 @@ from .blocks import (
     VsCodeMcpBlock,
 )
 from .formats.codex import (
+    CODEX_DIR_NAME,
+    CODEX_HOOKS_FILENAME,
     codex_declared_hook_files,
     codex_declared_mcp_files,
     codex_inline_hooks,
@@ -751,8 +753,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # package as the repository root, so a package's own layer is live
     # configuration. The walk-backed lookup finds both, which is also what
     # ``HAS_CODEX`` detection reads: detection agrees with attachment.
-    for codex_dir in context.agent_tool_dirs(".codex"):
-        state.add_parser_block(root, codex_dir / "hooks.json", CodexHooksBlock)
+    for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
+        state.add_parser_block(root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         state.add_parser_block(root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)

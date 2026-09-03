@@ -38,7 +38,9 @@ hedge (see Sync notes).
   handler types, and per-handler fields. No JSON Schema is linked from the prose; the
   generated schema lives at
   https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated (see Sync
-  notes).
+  notes). Read it at the tag of the Codex release skillsaw supports, never on `main`:
+  `main` carries fields no release ships, and syncing from it makes `codex-hooks-valid`
+  enforce a field the shipped release does not have.
 
 ## What to check
 - **Manifest paths**: `.codex-plugin/plugin.json` and `$REPO_ROOT/.agents/plugins/marketplace.json`.
@@ -65,9 +67,11 @@ hedge (see Sync notes).
   `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `UserPromptSubmit`,
   `Stop`, `Interrupt`. `command` and `mcp_tool` handlers run; `prompt` and `agent` are
   parsed and skipped.
-- **Hook handler fields**: `command` handlers take `command`, `commandWindows`, `timeout`
-  (seconds, default `600`), `statusMessage`, `additionalContextLimit`, `async`; `mcp_tool`
-  handlers take `server`, `tool`, `input`. `SessionEnd` and `Interrupt` default to a
+- **Hook handler fields**: `command` handlers require `command` and take
+  `commandWindows`, `timeout` (seconds, default `600`), `statusMessage`,
+  `additionalContextLimit` and `async`; `mcp_tool` handlers require `server` and `tool`
+  and take `input`, `timeout` and `statusMessage`. `async` is command-only.
+  `SessionEnd` and `Interrupt` default to a
   1-second timeout and cap configured timeouts at 3 seconds; `SessionEnd` rejects
   `mcp_tool` handlers. `matcher` is honored on `PermissionRequest`, `PostToolUse`,
   `PreToolUse`, `PreCompact`/`PostCompact` (compaction trigger), `SessionStart`,
@@ -129,9 +133,8 @@ Hand-copied value sets that drift — re-check each against upstream:
   required/optional per-handler fields, which events honor `matcher`, which reject
   `mcp_tool`, and the `SessionEnd`/`Interrupt` short-timeout events), read by
   `codex/hooks_valid.py`: re-check against https://developers.openai.com/codex/hooks
-  and the generated schema at
-  https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated on every
-  sync. `config.toml` inline `[hooks]` tables are not yet linted — only `hooks.json`
+  and the generated schema under `codex-rs/hooks/schema/generated`, read at the
+  supported release's tag rather than on `main`, on every sync. `config.toml` inline `[hooks]` tables are not yet linted — only `hooks.json`
   files and plugin-manifest-declared or inline manifest hooks are.
 
 Deliberate non-checks — do not "fix" these without a spec change. Each records what

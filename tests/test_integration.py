@@ -2422,6 +2422,50 @@ class TestCursorRules:
         assert len([m for m in messages if "prompt hooks are prohibited" in m]) == 1
         assert any("gofmt-check.sh" in m for m in messages)
 
+    def test_a_cursor_prompt_hook_is_allowlisted_by_its_prompt_identity(self, tmp_path):
+        """A reviewed prompt hook is allowlisted the way a reviewed command
+        is, under the same ``prompt:<text>`` spelling a nested-shape prompt
+        handler carries."""
+        repo = tmp_path / "cursor-prompt-allowlist"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "hooks": {
+                        "beforeShellExecution": [
+                            {"type": "prompt", "prompt": "Confirm this touches no live data."}
+                        ]
+                    },
+                }
+            )
+        )
+        config = repo / ".skillsaw.yaml"
+        prohibited = "rules:\n  hooks-prohibited:\n    enabled: true\n"
+
+        config.write_text(prohibited)
+        assert [
+            v["message"] for v in by_rule(run_lint(repo, config=config))["hooks-prohibited"]
+        ] == [
+            "Hook beforeShellExecution: prompt hooks are prohibited — "
+            "'prompt:Confirm this touches no live data.'"
+        ]
+
+        config.write_text(
+            prohibited + "    allowlist:\n      - 'prompt:Confirm this touches no live data.'\n"
+        )
+        assert by_rule(run_lint(repo, config=config)).get("hooks-prohibited", []) == []
+
+        # An allowlist that names something else leaves the hook reported.
+        config.write_text(prohibited + "    allowlist:\n      - 'scripts/format.sh'\n")
+        assert [
+            v["message"] for v in by_rule(run_lint(repo, config=config))["hooks-prohibited"]
+        ] == [
+            "Hook beforeShellExecution: non-allowlisted prompt hook — "
+            "'prompt:Confirm this touches no live data.'"
+        ]
+
     def test_prompt_hook_findings_are_never_advertised_as_fixable(self, tmp_path):
         """A prompt is a decoded JSON string — no span exists to splice a fix into."""
         repo = tmp_path / "promptfix"
@@ -4832,7 +4876,7 @@ BROKEN_FIXTURES = [
     "content/mcp-tool-name",
     "security/malicious-skill",
     "codex/broken",
-    "codex/hooks-valid",
+    "codex/hooks-broken",
     "cursor-rules/broken-frontmatter",
     "cursor-rules/broken-hooks",
     "cursor-rules/prompt-hooks",

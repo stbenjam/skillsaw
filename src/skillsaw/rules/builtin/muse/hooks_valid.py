@@ -58,11 +58,12 @@ def _uses_rust_only_regex_syntax(pattern: str) -> bool:
     """Whether *pattern* uses regex syntax only Rust's engine has.
 
     Muse compiles a matcher with the Rust ``regex`` crate, whose dialect is
-    a superset of Python's in two places a hooks file plausibly reaches:
-    Unicode character classes and the character-class set operators. Python
-    raises on both, so compiling such a pattern here and reporting the
-    exception would call a working matcher broken. Deliberately generous —
-    a missed defect in a ``warning`` costs less than a false one.
+    not Python's: it has no look-around and no backreferences, and it adds
+    two constructs a hooks file plausibly reaches — Unicode character
+    classes and the character-class set operators. Python raises on both,
+    so compiling such a pattern here and reporting the exception would call
+    a working matcher broken. Deliberately generous — a missed defect in a
+    ``warning`` costs less than a false one.
     """
     if _RUST_UNICODE_CLASS.search(pattern):
         return True
@@ -93,6 +94,14 @@ class MuseHooksValidRule(Rule):
             "default": [],
             "description": (
                 "Additional handler field names to accept, for fields newer "
+                "than this skillsaw release"
+            ),
+        },
+        "extra-group-keys": {
+            "type": "list",
+            "default": [],
+            "description": (
+                "Additional matcher-group key names to accept, for keys newer "
                 "than this skillsaw release"
             ),
         },
@@ -139,6 +148,10 @@ class MuseHooksValidRule(Rule):
         know what Muse expects of a field it has not heard of.
         """
         return set(muse.HANDLER_FIELDS) | self._declared("extra-handler-fields")
+
+    def _known_group_keys(self) -> Set[str]:
+        """Muse's matcher-group keys plus any the project declares."""
+        return set(muse.MATCHER_GROUP_FIELDS) | self._declared("extra-group-keys")
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -200,6 +213,7 @@ class _FileCheck:
         self.block = block
         self.known_events = rule._known_events()
         self.known_handler_fields = rule._known_handler_fields()
+        self.known_group_keys = rule._known_group_keys()
         #: stray key -> the group locations that carry it
         self.group_keys: Dict[str, List[str]] = {}
         #: stray key -> the handler locations that carry it
@@ -240,7 +254,9 @@ class _FileCheck:
             violations.append(
                 self._violation(
                     f"{subject} '{safe_display(key)}' ({self._locations(where)}), and a "
-                    f"matcher group may carry only {_GROUP_FIELDS} — {verdict}"
+                    f"matcher group may carry only {_GROUP_FIELDS} — {verdict}. If Muse "
+                    "added this key after this skillsaw release, list it under "
+                    "muse-hooks-valid 'extra-group-keys'."
                 )
             )
         for key, where in sorted(self.handler_keys.items()):
@@ -361,7 +377,7 @@ class _FileCheck:
     def _check_group(self, where: str, group: Dict[str, Any]) -> List[RuleViolation]:
         """A matcher group carries a ``matcher`` and a ``hooks`` array, nothing else."""
         for key in group:
-            if key not in muse.MATCHER_GROUP_FIELDS:
+            if key not in self.known_group_keys:
                 self.group_keys.setdefault(str(key), []).append(where)
 
         violations = self._check_matcher(where, group)

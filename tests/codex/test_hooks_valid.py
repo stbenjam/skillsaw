@@ -3,7 +3,7 @@
 Codex adopted Claude Code's nested hooks shape and kept none of its
 vocabulary, so a hooks file copied from a Claude plugin loads without
 complaint and does less than it says. These tests drive the two fixtures
-that pin that: ``codex/hooks-valid`` collects one instance of each finding
+that pin that: ``codex/hooks-broken`` collects one instance of each finding
 the rule makes, and ``codex/hooks-clean`` is the same layout written the
 way Codex reads it.
 """
@@ -58,14 +58,14 @@ class TestCodexHookLocations:
     def test_the_project_layer_hooks_file_is_a_codex_block(self, tmp_path):
         """Codex resolves ``.codex/hooks.json`` from the project root,
         plugin or not — and no other host reads it."""
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         tree = RepositoryContext(repo).lint_tree
 
         assert repo / ".codex" / "hooks.json" in {b.path for b in tree.find(CodexHooksBlock)}
         assert tree.find(ClaudeHooksBlock) == []
 
     def test_a_codex_only_plugins_hooks_file_is_a_codex_block(self, tmp_path):
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         tree = RepositoryContext(repo).lint_tree
 
         assert {b.path.relative_to(repo).as_posix() for b in tree.find(CodexHooksBlock)} == {
@@ -75,7 +75,7 @@ class TestCodexHookLocations:
 
     def test_claudes_rule_says_nothing_about_a_codex_hooks_file(self, tmp_path):
         """The split's other half: Claude's vocabulary never judges these."""
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         assert ClaudeHooksValidRule({}).check(RepositoryContext(repo)) == []
 
     def test_a_subpackage_hooks_file_is_a_codex_block(self, tmp_path):
@@ -97,6 +97,20 @@ class TestCodexHookLocations:
         assert len(found) == 1, messages(found)
         assert "Unknown hook event 'PostToolUseFailure'" in found[0].message
         assert found[0].file_path == repo / "services" / "billing" / ".codex" / "hooks.json"
+
+    def test_the_location_is_spelled_once_in_formats_codex(self):
+        """Discovery and the lint tree read the directory and filename from
+        ``formats.codex``. A second spelling is how detection and attachment
+        drift apart and a hooks file reaches no rule."""
+        from skillsaw.discovery.detect import AGENT_TOOL_DIR_NAMES, _EDITOR_EVIDENCE
+        from skillsaw.formats.codex import CODEX_DIR_NAME, CODEX_HOOKS_FILENAME
+
+        assert (CODEX_DIR_NAME, CODEX_HOOKS_FILENAME) == (".codex", "hooks.json")
+        assert CODEX_DIR_NAME in AGENT_TOOL_DIR_NAMES
+        assert _EDITOR_EVIDENCE["HAS_CODEX"] == (
+            CODEX_DIR_NAME,
+            ((CODEX_HOOKS_FILENAME, False),),
+        )
 
 
 # ── When the rule runs ──────────────────────────────────────────
@@ -159,7 +173,7 @@ class TestActivation:
         assert "detected repo type: codex-marketplace, codex-plugin" in reason
 
     def test_the_broken_fixture_turns_it_on(self, tmp_path):
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         assert _enabled_reason(repo)[0] is True
 
     @pytest.mark.integration
@@ -203,7 +217,7 @@ class TestBrokenFixture:
         ],
     )
     def test_each_check_fires_once(self, tmp_path, fragment, severity):
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         matched = [v for v in _findings(repo) if fragment in v.message]
 
         assert len(matched) == 1, messages(_findings(repo))
@@ -211,12 +225,12 @@ class TestBrokenFixture:
 
     def test_the_fixture_reports_nothing_else(self, tmp_path):
         """A count, so a new check cannot land unnoticed in the fixture."""
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         assert len(_findings(repo)) == 7, messages(_findings(repo))
 
     def test_findings_carry_no_line_number(self, tmp_path):
         """JSON keeps none, and a fabricated line is worse than none."""
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         found = _findings(repo)
         # An empty list would satisfy both ``all()`` calls below.
         assert found, "the fixture must report something for this to mean anything"
@@ -538,14 +552,14 @@ class TestNonFiniteTokens:
 
 class TestExtraEvents:
     def test_extra_events_silences_the_unknown_event_warning(self, tmp_path):
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         config = {"extra-events": ["PostToolUseFailure"]}
 
         assert any("Unknown hook event" in m for m in messages(_findings(repo)))
         assert not any("Unknown hook event" in m for m in messages(_findings(repo, config)))
 
     def test_a_declared_event_keeps_every_other_finding(self, tmp_path):
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         config = {"extra-events": ["PostToolUseFailure"]}
         assert len(_findings(repo, config)) == len(_findings(repo)) - 1
 
@@ -554,8 +568,56 @@ class TestExtraEvents:
         """The declared type is not enforced when the config loads.
         Iterating an int would raise and lose every structural finding in
         every Codex hooks file over one bad config line."""
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         assert len(_findings(repo, {"extra-events": bad})) == 7
+
+
+# ── Vocabulary drift ────────────────────────────────────────────
+
+
+class TestHandlerTypeWithoutAFieldTable:
+    """The handler-type set and the per-type field tables are three
+    hand-copied constants in ``formats.codex``. A sync that grows the set
+    and forgets a table must cost the unknown type's field checks, not the
+    whole rule: indexing the tables directly raised ``KeyError``, which
+    aborts the rule and silences every hooks finding in the run."""
+
+    def test_a_type_with_no_field_table_survives(self, tmp_path, monkeypatch):
+        from skillsaw.rules.builtin.codex import hooks_valid
+
+        monkeypatch.setattr(
+            hooks_valid,
+            "CODEX_HOOK_HANDLER_TYPES",
+            hooks_valid.CODEX_HOOK_HANDLER_TYPES | {"batch_tool"},
+        )
+        monkeypatch.setattr(
+            hooks_valid,
+            "_KNOWN_HANDLER_TYPES",
+            hooks_valid._KNOWN_HANDLER_TYPES | {"batch_tool"},
+        )
+        repo = _root_hooks_repo(
+            tmp_path,
+            {
+                "hooks": {
+                    "SessionStart": [
+                        {
+                            "hooks": [
+                                {"type": "batch_tool", "queue": "nightly"},
+                                {"type": "command"},
+                            ]
+                        }
+                    ]
+                }
+            },
+        )
+
+        found = _findings(repo)
+
+        # Nothing is known about the new type's fields, so nothing is said
+        # about them — and the sibling handler is still reported.
+        assert messages(found) == [
+            "Event 'SessionStart[0].hooks[1]' of type 'command' requires a 'command' field"
+        ]
 
 
 # ── The security rules read the same blocks ─────────────────────
@@ -701,7 +763,7 @@ class TestCodexHooksThroughTheCli:
         return json.loads(result.stdout)["violations"]
 
     def test_the_broken_fixture_reports_through_the_cli(self, tmp_path):
-        repo = copy_fixture("codex/hooks-valid", tmp_path)
+        repo = copy_fixture("codex/hooks-broken", tmp_path)
         found = [v for v in self._run(repo) if v["rule_id"] == "codex-hooks-valid"]
 
         assert len(found) == 7, found

@@ -346,10 +346,17 @@ class CodexHooksValidRule(Rule):
     def _check_fields(
         self, where: str, handler_type: str, handler: Dict[str, Any], block: CodexHooksBlock
     ) -> List[RuleViolation]:
-        """Required fields, this type's optional fields, and the other type's."""
+        """Required fields, this type's optional fields, and the other type's.
+
+        Both tables are read with a default: a handler type added to
+        ``CODEX_HOOK_HANDLER_TYPES`` without an entry beside it passes the
+        membership test above and would otherwise ``KeyError`` here, taking
+        every remaining hooks finding down with it. Nothing is known about
+        such a type's fields, so nothing is reported about them.
+        """
         violations: List[RuleViolation] = []
 
-        for field in CODEX_HOOK_REQUIRED_FIELDS[handler_type]:
+        for field in CODEX_HOOK_REQUIRED_FIELDS.get(handler_type, ()):
             if field not in handler:
                 violations.append(
                     self.violation(
@@ -376,7 +383,7 @@ class CodexHooksValidRule(Rule):
                     )
                 )
 
-        for field, expected in CODEX_HOOK_OPTIONAL_FIELDS[handler_type].items():
+        for field, expected in CODEX_HOOK_OPTIONAL_FIELDS.get(handler_type, {}).items():
             if field == _TIMEOUT or field not in handler:
                 continue
             if not _matches_type(handler[field], expected):

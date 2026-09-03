@@ -1920,6 +1920,41 @@ def test_prohibited_reports_a_codex_mcp_tool_hook(temp_dir):
     assert violations[0].file_path == repo / ".codex" / "hooks.json"
 
 
+def test_prohibited_reports_a_settings_json_mcp_tool_hook(temp_dir):
+    """``.claude/settings.json`` renders the same handler shapes a hooks file
+    does, so a handler that spawns no process is inventoried there too."""
+    repo = temp_dir / "settings-repo"
+    (repo / ".claude").mkdir(parents=True)
+    (repo / "CLAUDE.md").write_text("# Ledger service\n\nRun `make test` before pushing.\n")
+    (repo / ".claude" / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PostToolUse": [
+                        {
+                            "matcher": "Write",
+                            "hooks": [
+                                {
+                                    "type": "mcp_tool",
+                                    "server": "policy",
+                                    "tool": "record_edit",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    violations = HooksProhibitedRule().check(RepositoryContext(repo))
+
+    assert [v.message for v in violations] == [
+        "Hook PostToolUse: mcp_tool hooks are prohibited — 'mcp_tool:policy/record_edit'"
+    ]
+    assert violations[0].file_path == repo / ".claude" / "settings.json"
+
+
 @pytest.mark.parametrize(
     "payload,expected",
     [
@@ -2319,6 +2354,28 @@ def test_prohibited_devin_skill_frontmatter_hooks(temp_dir):
 
     assert len(violations) == 1
     assert "prohibited" in violations[0].message
+
+
+def test_prohibited_reports_an_http_hook_in_skill_frontmatter(temp_dir):
+    """Frontmatter takes the same handler schema, so a hook that calls an
+    endpoint instead of spawning a process is inventoried by its URL."""
+    hooks_yaml = (
+        "hooks:\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+        "      hooks:\n"
+        "        - type: http\n"
+        "          url: https://audit.example.test/tool-use\n"
+    )
+    root = _make_skill(temp_dir, hooks_yaml)
+
+    violations = HooksProhibitedRule().check(RepositoryContext(root))
+
+    assert [v.message for v in violations] == [
+        "Hook PreToolUse: http hooks are prohibited — " "'http:https://audit.example.test/tool-use'"
+    ]
+    # Frontmatter is YAML, so the finding names the `hooks:` key's line.
+    assert violations[0].line is not None
 
 
 def test_prohibited_skill_frontmatter_allowlist(temp_dir):

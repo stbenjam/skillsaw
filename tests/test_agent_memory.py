@@ -17,6 +17,9 @@ from pathlib import Path
 from skillsaw.blocks import AgentMemoryBlock, AgentMemoryIndexBlock
 from skillsaw.context import HAS_MUSE, RepositoryContext
 from skillsaw.rule import Severity
+from skillsaw.rules.builtin.content.progressive_disclosure import (
+    ContentProgressiveDisclosureRule,
+)
 from skillsaw.rules.builtin.context_budget.budget import ContextBudgetRule
 from skillsaw.rules.builtin.security.hidden_instructions import SecurityHiddenInstructionsRule
 from tests.cli_runner import run_cli
@@ -118,6 +121,27 @@ def test_an_oversized_index_is_a_context_budget_error(tmp_path) -> None:
     assert len(memory) == 1
     assert memory[0].severity == Severity.ERROR
     assert "memory error limit of 8,000" in memory[0].message
+
+
+def test_an_oversized_note_is_told_to_split_and_link(tmp_path) -> None:
+    """`memory` is one of content-progressive-disclosure's default
+    categories, so a note over the threshold that references nothing is
+    told what to do about its size, not only that it has one. No config
+    here on purpose: a `limits` entry would register the category by
+    itself and the default would go untested."""
+    # One repository per size: the file cache is keyed by path, so rewriting
+    # one note would measure the first read twice.
+    under = copy_fixture("agent-memory/notes", tmp_path / "under")
+    (under / ".agents" / "memory" / "reindex.md").write_text(_prose(2000))
+    assert ContentProgressiveDisclosureRule().check(RepositoryContext(under)) == []
+
+    over = copy_fixture("agent-memory/notes", tmp_path / "over")
+    (over / ".agents" / "memory" / "reindex.md").write_text(_prose(3500))
+    found = ContentProgressiveDisclosureRule().check(RepositoryContext(over))
+
+    assert [v.file_path.name for v in found] == ["reindex.md"]
+    assert "threshold for memory" in found[0].message
+    assert "loads on demand" in found[0].message
 
 
 def test_the_memory_limit_is_configurable(tmp_path) -> None:

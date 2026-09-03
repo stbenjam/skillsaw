@@ -19,9 +19,10 @@ handler in `.muse/hooks.json` is reported even though Muse runs only
 reads the file. Whether a given host actually dispatches it is what that
 host's shape rule (`muse-hooks-valid`, `cursor-hooks-valid`) reports.
 
-A Cursor `type: "prompt"` hook runs no command either, and is reported
-whenever the rule is on: it has no identity an allowlist can name, because
-Cursor puts the prose inline rather than behind a server or a URL.
+A prompt handler is named by its text: `prompt:<text>` in the nested shape
+Claude Code defines, and the same spelling for a Cursor `type: "prompt"`
+entry in the flatter `.cursor/hooks.json` — so one allowlist entry covers a
+prompt whichever host's file it sits in.
 
 ## Examples
 

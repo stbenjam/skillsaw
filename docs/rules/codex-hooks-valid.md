@@ -43,11 +43,11 @@ in `hooks`, and hooks written inline in that manifest, are read by nothing
 else and are checked here.
 
 These checks were part of `hooks-json-valid` before 0.20.0 split them out.
-That legacy name resolves to
-[`claude-hooks-valid`](claude-hooks-valid.md) only, so a project that had
-`hooks-json-valid: {enabled: false}` must configure this rule by its own id.
-Baselines are the exception: a finding recorded under the old name keeps
-suppressing without a change.
+That legacy name resolves to [`claude-hooks-valid`](claude-hooks-valid.md)
+alone for config, `--rule`/`--skip-rule` and suppression comments, so a
+project that had `hooks-json-valid: {enabled: false}` must configure this
+rule by its own id. Baselines are the exception: a finding recorded under
+the old name keeps suppressing this rule's findings too.
 
 ## Severity
 

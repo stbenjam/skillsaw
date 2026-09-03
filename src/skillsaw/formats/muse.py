@@ -1,6 +1,6 @@
-"""Muse Code repository-context vocabulary, in one place.
+r"""Muse Code repository-context vocabulary, in one place.
 
-Muse Code is Meta's terminal coding agent. It reads two things skillsaw
+Muse Code is Meta's terminal coding agent. It reads one thing skillsaw
 lints from a checkout of its own — project hooks in ``.muse/hooks.json`` —
 plus the shared conventions other rules already cover: ``AGENTS.md``,
 ``.agents/skills``, and the committed ``.agents/memory/`` notes whose
@@ -14,6 +14,11 @@ Sources:
   lifecycle events, load-time validation behavior (read 2026-09-02).
 * https://dev.meta.ai/docs/muse-code/configuration#local-memory — memory
   layout, the index, and the session-start injection cap.
+* agenticcontrolplane.com, an early public account written against Muse
+  0.2.1, reported project ``.muse/hooks.json`` silently ignored; the canary
+  matrix below shows 1.0.2 honoring it, so the rule's premise holds for the
+  current release. That account also names a ``.muse-plugin/plugin.json``
+  hook surface skillsaw does not cover.
 
 Muse's docs name the events and the file locations but publish no example
 of a hooks file, so the shape and the failure scopes below were verified
@@ -25,7 +30,7 @@ diagnostic in a headless run: a rejected file, a rejected group and a
 dropped handler all look like a hook that had nothing to do. Re-run that
 matrix before changing a rule here.
 
-What it showed. The file is the nested shape Claude Code defined:
+The matrix showed a file in the nested shape Claude Code defined:
 ``{"hooks": {Event: [{matcher?, hooks: [handler, ...]}, ...]}}``. Top-level
 keys other than ``hooks`` are ignored, and ``hooks`` must be an object.
 Failure scope then differs by level, and the scope is what makes a defect
@@ -56,7 +61,9 @@ worth reporting — a whole-file rejection costs every hook in the file:
 ``matcher`` is a regex applied on every event (a non-matching pattern on
 ``Stop`` or ``UserPromptSubmit`` suppresses the hook); omitted, empty, and
 ``"*"`` all match everything. Muse compiles it with Rust's ``regex``
-crate, whose dialect is a superset of Python's in places.
+crate, whose dialect is not Python's: it has no look-around and no
+backreferences, and it adds Unicode classes (``\p{L}``) and the
+class-set operators ``&&``, ``--`` and ``~~``.
 """
 
 from __future__ import annotations

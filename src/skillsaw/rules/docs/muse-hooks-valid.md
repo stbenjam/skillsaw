@@ -65,8 +65,11 @@ The softer checks are the ones where the file still loads and does something:
 - an empty `hooks` object, an event whose array is empty, or a group whose
   `hooks` array is empty, at `warning` — they configure nothing;
 - a `matcher` that does not compile as a regex, at `warning` — Muse compiles
-  matchers with Rust's `regex` crate, whose dialect is a superset of
-  Python's, so patterns using Rust-only syntax are not reported at all;
+  matchers with Rust's `regex` crate, whose dialect is not Python's: it has
+  no look-around and no backreferences, and it adds Unicode classes
+  (`\p{L}`) and the class-set operators `&&`, `--` and `~~`. The compile
+  check is skipped on a pattern using that Rust-only syntax, and the finding
+  stays a warning because the two dialects part ways elsewhere too;
 - a handler with only `commandWindows`, at `warning` — it runs on Windows and
   does nothing anywhere else.
 
@@ -146,8 +149,8 @@ from Claude Code is dropped on its own:
   `"30"`.
 - Correct the event name to one Muse dispatches, matching case exactly. If
   Muse added it after this skillsaw release, list it under the rule's
-  `extra-events` setting — and a handler field it added under
-  `extra-handler-fields`:
+  `extra-events` setting — a handler field it added under
+  `extra-handler-fields`, and a matcher-group key under `extra-group-keys`:
 
   ```yaml
   rules:
@@ -156,4 +159,6 @@ from Claude Code is dropped on its own:
         - PreSomethingNew
       extra-handler-fields:
         - retries
+      extra-group-keys:
+        - priority
   ```

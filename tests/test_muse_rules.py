@@ -841,7 +841,7 @@ def test_an_unknown_event_is_still_shape_checked(tmp_path) -> None:
     assert only(violations, "'command' is empty").severity == Severity.ERROR
 
 
-@pytest.mark.parametrize("option", ["extra-events", "extra-handler-fields"])
+@pytest.mark.parametrize("option", ["extra-events", "extra-handler-fields", "extra-group-keys"])
 def test_a_wrong_shaped_list_option_costs_no_other_finding(tmp_path, option) -> None:
     """The declared type is not enforced at load, so 42 must not raise here."""
     repo = copy_fixture("muse/broken", tmp_path)
@@ -884,6 +884,39 @@ def test_a_declared_handler_field_is_never_type_checked(tmp_path) -> None:
 
     assert only(check(repo), "1 handler sets 'retries'")
     assert check(repo, {"extra-handler-fields": ["retries"]}) == []
+
+
+# ── extra-group-keys ─────────────────────────────────────────────
+
+
+def test_extra_group_keys_accepts_a_group_key_newer_than_this_release(tmp_path) -> None:
+    """A matcher-group key Muse adds after this release gets the same
+    same-day remedy its events and handler fields do."""
+    repo = copy_fixture("muse/broken", tmp_path)
+    baseline = messages(check(repo))
+    assert [m for m in baseline if "carry 'description'" in m]
+
+    silenced = messages(check(repo, {"extra-group-keys": ["description"]}))
+
+    # The declared key alone stops being a finding; every other verdict in
+    # the file is unchanged, including the handler-level stray keys.
+    assert silenced == [m for m in baseline if "carry 'description'" not in m]
+
+
+def test_extra_group_keys_is_configurable_through_a_config_file(tmp_path) -> None:
+    repo = copy_fixture("muse/broken-groups", tmp_path)
+    (repo / ".skillsaw.yaml").write_text(
+        'version: "99.0.0"\n'
+        "rules:\n"
+        "  muse-hooks-valid:\n"
+        "    extra-group-keys:\n"
+        "      - enabled\n"
+    )
+
+    found = violations_for(lint_json(repo, returncode=1), "muse-hooks-valid")
+
+    assert not [v for v in found if "'enabled'" in v["message"]]
+    assert [v for v in found if "'matcher' must be a string" in v["message"]]
 
 
 def test_extra_events_is_configurable_through_a_config_file(tmp_path) -> None:

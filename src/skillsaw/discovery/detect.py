@@ -14,7 +14,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
-from skillsaw.formats import devin, muse
+from skillsaw.formats import codex, devin, muse
 from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
@@ -41,7 +41,7 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         ".github",
         ".vscode",
         ".opencode",
-        ".codex",
+        codex.CODEX_DIR_NAME,
         muse.TOOL_DIR_NAME,
         *devin.TOOL_DIR_NAMES,
     }
@@ -223,8 +223,8 @@ _EDITOR_EVIDENCE = {
     # finds and that the Codex plugin rules gate on repository type — so it
     # is deliberately not evidence here.
     "HAS_CODEX": (
-        ".codex",
-        (("hooks.json", False),),
+        codex.CODEX_DIR_NAME,
+        ((codex.CODEX_HOOKS_FILENAME, False),),
     ),
 }
 

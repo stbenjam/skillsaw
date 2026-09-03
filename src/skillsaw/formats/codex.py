@@ -93,6 +93,12 @@ def inline_documents(declared: Any, key: str) -> List[Dict[str, Any]]:
 # the readers below need no repository state at all.
 CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
 
+#: The project directory Codex reads, and the one committed file skillsaw
+#: lints inside it. Named here so discovery and the lint tree spell the
+#: location once, the way the Muse leg reads ``muse.TOOL_DIR_NAME``.
+CODEX_DIR_NAME = ".codex"
+CODEX_HOOKS_FILENAME = "hooks.json"
+
 # -- Lifecycle hooks ----------------------------------------------------------
 #
 # Source: https://developers.openai.com/codex/hooks (read 2026-09-02). Codex

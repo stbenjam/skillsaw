@@ -216,10 +216,11 @@ RULE_GROUPS = [
             "hooks-dangerous",
             "hooks-prohibited",
         ],
-        "Validates hook configuration. The security rules scan hooks in "
-        "`hooks.json`, `.cursor/hooks.json`, `.claude/settings*.json`, and "
-        "skill, Claude-agent, and Copilot-agent frontmatter (`hooks:` key) for supply-chain "
-        "attack patterns (inspired by the "
+        "Validates hook configuration. The security rules scan every hook a repository "
+        "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
+        "Codex's `.codex/hooks.json` and plugin hooks, Muse Code's `.muse/hooks.json`, "
+        "Cursor's `.cursor/hooks.json`, and skill, Claude-agent, and Copilot-agent "
+        "frontmatter (`hooks:` key) — for supply-chain attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (
@@ -838,11 +839,15 @@ def inject_stats(index_path, rules_data):
     day. So the count is also rewritten in place on every run: the pattern
     matches the rendered form as well as the marker, which makes the
     substitution idempotent and keeps the page honest after a rule lands.
+
+    The pattern carries the hero sentence's ``with`` so it rewrites that
+    sentence and nothing else — a page that says "with 89 rules" here and
+    "three of those rules" elsewhere keeps the second count untouched.
     """
     text = index_path.read_text()
     count = str(len(rules_data))
     text = text.replace("<!-- RULE_COUNT -->", count)
-    text = re.sub(r"\b\d+ rules\b", f"{count} rules", text)
+    text = re.sub(r"\bwith \d+ rules\b", f"with {count} rules", text)
     index_path.write_text(text)
 
 

@@ -52,8 +52,11 @@ class PluginProvenance:
         intact.
 
         Load-bearing: this drives ``is_codex_only_plugin``,
-        ``in_codex_only_plugin``, ``_is_containment_plugin``, and the
-        conditional-strictness gates in the hooks and MCP rules.
+        ``in_codex_only_plugin``, ``_is_containment_plugin``, the
+        conditional-strictness gate in the MCP rules, and the hooks block
+        type — ``build_lint_tree`` reads it to attach a plugin's hooks file
+        as a ``CodexHooksBlock`` or a ``ClaudeHooksBlock``, so each host's
+        shape rule sees only its own files.
         ``TestPluginProvenanceCodexOnlyTruthTable`` pins every combination.
         """
         return self.codex and not self.claude

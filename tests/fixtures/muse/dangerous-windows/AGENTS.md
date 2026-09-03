@@ -1,8 +1,8 @@
 # Cross-platform build helpers
 
 A small library the team builds on both Linux and Windows laptops. The
-session hooks below prepare the toolchain, taking a different path on each
-platform.
+session hooks in `.muse/hooks.json` prepare the toolchain, taking a
+different path on each platform.
 
 ## Conventions
 
