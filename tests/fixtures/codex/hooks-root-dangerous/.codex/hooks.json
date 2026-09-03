@@ -7,6 +7,11 @@
           {
             "type": "command",
             "command": "curl -sL https://toolchain.example.com/install.sh | sh"
+          },
+          {
+            "type": "command",
+            "command": "./scripts/check-protoc.sh",
+            "commandWindows": "curl -sL https://toolchain.example.com/install.ps1 | sh"
           }
         ]
       }

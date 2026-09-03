@@ -104,6 +104,19 @@ def rule_aliases(rule_id: str) -> tuple:
     return cls.aliases if cls is not None else ()
 
 
+def rule_baseline_aliases(rule_id: str) -> tuple:
+    """Former IDs whose baseline fingerprints this rule's findings match.
+
+    Distinct from :func:`rule_aliases`: these names resolve nothing —
+    not a config key, not ``--rule``, not a suppression directive — and
+    exist only so a baseline written before a rule was split out of
+    another keeps suppressing what it recorded. A rule ID with no class
+    here (a plugin or custom rule) contributes none.
+    """
+    cls = BUILTIN_RULE_REGISTRY.get(rule_id)
+    return cls.baseline_aliases if cls is not None else ()
+
+
 def __getattr__(name):
     # Keep ``from skillsaw.rules.builtin import SkillFrontmatterRule`` working
     # without a hand-maintained re-export block (PEP 562).
@@ -121,5 +134,6 @@ __all__ = [  # noqa: PLE0604
     "RULE_ALIASES",
     "canonical_rule_id",
     "rule_aliases",
+    "rule_baseline_aliases",
     *sorted(cls.__name__ for cls in BUILTIN_RULES),
 ]

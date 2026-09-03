@@ -178,7 +178,7 @@ rules:
 
   # Codex hooks files must use Codex's hook events, handler types, and fields
   codex-hooks-valid:
-    enabled: true
+    enabled: auto
     severity: error
     # extra-events: []
 
@@ -330,6 +330,7 @@ rules:
     #   gemini-md: 6000
     #   qwen-md: 6000
     #   instruction: 4000
+    #   memory: 4000
 
   # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
   content-redundant-with-tooling:
@@ -393,6 +394,9 @@ rules:
     #     warn: 6000
     #     error: 12000
     #   instruction:
+    #     warn: 4000
+    #     error: 8000
+    #   memory:
     #     warn: 4000
     #     error: 8000
     #   skill:
@@ -497,6 +501,7 @@ rules:
     enabled: auto
     severity: error
     # extra-events: []
+    # extra-handler-fields: []
 
   # Validate metadata.openclaw fields against the OpenClaw spec
   openclaw-metadata:

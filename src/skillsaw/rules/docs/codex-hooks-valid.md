@@ -19,10 +19,20 @@ when you want every hook reviewed rather than only the risky-looking ones,
 [`hooks-prohibited`](hooks-prohibited.md) — both read Codex hooks through
 the same path they use for Claude Code hooks.
 
-A hooks file that Claude Code also reads — a plugin shipping both
-`.claude-plugin/` and `.codex-plugin/` manifests — is checked by
+A hooks file that Claude Code also reads — the conventional
+`hooks/hooks.json` of a plugin shipping both `.claude-plugin/` and
+`.codex-plugin/` manifests — is checked by
 [`claude-hooks-valid`](claude-hooks-valid.md) instead, so a dual-manifest
-plugin keeps one set of results.
+plugin keeps one set of results. A file that only the Codex manifest names
+in `hooks`, and hooks written inline in that manifest, are read by nothing
+else and are checked here.
+
+These checks were part of `hooks-json-valid` before 0.20.0 split them out.
+That legacy name resolves to
+[`claude-hooks-valid`](claude-hooks-valid.md) only, so a project that had
+`hooks-json-valid: {enabled: false}` must configure this rule by its own id.
+Baselines are the exception: a finding recorded under the old name keeps
+suppressing without a change.
 
 ## Severity
 

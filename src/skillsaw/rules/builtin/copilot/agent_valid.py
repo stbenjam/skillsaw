@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, List, Optional, Tuple
 
-from skillsaw.blocks import HOOK_COMMAND_FIELDS
+from skillsaw.blocks import VSCODE_HOOK_COMMAND_FIELDS
 from skillsaw.context import HAS_COPILOT, RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -796,13 +796,13 @@ class CopilotAgentValidRule(Rule):
         """Validate the fields that make a handler of *hook_type* runnable."""
         valid = True
         if hook_type == "command":
-            present_commands = [key for key in HOOK_COMMAND_FIELDS if key in handler]
+            present_commands = [key for key in VSCODE_HOOK_COMMAND_FIELDS if key in handler]
             if not present_commands:
                 violations.append(
                     self._finding(
                         block,
                         f"Hook '{path}' of type 'command' requires at least one of: "
-                        f"{', '.join(HOOK_COMMAND_FIELDS)}",
+                        f"{', '.join(VSCODE_HOOK_COMMAND_FIELDS)}",
                         line=line,
                         discriminator=f"hooks:{path}:command:missing",
                     )
@@ -898,7 +898,7 @@ class CopilotAgentValidRule(Rule):
         """Warn when a valid field belongs to a different handler type."""
         for key in handler:
             allowed_types = (
-                {"command"} if key in HOOK_COMMAND_FIELDS else _TYPE_SPECIFIC_FIELDS.get(key)
+                {"command"} if key in VSCODE_HOOK_COMMAND_FIELDS else _TYPE_SPECIFIC_FIELDS.get(key)
             )
             if allowed_types is not None and hook_type not in allowed_types:
                 violations.append(

@@ -82,7 +82,7 @@ class TestInlineHooks:
 class TestMalformedInlineHooks:
     """An invalid inline shape must be reported, not filtered away."""
 
-    def test_a_non_list_event_reaches_hooks_json_valid(self, tmp_path):
+    def test_a_non_list_event_reaches_codex_hooks_valid(self, tmp_path):
         repo = _codex_plugin_repo(
             tmp_path,
             {

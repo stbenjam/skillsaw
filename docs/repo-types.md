@@ -297,7 +297,8 @@ validation wherever a tool's own metadata can fail silently — see
 | **Windsurf** | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
-| **Muse Code** | `.muse/hooks.json`, `.agents/memory/MEMORY.md` (index) and topic files |
+| **Muse Code** | `.muse/hooks.json` |
+| **Committed project memory** | `.agents/memory/MEMORY.md` (index) and its topic files |
 
 Discovery and validation are separate layers for Copilot. Every Markdown file
 under `.github/agents/` and every `*.chatmode.md` file under the legacy
@@ -409,23 +410,35 @@ the other injection scanners read it, and `hooks-prohibited` counts it as a
 hook. JSON carries no line numbers, so those findings name the file without
 a line.
 
-### Muse Code hooks and memory
+### Muse Code hooks
 
 `.muse/hooks.json` is [Muse Code's](https://dev.meta.ai/docs/muse-code)
-committed project hooks file. It uses the nested shape Claude Code defined,
-but Muse's loader is strict: a handler carrying a field it does not
-recognize is silently dropped, and a malformed matcher group rejects the
-whole file — with no diagnostic in a headless run. `muse-hooks-valid`
-validates the shape against Muse's own events and fields, the same way
-`cursor-hooks-valid` does for Cursor; `hooks-dangerous` and
-`hooks-prohibited` scan it like any other host's hooks file.
+committed project hooks file, and the one thing in a checkout that is Muse's
+alone — it is what marks a repository as Muse Code. It uses the nested shape
+Claude Code defined, but Muse's loader is strict, and how strict depends on
+where the defect is: a known handler field of the wrong type rejects the
+whole file, a matcher group carrying a stray key drops that group, an
+unknown event skips its entries, and a handler Muse cannot use is dropped on
+its own. None of it is reported in a headless run.
+[`muse-hooks-valid`](rules/muse-hooks-valid.md) validates the shape against
+Muse's own events and fields, the same way `cursor-hooks-valid` does for
+Cursor, and every message names what the defect costs. `hooks-dangerous` and
+`hooks-prohibited` scan the commands like any other host's hooks file.
 
-Project memory under `.agents/memory/` is committed, shared context: Muse
-injects `MEMORY.md` in full at every session start, even in an untrusted
-workspace, so it gets the always-on instruction budget, while topic files
-are listed by path and read on demand, so they get every content and
-security rule instead. A `.muse/hooks.json` file or an `.agents/memory/`
-directory marks a repository as Muse Code.
+### Committed project memory
+
+`.agents/memory/` holds notes a team checks into the repository for whatever
+agent reads it — the shared counterpart of Claude Code's per-developer auto
+memory. The convention belongs to no tool: projects were committing it
+before Muse Code shipped, and Muse reads it the way it reads `AGENTS.md`,
+injecting `MEMORY.md` in full at session start (even in an untrusted
+workspace) and listing the topic files it names for reading on demand.
+
+skillsaw therefore attaches the directory unconditionally, and it is
+evidence of no tool in particular. The index and its topic files are agent
+context, so they get every content and security rule, and both are budgeted
+under the `memory` category — the index because a reader loads it whole, a
+topic file because a reader loads it whole once the topic comes up.
 
 ### OpenCode and APM
 

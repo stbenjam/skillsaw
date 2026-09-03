@@ -14,6 +14,8 @@ from .diagnostics import safe_display
 
 from .blocks import (
     AgentBlock,
+    AgentMemoryBlock,
+    AgentMemoryIndexBlock,
     AgentPluginMcpBlock,
     AgentsMdBlock,
     ChatmodeBlock,
@@ -38,14 +40,11 @@ from .blocks import (
     DevinSkillBlock,
     ExtraBlock,
     GeminiMdBlock,
-    HooksBlock,
     InstructionBlock,
     McpBlock,
     McpRegistryNpmPackageBlock,
     McpRegistryServerBlock,
     MuseHooksBlock,
-    MuseMemoryBlock,
-    MuseMemoryIndexBlock,
     OpenAIMetadataBlock,
     OpenCodeAgentBlock,
     OpenCodeCommandBlock,
@@ -68,6 +67,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
+from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.opencode import contained_instruction_globs
 from .formats import devin, muse
 from .utils import has_apm_generated_header, read_text
@@ -746,21 +746,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for vscode_dir in context.agent_tool_dirs(".vscode"):
         state.add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
 
-    # Codex loads project hooks from the repository's ``.codex/`` layer,
-    # plugin or not. Root only: Codex resolves that layer from the project
-    # root, not from every package in a monorepo.
-    state.add_parser_block(root, context.root_path / ".codex" / "hooks.json", CodexHooksBlock)
+    # Codex loads project hooks from the ``.codex/`` layer of the project it
+    # is started in, plugin or not — and in a monorepo that is as often a
+    # package as the repository root, so a package's own layer is live
+    # configuration. The walk-backed lookup finds both, which is also what
+    # ``HAS_CODEX`` detection reads: detection agrees with attachment.
+    for codex_dir in context.agent_tool_dirs(".codex"):
+        state.add_parser_block(root, codex_dir / "hooks.json", CodexHooksBlock)
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         state.add_parser_block(root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
 
-    # Muse Code injects the memory index in full at session start — even in
-    # an untrusted workspace — and lists every topic file for on-demand
-    # reads, so project memory is agent context and gets every content and
-    # security rule. Root only, where Muse documents it.
-    memory_dir = context.root_path.joinpath(*muse.MEMORY_DIR)
-    state.add_block(root, memory_dir / muse.MEMORY_INDEX_FILENAME, MuseMemoryIndexBlock)
-    _add_glob(root, memory_dir, "**/*.md", MuseMemoryBlock)
+    # Committed project memory: notes a team checks in for whatever agent
+    # reads the checkout. The index is loaded whole and its topic files on
+    # demand, so all of it is agent context and gets every content and
+    # security rule — unconditionally, because content is content whether or
+    # not a reader for it is configured here. One directory, at the root,
+    # where the convention puts it.
+    memory_dir = context.root_path.joinpath(*AGENT_MEMORY_DIR)
+    state.add_block(root, memory_dir / AGENT_MEMORY_INDEX, AgentMemoryIndexBlock)
+    _add_glob(root, memory_dir, "**/*.md", AgentMemoryBlock)
 
     # The skills CLI writes one project lockfile at each project root. A
     # monorepo may therefore have several, all found by the shared walk.
@@ -1102,13 +1107,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # can ship executable hooks without declaring them — the same
             # supply-chain surface as a Claude plugin's hooks.
             #
-            # Typed by provenance. A Codex-only plugin's hooks are Codex's
-            # to validate (``codex-hooks-valid``). A dual-manifest plugin
-            # keeps the Claude block attached above: one block per file, so
-            # the security rules report each command once, and its
-            # established Claude results stand
-            # (``TestDualManifestBackwardCompat``) — the same line the
-            # conditional strictness this replaces drew.
+            # Typed by provenance, because the block class picks the shape
+            # rule. Only Codex reads a Codex-only plugin's hooks, so they
+            # are ``codex-hooks-valid``'s. A dual-manifest plugin's
+            # conventional file is read by both hosts and keeps the Claude
+            # block the Claude branch attached above: one block per file, so
+            # the security rules report each command once, and Claude's
+            # results for it stand (``TestDualManifestBackwardCompat``).
             hooks_cls = CodexHooksBlock if prov.codex_only else ClaudeHooksBlock
             _add_contained_plugin_block(
                 node, plugin_path / "hooks" / "hooks.json", hooks_cls, owner=resolved_plugin
@@ -1118,8 +1123,22 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # payloads have no file of their own, so they borrow the
             # manifest path — and only Codex reads that manifest, so they
             # are Codex's whatever else claims the directory.
+            #
+            # A declared file is Codex's for the same reason: nothing but the
+            # Codex manifest names it, so no other host loads it, even in a
+            # dual-manifest plugin whose conventional ``hooks/hooks.json``
+            # stayed Claude's above. The one exception is that same
+            # conventional file when the manifest also declares it — already
+            # attached as a ``ClaudeHooksBlock``, and re-attaching it under
+            # Codex's class would report every command in it twice.
             for declared_hooks in codex_declared_hook_files(plugin_path):
-                state.add_parser_block(node, declared_hooks, hooks_cls, owner=resolved_plugin)
+                declared_resolved = state.resolve_repo_path(declared_hooks)
+                declared_cls = (
+                    ClaudeHooksBlock
+                    if (declared_resolved, ClaudeHooksBlock) in state.seen_roles
+                    else CodexHooksBlock
+                )
+                state.add_parser_block(node, declared_hooks, declared_cls, owner=resolved_plugin)
             for inline_hooks in codex_inline_hooks(plugin_path):
                 inline_block = CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks)
                 inline_block.plugin_owner = resolved_plugin

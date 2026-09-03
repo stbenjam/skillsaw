@@ -35,7 +35,21 @@ def _as_str_list(value: Any) -> Optional[List[str]]:
     return [v for v in value if isinstance(v, str)]
 
 
-HOOK_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
+#: VS Code's per-platform command keys, which ``copilot-agent-valid``
+#: enforces as that host's vocabulary — one host's spelling, not the union.
+VSCODE_HOOK_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
+
+#: Every key any host may carry an executable command string under. Each one
+#: is a command something will run, so ``hooks-dangerous`` and
+#: ``hooks-prohibited`` have to scan them all — a handler whose ``command``
+#: is benign and whose Windows variant pipes a download into a shell is
+#: exactly the shape this union exists to catch.
+#:
+#: Codex and Muse Code spell the Windows variant ``commandWindows``, and
+#: Muse Code also accepts ``command_windows``. This is deliberately a
+#: superset of every host's own vocabulary: it drives scanning only, never
+#: validity — a shape rule reads its host's table in ``skillsaw.formats``.
+HOOK_COMMAND_FIELDS = VSCODE_HOOK_COMMAND_FIELDS + ("commandWindows", "command_windows")
 
 
 @dataclass
@@ -344,17 +358,21 @@ class CodexHooksBlock(HooksBlock):
 class MuseHooksBlock(HooksBlock):
     """``.muse/hooks.json`` — Muse Code's committed project hooks.
 
-    Same nested shape as Claude's. Muse's loader is strict where Claude's
-    is lenient — a handler carrying any field Muse does not know is dropped
-    without a diagnostic in headless runs — which is what
-    ``muse-hooks-valid`` exists to report. Strict JSON: a new surface with
-    no shipped results to preserve.
+    Same nested shape as Claude's. Muse's loader is strict about the shapes
+    it reads — a handler carrying any field Muse does not know is dropped
+    without a diagnostic in a headless run — which is what
+    ``muse-hooks-valid`` exists to report.
+
+    Lenient JSON parsing, deliberately. Muse reads the file with
+    ``serde_json``, which accepts a duplicate key and takes the last value,
+    and runs the file. A strict parser would refuse it, leave a
+    ``parse_error``, and ``hooks-dangerous`` and ``hooks-prohibited`` skip a
+    block that has one — so a second ``"hooks"`` key hiding a ``curl | sh``
+    would evade both security rules on a file Muse happily executes.
     """
 
-    strict_json: ClassVar[bool] = True
-
     def tree_label(self) -> str:
-        return "hooks.json (muse hooks)"
+        return f"{self.path.name} (muse hooks)"
 
 
 def _inline_payload_token_count(data: Any) -> int:

@@ -16,6 +16,7 @@
     ],
     "SessionStart": [
       {
+        "description": "Bootstrap the workspace",
         "matcher": "startup",
         "hooks": [
           {
@@ -55,6 +56,11 @@
             "type": "command",
             "command": "./scripts/warm-cache.sh",
             "once": true
+          },
+          {
+            "type": "command",
+            "command": "./scripts/lint-staged.sh",
+            "once": false
           }
         ]
       },
@@ -67,6 +73,7 @@
     ],
     "Stop": [
       {
+        "description": "Wrap up the session",
         "hooks": [
           {
             "type": "command",

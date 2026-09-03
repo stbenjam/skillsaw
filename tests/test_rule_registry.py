@@ -37,6 +37,41 @@ def test_registry_classes_are_concrete_rules():
         assert rule.description
 
 
+def test_new_rules_are_not_force_enabled():
+    """Project policy: a rule that ships after 0.20.0 defaults to ``auto``
+    or ``False``, never ``True``.
+
+    ``default_enabled = True`` runs the rule in every repository the day a
+    user upgrades, whether or not it has anything the rule can read. ``auto``
+    with ``repo_types``/``formats`` is how a rule says where it applies.
+    """
+    offenders = [
+        cls.__name__
+        for cls in BUILTIN_RULES
+        if _version(cls.since) >= (0, 20, 0) and cls.default_enabled not in ("auto", False)
+    ]
+    assert offenders == [], (
+        f"{offenders} default to enabled: true — declare repo_types/formats "
+        "and leave default_enabled at 'auto', or set it to False for opt-in"
+    )
+
+
+def test_class_import_aliases_do_not_duplicate_a_rule():
+    """Renamed rules keep their old class name importable (0.18.0's
+    ``claude-*`` renames set the precedent, and ``HooksJsonValidRule`` follows
+    it). Discovery dedupes by class identity, so a second binding must not
+    become a second registry entry."""
+    from skillsaw.rules.builtin.hooks import ClaudeHooksValidRule, HooksJsonValidRule
+
+    assert HooksJsonValidRule is ClaudeHooksValidRule
+    assert [cls for cls in BUILTIN_RULES if cls is ClaudeHooksValidRule] == [ClaudeHooksValidRule]
+
+
+def _version(text):
+    parts = (text or "0.1.0").split(".")
+    return tuple(int(part) for part in parts[:3])
+
+
 def test_default_enabled_values_are_valid():
     for cls in BUILTIN_RULES:
         assert cls.default_enabled in (True, False, "auto"), (
@@ -123,6 +158,21 @@ def test_backward_compatible_class_imports():
 
     with pytest.raises(ImportError):
         from skillsaw.rules.builtin import NoSuchRule  # noqa: F401
+
+
+def test_legacy_hooks_rule_class_name_still_imports():
+    """0.20.0 renamed ``hooks-json-valid`` to ``claude-hooks-valid`` and
+    split Codex's checks out. Third-party code importing the old class name
+    keeps working, as it did through the 0.18.0 renames."""
+    from skillsaw.rules.builtin.hooks import HooksJsonValidRule
+    from skillsaw.rules.builtin.hooks.json_valid import HooksJsonValidRule as FromModule
+
+    assert HooksJsonValidRule is FromModule
+    assert HooksJsonValidRule().rule_id == "claude-hooks-valid"
+    assert (
+        "HooksJsonValidRule"
+        in __import__("skillsaw.rules.builtin.hooks", fromlist=["__all__"]).__all__
+    )
 
 
 def test_context_constructor_applies_excludes(tmp_path):

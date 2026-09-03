@@ -20,11 +20,14 @@ highest-value target in an agent repository for supply-chain attacks:
 the 2025 Shai-Hulud npm compromise used exactly this pattern, hiding
 download-and-execute payloads in lifecycle hooks.
 
-Hooks can be declared in plugin `hooks/hooks.json`, in `.claude/settings*.json`,
-in **skill and agent frontmatter** (the `hooks:` YAML key, same schema as
-settings hooks), and in Cursor's `.cursor/hooks.json`. This rule scans every
-one of them — a `curl | sh` hook hidden in SKILL.md frontmatter or in a
-Cursor lifecycle hook is just as dangerous as one in `hooks.json`.
+Hooks can be declared in plugin `hooks/hooks.json` (Claude and Codex
+plugins, including Codex's manifest-declared and inline hooks), APM's
+compiled copy, `.claude/settings*.json`, **skill and agent frontmatter**
+(the `hooks:` YAML key, same schema as settings hooks),
+`<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`,
+`.muse/hooks.json`, and Cursor's `.cursor/hooks.json`. This rule scans
+every one of them — a `curl | sh` hook hidden in SKILL.md frontmatter or
+in a Cursor lifecycle hook is just as dangerous as one in `hooks.json`.
 
 This rule flags hook commands that:
 

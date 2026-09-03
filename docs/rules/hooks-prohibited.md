@@ -18,8 +18,11 @@ Hooks execute arbitrary shell commands with no human review on every
 matching event. In high-security environments, any hook that was not
 explicitly reviewed and allowlisted represents an uncontrolled
 execution vector — even legitimate hooks should be inventoried. This
-rule inventories hooks in plugin `hooks/hooks.json`, `.claude/settings*.json`,
-**skill/agent frontmatter** (`hooks:` key), and Cursor's `.cursor/hooks.json`.
+rule inventories hooks in plugin `hooks/hooks.json` (Claude and Codex,
+including Codex's manifest-declared and inline hooks), APM's compiled
+copy, `.claude/settings*.json`, **skill/agent frontmatter** (`hooks:` key),
+`<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`,
+`.muse/hooks.json`, and Cursor's `.cursor/hooks.json`.
 
 A Cursor `type: "prompt"` hook runs no command, so there is nothing for a
 command allowlist to match — it is reported whenever the rule is on. It is

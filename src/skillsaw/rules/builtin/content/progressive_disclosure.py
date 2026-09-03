@@ -59,6 +59,7 @@ _DEFAULT_CATEGORIES = (
     "gemini-md",
     "qwen-md",
     "instruction",
+    "memory",
 )
 DEFAULT_THRESHOLDS: Dict[str, int] = {
     category: DEFAULT_LIMITS[category]["warn"] for category in _DEFAULT_CATEGORIES

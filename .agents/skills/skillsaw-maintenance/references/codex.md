@@ -34,6 +34,11 @@ hedge (see Sync notes).
   It is the de-facto conformance suite: skillsaw must stay silent on it.
 - Third-party schema (unofficial, one author's reading — useful for cross-checking,
   not authoritative): https://github.com/typeforged/codex-plugin-marketplace
+- Hooks: https://developers.openai.com/codex/hooks — hook sources, lifecycle events,
+  handler types, and per-handler fields. No JSON Schema is linked from the prose; the
+  generated schema lives at
+  https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated (see Sync
+  notes).
 
 ## What to check
 - **Manifest paths**: `.codex-plugin/plugin.json` and `$REPO_ROOT/.agents/plugins/marketplace.json`.
@@ -52,6 +57,22 @@ hedge (see Sync notes).
   skill metadata (and the observed plugin-root form). Re-check `_INTERFACE_STRINGS`,
   the `dependencies.tools` entry keys, and `_BRAND_COLOR` against `openai_yaml.md`
   and `validate_plugin.py` — see the Sync notes.
+- **Hooks**: where Codex loads them from — `~/.codex/hooks.json`, inline `[hooks]`
+  tables in `~/.codex/config.toml`, `<repo>/.codex/hooks.json`, `<repo>/.codex/config.toml`,
+  and a plugin's `hooks/hooks.json` (or a manifest `hooks` entry: a `./`-prefixed path,
+  an array of such paths, an inline hooks object, or an array of inline objects). The 12
+  events: `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`, `PreToolUse`,
+  `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `UserPromptSubmit`,
+  `Stop`, `Interrupt`. `command` and `mcp_tool` handlers run; `prompt` and `agent` are
+  parsed and skipped.
+- **Hook handler fields**: `command` handlers take `command`, `commandWindows`, `timeout`
+  (seconds, default `600`), `statusMessage`, `additionalContextLimit`, `async`; `mcp_tool`
+  handlers take `server`, `tool`, `input`. `SessionEnd` and `Interrupt` default to a
+  1-second timeout and cap configured timeouts at 3 seconds; `SessionEnd` rejects
+  `mcp_tool` handlers. `matcher` is honored on `PermissionRequest`, `PostToolUse`,
+  `PreToolUse`, `PreCompact`/`PostCompact` (compaction trigger), `SessionStart`,
+  `SubagentStart`/`SubagentStop`, and `SessionEnd`; `UserPromptSubmit`, `Stop`, and
+  `Interrupt` ignore any configured `matcher`.
 
 ## skillsaw rules that map
 - `src/skillsaw/rules/builtin/codex/`: `codex-plugin-json-valid`,
@@ -66,6 +87,9 @@ hedge (see Sync notes).
   `CodexPluginConfigNode`; `CodexMarketplaceConfigNode`), built in
   `src/skillsaw/lint_tree.py`.
 - Docs: `src/skillsaw/rules/docs/codex-*.md`.
+- Hooks — `src/skillsaw/rules/builtin/codex/hooks_valid.py`: `codex-hooks-valid`.
+  Vocabulary (events, handler types, per-handler fields) lives in
+  `src/skillsaw/formats/codex.py`, not the rule.
 
 ## Sync notes
 Hand-copied value sets that drift — re-check each against upstream:
@@ -101,6 +125,14 @@ Hand-copied value sets that drift — re-check each against upstream:
   shorthand, no CSS keywords. Transcribed from `validate_plugin.py:25`
   (`HEX_COLOR_RE`), applied at `:522-527` — the validator publishes no schema, so
   this regex is the only statement of the rule and can drift silently.
+- The `CODEX_HOOK_*` constants in `formats/codex.py` (events, handler types,
+  required/optional per-handler fields, which events honor `matcher`, which reject
+  `mcp_tool`, and the `SessionEnd`/`Interrupt` short-timeout events), read by
+  `codex/hooks_valid.py`: re-check against https://developers.openai.com/codex/hooks
+  and the generated schema at
+  https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated on every
+  sync. `config.toml` inline `[hooks]` tables are not yet linted — only `hooks.json`
+  files and plugin-manifest-declared or inline manifest hooks are.
 
 Deliberate non-checks — do not "fix" these without a spec change. Each records what
 upstream requires and why skillsaw does not enforce it.

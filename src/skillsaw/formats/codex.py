@@ -176,10 +176,6 @@ CODEX_HOOK_NO_MCP_TOOL_EVENTS = frozenset({"SessionEnd"})
 CODEX_HOOK_SHORT_TIMEOUT_EVENTS = frozenset({"SessionEnd", "Interrupt"})
 CODEX_HOOK_SHORT_TIMEOUT_MAX_SECONDS = 3
 
-#: Top-level keys a Codex hooks.json accepts. ``description`` is metadata
-#: that changes nothing about which hooks run.
-CODEX_HOOKS_TOP_LEVEL_KEYS = frozenset({"description", "hooks"})
-
 
 def codex_manifest(plugin_dir: Path) -> Dict[str, Any]:
     """A Codex plugin's parsed manifest, or ``{}`` when absent or unparseable.

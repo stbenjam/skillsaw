@@ -22,6 +22,7 @@ from skillsaw.context import (
     HAS_KIRO,
     HAS_CLAUDE_MD,
     HAS_CODERABBIT,
+    HAS_CODEX,
     HAS_OPENCODE,
 )
 from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
@@ -883,6 +884,71 @@ def test_opencode_is_not_an_instruction_format(temp_dir):
     from skillsaw.context import ALL_INSTRUCTION_FORMATS
 
     assert HAS_OPENCODE not in ALL_INSTRUCTION_FORMATS
+
+
+_CODEX_HOOKS = """{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "./scripts/load-policy.sh"}]}
+    ]
+  }
+}
+"""
+
+
+def test_detected_formats_codex_root_hooks(temp_dir):
+    """``.codex/hooks.json`` is the project-layer configuration Codex reads."""
+    (temp_dir / ".codex").mkdir()
+    (temp_dir / ".codex" / "hooks.json").write_text(_CODEX_HOOKS)
+    assert HAS_CODEX in RepositoryContext(temp_dir).detected_formats
+
+
+def test_detected_formats_codex_hooks_in_a_subpackage(temp_dir):
+    """Codex reads the ``.codex/`` layer of the project it is started in.
+
+    In a monorepo that is as often a package as the repository root, so the
+    walk finds a nested one — and attachment follows the same lookup.
+    """
+    package = temp_dir / "packages" / "api" / ".codex"
+    package.mkdir(parents=True)
+    (package / "hooks.json").write_text(_CODEX_HOOKS)
+    assert HAS_CODEX in RepositoryContext(temp_dir).detected_formats
+
+
+def test_an_empty_codex_directory_is_not_evidence(temp_dir):
+    """Detection must agree with attachment: nothing here for a rule to read.
+
+    ``.codex/plugins/`` is an install location Codex's own plugin discovery
+    walks, not project-layer configuration, so it is not evidence either.
+    """
+    (temp_dir / ".codex" / "plugins").mkdir(parents=True)
+    assert HAS_CODEX not in RepositoryContext(temp_dir).detected_formats
+
+
+def test_excluded_codex_hooks_drive_neither_detection_nor_attachment(temp_dir):
+    """An exclude in ``.skillsaw.yaml`` reaches detection through the context."""
+    from skillsaw.blocks import CodexHooksBlock
+
+    (temp_dir / ".codex").mkdir()
+    (temp_dir / ".codex" / "hooks.json").write_text(_CODEX_HOOKS)
+
+    context = RepositoryContext(temp_dir, exclude_patterns=[".codex/**"])
+
+    assert HAS_CODEX not in context.detected_formats
+    assert context.lint_tree.find(CodexHooksBlock) == []
+
+
+def test_codex_is_not_an_instruction_format(temp_dir):
+    """The instruction-file rules only read AGENTS.md and friends.
+
+    Codex does read AGENTS.md — but a repository whose only marker is
+    ``.codex/hooks.json`` has none, and auto-enabling two rules structurally
+    incapable of finding anything is the silent no-op this linter exists to
+    catch. HAS_AGENTS_MD covers the case where the file is actually there.
+    """
+    from skillsaw.context import ALL_INSTRUCTION_FORMATS
+
+    assert HAS_CODEX not in ALL_INSTRUCTION_FORMATS
 
 
 def test_a_native_opencode_repo_is_not_apm_compiled_output(temp_dir):

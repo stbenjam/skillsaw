@@ -35,8 +35,8 @@ from .content import (
     GeminiMdBlock,
     InstructionBlock,
     PromptBlock,
-    MuseMemoryBlock,
-    MuseMemoryIndexBlock,
+    AgentMemoryBlock,
+    AgentMemoryIndexBlock,
     QwenMdBlock,
     ReadmeBlock,
     SkillRefBlock,
@@ -62,6 +62,7 @@ from .frontmatter import (
 )
 from .json_config import (
     HOOK_COMMAND_FIELDS,
+    VSCODE_HOOK_COMMAND_FIELDS,
     HookEventConfig,
     HookHandler,
     AgentPluginMcpBlock,
@@ -118,8 +119,8 @@ __all__ = [
     "ClaudeMdBlock",
     "AgentsMdBlock",
     "GeminiMdBlock",
-    "MuseMemoryBlock",
-    "MuseMemoryIndexBlock",
+    "AgentMemoryBlock",
+    "AgentMemoryIndexBlock",
     "QwenMdBlock",
     "ClineWorkflowBlock",
     "SkillRefBlock",
@@ -148,6 +149,7 @@ __all__ = [
     "_parse_file_frontmatter",
     # json_config
     "HOOK_COMMAND_FIELDS",
+    "VSCODE_HOOK_COMMAND_FIELDS",
     "HookHandler",
     "HookEventConfig",
     "AgentPluginMcpBlock",

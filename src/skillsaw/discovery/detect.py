@@ -41,6 +41,7 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         ".github",
         ".vscode",
         ".opencode",
+        ".codex",
         muse.TOOL_DIR_NAME,
         *devin.TOOL_DIR_NAMES,
     }
@@ -89,7 +90,10 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     for dirpath, dirnames, filenames in os.walk(root_str):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
-        if here.name == muse.TOOL_DIR_NAME:
+        # ``os.path.basename`` rather than ``here.name``: this runs once per
+        # directory in the repository, and constructing the pathlib view of
+        # every one of them to read a string costs more than the walk.
+        if os.path.basename(dirpath) == muse.TOOL_DIR_NAME:
             # Muse's per-agent worktrees are whole checkouts of this
             # repository; walking them would attach every file twice.
             dirnames[:] = [name for name in dirnames if name not in muse.SCRATCH_DIR_NAMES]
@@ -208,12 +212,19 @@ _EDITOR_EVIDENCE = {
         ),
     ),
     # ``hooks.json`` is the only committed file Muse reads from ``.muse/``;
-    # ``worktrees/`` is child-agent scratch. Project memory is the other
-    # Muse marker, checked separately in ``instruction_formats`` because it
-    # lives under ``.agents/``, a directory several tools share.
+    # ``worktrees/`` is child-agent scratch.
     "HAS_MUSE": (
         muse.TOOL_DIR_NAME,
         ((muse.HOOKS_FILENAME, False),),
+    ),
+    # ``hooks.json`` is the only committed project-layer configuration
+    # skillsaw reads from ``.codex/``. ``.codex/plugins/`` is an install
+    # location — vendor-managed content that Codex's own plugin discovery
+    # finds and that the Codex plugin rules gate on repository type — so it
+    # is deliberately not evidence here.
+    "HAS_CODEX": (
+        ".codex",
+        (("hooks.json", False),),
     ),
 }
 
@@ -324,14 +335,12 @@ def instruction_formats(
             # only a model and an MCP server has no ``.opencode/`` at all.
             or marker("opencode.json") or marker("opencode.jsonc"),
         ),
-        (
-            "HAS_MUSE",
-            editor_marker("HAS_MUSE")
-            # Committed project memory is Muse's alone: ``.agents/`` is
-            # shared with the portable skills and Codex marketplace
-            # conventions, but no other tool reads a ``memory/`` under it.
-            or marker(*muse.MEMORY_DIR, is_dir=True),
-        ),
+        # ``.muse/hooks.json`` is the only thing in a checkout that is Muse
+        # Code's alone. Committed ``.agents/memory/`` notes are a shared
+        # convention Muse reads — projects were committing them before Muse
+        # shipped — so they are no more evidence of Muse than AGENTS.md is.
+        ("HAS_MUSE", editor_marker("HAS_MUSE")),
+        ("HAS_CODEX", editor_marker("HAS_CODEX")),
         ("HAS_GEMINI", marker("GEMINI.md")),
         ("HAS_QWEN", marker("QWEN.md")),
         (

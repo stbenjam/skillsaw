@@ -59,25 +59,30 @@ class QwenMdBlock(InstructionBlock):
 
 
 @dataclass(eq=False)
-class MuseMemoryIndexBlock(FileContentBlock):
-    """``.agents/memory/MEMORY.md`` — the index Muse Code injects at session start.
+class AgentMemoryIndexBlock(FileContentBlock):
+    """``.agents/memory/MEMORY.md`` — the index of committed project memory.
 
-    Read in full, every session, even in an untrusted workspace, so it is
-    always-on instruction text and shares the ``instruction`` budget. Not an
-    :class:`InstructionBlock`: the instruction-file rules check conventions
-    of the CLAUDE.md family that a memory index does not follow.
+    Team notes checked into the repository for whatever agent reads it, the
+    shared counterpart of Claude Code's per-developer auto memory. The index
+    is the entry point: one line per topic file, loaded whole by the agents
+    that read the convention — Muse Code injects it at session start, even
+    in an untrusted workspace, and lists the topic paths it names.
+
+    Not an :class:`InstructionBlock`: the instruction-file rules check
+    conventions of the CLAUDE.md family that a memory index does not follow.
     """
 
-    category: str = "instruction"
+    category: str = "memory"
 
 
 @dataclass(eq=False)
-class MuseMemoryBlock(FileContentBlock):
+class AgentMemoryBlock(FileContentBlock):
     """A topic file under ``.agents/memory/``.
 
-    Muse Code lists only its path at session start and reads the file on
-    demand, so it is on-demand prose: every content and security rule reads
-    it, but no always-on budget applies.
+    Reached through the index rather than loaded with it — Muse Code lists
+    its path at session start and reads the file when a topic comes up — so
+    it is on-demand prose that still lands whole in a context window. Every
+    content and security rule reads it.
     """
 
     category: str = "memory"

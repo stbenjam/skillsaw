@@ -1,0 +1,6 @@
+{
+  "name": "policy-guard",
+  "version": "2.1.0",
+  "description": "Repository policy hooks published for both Claude Code and Codex.",
+  "hooks": ["./hooks/hooks.json", "./hooks/codex-only.json"]
+}

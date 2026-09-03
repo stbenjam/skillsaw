@@ -4867,6 +4867,8 @@ CLEAN_FIXTURES = [
     "instructions/agents-import/import-only",
     "opencode/native-v1",
     "opencode/native-v2",
+    "muse/clean",
+    "agent-memory/notes",
 ]
 
 OPT_IN_RULES = {

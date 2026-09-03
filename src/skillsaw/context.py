@@ -81,14 +81,16 @@ HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
 HAS_CODERABBIT = "HAS_CODERABBIT"
 HAS_OPENCODE = "HAS_OPENCODE"
 HAS_MUSE = "HAS_MUSE"
+HAS_CODEX = "HAS_CODEX"
 HAS_SKILLS_LOCK = "HAS_SKILLS_LOCK"
 # Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE,
-# HAS_OPENCODE and HAS_MUSE are deliberately absent: the instruction-file
-# rules only ever look at AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a
-# repository whose only marker is ``.clinerules``, ``opencode.json`` or
-# ``.muse/hooks.json`` would auto-enable two rules structurally incapable of
-# finding anything. OpenCode and Muse Code do read AGENTS.md — and when one
-# is present HAS_AGENTS_MD enables them for it.
+# HAS_OPENCODE, HAS_MUSE and HAS_CODEX are deliberately absent: the
+# instruction-file rules only ever look at
+# AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose only marker is
+# ``.clinerules``, ``opencode.json``, ``.muse/hooks.json`` or
+# ``.codex/hooks.json`` would auto-enable two rules structurally incapable of
+# finding anything. OpenCode, Muse Code and Codex do read AGENTS.md — and
+# when one is present HAS_AGENTS_MD enables them for it.
 ALL_INSTRUCTION_FORMATS = frozenset(
     {
         HAS_CURSOR,

@@ -302,3 +302,9 @@ class ClaudeHooksValidRule(Rule):
                                 )
 
         return violations
+
+
+# The class name this rule shipped under before 0.20.0 split it by host.
+# Kept for third-party imports; the registry deduplicates by class identity,
+# so binding a second name here adds no second rule.
+HooksJsonValidRule = ClaudeHooksValidRule

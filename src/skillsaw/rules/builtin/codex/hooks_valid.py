@@ -6,19 +6,21 @@ vocabulary: twelve events, two handler types it runs and two it parses and
 skips, and per-handler fields of its own. The vocabulary lives in
 ``skillsaw.formats.codex`` — this rule reads it and never restates it.
 
-Only :class:`CodexHooksBlock` is iterated: ``<repo>/.codex/hooks.json``, a
-Codex-only plugin's ``hooks/hooks.json``, files that plugin's manifest names
-in ``hooks``, and hooks written inline in a ``.codex-plugin/plugin.json``.
-Those blocks exist only where Codex content does, which is why the rule is
-quiet in every other repository despite being on by default. It declares no
-``provenance_scope``: the node type already scopes it, and declaring one
-would make a forced ``--type codex`` with no filesystem claim skip the very
-files the rule exists to report.
+Only :class:`CodexHooksBlock` is iterated: a repository's
+``.codex/hooks.json``, a Codex-only plugin's ``hooks/hooks.json``, files that
+plugin's manifest names in ``hooks``, and hooks written inline in a
+``.codex-plugin/plugin.json``. Those blocks exist only where Codex content
+does, and the rule is gated to match: ``enabled: auto`` fires on a Codex
+plugin or marketplace repository, or on ``HAS_CODEX`` — the format label a
+committed ``.codex/hooks.json`` raises. It declares no ``provenance_scope``:
+the node type already scopes it, and declaring one would make a forced
+``--type codex`` with no filesystem claim skip the very files the rule exists
+to report.
 """
 
 from typing import Any, Dict, List, Set
 
-from skillsaw.context import RepositoryContext
+from skillsaw.context import HAS_CODEX, RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.codex import (
     CODEX_HOOK_EVENTS,
@@ -32,6 +34,7 @@ from skillsaw.formats.codex import (
     CODEX_HOOK_SKIPPED_HANDLER_TYPES,
 )
 from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.rules.builtin.codex._helpers import CODEX_PLUGIN_REPO_TYPES
 from skillsaw.rules.builtin.content_analysis import CodexHooksBlock
 from skillsaw.utils import is_finite_number
 
@@ -65,13 +68,6 @@ def _fields_by_handler_type() -> Dict[str, frozenset]:
 _FIELD_OWNERS = _fields_by_handler_type()
 
 
-def _type_name(expected) -> str:
-    """Render an expected JSON type for a message."""
-    if isinstance(expected, tuple):
-        return "/".join(t.__name__ for t in expected)
-    return expected.__name__
-
-
 def _matches_type(value: Any, expected) -> bool:
     """Type check that keeps ``bool`` distinct from ``int``."""
     if expected is bool:
@@ -84,7 +80,18 @@ class CodexHooksValidRule(Rule):
 
     since = "0.20.0"
 
-    default_enabled = True
+    # ``enabled: auto`` on the base default, gated on the two places Codex
+    # hooks live: a Codex plugin or marketplace repository, and any checkout
+    # that commits a ``.codex/hooks.json``. Project policy forbids a new rule
+    # defaulting to ``True``.
+    repo_types = CODEX_PLUGIN_REPO_TYPES
+    formats = frozenset({HAS_CODEX})
+
+    # These checks used to be reported by ``hooks-json-valid``, so a
+    # baseline written before the split recorded a Codex-only plugin's
+    # findings under that ID. Not an ``alias``: the rule is configured and
+    # suppressed by its own name — only the baseline lookup follows this.
+    baseline_aliases = ("hooks-json-valid",)
 
     config_schema = {
         "extra-events": {
@@ -163,8 +170,9 @@ class CodexHooksValidRule(Rule):
         """One event key and the entries under it."""
         violations: List[RuleViolation] = []
         name = safe_display(event)
+        known = event in known_events
 
-        if event not in known_events:
+        if not known:
             # A warning, not an error, on two counts: Codex loads the file
             # and skips the key, and Codex ships events faster than skillsaw
             # releases. ``extra-events`` is named so a false positive has a
@@ -192,11 +200,17 @@ class CodexHooksValidRule(Rule):
             return violations
 
         for index, entry in enumerate(entries):
-            violations.extend(self._check_entry(name, event, index, entry, block))
+            violations.extend(self._check_entry(name, event, index, entry, block, known))
         return violations
 
     def _check_entry(
-        self, name: str, event: Any, index: int, entry: Any, block: CodexHooksBlock
+        self,
+        name: str,
+        event: Any,
+        index: int,
+        entry: Any,
+        block: CodexHooksBlock,
+        known: bool = True,
     ) -> List[RuleViolation]:
         """One ``{matcher?, hooks: [...]}`` entry under an event."""
         violations: List[RuleViolation] = []
@@ -221,7 +235,11 @@ class CodexHooksValidRule(Rule):
                         f"Event '{where}.matcher' must be a string", file_path=block.path
                     )
                 )
-            elif event not in CODEX_HOOK_MATCHER_EVENTS:
+            elif known and event not in CODEX_HOOK_MATCHER_EVENTS:
+                # Only for an event Codex actually dispatches. On a typo the
+                # unknown-event warning already says the entry never fires,
+                # and "your matcher is ignored" on top of it is a second
+                # finding for one mistake.
                 violations.append(
                     self.violation(
                         f"Event '{where}.matcher' is ignored on this event — Codex "
@@ -343,7 +361,7 @@ class CodexHooksValidRule(Rule):
             if not _matches_type(handler[field], expected):
                 violations.append(
                     self.violation(
-                        f"Event '{where}' field '{field}' must be a {_type_name(expected)}",
+                        f"Event '{where}' field '{field}' must be a {expected.__name__}",
                         file_path=block.path,
                     )
                 )

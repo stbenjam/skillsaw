@@ -78,6 +78,21 @@ def test_explain_shows_config_schema(temp_dir):
     assert "Minimum file length" in result.stdout
 
 
+def test_explain_resolves_the_legacy_hooks_rule_name(temp_dir):
+    """0.20.0 renamed ``hooks-json-valid`` to ``claude-hooks-valid``, so the
+    old name still explains the rule it became.
+
+    Codex's checks were split out into ``codex-hooks-valid`` at the same
+    time, and that rule is named, configured and explained on its own id —
+    the legacy alias resolves to Claude's rule only.
+    """
+    result = run_explain("hooks-json-valid", str(temp_dir))
+
+    assert result.returncode == 0
+    assert "claude-hooks-valid" in result.stdout
+    assert "codex-hooks-valid" not in result.stdout.split("## Why")[0]
+
+
 def test_explain_unknown_rule_suggests_close_match(temp_dir):
     result = run_explain("content-weak-langage", str(temp_dir))
     assert result.returncode == 1
