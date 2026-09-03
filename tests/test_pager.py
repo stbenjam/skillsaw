@@ -4,7 +4,7 @@ import io
 import os
 import sys
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from skillsaw.cli._pager import (
     _write_fallback,
@@ -285,6 +285,56 @@ def test_resolve_pager_windows_path_semantics(monkeypatch):
         assert resolved is not None
         cmd_parts, _ = resolved
         assert cmd_parts == [r"C:\bin\less.exe", "-R"]
+
+
+def test_resolve_pager_windows_quoted_path(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    with patch("shutil.which", return_value=r"C:\Program Files\less.exe"):
+        resolved = resolve_pager_command(r'"C:\Program Files\less.exe" -R')
+        assert resolved is not None
+        cmd_parts, env = resolved
+        assert cmd_parts == [r"C:\Program Files\less.exe", "-R"]
+        assert env.get("LESS") == "-R"
+        assert env.get("LESSCHARSET") == "utf-8"
+
+
+def test_resolve_pager_less_exe_ansi_and_charset(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("PAGER", r"C:\Tools\LESS.EXE")
+    monkeypatch.delenv("MANPAGER", raising=False)
+    monkeypatch.delenv("LESS", raising=False)
+    with patch("shutil.which", return_value=r"C:\Tools\LESS.EXE"):
+        resolved = resolve_pager_command()
+        assert resolved is not None
+        cmd_parts, env = resolved
+        assert env.get("LESS") == "-R"
+        assert env.get("LESSCHARSET") == "utf-8"
+
+
+def test_page_text_unicode_encoding_fallback():
+    class DummyStream:
+        encoding = "cp1252"
+
+    with patch("subprocess.Popen") as mock_popen:
+        mock_proc = MagicMock()
+        mock_proc.stdin = MagicMock()
+        mock_popen.return_value = mock_proc
+        page_text("Warning: ⚠ → test", pager_cmd=["cat"], stream=DummyStream())
+        assert mock_popen.called
+        assert mock_popen.call_args[1].get("encoding") == "utf-8"
+
+
+def test_page_text_unicode_compatible_stream_encoding():
+    class DummyStream:
+        encoding = "utf-8"
+
+    with patch("subprocess.Popen") as mock_popen:
+        mock_proc = MagicMock()
+        mock_proc.stdin = MagicMock()
+        mock_popen.return_value = mock_proc
+        page_text("Simple text", pager_cmd=["cat"], stream=DummyStream())
+        assert mock_popen.called
+        assert mock_popen.call_args[1].get("encoding") == "utf-8"
 
 
 def test_page_text_with_pager_cmd_none(tmp_path):

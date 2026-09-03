@@ -98,6 +98,15 @@ def resolve_pager_command(
             cmd_parts = shlex.split(raw_cmd, posix=sys.platform != "win32")
         except ValueError:
             return None
+        if sys.platform == "win32" and cmd_parts:
+            cmd_parts = [
+                (
+                    part[1:-1]
+                    if len(part) >= 2 and part[0] == part[-1] and part[0] in ('"', "'")
+                    else part
+                )
+                for part in cmd_parts
+            ]
         if not cmd_parts:
             return None
         if not shutil.which(cmd_parts[0]):
@@ -112,11 +121,13 @@ def resolve_pager_command(
             return None
 
     env = dict(os.environ)
-    cmd_name = Path(cmd_parts[0]).name
+    cmd_name = cmd_parts[0].replace("\\", "/").split("/")[-1].lower().removesuffix(".exe")
     # When using less and LESS is unset, enable raw ANSI escape sequences
     # so colored output displays properly.
-    if cmd_name == "less" and "LESS" not in env:
-        env["LESS"] = "-R"
+    if cmd_name == "less":
+        if "LESS" not in env:
+            env["LESS"] = "-R"
+        env.setdefault("LESSCHARSET", "utf-8")
 
     return cmd_parts, env
 
@@ -146,11 +157,18 @@ def page_text(
     if env is None:
         env = dict(os.environ)
 
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    try:
+        text.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        encoding = "utf-8"
+
     try:
         proc = subprocess.Popen(
             list(pager_cmd),
             stdin=subprocess.PIPE,
             text=True,
+            encoding=encoding,
             env=dict(env),
             errors="replace",
         )
