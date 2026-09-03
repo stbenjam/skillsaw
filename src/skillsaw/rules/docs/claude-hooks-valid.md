@@ -19,8 +19,14 @@ dedicated rules:
 
 This rule was previously known as `hooks-json-valid` before host-specific checks
 were introduced. The earlier rule name remains supported as an alias for backwards
-compatibility, while baselines recorded under the old name continue to apply
-smoothly.
+compatibility, and a baseline recorded under it keeps applying here: this rule's
+messages are unchanged from the ones it recorded.
+
+The checks that moved to [`codex-hooks-valid`](codex-hooks-valid.md) were
+re-worded, and a hooks file's baseline fingerprint hashes the message text —
+JSON carries no line numbers to hash instead. An old baseline therefore carries
+over to that rule only for the four file-level verdicts whose wording survived;
+its page lists them.
 
 For security, the commands themselves are scanned by
 [`hooks-dangerous`](hooks-dangerous.md) for risky execution patterns, and can be

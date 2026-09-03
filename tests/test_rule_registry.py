@@ -186,6 +186,74 @@ def test_legacy_hooks_rule_class_name_still_imports():
         builtin.NoSuchLegacyRule
 
 
+def test_no_builtin_rule_declares_a_formats_attribute():
+    """0.20.0 folded the ``HAS_*`` format labels into ``RepositoryType``, so
+    a rule now gates on ``repo_types`` alone.
+
+    Nothing reads ``formats`` any more. A rule class that still declared one
+    would look gated and be ungated — the silent no-op this suite exists to
+    catch — so the removal is pinned rather than trusted.
+    """
+    offenders = [cls.__name__ for cls in BUILTIN_RULES if hasattr(cls, "formats")]
+
+    assert offenders == [], (
+        f"{offenders} still declare a 'formats' attribute; gate on repo_types "
+        "instead — nothing reads formats"
+    )
+
+
+def test_every_detected_tool_type_is_listed_in_tool_repo_types(tmp_path):
+    """``TOOL_REPO_TYPES`` is what ``_refresh_tool_types`` recomputes.
+
+    A tool type detection can produce but that set omits would be added once
+    at construction and never refreshed — it would survive an exclude that
+    removed its marker, and it would not be unioned back in under a
+    ``--type`` override.
+    """
+    from skillsaw.context import RepositoryType
+    from skillsaw.discovery.detect import tool_types
+    from skillsaw.repository_types import TOOL_REPO_TYPES
+
+    (tmp_path / ".cursor" / "rules").mkdir(parents=True)
+    (tmp_path / ".github").mkdir()
+    (tmp_path / ".github" / "copilot-instructions.md").write_text("Use tabs in Makefiles.\n")
+    (tmp_path / ".clinerules").write_text("Prefer small commits.\n")
+    (tmp_path / ".devin" / "rules").mkdir(parents=True)
+    (tmp_path / "opencode.json").write_text('{"$schema": "https://opencode.ai/config.json"}\n')
+    (tmp_path / ".muse").mkdir()
+    (tmp_path / ".muse" / "hooks.json").write_text('{"hooks": {}}\n')
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".codex" / "hooks.json").write_text('{"hooks": {}}\n')
+    (tmp_path / ".kiro").mkdir()
+    (tmp_path / "GEMINI.md").write_text("# Gemini\n\nRun `make test`.\n")
+    (tmp_path / "QWEN.md").write_text("# Qwen\n\nRun `make test`.\n")
+    (tmp_path / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+    (tmp_path / "CLAUDE.md").write_text("# Claude\n\nRun `make test`.\n")
+    (tmp_path / ".coderabbit.yaml").write_text("reviews:\n  profile: chill\n")
+    (tmp_path / "skills-lock.json").write_text('{"skills": {}}\n')
+
+    context = RepositoryContext(tmp_path)
+    scan = context._repository_scan()
+    # ``RepositoryType(value)`` raises on a value the enum does not have, so
+    # the conversion itself pins detection to the vocabulary.
+    detected = {
+        RepositoryType(value)
+        for value in tool_types(
+            tmp_path,
+            context.instruction_files,
+            context.is_path_excluded,
+            scan.tool_dirs,
+            scan.legacy_editor_files,
+            scan.skills_lock_files,
+        )
+    }
+
+    assert detected <= TOOL_REPO_TYPES, sorted(t.value for t in detected - TOOL_REPO_TYPES)
+    # The fixture carries one marker per tool, so the two sets should meet:
+    # a member here that detection never produces is a type nothing can set.
+    assert detected == TOOL_REPO_TYPES, sorted(t.value for t in TOOL_REPO_TYPES - detected)
+
+
 def test_context_constructor_applies_excludes(tmp_path):
     """Excludes passed to the constructor filter discovery from the start."""
     skill = tmp_path / "templates" / "my-skill"
@@ -251,7 +319,12 @@ def test_apply_excludes_refreshes_the_tool_repo_types(tmp_path):
 
 
 def test_an_explicit_type_override_survives_apply_excludes(tmp_path):
-    """``--type`` is the operator's answer; detection never overrules it."""
+    """``--type`` is the operator's answer; detection never takes it away.
+
+    Detection still adds to it: the override answers how the content is
+    packaged, not which tools the checkout configures, so the CLAUDE.md here
+    contributes its own type alongside the forced one.
+    """
     from skillsaw.context import RepositoryType
 
     (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
@@ -259,7 +332,8 @@ def test_an_explicit_type_override_survives_apply_excludes(tmp_path):
     context = RepositoryContext(tmp_path, repo_types={RepositoryType.MUSE})
     context.apply_excludes()
 
-    assert context.repo_types == {RepositoryType.MUSE}
+    assert {RepositoryType.MUSE} <= context.repo_types
+    assert RepositoryType.CLAUDE_MD in context.repo_types
 
 
 def test_severity_enum_matches():

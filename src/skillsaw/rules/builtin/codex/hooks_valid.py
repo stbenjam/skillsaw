@@ -162,6 +162,12 @@ class CodexHooksValidRule(Rule):
         violations: List[RuleViolation] = []
         name = safe_display(event)
         known = event in known_events
+        # Whether *Codex* dispatches this event, as opposed to the project
+        # having named it under ``extra-events``. Only a built-in event has
+        # a documented matcher behaviour to advise about; telling a project
+        # its matcher has no effect on an event this release has never heard
+        # of is a guess dressed as a finding.
+        builtin = event in CODEX_HOOK_EVENTS
 
         if not known:
             # A warning, not an error, on two counts: Codex loads the file
@@ -187,7 +193,7 @@ class CodexHooksValidRule(Rule):
             return violations
 
         for index, entry in enumerate(entries):
-            violations.extend(self._check_entry(name, event, index, entry, block, known))
+            violations.extend(self._check_entry(name, event, index, entry, block, builtin))
         return violations
 
     def _check_entry(
@@ -197,7 +203,7 @@ class CodexHooksValidRule(Rule):
         index: int,
         entry: Any,
         block: CodexHooksBlock,
-        known: bool = True,
+        builtin: bool = True,
     ) -> List[RuleViolation]:
         """Validate an individual {matcher?, hooks: [...]} event entry."""
         violations: List[RuleViolation] = []
@@ -217,7 +223,7 @@ class CodexHooksValidRule(Rule):
                         file_path=block.path,
                     )
                 )
-            elif known and event not in CODEX_HOOK_MATCHER_EVENTS:
+            elif builtin and event not in CODEX_HOOK_MATCHER_EVENTS:
                 violations.append(
                     self.violation(
                         f"Hook {where}.matcher has no effect on {name}",

@@ -6,8 +6,9 @@ A type describes either how the repository *packages* its content — a
 marketplace, a plugin, an APM project — or which *tool* it is configured
 for. Both are the same kind of fact: if the checkout holds a tool's
 configuration, that tool's rules run and `Repo type:` says so. Every value
-below is also accepted by `--type`, which replaces built-in detection; a
-repository type contributed by an installed rule plugin is still detected.
+below is also accepted by `--type`, which replaces packaging-type detection;
+tool types are always detected from the checkout, and plugin-contributed
+types too.
 
 The tool types sort below the packaging types, so the single "primary" type
 in the JSON report's `repo_type` field is unchanged: a marketplace that also
@@ -275,8 +276,9 @@ scanned by [`hooks-dangerous`](rules/hooks-dangerous.md) and
 
 Muse reads `AGENTS.md` for portable instructions and `.agents/memory/` for
 committed team memory. Both are shared conventions rather than Muse
-surfaces, so neither is Muse evidence on its own — but both are linted
-wherever they appear.
+surfaces, so neither is Muse evidence on its own — but both are linted:
+`AGENTS.md` wherever it appears, and committed memory at the repository
+root, `<repo>/.agents/memory/`, which is where Muse documents it.
 
 ## OpenAI Codex project configuration
 
@@ -354,12 +356,15 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Kiro** | `kiro` | `.kiro/steering/*.md` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
 | **OpenAI Codex** | `codex-project` | `.codex/hooks.json` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
-| **Committed project memory** | — | `.agents/memory/MEMORY.md` (index) and every other `**/*.md` beside it |
+| **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
 
 `.agents/memory/` is the one row with no type of its own: the convention
 predates every tool that reads it and none owns it, so committed memory is
-linted wherever it appears without making the repository anything in
-particular.
+linted without making the repository anything in particular. It is read from
+the repository root only — `<repo>/.agents/memory/`, which is where Muse
+documents it — and everything below that directory is linted. A copy nested
+somewhere else in the tree is not attached, because it is not memory to the
+tools that read it either.
 
 Discovery and validation are separate layers for Copilot. Every Markdown file
 under `.github/agents/` and every `*.chatmode.md` file under the legacy
@@ -479,8 +484,8 @@ team counterpart to local, per-user memory stores. Muse Code and other tools rea
 this folder, loading `MEMORY.md` as an index at session start and referencing
 individual topic files as questions arise.
 
-skillsaw includes `.agents/memory/` in the lint tree to ensure your team notes remain
-high quality. The index and topic files are scanned with skillsaw's content quality
+skillsaw includes the repository root's `.agents/memory/` in the lint tree to ensure
+your team notes remain high quality. The index and topic files are scanned with skillsaw's content quality
 and security rules, and tracked under the `memory` budget category so instructions
 remain focused, accurate, and within recommended token limits.
 

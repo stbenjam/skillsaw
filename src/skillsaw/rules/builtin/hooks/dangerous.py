@@ -162,121 +162,6 @@ _NETWORK_FETCH_RE = re.compile(
     rf"{_CMD_WRAPPERS}{_ENV_PREFIX}(?:\S+/)?(?:curl|wget|nc|ncat)\b"
 )
 
-# ── Windows command variants ────────────────────────────────────
-#
-# A handler's `commandWindows` / `command_windows` is what Codex and Muse
-# Code run on Windows, and it reaches this scan like any other command —
-# but the grammar above is POSIX shell, so a PowerShell one-liner sails
-# through it. These patterns cover the Windows spellings of the same two
-# primitives the POSIX ones cover: a download fed into execution, and an
-# obfuscated payload.
-#
-# PowerShell is case-insensitive, so they run against the already-computed
-# lowercased command rather than paying for `re.IGNORECASE`. Each one is a
-# token match against the whole string — never a bounded run nested inside
-# another — so a pathological command costs one linear pass per pattern.
-
-# A PowerShell word boundary. Cmdlet names and aliases are word characters
-# and hyphens, and `.` joins a member access, so `piexif` never yields the
-# alias `iex` and `-noiex` is not a call either.
-_PS_WORD_START = r"(?:^|[^\w.-])"
-_PS_WORD_END = r"(?:$|[^\w.-])"
-
-# Patterns for remote downloads via PowerShell web cmdlets (iwr, irm),
-# WebClient methods, or `curl`/`wget` — which on Windows are either the
-# shipped `curl.exe` or PowerShell's own aliases for Invoke-WebRequest.
-# The fetch half is spelled that way often enough that pairing it only
-# with the cmdlets misses `powershell -Command "curl.exe … | iex"`.
-# These are paired with the execution primitives below.
-_PS_DOWNLOAD_RE = re.compile(
-    rf"{_PS_WORD_START}(?:iwr|irm|invoke-webrequest|invoke-restmethod){_PS_WORD_END}"
-    rf"|{_PS_WORD_START}(?:curl|wget)(?:\.exe)?{_PS_WORD_END}"
-    r"|\.download(?:string|file|data)\s*\("
-)
-# Patterns for immediate execution of fetched content (Invoke-Expression,
-# pipeline to PowerShell, or call operators). The call operator rejects a
-# doubled `&`: now that a POSIX-spelled `curl`/`wget` is a fetch half, the
-# ordinary shell `curl … && (cd build && make)` would otherwise read as a
-# call operator on a downloaded file.
-_PS_EXECUTE_RE = re.compile(
-    rf"{_PS_WORD_START}(?:iex|invoke-expression){_PS_WORD_END}"
-    rf"|\|\s*&?\s*(?:powershell|pwsh)(?:\.exe)?{_PS_WORD_END}"
-    r"|(?<!&)&\s*\("
-)
-
-# A fetch and the run of what it wrote need not share a pipeline:
-# `iwr … -OutFile x.ps1; powershell -File x.ps1` puts a separator between
-# them, which the paired patterns above never see. These mirror the POSIX
-# artifact tracking in `_downloads_and_executes` for the Windows spellings:
-# collect the file a fetch wrote, then look for a later segment that runs
-# that path. Every bound is explicit so a pathological command stays linear.
-_PS_SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||;|\||\n")
-_PS_ARTIFACT_TARGET_RE = re.compile(
-    r"[-/]outfile[=:\s]+(\"[^\"]{1,200}\"|'[^']{1,200}'|[^\s,;|&)]{1,200})"
-    r"|\.downloadfile\s*\(\s*[^,)]{1,200},\s*"
-    r"(\"[^\"]{1,200}\"|'[^']{1,200}'|[^\s,)]{1,200})"
-)
-# `-File <path>`: the interpreter's own argument, anywhere in the segment.
-_PS_FILE_ARG_RE = re.compile(r"[-/]file[=:\s]+(\"[^\"]{1,200}\"|'[^']{1,200}'|[^\s;|&]{1,200})")
-# The segment's command word, past an optional call operator and an
-# optional launcher: `& .\x.ps1`, `Start-Process x.ps1`, or a bare path.
-# Only the command position counts — `Expand-Archive tool.zip` names the
-# file it fetched but runs nothing.
-_PS_RUN_TARGET_RE = re.compile(
-    r"^\s*(?:&\s*)?(?:(?:start-process|saps)\s+(?:[-/]\S{1,100}\s+)*)?"
-    r"(\"[^\"]{1,200}\"|'[^']{1,200}'|[^\s;|&]{1,200})"
-)
-
-# Encoded PowerShell commands (e.g. `powershell -EncodedCommand <base64>`).
-_PS_EXE_RE = re.compile(rf"{_PS_WORD_START}(?:powershell|pwsh)(?:\.exe)?{_PS_WORD_END}")
-# Match a flag carrying a payload long enough to be an encoded script. The
-# payload is commonly quoted — `-EncodedCommand "SQBFAFgA…"` is how it
-# survives a JSON hook file and a `cmd.exe` wrapper — so an opening quote
-# may sit between the flag and the base64. The closing quote is not
-# required: the length bound already carries the decision, and demanding
-# it would drop a payload truncated by an unbalanced quote.
-#
-# The flag word is captured rather than enumerated, because PowerShell
-# resolves any unambiguous prefix of a parameter name: `-encodedc`,
-# `-encoded` and `-en` all run what `-EncodedCommand` would.
-_PS_ENCODED_FLAG_RE = re.compile(r"[-/]([a-z]+)\s+[\"']?([a-z0-9+/=]{16,})")
-_PS_ENCODED_PARAM = "encodedcommand"
-#: A bare `-e` is that abbreviation too, but it is also the commonest custom
-#: parameter name, so only a payload too long to be an ordinary value tips it.
-_PS_BARE_E_PAYLOAD_MIN = 40
-
-
-def _is_encoded_command_flag(flag: str, payload: str) -> bool:
-    """Whether *flag* names ``-EncodedCommand`` with a long enough *payload*.
-
-    Every prefix of ``encodedcommand`` down to ``en`` is the real parameter,
-    and ``-ec`` is the documented short form. One letter is not a prefix
-    worth trusting on its own, so ``-e`` is decided by payload length.
-    """
-    if flag == "e":
-        return len(payload) >= _PS_BARE_E_PAYLOAD_MIN
-    return flag == "ec" or (len(flag) >= 2 and _PS_ENCODED_PARAM.startswith(flag))
-
-
-# Built-in Windows utilities commonly used for remote file retrieval
-# (certutil, bitsadmin, mshta, regsvr32) paired with remote URLs.
-_URL_RE = re.compile(r"https?://")
-_CERTUTIL_RE = re.compile(rf"{_PS_WORD_START}certutil(?:\.exe)?{_PS_WORD_END}")
-_CERTUTIL_URLCACHE_RE = re.compile(rf"[-/]urlcache{_PS_WORD_END}")
-_BITSADMIN_RE = re.compile(rf"{_PS_WORD_START}bitsadmin(?:\.exe)?{_PS_WORD_END}")
-_BITSADMIN_TRANSFER_RE = re.compile(rf"[-/]transfer{_PS_WORD_END}")
-# Match mshta executions referencing remote HTTP/HTTPS endpoints directly or via scripts.
-_MSHTA_URL_RE = re.compile(
-    rf"{_PS_WORD_START}mshta(?:\.exe)?\s+[\"']?https?://"
-    rf"|{_PS_WORD_START}mshta(?:\.exe)?\s+[\"']?(?:javascript|vbscript):"
-    r"[^\n]{0,120}?https?://"
-)
-_REGSVR32_RE = re.compile(rf"{_PS_WORD_START}regsvr32(?:\.exe)?{_PS_WORD_END}")
-_REGSVR32_REMOTE_RE = re.compile(r"[-/]i:\s*[\"']?https?://")
-_LOLBIN_DESCRIPTION = (
-    "uses a Windows living-off-the-land downloader (certutil/bitsadmin/mshta/regsvr32)"
-)
-
 #: Fast keyword checks for POSIX download and execution utilities.
 _POSIX_TOKENS = (
     "curl",
@@ -287,109 +172,6 @@ _POSIX_TOKENS = (
     "base64",
     "bun",
 )
-#: Fast keyword checks for Windows download and execution utilities.
-_WINDOWS_TOKENS = (
-    "iwr",
-    "irm",
-    "invoke-web",
-    "invoke-rest",
-    "invoke-expression",
-    "iex",
-    ".download",
-    # The deferred-execution pairing reads a fetch that only wrote a file,
-    # which a POSIX-spelled `wget … -OutFile x.ps1` carries no other
-    # Windows keyword for.
-    "-outfile",
-    "powershell",
-    "pwsh",
-    "certutil",
-    "bitsadmin",
-    "mshta",
-    "regsvr32",
-)
-
-
-def _ps_artifact_name(token: str) -> str:
-    """Normalise a path token so a fetch target and a later run compare equal."""
-    token = token.strip("\"'")
-    for prefix in (".\\", "./"):
-        if token.startswith(prefix):
-            return token[len(prefix) :]
-    return token
-
-
-def _ps_segment_runs(segment: str, artifacts: Set[str]) -> bool:
-    """Whether *segment* executes one of the already-fetched *artifacts*."""
-    file_arg = _PS_FILE_ARG_RE.search(segment)
-    if file_arg and _ps_artifact_name(file_arg.group(1)) in artifacts:
-        return True
-    run_target = _PS_RUN_TARGET_RE.match(segment)
-    return bool(run_target and _ps_artifact_name(run_target.group(1)) in artifacts)
-
-
-def _windows_runs_downloaded_artifact(lower_command: str) -> bool:
-    """Detect a fetch whose file a later command in the same line runs.
-
-    Segments are walked in order, so a run only counts against a file an
-    earlier segment fetched — the download's own segment names the path too.
-    """
-    if "-outfile" not in lower_command and ".downloadfile" not in lower_command:
-        return False
-    artifacts: Set[str] = set()
-    for segment in _PS_SEGMENT_SPLIT_RE.split(lower_command):
-        if artifacts and _ps_segment_runs(segment, artifacts):
-            return True
-        for match in _PS_ARTIFACT_TARGET_RE.finditer(segment):
-            target = _ps_artifact_name(match.group(1) or match.group(2) or "")
-            if target:
-                artifacts.add(target)
-    return False
-
-
-def _windows_downloads_and_executes(lower_command: str) -> bool:
-    """Detect paired PowerShell download and execution commands."""
-    if not _PS_DOWNLOAD_RE.search(lower_command):
-        return False
-    return bool(_PS_EXECUTE_RE.search(lower_command)) or _windows_runs_downloaded_artifact(
-        lower_command
-    )
-
-
-def _windows_encoded_command(lower_command: str) -> bool:
-    """Detect PowerShell commands using encoded command flags."""
-    if not _PS_EXE_RE.search(lower_command):
-        return False
-    return any(
-        _is_encoded_command_flag(match.group(1), match.group(2))
-        for match in _PS_ENCODED_FLAG_RE.finditer(lower_command)
-    )
-
-
-def _windows_lolbin_download(lower_command: str) -> bool:
-    """Detect Windows living-off-the-land binaries downloading remote content."""
-    if not _URL_RE.search(lower_command):
-        return False
-    if (
-        "certutil" in lower_command
-        and _CERTUTIL_RE.search(lower_command)
-        and _CERTUTIL_URLCACHE_RE.search(lower_command)
-    ):
-        return True
-    if (
-        "bitsadmin" in lower_command
-        and _BITSADMIN_RE.search(lower_command)
-        and _BITSADMIN_TRANSFER_RE.search(lower_command)
-    ):
-        return True
-    if "mshta" in lower_command and _MSHTA_URL_RE.search(lower_command):
-        return True
-    if (
-        "regsvr32" in lower_command
-        and _REGSVR32_RE.search(lower_command)
-        and _REGSVR32_REMOTE_RE.search(lower_command)
-    ):
-        return True
-    return False
 
 
 def _mask_quoted_separators(line: str) -> str:
@@ -667,49 +449,28 @@ def _downloads_and_executes(command: str) -> bool:
 def dangerous_command_descriptions(command: str) -> List[str]:
     """Return messages for dangerous patterns in a command."""
     lower_command = command.lower()
-    posix_seen = any(token in lower_command for token in _POSIX_TOKENS)
-    windows_seen = any(token in lower_command for token in _WINDOWS_TOKENS)
-    if not posix_seen and not windows_seen:
+    if not any(token in lower_command for token in _POSIX_TOKENS):
         return []
 
     # Quote-aware view: separators inside quotes are argument data, so the
     # anchored patterns must not treat them as command boundaries. Masking
     # is idempotent, and _downloads_and_executes masks again per line.
-    # The Windows patterns read the unmasked lowercased command instead:
-    # they pair two independent primitives rather than reading a POSIX
-    # command boundary, and PowerShell quoting is not the shell's.
     raw_command = command
     command = _mask_quoted_separators(raw_command)
     findings: List[str] = []
 
-    downloads_and_executes = ("curl" in lower_command or "wget" in lower_command) and (
-        _downloads_and_executes(raw_command)
-    )
-    # `_PS_DOWNLOAD_RE` reads a POSIX-spelled `curl`/`wget` as a fetch half
-    # too, so the Windows pairing has to stay reachable when the execution
-    # half is the only Windows spelling in the command: `wget … ; & ('.\p.ps1')`
-    # carries no `_WINDOWS_TOKENS` keyword at all. Every execution primitive
-    # but the call operator is one of those keywords, which leaves `&` as the
-    # remaining entry point — an ordinary `curl -o tool.zip …` has neither and
-    # still never runs a Windows regex.
-    if not downloads_and_executes and (windows_seen or "&" in lower_command):
-        downloads_and_executes = _windows_downloads_and_executes(lower_command)
-    if downloads_and_executes:
+    if ("curl" in lower_command or "wget" in lower_command) and _downloads_and_executes(
+        raw_command
+    ):
         findings.append("downloads and executes remote code")
 
-    if posix_seen and _OBFUSCATION_RE.search(command):
+    if _OBFUSCATION_RE.search(command):
         findings.append("uses obfuscation techniques (eval/base64)")
 
-    if windows_seen and _windows_encoded_command(lower_command):
-        findings.append("uses obfuscation techniques (PowerShell encoded command)")
-
-    if windows_seen and _windows_lolbin_download(lower_command):
-        findings.append(_LOLBIN_DESCRIPTION)
-
-    if not findings and posix_seen and _BUN_RE.search(command):
+    if not findings and _BUN_RE.search(command):
         findings.append("uses bun runtime (uncommon in hooks, verify intent)")
 
-    if not findings and posix_seen and _NETWORK_FETCH_RE.search(command):
+    if not findings and _NETWORK_FETCH_RE.search(command):
         findings.append("performs network requests (verify intent)")
 
     return findings

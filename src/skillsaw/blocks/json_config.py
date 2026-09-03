@@ -78,6 +78,12 @@ class HookHandler:
     source_line: Optional[int] = None
     # Keep new fields at the end to preserve positional construction.
     command_variants: List[Tuple[str, Optional[int]]] = field(default_factory=list)
+    #: Line of the handler's ``type:`` key. ``source_line`` follows the
+    #: ``command``, which an ``http``/``mcp_tool``/``prompt``/``agent``
+    #: handler does not have — every finding about one was line-less until
+    #: this, in YAML frontmatter that does carry line numbers. JSON-backed
+    #: blocks have no lines to give and leave it ``None``, as they should.
+    type_line: Optional[int] = None
 
     def iter_effective_commands(self) -> Iterator[Tuple[str, Optional[int]]]:
         """Yield each effective command and the line that declared it.
@@ -112,6 +118,7 @@ class HookHandler:
         own shape rule reads the raw document and reports it.
         """
         command_line = commented_key_line(d, "command")
+        type_line = commented_key_line(d, "type")
         command_variants: List[Tuple[str, Optional[int]]] = []
         for key in HOOK_COMMAND_FIELDS:
             value = _as_str(d.get(key))
@@ -142,6 +149,7 @@ class HookHandler:
             shell=_as_str(d.get("shell")),
             allowed_env_vars=_as_str_list(d.get("allowedEnvVars")),
             source_line=command_line + line_offset if command_line is not None else None,
+            type_line=type_line + line_offset if type_line is not None else None,
         )
 
 
@@ -505,6 +513,19 @@ class CursorHooksBlock(HooksBlock):
             configs: List[HookEventConfig] = []
             for entry in entries:
                 if not isinstance(entry, dict):
+                    continue
+                # A shared file — `.cursor/hooks.json` symlinked to the
+                # Codex or Muse document — carries the nested
+                # ``{matcher?, hooks: [...]}`` shape instead. Only the first
+                # host to reach a shared file gets a block for it, so an
+                # entry this class skipped would take its commands out of
+                # reach of every security rule. Reading it with the shared
+                # nested parser is shape-agnostic; ``cursor-hooks-valid``
+                # still judges the format on its own terms.
+                if isinstance(entry.get("hooks"), list):
+                    nested = HookEventConfig.from_dict(entry)
+                    if nested.handlers:
+                        configs.append(nested)
                     continue
                 # ``type`` is optional and defaults to a command hook. Set it
                 # explicitly either way: the shared security rules skip any

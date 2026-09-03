@@ -33,21 +33,15 @@ This rule flags hook commands that:
 - obfuscate their payload (`eval`, `base64 -d`)
 - make network requests
 
-Windows commands (`commandWindows` in Codex and Muse Code, or `command_windows` in
-Muse Code) are scanned with equal care using PowerShell patterns:
-
-- download-and-execute chains (combining web requests like `iwr`, `irm`,
-  `Invoke-WebRequest`, `Invoke-RestMethod`, or `Net.WebClient` with execution
-  via `iex`, `Invoke-Expression`, piping into `powershell`, or the `& (...)` call
-  operator)
-- obfuscated payloads (such as `powershell -EncodedCommand` base64 strings and
-  shorthand flags like `-enc` or `-e`)
-- utility downloaders (`certutil -urlcache`, `bitsadmin /transfer`,
-  `mshta http(s)://...`, and `regsvr32 /i:http(s)://...`)
+The scanner's vocabulary is POSIX shell: a Windows override (`commandWindows` in
+Codex and Muse Code, or `command_windows` in Muse Code) is scanned with the same
+heuristics as any other command, and PowerShell constructs are out of scope by
+design — a project that ships PowerShell hooks should enable
+[`hooks-prohibited`](hooks-prohibited.md), which reviews every hook regardless of
+the language it is written in.
 
 Ordinary setup commands, such as downloading a specific archive to disk
-(`Invoke-WebRequest -Uri ... -OutFile tool.zip`), remain fully supported and
-unflagged.
+(`curl -o tool.zip https://...`), remain fully supported and unflagged.
 
 
 ## Examples

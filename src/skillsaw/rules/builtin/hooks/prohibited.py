@@ -85,8 +85,19 @@ class HooksProhibitedRule(Rule):
         return Severity.ERROR
 
     def _is_allowed(self, command: str) -> bool:
+        """Whether *command* — raw, or as the finding printed it — is allowed.
+
+        The message renders ``safe_display(command)``, which redacts URL
+        userinfo and truncates long values. Matching the raw spelling alone
+        meant a credentialed ``http:`` URL or an overlong ``prompt:``
+        identity could not be allowlisted by the only spelling the operator
+        was ever shown. Both forms are accepted, and the redaction stays.
+        """
         allowlist = self.setting("allowlist")
-        return any(command == entry for entry in allowlist)
+        if any(command == entry for entry in allowlist):
+            return True
+        displayed = safe_display(command)
+        return displayed != command and any(displayed == entry for entry in allowlist)
 
     def _check_events(
         self,
@@ -149,7 +160,11 @@ class HooksProhibitedRule(Rule):
                         self.violation(
                             message,
                             file_path=file_path,
-                            line=handler.source_line or line,
+                            # A handler that runs no command has no
+                            # ``command:`` line to point at; its ``type:`` is
+                            # the line the reader needs. JSON gives neither
+                            # and falls back to the block's own line.
+                            line=handler.type_line or line,
                         )
                     )
         return violations

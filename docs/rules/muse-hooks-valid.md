@@ -57,13 +57,16 @@ A finding's severity is how much of the file the defect costs.
   `sessionStart` matches nothing while correctly cased events keep running.
 - `Setup`, which Muse recognizes from Claude Code's vocabulary and
   deliberately does not run.
-- An empty `hooks` object, event array, or matcher group — valid, and it
-  configures nothing.
+- An empty `hooks` object, event array, or matcher-group `hooks` array —
+  valid, and it configures nothing. (A matcher group with no `hooks` key at
+  all is the error above, not this warning.)
 - A `matcher` that does not compile. Muse compiles matchers with Rust's
   regex engine, which differs from Python's at the edges (no lookarounds or
   backreferences, plus Unicode classes and set operators Python lacks), so
   skillsaw checks the syntax the two dialects share and warns rather than
-  errors.
+  errors. A matcher longer than 1,000 characters is left alone: Muse sets no
+  length limit, so length is not a defect, and a hooks file is untrusted
+  input that the syntax check has no reason to scan without a bound.
 - A handler with `commandWindows` and no `command`: it runs on Windows and
   does nothing on Linux or macOS.
 

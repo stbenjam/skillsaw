@@ -130,7 +130,9 @@ class RepositoryContext(
 
         Args:
             root_path: Root directory of the repository
-            repo_types: Optional explicit repository type override.
+            repo_types: Optional explicit repository type override. It
+                replaces packaging-type detection; the tool types a checkout
+                configures are still detected and unioned in.
             exclude_patterns: Glob patterns (from config) filtering discovered
                 plugins/skills/instruction files. Prefer passing them here so
                 discovery results are filtered from the start, rather than
@@ -196,7 +198,12 @@ class RepositoryContext(
         self.agent_plugins: List[Path] = (
             self._discover_agent_plugins() if self._agent_plugin_discovery_enabled else []
         )
-        self._types_overridden = repo_types is not None
+        # An explicit ``--type`` answers "how is this content packaged", and
+        # ``_refresh_tool_types()`` keeps it authoritative for that half while
+        # still folding in the tools the checkout configures.
+        self._overridden_types: Optional[Set[RepositoryType]] = (
+            set(repo_types) if repo_types is not None else None
+        )
         # Types describing how content is packaged. The tool types are folded
         # in by ``_refresh_tool_types()`` once instruction-file discovery has
         # run — an AGENTS.md is evidence of a tool, and it is not found yet.
@@ -442,13 +449,23 @@ class RepositoryContext(
         and friends, which are not discovered when the packaging types are
         worked out — and again whenever a caller mutates
         ``exclude_patterns``, so an exclude added after construction takes
-        that tool's rules with it. An explicit ``--type`` is the operator's
-        answer and is never second-guessed.
+        that tool's rules with it.
+
+        An explicit ``--type`` is the operator's answer to how the content is
+        *packaged*, and it stays authoritative for that: every forced type
+        survives, including a tool type the checkout has no marker for, so
+        ``--type muse`` runs the Muse rules on a repository that has yet to
+        commit ``.muse/hooks.json``. It is not an answer to which tools the
+        checkout configures, so the detected tool types are unioned in rather
+        than replaced — otherwise ``--type marketplace`` would quietly switch
+        off every tool-gated rule and leave rules that read
+        ``RepositoryType.X in context.repo_types`` reading a stale set.
         """
-        if self._types_overridden:
-            return
-        self.repo_types -= TOOL_REPO_TYPES
-        self.repo_types |= {RepositoryType(value) for value in self._detect_tool_type_values()}
+        detected = {RepositoryType(value) for value in self._detect_tool_type_values()}
+        if self._overridden_types is not None:
+            self.repo_types = set(self._overridden_types) | detected
+        else:
+            self.repo_types = (self.repo_types - TOOL_REPO_TYPES) | detected
         if len(self.repo_types) > 1:
             self.repo_types.discard(RepositoryType.UNKNOWN)
         elif not self.repo_types:

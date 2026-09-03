@@ -73,6 +73,32 @@ def test_both_block_types_carry_the_memory_budget_category(tmp_path) -> None:
     assert [block.category for block in tree.find(AgentMemoryBlock)] == ["memory"]
 
 
+def test_memory_is_read_from_the_repository_root_only(tmp_path) -> None:
+    """`<repo>/.agents/memory/` is where the convention puts it, and where
+    Muse documents it.
+
+    Everything below that one directory is linted; a copy further down the
+    tree is not memory to any tool that reads the checkout, so attaching it
+    would lint an ordinary notes folder as though agents loaded it.
+    """
+    repo = copy_fixture("agent-memory/notes", tmp_path)
+    nested = repo / "packages" / "billing" / ".agents" / "memory"
+    nested.mkdir(parents=True)
+    (nested / "MEMORY.md").write_text("# Billing memory\n\n- [Ledger](ledger.md)\n")
+    (nested / "ledger.md").write_text("# Ledger\n\nThe ledger reconciles nightly.\n")
+    deeper = repo / ".agents" / "memory" / "incidents"
+    deeper.mkdir(parents=True)
+    (deeper / "2026-08.md").write_text("# August\n\nThe alias swap ran twice.\n")
+
+    tree = RepositoryContext(repo).lint_tree
+
+    assert relative(repo, tree.find(AgentMemoryIndexBlock)) == [".agents/memory/MEMORY.md"]
+    assert relative(repo, tree.find(AgentMemoryBlock)) == [
+        ".agents/memory/incidents/2026-08.md",
+        ".agents/memory/reindex.md",
+    ]
+
+
 def test_an_excluded_memory_tree_is_neither_detected_nor_attached(tmp_path) -> None:
     repo = copy_fixture("agent-memory/notes", tmp_path)
 

@@ -25,7 +25,23 @@ results. Dedicated Codex files and inline manifest hooks are checked here.
 These checks were part of `hooks-json-valid` before 0.20.0 split them by
 host. The legacy name resolves to
 [`claude-hooks-valid`](claude-hooks-valid.md) for configuration and
-suppression comments; baselines keep suppressing findings recorded under it.
+suppression comments.
+
+A baseline written under `hooks-json-valid` keeps suppressing a finding from
+this rule only where the message is the same. A hooks file is JSON, which
+carries no line numbers, so the baseline fingerprint hashes the rule name,
+the file path, and the message text — and 0.20.0 rewrote most of these
+messages. Four file-level verdicts kept their wording and carry over:
+
+- `Invalid JSON: <parser error>`
+- `hooks.json must be a JSON object`
+- `hooks.json must contain a 'hooks' key`
+- `'hooks' must be a JSON object`
+
+The per-event and per-handler shape messages were all re-worded, so a
+finding of that kind returns after the upgrade even with the old baseline in
+place. Re-record with `skillsaw baseline` once you have reviewed what came
+back.
 
 ## Severity
 

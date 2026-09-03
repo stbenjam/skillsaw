@@ -497,3 +497,88 @@ def test_the_pre_split_baseline_test_is_not_vacuous(tmp_path):
     assert [v["message"] for v in found] == [
         "Hook PostToolUse[0] 'matcher' must be a string, got list"
     ]
+
+
+#: What ``hooks-json-valid`` printed before 0.20.0 split it by host, for the
+#: two files in the fixture. A hooks file is JSON and carries no line
+#: numbers, so its baseline fingerprint hashes the message text — which makes
+#: the wording, not the rule name, what decides whether an old entry still
+#: matches. The first survived the split word-for-word; the second did not.
+_PRE_SPLIT_MESSAGES = {
+    ".codex/hooks.json": "'hooks' must be a JSON object",
+    "hooks/hooks.json": "Event 'PostToolUse[0].matcher' must be a string",
+}
+
+
+def _pre_split_baseline(repo: Path) -> str:
+    """A baseline as ``hooks-json-valid`` would have written it on 0.19.x."""
+    entries = []
+    for relative, message in _PRE_SPLIT_MESSAGES.items():
+        violation = RuleViolation(
+            rule_id="hooks-json-valid",
+            severity=Severity.ERROR,
+            message=message,
+            file_path=repo / relative,
+        )
+        entries.append(
+            {
+                "fingerprint": fingerprint_violation(violation, repo, _rule_id="hooks-json-valid"),
+                "rule_id": "hooks-json-valid",
+                "file_path": relative,
+                "line": None,
+                "message": message,
+                "severity": "error",
+            }
+        )
+    return json.dumps(
+        {
+            "version": "1",
+            "generated_by": "skillsaw 0.19.2",
+            "generated_at": "2026-08-01T00:00:00+00:00",
+            "violations": entries,
+        },
+        indent=2,
+    )
+
+
+def test_a_pre_split_baseline_carries_over_only_the_unchanged_messages(tmp_path):
+    """The alias carries an entry across the rename; the message decides
+    whether it still matches.
+
+    0.20.0 rewrote most of these findings, and a rewritten one comes back on
+    upgrade however the baseline names the rule — worth stating plainly,
+    because the alias reads like a promise that nothing resurfaces.
+    """
+    repo = copy_fixture("codex/hooks-pre-split-messages", tmp_path)
+    (repo / ".skillsaw-baseline.json").write_text(_pre_split_baseline(repo))
+
+    result = run_cli(["lint", "--format", "json", str(repo)])
+    found = [
+        v for v in json.loads(result.stdout)["violations"] if v["rule_id"] == "codex-hooks-valid"
+    ]
+
+    # The kept wording matches, so the old entry still suppresses it; the
+    # rewritten one no longer hashes to anything the baseline recorded.
+    assert [(v["file_path"], v["message"]) for v in found] == [
+        ("hooks/hooks.json", "Hook PostToolUse[0] 'matcher' must be a string, got list")
+    ]
+
+
+def test_the_message_carryover_test_is_not_vacuous(tmp_path):
+    """Both findings are there to begin with, and the fixture's project file
+    really does produce the message that survived the split."""
+    repo = copy_fixture("codex/hooks-pre-split-messages", tmp_path)
+
+    result = run_cli(["lint", "--format", "json", str(repo)])
+    found = {
+        v["file_path"]: v["message"]
+        for v in json.loads(result.stdout)["violations"]
+        if v["rule_id"] == "codex-hooks-valid"
+    }
+
+    assert found == {
+        ".codex/hooks.json": "'hooks' must be a JSON object",
+        "hooks/hooks.json": "Hook PostToolUse[0] 'matcher' must be a string, got list",
+    }
+    assert found[".codex/hooks.json"] == _PRE_SPLIT_MESSAGES[".codex/hooks.json"]
+    assert found["hooks/hooks.json"] != _PRE_SPLIT_MESSAGES["hooks/hooks.json"]

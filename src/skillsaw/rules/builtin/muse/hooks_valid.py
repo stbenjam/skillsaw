@@ -29,7 +29,21 @@ _MAX_LOCATIONS = 4
 
 #: Unicode character classes: ``\p{Greek}``, ``\pL`` and their negations.
 #: Rust's ``regex`` crate compiles these and Python's ``re`` raises on them.
-_RUST_UNICODE_CLASS = re.compile(r"\\[pP](?:\{[^}]*\}|[A-Za-z])")
+#: The braced name is bounded: no Unicode script or property name comes near
+#: 64 characters, and an unbounded run inside an untrusted matcher is work
+#: this rule has no reason to accept. A longer run simply does not match, so
+#: the ``\p`` survives into ``re.compile`` and is reported as it was before.
+_RUST_UNICODE_CLASS = re.compile(r"\\[pP](?:\{[^}]{0,64}\}|[A-Za-z])")
+
+#: Longest matcher this rule will compile-check. `.muse/hooks.json` is
+#: untrusted input and the check translates the matcher — two regex passes
+#: and a character walk — before handing it to ``re.compile``, whose own
+#: parser is where a pathological pattern gets expensive. A real Muse matcher
+#: names tools (``Write|Edit|Bash``), so the cap is orders of magnitude above
+#: anything an author writes. Past it the rule reports *nothing* rather than
+#: "too long": Muse imposes no length limit, so length is not a defect and a
+#: finding for it would be a false positive.
+_MAX_MATCHER_LENGTH = 1000
 
 #: Rust's character-class set operators: ``[a-z&&[^aeiou]]``,
 #: ``[\w--\d]``, ``[a-g~~b-h]``. Python has no equivalent syntax.
@@ -358,6 +372,10 @@ class _FileCheck:
             ]
 
         if matcher in _WILDCARD_MATCHERS:
+            return []
+
+        # Bound the work an oversized matcher can ask for before touching it.
+        if len(matcher) > _MAX_MATCHER_LENGTH:
             return []
 
         try:
