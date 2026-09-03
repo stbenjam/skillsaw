@@ -1,0 +1,9 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [{ "type": "http", "timeout": 10 }]
+      }
+    ]
+  }
+}

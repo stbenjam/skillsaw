@@ -495,6 +495,11 @@ def test_top_level_keys_other_than_hooks_are_ignored(tmp_path) -> None:
         r"\pL",
         "[a-z&&[^aeiou]]",
         r"[\w--\d]",
+        # Rust's named capture group. Python spells it `(?P<tool>...)` and
+        # raises "unknown extension ?<t" on this one, so the rewrite has to
+        # cover it — and must not swallow `(?<=` / `(?<!`, which are
+        # look-behind and reported below.
+        "(?<tool>Bash|Write)",
     ],
 )
 def test_the_matchers_python_cannot_compile_but_muse_can(tmp_path, matcher) -> None:
@@ -576,6 +581,69 @@ def test_a_rust_only_atom_does_not_waive_the_rest_of_the_pattern(tmp_path, match
     violation = only(check(repo), "does not compile")
 
     assert violation.severity == Severity.WARNING
+
+
+@pytest.mark.parametrize(
+    ("matcher", "detail"),
+    [
+        (r"(?<=x)y", "Rust's regex has no look-around"),
+        ("(?=Write)Write", "Rust's regex has no look-around"),
+        (r"(a)\1", "Rust's regex has no backreferences"),
+        ("(?P<n>a)(?P=n)", "Rust's regex has no backreferences"),
+    ],
+)
+def test_a_construct_python_accepts_and_rust_refuses_is_named(tmp_path, matcher, detail) -> None:
+    """The dialects diverge in both directions, and this is the direction a
+    compile check cannot see: Python accepts look-around and backreferences,
+    Rust's finite-automaton engine has neither, and Muse drops the matcher
+    group without a word."""
+    repo = write_repo(tmp_path / f"unsupported-{abs(hash(matcher))}")
+    (repo / ".muse").mkdir()
+    (repo / ".muse" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": matcher,
+                            "hooks": [{"type": "command", "command": "./audit.sh"}],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    violations = check(repo)
+
+    assert len(violations) == 1
+    assert violations[0].severity == Severity.WARNING
+    assert violations[0].message.endswith(f"does not compile: {detail}")
+
+
+@pytest.mark.parametrize("matcher", [r"\(?=", "[(?=]"])
+def test_a_look_around_run_that_is_only_literal_text_is_not_reported(tmp_path, matcher) -> None:
+    """`\\(?=` is an optional literal paren and `[(?=]` is a character class:
+    both dialects read the run as text, so naming a construct here would call
+    a working matcher broken."""
+    repo = write_repo(tmp_path / f"literal-{abs(hash(matcher))}")
+    (repo / ".muse").mkdir()
+    (repo / ".muse" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": matcher,
+                            "hooks": [{"type": "command", "command": "./audit.sh"}],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    assert check(repo) == []
 
 
 def test_a_pathological_pattern_does_not_crash_the_rule(tmp_path) -> None:

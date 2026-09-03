@@ -45,7 +45,7 @@ rules:
   context-budget:
     limits:
       instruction:
-        warn: 5000
+        warn: 5250
   content-progressive-disclosure:
     limits:
-      instruction: 5000
+      instruction: 5250

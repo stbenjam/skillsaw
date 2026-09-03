@@ -162,6 +162,27 @@ RULE_GROUPS = [
         "automatically when Devin repository context is present.",
     ),
     (
+        "Grok Build",
+        ["grok-agent-valid", "grok-hooks-valid"],
+        "Validates `.grok/hooks/*.json`, the project hooks Grok Build loads and "
+        "silently refuses when they are malformed. What a defect costs depends "
+        "on where it is: a wrong-typed field or a handler with no `type` "
+        "refuses the whole file, an uncompilable matcher drops that group, an "
+        "unknown event skips its entries, and a handler with nothing to run "
+        "drops that handler — none of it reported, because `grok inspect` "
+        "emits no configuration warning for any of them. Grok accepts several "
+        "spellings of every event, including Cursor's, so a shared hooks file "
+        "is not reported for the spelling it uses. `grok-agent-valid` covers the "
+        "other surface Grok refuses in silence: a `.grok/agents/*.md` subagent "
+        "missing the `name` or `description` its loader registers it by. Grok "
+        "reads AGENTS.md for "
+        "portable instructions and portable Agent Skills from `.grok/skills/`, "
+        "and its rules, commands and agent prose get the content and security "
+        "rules every format shares, so no Grok-specific instruction format "
+        "is validated. Enabled automatically when a `.grok/` project layer "
+        "exists.",
+    ),
+    (
         "Hooks",
         [
             "claude-hooks-valid",
@@ -171,8 +192,9 @@ RULE_GROUPS = [
         "Validates hook configuration. The security rules scan every hook a repository "
         "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
         "Codex's `.codex/hooks.json` and plugin hooks, Muse Code's `.muse/hooks.json`, "
-        "Cursor's `.cursor/hooks.json`, and skill, Claude-agent, and Copilot-agent "
-        "frontmatter (`hooks:` key) — for supply-chain attack patterns (inspired by the "
+        "Grok Build's `.grok/hooks/*.json`, Cursor's `.cursor/hooks.json`, and skill, "
+        "Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain "
+        "attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (

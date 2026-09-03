@@ -162,6 +162,7 @@ be defined:
 | Codex manifest-declared or inline `hooks` | hooks-dangerous, hooks-prohibited |
 | Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
 | `.muse/hooks.json` | hooks-dangerous, hooks-prohibited |
+| `.grok/hooks/*.json` (repo root or any package) | hooks-dangerous, hooks-prohibited |
 | `.cursor/hooks.json` | hooks-dangerous, hooks-prohibited |
 | Copilot / VS Code agent `hooks:` frontmatter | hooks-dangerous, hooks-prohibited |
 | Copilot cloud/shared agent `mcp-servers:` frontmatter | mcp-prohibited, mcp-valid-json |

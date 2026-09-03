@@ -1,0 +1,9 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [{ "command": "./scripts/log-tool-use.sh" }]
+      }
+    ]
+  }
+}

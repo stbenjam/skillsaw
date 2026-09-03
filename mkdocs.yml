@@ -136,6 +136,7 @@ nav:
     - Copilot / VS Code: rules/copilot.md
     - Cursor: rules/cursor.md
     - Devin: rules/devin.md
+    - Grok Build: rules/grok.md
     - Hooks: rules/hooks.md
     - Instruction Files: rules/instruction-files.md
     - MCP: rules/mcp.md

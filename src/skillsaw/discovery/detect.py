@@ -14,7 +14,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
-from skillsaw.formats import codex, devin, muse
+from skillsaw.formats import codex, devin, grok, muse
 from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
@@ -31,9 +31,10 @@ VENDOR_DIR_NAMES = frozenset(
 )
 
 # Editor-owned directories whose contents ship in a repository. Cursor,
-# Copilot/VS Code, Cline, Devin and OpenCode all read these from the nearest
-# enclosing folder as well as the repository root, so a monorepo package can
-# carry its own set — hence a walk rather than a root-anchored lookup.
+# Copilot/VS Code, Cline, Devin, OpenCode and Grok Build all read these from
+# the nearest enclosing folder as well as the repository root, so a monorepo
+# package can carry its own set — hence a walk rather than a root-anchored
+# lookup.
 AGENT_TOOL_DIR_NAMES = frozenset(
     {
         ".cursor",
@@ -42,10 +43,29 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         ".vscode",
         ".opencode",
         codex.CODEX_DIR_NAME,
+        grok.TOOL_DIR_NAME,
         muse.TOOL_DIR_NAME,
         *devin.TOOL_DIR_NAMES,
     }
 )
+
+# The tool directories whose nested ``skills/`` component is handed to the
+# skill walk today. ``CONVENTIONAL_SKILL_DIRS`` names each one's
+# root-relative spelling, which is where a single-package repository puts
+# it; a monorepo package carries its own, and the generic skill walk never
+# finds that one because it skips hidden directories. So the nested roots
+# are handed over explicitly, from the walk that already located the
+# directory. This is not every tool with a ``skills/`` spelling in that
+# table — ``.cursor``, ``.github``, ``.clinerules`` and ``.opencode`` are
+# not here yet, so a package's copy of those is still found only at the
+# repository root.
+#
+# One tuple for both readers — ``marker_types`` below, which decides whether
+# the repository is an Agent Skills repository at all, and
+# ``RepositoryContext._discover_skills``, which passes them to
+# ``discover_skills``. A name in only one of the two is a skill that is
+# counted but never linted, or found but never counted.
+NESTED_TOOL_SKILL_DIRS = (*devin.TOOL_DIR_NAMES, grok.TOOL_DIR_NAME)
 
 
 @dataclass
@@ -218,6 +238,36 @@ _TOOL_EVIDENCE = {
         muse.TOOL_DIR_NAME,
         ((muse.HOOKS_FILENAME, False),),
     ),
+    # Grok Build reads a whole project layer from ``.grok/``, and any one
+    # piece of it is enough: the skills, rules, commands and agents load
+    # unconditionally, while hooks and LSP additionally need folder trust.
+    # The second group is listed even though nothing parses or attaches it
+    # yet — a repository that configures only an MCP server through
+    # ``.grok/config.toml``, or only a sandbox policy, is still a Grok
+    # repository, and the summary should say so rather than ``unknown``.
+    # Existence is the whole test for those, which is why adding one is a
+    # line here and nothing else: with nothing attached there is no
+    # attachment for detection to disagree with. ``plugins/`` is an install
+    # location Grok's own plugin discovery owns, so it is deliberately not
+    # evidence, and there is no ``.grok/mcp.json``: Grok reads project MCP
+    # servers from ``config.toml`` and the repository-root ``.mcp.json``
+    # only.
+    "grok-project": (
+        grok.TOOL_DIR_NAME,
+        (
+            (grok.RULES_DIR_NAME, True),
+            (grok.SKILLS_DIR_NAME, True),
+            (grok.AGENTS_DIR_NAME, True),
+            (grok.COMMANDS_DIR_NAME, True),
+            (grok.HOOKS_DIR_NAME, True),
+            (grok.CONFIG_FILENAME, False),
+            (grok.LSP_FILENAME, False),
+            (grok.WORKFLOWS_DIR_NAME, True),
+            (grok.ROLES_DIR_NAME, True),
+            (grok.PERSONAS_DIR_NAME, True),
+            (grok.SANDBOX_FILENAME, False),
+        ),
+    ),
     # ``hooks.json`` is the only committed project-layer configuration
     # skillsaw reads from ``.codex/``. ``.codex/plugins/`` is an install
     # location — vendor-managed content that Codex's own plugin discovery
@@ -343,6 +393,10 @@ def tool_types(
         # convention Muse reads — projects were committing them before Muse
         # shipped — so they are no more evidence of Muse than AGENTS.md is.
         ("muse", tool_marker("muse")),
+        # Grok reads ``AGENTS.md`` and ``CLAUDE.md`` too, and both already
+        # carry their own types, so ``.grok/`` itself is the only marker
+        # that is Grok Build's alone.
+        ("grok-project", tool_marker("grok-project")),
         ("codex-project", tool_marker("codex-project")),
         ("gemini", marker("GEMINI.md")),
         ("qwen", marker("QWEN.md")),
@@ -482,17 +536,17 @@ def marker_types(
     """Return independently detectable type labels (excluding ecosystems)."""
     found: Set[str] = set()
     resolved_root = safe_resolve(root)
-    devin_skill_roots: List[Path] = []
+    nested_skill_roots: List[Path] = []
     if resolved_root is not None:
-        for name in devin.TOOL_DIR_NAMES:
+        for name in NESTED_TOOL_SKILL_DIRS:
             for directory in (tool_dirs or {}).get(name, ()):
                 skill_root = directory / "skills"
                 resolved_skill_root = safe_resolve(skill_root)
                 if resolved_skill_root is not None and resolved_skill_root.is_relative_to(
                     resolved_root
                 ):
-                    devin_skill_roots.append(skill_root)
-    if is_agentskills_repo(root, should_skip, devin_skill_roots):
+                    nested_skill_roots.append(skill_root)
+    if is_agentskills_repo(root, should_skip, nested_skill_roots):
         found.add("agentskills")
     if apm:
         found.add("apm")

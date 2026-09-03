@@ -6,7 +6,6 @@ and handler fields. Severity carries the blast radius — what each defect
 costs, and how to fix it, is on the rule's documentation page.
 """
 
-import re
 from typing import Any, Dict, List, Optional, Set
 
 from skillsaw.blocks import json_token
@@ -15,6 +14,7 @@ from skillsaw.diagnostics import safe_display
 from skillsaw.formats import muse
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import MuseHooksBlock
+from skillsaw.rules.builtin.utils import rust_matcher_error
 
 #: Matchers Muse treats as "everything" rather than compiling as a pattern.
 #: ``"*"`` is not a valid regex — reporting it would be a false positive on
@@ -28,75 +28,6 @@ _ACCEPTED_TYPES = ", ".join(f"'{name}'" for name in sorted(muse.HOOK_HANDLER_TYP
 #: it stops listing them. A file copied from Claude Code carries the same
 #: stray key in every group, and thirty findings for one habit is noise.
 _MAX_LOCATIONS = 4
-
-#: Unicode character classes: ``\p{Greek}``, ``\pL`` and their negations.
-#: Rust's ``regex`` crate compiles these and Python's ``re`` raises on them.
-#: The braced name is bounded: no Unicode script or property name comes near
-#: 64 characters, and an unbounded run inside an untrusted matcher is work
-#: this rule has no reason to accept. A longer run simply does not match, so
-#: the ``\p`` survives into ``re.compile`` and is reported as it was before.
-_RUST_UNICODE_CLASS = re.compile(r"\\[pP](?:\{[^}]{0,64}\}|[A-Za-z])")
-
-#: Longest matcher this rule will compile-check. `.muse/hooks.json` is
-#: untrusted input and the check translates the matcher — two regex passes
-#: and a character walk — before handing it to ``re.compile``, whose own
-#: parser is where a pathological pattern gets expensive. A real Muse matcher
-#: names tools (``Write|Edit|Bash``), so the cap is orders of magnitude above
-#: anything an author writes. Past it the rule reports *nothing* rather than
-#: "too long": Muse imposes no length limit, so length is not a defect and a
-#: finding for it would be a false positive.
-_MAX_MATCHER_LENGTH = 1000
-
-#: Rust's character-class set operators: ``[a-z&&[^aeiou]]``,
-#: ``[\w--\d]``, ``[a-g~~b-h]``. Python has no equivalent syntax.
-_RUST_CLASS_SET_OPERATOR = re.compile(r"&&|--|~~")
-
-
-def _to_python_regex(pattern: str) -> str:
-    """*pattern* with Rust-only atoms rewritten to Python-compatible ones.
-
-    Muse compiles a matcher with the Rust ``regex`` crate, whose dialect is
-    not Python's: it has no look-around and no backreferences, and it adds
-    two constructs a hooks file plausibly reaches — Unicode character
-    classes and the character-class set operators. Python raises on both,
-    so compiling the pattern as written would call a working matcher
-    broken. Skipping such a pattern instead would drop every other defect
-    in it: ``(\\pL`` leaves a group unclosed, which costs the matcher group
-    whatever engine reads it.
-
-    So the Rust-only atoms are substituted rather than the check skipped —
-    ``\\p{...}`` and its short forms become ``\\w``, the set operators are
-    dropped — and what is left is the structure both dialects share.
-    """
-    substituted = _RUST_UNICODE_CLASS.sub(r"\\w", pattern)
-    if "[" not in substituted:
-        return substituted
-
-    # The set operators only mean anything inside a character class: ``a--b``
-    # outside one is three literal characters in either dialect. Escapes are
-    # consumed whole so a ``\[`` does not open a class.
-    out: List[str] = []
-    depth = 0
-    index = 0
-    end = len(substituted)
-    while index < end:
-        char = substituted[index]
-        if char == "\\":
-            out.append(substituted[index : index + 2])
-            index += 2
-            continue
-        if depth:
-            operator = _RUST_CLASS_SET_OPERATOR.match(substituted, index)
-            if operator is not None:
-                index = operator.end()
-                continue
-        if char == "[":
-            depth += 1
-        elif char == "]" and depth:
-            depth -= 1
-        out.append(char)
-        index += 1
-    return "".join(out)
 
 
 class MuseHooksValidRule(Rule):
@@ -394,19 +325,10 @@ class _FileCheck:
         if matcher in _WILDCARD_MATCHERS:
             return []
 
-        # Bound the work an oversized matcher can ask for before touching it.
-        if len(matcher) > _MAX_MATCHER_LENGTH:
-            return []
-
-        try:
-            # Rewritten, not skipped: a pattern carrying a Rust-only atom
-            # still has the structure both dialects share, and an unclosed
-            # group costs the matcher group whatever engine reads it.
-            re.compile(_to_python_regex(matcher))
-        except (re.error, RecursionError, OverflowError) as err:
+        detail = rust_matcher_error(matcher)
+        if detail is not None:
             # A warning, not an error: Muse compiles matchers with Rust's
             # regex engine, and the dialects differ at the edges.
-            detail = getattr(err, "msg", None) or str(err)
             return [
                 self._violation(
                     f"Hook {where} 'matcher' {safe_display(repr(matcher))} does not "

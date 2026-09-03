@@ -280,6 +280,58 @@ surfaces, so neither is Muse evidence on its own — but both are linted:
 `AGENTS.md` wherever it appears, and committed memory at the repository
 root, `<repo>/.agents/memory/`, which is where Muse documents it.
 
+## Grok Build
+
+Repositories with a `.grok/` project layer — a `.grok/` directory carrying
+any of `rules/`, `skills/`, `agents/`, `commands/`, `hooks/`, `config.toml`,
+`lsp.json`, `workflows/`, `roles/`, `personas/` or `sandbox.toml` — the
+layer [Grok Build](https://github.com/xai-org/grok-build) reads. An empty
+`.grok/` is not detected. skillsaw finds a project layer at the repository
+root and in any subpackage, because Grok reads the `.grok/` layer of the
+project it is started in.
+
+Most of what is attached is linted by rules that already existed:
+`.grok/skills/*/SKILL.md` are portable Agent Skills and get the full skill
+rule set, and `.grok/rules/*.md`, `.grok/commands/*.md` and
+`.grok/agents/*.md` get the shared content and security rules. Grok reads
+each of those three directories at the top level only, so a file nested a
+directory deeper is not attached either — it is not context Grok loads.
+`.grok/skills/` is the exception and is walked in full. `config.toml`,
+`lsp.json`, `sandbox.toml`, `workflows/`, `roles/` and `personas/` are
+detection evidence only today — nothing under them is read or linted yet;
+covering them is later work (see the
+[Grok Build design record](https://github.com/stbenjam/skillsaw/blob/main/docs/designs/grok-build.md)).
+
+Two things in that layer are Grok's own structure, on top of the shared
+rules above. [`grok-hooks-valid`](rules/grok-hooks-valid.md) validates every
+`.grok/hooks/*.json` — Grok merges the whole directory, so a repository may
+have several — against Grok's events, alias table and handler fields. This
+matters more than it sounds: Grok refuses a whole file over one wrong-typed
+field and reports nothing when it does, so a rejected file, a dropped matcher
+group and a skipped handler all look like a hook that had nothing to do. The
+commands themselves are scanned by
+[`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md).
+[`grok-agent-valid`](rules/grok-agent-valid.md) covers the other one: a
+`.grok/agents/*.md` whose frontmatter is missing, malformed, or without
+`name` or `description` is dropped by Grok, and the subagent never appears
+in the agent list.
+
+Two things in that layer decide whether a file loads at all, and neither
+changes what skillsaw lints. Grok gates hooks, MCP and LSP on folder trust —
+until a project is trusted they are silently skipped — while skills, rules,
+commands and agents load whether or not the folder is trusted. Trust is a
+per-machine decision recorded outside the repository, so skillsaw lints the
+files as committed. Project MCP servers are declared in `.grok/config.toml`
+under `[mcp_servers]` and in the repository-root `.mcp.json`, which skillsaw
+already lints; there is no `.grok/mcp.json`.
+
+Grok reads `AGENTS.md` and `CLAUDE.md` for portable instructions, both of
+which carry their own repository types, so a `.grok/` directory is the only
+marker that is Grok Build's alone. `.grok/plugins/` is an install location
+for project-scoped plugins rather than authored configuration, so it is
+neither evidence nor linted here.
+
 ## OpenAI Codex project configuration
 
 Repositories with a `.codex/hooks.json`, the project layer Codex reads from
@@ -327,7 +379,7 @@ visible to rules by default but are never autofixed; see
 [`lint-external-content`](configuration.md#external-content) for the opt-out.
 
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
-— Cursor, Copilot, Cline, OpenCode, Muse Code and Codex all read it, and one well-linted
+— Cursor, Copilot, Cline, OpenCode, Muse Code, Grok Build and Codex all read it, and one well-linted
 AGENTS.md beats five per-vendor copies that drift apart. skillsaw does not
 reimplement a per-vendor instruction format on top of it; what it adds is
 coverage of the prose each tool keeps in its own directory, plus structural
@@ -355,6 +407,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `kiro` | `.kiro/steering/*.md` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
+| **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json` — see [Grok Build](#grok-build) |
 | **OpenAI Codex** | `codex-project` | `.codex/hooks.json` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
 | **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
 

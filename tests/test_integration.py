@@ -4957,6 +4957,7 @@ BROKEN_FIXTURES = [
     "opencode/broken",
     "opencode/malformed-shapes",
     "muse/broken",
+    "grok/project-broken",
     "skills-lock/invalid",
 ]
 
@@ -4987,6 +4988,7 @@ CLEAN_FIXTURES = [
     "opencode/native-v1",
     "opencode/native-v2",
     "muse/clean",
+    "grok/project-clean",
     "agent-memory/notes",
 ]
 

@@ -10,6 +10,8 @@ from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
     CommandBlock,
     CopilotAgentBlock,
+    GrokAgentBlock,
+    GrokCommandBlock,
     OpenCodeAgentBlock,
     OpenCodeCommandBlock,
     SkillBlock,
@@ -107,6 +109,11 @@ class DescriptionRoutingRule(Rule):
         # the repositories it is for.
         RepositoryType.COPILOT,
         RepositoryType.OPENCODE,
+        # Grok routes a subagent by its description the same way, and its
+        # commands carry the blurb `grok` shows in the picker. Without this
+        # the ``GrokAgentBlock`` and ``GrokCommandBlock`` traversals below
+        # would never run on a repository configured only through `.grok/`.
+        RepositoryType.GROK_PROJECT,
     }
 
     config_schema = {
@@ -177,8 +184,10 @@ class DescriptionRoutingRule(Rule):
             AgentBlock,
             CopilotAgentBlock,
             OpenCodeAgentBlock,
+            GrokAgentBlock,
             CommandBlock,
             OpenCodeCommandBlock,
+            GrokCommandBlock,
         ):
             for block in self.dependency_scoped_find(context, block_type):
                 if block.frontmatter_error:
@@ -266,7 +275,13 @@ class DescriptionRoutingRule(Rule):
                 # meaningful, non-name-restating description (checked below),
                 # but the trigger-phrasing style is not imposed on them.
                 if (
-                    block_type not in (CommandBlock, CopilotAgentBlock, OpenCodeCommandBlock)
+                    block_type
+                    not in (
+                        CommandBlock,
+                        CopilotAgentBlock,
+                        OpenCodeCommandBlock,
+                        GrokCommandBlock,
+                    )
                     and not self._is_user_selected_agent(block_type, block)
                     and self.setting("require-trigger-phrasing")
                     and not self._has_trigger_phrase(text)

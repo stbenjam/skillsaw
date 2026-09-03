@@ -8,6 +8,7 @@ content-quality rules never see them.  Dedicated rules locate them with
 
 from __future__ import annotations
 
+import codecs
 import math
 from itertools import islice
 from dataclasses import dataclass, field
@@ -280,6 +281,26 @@ class JsonConfigBlock(LintTarget):
         content = read_text(self.path)
         return len(content) // 4 if content else 0
 
+    def has_utf8_bom(self) -> bool:
+        """Whether the file on disk opens with a UTF-8 byte-order mark.
+
+        skillsaw reads with ``utf-8-sig``, which drops a BOM without a word,
+        so the parsed document looks perfectly valid and every shape check
+        passes. A host whose reader does not strip one sees ``\\ufeff{`` and
+        refuses the file — verified for Grok Build 1.0.13, where ``grok
+        inspect --json`` loads zero hooks from a BOM-prefixed file that is
+        otherwise correct. So the answer belongs to the host: only a rule
+        for one that is known to refuse it should ask.
+
+        Three bytes off the front rather than the cached text, because the
+        cache is exactly what already dropped the mark.
+        """
+        try:
+            with open(self.path, "rb") as handle:
+                return handle.read(3) == codecs.BOM_UTF8
+        except OSError:
+            return False
+
     def first_non_finite(self) -> Optional[Tuple[str, float]]:
         """The first ``NaN``/``Infinity`` in this document, as ``(path, value)``.
 
@@ -346,13 +367,14 @@ class HooksBlock(JsonConfigBlock):
     Shape validation is per host, because each host has its own event
     list, handler types, and fields: ``claude-hooks-valid`` iterates
     :class:`ClaudeHooksBlock`, ``codex-hooks-valid`` :class:`CodexHooksBlock`,
-    ``muse-hooks-valid`` :class:`MuseHooksBlock`, and ``cursor-hooks-valid``
+    ``muse-hooks-valid`` :class:`MuseHooksBlock`, ``grok-hooks-valid``
+    :class:`GrokHooksBlock`, and ``cursor-hooks-valid``
     :class:`CursorHooksBlock` — so a file is checked against the vocabulary
     of the tool that will actually load it. The tree builder picks the
     subclass from where the file lives and who claims the directory.
 
-    :attr:`events` parses the nested shape Claude Code defined and Codex and
-    Muse Code adopted: ``{hooks: {Event: [{matcher?, hooks: [{type,
+    :attr:`events` parses the nested shape Claude Code defined and Codex,
+    Muse Code and Grok Build adopted: ``{hooks: {Event: [{matcher?, hooks: [{type,
     command, ...}]}]}}``. A host with a different shape overrides it
     (Cursor).
     """
@@ -421,6 +443,30 @@ class MuseHooksBlock(HooksBlock):
 
     def tree_label(self) -> str:
         return f"{self.path.name} (muse hooks)"
+
+
+@dataclass(eq=False)
+class GrokHooksBlock(HooksBlock):
+    """One file from ``.grok/hooks/`` — Grok Build's committed project hooks.
+
+    Grok reads that directory as a flat ``*.json`` glob and merges every
+    file, so a repository has as many of these blocks as it has files. The
+    label carries the filename for that reason: "hooks.json" alone would not
+    say which of them a finding is about.
+
+    Same nested shape as Claude's, with Grok's own events, alias table and
+    handler fields. Its loader refuses a whole file over one wrong-typed
+    field and reports nothing when it does, which is what
+    ``grok-hooks-valid`` exists to say.
+
+    Lenient JSON parsing, deliberately, for the reason
+    :class:`MuseHooksBlock` documents: Grok reads the file with
+    ``serde_json``, which takes the last of two duplicate keys and runs it,
+    and both security rules skip a block carrying a ``parse_error``.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (grok hooks)"
 
 
 def _inline_payload_token_count(data: Any) -> int:
@@ -495,6 +541,15 @@ class _InlineJsonPayload:
 
     def estimate_tokens(self) -> int:
         return _inline_payload_token_count(self.inline_data)
+
+    def has_utf8_bom(self) -> bool:
+        """Never: this config has no file of its own.
+
+        ``path`` is the manifest that carries the payload, so the base
+        implementation would answer a question about a *different* document
+        and report the inline hooks for a mark on the file around them.
+        """
+        return False
 
     # LintTarget compares by (type, resolved path), which assumes the path
     # identifies the config. It does not here: a manifest can declare an

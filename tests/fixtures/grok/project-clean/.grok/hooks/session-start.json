@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/print-schema-version.sh",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/record-session.sh",
+            "env": { "TESSELLATE_LOG_FORMAT": "json" }
+          }
+        ]
+      }
+    ]
+  }
+}

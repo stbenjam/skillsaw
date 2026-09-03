@@ -1,0 +1,9 @@
+{
+  "hooks": {
+    "PreToolUseFailure": [
+      {
+        "hooks": [{ "type": "command", "command": "./scripts/note-failure.sh" }]
+      }
+    ]
+  }
+}

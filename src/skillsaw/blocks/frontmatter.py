@@ -578,6 +578,26 @@ class CursorCommandBlock(FrontmatteredBlock):
 
 
 @dataclass(eq=False)
+class GrokCommandBlock(FrontmatteredBlock):
+    """.grok/commands/*.md — Grok Build's legacy slash commands.
+
+    Grok loads one as a project *skill*: ``grok inspect`` lists a
+    ``.grok/commands/hello.md`` alongside ``.grok/skills/``. It is budgeted
+    as a ``command`` all the same, because that is when the prose enters the
+    context window — on demand, when the user invokes it.
+    """
+
+    category: str = "command"
+
+
+@dataclass(eq=False)
+class GrokAgentBlock(FrontmatteredBlock):
+    """.grok/agents/*.md — Grok Build's project subagents."""
+
+    category: str = "agent"
+
+
+@dataclass(eq=False)
 class CopilotPromptBlock(FrontmatteredBlock):
     """.github/prompts/**/*.prompt.md — Copilot prompt files."""
 

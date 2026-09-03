@@ -40,6 +40,10 @@ from .blocks import (
     DevinSkillBlock,
     ExtraBlock,
     GeminiMdBlock,
+    GrokAgentBlock,
+    GrokCommandBlock,
+    GrokHooksBlock,
+    GrokRuleBlock,
     HooksBlock,
     InstructionBlock,
     McpBlock,
@@ -72,7 +76,7 @@ from .formats.codex import (
 )
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.opencode import contained_instruction_globs
-from .formats import devin, muse
+from .formats import devin, grok, muse
 from .utils import has_apm_generated_header, read_text
 from .paths import (
     contained_resolve,
@@ -330,7 +334,10 @@ def _add_project_hooks(
     host and the security rules report each of its commands once per block.
     Whichever host reaches it first keeps it: the security rules read every
     hooks class alike, and the later host's shape rule simply does not see a
-    file that host chose to share.
+    file that host chose to share. Grok contributes a directory of candidates
+    (``.grok/hooks/*.json``) rather than one well-known name, and its loop
+    runs last, so a Grok file symlinked to another host's is that host's
+    block.
     """
     if _attached_as_hooks(state, path):
         return
@@ -715,6 +722,41 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # directory as well as the repository root, so a monorepo package can
     # carry its own — hence the walk-backed ``agent_tool_dirs`` rather than a
     # root-anchored lookup.
+    def _readable_matches(directory: Path, pattern: str) -> List[Path]:
+        """Every *pattern* match under *directory*, or nothing if it is unread.
+
+        The four guards in this helper are what any glob of a repository directory
+        needs, and a caller that skips the last one fails *silently*: a
+        directory that cannot be read looks exactly like a directory with
+        nothing in it, so the run stays green over content nobody scanned.
+        Hence one helper rather than a guard per call site.
+        """
+        if not safe_is_dir(directory):
+            return []
+        # An excluded directory is not walked. Testing only each match would
+        # let `exclude: [".cursor/rules"]` through — the pattern names the
+        # directory and the matches are its children — leaving the files in
+        # every content and security rule while format detection, which does
+        # honour the directory, disagrees.
+        if _is_excluded(directory):
+            return []
+        # Contain the glob *base*, not just each match: pathlib follows a
+        # symlink at the base even though it will not follow one during
+        # ``**`` descent, so a ``.clinerules -> /`` symlink would walk the
+        # filesystem before a single match was rejected.
+        if state.resolve_repo_path(directory) is None:
+            return []
+        try:
+            return sorted(directory.glob(pattern))
+        except OSError as exc:
+            # A directory that cannot be read drops silently otherwise, and
+            # "no findings" is indistinguishable from "nothing to find".
+            message = f"Could not read {directory}: {exc}"
+            if message not in context.lint_tree_errors:
+                context.lint_tree_errors.append(message)
+            logger.warning(message)
+            return []
+
     def _add_glob(
         parent: LintTarget,
         directory: Path,
@@ -728,32 +770,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *skip_dirs* names immediate subdirectories the owning tool does not
         read, so their contents are not swept in under this block type.
         """
-        if not safe_is_dir(directory):
-            return
-        # An excluded directory is not walked. Testing only each match would
-        # let `exclude: [".cursor/rules"]` through — the pattern names the
-        # directory and the matches are its children — leaving the files in
-        # every content and security rule while format detection, which does
-        # honour the directory, disagrees.
-        if _is_excluded(directory):
-            return
-        # Contain the glob *base*, not just each match: pathlib follows a
-        # symlink at the base even though it will not follow one during
-        # ``**`` descent, so a ``.clinerules -> /`` symlink would walk the
-        # filesystem before a single match was rejected.
-        if state.resolve_repo_path(directory) is None:
-            return
-        try:
-            matches = sorted(directory.glob(pattern))
-        except OSError as exc:
-            # A directory that cannot be read drops silently otherwise, and
-            # "no findings" is indistinguishable from "nothing to find".
-            message = f"Could not read {directory}: {exc}"
-            if message not in context.lint_tree_errors:
-                context.lint_tree_errors.append(message)
-            logger.warning(message)
-            return
-        for match in matches:
+        for match in _readable_matches(directory, pattern):
             # First component only: Cline reserves ``workflows``, ``hooks``
             # and ``skills`` at the top of .clinerules, not everywhere. A
             # rule filed under ``backend/hooks/`` is ordinary prose that
@@ -841,6 +858,27 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
+
+    # Grok Build reads the ``.grok/`` layer of the project it is started in,
+    # as Codex does, so a monorepo package's own layer is live configuration
+    # and the walk-backed lookup finds both. Every directory here is read
+    # *flat* — a nested ``rules/theme/style.md`` or ``commands/git/sync.md``
+    # is not loaded, and a recursive glob would budget context Grok never
+    # sees. ``skills/`` is the exception and is walked recursively through
+    # ``CONVENTIONAL_SKILL_DIRS``, which earns the whole skill rule set.
+    # ``plugins/`` is Grok's install location and belongs to its own plugin
+    # discovery, so nothing here descends into it.
+    for grok_dir in context.agent_tool_dirs(grok.TOOL_DIR_NAME):
+        _add_glob(root, grok_dir / grok.RULES_DIR_NAME, "*.md", GrokRuleBlock)
+        _add_glob(root, grok_dir / grok.COMMANDS_DIR_NAME, "*.md", GrokCommandBlock)
+        _add_glob(root, grok_dir / grok.AGENTS_DIR_NAME, "*.md", GrokAgentBlock)
+        # One block per file: Grok merges every ``.json`` in the directory,
+        # so a repository has as many hooks blocks as it has files. Through
+        # ``_readable_matches`` rather than ``_add_glob`` because each match
+        # needs the hooks parser, but with the same containment, exclusion
+        # and unreadable-directory guards ``_add_glob`` gets.
+        for hooks_file in _readable_matches(grok_dir / grok.HOOKS_DIR_NAME, grok.HOOKS_GLOB):
+            _add_project_hooks(state, root, hooks_file, GrokHooksBlock)
 
     # Committed project memory: notes a team checks in for whatever agent
     # reads the checkout. The index is loaded whole and every other Markdown

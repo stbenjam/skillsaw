@@ -14,7 +14,6 @@ from .discovery import merge_plugin_dirs
 from .discovery import codex as codex_discovery
 from .discovery import claude as claude_discovery
 from .discovery import agent_plugins as agent_plugins_discovery
-from .formats import devin
 from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_local_source_path,  # noqa: F401 - compatibility re-export
@@ -85,6 +84,7 @@ class RepositoryContext(
         # a `.cursor/` keeps `marketplace` as its primary type.
         RepositoryType.CODEX_PROJECT,
         RepositoryType.MUSE,
+        RepositoryType.GROK_PROJECT,
         RepositoryType.CURSOR,
         RepositoryType.COPILOT,
         RepositoryType.CLINE,
@@ -847,9 +847,15 @@ class RepositoryContext(
             claim_boundary=self._contained_plugin_claim_boundary,
             containment_claims_possible=self._contained_plugin_claims_possible,
             is_containment_plugin=self._is_containment_plugin,
+            # Devin/Windsurf and Grok Build each read the nearest enclosing
+            # tool directory, so a monorepo package carries its own
+            # ``skills/``. ``CONVENTIONAL_SKILL_DIRS`` covers only the
+            # root-relative spelling and the generic walk skips hidden
+            # directories, so the nested roots are handed over from the walk
+            # that already found them — the same tuple detection reads.
             additional_skill_dirs=(
                 directory / "skills"
-                for name in devin.TOOL_DIR_NAMES
+                for name in detect_discovery.NESTED_TOOL_SKILL_DIRS
                 for directory in self.agent_tool_dirs(name)
             ),
         )

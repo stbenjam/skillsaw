@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|run_terminal_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/audit-command.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/note-shell-call.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "make lint",
+            "timeout": 600
+          },
+          {
+            "type": "http",
+            "url": "https://hooks.tessellate.example/turn-ended",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
