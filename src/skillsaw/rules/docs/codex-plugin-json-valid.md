@@ -39,13 +39,15 @@ plugin identifier and component namespace. `version` and `description`
 are reported as recommended; adjust `recommended-fields` to change that
 set.
 
-Manifest paths (`skills`, `apps`, `hooks`, `mcpServers` when
-path-valued, and the `interface` asset fields) must resolve inside the
-plugin root and should start with `./`. An absolute path or one
-containing `..` is an error; a missing `./` prefix is informational.
-Paths that point at something not in the repository are reported as
-warnings — set `check-paths-exist: false` to skip that check when
-assets are generated at build time.
+Manifest paths (`skills`, `apps`, `hooks`, and `mcpServers` when
+path-valued) must resolve inside the plugin root and should start with `./`.
+Interface asset fields (`composerIcon`, `logo`, `logoDark`, `screenshots`) accept
+remote HTTP/HTTPS URLs and data URIs as well as local relative paths. When given
+as local paths, they must also resolve inside the plugin root and should start
+with `./`. An absolute path or one containing `..` is an error; a missing `./`
+prefix on a local path is informational. Paths that point at something not in the
+repository are reported as warnings — set `check-paths-exist: false` to skip that
+check when assets are generated at build time.
 
 `mcpServers` is not purely a path field: it accepts a path string, an
 inline server object, or an array mixing both. Only its path-valued
@@ -62,8 +64,10 @@ A path can also exist and still be reported for its *kind*: `hooks` and
 a path-valued `mcpServers` name a file and are warned about when they
 resolve to a directory, and `skills` names a directory and is warned
 about when it resolves to a file. The path is fine — point the field at
-the right kind of filesystem object. Other path fields (`apps`, the
+the right kind of filesystem object. Other path fields (`apps`, and local
 `interface` asset paths) are checked for containment and existence but
-not for kind, because Codex accepts more than one shape for them.
+not for kind, because Codex accepts more than one shape for them. Remote
+interface asset URLs are not resolved as local paths or checked for
+repository existence.
 
 `version` can be any valid version string; semver is recommended but not enforced.
