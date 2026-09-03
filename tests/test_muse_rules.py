@@ -651,3 +651,36 @@ def test_the_cli_fails_on_a_rejected_file(tmp_path) -> None:
 
     assert result.returncode != 0
     assert violations_for(json.loads(result.stdout), "muse-hooks-valid") != []
+
+
+# ── Branches the fixtures leave uncovered ────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("group", "needle"),
+    [
+        (
+            '{"hooks": {"type": "command", "command": "make lint"}}',
+            "'hooks' must be an array of handlers",
+        ),
+        ('{"hooks": ["make lint"]}', "must be an object"),
+        (
+            '{"hooks": [{"type": "Command", "command": "make lint"}]}',
+            "'type' must be exactly 'command', got 'Command'",
+        ),
+        ('{"hooks": [{"type": "command"}]}', "is missing 'command'"),
+    ],
+)
+def test_each_remaining_shape_defect_names_its_verdict(tmp_path, group, needle) -> None:
+    """A non-array `hooks`, a bare-string handler, a miscased type, and a
+    handler with nothing to run each get one finding that says what Muse
+    does with it."""
+    repo = write_repo(tmp_path / "shape")
+    (repo / ".muse").mkdir()
+    (repo / ".muse" / "hooks.json").write_text('{"hooks": {"Stop": [' + group + "]}}")
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert needle in violations[0].message
+    assert violations[0].severity == Severity.ERROR

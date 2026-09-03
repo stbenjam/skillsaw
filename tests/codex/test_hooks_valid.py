@@ -307,7 +307,9 @@ class TestSecurityRulesReachCodexHooks:
         repo = copy_fixture("codex/hooks-root-dangerous", tmp_path)
         found = HooksDangerousRule({}).check(RepositoryContext(repo))
 
-        assert any("toolchain.example.com" in v.message for v in found), messages(found)
+        assert any("downloads and executes remote code" in v.message for v in found), messages(
+            found
+        )
         assert {v.file_path.name for v in found} == {"hooks.json"}
 
 
