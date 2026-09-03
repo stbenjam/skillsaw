@@ -3,7 +3,8 @@ Rule: codex-plugin-json-valid
 """
 
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -24,8 +25,8 @@ from ._helpers import (
 # ``hooks`` is excluded — it alone accepts inline objects as well as paths,
 # so it is unpacked separately.
 _PATH_FIELDS = ("skills", "mcpServers", "apps")
-# All three are documented in plugin-json-spec.md, which also requires every
-# asset path to point at a real file inside the plugin.
+# Interface asset fields documented in plugin-json-spec.md. In addition to
+# local relative paths, these accept remote HTTP/HTTPS URLs and data URIs.
 _INTERFACE_PATH_FIELDS = ("composerIcon", "logo", "logoDark")
 _INTERFACE_PATH_LIST_FIELDS = ("screenshots",)
 
@@ -213,6 +214,13 @@ class CodexPluginJsonValidRule(Rule):
                 # below would pass and the field would look fine.
                 violations.append(self.violation(f"'{field}' is an empty path", file_path=manifest))
                 continue
+            if field.startswith("interface."):
+                is_uri, uri_violation = self._check_interface_asset_uri(field, value, manifest)
+                if uri_violation:
+                    violations.append(uri_violation)
+                    continue
+                if is_uri:
+                    continue
             problem = path_problem(value, "plugin root", plugin_dir)
             if problem:
                 violations.append(self.violation(f"'{field}': {problem}", file_path=manifest))
@@ -261,6 +269,49 @@ class CodexPluginJsonValidRule(Rule):
                 )
 
         return violations
+
+    def _check_interface_asset_uri(
+        self, field: str, value: str, manifest: Path
+    ) -> Tuple[bool, Optional[RuleViolation]]:
+        """Check whether an interface asset field value is a URI.
+
+        Returns (is_uri, violation). If the value is a valid URI or URL,
+        returns (True, None). If it is a malformed URL, returns (True, violation).
+        If it is not a URI, returns (False, None) so it can be validated as
+        a local filesystem path.
+        """
+        trimmed = value.strip()
+        try:
+            parsed = urlparse(trimmed)
+        except ValueError:
+            if trimmed.lower().startswith(("https://", "http://")):
+                return True, self.violation(
+                    f"'{field}': '{safe_display(value)}' is not a valid URL",
+                    file_path=manifest,
+                    severity=Severity.WARNING,
+                )
+            return False, None
+
+        scheme = parsed.scheme.lower()
+        if scheme in ("https", "http"):
+            if not parsed.netloc:
+                return True, self.violation(
+                    f"'{field}': '{safe_display(value)}' is not a valid URL — URL must include a host",
+                    file_path=manifest,
+                    severity=Severity.WARNING,
+                )
+            return True, None
+
+        if scheme == "data":
+            if not parsed.path:
+                return True, self.violation(
+                    f"'{field}': '{safe_display(value)}' is an empty data URI",
+                    file_path=manifest,
+                    severity=Severity.WARNING,
+                )
+            return True, None
+
+        return False, None
 
     def _iter_path_values(self, data: dict) -> List[Tuple[str, Any]]:
         """(field label, raw value) for every path-valued manifest field.
