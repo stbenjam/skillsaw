@@ -165,6 +165,8 @@ RULE_GROUPS = [
         "Grok Build",
         [
             "grok-agent-valid",
+            "grok-config-project-scope",
+            "grok-config-valid",
             "grok-hooks-valid",
             "grok-marketplace-index-parity",
             "grok-marketplace-json-valid",
@@ -182,6 +184,19 @@ RULE_GROUPS = [
         "is not reported for the spelling it uses. `grok-agent-valid` covers the "
         "other surface Grok refuses in silence: a `.grok/agents/*.md` subagent "
         "missing the `name` or `description` its loader registers it by."
+        "\n\n`.grok/config.toml` fails in both directions at once. "
+        "`grok-config-valid` reports a file Grok loads nothing from — one "
+        "stray bracket costs the tables above it too, and the only trace is a "
+        "`parse error` note inside `grok inspect` — plus the servers it drops "
+        "and the permission keys it reads nothing from, which no diagnostic "
+        "mentions at any scope. `grok-config-project-scope` reports the other "
+        "half: a project file contributes only `[mcp_servers]`, "
+        "`[permission]`, `[plugins]` and `[mcp] max_output_bytes`, and "
+        "everything else in it — a `[model]` table, a `[hooks]` table written "
+        "where `.grok/hooks/*.json` was meant, `[mcpServers]` spelled the way "
+        "another host spells it — is dropped without a word, because Grok's "
+        "unknown-table warnings cover the user's own config and not a "
+        "project's."
         "\n\nPackaging fails the same way: `grok-plugin-json-valid` reports a "
         "manifest Grok skips the whole plugin directory over while "
         "`grok plugin install` still prints success, `grok-plugin-structure` "
@@ -194,7 +209,7 @@ RULE_GROUPS = [
         "portable instructions and portable Agent Skills from `.grok/skills/`, "
         "and its rules, commands and agent prose get the content and security "
         "rules every format shares, so no Grok-specific instruction format "
-        "is validated.\n\nThe hooks and subagent rules are enabled automatically "
+        "is validated.\n\nThe hooks, subagent and config rules are enabled automatically "
         "when a `.grok/` project layer exists; the packaging rules when a "
         "`.grok-plugin/` manifest or catalog does.",
     ),

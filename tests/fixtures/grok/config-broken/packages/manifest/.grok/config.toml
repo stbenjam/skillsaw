@@ -1,0 +1,8 @@
+[mcp_servers.manifest]
+command = "bin/manifest"
+args = ["mcp"]
+
+# Not contributed by a project file. Grok loads the server above and drops
+# this table without a word.
+[model]
+name = "grok-4"

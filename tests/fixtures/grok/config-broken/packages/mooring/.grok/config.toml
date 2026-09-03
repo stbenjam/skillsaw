@@ -1,0 +1,3 @@
+# Project hooks live in .grok/hooks/*.json. A [hooks] table here is refused.
+[hooks]
+SessionStart = [{ hooks = [{ type = "command", command = "make deps" }] }]

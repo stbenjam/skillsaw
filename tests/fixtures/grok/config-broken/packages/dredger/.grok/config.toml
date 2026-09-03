@@ -1,0 +1,4 @@
+# The table is mcp_servers, with an underscore. This spelling loads nothing.
+[mcp-servers.dredger]
+command = "bin/dredger"
+args = ["mcp"]

@@ -7,7 +7,9 @@ and skill rules already cover. What is Grok's own and structural is
 whatever its loader refuses without a word. In the project layer that is
 ``.grok/hooks/*.json``, where one wrong-typed field costs the whole file,
 and ``.grok/agents/*.md``, where a missing ``name`` or ``description`` costs
-the subagent.
+the subagent. ``.grok/config.toml`` is the third: a parse error costs the
+whole file, a malformed server table costs that server, and a table the
+project layer does not contribute is dropped without a word.
 
 Packaging is the other half, and it is silent in the same way. A plugin
 manifest that fails to load takes the whole directory with it while ``grok
@@ -23,6 +25,8 @@ nothing structural to require.
 """
 
 from .agent_valid import GrokAgentValidRule
+from .config_project_scope import GrokConfigProjectScopeRule
+from .config_valid import GrokConfigValidRule
 from .hooks_valid import GrokHooksValidRule
 from .marketplace_index_parity import GrokMarketplaceIndexParityRule
 from .marketplace_json_valid import GrokMarketplaceJsonValidRule
@@ -31,6 +35,8 @@ from .plugin_structure import GrokPluginStructureRule
 
 __all__ = [
     "GrokAgentValidRule",
+    "GrokConfigProjectScopeRule",
+    "GrokConfigValidRule",
     "GrokHooksValidRule",
     "GrokMarketplaceIndexParityRule",
     "GrokMarketplaceJsonValidRule",

@@ -296,13 +296,14 @@ rule set, and `.grok/rules/*.md`, `.grok/commands/*.md` and
 `.grok/agents/*.md` get the shared content and security rules. Grok reads
 each of those three directories at the top level only, so a file nested a
 directory deeper is not attached either — it is not context Grok loads.
-`.grok/skills/` is the exception and is walked in full. `config.toml`,
+`.grok/skills/` is the exception and is walked in full. `config.toml` is
+parsed as TOML and attached, and the rules that read it come with it.
 `lsp.json`, `sandbox.toml`, `workflows/`, `roles/` and `personas/` are
 detection evidence only today — nothing under them is read or linted yet;
 covering them is later work (see the
 [Grok Build design record](https://github.com/stbenjam/skillsaw/blob/main/docs/designs/grok-build.md)).
 
-Two things in that layer are Grok's own structure, on top of the shared
+Three things in that layer are Grok's own structure, on top of the shared
 rules above. [`grok-hooks-valid`](rules/grok-hooks-valid.md) validates every
 `.grok/hooks/*.json` — Grok merges the whole directory, so a repository may
 have several — against Grok's events, alias table and handler fields. This
@@ -323,8 +324,27 @@ until a project is trusted they are silently skipped — while skills, rules,
 commands and agents load whether or not the folder is trusted. Trust is a
 per-machine decision recorded outside the repository, so skillsaw lints the
 files as committed. Project MCP servers are declared in `.grok/config.toml`
-under `[mcp_servers]` and in the repository-root `.mcp.json`, which skillsaw
-already lints; there is no `.grok/mcp.json`.
+under `[mcp_servers]` and in the repository-root `.mcp.json`; there is no
+`.grok/mcp.json`. skillsaw reads both, so
+[`mcp-prohibited`](rules/mcp-prohibited.md) sees a server wherever a Grok
+project declared it.
+
+A project `config.toml` contributes only `[mcp_servers]`, `[plugins]`,
+`[permission]` and `[mcp] max_output_bytes`. Every other table in it is
+dropped, and dropped silently: Grok's unknown-key warnings cover the user's
+own `~/.grok/config.toml` and not a project file, so a typo'd table there
+produces no diagnostic anywhere. `[plugins] paths` is dropped the same way,
+honoured only from the user's file.
+[`grok-config-project-scope`](rules/grok-config-project-scope.md) reports
+that: an ignored table or key, and the spellings that load nothing at all —
+`[[mcp.servers]]`, `[mcp-servers]`, `[mcpServers]`, `[permissions]`,
+`transport` inside a server, `defaultMode` inside `[permission]`.
+[`grok-config-valid`](rules/grok-config-valid.md) covers the file itself: a
+parse error costs every table in it including the ones above the error, and
+Grok exits 0 with an empty stderr when that happens, while a malformed
+server costs that server and a malformed `[permission]` key costs that key.
+Grok reports the server defects through `mcpConfigProblems` and the
+permission ones not at all.
 
 Grok reads `AGENTS.md` and `CLAUDE.md` for portable instructions, both of
 which carry their own repository types, so a `.grok/` directory is the only
