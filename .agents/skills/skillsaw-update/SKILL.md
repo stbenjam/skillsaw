@@ -3,6 +3,8 @@ name: skillsaw-update
 description: "Update a repository to the newest skillsaw — upgrade the install, report new rules and their findings in your repo, and bump version pins (GitHub Action SHAs, Makefile targets, pre-commit hooks). Use when a new skillsaw release is out and you want its latest checks."
 compatibility: "Requires skillsaw already adopted (uvx skillsaw, pip install skillsaw, or container). Network access for version lookup."
 license: Apache-2.0
+user-invocable: true
+disable-model-invocation: true
 metadata:
   author: stbenjam
   version: "1.0"
