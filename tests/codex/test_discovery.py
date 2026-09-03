@@ -73,7 +73,7 @@ class TestCodexDiscovery:
 
         Codex probes ``hooks/hooks.json`` automatically, so a plugin can ship
         hooks without declaring them. Routing the file to the existing
-        HooksBlock gives Codex plugins hooks-json-valid and hooks-dangerous
+        HooksBlock gives Codex plugins codex-hooks-valid and hooks-dangerous
         rather than duplicating those rules.
         """
         repo = copy_fixture("codex/clean", tmp_path)

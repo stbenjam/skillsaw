@@ -108,6 +108,11 @@ rules:
     enabled: false
     severity: warning
 
+  # Claude Code hooks.json must be valid JSON with proper hook configuration structure
+  claude-hooks-valid:
+    enabled: true
+    severity: error
+
   # Marketplace.json must be valid JSON with required fields
   claude-marketplace-json-valid:
     enabled: auto
@@ -170,6 +175,12 @@ rules:
   coderabbit-yaml-valid:
     enabled: auto
     severity: error
+
+  # Codex hooks files must use Codex's hook events, handler types, and fields
+  codex-hooks-valid:
+    enabled: true
+    severity: error
+    # extra-events: []
 
   # .agents/plugins/marketplace.json must be valid JSON with required fields
   codex-marketplace-json-valid:
@@ -437,11 +448,6 @@ rules:
     severity: error
     # allowlist: []
 
-  # hooks.json must be valid JSON with proper hook configuration structure
-  hooks-json-valid:
-    enabled: true
-    severity: error
-
   # All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project
   hooks-prohibited:
     enabled: false
@@ -485,6 +491,12 @@ rules:
     enabled: true
     severity: error
     # additional-placeholders: []
+
+  # .muse/hooks.json must use Muse's events, matcher groups and handler fields
+  muse-hooks-valid:
+    enabled: auto
+    severity: error
+    # extra-events: []
 
   # Validate metadata.openclaw fields against the OpenClaw spec
   openclaw-metadata:

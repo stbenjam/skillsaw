@@ -97,8 +97,9 @@ class HooksProhibitedRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        # CursorHooksBlock renders its flatter shape as HookEventConfig too.
-        hook_blocks = context.lint_tree.find(HooksBlock) + context.lint_tree.find(CursorHooksBlock)
+        # Every host's hooks file is a HooksBlock — Claude, Codex, Muse,
+        # Cursor — and each renders its own shape as HookEventConfig.
+        hook_blocks = context.lint_tree.find(HooksBlock)
         for block in hook_blocks:
             if block.parse_error:
                 continue

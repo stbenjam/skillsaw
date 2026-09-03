@@ -641,12 +641,14 @@ class TestCodexPluginTreeHierarchy:
 
 class TestDualManifestBackwardCompat:
     """A directory with both manifests keeps its established Claude
-    results — the ecosystem-tightened hooks/MCP checks fire only for
-    Codex-only plugins. Each test pins its precondition so a discovery
-    change cannot quietly turn the assertions vacuous."""
+    results — the hooks file is Claude's block, validated by Claude's rule,
+    and the ecosystem-tightened MCP checks fire only for Codex-only
+    plugins. Each test pins its precondition so a discovery change cannot
+    quietly turn the assertions vacuous."""
 
     def _fixture(self, tmp_path):
-        from skillsaw.rules.builtin.hooks import HooksJsonValidRule
+        from skillsaw.rules.builtin.codex import CodexHooksValidRule
+        from skillsaw.rules.builtin.hooks import ClaudeHooksValidRule
         from skillsaw.rules.builtin.mcp.valid_json import McpValidJsonRule
 
         repo = copy_fixture("codex/dual-manifest", tmp_path)
@@ -656,43 +658,59 @@ class TestDualManifestBackwardCompat:
         # under test short-circuit before their codex-only conjunct.
         assert context.provenance(repo).ecosystems == frozenset({"claude", "codex"})
         assert context.codex_plugin_owning(repo / "hooks" / "hooks.json") is not None
-        return repo, context, HooksJsonValidRule, McpValidJsonRule
+        return repo, context, ClaudeHooksValidRule, CodexHooksValidRule, McpValidJsonRule
+
+    def test_dual_manifest_hooks_are_claudes_block(self, tmp_path):
+        """Both hosts read the file, and its established results are
+        Claude's — so it is a ClaudeHooksBlock and only Claude's rule
+        judges it."""
+        from skillsaw.blocks import ClaudeHooksBlock, CodexHooksBlock
+
+        repo, context, _, _, _ = self._fixture(tmp_path)
+        hooks = repo / "hooks" / "hooks.json"
+        assert [b.path for b in context.lint_tree.find(ClaudeHooksBlock)] == [hooks]
+        assert context.lint_tree.find(CodexHooksBlock) == []
 
     def test_dual_manifest_hooks_keep_claude_results(self, tmp_path):
-        repo, context, hooks_rule, _ = self._fixture(tmp_path)
-        found = messages(hooks_rule().check(context))
+        repo, context, claude_hooks, codex_hooks, _ = self._fixture(tmp_path)
+        found = messages(claude_hooks().check(context))
         assert not any("matcher" in m and "must be a string" in m for m in found), found
+        # Codex's rule finds no block of its own here, so it says nothing
+        # at all about a file Claude's rule has already judged.
+        assert codex_hooks().check(context) == []
 
     def test_dual_manifest_mcp_keeps_claude_results(self, tmp_path):
-        repo, context, _, mcp_rule = self._fixture(tmp_path)
+        repo, context, _, _, mcp_rule = self._fixture(tmp_path)
         found = messages(mcp_rule().check(context))
         assert not any("non-empty string" in m for m in found), found
 
     def test_codex_only_twin_gets_the_tightened_checks(self, tmp_path):
         """The same directory minus `.claude-plugin/` crosses the gate:
-        both tightened violations must appear — this is the half of the
-        conjunction the dual tests prove is *not* firing above."""
-        repo, _, hooks_rule, mcp_rule = self._fixture(tmp_path)
+        the hooks file becomes Codex's block, so Codex's rule reports the
+        non-string matcher and Claude's rule says nothing — this is the
+        half of the conjunction the dual tests prove is *not* firing."""
+        repo, _, claude_hooks, codex_hooks, mcp_rule = self._fixture(tmp_path)
         shutil.rmtree(repo / ".claude-plugin")
         context = RepositoryContext(repo)
         assert context.provenance(repo).codex_only
-        hooks_found = messages(hooks_rule().check(context))
+        hooks_found = messages(codex_hooks().check(context))
         assert any("matcher" in m and "must be a string" in m for m in hooks_found), hooks_found
+        assert claude_hooks().check(context) == []
         mcp_found = messages(mcp_rule().check(context))
         assert any("non-empty string" in m for m in mcp_found), mcp_found
 
     def test_claude_only_twin_matches_dual_results_exactly(self, tmp_path):
         """Strongest form of the compat claim: deleting `.codex-plugin/`
         must not change either rule's messages at all."""
-        repo, context, hooks_rule, mcp_rule = self._fixture(tmp_path)
+        repo, context, claude_hooks, _, mcp_rule = self._fixture(tmp_path)
         dual_msgs = (
-            sorted(messages(hooks_rule().check(context))),
+            sorted(messages(claude_hooks().check(context))),
             sorted(messages(mcp_rule().check(context))),
         )
         shutil.rmtree(repo / ".codex-plugin")
         claude_context = RepositoryContext(repo)
         claude_msgs = (
-            sorted(messages(hooks_rule().check(claude_context))),
+            sorted(messages(claude_hooks().check(claude_context))),
             sorted(messages(mcp_rule().check(claude_context))),
         )
         assert dual_msgs == claude_msgs
@@ -858,10 +876,10 @@ class TestProvenanceScopeMechanism:
         assert [b.path.name for b in scoped] == ["dual-cmd.md"]
 
     def test_neutral_scope_sees_every_block(self, tmp_path):
-        from skillsaw.rules.builtin.hooks import HooksJsonValidRule
+        from skillsaw.rules.builtin.mcp.valid_json import McpValidJsonRule
 
         context = self._context(tmp_path)
-        rule = HooksJsonValidRule({})
+        rule = McpValidJsonRule({})
         # Conditional-strictness rules stay ecosystem-neutral — tightening
         # is their semantic, not a skip.
         assert rule.provenance_scope is None

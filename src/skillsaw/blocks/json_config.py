@@ -93,8 +93,8 @@ class HookHandler:
         ``hooks-dangerous`` that becomes a rule crash, which stops the scan
         before it reaches later blocks — so one malformed handler can hide
         a real ``curl | sh`` behind it. Dropping the value here leaves the
-        field falsy, which every consumer already handles, and
-        ``hooks-json-valid`` reads the raw document and reports the shape.
+        field falsy, which every consumer already handles, and the host's
+        own shape rule reads the raw document and reports it.
         """
         command_line = commented_key_line(d, "command")
         command_variants: List[Tuple[str, Optional[int]]] = []
@@ -151,7 +151,7 @@ class HookEventConfig:
             # lowercases it while searching, which kills search for the
             # whole page. Codex uses the default when the field is absent,
             # and an invalid value is no more specific than absent.
-            # hooks-json-valid reports it, so coercing hides nothing.
+            # codex-hooks-valid reports it, so coercing hides nothing.
             matcher=_as_str(d.get("matcher")) or ".*",
             handlers=handlers,
         )
@@ -274,7 +274,26 @@ class McpRegistryNpmPackageBlock(JsonConfigBlock):
 
 @dataclass(eq=False)
 class HooksBlock(JsonConfigBlock):
-    """hooks/hooks.json in a plugin."""
+    """A lifecycle-hooks document, whichever host reads it.
+
+    The shared base for every hooks file in the tree. The security rules
+    (``hooks-dangerous``, ``hooks-prohibited``) find every hooks file
+    through this class and read :attr:`events`, which renders the document
+    as :class:`HookEventConfig` entries whatever the host's shape.
+
+    Shape validation is per host, because each host has its own event
+    list, handler types, and fields: ``claude-hooks-valid`` iterates
+    :class:`ClaudeHooksBlock`, ``codex-hooks-valid`` :class:`CodexHooksBlock`,
+    ``muse-hooks-valid`` :class:`MuseHooksBlock`, and ``cursor-hooks-valid``
+    :class:`CursorHooksBlock` — so a file is checked against the vocabulary
+    of the tool that will actually load it. The tree builder picks the
+    subclass from where the file lives and who claims the directory.
+
+    :attr:`events` parses the nested shape Claude Code defined and Codex and
+    Muse Code adopted: ``{hooks: {Event: [{matcher?, hooks: [{type,
+    command, ...}]}]}}``. A host with a different shape overrides it
+    (Cursor).
+    """
 
     category: str = "hooks"
 
@@ -297,6 +316,45 @@ class HooksBlock(JsonConfigBlock):
             if entries:
                 result[event_type] = entries
         return result
+
+
+@dataclass(eq=False)
+class ClaudeHooksBlock(HooksBlock):
+    """``hooks/hooks.json`` in a Claude Code plugin, or APM's compiled copy.
+
+    Also the block a dual-manifest (Claude + Codex) plugin's hooks file
+    gets: both hosts read it, and its established results are Claude's.
+    """
+
+
+@dataclass(eq=False)
+class CodexHooksBlock(HooksBlock):
+    """A hooks file only Codex reads.
+
+    ``<repo>/.codex/hooks.json``, a Codex-only plugin's ``hooks/hooks.json``,
+    or a file that plugin's manifest names in ``hooks``. Same nested shape as
+    Claude's, with Codex's own events, handler types, and fields.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (codex hooks)"
+
+
+@dataclass(eq=False)
+class MuseHooksBlock(HooksBlock):
+    """``.muse/hooks.json`` — Muse Code's committed project hooks.
+
+    Same nested shape as Claude's. Muse's loader is strict where Claude's
+    is lenient — a handler carrying any field Muse does not know is dropped
+    without a diagnostic in headless runs — which is what
+    ``muse-hooks-valid`` exists to report. Strict JSON: a new surface with
+    no shipped results to preserve.
+    """
+
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return "hooks.json (muse hooks)"
 
 
 def _inline_payload_token_count(data: Any) -> int:
@@ -385,7 +443,7 @@ class _InlineJsonPayload:
 
 
 @dataclass(eq=False)
-class CodexInlineHooksBlock(_InlineJsonPayload, HooksBlock):
+class CodexInlineHooksBlock(_InlineJsonPayload, CodexHooksBlock):
     """Hooks written inline in a Codex ``.codex-plugin/plugin.json``."""
 
     inline_data: Optional[Dict[str, Any]] = None
@@ -395,16 +453,18 @@ class CodexInlineHooksBlock(_InlineJsonPayload, HooksBlock):
 
 
 @dataclass(eq=False)
-class CursorHooksBlock(JsonConfigBlock):
+class CursorHooksBlock(HooksBlock):
     """``.cursor/hooks.json`` — Cursor's agent-lifecycle hooks.
 
     Cursor's shape is flatter than Claude's: ``{version, hooks: {event:
     [{command | prompt, type?, matcher?, timeout?}]}}``. There is no
     per-event ``matcher`` wrapper, and ``type`` defaults to ``"command"``
-    rather than being required. :attr:`events` renders it as the shared
-    :class:`HookEventConfig` structure so ``hooks-dangerous`` and
-    ``hooks-prohibited`` scan Cursor hooks with no per-ecosystem branch;
-    ``cursor-hooks-valid`` reads ``raw_data`` for the shape itself.
+    rather than being required. A :class:`HooksBlock` so the security
+    rules find it with every other host's file; the :attr:`events` override
+    renders the flatter shape as the shared :class:`HookEventConfig`
+    structure, so ``hooks-dangerous`` and ``hooks-prohibited`` scan Cursor
+    hooks with no per-ecosystem branch. ``cursor-hooks-valid`` reads
+    ``raw_data`` for the shape itself.
     """
 
     category: str = "hooks"

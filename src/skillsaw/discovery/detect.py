@@ -14,7 +14,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
-from skillsaw.formats import devin
+from skillsaw.formats import devin, muse
 from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
@@ -35,7 +35,15 @@ VENDOR_DIR_NAMES = frozenset(
 # enclosing folder as well as the repository root, so a monorepo package can
 # carry its own set — hence a walk rather than a root-anchored lookup.
 AGENT_TOOL_DIR_NAMES = frozenset(
-    {".cursor", ".clinerules", ".github", ".vscode", ".opencode", *devin.TOOL_DIR_NAMES}
+    {
+        ".cursor",
+        ".clinerules",
+        ".github",
+        ".vscode",
+        ".opencode",
+        muse.TOOL_DIR_NAME,
+        *devin.TOOL_DIR_NAMES,
+    }
 )
 
 
@@ -81,6 +89,10 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     for dirpath, dirnames, filenames in os.walk(root_str):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
+        if here.name == muse.TOOL_DIR_NAME:
+            # Muse's per-agent worktrees are whole checkouts of this
+            # repository; walking them would attach every file twice.
+            dirnames[:] = [name for name in dirnames if name not in muse.SCRATCH_DIR_NAMES]
         # Slice relative directory parts from dirpath to avoid repeatedly calling
         # Path.relative_to() for every directory and file during the walk.
         relative_dir = dirpath[len(root_str) :].lstrip(os.sep)
@@ -195,6 +207,14 @@ _EDITOR_EVIDENCE = {
             ("plugin", True),
         ),
     ),
+    # ``hooks.json`` is the only committed file Muse reads from ``.muse/``;
+    # ``worktrees/`` is child-agent scratch. Project memory is the other
+    # Muse marker, checked separately in ``instruction_formats`` because it
+    # lives under ``.agents/``, a directory several tools share.
+    "HAS_MUSE": (
+        muse.TOOL_DIR_NAME,
+        ((muse.HOOKS_FILENAME, False),),
+    ),
 }
 
 
@@ -303,6 +323,14 @@ def instruction_formats(
             # well as from ``.opencode/``, and a repository that configures
             # only a model and an MCP server has no ``.opencode/`` at all.
             or marker("opencode.json") or marker("opencode.jsonc"),
+        ),
+        (
+            "HAS_MUSE",
+            editor_marker("HAS_MUSE")
+            # Committed project memory is Muse's alone: ``.agents/`` is
+            # shared with the portable skills and Codex marketplace
+            # conventions, but no other tool reads a ``memory/`` under it.
+            or marker(*muse.MEMORY_DIR, is_dir=True),
         ),
         ("HAS_GEMINI", marker("GEMINI.md")),
         ("HAS_QWEN", marker("QWEN.md")),

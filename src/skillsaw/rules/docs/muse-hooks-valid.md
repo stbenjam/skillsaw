@@ -1,0 +1,134 @@
+## Why
+
+`.muse/hooks.json` binds shell commands to Muse Code's lifecycle events —
+before a tool runs, when a session starts, when the agent stops. It ships in
+the repository, so anyone who can land a commit can add one.
+
+Muse's loader reports nothing when it refuses one. In a headless run a
+rejected file, a rejected matcher group and a dropped handler all look
+identical to a hook that simply had nothing to do: no diagnostic, no exit
+code, no log line. The only symptom is that the guard you wrote never fires.
+
+The blast radius depends on where the defect is, which is why the severities
+below are not uniform:
+
+- A malformed **matcher group** — not an object, a non-string `matcher`, a
+  missing or non-array `hooks`, or any key other than those two — rejects
+  the **whole file**. One stray `"enabled": false` copied from a Cursor
+  config takes every other hook in the file down with it.
+- A malformed **handler** — a missing or non-`command` `type`, an empty or
+  non-string `command`, a field Muse does not know, or a wrong-typed known
+  field — drops that handler alone. Its siblings still run.
+- An unknown **event name** skips that event's entries and loads the rest of
+  the file. Names are case-sensitive, so `sessionStart` configures nothing.
+
+Muse's handler fields are a subset of Claude Code's, so a hooks file copied
+across from `.claude/` is the common way to get here: `args`, `env` and
+`description` are all fields Muse drops a handler for, and `if`, `once` and
+the `asyncRewake` family are ones it parses and then rejects.
+
+This rule checks the shape. The commands themselves are scanned by
+[`hooks-dangerous`](hooks-dangerous.md) and, when you want every hook
+reviewed rather than only the risky-looking ones,
+[`hooks-prohibited`](hooks-prohibited.md) — both read Muse hooks through the
+same path they use for Claude Code hooks.
+
+## Severity
+
+Anything that stops a hook running is an error: an unparseable file, a
+missing or non-object `hooks`, an event whose value is not an array, a
+malformed matcher group, an unknown or missing handler `type`, a missing or
+empty `command`, an unsupported or unknown handler field, and a known field
+of the wrong type (`timeout` must be a non-negative integer — a float, a
+numeric string or a boolean all drop the handler).
+
+Four checks are softer, because the file still loads and the rest of it
+still runs:
+
+- an unrecognised event name, at `warning` — Muse adds events between
+  skillsaw releases, and `extra-events` accepts one without waiting for a
+  release;
+- an empty `hooks` object, or an event whose array is empty, at `warning` —
+  the file configures nothing;
+- a `matcher` Python's `re` cannot compile, at `warning` — Muse's matcher is
+  a Rust regex, and the two dialects differ at the edges;
+- a handler with only `commandWindows`, at `warning` — it runs on Windows
+  and does nothing anywhere else.
+
+## Examples
+
+**Bad** — a group carrying a third key takes the whole file down, and a
+handler copied from Claude Code is dropped:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "enabled": true,
+        "hooks": [
+          { "type": "command", "command": "./scripts/audit.sh", "args": ["--json"] }
+        ]
+      }
+    ],
+    "sessionStart": [
+      { "hooks": [{ "type": "command", "command": "./scripts/bootstrap.sh" }] }
+    ]
+  }
+}
+```
+
+**Good** — two keys per group, and every handler a command:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          { "type": "command", "command": "./scripts/bootstrap.sh", "timeout": 30 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/audit.sh --json",
+            "statusMessage": "Auditing command",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## How to fix
+
+- Give every matcher group exactly `matcher` and `hooks`, and nothing else.
+  Move a `description` into a comment beside the file, or drop it.
+- Give every handler `"type": "command"` and a non-empty `command` string.
+  A handler that only has `commandWindows` needs a `command` too, or it does
+  nothing on Linux and macOS.
+- Replace Claude-only fields: fold `args` into the `command` string, export
+  `env` from inside the script, and drop `description`. There is no
+  replacement for `if`, `once` or `asyncRewake` — put the condition in the
+  script and exit early.
+- Write `timeout` as a plain non-negative integer: `30`, not `30.0` and not
+  `"30"`.
+- Correct the event name to one Muse dispatches, matching case exactly. If
+  Muse added it after this skillsaw release, list it under the rule's
+  `extra-events` setting:
+
+  ```yaml
+  rules:
+    muse-hooks-valid:
+      extra-events:
+        - PreSomethingNew
+  ```

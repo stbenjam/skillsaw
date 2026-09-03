@@ -192,7 +192,7 @@ skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every 
 
 | Rule | On an installed plugin | Why |
 |---|---|---|
-| `hooks-dangerous`, `hooks-prohibited`, `hooks-json-valid` | **Runs (no autofix)** | These commands execute in this checkout. Whoever wrote them, they are this checkout's exposure. |
+| `hooks-dangerous`, `hooks-prohibited`, `codex-hooks-valid` | **Runs (no autofix)** | These commands execute in this checkout. Whoever wrote them, they are this checkout's exposure. |
 | `mcp-valid-json`, `mcp-prohibited` | **Runs (no autofix)** | Same — the host spawns these commands here. |
 | `agentskill-*` | **Runs (no autofix)** | These skills enter the agent's context window here. |
 | `codex-plugin-json-valid`, `codex-plugin-structure` | **Stands down** | A kebab-case name, a missing `description` or a dangling asset path is a defect in a file the developer cannot edit. |
@@ -275,7 +275,7 @@ visible to rules by default but are never autofixed; see
 [`lint-external-content`](configuration.md#external-content) for the opt-out.
 
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
-— Cursor, Copilot, Cline, OpenCode and Codex all read it, and one well-linted
+— Cursor, Copilot, Cline, OpenCode, Muse Code and Codex all read it, and one well-linted
 AGENTS.md beats five per-vendor copies that drift apart. skillsaw does not
 reimplement a per-vendor instruction format on top of it; what it adds is
 coverage of the prose each tool keeps in its own directory, plus structural
@@ -297,6 +297,7 @@ validation wherever a tool's own metadata can fail silently — see
 | **Windsurf** | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
+| **Muse Code** | `.muse/hooks.json`, `.agents/memory/MEMORY.md` (index) and topic files |
 
 Discovery and validation are separate layers for Copilot. Every Markdown file
 under `.github/agents/` and every `*.chatmode.md` file under the legacy
@@ -397,7 +398,7 @@ repository, so its commands are scanned by
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md) alongside Claude Code hooks
 and settings. Cursor's schema is flatter than Claude's — hooks hang directly
-off the event name rather than off a matcher group — so `hooks-json-valid`
+off the event name rather than off a matcher group — so `claude-hooks-valid`
 leaves the file alone and `cursor-hooks-valid` validates the shape instead.
 A `type: "prompt"` hook injects text rather than spawning a process, so the
 command scanners skip it — but Cursor puts that text into the agent's
@@ -407,6 +408,24 @@ prose. Its `prompt` string is linted as content, so
 the other injection scanners read it, and `hooks-prohibited` counts it as a
 hook. JSON carries no line numbers, so those findings name the file without
 a line.
+
+### Muse Code hooks and memory
+
+`.muse/hooks.json` is [Muse Code's](https://dev.meta.ai/docs/muse-code)
+committed project hooks file. It uses the nested shape Claude Code defined,
+but Muse's loader is strict: a handler carrying a field it does not
+recognize is silently dropped, and a malformed matcher group rejects the
+whole file — with no diagnostic in a headless run. `muse-hooks-valid`
+validates the shape against Muse's own events and fields, the same way
+`cursor-hooks-valid` does for Cursor; `hooks-dangerous` and
+`hooks-prohibited` scan it like any other host's hooks file.
+
+Project memory under `.agents/memory/` is committed, shared context: Muse
+injects `MEMORY.md` in full at every session start, even in an untrusted
+workspace, so it gets the always-on instruction budget, while topic files
+are listed by path and read on demand, so they get every content and
+security rule instead. A `.muse/hooks.json` file or an `.agents/memory/`
+directory marks a repository as Muse Code.
 
 ### OpenCode and APM
 

@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ["Bash", "Write"],
+        "hooks": [
+          { "type": "command", "command": "./scripts/audit-command.sh" }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "enabled": false,
+        "hooks": [
+          { "type": "command", "command": "./scripts/format-on-edit.sh" }
+        ]
+      },
+      {
+        "matcher": "Read"
+      }
+    ],
+    "Stop": {
+      "hooks": [
+        { "type": "command", "command": "./scripts/summarize.sh" }
+      ]
+    },
+    "SessionEnd": [
+      "./scripts/cleanup.sh"
+    ]
+  }
+}

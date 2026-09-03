@@ -1,5 +1,5 @@
-from .json_valid import HooksJsonValidRule
+from .json_valid import ClaudeHooksValidRule
 from .dangerous import HooksDangerousRule
 from .prohibited import HooksProhibitedRule
 
-__all__ = ["HooksJsonValidRule", "HooksDangerousRule", "HooksProhibitedRule"]
+__all__ = ["ClaudeHooksValidRule", "HooksDangerousRule", "HooksProhibitedRule"]

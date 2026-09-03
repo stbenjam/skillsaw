@@ -7,7 +7,7 @@ Validates hook configuration. The security rules scan hooks in `hooks.json`, `.c
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - |
+| [`claude-hooks-valid`](claude-hooks-valid.md) | Claude Code hooks.json must be valid JSON with proper hook configuration structure | error | - |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that chain a download into execution (curl\|sh), obfuscate their payload (eval/base64), or perform network requests | error (auto) | - |
 | [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
 

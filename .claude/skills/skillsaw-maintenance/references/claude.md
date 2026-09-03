@@ -37,7 +37,7 @@ layout. Each format below maps to its own skillsaw rules.
 - `.claude/` detection — `src/skillsaw/discovery/detect.py` (`is_dot_claude`,
   the `dot-claude` marker returned by `marker_types`); `src/skillsaw/context.py`
   maps that marker to `RepositoryType.DOT_CLAUDE`.
-- Hooks — `src/skillsaw/rules/builtin/hooks/`: `hooks-json-valid`, `hooks-dangerous`,
+- Hooks — `src/skillsaw/rules/builtin/hooks/`: `claude-hooks-valid`, `hooks-dangerous`,
   `hooks-prohibited`.
 - MCP — `src/skillsaw/rules/builtin/mcp/`: `mcp-valid-json`, `mcp-prohibited`.
 - Skills — `src/skillsaw/rules/builtin/skills/frontmatter.py`: `skill-frontmatter`.

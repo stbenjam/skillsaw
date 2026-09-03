@@ -1294,7 +1294,7 @@ def test_coderabbit_repo_no_command_violations(temp_dir):
             "claude-command-frontmatter",
             "skill-frontmatter",
             "claude-agent-frontmatter",
-            "hooks-json-valid",
+            "claude-hooks-valid",
             "mcp-valid-json",
         }
     ]

@@ -59,6 +59,31 @@ class QwenMdBlock(InstructionBlock):
 
 
 @dataclass(eq=False)
+class MuseMemoryIndexBlock(FileContentBlock):
+    """``.agents/memory/MEMORY.md`` — the index Muse Code injects at session start.
+
+    Read in full, every session, even in an untrusted workspace, so it is
+    always-on instruction text and shares the ``instruction`` budget. Not an
+    :class:`InstructionBlock`: the instruction-file rules check conventions
+    of the CLAUDE.md family that a memory index does not follow.
+    """
+
+    category: str = "instruction"
+
+
+@dataclass(eq=False)
+class MuseMemoryBlock(FileContentBlock):
+    """A topic file under ``.agents/memory/``.
+
+    Muse Code lists only its path at session start and reads the file on
+    demand, so it is on-demand prose: every content and security rule reads
+    it, but no always-on budget applies.
+    """
+
+    category: str = "memory"
+
+
+@dataclass(eq=False)
 class ClineWorkflowBlock(FileContentBlock):
     """.clinerules/workflows/*.md — Cline workflows, invoked on demand.
 

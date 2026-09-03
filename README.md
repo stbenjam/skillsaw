@@ -26,10 +26,10 @@ coding ecosystem, and eliminates content dead zones with deterministic autofixes
 It understands Agent Skills,
 [Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
 plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
-GEMINI.md, QWEN.md, Cursor, Copilot, Cline, Devin, Kiro, OpenCode, hooks, agent
-configuration, MCP Registry `server.json` publisher metadata, Vercel skills CLI
-lockfiles, and evals. Safe structural fixes can be applied automatically;
-everything else comes with precise, agent-friendly guidance.
+GEMINI.md, QWEN.md, Cursor, Copilot, Cline, Devin, Kiro, OpenCode, Muse Code,
+hooks, agent configuration, MCP Registry `server.json` publisher metadata,
+Vercel skills CLI lockfiles, and evals. Safe structural fixes can be applied
+automatically; everything else comes with precise, agent-friendly guidance.
 
 Content installed under APM's `apm_modules/` and skills installed from
 external `skills-lock.json` sources are tracked as external in the lint tree.
@@ -75,7 +75,7 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
   - **Prohibited & unvetted MCP servers:** enforces strict MCP allowlists across root, plugin, and custom agent configurations.
   - **Prompt injection & stealth payloads:** detects invisible Unicode (ASCII smuggling, zero-width tags, bidi overrides), high-entropy encoded payloads (base64/hex), and hidden instructions in comments and code fences.
   - **Environment & context security:** flags dangerous environment overrides (`LD_PRELOAD`, `NODE_OPTIONS`, `PYTHONPATH`), unallowlisted dynamic context injection, and embedded credentials.
-- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (plugins & marketplaces), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, APM packages, MCP server maps, and MCP Registry metadata.
+- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (plugins & marketplaces), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, Muse Code hooks, APM packages, MCP server maps, and MCP Registry metadata.
 - **Deterministic autofixes:** safe, instant automated fixes for invalid frontmatter, broken headings, missing manifests, unclosed code fences, and schema keys via `skillsaw fix`.
 - **Content quality & token economy:** research-backed rules detecting instruction drift across duplicate files, lost-in-the-middle attention dead zones, cognitive overload, section length violations, weak language, contradictions, and repetitive inline tool-call examples.
 - **Discovery & repository integrity:** unreferenced bundled files, broken internal file references, inconsistent terminology, missing stop conditions, and stale baselines.

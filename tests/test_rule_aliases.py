@@ -81,6 +81,7 @@ def test_renamed_rules_carry_their_legacy_alias():
         "command-name-format": "claude-command-name-format",
         "command-sections": "claude-command-sections",
         "settings-dangerous": "claude-settings-dangerous",
+        "hooks-json-valid": "claude-hooks-valid",
         "rules-valid": "claude-rules-valid",
     }
     assert RULE_ALIASES == expected
@@ -125,6 +126,49 @@ def test_legacy_config_key_disables_renamed_rule(plugin_repo):
     assert "claude-plugin-readme" not in {v.rule_id for v in results}
     # No invalid-config warning: the legacy name is not an unknown rule.
     assert "invalid-config" not in {v.rule_id for v in results}
+
+
+def test_legacy_hooks_key_configures_the_renamed_hooks_rule(tmp_path):
+    """0.20.0 split ``hooks-json-valid`` per host: Claude Code's half kept
+    the checks under ``claude-hooks-valid``, and a config written against
+    the old name must still reach it."""
+    config_path = tmp_path / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "99.0.0"\nrules:\n  hooks-json-valid:\n    severity: warning\n'
+    )
+    config = LinterConfig.from_file(config_path)
+    assert "hooks-json-valid" not in config.rules
+    assert config.rules["claude-hooks-valid"]["severity"] == "warning"
+
+
+def test_legacy_hooks_key_lowers_the_severity_of_a_real_finding(tmp_path):
+    """End to end, not just the config table: a Claude plugin's malformed
+    hooks file must be reported at the severity the legacy key sets."""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "billing-tools",
+                "description": "Commands for the billing dashboard",
+                "version": "1.0.0",
+            }
+        )
+    )
+    (tmp_path / "hooks").mkdir()
+    (tmp_path / "hooks" / "hooks.json").write_text(
+        json.dumps({"hooks": {"PostToolUse": {"command": "npm run lint"}}})
+    )
+    config_path = tmp_path / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "99.0.0"\nrules:\n  hooks-json-valid:\n    severity: warning\n'
+    )
+
+    results = Linter(
+        RepositoryContext(tmp_path), config=LinterConfig.from_file(config_path), no_plugins=True
+    ).run()
+    found = [v for v in results if v.rule_id == "claude-hooks-valid"]
+    assert found, [v.rule_id for v in results]
+    assert all(v.severity is Severity.WARNING for v in found)
 
 
 # ── --rule / --skip-rule ────────────────────────────────────────

@@ -96,7 +96,7 @@ class TestMalformedInlineHooks:
         config.version = "99.0.0"
         violations = Linter(RepositoryContext(repo), config=config).run()
 
-        found = [v.message for v in violations if v.rule_id == "hooks-json-valid"]
+        found = [v.message for v in violations if v.rule_id == "codex-hooks-valid"]
         assert any("must have an array of hook configurations" in m for m in found)
 
     def test_a_repeated_event_keeps_both_occurrences(self, tmp_path):
@@ -137,7 +137,7 @@ class TestMalformedInlineHooks:
         violations = Linter(RepositoryContext(repo), config=config).run()
 
         assert any(
-            v.rule_id == "hooks-json-valid" and "must have an array" in v.message
+            v.rule_id == "codex-hooks-valid" and "must have an array" in v.message
             for v in violations
         ), "the malformed occurrence was swallowed"
         assert any(
@@ -444,7 +444,7 @@ class TestInlineMcpCommandIsUsable:
 class TestUnhashableHookType:
     @pytest.mark.parametrize("bad", [[], {}, ["command"], 42])
     def test_a_non_string_hook_type_is_reported_not_raised(self, tmp_path, bad):
-        from skillsaw.rules.builtin.hooks.json_valid import HooksJsonValidRule
+        from skillsaw.rules.builtin.codex import CodexHooksValidRule
 
         repo = _codex_plugin_repo(
             tmp_path,
@@ -457,7 +457,7 @@ class TestUnhashableHookType:
                 },
             },
         )
-        violations = HooksJsonValidRule({}).check(RepositoryContext(repo))
+        violations = CodexHooksValidRule({}).check(RepositoryContext(repo))
         assert any("invalid type" in m for m in messages(violations))
 
 
@@ -518,10 +518,10 @@ class TestNonStringHookMatcher:
 
     @pytest.mark.parametrize("bad", [[], {}, 42])
     def test_a_non_string_matcher_is_reported_and_coerced(self, tmp_path, bad):
-        from skillsaw.rules.builtin.hooks.json_valid import HooksJsonValidRule
+        from skillsaw.rules.builtin.codex import CodexHooksValidRule
 
         context = RepositoryContext(self._repo(tmp_path, bad))
-        found = messages(HooksJsonValidRule({}).check(context))
+        found = messages(CodexHooksValidRule({}).check(context))
         assert any("matcher' must be a string" in m for m in found), found
 
         # The docs model must carry a string, or the generated page's
@@ -532,10 +532,10 @@ class TestNonStringHookMatcher:
                     assert isinstance(entry.matcher, str)
 
     def test_a_real_matcher_is_untouched(self, tmp_path):
-        from skillsaw.rules.builtin.hooks.json_valid import HooksJsonValidRule
+        from skillsaw.rules.builtin.codex import CodexHooksValidRule
 
         context = RepositoryContext(self._repo(tmp_path, "Write|Edit"))
-        assert HooksJsonValidRule({}).check(context) == []
+        assert CodexHooksValidRule({}).check(context) == []
         matchers = [
             e.matcher for p in extract_docs(context).plugins for h in p.hooks for e in h.entries
         ]
@@ -546,7 +546,7 @@ class TestHookDiagnosticRedaction:
     def test_non_string_hook_type_is_redacted_in_diagnostics(self, tmp_path):
         """A dict-valued hook type carrying a credentialed URL must not
         echo the secret into the violation message."""
-        from skillsaw.rules.builtin.hooks import HooksJsonValidRule
+        from skillsaw.rules.builtin.hooks import ClaudeHooksValidRule
 
         repo = tmp_path / "claude-repo"
         plugin = repo / "plugins" / "cl"
@@ -577,7 +577,7 @@ class TestHookDiagnosticRedaction:
             encoding="utf-8",
         )
 
-        violations = HooksJsonValidRule().check(RepositoryContext(repo))
+        violations = ClaudeHooksValidRule().check(RepositoryContext(repo))
         assert violations
         invalid = [v for v in violations if "invalid type" in v.message]
         assert invalid

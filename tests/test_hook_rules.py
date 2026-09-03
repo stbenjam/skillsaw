@@ -7,7 +7,11 @@ import json
 from pathlib import Path
 
 from skillsaw.blocks import HookEventConfig, HookHandler, HooksBlock
-from skillsaw.rules.builtin.hooks import HooksJsonValidRule, HooksDangerousRule, HooksProhibitedRule
+from skillsaw.rules.builtin.hooks import (
+    ClaudeHooksValidRule,
+    HooksDangerousRule,
+    HooksProhibitedRule,
+)
 from skillsaw.rules.builtin.hooks.dangerous import dangerous_command_descriptions
 from skillsaw.rule import Severity
 from skillsaw.context import RepositoryContext
@@ -190,13 +194,18 @@ def plugin_without_hooks(temp_dir):
 def test_valid_hooks_json(plugin_with_valid_hooks):
     """Test that valid hooks.json passes validation"""
     context = RepositoryContext(plugin_with_valid_hooks)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
 
-def test_matcher_type_check_is_codex_scoped(temp_dir):
-    """The Codex tightening must not change established Claude results."""
+def test_matcher_type_check_belongs_to_codex(temp_dir):
+    """The matcher type check is Codex's, and must not change established
+    Claude results. A Claude plugin's hooks file is a ClaudeHooksBlock, so
+    Codex's rule never sees it and Claude's rule never makes the check."""
+    from skillsaw.blocks import CodexHooksBlock
+    from skillsaw.rules.builtin.codex import CodexHooksValidRule
+
     plugin = temp_dir / "legacy-plugin"
     (plugin / ".claude-plugin").mkdir(parents=True)
     (plugin / ".claude-plugin" / "plugin.json").write_text(
@@ -223,14 +232,16 @@ def test_matcher_type_check_is_codex_scoped(temp_dir):
     # means nothing unless the hooks file was actually parsed into the tree.
     hooks_blocks = [b for b in context.lint_tree.find(HooksBlock) if b.path.name == "hooks.json"]
     assert hooks_blocks, "hooks/hooks.json was not attached to the lint tree"
-    violations = HooksJsonValidRule().check(context)
+    violations = ClaudeHooksValidRule().check(context)
     assert not any("matcher' must be a string" in v.message for v in violations)
+    assert context.lint_tree.find(CodexHooksBlock) == []
+    assert CodexHooksValidRule({}).check(context) == []
 
 
 def test_invalid_json(plugin_with_invalid_json):
     """Test that invalid JSON is detected"""
     context = RepositoryContext(plugin_with_invalid_json)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "Invalid JSON" in violations[0].message
@@ -239,7 +250,7 @@ def test_invalid_json(plugin_with_invalid_json):
 def test_missing_hooks_key(plugin_with_missing_hooks_key):
     """Test that missing 'hooks' key is detected"""
     context = RepositoryContext(plugin_with_missing_hooks_key)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "'hooks' key" in violations[0].message
@@ -248,7 +259,7 @@ def test_missing_hooks_key(plugin_with_missing_hooks_key):
 def test_invalid_event_type(plugin_with_invalid_event_type):
     """Test that invalid event types are detected"""
     context = RepositoryContext(plugin_with_invalid_event_type)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "Unknown event type" in violations[0].message
@@ -257,7 +268,7 @@ def test_invalid_event_type(plugin_with_invalid_event_type):
 def test_missing_hook_type(plugin_with_missing_hook_type):
     """Test that missing 'type' field in hook is detected"""
     context = RepositoryContext(plugin_with_missing_hook_type)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "'type' field" in violations[0].message
@@ -266,7 +277,7 @@ def test_missing_hook_type(plugin_with_missing_hook_type):
 def test_no_hooks_directory(plugin_without_hooks):
     """Test that plugins without hooks directory don't trigger violations"""
     context = RepositoryContext(plugin_without_hooks)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -327,7 +338,7 @@ def test_all_valid_event_types(temp_dir):
     (hooks_dir / "hooks.json").write_text(json.dumps(hooks_config))
 
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -361,7 +372,7 @@ def test_valid_hook_type_command(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -382,7 +393,7 @@ def test_valid_hook_type_http(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -403,7 +414,7 @@ def test_valid_hook_type_prompt(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -424,7 +435,7 @@ def test_valid_hook_type_agent(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -445,7 +456,7 @@ def test_invalid_hook_type_value(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "invalid type" in violations[0].message
@@ -467,7 +478,7 @@ def test_command_type_missing_command_field(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "requires a 'command' field" in violations[0].message
@@ -489,7 +500,7 @@ def test_http_type_missing_url_field(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "requires a 'url' field" in violations[0].message
@@ -511,7 +522,7 @@ def test_prompt_type_missing_prompt_field(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "requires a 'prompt' field" in violations[0].message
@@ -539,7 +550,7 @@ def test_type_specific_field_restriction_warning(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert violations[0].severity == Severity.WARNING
@@ -568,7 +579,7 @@ def test_field_type_validation_timeout_string(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "timeout" in violations[0].message
@@ -597,7 +608,7 @@ def test_field_type_validation_timeout_number(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -624,7 +635,7 @@ def test_headers_on_command_type_warning(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert violations[0].severity == Severity.WARNING
@@ -647,7 +658,7 @@ def test_agent_type_missing_prompt_field(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "requires a 'prompt' field" in violations[0].message
@@ -669,7 +680,7 @@ def test_required_field_wrong_type(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "must be a str" in violations[0].message
@@ -697,7 +708,7 @@ def test_timeout_as_boolean_rejected(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "timeout" in violations[0].message
@@ -726,7 +737,7 @@ def test_valid_mcp_tool_hook_type(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -747,7 +758,7 @@ def test_mcp_tool_missing_server_field(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "requires a 'server' field" in violations[0].message
@@ -769,7 +780,7 @@ def test_mcp_tool_missing_tool_field(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert "requires a 'tool' field" in violations[0].message
@@ -807,7 +818,7 @@ def test_new_event_types_accepted(temp_dir):
             },
         )
         context = RepositoryContext(plugin_dir)
-        rule = HooksJsonValidRule()
+        rule = ClaudeHooksValidRule()
         violations = rule.check(context)
         assert len(violations) == 0, f"Event '{event}' should be valid but got: {violations}"
         # Clean up for next iteration
@@ -838,7 +849,7 @@ def test_async_rewake_field_accepted(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -865,7 +876,7 @@ def test_shell_field_accepted(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -892,7 +903,7 @@ def test_if_field_accepted(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
 
@@ -919,7 +930,7 @@ def test_shell_on_http_type_warning(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert violations[0].severity == Severity.WARNING
@@ -948,7 +959,7 @@ def test_input_on_non_mcp_tool_warning(temp_dir):
         },
     )
     context = RepositoryContext(plugin_dir)
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(context)
     assert len(violations) == 1
     assert violations[0].severity == Severity.WARNING
@@ -1832,7 +1843,7 @@ def test_malformed_hooks_structure(temp_dir, payload, expected):
     hooks_dir.mkdir()
     (hooks_dir / "hooks.json").write_text(json.dumps(payload))
 
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(RepositoryContext(plugin_dir))
     assert len(violations) == 1
     assert expected in violations[0].message
@@ -1860,7 +1871,7 @@ def test_args_field_accepted_on_command(temp_dir):
             }
         },
     )
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(RepositoryContext(plugin_dir))
     assert len(violations) == 0
 
@@ -1880,7 +1891,7 @@ def test_args_field_wrong_type_rejected(temp_dir):
             }
         },
     )
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(RepositoryContext(plugin_dir))
     assert len(violations) == 1
     assert "'args' must be a list" in violations[0].message
@@ -1907,7 +1918,7 @@ def test_args_on_http_type_warning(temp_dir):
             }
         },
     )
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(RepositoryContext(plugin_dir))
     assert len(violations) == 1
     assert violations[0].severity == Severity.WARNING
@@ -1920,7 +1931,7 @@ def test_message_display_event_accepted(temp_dir):
         temp_dir,
         {"hooks": {"MessageDisplay": [{"hooks": [{"type": "command", "command": "echo shown"}]}]}},
     )
-    rule = HooksJsonValidRule()
+    rule = ClaudeHooksValidRule()
     violations = rule.check(RepositoryContext(plugin_dir))
     assert len(violations) == 0
 

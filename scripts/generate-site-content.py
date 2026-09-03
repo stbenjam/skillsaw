@@ -212,7 +212,7 @@ RULE_GROUPS = [
         "Hooks",
         "hooks",
         [
-            "hooks-json-valid",
+            "claude-hooks-valid",
             "hooks-dangerous",
             "hooks-prohibited",
         ],
@@ -250,9 +250,26 @@ RULE_GROUPS = [
         "package metadata; they never query a package registry.",
     ),
     (
+        "Muse Code",
+        "muse",
+        ["muse-hooks-valid"],
+        "Validates `.muse/hooks.json`, the project hooks Muse Code loads and "
+        "silently refuses when they are malformed: a bad matcher group "
+        "rejects the whole file, an unknown handler field drops that handler, "
+        "and an unknown event skips its entries — with no diagnostic in a "
+        "headless run. Muse's handler fields are a subset of Claude Code's, "
+        "so a hooks file copied from `.claude/` is the usual way in. Muse "
+        "reads AGENTS.md for portable instructions and `.agents/memory/` for "
+        "project memory; both get the shared content and security rules, so "
+        "no Muse-specific instruction format is validated. Enabled "
+        "automatically when a `.muse/hooks.json` or a root `.agents/memory/` "
+        "directory exists.",
+    ),
+    (
         "OpenAI Codex",
         "codex",
         [
+            "codex-hooks-valid",
             "codex-openai-metadata",
             "codex-plugin-json-valid",
             "codex-plugin-structure",

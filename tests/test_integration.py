@@ -310,7 +310,7 @@ class TestHooksJson:
         r = run_lint(repo)
         assert r["out"] is not None
         assert r["rc"] == 0
-        assert "hooks-json-valid" not in rule_ids(r)
+        assert "claude-hooks-valid" not in rule_ids(r)
 
 
 # ── Supply Chain Hooks ──────────────────────────────────────────
@@ -2393,8 +2393,8 @@ class TestCursorRules:
         r = run_lint(repo)
 
         assert not [
-            v for v in violations(r) if v["rule_id"] == "hooks-json-valid"
-        ], "hooks-json-valid must leave .cursor/hooks.json to cursor-hooks-valid"
+            v for v in violations(r) if v["rule_id"] == "claude-hooks-valid"
+        ], "claude-hooks-valid must leave .cursor/hooks.json to cursor-hooks-valid"
 
     def test_prompt_hook_text_reaches_the_injection_scanners(self, tmp_path):
         """A prompt hook ships prose the agent reads, so the prose rules read it."""
@@ -4828,6 +4828,7 @@ BROKEN_FIXTURES = [
     "content/mcp-tool-name",
     "security/malicious-skill",
     "codex/broken",
+    "codex/hooks-valid",
     "cursor-rules/broken-frontmatter",
     "cursor-rules/broken-hooks",
     "cursor-rules/prompt-hooks",
@@ -4836,6 +4837,7 @@ BROKEN_FIXTURES = [
     "instructions/agents-import/duplicated-pair",
     "opencode/broken",
     "opencode/malformed-shapes",
+    "muse/broken",
     "skills-lock/invalid",
 ]
 
@@ -4857,6 +4859,7 @@ CLEAN_FIXTURES = [
     "mcp-registry/clean",
     "agent-plugins/clean",
     "codex/clean",
+    "codex/hooks-clean",
     "cursor-rules/clean",
     "copilot-agents-clean",
     "devin/valid",
