@@ -2,9 +2,9 @@
 Rule: grok-config-valid
 
 The shape of a Grok Build project ``.grok/config.toml``, at the severity
-each defect's blast radius earns. The vocabulary — the honoured tables, the
+each defect's blast radius earns. The vocabulary — the honored tables, the
 server fields, the transport derivation, the permission keys — lives in
-``skillsaw.formats.grok``; this rule reads it and never restates it.
+``skillsaw.formats.grok``, which this rule reads.
 
 A parse error is the whole file: Grok loads nothing from it, including the
 tables above the error, and exits 0 with an empty stderr. Everything below
@@ -31,9 +31,22 @@ from skillsaw.diagnostics import safe_display
 from skillsaw.formats import grok
 from skillsaw.rule import Rule, RuleViolation, Severity
 
+from ._helpers import sample
+
 #: Server fields whose TOML type Grok's deserializer pins. Read in this
 #: order so a server carrying two defects names them the way the file does.
 _TYPED_SERVER_FIELDS = ("command", "url", "args", "env", "headers")
+
+#: The TOML type each Python type was read as, in the spelling TOML uses.
+#: Hoisted, because ``_type_name`` is called once per defective field.
+_TOML_TYPE_NAMES = {
+    bool: "boolean",
+    dict: "table",
+    float: "float",
+    int: "integer",
+    list: "array",
+    str: "string",
+}
 
 
 class GrokConfigValidRule(Rule):
@@ -66,7 +79,10 @@ class GrokConfigValidRule(Rule):
             if block.parse_error:
                 violations.append(
                     self.violation(
-                        f"Invalid TOML: {block.parse_error}",
+                        # Bounded: a TOML parser interpolates the offending
+                        # key into its message, so an adversarial file would
+                        # otherwise write its own content into the report.
+                        f"Invalid TOML: {safe_display(block.parse_error)}",
                         file_path=block.path,
                     )
                 )
@@ -101,7 +117,7 @@ class GrokConfigValidRule(Rule):
 
         violations: List[RuleViolation] = []
         for name, config in block.server_entries():
-            where = f"[{key}.{safe_display(str(name))}]"
+            where = f"[{key}.{safe_display(name)}]"
             if not isinstance(config, dict):
                 violations.append(self._warn(block, f"{where} must be a table"))
                 continue
@@ -124,6 +140,11 @@ class GrokConfigValidRule(Rule):
     ) -> List[RuleViolation]:
         """The table Grok reports nothing about, at any scope.
 
+        The two array keys fail at different scopes, measured: a non-string
+        in ``allow``/``deny``/``ask`` costs that entry, while a non-table in
+        ``rules`` costs every rule in the array. The findings say which, so
+        an author knows whether the rest of the key survived.
+
         A non-table ``permission`` is deliberately not reported: what it
         costs was never measured, and a rule may not invent the verdict.
         """
@@ -132,15 +153,30 @@ class GrokConfigValidRule(Rule):
             return []
 
         violations: List[RuleViolation] = []
-        # Document order, so a file with two defects reads top to bottom.
-        lists = [str(key) for key in table if str(key) in grok.PERMISSION_LIST_KEYS]
+        # Document order, so a file with two defects reads top to bottom. No
+        # ``str()``: a TOML key is a string by grammar, unlike a YAML one.
+        lists = [key for key in table if key in grok.PERMISSION_LIST_KEYS]
         for key in lists:
-            if not isinstance(table[key], list):
+            value = table[key]
+            if not isinstance(value, list):
                 violations.append(
                     self._warn(
                         block,
                         f"[{grok.PERMISSION_TABLE}] '{key}' must be an array of rule "
-                        f"strings, got {_type_name(table[key])}",
+                        f"strings, got {_type_name(value)}",
+                    )
+                )
+                continue
+            # Measured: a non-string entry costs that entry alone. The
+            # string siblings beside it still load, and the key keeps its
+            # place in ``permissions.sources``.
+            dropped = _bad_entries(value, str)
+            if dropped:
+                violations.append(
+                    self._warn(
+                        block,
+                        f"[{grok.PERMISSION_TABLE}] '{key}' entries must be rule "
+                        f"strings; Grok drops {sample(dropped)}",
                     )
                 )
 
@@ -166,6 +202,19 @@ class GrokConfigValidRule(Rule):
                     f"got {_type_name(table[rules_key])}",
                 )
             )
+        else:
+            # Measured, and the opposite of the compact keys above: one
+            # non-table entry costs the whole array. Two valid rules beside
+            # a bare integer loaded nothing, silently.
+            bad = _bad_entries(table[rules_key], dict)
+            if bad:
+                violations.append(
+                    self._warn(
+                        block,
+                        f"[{grok.PERMISSION_TABLE}] '{rules_key}' entries must be tables; "
+                        f"Grok discards the whole array over {sample(bad)}",
+                    )
+                )
         return violations
 
     def _warn(self, block: GrokConfigBlock, message: str) -> RuleViolation:
@@ -229,7 +278,7 @@ def _field_problem(field: str, value: Any) -> Optional[str]:
     for key, item in value.items():
         if not isinstance(item, str):
             return (
-                f"'{field}' value for '{safe_display(str(key))}' must be a string, "
+                f"'{field}' value for '{safe_display(key)}' must be a string, "
                 f"got {_type_name(item)}"
             )
     return None
@@ -237,14 +286,20 @@ def _field_problem(field: str, value: Any) -> Optional[str]:
 
 def _type_name(value: Any) -> str:
     """The TOML type *value* was read as, in the spelling TOML uses."""
-    return {
-        bool: "boolean",
-        dict: "table",
-        float: "float",
-        int: "integer",
-        list: "array",
-        str: "string",
-    }.get(type(value), type(value).__name__)
+    return _TOML_TYPE_NAMES.get(type(value), type(value).__name__)
+
+
+def _bad_entries(values: List[Any], expected: type) -> List[str]:
+    """Where *values* holds something other than *expected*, labelled.
+
+    Positions count from one: a TOML array carries no index the author can
+    read off the file, so the label has to be the one a reader would count.
+    """
+    return [
+        f"entry {position} ({_type_name(value)})"
+        for position, value in enumerate(values, 1)
+        if not isinstance(value, expected)
+    ]
 
 
 def _and_list(names: List[str]) -> str:

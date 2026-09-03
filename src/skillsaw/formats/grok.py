@@ -137,7 +137,7 @@ CONFIG_FILENAME = "config.toml"
 LSP_FILENAME = "lsp.json"
 
 #: The rest of the project layer, on the same footing as
-#: :data:`CONFIG_FILENAME`: Grok configuration nothing here parses or
+#: :data:`LSP_FILENAME`: Grok configuration nothing here parses or
 #: attaches, listed because *existence* is what makes a directory Grok's.
 #: A repository whose only Grok artifact is a sandbox policy is a Grok
 #: repository, and the summary saying ``unknown`` would be wrong about it.
@@ -349,31 +349,44 @@ def normalize_event(event: str) -> str:
 # and Grok exits 0 with an empty stderr; the sole signal is a
 # ``configSources[].note`` of ``"parse error"`` inside ``grok inspect``.
 
-#: The tables a project ``.grok/config.toml`` contributes, mapped to the
-#: keys each honours at project scope. ``None`` means the whole table; a
-#: frozenset names the honoured keys and nothing else.
+#: The top-level tables a project ``.grok/config.toml`` contributes. Names
+#: only: what a rule may report is a name outside this set, never a key
+#: inside one of them — see :data:`PROJECT_CONFIG_KEYS_REFUSED` for the one
+#: exception, which is measured.
 #:
 #: Only ``mcp_servers`` and ``permission`` are measured — see
 #: :data:`PROJECT_CONFIG_TABLES_MEASURED`. The other two are here on the
-#: reference's word, and a rule must not report against a table this map
+#: reference's word, and a rule must not report against a table this set
 #: lists, whichever half it comes from: reporting a *documented* table as
 #: ignored would be a false positive on a file the docs endorse.
-PROJECT_CONFIG_TABLES: Mapping[str, Optional[frozenset]] = {
-    "mcp_servers": None,
-    "permission": None,
-    "plugins": None,
-    "mcp": frozenset({"max_output_bytes"}),
+PROJECT_CONFIG_TABLES = frozenset({"mcp_servers", "permission", "plugins", "mcp"})
+
+#: Keys a project file was measured to drop from inside a table it
+#: otherwise honors. ``[plugins].paths`` is the only one: three
+#: independent runs ignored a project ``paths`` — relative, absolute, git
+#: repository or not — while the user layer's ``paths`` loaded a plugin.
+#:
+#: Deliberately a refusal list rather than an allow-list. The reference's
+#: other keys here — ``[plugins]`` ``enabled``/``disabled`` and ``[mcp]``
+#: ``max_output_bytes`` — produced no observable at either scope, in either
+#: direction, so an unknown-key finding inside these tables would rest on
+#: nothing and would fire on a working config the first time Grok adds a
+#: key. Top-level names are different: a table Grok does not read is
+#: measurably inert, and ``extra-tables`` is there for the release that
+#: adds one.
+PROJECT_CONFIG_KEYS_REFUSED: Mapping[str, frozenset] = {
+    "plugins": frozenset({"paths"}),
 }
 
 #: The half of :data:`PROJECT_CONFIG_TABLES` a project file was seen to
 #: load. Split out because the two halves support different sentences: a
-#: message may say a measured table is honoured, and must not claim as much
+#: message may say a measured table is honored, and must not claim as much
 #: for ``[plugins]`` or ``[mcp]``.
 PROJECT_CONFIG_TABLES_MEASURED = frozenset({"mcp_servers", "permission"})
 
 #: Tables a project file was measured to *not* contribute, each with a
 #: positive user-scope control so "nothing happened" is a refusal rather
-#: than a mis-run. ``hooks`` is the sharp one: the honoured path for a
+#: than a mis-run. ``hooks`` is the sharp one: the honored path for a
 #: project's hooks is ``.grok/hooks/*.json``, which loads.
 PROJECT_CONFIG_TABLES_REFUSED = frozenset({"hooks", "skills", "sandbox"})
 
@@ -382,9 +395,8 @@ PROJECT_CONFIG_TABLES_REFUSED = frozenset({"hooks", "skills", "sandbox"})
 #: this is the vocabulary a rule may check membership against, never a
 #: reason to call a file broken.
 #:
-#: ``transport`` is deliberately absent. It is the plausible misspelling of
-#: ``type`` and is *not* an alias: measured, it is reported unrecognized and
-#: ignored.
+#: ``transport`` is deliberately absent; see
+#: :data:`MCP_TYPE_MISSPELLED_FIELD`.
 MCP_SERVER_FIELDS = frozenset(
     {
         "args",
@@ -446,28 +458,17 @@ def mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
-#: The ``[plugins]`` keys the reference documents for a project file.
-#:
-#: **Documented, not measured.** Neither key was reproduced at project *or*
-#: user scope against a ``.grok/plugins/`` directory, so nothing here may be
-#: asserted to work. ``paths`` is deliberately absent and is the one
-#: measured fact in this table: three independent runs ignored a project
-#: ``paths`` — relative, absolute, git repository or not — while only the
-#: user layer's ``paths`` loaded a plugin, and it arrived disabled.
-PLUGINS_PROJECT_KEYS = frozenset({"enabled", "disabled"})
-
-#: The one ``[mcp]`` key a project file is documented to contribute. No
-#: observable confirms it at either scope; state it as documented.
-MCP_PROJECT_KEYS = PROJECT_CONFIG_TABLES["mcp"]
-
 #: The ``[permission]`` keys that hold compact rule strings, and the verbose
 #: table array beside them. Measured: ``rules`` is discarded **entirely**
 #: whenever any of the three list keys is present, in any order, with no
 #: diagnostic — which is the defect worth reporting, since a file carrying
 #: both loses every verbose rule it wrote.
 #:
-#: An unparseable entry costs that entry alone, also silently. ``defaultMode``
-#: is a ``.claude/settings.json`` key with no meaning here and is ignored.
+#: The two forms also fail at different scopes, measured. A non-string entry
+#: in a list key costs that entry: ``allow = ["Bash(git *)", 42]`` loads the
+#: string beside the integer. A non-table entry in ``rules`` costs the whole
+#: array: two valid rules beside a bare integer loaded nothing. Both are
+#: silent, and an unparseable rule *string* costs its entry alone.
 PERMISSION_TABLE = "permission"
 PERMISSION_LIST_KEYS = frozenset({"allow", "deny", "ask"})
 PERMISSION_RULES_KEY = "rules"

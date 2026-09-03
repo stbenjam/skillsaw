@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import pytest
 
+from skillsaw.blocks import GrokConfigBlock
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.diagnostics import _MAX_DISPLAY
 from skillsaw.linter import Linter
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.grok import GrokConfigValidRule
@@ -48,6 +50,17 @@ def config(tmp_path, body, name="repo"):
     return repo_with_config(tmp_path, name, body)
 
 
+def _toml_parse_errors(report, rule_id) -> int:
+    """How many syntax failures *rule_id* reported.
+
+    Counted by skillsaw's own prefix, never by the parser's wording: the
+    3.9 floor resolves a separately versioned ``tomli``.
+    """
+    return len(
+        [v for v in violations_for(report, rule_id) if v["message"].startswith("Invalid TOML: ")]
+    )
+
+
 # ── Rule metadata ────────────────────────────────────────────────
 
 
@@ -62,7 +75,7 @@ def test_rule_metadata() -> None:
     # A tool directory nobody else claims needs no provenance filtering.
     assert rule.provenance_scope is None
     assert not rule.supports_autofix
-    # No tuneable settings: the honoured vocabulary is Grok's, and the one
+    # No tuneable settings: the honored vocabulary is Grok's, and the one
     # place a release can widen it is the scope rule's ``extra-tables``.
     assert rule.config_schema == {}
 
@@ -96,7 +109,11 @@ def test_the_rule_runs_on_a_repository_with_a_project_config(tmp_path) -> None:
 
 
 def test_a_well_formed_project_config_reports_nothing(tmp_path) -> None:
-    assert check(copy_fixture("grok/config-clean", tmp_path)) == []
+    repo = copy_fixture("grok/config-clean", tmp_path)
+
+    # Pinned, or a regression in attachment would make this pass vacuously.
+    assert RepositoryContext(repo).lint_tree.find(GrokConfigBlock)
+    assert check(repo) == []
 
 
 def test_the_clean_fixture_lints_green(tmp_path) -> None:
@@ -120,19 +137,6 @@ def broken(tmp_path):
 @pytest.mark.parametrize(
     ("path", "message", "severity"),
     [
-        # Whole file: the unclosed array costs the [permission] table under
-        # it, and Grok exits 0 without saying so.
-        (
-            ".grok/config.toml",
-            "Invalid TOML: Unclosed array (at line 5, column 1)",
-            Severity.ERROR,
-        ),
-        # A key set twice is a TOML parse error, so it costs the file too.
-        (
-            "packages/gantry/.grok/config.toml",
-            "Invalid TOML: Cannot overwrite a value (at line 4, column 27)",
-            Severity.ERROR,
-        ),
         # Server scope: the sibling [mcp_servers.berths] still loads.
         (
             "packages/quayside/.grok/config.toml",
@@ -161,6 +165,30 @@ def test_each_defect_is_reported_once(broken, path, message, severity) -> None:
     assert len(matched) == 1, messages(violations)
     assert matched[0].severity == severity
     assert where(repo, matched[0]) == path
+
+
+#: The two whole-file defects. Their messages quote the parser, whose exact
+#: wording is not a contract — the 3.9 floor resolves a separately versioned
+#: ``tomli`` — so what is pinned is skillsaw's own prefix and the line the
+#: author has to open.
+@pytest.mark.parametrize(
+    ("path", "line"),
+    [
+        # The unclosed array costs the [permission] table under it, and Grok
+        # exits 0 without saying so.
+        (".grok/config.toml", "line 5"),
+        # A key set twice is a TOML parse error, so it costs the file too.
+        ("packages/gantry/.grok/config.toml", "line 4"),
+    ],
+)
+def test_a_parse_error_is_one_error_naming_its_line(broken, path, line) -> None:
+    repo, violations = broken
+    matched = [v for v in violations if where(repo, v) == path]
+
+    assert len(matched) == 1, messages(violations)
+    assert matched[0].severity == Severity.ERROR
+    assert matched[0].message.startswith("Invalid TOML: ")
+    assert line in matched[0].message
 
 
 def test_the_broken_fixture_reports_nothing_else(broken) -> None:
@@ -227,6 +255,36 @@ def test_a_malformed_file_reports_nothing_about_its_tables(tmp_path) -> None:
     )
 
     assert len(check(repo)) == 1
+
+
+def test_a_parser_message_carrying_the_file_is_bounded(tmp_path) -> None:
+    """A TOML parser interpolates the offending key into its own message, so
+    a crafted file would otherwise write kilobytes of its own content into a
+    CI artifact."""
+    key = "A" * 5000
+    repo = config(tmp_path, f'["{key}"]\n["{key}"]\n', "long-duplicate-key")
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert violations[0].message.startswith("Invalid TOML: ")
+    assert len(violations[0].message) <= len("Invalid TOML: ") + _MAX_DISPLAY + 1
+    assert key not in violations[0].message
+
+
+def test_a_file_that_cannot_be_decoded_is_the_same_whole_file_defect(tmp_path) -> None:
+    """A config saved as cp1252 never reaches the parser, and Grok loads
+    nothing from it either — the same scope, so the same finding."""
+    repo = write_repo(tmp_path / "cp1252")
+    grok_dir = repo / ".grok"
+    grok_dir.mkdir()
+    (grok_dir / "config.toml").write_bytes(b'[permission]\nallow = ["Bash(caf\x92 *)"]\n')
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert violations[0].severity == Severity.ERROR
+    assert "Failed to read config.toml" in violations[0].message
 
 
 # ── ``[mcp_servers]`` ────────────────────────────────────────────
@@ -308,6 +366,16 @@ def test_the_other_connection_field_is_typed_too(tmp_path) -> None:
     repo = config(tmp_path, '[mcp_servers.quayside]\ncommand = "bin/quayside"\nurl = 8080\n')
 
     assert messages(check(repo)) == ["[mcp_servers.quayside] 'url' must be a string, got integer"]
+
+
+def test_a_url_server_types_its_command_too(tmp_path) -> None:
+    """The mirror: a ``url`` carries the transport, and the ``command``
+    beside it is still deserialized — a non-string one drops the server."""
+    repo = config(tmp_path, '[mcp_servers.quayside]\nurl = "https://q.example/mcp"\ncommand = 42\n')
+
+    assert messages(check(repo)) == [
+        "[mcp_servers.quayside] 'command' must be a string, got integer"
+    ]
 
 
 def test_two_defects_in_one_server_are_one_finding(tmp_path) -> None:
@@ -405,6 +473,84 @@ def test_a_discarded_rules_is_not_also_reported_for_its_type(tmp_path) -> None:
     ]
 
 
+# ── ``[permission]`` array entries ───────────────────────────────
+#
+# The two forms fail at different scopes, measured against 1.0.13 with a
+# valid entry beside the bad one so per-entry and per-key are told apart:
+# ``allow = ["Bash(git *)", 42]`` loaded 1 rule, while ``rules`` holding two
+# valid tables and one integer loaded 0.
+
+
+@pytest.mark.parametrize("key", ["allow", "deny", "ask"])
+def test_a_non_string_entry_costs_that_entry(tmp_path, key) -> None:
+    repo = config(tmp_path, f'[permission]\n{key} = ["Bash(make test)", 42]\n')
+
+    violations = check(repo)
+
+    assert messages(violations) == [
+        f"[permission] '{key}' entries must be rule strings; Grok drops entry 2 (integer)"
+    ]
+    assert violations[0].severity == Severity.WARNING
+
+
+def test_every_dropped_entry_is_named_in_one_finding(tmp_path) -> None:
+    repo = config(tmp_path, '[permission]\nallow = [42, "Bash(make test)", true]\n')
+
+    assert messages(check(repo)) == [
+        "[permission] 'allow' entries must be rule strings; "
+        "Grok drops entry 1 (integer), entry 3 (boolean)"
+    ]
+
+
+def test_a_non_table_rules_entry_costs_the_whole_array(tmp_path) -> None:
+    """Two valid rules beside one integer loaded nothing at all."""
+    repo = config(
+        tmp_path,
+        "[permission]\nrules = [\n"
+        '  { action = "allow", tool = "bash", pattern = "gh *" },\n'
+        '  { action = "deny", tool = "webfetch" },\n'
+        "  42,\n]\n",
+    )
+
+    violations = check(repo)
+
+    assert messages(violations) == [
+        "[permission] 'rules' entries must be tables; "
+        "Grok discards the whole array over entry 3 (integer)"
+    ]
+    assert violations[0].severity == Severity.WARNING
+
+
+def test_an_array_of_rule_strings_is_not_a_rules_array(tmp_path) -> None:
+    """``rules = ["deny Bash"]`` is the compact spelling written under the
+    verbose key: every entry is dropped, so the whole array is."""
+    repo = config(tmp_path, '[permission]\nrules = ["deny Bash"]\n')
+
+    assert messages(check(repo)) == [
+        "[permission] 'rules' entries must be tables; "
+        "Grok discards the whole array over entry 1 (string)"
+    ]
+
+
+def test_a_discarded_rules_is_not_also_reported_for_its_entries(tmp_path) -> None:
+    """A ``rules`` already discarded by a list key beside it is one finding,
+    not two."""
+    repo = config(tmp_path, '[permission]\nallow = ["Bash(make test)"]\nrules = [42]\n')
+
+    assert messages(check(repo)) == [
+        "[permission] 'rules' is discarded because 'allow' is also set"
+    ]
+
+
+def test_well_typed_entries_are_not_a_defect(tmp_path) -> None:
+    repo = config(
+        tmp_path,
+        '[permission]\nask = ["Bash(rm *)"]\n\n[[permission.nowhere]]\nx = 1\n',
+    )
+
+    assert [m for m in messages(check(repo)) if "entries must be" in m] == []
+
+
 # ── What is never reported ───────────────────────────────────────
 
 
@@ -498,15 +644,42 @@ def test_a_configured_severity_moves_the_file_scoped_findings_only(tmp_path) -> 
 
 
 def test_the_rule_can_be_turned_off(tmp_path) -> None:
+    """Every finding this rule makes goes, except the one it shares: a file
+    that does not parse is not an MCP source either, so ``mcp-valid-json``
+    reports it wherever this rule cannot."""
     repo = copy_fixture("grok/config-broken", tmp_path)
     (repo / ".skillsaw.yaml").write_text(
         'version: "99.0.0"\nrules:\n  grok-config-valid:\n    enabled: false\n'
     )
 
-    report = lint_json(repo, returncode=0)
+    report = lint_json(repo, returncode=1)
 
     assert violations_for(report, "grok-config-valid") == []
     assert violations_for(report, "grok-config-project-scope")
+    assert _toml_parse_errors(report, "mcp-valid-json") == 2
+
+
+def test_a_version_pin_leaves_the_parse_error_to_the_mcp_rule(tmp_path) -> None:
+    """The ordinary state right after an upgrade: this rule's ``since``
+    postdates the pin, and the file still does not parse."""
+    repo = copy_fixture("grok/config-broken", tmp_path)
+    (repo / ".skillsaw.yaml").write_text('version: "0.19.0"\n')
+
+    report = lint_json(repo, returncode=1)
+
+    assert violations_for(report, "grok-config-valid") == []
+    assert _toml_parse_errors(report, "mcp-valid-json") == 2
+
+
+def test_the_two_rules_never_both_report_one_parse_error(tmp_path) -> None:
+    """One defect, one finding: the deferral names the owner rather than
+    both rules reading ``parse_error``."""
+    repo = copy_fixture("grok/config-broken", tmp_path)
+
+    report = lint_json(repo, returncode=1)
+
+    assert violations_for(report, "mcp-valid-json") == []
+    assert _toml_parse_errors(report, "grok-config-valid") == 2
 
 
 # ── A package is a project of its own ────────────────────────────

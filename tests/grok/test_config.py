@@ -13,6 +13,7 @@ import pytest
 
 from skillsaw.blocks import GrokConfigBlock, McpConfigRole
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.formats import grok
 from skillsaw.rules.builtin.mcp import McpProhibitedRule, McpValidJsonRule
 
 from tests.grok._helpers import (
@@ -243,7 +244,7 @@ def test_a_non_table_mcp_servers_costs_only_that_table(temp_dir) -> None:
 
 
 def test_the_permission_table_is_exposed(temp_dir) -> None:
-    """The other honoured table, and the one Grok says nothing about."""
+    """The other honored table, and the one Grok says nothing about."""
     repo = write_repo(temp_dir / "repo")
     write_config(
         repo,
@@ -297,7 +298,9 @@ def test_mcp_valid_json_leaves_the_toml_shape_alone(temp_dir) -> None:
     assert run_rule(McpValidJsonRule, repo) == []
 
 
-def test_mcp_valid_json_does_not_announce_a_toml_parse_error_as_json(temp_dir) -> None:
+def test_mcp_valid_json_leaves_a_toml_parse_error_to_the_grok_rule(temp_dir) -> None:
+    """The deferral names the owner, so one malformed file is one finding —
+    and it is never announced as invalid JSON."""
     repo = write_repo(temp_dir / "repo")
     write_config(repo, "[mcp_servers.gantry\n")
 
@@ -320,12 +323,56 @@ def test_mcp_valid_json_keeps_the_dialect_neutral_credential_check(temp_dir) -> 
     assert messages(found) == ["MCP server 'tideboard' 'url' must not contain user information"]
 
 
+#: A credential-shaped value per map Grok accepts, built by concatenation so
+#: the file never holds a contiguous token literal.
+_COMMITTED = "oc7yq3wm2ka9" + "zvb4td6xh1prn8gj5sfe"
+
+
+@pytest.mark.parametrize(
+    ("table", "entry"),
+    [
+        ("headers", f'Authorization = "Bearer {_COMMITTED}"'),
+        ("env", f'HARBOURMASTER_API_TOKEN = "{_COMMITTED}"'),
+        ("oauth", f'client_secret = "{_COMMITTED}"'),
+    ],
+)
+def test_a_committed_credential_in_a_server_map_is_scanned(temp_dir, table, entry) -> None:
+    """The higher-value half of the dialect-neutral check: a token committed
+    to a project's config is the realistic supply-chain defect, and the map
+    it sits in is named by the block — including ``oauth``, which Grok
+    accepts as a server field."""
+    repo = write_repo(temp_dir / table)
+    write_config(
+        repo,
+        "[mcp_servers.tideboard]\n"
+        'url = "https://tideboard.internal.example/mcp"\n\n'
+        f"[mcp_servers.tideboard.{table}]\n{entry}\n",
+    )
+
+    found = messages(run_rule(McpValidJsonRule, repo))
+
+    assert len(found) == 1, found
+    assert "tideboard" in found[0]
+    assert _COMMITTED not in found[0]
+
+
+def test_the_grok_block_declares_the_maps_grok_accepts(temp_dir) -> None:
+    """``oauth`` is a documented server field, so it is scanned like the
+    other two rather than being the one map a secret can hide in."""
+    assert dict(GrokConfigBlock.credential_maps) == {"env": False, "headers": True, "oauth": False}
+    assert set(dict(GrokConfigBlock.credential_maps)) <= grok.MCP_SERVER_FIELDS
+
+
 # ── End to end ───────────────────────────────────────────────────
 
 
 def test_the_clean_fixture_reports_nothing(tmp_path) -> None:
     repo = copy_fixture("grok/config-clean", tmp_path)
 
+    # Pinned, or a regression in attachment would make this pass vacuously.
+    assert relative(repo, RepositoryContext(repo).lint_tree.find(GrokConfigBlock)) == [
+        ".grok/config.toml"
+    ]
     assert lint_json(repo)["violations"] == []
 
 

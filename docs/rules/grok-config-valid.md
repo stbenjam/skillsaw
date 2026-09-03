@@ -57,15 +57,20 @@ beside the defect load either way.
 - `mcp_servers` set to something that is not a table. That table contributes
   no servers; `[permission]` beside it is untouched.
 - A `[mcp_servers.<name>]` entry that is not a table, or that names nothing
-  Grok can start — neither a `command` nor a `url`, an empty `command`, or
-  either field carrying something other than a string. Grok drops that
+  Grok can start — neither a `command` nor a `url`, an empty one of either,
+  or either field carrying something other than a string. Grok drops that
   server alone, order-independent, and its siblings still load.
 - A server field whose TOML type Grok's deserializer refuses: `args` that is
   not an array of strings, or `env` / `headers` that is not a table of
   strings. That server does not load.
 - `[permission]` `allow`, `deny` or `ask` set to something other than an
   array. Grok reads nothing from that key.
-- `[permission]` `rules` set to something other than an array of tables.
+- An entry in `allow`, `deny` or `ask` that is not a string. Grok drops that
+  entry and loads the ones beside it, so the finding names the positions.
+- `[permission]` `rules` set to something other than an array of tables —
+  either a wrong type on the key, or a non-table entry inside it. The entry
+  case is the sharper one: it costs the whole array, and two valid rules
+  beside a single bad entry loaded nothing at all.
 - `[permission]` `rules` written alongside any of `allow`, `deny` or `ask`.
   Grok discards **every** verbose rule when a compact list key is present,
   in any order, so a file carrying both loses the whole `rules` array.
@@ -142,6 +147,9 @@ deny = ["Bash(psql *)"]
 - Pick one permission spelling. Move the verbose `rules` entries into
   `allow` / `deny` / `ask` as compact rule strings, or delete the list keys
   and keep `rules` — a file with both keeps only the list keys.
+- Keep every `allow` / `deny` / `ask` entry a rule string and every `rules`
+  entry a table. Mixing the two spellings inside one array is what costs the
+  whole `rules` array.
 
 ## Configuration
 

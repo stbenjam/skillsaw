@@ -313,10 +313,11 @@ group and a skipped handler all look like a hook that had nothing to do. The
 commands themselves are scanned by
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md).
-[`grok-agent-valid`](rules/grok-agent-valid.md) covers the other one: a
+[`grok-agent-valid`](rules/grok-agent-valid.md) covers the second: a
 `.grok/agents/*.md` whose frontmatter is missing, malformed, or without
 `name` or `description` is dropped by Grok, and the subagent never appears
-in the agent list.
+in the agent list. The third is `config.toml`, which gets its own paragraphs
+below.
 
 Two things in that layer decide whether a file loads at all, and neither
 changes what skillsaw lints. Grok gates hooks, MCP and LSP on folder trust —
@@ -334,15 +335,17 @@ A project `config.toml` contributes only `[mcp_servers]`, `[plugins]`,
 dropped, and dropped silently: Grok's unknown-key warnings cover the user's
 own `~/.grok/config.toml` and not a project file, so a typo'd table there
 produces no diagnostic anywhere. `[plugins] paths` is dropped the same way,
-honoured only from the user's file.
+honored only from the user's file.
 [`grok-config-project-scope`](rules/grok-config-project-scope.md) reports
-that: an ignored table or key, and the spellings that load nothing at all —
+that: an ignored top-level table or scalar, `[plugins] paths`, and the
+spellings that load nothing at all —
 `[[mcp.servers]]`, `[mcp-servers]`, `[mcpServers]`, `[permissions]`,
 `transport` inside a server, `defaultMode` inside `[permission]`.
 [`grok-config-valid`](rules/grok-config-valid.md) covers the file itself: a
 parse error costs every table in it including the ones above the error, and
 Grok exits 0 with an empty stderr when that happens, while a malformed
-server costs that server and a malformed `[permission]` key costs that key.
+server costs that server and a malformed `[permission]` key costs that key —
+or, for a non-table entry inside `rules`, every rule in the array.
 Grok reports the server defects through `mcpConfigProblems` and the
 permission ones not at all.
 
@@ -563,7 +566,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `kiro` | `.kiro/steering/*.md` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
-| **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json` — see [Grok Build](#grok-build) |
+| **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
 | **OpenAI Codex** | `codex-project` | `.codex/hooks.json` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
 | **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 
+from skillsaw.blocks import GrokConfigBlock
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats import grok
@@ -34,7 +35,7 @@ from tests.grok._helpers import (
 
 #: A project file that contributes everything it declares, so a finding
 #: beside it is about the table under test and nothing else.
-HONOURED = """\
+HONORED = """\
 [mcp_servers.berths]
 command = "bin/harbourmaster"
 
@@ -88,7 +89,11 @@ def test_the_rule_is_not_loaded_without_grok_evidence(tmp_path) -> None:
 
 
 def test_a_project_scoped_config_reports_nothing(tmp_path) -> None:
-    assert check(copy_fixture("grok/config-clean", tmp_path)) == []
+    repo = copy_fixture("grok/config-clean", tmp_path)
+
+    # Pinned, or a regression in attachment would make this pass vacuously.
+    assert RepositoryContext(repo).lint_tree.find(GrokConfigBlock)
+    assert check(repo) == []
 
 
 @pytest.fixture
@@ -151,7 +156,7 @@ def test_the_broken_fixture_reports_nothing_else(broken) -> None:
 
 
 def test_one_ignored_table_is_named_on_its_own(tmp_path) -> None:
-    repo = scope(tmp_path, HONOURED + '\n[ui]\ntheme = "dark"\n')
+    repo = scope(tmp_path, HONORED + '\n[ui]\ntheme = "dark"\n')
 
     violations = check(repo)
 
@@ -164,8 +169,7 @@ def test_several_ignored_tables_are_one_consolidated_finding(tmp_path) -> None:
     tables, and naming each separately buries the run."""
     repo = scope(
         tmp_path,
-        HONOURED
-        + '\n[ui]\ntheme = "dark"\n\n[telemetry]\nenabled = false\n\n[tools]\nweb = true\n',
+        HONORED + '\n[ui]\ntheme = "dark"\n\n[telemetry]\nenabled = false\n\n[tools]\nweb = true\n',
     )
 
     assert messages(check(repo)) == [
@@ -211,8 +215,8 @@ def test_a_measured_refusal_names_the_file_to_write_instead(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("table", ["skills", "sandbox"])
-def test_a_refusal_honoured_only_at_user_scope_carries_no_hint(tmp_path, table) -> None:
-    """Which scope honours it is a consequence of the finding rather
+def test_a_refusal_honored_only_at_user_scope_carries_no_hint(tmp_path, table) -> None:
+    """Which scope honors it is a consequence of the finding rather
     than a fix for it, and belongs on the rule's page."""
     repo = scope(tmp_path, f'[{table}]\npaths = ["./elsewhere"]\n', table)
 
@@ -237,10 +241,10 @@ def test_every_hint_belongs_to_a_measured_refusal() -> None:
     assert set(_REFUSED_HINTS) <= set(grok.PROJECT_CONFIG_TABLES_REFUSED)
 
 
-# ── Keys inside an honoured table ────────────────────────────────
+# ── Keys inside an honored table ────────────────────────────────
 
 
-def test_a_plugins_key_outside_the_documented_two(tmp_path) -> None:
+def test_the_one_measured_refusal_inside_an_honored_table(tmp_path) -> None:
     """Three independent runs ignored a project ``paths``, relative or
     absolute, in a git repository or not."""
     repo = scope(tmp_path, '[plugins]\npaths = ["./.grok/plugins/pilot-charts"]\n')
@@ -248,16 +252,25 @@ def test_a_plugins_key_outside_the_documented_two(tmp_path) -> None:
     assert messages(check(repo)) == ["[plugins] 'paths' is ignored in a project config.toml"]
 
 
-def test_another_plugins_key_gets_no_paths_hint(tmp_path) -> None:
-    repo = scope(tmp_path, "[plugins]\nautoupdate = true\n")
+@pytest.mark.parametrize(
+    "body",
+    [
+        "[plugins]\nautoupdate = true\n",
+        "[mcp]\nmax_output_bytes = 65536\ntimeout = 30\n",
+    ],
+)
+def test_an_unmeasured_key_inside_an_honored_table_is_not_reported(tmp_path, body) -> None:
+    """Nothing was measured in either direction for these, and
+    ``extra-tables`` reaches top-level names only — so a Grok release adding
+    a key would leave a working config carrying a finding it cannot answer."""
+    assert check(scope(tmp_path, body)) == []
 
-    assert messages(check(repo)) == ["[plugins] 'autoupdate' is ignored in a project config.toml"]
 
-
-def test_an_mcp_key_outside_the_documented_one(tmp_path) -> None:
-    repo = scope(tmp_path, "[mcp]\nmax_output_bytes = 65536\ntimeout = 30\n")
-
-    assert messages(check(repo)) == ["[mcp] 'timeout' is ignored in a project config.toml"]
+def test_a_refused_key_is_measured_and_carries_no_others() -> None:
+    """The mapping is a refusal list, so a name landing in it has a run
+    behind it."""
+    assert grok.PROJECT_CONFIG_KEYS_REFUSED == {"plugins": frozenset({"paths"})}
+    assert set(grok.PROJECT_CONFIG_KEYS_REFUSED) <= grok.PROJECT_CONFIG_TABLES
 
 
 # ── Spellings that load nothing ──────────────────────────────────
@@ -337,12 +350,12 @@ def test_default_mode_inside_the_permission_table(tmp_path) -> None:
 # ── What is never reported ───────────────────────────────────────
 
 
-def test_the_honoured_tables_are_never_reported(tmp_path) -> None:
+def test_the_honored_tables_are_never_reported(tmp_path) -> None:
     """All four, including the two carried on the reference's word: reporting
     a table the documentation endorses would be a false positive."""
     repo = scope(
         tmp_path,
-        HONOURED + '\n[plugins]\nenabled = ["tide-charts"]\ndisabled = ["old"]\n'
+        HONORED + '\n[plugins]\nenabled = ["tide-charts"]\ndisabled = ["old"]\n'
         "\n[mcp]\nmax_output_bytes = 65536\n",
     )
 
@@ -374,7 +387,7 @@ def test_a_server_whose_value_is_not_a_table_is_not_read_for_transport(tmp_path)
 # ── The ``extra-tables`` option ──────────────────────────────────
 
 
-def test_extra_tables_accepts_a_table_a_newer_grok_honours(tmp_path) -> None:
+def test_extra_tables_accepts_a_table_a_newer_grok_honors(tmp_path) -> None:
     repo = scope(tmp_path, '[toolset]\nname = "harbour"\n')
 
     assert messages(check(repo)) == ["[toolset] is ignored in a project config.toml"]
@@ -390,7 +403,7 @@ def test_extra_tables_does_not_silence_the_rest(tmp_path) -> None:
 
 
 def test_extra_tables_can_accept_a_spelling_that_used_to_load_nothing(tmp_path) -> None:
-    """A release that starts honouring one of the misspelled table names
+    """A release that starts honoring one of the misspelled table names
     must be nameable here, or the rule reports a file that works."""
     repo = scope(tmp_path, '[mcpServers.dredger]\ncommand = "bin/dredger"\n')
 

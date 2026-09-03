@@ -109,8 +109,8 @@ from .coderabbit import (
     _find_yaml_key_line_after,
 )
 from .promptfoo import PromptfooPromptBlock
-from .grok import GrokConfigBlock
 from .openai import OpenAIMetadataBlock
+from .grok import GrokConfigBlock
 from .gather import (
     gather_all_content_blocks,
     gather_all_content_files,

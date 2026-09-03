@@ -5,14 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Dict, List, Optional, Tuple
 
-from skillsaw.blocks.json_config import McpConfigRole, McpServerConfig
 from skillsaw.formats.grok import PERMISSION_TABLE, mcp_transport
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import read_toml
 
+from .json_config import McpConfigRole, McpServerConfig, McpShapeDeferral
+
 
 @dataclass(eq=False)
-class GrokConfigBlock(LintTarget, McpConfigRole):
+class GrokConfigBlock(McpConfigRole, LintTarget):
     """A ``.grok/config.toml`` — project-scoped Grok Build configuration.
 
     A direct :class:`~skillsaw.lint_target.LintTarget`, the way
@@ -42,13 +43,31 @@ class GrokConfigBlock(LintTarget, McpConfigRole):
     #: servers.
     servers_key: ClassVar[str] = "mcp_servers"
     allow_bare_server_map: ClassVar[bool] = False
-    #: Claude Code reads none of this file, so its built-in server names are
-    #: not reserved in it.
-    claude_builtins_reserved: ClassVar[bool] = False
-    #: A new surface with no established results to preserve, so a
-    #: connection field must name something spawnable rather than merely
-    #: exist.
-    require_usable_connection: ClassVar[bool] = True
+
+    #: The document is TOML and only its ``[mcp_servers]`` tables are
+    #: servers, so the shared JSON shape walk has nothing to fall back to:
+    #: it would report a config legitimately declaring only ``[permission]``.
+    #: Unconditional for that reason, where the other deferrals are gated on
+    #: their format rule being able to run.
+    shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
+        syntax_error_rule="grok-config-valid",
+    )
+    syntax_name: ClassVar[str] = "TOML"
+
+    #: ``oauth`` beside the inherited ``env`` and ``headers``: Grok accepts
+    #: it as a server field, and a table there can hold a literal secret the
+    #: way OpenCode's can. Declared rather than reasoned about, because the
+    #: shared scan skips a non-dict value, so a toggle costs nothing.
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = (
+        ("env", False),
+        ("headers", True),
+        ("oauth", False),
+    )
+
+    # ``claude_builtins_reserved`` and ``require_usable_connection`` are
+    # deliberately left at their inherited values: both are read only by the
+    # JSON shape walk in ``mcp-valid-json``, which this block never reaches.
+    # Setting them here would look like configuration and be dead.
 
     _parsed: Optional[Tuple[Optional[dict], Optional[str]]] = field(
         default=None, init=False, repr=False
@@ -72,7 +91,7 @@ class GrokConfigBlock(LintTarget, McpConfigRole):
     def permission(self) -> Optional[Dict[str, Any]]:
         """The parsed ``[permission]`` table, or ``None`` when absent.
 
-        The other honoured table, and the one Grok is silent about: every
+        The other honored table, and the one Grok is silent about: every
         permission defect — a non-array ``allow``, an unparseable rule
         string, ``rules`` discarded because a list key sits beside it —
         produces no diagnostic at all.

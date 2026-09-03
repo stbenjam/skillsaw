@@ -12,17 +12,20 @@ mentions an ignored table, an ignored key, or a table name spelled the way
 another host spells it. The file loads, the tables Grok knows take effect,
 and the rest is gone.
 
-The honoured set lives in ``skillsaw.formats.grok`` and holds both the
+The honored set lives in ``skillsaw.formats.grok`` and holds both the
 measured half and the documented half, because reporting a table the
-reference endorses would be a false positive on a file the docs bless. Only
-the measured refusals earn a hint about where the setting does work.
+reference endorses would be a false positive on a file the docs bless. What
+the rule reports inside one of those tables is a measured refusal and
+nothing else, for the same reason: an unknown-key finding there would rest
+on no measurement and would fire on a working config the first time Grok
+adds a key.
 
 Only :class:`GrokConfigBlock` is iterated, a node type that exists only
 where Grok's project layer does, so the rule declares no
 ``provenance_scope``.
 """
 
-from typing import Any, Dict, Iterable, List, Mapping, Set
+from typing import Any, Dict, List, Mapping, Set, Sized
 
 from skillsaw.blocks import GrokConfigBlock
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -41,7 +44,7 @@ _IGNORED = "ignored in a project config.toml"
 #: back to the plain finding rather than borrowing another table's advice.
 #:
 #: Only ``hooks`` has somewhere else in the repository to go. ``skills`` and
-#: ``sandbox`` are honoured at user scope, which is a consequence of the
+#: ``sandbox`` are honored at user scope, which is a consequence of the
 #: finding rather than a fix for it, and belongs on the rule's page.
 _REFUSED_HINTS: Mapping[str, str] = {
     "hooks": "project hooks live in .grok/hooks/*.json",
@@ -61,7 +64,7 @@ class GrokConfigProjectScopeRule(Rule):
             "default": [],
             "description": (
                 "Additional top-level table names to accept, for tables a Grok "
-                "release honours at project scope that this skillsaw release has "
+                "release honors at project scope that this skillsaw release has "
                 "not heard of"
             ),
         },
@@ -80,7 +83,7 @@ class GrokConfigProjectScopeRule(Rule):
         # anywhere. Nothing breaks; something the author wrote is gone.
         return Severity.WARNING
 
-    def _honoured_tables(self) -> Set[str]:
+    def _honored_tables(self) -> Set[str]:
         """The top-level names a project file contributes, plus any declared.
 
         The declared type is not enforced when the config loads, so
@@ -96,7 +99,7 @@ class GrokConfigProjectScopeRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
-        honoured = self._honoured_tables()
+        honored = self._honored_tables()
 
         for block in context.lint_tree.find(GrokConfigBlock):
             data = block.raw_data
@@ -105,9 +108,9 @@ class GrokConfigProjectScopeRule(Rule):
                 # and ``grok-config-valid`` reports it. Naming its tables
                 # here would name a scope defect in a file with no scope.
                 continue
-            violations.extend(self._check_top_level(block, data, honoured))
+            violations.extend(self._check_top_level(block, data, honored))
+            violations.extend(self._check_refused_keys(block, data))
             violations.extend(self._check_mcp(block, data))
-            violations.extend(self._check_plugins(block, data))
             violations.extend(self._check_servers(block))
             violations.extend(self._check_permission(block, data))
 
@@ -116,15 +119,16 @@ class GrokConfigProjectScopeRule(Rule):
     # -- Top-level tables and scalars -------------------------------
 
     def _check_top_level(
-        self, block: GrokConfigBlock, data: Dict[str, Any], honoured: Set[str]
+        self, block: GrokConfigBlock, data: Dict[str, Any], honored: Set[str]
     ) -> List[RuleViolation]:
         """Everything a project file drops outright, named once each."""
         violations: List[RuleViolation] = []
         plain: List[str] = []
 
-        for name, value in data.items():
-            key = str(name)
-            if key in honoured:
+        # No ``str()`` on a key: a TOML key is a string by grammar, unlike a
+        # YAML one, so the defensiveness the YAML readers need is dead here.
+        for key, value in data.items():
+            if key in honored:
                 continue
             if key in grok.MCP_SERVERS_MISSPELLED_TABLES:
                 violations.append(
@@ -159,50 +163,49 @@ class GrokConfigProjectScopeRule(Rule):
             violations.append(self._violation(block, f"{sample(plain)} {_verb(plain)} {_IGNORED}"))
         return violations
 
-    # -- Keys inside an honoured table ------------------------------
+    # -- Keys inside an honored table -------------------------------
 
-    def _check_mcp(self, block: GrokConfigBlock, data: Dict[str, Any]) -> List[RuleViolation]:
-        """``[mcp]`` contributes one documented key, and holds one misspelling."""
-        table_name, servers_key = grok.MCP_SERVERS_MISSPELLING
-        table = data.get(table_name)
-        if not isinstance(table, dict):
-            return []
+    def _check_refused_keys(
+        self, block: GrokConfigBlock, data: Dict[str, Any]
+    ) -> List[RuleViolation]:
+        """Keys a project file drops from a table it otherwise honors.
 
+        Measured refusals only, from
+        :data:`~skillsaw.formats.grok.PROJECT_CONFIG_KEYS_REFUSED`. An
+        unknown key inside one of these tables is not reported: nothing was
+        measured in either direction, and ``extra-tables`` reaches top-level
+        names only, so a Grok release adding a key would leave a working
+        config carrying a finding with no way to answer it.
+        """
         violations: List[RuleViolation] = []
-        if servers_key in table:
-            violations.append(
-                self._violation(
-                    block,
-                    f"[{table_name}.{servers_key}] loads no server; MCP servers are "
-                    f"declared as [{block.servers_key}.<name>]",
+        for table_name, refused in grok.PROJECT_CONFIG_KEYS_REFUSED.items():
+            table = data.get(table_name)
+            if not isinstance(table, dict):
+                continue
+            present = [f"'{key}'" for key in table if key in refused]
+            if present:
+                violations.append(
+                    self._violation(
+                        block, f"[{table_name}] {sample(present)} {_verb(present)} {_IGNORED}"
+                    )
                 )
-            )
-        honoured = grok.MCP_PROJECT_KEYS or frozenset()
-        unknown = [
-            f"'{safe_display(str(key))}'"
-            for key in table
-            if str(key) not in honoured and str(key) != servers_key
-        ]
-        if unknown:
-            violations.append(
-                self._violation(
-                    block, f"[{table_name}] {sample(unknown)} {_verb(unknown)} {_IGNORED}"
-                )
-            )
         return violations
 
-    def _check_plugins(self, block: GrokConfigBlock, data: Dict[str, Any]) -> List[RuleViolation]:
-        """``[plugins]`` names two keys at project scope, and ``paths`` is not one."""
-        table = data.get("plugins")
-        if not isinstance(table, dict):
-            return []
-        unknown = [str(key) for key in table if str(key) not in grok.PLUGINS_PROJECT_KEYS]
-        if not unknown:
-            return []
-        quoted = [f"'{safe_display(key)}'" for key in unknown]
-        return [self._violation(block, f"[plugins] {sample(quoted)} {_verb(quoted)} {_IGNORED}")]
+    # -- Misspellings inside an honored table -----------------------
 
-    # -- Misspellings inside an honoured table ----------------------
+    def _check_mcp(self, block: GrokConfigBlock, data: Dict[str, Any]) -> List[RuleViolation]:
+        """``[mcp]`` holds one misspelling of the servers table."""
+        table_name, servers_key = grok.MCP_SERVERS_MISSPELLING
+        table = data.get(table_name)
+        if not isinstance(table, dict) or servers_key not in table:
+            return []
+        return [
+            self._violation(
+                block,
+                f"[{table_name}.{servers_key}] loads no server; MCP servers are "
+                f"declared as [{block.servers_key}.<name>]",
+            )
+        ]
 
     def _check_servers(self, block: GrokConfigBlock) -> List[RuleViolation]:
         """``transport`` is the plausible misreading of a server's ``type``."""
@@ -210,7 +213,7 @@ class GrokConfigProjectScopeRule(Rule):
         return [
             self._violation(
                 block,
-                f"[{block.servers_key}.{safe_display(str(name))}] sets '{field}', which "
+                f"[{block.servers_key}.{safe_display(name)}] sets '{field}', which "
                 "Grok ignores; the field is 'type'",
             )
             for name, config in block.server_entries()
@@ -254,5 +257,5 @@ def _render(name: str, value: Any) -> str:
     return f"'{display}'"
 
 
-def _verb(names: Iterable[Any]) -> str:
-    return "is" if len(list(names)) == 1 else "are"
+def _verb(names: Sized) -> str:
+    return "is" if len(names) == 1 else "are"

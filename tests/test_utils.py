@@ -512,11 +512,15 @@ def test_read_toml_parses_valid(temp_dir):
 
 
 def test_read_toml_returns_error_on_syntax_error(temp_dir):
+    """The parser's own wording carries the position this two-element
+    contract cannot; what is pinned is that an error came back, not how
+    ``tomli`` phrases it — the 3.9 floor resolves a separately versioned
+    copy."""
     f = temp_dir / "bad.toml"
     f.write_text("[mcp_servers.berths\n", encoding="utf-8")
     data, error = read_toml(f)
     assert data is None
-    assert "table declaration" in error
+    assert "line 1" in error
 
 
 def test_read_toml_returns_error_on_duplicate_key(temp_dir):
@@ -555,6 +559,36 @@ def test_read_toml_returns_error_on_missing(temp_dir):
     data, error = read_toml(temp_dir / "missing.toml")
     assert data is None
     assert "Failed to read" in error
+
+
+def test_read_toml_returns_error_on_undecodable_bytes(temp_dir):
+    """A config saved as cp1252 never reaches the parser: ``read_text``
+    refuses it, and the reader reports rather than raising."""
+    f = temp_dir / "cp1252.toml"
+    f.write_bytes(b'[permission]\nallow = ["Bash(caf\x92 *)"]\n')
+    data, error = read_toml(f)
+    assert data is None
+    assert "Failed to read" in error
+
+
+def test_read_toml_reports_deep_nesting(temp_dir):
+    """A ``RecursionError`` from the parser becomes an error string; escaping
+    it would abort the whole lint."""
+    f = temp_dir / "deep.toml"
+    f.write_text("a = " + "[" * 2000 + "]" * 2000, encoding="utf-8")
+    assert read_toml(f) == (None, "Nesting too deep to parse")
+
+
+def test_read_toml_reports_an_oversized_integer(temp_dir, oversized_integer_digits):
+    """Past the interpreter's digit limit the parser raises bare
+    ``ValueError``, not its own decode error."""
+    if oversized_integer_digits is None:
+        pytest.skip("interpreter enforces no int-parse digit limit")
+    f = temp_dir / "big.toml"
+    f.write_text(f"a = {oversized_integer_digits}\n", encoding="utf-8")
+    data, error = read_toml(f)
+    assert data is None
+    assert "digits" in error
 
 
 def test_frontmatter_key_line_finds_key(temp_dir):

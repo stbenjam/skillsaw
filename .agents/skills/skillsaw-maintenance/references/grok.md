@@ -132,20 +132,22 @@ signal.
 
 ### What a project file contributes
 
-- **Measured honoured**: `[mcp_servers]` and `[permission]`
+- **Measured honored**: `[mcp_servers]` and `[permission]`
   (`PROJECT_CONFIG_TABLES_MEASURED`). **Documented but unmeasured**: `[plugins]` and
   `[mcp] max_output_bytes` — no observable at *either* scope. `PROJECT_CONFIG_TABLES`
   holds all four, because a rule must not report a documented table as ignored; the
   measured subset is what a message may make a claim about.
-- **Measured refused**: `[hooks]` (the honoured path for a project's hooks is
+- **Measured refused**: `[hooks]` (the honored path for a project's hooks is
   `.grok/hooks/*.json`, which loads), `[skills].paths` and `[sandbox].profile`, each
   with a positive user-scope control (`PROJECT_CONFIG_TABLES_REFUSED`).
 - **`[plugins]`**: `enabled` and `disabled` are documented and were **not** reproduced
   at project *or* user scope against a `.grok/plugins/` directory, so nothing may be
-  asserted to work; `PLUGINS_PROJECT_KEYS` records the names, not a behaviour. `paths`
+  asserted to work and no rule reports an unrecognized key inside the table. `paths`
   is user-scope only — three independent runs ignored a project `paths`, relative or
   absolute, git repository or not, and the user layer's `paths` plugin arrived
-  `scope: "config"` and `enabled: false`.
+  `scope: "config"` and `enabled: false`. That is the one measured refusal inside an
+  honored table, and `PROJECT_CONFIG_KEYS_REFUSED` is where it lives.
+
 ### `[mcp_servers]`
 
 - **Fields**: `MCP_SERVER_FIELDS` is the accepted set; an unknown
@@ -160,16 +162,21 @@ signal.
   loads as an HTTP server. `enabled = false` omits the server from `inspect`;
   `GrokConfigBlock` keeps it anyway, because the command is committed and one word
   turns it back on.
+
 ### `[permission]` and the spellings that load nothing
 
 - **`[permission]`**: `allow`/`deny`/`ask` hold compact rule strings and `rules` holds
   verbose tables. `rules` is discarded **entirely** whenever any of the three list keys
   is present, in any order, with no diagnostic — a file carrying both loses every
   verbose rule it wrote. An unparseable entry costs that entry alone, also silently.
+  A **wrong-typed entry** splits by key, measured: a non-string in a list key costs
+  that entry (`allow = ["Bash(git *)", 42]` loaded 1), while a non-table in `rules`
+  costs the whole array (two valid rules beside a bare integer loaded 0).
   `defaultMode` is a `.claude/settings.json` key with no meaning here.
 - **Silent misspellings**, each loading nothing and saying nothing: `[[mcp.servers]]`,
   `[mcp-servers.<n>]`, `[mcpServers.<n>]`, and `[permissions]` (plural, which also
   drops the file out of `permissions.sources`).
+
 ### Parsing
 
 - **Malformed TOML** — a syntax error, a duplicate key, a duplicate table header — is
@@ -177,8 +184,11 @@ signal.
   the sole signal is a `configSources[].note` of `"parse error"` in `grok inspect`. An
   empty file reads as `note: "empty"`.
 - **Parsing**: `read_toml()` in `src/skillsaw/utils.py`, `tomllib` on 3.11+ and `tomli`
-  below it. Errors are file-level — TOML gives no structured position — and a leading
-  UTF-8 BOM is stripped by `read_text` before the parser sees it.
+  below it. Errors are file-level: stdlib `tomllib` gained `TOMLDecodeError.lineno`
+  only in 3.14, so 3.11 through 3.13 carry no position, while the floor's `tomli`
+  2.2.1 does expose one — and one contract across both parsers beats a line number
+  on some legs. A leading UTF-8 BOM is stripped by `read_text` before the parser
+  sees it.
 - **Do not claim** that `mcpServers[].source.path` attributes a server to its config
   file: it always prints the user `$GROK_HOME/config.toml` path, even for project-only
   servers and even when that file does not exist.
@@ -296,11 +306,13 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   reports an unknown server field or an unknown permission key, both of which load.
   `grok-config-project-scope` (WARNING, option `extra-tables`) reports what the
   project layer drops: a top-level table or scalar outside `PROJECT_CONFIG_TABLES`
-  (the `_REFUSED` three carry a hint, the rest are one consolidated finding), a
-  `[plugins]` key outside `PLUGINS_PROJECT_KEYS`, an `[mcp]` key outside
-  `MCP_PROJECT_KEYS`, and the silent misspellings. Neither rule claims anything for
-  `[plugins] enabled`/`disabled` or `[mcp] max_output_bytes`, which are documented
-  and unmeasured.
+  (only `hooks` carries a hint — it is the one refusal with somewhere else in the
+  repository to go — and the rest are one consolidated finding), the keys in
+  `PROJECT_CONFIG_KEYS_REFUSED`, and the silent misspellings. It reports no
+  unrecognized key inside `[plugins]` or `[mcp]`: nothing was measured there in
+  either direction, and `extra-tables` reaches top-level names only. Neither rule
+  claims anything for `[plugins] enabled`/`disabled` or `[mcp] max_output_bytes`,
+  which are documented and unmeasured.
 - Plugin manifests — `grok-plugin-json-valid` (ERROR): invalid JSON and a `name` that
   is missing, non-string, empty or outside `PLUGIN_NAME_RE`, each of which makes Grok
   skip the whole directory. Component paths that escape or do not exist, and an
@@ -396,13 +408,15 @@ user guide, or re-verify empirically with the canary matrix above:
   *generator* wrote, so it carries the union of both readings and reports drift only
   for a name neither produces.
 - `PROJECT_CONFIG_TABLES` and its `_MEASURED` / `_REFUSED` companions,
-  `PLUGINS_PROJECT_KEYS`, `MCP_SERVER_FIELDS` and `mcp_transport()` in `formats/grok.py`.
+  `PROJECT_CONFIG_KEYS_REFUSED`, `MCP_SERVER_FIELDS` and `mcp_transport()` in
+  `formats/grok.py`.
   The split between measured and documented is the thing to preserve: re-measure before
   moving a name across it, and never widen a rule's claim on the reference's word alone.
   `PROJECT_CONFIG_TABLES` is the allow-list `grok-config-project-scope` reports
   against, so a table added upstream reads as ignored until it is added here — which
-  is what the rule's `extra-tables` option is for in the meantime, and `_REFUSED` is
-  what earns a name its "use this instead" hint.
+  is what the rule's `extra-tables` option is for in the meantime. A "use this
+  instead" hint needs both `_REFUSED` membership and an entry in the rule's
+  `_REFUSED_HINTS`, which today holds `hooks` alone.
   `MCP_SERVER_FIELDS` came from the `mcp_servers.<name>.*` rows of
   `26-config-reference.md` and was confirmed accepted by watching for
   `mcpConfigProblems`; a field added upstream reads as unknown until it is added here.

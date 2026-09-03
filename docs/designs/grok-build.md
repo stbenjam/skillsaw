@@ -207,11 +207,12 @@ Separate because it needs a TOML parser, and that is a real new runtime
 dependency on a four-dependency project.
 
 The argument for it: `tomllib` is stdlib from Python 3.11 and skillsaw's floor
-is 3.9, so the dependency is `tomli>=2.0; python_version < '3.11'` — the same
+is 3.9, so the dependency is `tomli>=2.0,<3; python_version < '3.11'` — the same
 parser, since CPython vendored `tomli` as `tomllib`, installed only on the two
 oldest versions and absent from every modern install. It is pure Python, makes
-no network calls, and reads files the linter already opens. Writing a TOML
-parser instead is the alternative, and it would be a worse one.
+no network calls, and reads files the linter already opens. The alternative is
+writing a TOML parser, which trades a vendored upstream for a hand-rolled one
+on both supply chain and correctness.
 
 The parser lands with the reader (`read_toml()` in `utils.py`, file-level errors
 because TOML gives no structured position), the block (`GrokConfigBlock` in
@@ -228,7 +229,7 @@ HTTP unless `type = "sse"`, and a table with neither is dropped by Grok and so
 exposes no server — the config rule reports it instead. `type` is otherwise
 advisory, and `transport` is not an alias for it.
 
-What the project layer honours is narrower than the reference implies.
+What the project layer honors is narrower than the reference implies.
 `[mcp_servers]` and `[permission]` were measured loading; `[plugins]` and
 `[mcp] max_output_bytes` produce no observable at either scope and are carried
 as documented, not measured. And the silence is total: `configWarnings` is a
@@ -246,21 +247,28 @@ it happens. Everything under that — a server naming nothing to start, a
 wrong-typed `args` or `env`, a non-array `allow`, a `rules` array discarded
 because a list key sits beside it — costs one server or one key and is a
 hardcoded warning, because the tables beside it still load whatever severity
-the rule is configured to. `grok-config-project-scope` (WARNING) owns what the
-project layer cannot contribute at all: a table or key outside the four, with a
-"use this instead" hint for the three measured refusals, and one finding each
+the rule is configured to. A wrong-typed *entry* inside those arrays splits
+the same way and was measured separately: a non-string in `allow`/`deny`/`ask`
+costs that entry, while a non-table in `rules` costs the whole array, so the
+two findings say which. `grok-config-project-scope` (WARNING) owns what the
+project layer cannot contribute at all: a top-level table or scalar outside the
+four, with a "use this instead" hint for `[hooks]` — the one refusal with
+somewhere else in the repository to go — the measured `[plugins] paths`
+refusal, and one finding each
 for the spellings that load nothing — `[[mcp.servers]]`, `[mcp-servers]`,
 `[mcpServers]`, `[permissions]`, `transport` inside a server, `defaultMode`
-inside `[permission]`. Its `extra-tables` option names a table a newer Grok
-honours, so a release that widens the project layer does not need a skillsaw
-release to stop reporting it.
+inside `[permission]`. It reports no unrecognized key inside `[plugins]` or
+`[mcp]`, because nothing was measured there in either direction and its
+`extra-tables` option — which names a table a newer Grok honors, so a release
+widening the project layer needs no skillsaw release to stop reporting it —
+reaches top-level names only.
 
 ## Deliberately out of scope
 
 | Surface | Why |
 |---|---|
 | `.grok/workflows/*.rhai` | Needs a Rhai parser; a regex over a scripting language generates false positives |
-| `.grok/sandbox.toml` | TOML dependency, and the semantics misfire easily — `read_only`/`read_write` are literal directory grants, not globs |
-| `.grok/roles/*.toml`, `.grok/personas/*.toml` | TOML dependency; the formats are less settled |
+| `.grok/sandbox.toml` | The semantics misfire easily — `read_only`/`read_write` are literal directory grants, not globs |
+| `.grok/roles/*.toml`, `.grok/personas/*.toml` | The formats are less settled |
 | `.grok/lsp.json` | No public schema to calibrate against. Detection evidence only |
 | `~/.grok/` runtime state, `trusted_folders.toml`, `known_marketplaces.json` | Host-machine state, not repository-resident |

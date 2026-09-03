@@ -21,7 +21,7 @@ carried on the reference's word and are never reported, because reporting a
 table the documentation endorses would be a false positive on a file the
 docs bless.
 
-Whether the honoured tables are themselves well formed is a different
+Whether the honored tables are themselves well formed is a different
 question, and belongs to [`grok-config-valid`](grok-config-valid.md).
 
 ## Severity
@@ -33,18 +33,16 @@ of them carry the rule's configured severity, `warning` by default.
 **Ignored tables and keys**
 
 - Any top-level table or scalar outside the four a project file contributes.
-  `[hooks]` is named on its own, because it is the one refusal with
-  somewhere else in the repository to go: project hooks belong in
-  `.grok/hooks/*.json`, which *does* load. `[skills]` and `[sandbox]` were
-  measured refused too, and are honoured only in your own
-  `~/.grok/config.toml`. The rest — `[model]`, `[ui]`, `[tools]`,
-  `[telemetry]`, `disable_web_search` and their neighbours — are named in
-  one consolidated finding per file.
-- A `[plugins]` key other than `enabled` and `disabled`. `paths` is the one
-  that matters: three independent runs ignored a project `paths`, relative
-  or absolute, in a git repository or not, while the user layer's loaded, so
-  it belongs in your own config too.
-- An `[mcp]` key other than `max_output_bytes`.
+  Most of them — `[model]`, `[ui]`, `[tools]`, `[telemetry]`,
+  `disable_web_search` and their neighbors — are named in one consolidated
+  finding per file. `[hooks]` is named on its own, because it is the one
+  refusal with somewhere else in the repository to go: project hooks belong
+  in `.grok/hooks/*.json`, which *does* load. `[skills]` and `[sandbox]`
+  were measured refused too and go in the consolidated finding, since the
+  only place they work is your own `~/.grok/config.toml`.
+- `[plugins] paths`. Three independent runs ignored a project `paths`,
+  relative or absolute, in a git repository or not, while the user layer's
+  loaded — so it belongs in your own config too.
 
 **Spellings that load nothing**
 
@@ -68,6 +66,12 @@ total, silent loss of the declaration:
 reproduced at project or user scope, and `[mcp] max_output_bytes` produces
 no observable at either. They are never reported, and no finding claims they
 do anything.
+
+Nor is an *unrecognized* key inside `[plugins]` or `[mcp]`. Nothing was
+measured in either direction there, and `extra-tables` reaches top-level
+names only — so a Grok release adding a key would leave a working config
+carrying a finding with no way to answer it. Only the measured refusal,
+`[plugins] paths`, is reported.
 
 ## Examples
 
