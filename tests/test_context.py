@@ -766,6 +766,47 @@ def test_excluded_devin_tree_does_not_drive_detection_or_attachment(temp_dir):
     assert context.lint_tree.find(DevinRuleBlock) == []
 
 
+def test_exact_directory_exclude_on_conventional_skill_root(temp_dir):
+    """Exact directory exclude on a conventional skill root prevents discovery and agentskills type."""
+    demo_skill = temp_dir / ".claude" / "skills" / "demo"
+    demo_skill.mkdir(parents=True)
+    (demo_skill / "SKILL.md").write_text("---\nname: demo\ndescription: A demo skill.\n---\n")
+
+    context = RepositoryContext(temp_dir, exclude_patterns=[".claude/skills"])
+
+    assert RepositoryType.AGENTSKILLS not in context.repo_types
+    assert context.skills == []
+
+
+def test_ancestor_directory_exclude_on_conventional_skill_root(temp_dir):
+    """Excluding an ancestor directory suppresses conventional skills beneath it."""
+    demo_skill = temp_dir / ".claude" / "skills" / "demo"
+    demo_skill.mkdir(parents=True)
+    (demo_skill / "SKILL.md").write_text("---\nname: demo\ndescription: A demo skill.\n---\n")
+
+    context = RepositoryContext(temp_dir, exclude_patterns=[".claude"])
+
+    assert RepositoryType.AGENTSKILLS not in context.repo_types
+    assert context.skills == []
+
+
+def test_post_init_exclude_mutation_drops_skills_and_agentskills_type(temp_dir):
+    """Mutating exclude_patterns after construction prunes skills and drops AGENTSKILLS."""
+    demo_skill = temp_dir / ".claude" / "skills" / "demo"
+    demo_skill.mkdir(parents=True)
+    (demo_skill / "SKILL.md").write_text("---\nname: demo\ndescription: A demo skill.\n---\n")
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.AGENTSKILLS in context.repo_types
+    assert len(context.skills) == 1
+
+    context.exclude_patterns = [".claude/skills"]
+    context.apply_excludes()
+
+    assert RepositoryType.AGENTSKILLS not in context.repo_types
+    assert context.skills == []
+
+
 def test_detects_cursor_rules_dir(temp_dir):
     """Detect .cursor/rules/ directory"""
     (temp_dir / ".cursor" / "rules").mkdir(parents=True)
