@@ -67,7 +67,8 @@ from an upstream validator rather than from the runtime are warnings.
   the highest-frequency authoring mistake here and nothing in the toolchain
   reports it: `marketplace add` succeeds, `plugin list --available` shows
   nothing, and `plugin install` says the plugin does not exist.
-- A local `source.path` that escapes the marketplace root.
+- A local `source.path` that is absolute, contains `..`, or resolves
+  outside the marketplace root through a symlink.
 - A url source with no `sha`. Grok falls back to an unpinned `git clone`, so
   a vendor force-push or repo compromise immediately ships to every user.
 - A url source whose `sha` is not a string (the entry is dropped) or is not
@@ -151,7 +152,9 @@ upstream rather than from a measurement.
 
 ## How to fix
 
-- Pin every url source to a full 40- or 64-character lowercase commit id.
+- Pin every url source to a 40-character lowercase commit id. Grok also
+  installs a 64-character or uppercase one, and the upstream validator
+  refuses it — which is what the advisory above says.
 - Point every local `source.path` at a directory that is in this repository,
   resolved against the *marketplace root* — the directory holding
   `.grok-plugin/`, which in a monorepo package is the package.

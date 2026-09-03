@@ -182,7 +182,8 @@ def discover_grok_plugins(
         resolved = safe_resolve(path)
         if resolved is None:
             return None
-        return resolved if resolved == root or resolved.is_relative_to(root) else None
+        # ``is_relative_to`` is True on equality, so the root itself passes.
+        return resolved if resolved.is_relative_to(root) else None
 
     def _add(directory: Path, *, require_manifest: bool) -> None:
         # Either half can be the symlink out of the repository: the plugin

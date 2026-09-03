@@ -916,6 +916,11 @@ class GrokMcpBlock(McpBlock):
 
     claude_builtins_reserved: ClassVar[bool] = False
     require_usable_connection: ClassVar[bool] = True
+    #: Grok's parser refuses a bare ``NaN``/``Infinity`` token and a
+    #: duplicated key — measured on a plugin manifest, which fails to load
+    #: and takes the whole plugin with it. Only Grok reads this file, and it
+    #: is a new surface with no established results to preserve.
+    strict_json: ClassVar[bool] = True
 
     def tree_label(self) -> str:
         # The filename, not a fixed "mcp.json": a manifest may point

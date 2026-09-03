@@ -240,12 +240,19 @@ class RepositoryProvenanceMixin:
         """Grok-claimed with no Claude declaration.
 
         The Grok counterpart of :meth:`is_codex_only_plugin`: the line the
-        package-containment boundary is drawn on.
+        package-containment boundary is drawn on. Reserved — the boundary
+        reads :attr:`PluginProvenance.grok_only` through
+        ``_declares_containment``, and no rule consults this view yet.
         """
         return self.provenance(plugin_dir).grok_only
 
     def in_grok_only_plugin(self, path: Path) -> bool:
-        """Whether *path* sits inside a Grok-only plugin, nearest owner first."""
+        """Whether *path* sits inside a Grok-only plugin, nearest owner first.
+
+        Reserved, like :meth:`is_grok_only_plugin`: the Grok-tightened MCP
+        checks are expressed on the block class instead, so nothing consults
+        this yet.
+        """
         owner = self.grok_plugin_owning(path)
         return owner is not None and self.provenance(owner).grok_only
 

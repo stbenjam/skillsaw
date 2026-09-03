@@ -19,7 +19,7 @@ from skillsaw.formats.grok import (
     grok_plugin_name,
     is_url_source as is_grok_url_source,
 )
-from skillsaw.paths import safe_is_file, safe_resolve
+from skillsaw.paths import contained_resolve, safe_is_file, safe_resolve
 from skillsaw.utils import read_json
 from skillsaw.docs.models import (
     AgentDoc,
@@ -109,8 +109,18 @@ def extract_docs(
         # ``marketplace_data`` only ever loads the Claude marketplace, so a
         # Codex catalog needs its own MarketplaceDoc.
         marketplace = _codex_marketplace_doc(context, plugins)
-    elif RepositoryType.GROK_MARKETPLACE in context.repo_types:
-        marketplace = _grok_marketplace_doc(context, plugins)
+    if RepositoryType.GROK_MARKETPLACE in context.repo_types:
+        # Additive rather than a fourth arm of the chain: a repository can
+        # carry a Grok catalog beside a Claude or Codex one, and an ``elif``
+        # would publish neither its url-only entries nor the categories its
+        # local entries carry. The existing document keeps its name, owner
+        # and order; what a Grok entry adds is appended.
+        grok_catalog = _grok_marketplace_doc(context, plugins)
+        if marketplace is None:
+            marketplace = grok_catalog
+        elif grok_catalog is not None:
+            already = {doc.path for doc in marketplace.plugins}
+            marketplace.plugins.extend(d for d in grok_catalog.plugins if d.path not in already)
 
     standalone_skills: List[SkillDoc] = []
     if RepositoryType.AGENTSKILLS in context.repo_types:
@@ -491,7 +501,10 @@ def _grok_marketplace_doc(
     """
     name: Optional[str] = None
     listed: List[PluginDoc] = []
-    seen: Set[int] = set()
+    # Keyed on the path each doc is addressed by — a plugin directory for a
+    # local entry, the plugin name for a url one — so two catalogs listing
+    # the same plugin publish it once.
+    seen: Set[Path] = set()
     by_path = {r: p for p in plugins if (r := safe_resolve(p.path)) is not None}
     for path in context.grok_marketplace_paths():
         data, error = read_json(path)
@@ -502,14 +515,16 @@ def _grok_marketplace_doc(
         entries = data.get("plugins")
         if not isinstance(entries, list):
             continue  # grok-marketplace-json-valid reports the shape
-        marketplace_root = path.parent.parent
+        marketplace_root = safe_resolve(path.parent.parent)
+        if marketplace_root is None:
+            continue
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
             doc = _grok_entry_doc(entry, marketplace_root, by_path)
-            if doc is None or id(doc) in seen:
+            if doc is None or doc.path in seen:
                 continue
-            seen.add(id(doc))
+            seen.add(doc.path)
             category = entry.get("category")
             if isinstance(category, str) and category and not doc.category:
                 doc.category = category
@@ -532,7 +547,11 @@ def _grok_entry_doc(
     """
     local = grok_local_source_path(entry.get("source"))
     if local is not None:
-        resolved = safe_resolve(marketplace_root / local)
+        # Contained against the marketplace root, as discovery contains it:
+        # a ``../sibling`` source is an entry Grok drops, and resolving it
+        # loosely would match a sibling package the walk found on its own
+        # and publish it as this catalog's listing.
+        resolved = contained_resolve(marketplace_root / local, marketplace_root)
         return by_path.get(resolved) if resolved is not None else None
     if not is_grok_url_source(entry.get("source")):
         return None

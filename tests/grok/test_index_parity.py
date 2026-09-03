@@ -448,3 +448,38 @@ def test_the_broken_fixture_is_one_consolidated_finding(broken) -> None:
 
 def test_the_clean_fixture_reports_nothing(tmp_path) -> None:
     assert check(copy_fixture("grok/marketplace-clean", tmp_path)) == []
+
+
+def test_a_non_finite_number_in_the_index_is_invalid_json(temp_dir) -> None:
+    """Grok's parser refuses the document over a token in a field nothing
+    reads, and an index it cannot parse is ignored without a word."""
+    repo = marketplace(temp_dir, "nan-index", {"plugins": [url_entry("almanac", SHA_A)]}, index({}))
+    (repo / ".grok-plugin" / "plugin-index.json").write_text(
+        '{"version": 1, "plugins": {}, "generated": NaN}', encoding="utf-8"
+    )
+
+    found = check(repo)
+
+    assert len(found) == 1
+    assert found[0].message == "Invalid JSON: non-finite JSON number: NaN"
+
+
+def test_a_sha_on_a_local_source_is_not_compared(temp_dir) -> None:
+    """Grok pins only a url source. A ``sha`` on a local entry installs
+    nothing, so an index without one is not behind."""
+    repo = marketplace(
+        temp_dir,
+        "local-sha",
+        {
+            "plugins": [
+                {
+                    "name": "almanac",
+                    "source": {"type": "local", "path": "./plugins/almanac", "sha": SHA_A},
+                }
+            ]
+        },
+        index({"almanac": {"components": {"skills": [{"name": "tide-window"}]}}}),
+        skills=("tide-window",),
+    )
+
+    assert check(repo) == []

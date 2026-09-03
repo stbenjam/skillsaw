@@ -69,3 +69,13 @@ plugins/berth-notes/
   `skills/<name>/SKILL.md`, an `agents/*.md`, a `hooks/hooks.json`, or a
   `.mcp.json`.
 - Keep slash commands, but do not rely on them alone to make a plugin.
+
+A repository whose components are generated at build time has none of them
+on disk when skillsaw runs. Drop the installability finding rather than the
+rule, so the synthesized-name advisory still fires:
+
+```yaml
+rules:
+  grok-plugin-structure:
+    check-installable: false
+```

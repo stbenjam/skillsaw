@@ -184,9 +184,15 @@ def test_two_catalogs_in_one_repository_do_not_collide(temp_dir) -> None:
 @pytest.mark.parametrize(
     "path,expected",
     [
-        pytest.param("./plugins/nope", "is not a directory in this repository", id="missing"),
-        pytest.param("../outside", "escapes the marketplace root", id="escaping"),
-        pytest.param("/etc", "escapes the marketplace root", id="absolute"),
+        pytest.param(
+            "./plugins/nope", "is not a directory under the marketplace root", id="missing"
+        ),
+        pytest.param(
+            "../outside", "contains '..'; paths must stay inside the marketplace root", id="dotdot"
+        ),
+        pytest.param(
+            "/etc", "is absolute; paths must stay inside the marketplace root", id="absolute"
+        ),
     ],
 )
 def test_a_local_source_that_does_not_resolve_is_an_error(temp_dir, path, expected) -> None:
@@ -418,3 +424,24 @@ def test_a_sha_with_a_trailing_newline_is_an_error(temp_dir) -> None:
     assert any(
         "is not a 40 or 64 character" in message for message in at(check(repo), Severity.ERROR)
     )
+
+
+def test_a_local_source_symlinked_out_of_the_marketplace_is_an_error(temp_dir) -> None:
+    """The symlink arm of the escape check, at rule level: no ``..`` and not
+    absolute, and still outside the package."""
+    outside = temp_dir / "outside"
+    (outside / "sediment").mkdir(parents=True)
+    repo = catalog_repo(
+        temp_dir,
+        "symlinked-source",
+        {"plugins": [{"name": "sediment", "source": "./plugins/sediment"}]},
+    )
+    (repo / "plugins").mkdir(exist_ok=True)
+    (repo / "plugins" / "sediment").symlink_to(outside / "sediment")
+
+    found = at(check(repo), Severity.ERROR)
+
+    assert found == [
+        "plugins[0].source: './plugins/sediment' resolves outside the marketplace root "
+        "— check for a symlink"
+    ]

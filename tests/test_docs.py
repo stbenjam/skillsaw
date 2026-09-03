@@ -736,6 +736,82 @@ class TestGrokExtractor:
 
         assert [p.name for p in docs.plugins] == ["tide-charts"]
 
+    def test_a_source_escaping_the_marketplace_root_lists_nothing(self, temp_dir):
+        """Grok drops such an entry, and resolving it loosely would match a
+        sibling package the walk found on its own and publish it as this
+        catalog's listing."""
+        (temp_dir / "pkg-a" / ".grok-plugin").mkdir(parents=True)
+        (temp_dir / "pkg-a" / ".grok-plugin" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "harbour-plugins",
+                    "plugins": [{"name": "tide-charts", "source": "../pkg-b/plugins/tide-charts"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        self._plugin(temp_dir / "pkg-b" / "plugins" / "tide-charts")
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert docs.marketplace is not None
+        assert docs.marketplace.plugins == []
+        # The sibling is still its own Grok plugin; what it is not is this
+        # catalog's entry.
+        assert [p.name for p in docs.plugins] == ["tide-charts"]
+
+    def test_a_grok_catalog_beside_a_claude_one_is_published_too(self, temp_dir):
+        """The branches are additive: an if/elif chain published the Claude
+        catalog and dropped the Grok one entirely."""
+        (temp_dir / ".claude-plugin").mkdir(parents=True)
+        (temp_dir / ".claude-plugin" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "claude-cat",
+                    "owner": {"name": "Harbour Tools"},
+                    "plugins": [{"name": "berth-notes", "source": "./plugins/berth-notes"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        claude_plugin = temp_dir / "plugins" / "berth-notes"
+        (claude_plugin / ".claude-plugin").mkdir(parents=True)
+        (claude_plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "berth-notes", "version": "1.0.0"}), encoding="utf-8"
+        )
+        (temp_dir / ".grok-plugin").mkdir()
+        (temp_dir / ".grok-plugin" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "grok-cat",
+                    "plugins": [
+                        {"name": "tide-charts", "source": "./plugins/tide-charts"},
+                        {
+                            "name": "bathymetry",
+                            "source": {
+                                "source": "url",
+                                "url": "https://example.invalid/bathymetry.git",
+                            },
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        self._plugin(temp_dir / "plugins" / "tide-charts")
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert docs.marketplace is not None
+        # The Claude catalog keeps its name, owner and position.
+        assert docs.marketplace.name == "claude-cat"
+        assert docs.marketplace.owner == {"name": "Harbour Tools"}
+        assert [p.name for p in docs.marketplace.plugins] == [
+            "berth-notes",
+            "tide-charts",
+            "bathymetry",
+        ]
+
 
 class TestHtmlRenderer:
     def test_single_page_valid_html(self, valid_plugin):

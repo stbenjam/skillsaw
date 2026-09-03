@@ -86,8 +86,8 @@ from typing import Any, Dict, List, Mapping, Optional
 # itself" manifest shape Claude Code defined and both Codex and Grok
 # inherited. It lives beside the reader that needed it first rather than
 # being copied here, so one fix covers both ecosystems.
-from .codex import inline_documents
-from ..paths import (
+from skillsaw.formats.codex import inline_documents
+from skillsaw.paths import (
     contained_resolve,
     safe_exists,
     safe_is_dir,
@@ -95,7 +95,7 @@ from ..paths import (
     safe_is_symlink,
     safe_resolve,
 )
-from ..utils import read_json
+from skillsaw.utils import read_json
 
 #: The project directory Grok Build reads. Grok loads the ``.grok/`` layer
 #: of the project it is started in, which in a monorepo is as often a
@@ -342,39 +342,22 @@ def normalize_event(event: str) -> str:
 #: ``.claude-plugin`` is a documented fallback Grok reads, and is
 #: deliberately *not* Grok's marker: a directory carrying only that one is a
 #: Claude plugin the Claude rules already own.
+#:
+#: What each defect in these files costs is measured per input in "What the
+#: packaging loader costs" in ``docs/designs/grok-build.md``; the severities
+#: in ``rules/builtin/grok/`` are read off that table.
 PLUGIN_DIR_NAME = ".grok-plugin"
-
-#: What each defect costs, measured against 1.0.13 rather than read off the
-#: docs, because the loader reports none of it — ``grok plugin install``
-#: prints success for a plugin the runtime then loads nothing from.
-#:
-#: * **The whole plugin directory** — a ``plugin.json`` that fails to parse,
-#:   or a ``name`` that is missing, non-string, or outside
-#:   :data:`PLUGIN_NAME_RE`. The conventional ``skills/`` does not rescue it:
-#:   discovery skips the directory and ``grok inspect`` reports no plugin.
-#: * **That component list only** — a declared path that escapes the plugin
-#:   root or does not exist. Containment is real, not incidental: a target
-#:   that exists outside the plugin is still dropped. A declared
-#:   ``skills``/``commands``/``agents`` path *replaces* the conventional
-#:   directory rather than adding to it, so an override silently costs
-#:   everything under ``skills/``.
-#: * **Those hooks or servers only** — ``hooks`` or ``mcpServers`` naming a
-#:   path that does not exist, or a malformed inline object. The plugin and
-#:   its sibling components survive.
-#: * **Nothing** — a ``name`` disagreeing with the directory name (the
-#:   manifest name wins everywhere), a non-semver ``version``, an unknown
-#:   key, and a path field given as a bare string instead of an array.
-#:
-#: A manifest is optional: a directory holding ``skills/``, ``agents/``,
-#: ``hooks/hooks.json`` or ``.mcp.json`` installs without one, under a
-#: synthesized ``<dir>-<hash>`` name. ``commands/`` alone and ``.lsp.json``
-#: alone are discovered but refused by ``grok plugin install``.
 
 #: Filenames inside :data:`PLUGIN_DIR_NAME`. ``plugin.json`` describes one
 #: plugin; ``marketplace.json`` is the catalog Grok reads; ``plugin-index.json``
 #: is the optional display catalog beside it, whose ``sha`` values a
 #: ``require_sha`` deployment installs from.
 PLUGIN_MANIFEST = "plugin.json"
+
+#: The file that makes a directory a skill rather than a folder of notes.
+#: Named here because both the structure rule and the parity rule ask the
+#: same question of the same directories.
+SKILL_FILENAME = "SKILL.md"
 MARKETPLACE_FILENAME = "marketplace.json"
 PLUGIN_INDEX_FILENAME = "plugin-index.json"
 
@@ -415,6 +398,9 @@ MANIFEST_PATHS = (
 #: Every manifest key Grok's loader reads. Unknown keys are tolerated, so
 #: this is the vocabulary a rule may check the *shape* of, never a
 #: whitelist to report against.
+#: Reserved: no rule reads this yet. Kept because a shape check over an
+#: unknown key is the first thing a manifest rule reaches for, and the
+#: answer — Grok tolerates unknown keys — is the vocabulary's to record.
 MANIFEST_KEYS = frozenset(
     {
         "name",
@@ -449,7 +435,8 @@ MANIFEST_KEYS = frozenset(
 #: walk visits the conventional directory either way, so the skills that
 #: warning names as dropped are still linted.
 #:
-#: ``lspServers`` has no rule yet — recorded so the vocabulary is complete.
+#: ``lspServers`` is vocabulary only — no public schema and no LSP entries
+#: in the official marketplace, so nothing calibrates a rule.
 COMPONENT_PATHS = {
     "skills": ("skills", True),
     "commands": ("commands", True),
@@ -477,14 +464,14 @@ SINGLE_PATH_FIELDS = frozenset({"hooks", "mcpServers"})
 PLUGIN_NAME_RE = re.compile(r"\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\Z")
 PLUGIN_NAME_MAX_LENGTH = 64
 
-#: The ``sha`` a url source must pin. The official validator requires 40
-#: lowercase hex — "a vendor force-push or repo compromise immediately ships
-#: to every user" — while the installer accepts 40 or 64 (SHA-256) and is
-#: **case-insensitive**: an uppercase 40-hex value passed straight through
-#: to fetch-by-sha when measured. So this matches what the runtime pins, and
-#: only a branch, a tag, an abbreviation or an absent value is unpinned. A
-#: rule enforcing the validator's lowercase is stricter than the runtime and
-#: owes that its own, softer finding.
+#: The ``sha`` a url source must pin. An absent one degrades to an unpinned
+#: ``git clone``, so a vendor force-push ships to every user. The installer
+#: accepts 40 or 64 (SHA-256) and is **case-insensitive**: an uppercase
+#: 40-hex value passed straight through to fetch-by-sha when measured, so
+#: this matches what the runtime pins, and only a branch, a tag, an
+#: abbreviation or an absent value is unpinned. The upstream validator
+#: requires 40 lowercase, which is stricter than the runtime and owes that
+#: its own, softer finding.
 SHA_LENGTHS = frozenset({40, 64})
 SHA_RE = re.compile(r"\A(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
 
@@ -586,15 +573,20 @@ def grok_declared_paths(plugin_dir: Path, field: str, want_dir: bool) -> List[Pa
     if root is None:
         return []
     found: List[Path] = []
+    seen: set = set()
     for item in candidates:
         if not isinstance(item, str) or not item:
             continue
         candidate = contained_resolve(plugin_dir / item, root)
-        if candidate is None:
+        if candidate is None or candidate in seen:
+            # Two spellings of one path are one component list, and every
+            # caller walks what it gets back — a directory listed twice
+            # would be read twice.
             continue
         if candidate == root and not want_dir:
             continue
         if safe_is_dir(candidate) if want_dir else safe_is_file(candidate):
+            seen.add(candidate)
             found.append(candidate)
     return found
 

@@ -15,11 +15,7 @@ from typing import Iterable, List, Optional
 from skillsaw.context import RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.paths import escapes_root, has_parent_traversal, is_absolute_path
-
-# Semantic Versioning 2.0.0, defined once beside the rule that needed it
-# first rather than restated here — the same reasoning ``formats.grok`` uses
-# for borrowing ``inline_documents`` from ``formats.codex``.
-from ..mcp_registry._helpers import SEMVER
+from skillsaw.rules.builtin.utils import SEMVER
 
 # A Grok marketplace repository contains the plugins it catalogs, so the
 # plugin rules have to fire there too — the same reason the Codex sets carry
@@ -35,8 +31,8 @@ GROK_MARKETPLACE_REPO_TYPES = frozenset({RepositoryType.GROK_MARKETPLACE})
 SAMPLE_LIMIT = 3
 
 
-def escape_reason(value: str, root: Path) -> Optional[str]:
-    """How *value* leaves *root*, or ``None`` when it stays inside.
+def escape_reason(value: str, root: Path, root_label: str) -> Optional[str]:
+    """Why *value* is not a usable path under *root*, or ``None``.
 
     Grok resolves a declared path against the plugin root and a catalog
     source against the marketplace root, and drops anything that escapes —
@@ -45,15 +41,18 @@ def escape_reason(value: str, root: Path) -> Optional[str]:
     lexical checks are not enough: ``./skills-link`` has no ``..`` and is
     not absolute, and still lands outside.
 
-    The caller names the root and what the escape costs, so one phrase
-    serves both a plugin's manifest and a marketplace's catalog.
+    The two lexical arms state the requirement rather than the consequence,
+    as the Codex helper does: ``./nested/../plugins/x`` normalises back
+    inside the root, so calling it an escape would be wrong, while the
+    field is still no place for ``..``. *root_label* names the root, so one
+    helper serves both a plugin's manifest and a marketplace's catalog.
     """
     if is_absolute_path(value):
-        return "is absolute"
+        return f"is absolute; paths must stay inside the {root_label}"
     if has_parent_traversal(value):
-        return "contains '..'"
+        return f"contains '..'; paths must stay inside the {root_label}"
     if escapes_root(value, root):
-        return "resolves through a symlink"
+        return f"resolves outside the {root_label} — check for a symlink"
     return None
 
 

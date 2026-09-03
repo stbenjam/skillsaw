@@ -166,3 +166,13 @@ def test_a_forced_type_still_reports_a_directory_grok_installs_nothing_from(temp
 
     assert [v.severity for v in found] == [Severity.WARNING]
     assert "Grok installs nothing from" in found[0].message
+
+
+def test_check_installable_off_keeps_the_synthesized_name_finding(temp_dir) -> None:
+    """A repository whose components are generated at build time can drop
+    the installability finding without losing the naming advisory."""
+    repo = catalog_repo(temp_dir, "installable-off", {"README.md": "# Almanac\n"})
+    named = catalog_repo(temp_dir, "installable-off-named", {"skills/tide/SKILL.md": SKILL})
+
+    assert check(repo, {"check-installable": False}) == []
+    assert at(check(named, {"check-installable": False}), Severity.INFO) != []

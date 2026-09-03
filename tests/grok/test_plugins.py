@@ -34,12 +34,16 @@ from skillsaw.blocks import (
     SkillBlock,
 )
 from skillsaw.context import SKILL_REPO_TYPES, RepositoryContext, RepositoryType
+from skillsaw.paths import safe_resolve
 from skillsaw.lint_target import (
     GrokMarketplaceConfigNode,
     GrokMarketplaceIndexNode,
     GrokPluginConfigNode,
     GrokPluginNode,
 )
+from skillsaw.rules.builtin.agents.frontmatter import AgentFrontmatterRule
+from skillsaw.rules.builtin.commands.frontmatter import CommandFrontmatterRule
+from skillsaw.rules.builtin.commands.naming import CommandNamingRule
 from skillsaw.rules.builtin.description_routing import DescriptionRoutingRule
 from skillsaw.rules.builtin.hooks.dangerous import HooksDangerousRule
 from skillsaw.rules.builtin.hooks.prohibited import HooksProhibitedRule
@@ -687,3 +691,202 @@ def test_a_grok_only_server_must_name_something_to_spawn(temp_dir) -> None:
     assert messages(McpValidJsonRule().check(RepositoryContext(repo))) == [
         "MCP server 'empty' 'command' must be a non-empty string"
     ]
+
+
+def test_a_hook_file_only_the_grok_manifest_declares_is_groks_block(tmp_path) -> None:
+    """The conventional file both hosts read keeps the directory's class;
+    a file only the Grok manifest names is loaded by Grok alone, and
+    ``grok-hooks-valid``'s verdicts were not measured on that path."""
+    from skillsaw.blocks import ClaudeHooksBlock
+
+    repo = copy_fixture("grok/dual-manifest", tmp_path)
+    manifest = repo / ".grok-plugin" / "plugin.json"
+    manifest.write_text(
+        json.dumps({**json.loads(manifest.read_text()), "hooks": "custom-hooks.json"}),
+        encoding="utf-8",
+    )
+    (repo / "custom-hooks.json").write_text(HOOKS_JSON, encoding="utf-8")
+
+    context = RepositoryContext(repo)
+
+    assert context.provenance(repo).ecosystems == frozenset({"claude", "grok"})
+    assert relative(repo, context.lint_tree.find(ClaudeHooksBlock)) == ["hooks/hooks.json"]
+    assert relative(repo, context.lint_tree.find(GrokPluginHooksBlock)) == ["custom-hooks.json"]
+
+
+def test_a_nested_grok_plugin_keeps_its_skills_when_the_outer_claim_is_excluded(
+    temp_dir,
+) -> None:
+    """The outer directory was claimed by the catalog alone and leaves the
+    set with it; the plugin nested inside carries a manifest of its own and
+    is still an owner."""
+    repo = write_repo(temp_dir / "nested-owner")
+    write_catalog(repo, local_catalog("./plugins/almanac"))
+    inner = write_plugin(repo / "plugins" / "almanac" / "bundled" / "tide-charts", MANIFEST)
+    skill = inner / "skills" / "tide-window"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(SKILL_MD, encoding="utf-8")
+
+    context = RepositoryContext(repo)
+    assert skill in context.skills
+
+    context.exclude_patterns = [".grok-plugin/marketplace.json"]
+    context.apply_excludes()
+
+    assert context.grok_plugins == [inner]
+    assert relative(repo, context.lint_tree.find(SkillBlock)) == [
+        "plugins/almanac/bundled/tide-charts/skills/tide-window/SKILL.md"
+    ]
+
+
+def test_a_grok_only_mcp_config_is_read_as_strict_json(temp_dir) -> None:
+    """Grok's parser refuses a bare ``NaN``; only Grok reads this file."""
+    repo = write_repo(temp_dir / "nan-mcp")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", MANIFEST)
+    (plugin / ".mcp.json").write_text(
+        '{"mcpServers": {"tides": {"command": "serve", "retries": NaN}}}', encoding="utf-8"
+    )
+
+    found = messages(McpValidJsonRule().check(RepositoryContext(repo)))
+
+    assert found == ["Invalid JSON: NaN is not valid JSON"]
+
+
+# ── Provenance for manifest-declared prose ───────────────────────
+
+
+#: Prose each Claude-scoped rule has something to say about: an agent with
+#: no frontmatter, and a command file that is neither kebab-case nor carries
+#: a description.
+NO_FRONTMATTER_AGENT = "# Berth reviewer\n\nReport each vessel with no berth.\n"
+NO_FRONTMATTER_COMMAND = "# Handover\n\nList the berths.\n"
+
+
+def _nested_declaration(temp_dir, name, field, relative_dir, body, filename, extra=None):
+    repo = write_repo(temp_dir / name)
+    plugin = write_plugin(
+        repo / "plugins" / "tide-charts", {**MANIFEST, field: relative_dir, **(extra or {})}
+    )
+    target = plugin / relative_dir
+    target.mkdir(parents=True)
+    (target / filename).write_text(body, encoding="utf-8")
+    return repo, plugin
+
+
+@pytest.mark.parametrize(
+    "field,relative_dir,body,filename,rule_cls",
+    [
+        pytest.param(
+            "agents",
+            "tools/agents",
+            NO_FRONTMATTER_AGENT,
+            "reviewer.md",
+            AgentFrontmatterRule,
+            id="agent-frontmatter",
+        ),
+        pytest.param(
+            "commands",
+            "src/commands",
+            NO_FRONTMATTER_COMMAND,
+            "Berth_Handover.md",
+            CommandFrontmatterRule,
+            id="command-frontmatter",
+        ),
+        pytest.param(
+            "commands",
+            "src/commands",
+            NO_FRONTMATTER_COMMAND,
+            "Berth_Handover.md",
+            CommandNamingRule,
+            id="command-naming",
+        ),
+    ],
+)
+def test_a_two_level_declared_directory_stays_out_of_claudes_scope(
+    temp_dir, field, relative_dir, body, filename, rule_cls
+) -> None:
+    """``provenance_dir()`` reads the owner the attach recorded. Guessing it
+    from the layout names an intermediate directory no ecosystem claims,
+    which puts Claude's frontmatter and naming rules back on Grok-only
+    content."""
+    repo, plugin = _nested_declaration(
+        temp_dir, f"nested-{rule_cls.__name__}", field, relative_dir, body, filename
+    )
+
+    context = RepositoryContext(repo)
+
+    assert context.provenance(plugin).grok_only
+    # The file is in the tree — the rule is silent because it is out of
+    # scope, not because nothing attached.
+    assert relative(
+        repo, context.lint_tree.find(AgentBlock) + context.lint_tree.find(CommandBlock)
+    ) == [f"plugins/tide-charts/{relative_dir}/{filename}"]
+    assert rule_cls().check(context) == []
+
+
+@pytest.mark.parametrize(
+    "field,relative_dir,body,filename,rule_cls",
+    [
+        pytest.param(
+            "agents",
+            "tools/agents",
+            NO_FRONTMATTER_AGENT,
+            "reviewer.md",
+            AgentFrontmatterRule,
+            id="agent-frontmatter",
+        ),
+        pytest.param(
+            "commands",
+            "src/commands",
+            NO_FRONTMATTER_COMMAND,
+            "Berth_Handover.md",
+            CommandFrontmatterRule,
+            id="command-frontmatter",
+        ),
+    ],
+)
+def test_a_dual_manifest_plugin_keeps_claudes_prose_rules(
+    temp_dir, field, relative_dir, body, filename, rule_cls
+) -> None:
+    """The other half: a directory Claude also declares stays in Claude's
+    scope, wherever the Grok manifest put the files."""
+    repo, plugin = _nested_declaration(
+        temp_dir, f"dual-{rule_cls.__name__}", field, relative_dir, body, filename
+    )
+    (plugin / ".claude-plugin").mkdir()
+    (plugin / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "tide-charts"}), encoding="utf-8"
+    )
+
+    context = RepositoryContext(repo)
+
+    assert context.provenance(plugin).ecosystems == frozenset({"claude", "grok"})
+    assert rule_cls().check(context) != []
+
+
+def test_a_declared_directory_inside_a_nested_plugin_does_not_steal_its_prose(temp_dir) -> None:
+    """A manifest may point the field straight into a nested plugin. Those
+    files are the nested plugin's, and its owner is what every scoped rule
+    reads."""
+    repo = write_repo(temp_dir / "nested-plugin")
+    outer = write_plugin(
+        repo / "plugins" / "tide-charts", {**MANIFEST, "commands": "bundled/almanac/commands"}
+    )
+    inner = write_plugin(outer / "bundled" / "almanac", {**MANIFEST, "name": "almanac"})
+    (inner / "commands").mkdir()
+    (inner / "commands" / "handover.md").write_text(NO_FRONTMATTER_COMMAND, encoding="utf-8")
+
+    tree = RepositoryContext(repo).lint_tree
+    commands = tree.find(CommandBlock)
+
+    assert relative(repo, commands) == ["plugins/tide-charts/bundled/almanac/commands/handover.md"]
+    assert [block.plugin_owner for block in commands] == [safe_resolve(inner)]
+
+
+def test_a_dual_manifest_plugin_keeps_claudes_reading_of_an_empty_command(temp_dir) -> None:
+    """The other half of the usable-connection tightening: the shared block
+    a Claude declaration keeps carries Claude's presence-only check, and the
+    established result stands."""
+    repo = _mcp_plugin(temp_dir, "dual-unusable", {"empty": {"command": ""}}, claude=True)
+
+    assert McpValidJsonRule().check(RepositoryContext(repo)) == []

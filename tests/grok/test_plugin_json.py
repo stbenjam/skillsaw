@@ -139,7 +139,7 @@ def test_an_escaping_path_warns(broken) -> None:
     found = only(check(broken), "'../../etc'")
 
     assert found.severity == Severity.WARNING
-    assert "escapes the plugin root" in found.message
+    assert "paths must stay inside the plugin root" in found.message
 
 
 @pytest.mark.parametrize(
@@ -171,7 +171,7 @@ def test_a_symlinked_escape_warns(temp_dir) -> None:
     found = only(check(repo), "'skills'")
 
     assert found.severity == Severity.WARNING
-    assert "resolves through a symlink" in found.message
+    assert "resolves outside the plugin root — check for a symlink" in found.message
 
 
 def test_a_path_that_is_not_in_the_plugin_warns(broken) -> None:
@@ -195,7 +195,7 @@ def test_check_paths_exist_off_keeps_the_escape_finding(broken) -> None:
     found = messages(check(broken, {"check-paths-exist": False}))
 
     assert not any("is not in the plugin" in message for message in found)
-    assert any("escapes the plugin root" in message for message in found)
+    assert any("must stay inside the plugin root" in message for message in found)
 
 
 def test_an_inline_hooks_object_is_not_a_path(temp_dir) -> None:
@@ -435,3 +435,20 @@ def test_each_finding_names_the_manifest_that_carries_it(broken) -> None:
     assert (plugins / "malformed" / ".grok-plugin" / "plugin.json", "Invalid JSON") in filed
     assert {v.file_path.name for v in check(broken)} == {"plugin.json"}
     assert {v.file_path.parent.name for v in check(broken)} == {".grok-plugin"}
+
+
+def test_check_overrides_off_keeps_the_path_checks(temp_dir) -> None:
+    """A repository that deliberately replaces its conventional directories
+    can silence the one finding without losing the rest."""
+    repo = write_repo(temp_dir / "overrides-off")
+    plugin = write_plugin(
+        repo / "plugins" / "tide-charts", {**MANIFEST, "skills": ["./extra-skills", "./nope"]}
+    )
+    for directory in ("skills/tide-window", "extra-skills/tide-legend"):
+        (plugin / directory).mkdir(parents=True)
+        (plugin / directory / "SKILL.md").write_text(SKILL, encoding="utf-8")
+
+    found = messages(check(repo, {"check-overrides": False}))
+
+    assert not any("replaces" in message for message in found)
+    assert "'skills': './nope' is not in the plugin" in found

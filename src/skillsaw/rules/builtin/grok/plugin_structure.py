@@ -29,7 +29,7 @@ from ._helpers import GROK_PLUGIN_REPO_TYPES
 
 #: What ``grok plugin install`` accepts from a manifest-less directory,
 #: rendered for the one message this rule has.
-_INSTALLABLE = "skills/<name>/SKILL.md, agents/*.md, hooks/hooks.json or .mcp.json"
+_INSTALLABLE = f"skills/<name>/{grok.SKILL_FILENAME}, agents/*.md, hooks/hooks.json or .mcp.json"
 
 
 class GrokPluginStructureRule(Rule):
@@ -38,6 +38,17 @@ class GrokPluginStructureRule(Rule):
     since = "0.20.0"
 
     repo_types = GROK_PLUGIN_REPO_TYPES
+
+    config_schema = {
+        "check-installable": {
+            "type": "bool",
+            "default": True,
+            "description": (
+                "Warn when a plugin directory holds neither a manifest nor a component "
+                "'grok plugin install' accepts"
+            ),
+        },
+    }
 
     @property
     def rule_id(self) -> str:
@@ -54,6 +65,7 @@ class GrokPluginStructureRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
+        check_installable = self.setting("check-installable")
         # One enumeration for the whole run: a catalog addressing the
         # directory by name is what makes a synthesized install name a
         # problem rather than a detail.
@@ -69,6 +81,8 @@ class GrokPluginStructureRule(Rule):
             if safe_is_file(node.path):
                 continue
             if not self._installable(plugin_dir):
+                if not check_installable:
+                    continue
                 violations.append(
                     self.violation(
                         f"Grok installs nothing from '{plugin_dir.name}/': no "
@@ -94,7 +108,7 @@ class GrokPluginStructureRule(Rule):
     def _installable(self, plugin_dir: Path) -> bool:
         """Whether ``grok plugin install`` accepts *plugin_dir* with no manifest."""
         skills = plugin_dir / grok.COMPONENT_PATHS["skills"][0]
-        if any(safe_is_file(child / "SKILL.md") for child in _children(skills)):
+        if any(safe_is_file(child / grok.SKILL_FILENAME) for child in _children(skills)):
             return True
         agents = plugin_dir / grok.COMPONENT_PATHS["agents"][0]
         if any(child.suffix == ".md" and safe_is_file(child) for child in _children(agents)):

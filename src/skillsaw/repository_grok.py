@@ -189,9 +189,14 @@ class RepositoryGrokMixin:
 
         ``grok_plugin_owning`` runs per consulted path, so resolving every
         root on each call would cost a filesystem round-trip per question.
+        Excluded directories are dropped, as Codex drops them: an ownership
+        answer over a directory the lint tree never built is an owner
+        nothing can consult.
         """
         if self._grok_roots is None:
-            self._grok_roots = sorted(self._grok_claim_set())
+            self._grok_roots = sorted(
+                root for root in self._grok_claim_set() if not self.is_path_excluded(root)
+            )
         return self._grok_roots
 
     def _reset_grok_caches(self, filtering: bool = False) -> None:
@@ -220,7 +225,8 @@ class RepositoryGrokMixin:
         walk and stay in ``self.skills`` — where they attach as standalone
         nodes and keep linting the very content the exclusion removed. A
         skill any other active plugin still claims keeps its owner and is
-        preserved.
+        preserved — including a nested Grok plugin of its own, which the
+        re-probe kept because it carries a manifest.
         """
         dropped = before - {
             r for r in (safe_resolve(p) for p in self.grok_plugins) if r is not None
@@ -229,7 +235,12 @@ class RepositoryGrokMixin:
             return
         active = {
             r
-            for p in (*self.plugins, *self.codex_plugins, *self.agent_plugins)
+            for p in (
+                *self.plugins,
+                *self.codex_plugins,
+                *self.agent_plugins,
+                *self.grok_plugins,
+            )
             if (r := safe_resolve(p)) is not None
         }
         self.skills = [

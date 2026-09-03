@@ -79,9 +79,11 @@ or a clearly recognizable placeholder instead.
 ```
 
 An empty `command` is a narrower case: the key is present, so the
-presence-only check passes it in a Claude-family file. Codex-only plugins
-and the editor files (`.cursor/mcp.json`, `.vscode/mcp.json`) require the
-value to name something spawnable — a non-empty `command` string or `url`.
+presence-only check passes it in a Claude-family file. Codex-only and
+Grok-only plugins — including a Grok manifest's `mcpServers` path and its
+inline map — and the editor files (`.cursor/mcp.json`, `.vscode/mcp.json`)
+require the value to name something spawnable: a non-empty `command` string
+or `url`.
 
 **Good:**
 

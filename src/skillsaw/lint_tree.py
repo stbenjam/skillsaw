@@ -641,6 +641,27 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return
         state.add_parser_block(parent, p, block_cls, owner=owner)
 
+    def _inside_plugin(candidate: Path, plugin_resolved: Path) -> bool:
+        """Inside *plugin_resolved*, and not inside a nested claimed plugin.
+
+        Any claimed plugin directory strictly between the file and this
+        plugin's root means the file is the nested plugin's to attach —
+        otherwise a repo-root plugin's recursive ``rules/`` scan, or a
+        manifest pointing ``commands`` at a directory holding another
+        plugin, would tag nested files with the outer owner.
+        ``seen_plugin_dirs`` is fully populated before the plugin loop makes
+        the first call here.
+        """
+        resolved = safe_resolve(candidate)
+        if resolved is None:
+            return False
+        for ancestor in resolved.parents:
+            if ancestor == plugin_resolved:
+                return True
+            if ancestor in seen_plugin_dirs:
+                return False
+        return False
+
     def _add_plugin_prose(parent: LintTarget, plugin_dir: Path, owner: Path) -> None:
         """The one prose attach for every plugin container.
 
@@ -655,24 +676,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return
 
         def _contained(p: Path) -> bool:
-            """Inside this plugin, and not inside a nested claimed plugin.
-
-            Any claimed plugin directory strictly between the file and this
-            plugin's root means the file is the nested plugin's to attach —
-            otherwise a repo-root plugin's recursive ``rules/`` scan would
-            tag nested files with the outer owner and poison ``seen`` first.
-            ``seen_plugin_dirs`` is fully populated before the plugin loop
-            makes the first call here.
-            """
-            resolved = safe_resolve(p)
-            if resolved is None:
-                return False
-            for ancestor in resolved.parents:
-                if ancestor == plugin_resolved:
-                    return True
-                if ancestor in seen_plugin_dirs:
-                    return False
-            return False
+            return _inside_plugin(p, plugin_resolved)
 
         for dirname, block_cls, pattern in (
             ("commands", CommandBlock, "*.md"),
@@ -1126,19 +1130,29 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if _is_excluded(grok_marketplace_json):
             continue
         catalog_node = GrokMarketplaceConfigNode(path=grok_marketplace_json)
-        marketplace_root = grok_marketplace_json.parent.parent
-        index_locations = [(grok_marketplace_json.parent / grok.PLUGIN_INDEX_FILENAME, False)]
-        # An index at a fallback catalog location is a file Grok never
-        # reads, and the parity rule reports it — so it is a node here like
-        # every other file the rules report on, rather than a probe of its
-        # own from inside the rule.
-        index_locations.extend(
-            (marketplace_root.joinpath(*parts, grok.PLUGIN_INDEX_FILENAME), True)
-            for parts in grok.UNREAD_INDEX_DIRS
-        )
-        for index_json, stray in index_locations:
-            if safe_is_file(index_json) and not _is_excluded(index_json):
-                catalog_node.children.append(GrokMarketplaceIndexNode(path=index_json, stray=stray))
+        marketplace_root = safe_resolve(grok_marketplace_json.parent.parent)
+        if marketplace_root is not None:
+            index_locations = [(grok_marketplace_json.parent / grok.PLUGIN_INDEX_FILENAME, False)]
+            # An index at a fallback catalog location is a file Grok never
+            # reads, and the parity rule reports it — so it is a node here
+            # like every other file the rules report on, rather than a probe
+            # of its own from inside the rule.
+            index_locations.extend(
+                (marketplace_root.joinpath(*parts, grok.PLUGIN_INDEX_FILENAME), True)
+                for parts in grok.UNREAD_INDEX_DIRS
+            )
+            for index_json, stray in index_locations:
+                # Contained against the marketplace root, the boundary the
+                # catalog's own sources are held to: an index symlinked out
+                # of the marketplace is not this marketplace's display
+                # catalog, and the parity rule would report a file it does
+                # not own.
+                if contained_resolve(index_json, marketplace_root) is None:
+                    continue
+                if safe_is_file(index_json) and not _is_excluded(index_json):
+                    catalog_node.children.append(
+                        GrokMarketplaceIndexNode(path=index_json, stray=stray)
+                    )
         root.children.append(catalog_node)
 
     # --- Plugins (build first so skills can nest inside them) ---
@@ -1384,15 +1398,16 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                     except OSError:
                         continue
                     for md in declared_prose:
-                        if contained_resolve(md, resolved_plugin) is not None:
+                        # The same predicate the conventional attach uses:
+                        # inside the plugin, and not inside a nested claimed
+                        # one — a manifest may point the field at a
+                        # directory that holds another plugin.
+                        if _inside_plugin(md, resolved_plugin):
                             state.add_block(container, md, prose_cls, owner=resolved_plugin)
-            # Whichever host already reads these files keeps its block
-            # class: one block per file, or the security rules report every
-            # command in it twice, and a dual-manifest plugin's established
-            # Claude results have to stand. Grok's own classes are for the
-            # files only Grok reads, which is every file in a Grok-only
-            # plugin — including a path the manifest declares, since that
-            # path may be the conventional file under another name.
+            # Whichever host already reads the *conventional* files keeps
+            # its block class: one block per file, or the security rules
+            # report every command in it twice, and a dual-manifest plugin's
+            # established Claude results have to stand.
             if prov.claude:
                 hooks_cls, mcp_cls = ClaudeHooksBlock, McpBlock
             elif prov.codex:
@@ -1417,10 +1432,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 _add_contained_plugin_block(
                     node, conventional_hooks, hooks_cls, owner=resolved_plugin
                 )
+            # A declared file is Grok's whatever else claims the directory:
+            # only the Grok manifest names it, so no other host loads it,
+            # and it must not arrive under a class whose shape rule was
+            # measured on another host's files. The conventional file both
+            # hosts read is the exception, and it is already attached above
+            # — ``_claim_attached_hooks`` finds it and records the
+            # declaration rather than adding a second block.
             for declared_hooks in grok.grok_declared_hook_files(plugin_path):
                 if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
                     continue
-                state.add_parser_block(node, declared_hooks, hooks_cls, owner=resolved_plugin)
+                state.add_parser_block(
+                    node, declared_hooks, GrokPluginHooksBlock, owner=resolved_plugin
+                )
             for inline_hooks in grok.grok_inline_hooks(plugin_path):
                 inline_hooks_block = GrokInlineHooksBlock(path=manifest, inline_data=inline_hooks)
                 inline_hooks_block.plugin_owner = resolved_plugin

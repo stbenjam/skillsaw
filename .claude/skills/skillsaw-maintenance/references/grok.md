@@ -189,8 +189,11 @@ a git repository.
   `src/skillsaw/repository_grok.py`, mixed into `RepositoryContext`. It lives outside
   `context.py` because `tests/test_module_layering.py` caps that file at 900 lines.
 - Ownership — one branch in `RepositoryContext.provenance()`
-  (`src/skillsaw/repository_provenance.py`) adding `"grok"`, plus `grok_only`,
-  `is_grok_only_plugin` and `in_grok_only_plugin` for conditional strictness.
+  (`src/skillsaw/repository_provenance.py`) adding `"grok"`, plus `grok_only`, which
+  `_declares_containment` reads to draw the package-containment boundary: a Grok plugin
+  contains its own files, and a directory Claude also declares stays on Claude's looser
+  reading. `is_grok_only_plugin` and `in_grok_only_plugin` are the per-path views of it,
+  reserved — no rule consults them yet.
 - Lint tree — `GrokPluginNode`, `GrokPluginConfigNode`, `GrokMarketplaceConfigNode` and
   `GrokMarketplaceIndexNode` in `src/skillsaw/lint_target.py`; `GrokPluginHooksBlock`,
   `GrokMcpBlock`, `GrokInlineHooksBlock` and `GrokInlineMcpBlock` in

@@ -28,6 +28,13 @@ The declared component paths fail more quietly still. A path that escapes
 the plugin root or does not exist is dropped with no diagnostic, and `grok
 plugin validate` calls the manifest valid either way.
 
+A finding names the manifest Grok actually reads, which is not always
+`.grok-plugin/plugin.json`. Grok resolves the first of `plugin.json`,
+`.grok-plugin/plugin.json`, `.claude-plugin/plugin.json` that exists — the
+**reverse** of the catalog order — so on a plugin carrying more than one, or
+on a manifest-less directory a catalog claims, the file to open is the one
+the finding names.
+
 ## Severity
 
 A finding's severity is how much of the plugin the defect costs.
@@ -50,10 +57,11 @@ conventional `skills/` does not rescue it.
 **Warnings** — the plugin loads and one component list is silently lost.
 
 - A declared `skills`, `commands`, `agents`, `hooks` or `mcpServers` path
-  that escapes the plugin root, whether by `..`, by being absolute, or
-  through a symlink. Containment is enforced rather than incidental: a
-  target that exists outside the plugin and holds a real `SKILL.md` still
-  loads nothing.
+  that is absolute, contains `..`, or resolves outside the plugin through a
+  symlink. Containment is enforced rather than incidental: a target that
+  exists outside the plugin and holds a real `SKILL.md` still loads
+  nothing. The two lexical shapes are refused whether or not they normalise
+  back inside — the field is no place for either.
 - A declared path that is not in the plugin.
 - A declared path of the wrong kind: `skills`, `commands` and `agents` name
   directories, `hooks` and `mcpServers` name files.
@@ -135,6 +143,16 @@ rules:
     check-paths-exist: false
 ```
 
+A repository that keeps its conventional directories deliberately empty —
+or ships nothing under them — loses nothing to an override, and can drop
+that finding alone:
+
+```yaml
+rules:
+  grok-plugin-json-valid:
+    check-overrides: false
+```
+
 ## Configuration
 
 ```yaml
@@ -147,6 +165,7 @@ rules:
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `check-paths-exist` | Warn when a manifest path (skills, commands, agents, hooks, mcpServers) names something the plugin does not contain | `true` |
+| `check-overrides` | Warn when a declared skills, commands or agents path replaces a populated conventional directory | `true` |
 
 
 *Run `skillsaw explain grok-plugin-json-valid` to see this documentation and the rule's effective configuration in your terminal.*

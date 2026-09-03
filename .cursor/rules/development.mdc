@@ -247,16 +247,14 @@ per-ecosystem attach paths and loses its content silently.
   `codex-hooks-valid`, `muse-hooks-valid`, `cursor-hooks-valid`,
   `grok-hooks-valid`. `hooks-dangerous` and
   `hooks-prohibited` read the shared `HooksBlock` base, so a new host
-  needs no changes there. One deliberate exception: a Grok *plugin's* hooks
-  file is `GrokPluginHooksBlock`, a sibling of `GrokHooksBlock` with no
-  shape rule, because Grok loads it through a different adapter and
-  `grok-hooks-valid`'s verdicts were measured on the project path only.
+  needs no changes there. One exception: a Grok *plugin's* hooks file is
+  `GrokPluginHooksBlock`, a sibling with no shape rule — a different adapter
+  loads it, and `grok-hooks-valid`'s evidence covers the project path.
 
 **Ecosystems and editor tools are different problems.** An *ecosystem*
 packages and installs content (Claude plugins, Codex, Grok Build, Agent
-Plugins), so it
-needs provenance: two of them can claim the same directory, and the format
-rules must stay out of each other's trees. Both are `RepositoryType` members
+Plugins), so it needs provenance: two of them can claim the same directory,
+and the format rules must stay out of each other's trees. Both are `RepositoryType` members
 — detection produces one set, and that enum is the only vocabulary. An *editor tool* (Cursor,
 Copilot, Cline, Qwen) reads its own configuration locations, which no other
 tool claims — nothing else installs into `.cursor/`, and `QWEN.md` belongs
@@ -306,13 +304,15 @@ the condition to a ClassVar.
 put its discovery leg — the
 state-free plugin/manifest walks, catalog enumeration, local-source
 resolution, and install-location helpers — in a new
-`src/skillsaw/discovery/<ecosystem>.py` beside the existing discovery modules;
-add its evidence probe to `provenance()` in
-`repository_provenance.py` and its
+`src/skillsaw/discovery/<ecosystem>.py`; add its evidence probe to
+`provenance()` in `repository_provenance.py` and its
 context wrappers (caching, `--type` gating) beside
-`_codex_catalog_files()` / `_agent_plugin_claim_set()` in `context.py`, or in
-a `repository_<ecosystem>.py` mixin when `test_module_layering` says
-`context.py` is at its line cap — Grok's are there; add its config-file
+`_codex_catalog_files()` / `_agent_plugin_claim_set()` in `context.py`, or a
+`repository_<ecosystem>.py` mixin when `test_module_layering` caps
+`context.py` (where Grok's live); a `RepositoryType` member per packaging
+claim, in `SKILL_REPO_TYPES` when its plugins carry skills (that turns the
+`agentskill-*` rules on) and in `_TYPE_PRIORITY`, or the reports'
+`repo_type` reads `unknown`; add its config-file
 cluster to the single
 plugin pass in `build_lint_tree` (attached through a contained helper);
 teach `in_format_scope` nothing — it already reads the
@@ -323,5 +323,6 @@ shared node type — rules that iterate the ecosystem's own node type gate by
 node type instead (see the scope rule above);
 extend the union in `merge_plugin_dirs` callers if it discovers plugin
 directories of its own. Prose needs no work — every claimed directory
-already gets it — and existing rule files need no visits: scope is
-declared per rule class, not guarded per call site.
+already gets it, and no existing rule needs a *scope* visit: scope is
+declared per rule class, not guarded per call site. The exception: a rule
+keying on an explicit `repo_types` list, like `content-description-routing`.

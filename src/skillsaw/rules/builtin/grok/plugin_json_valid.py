@@ -54,6 +54,14 @@ class GrokPluginJsonValidRule(Rule):
                 "mcpServers) names something the plugin does not contain"
             ),
         },
+        "check-overrides": {
+            "type": "bool",
+            "default": True,
+            "description": (
+                "Warn when a declared skills, commands or agents path replaces a "
+                "populated conventional directory"
+            ),
+        },
     }
 
     @property
@@ -73,6 +81,7 @@ class GrokPluginJsonValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         check_paths_exist = self.setting("check-paths-exist")
+        check_overrides = self.setting("check-overrides")
 
         for node in context.lint_tree.find(GrokPluginConfigNode):
             manifest = node.path
@@ -93,7 +102,9 @@ class GrokPluginJsonValidRule(Rule):
 
             violations.extend(self._check_name(data, manifest))
             violations.extend(
-                self._check_components(data, manifest, node.plugin_dir, check_paths_exist)
+                self._check_components(
+                    data, manifest, node.plugin_dir, check_paths_exist, check_overrides
+                )
             )
             violations.extend(self._check_metadata(data, manifest))
 
@@ -128,6 +139,7 @@ class GrokPluginJsonValidRule(Rule):
         manifest: Path,
         plugin_dir: Path,
         check_paths_exist: bool,
+        check_overrides: bool,
     ) -> List[RuleViolation]:
         """Declared component paths, and what an override costs.
 
@@ -173,12 +185,11 @@ class GrokPluginJsonValidRule(Rule):
                         )
                     )
                     continue
-                reason = escape_reason(raw, root)
+                reason = escape_reason(raw, root, "plugin root")
                 if reason:
                     violations.append(
                         self.violation(
-                            f"'{field}': '{safe_display(raw)}' {reason} and escapes the "
-                            "plugin root",
+                            f"'{field}': '{safe_display(raw)}' {reason}",
                             file_path=manifest,
                             severity=Severity.WARNING,
                         )
@@ -213,7 +224,8 @@ class GrokPluginJsonValidRule(Rule):
                 if contained is not None:
                     resolved.append(contained)
 
-            violations.extend(self._check_override(field, resolved, manifest, plugin_dir, root))
+            if check_overrides:
+                violations.extend(self._check_override(field, resolved, manifest, plugin_dir, root))
 
         return violations
 

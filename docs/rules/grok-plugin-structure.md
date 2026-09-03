@@ -85,6 +85,16 @@ plugins/berth-notes/
   `.mcp.json`.
 - Keep slash commands, but do not rely on them alone to make a plugin.
 
+A repository whose components are generated at build time has none of them
+on disk when skillsaw runs. Drop the installability finding rather than the
+rule, so the synthesized-name advisory still fires:
+
+```yaml
+rules:
+  grok-plugin-structure:
+    check-installable: false
+```
+
 ## Configuration
 
 ```yaml
@@ -93,6 +103,10 @@ rules:
     enabled: auto  # true | false | auto
     severity: warning
 ```
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `check-installable` | Warn when a plugin directory holds neither a manifest nor a component 'grok plugin install' accepts | `true` |
 
 
 *Run `skillsaw explain grok-plugin-structure` to see this documentation and the rule's effective configuration in your terminal.*

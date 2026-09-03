@@ -27,13 +27,9 @@ from skillsaw.formats import grok
 from skillsaw.lint_target import GrokMarketplaceConfigNode, GrokMarketplaceIndexNode
 from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import parse_frontmatter, read_json, read_text
+from skillsaw.rules.builtin.utils import parse_frontmatter, read_text, strict_json
 
 from ._helpers import GROK_MARKETPLACE_REPO_TYPES, sample
-
-#: The file Grok reads a skill from, which is what makes a subdirectory of
-#: ``skills/`` a skill rather than a folder of notes.
-_SKILL_FILE = "SKILL.md"
 
 
 @dataclass(frozen=True)
@@ -122,6 +118,10 @@ class GrokMarketplaceIndexParityRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
+        # One walk per plugin directory for the whole run: a directory a
+        # dozen catalog entries resolve to is read once. Bound to the call
+        # rather than the instance, so nothing survives into the next run.
+        self._skills_by_dir: Dict[Path, List[_Skill]] = {}
 
         for catalog_node in context.lint_tree.find(GrokMarketplaceConfigNode):
             index_nodes = catalog_node.find(GrokMarketplaceIndexNode)
@@ -153,7 +153,10 @@ class GrokMarketplaceIndexParityRule(Rule):
     def _check_index(
         self, index: Path, catalog: Path, entries: Optional[List[_Entry]]
     ) -> List[RuleViolation]:
-        data, error = read_json(index)
+        # Strict, as the two validity rules read their own files: Grok's
+        # parser refuses a bare ``NaN``/``Infinity`` token and a duplicated
+        # key, and an index it cannot parse is ignored without a word.
+        data, error = strict_json(index)
         if error:
             return [self.violation(f"Invalid JSON: {error}", file_path=index)]
         plugins = data.get("plugins") if isinstance(data, dict) else None
@@ -264,14 +267,22 @@ class GrokMarketplaceIndexParityRule(Rule):
         """
         if plugin_dir is None:
             return []
+        memo = self._skills_by_dir.get(plugin_dir)
+        if memo is not None:
+            return memo
         found: Dict[Path, _Skill] = {}
 
         def _record(directory: Path) -> None:
             resolved = safe_resolve(directory)
-            if resolved is None or resolved in found or not safe_is_file(directory / _SKILL_FILE):
+            if (
+                resolved is None
+                or resolved in found
+                or not safe_is_file(directory / grok.SKILL_FILENAME)
+            ):
                 return
             found[resolved] = _Skill(
-                display=directory.name, names=self._skill_names(directory / _SKILL_FILE, directory)
+                display=directory.name,
+                names=self._skill_names(directory / grok.SKILL_FILENAME, directory),
             )
 
         def _record_children(directory: Path) -> None:
@@ -286,7 +297,9 @@ class GrokMarketplaceIndexParityRule(Rule):
         for declared in grok.grok_declared_skill_dirs(plugin_dir):
             _record(declared)
             _record_children(declared)
-        return list(found.values())
+        skills = list(found.values())
+        self._skills_by_dir[plugin_dir] = skills
+        return skills
 
     def _skill_names(self, skill_md: Path, directory: Path) -> FrozenSet[str]:
         """Every name the generator could have written for this skill.
@@ -305,7 +318,7 @@ class GrokMarketplaceIndexParityRule(Rule):
 
     def _catalog_entries(self, catalog: Path) -> Optional[List[_Entry]]:
         """The catalog reduced to parity inputs, or ``None`` when unusable."""
-        data, error = read_json(catalog)
+        data, error = strict_json(catalog)
         if error or not isinstance(data, dict):
             return None
         entries = data.get("plugins")
@@ -326,7 +339,10 @@ class GrokMarketplaceIndexParityRule(Rule):
             if not names:
                 continue
             source = entry.get("source")
-            sha = source.get("sha") if isinstance(source, dict) else None
+            # Only a url source is pinned: Grok reads no ``sha`` on a local
+            # one, so carrying it here would report a sha-less index as
+            # catalog-only or drifted against a value nothing installs from.
+            sha = source.get("sha") if grok.is_url_source(source) else None
             found.append(
                 _Entry(
                     display=name or resolved or "",

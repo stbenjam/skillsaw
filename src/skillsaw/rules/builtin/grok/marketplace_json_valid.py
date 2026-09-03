@@ -232,13 +232,12 @@ class GrokMarketplaceJsonValidRule(Rule):
     ) -> Tuple[List[RuleViolation], Optional[Path]]:
         if resolved_root is None:
             return [], None
-        reason = escape_reason(value, resolved_root)
+        reason = escape_reason(value, resolved_root, "marketplace root")
         if reason:
             return (
                 [
                     self.violation(
-                        f"plugins[{index}].source: '{safe_display(value)}' {reason} and "
-                        "escapes the marketplace root",
+                        f"plugins[{index}].source: '{safe_display(value)}' {reason}",
                         file_path=catalog,
                     )
                 ],
@@ -249,8 +248,8 @@ class GrokMarketplaceJsonValidRule(Rule):
             return (
                 [
                     self.violation(
-                        f"plugins[{index}].source: '{safe_display(value)}' is not a directory "
-                        "in this repository",
+                        f"plugins[{index}].source: '{safe_display(value)}' is not a "
+                        "directory under the marketplace root",
                         file_path=catalog,
                     )
                 ],

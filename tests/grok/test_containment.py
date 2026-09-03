@@ -14,7 +14,11 @@ import json
 
 from skillsaw.blocks import GrokMcpBlock, HooksBlock, SkillBlock, SkillRefBlock
 from skillsaw.context import RepositoryContext
-from skillsaw.lint_target import GrokMarketplaceConfigNode, GrokPluginNode
+from skillsaw.lint_target import (
+    GrokMarketplaceConfigNode,
+    GrokMarketplaceIndexNode,
+    GrokPluginNode,
+)
 
 from tests.grok._helpers import (
     HOOKS_JSON,
@@ -286,3 +290,24 @@ def test_a_dual_manifest_plugin_keeps_claudes_looser_reading(temp_dir) -> None:
     assert relative(repo, context.lint_tree.find(SkillRefBlock)) == [
         "plugins/tide-charts/skills/tide-window/references/handbook.md"
     ]
+
+
+def test_an_index_symlinked_out_of_the_marketplace_is_not_attached(temp_dir) -> None:
+    """The display catalog is held to the boundary the catalog's own sources
+    are held to: a symlink out of the marketplace names a file this
+    marketplace does not own, and the parity rule would report it."""
+    outside = _outside(temp_dir)
+    (outside / "plugin-index.json").write_text(
+        json.dumps({"version": 1, "plugins": {}}), encoding="utf-8"
+    )
+    repo = write_repo(temp_dir / "repo")
+    write_catalog(repo / "packages" / "harbour", local_catalog("./plugins/almanac"))
+    (repo / "packages" / "harbour" / "plugins" / "almanac").mkdir(parents=True)
+    (repo / "packages" / "harbour" / ".grok-plugin" / "plugin-index.json").symlink_to(
+        outside / "plugin-index.json"
+    )
+
+    tree = RepositoryContext(repo).lint_tree
+
+    assert tree.find(GrokMarketplaceConfigNode) != []
+    assert tree.find(GrokMarketplaceIndexNode) == []
