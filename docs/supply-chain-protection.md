@@ -44,9 +44,11 @@ Always on by default. Scans hook commands in `hooks.json` and
 
 ### hooks-prohibited
 
-Opt-in policy rule. When enabled, **all** hook commands are prohibited
-unless they match an entry in the allowlist. This catches any new hook
-added to a project — even if it doesn't match a known dangerous pattern.
+Opt-in policy rule. When enabled, **all** hooks are prohibited unless they
+match an entry in the allowlist — a command hook by its command, and a
+handler that spawns no process (`mcp_tool`, `http`, `prompt`, `agent`) by an
+identity such as `mcp_tool:server/tool`. This catches any new hook added to
+a project — even if it doesn't match a known dangerous pattern.
 
 ### mcp-prohibited
 
@@ -156,8 +158,11 @@ be defined:
 | `.mcp.json` (repo root) | mcp-prohibited, mcp-valid-json |
 | Plugin `hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | Plugin `.mcp.json` | mcp-prohibited, mcp-valid-json |
+| `.codex/hooks.json` (repo root or any package) | hooks-dangerous, hooks-prohibited |
 | Codex manifest-declared or inline `hooks` | hooks-dangerous, hooks-prohibited |
 | Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
+| `.muse/hooks.json` | hooks-dangerous, hooks-prohibited |
+| `.cursor/hooks.json` | hooks-dangerous, hooks-prohibited |
 | Copilot / VS Code agent `hooks:` frontmatter | hooks-dangerous, hooks-prohibited |
 | Copilot cloud/shared agent `mcp-servers:` frontmatter | mcp-prohibited, mcp-valid-json |
 | Agent Plugin `mcp.json` | mcp-prohibited, agent-plugin-mcp-valid |

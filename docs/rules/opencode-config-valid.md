@@ -10,6 +10,7 @@ opencode.json and opencode.jsonc must parse and use keys and MCP server shapes O
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.20.0 |
+| **Repo Types** | opencode |
 | **Category** | [OpenCode](opencode.md) |
 
 ## Why

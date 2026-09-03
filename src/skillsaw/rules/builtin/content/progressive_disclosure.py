@@ -59,6 +59,7 @@ _DEFAULT_CATEGORIES = (
     "gemini-md",
     "qwen-md",
     "instruction",
+    "memory",
 )
 DEFAULT_THRESHOLDS: Dict[str, int] = {
     category: DEFAULT_LIMITS[category]["warn"] for category in _DEFAULT_CATEGORIES
@@ -104,7 +105,6 @@ _IMPORT_CATEGORIES = frozenset({"claude-md", "agents-md", "gemini-md", "qwen-md"
 class ContentProgressiveDisclosureRule(Rule):
     """Large files should split detail into referenced files that load on demand"""
 
-    formats = None
     repo_types = None
     default_enabled = "auto"
     since = "0.19.0"

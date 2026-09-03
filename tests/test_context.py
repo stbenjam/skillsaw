@@ -10,19 +10,10 @@ import pytest
 
 
 from skillsaw.context import (
+    INSTRUCTION_REPO_TYPES,
     RepositoryContext,
     RepositoryType,
     path_matches_patterns,
-    HAS_CURSOR,
-    HAS_COPILOT,
-    HAS_CLINE,
-    HAS_GEMINI,
-    HAS_QWEN,
-    HAS_AGENTS_MD,
-    HAS_KIRO,
-    HAS_CLAUDE_MD,
-    HAS_CODERABBIT,
-    HAS_OPENCODE,
 )
 from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
 from skillsaw.discovery.detect import has_skill_md_recursive
@@ -666,45 +657,42 @@ def test_dot_claude_not_detected_empty(temp_dir):
     assert context.repo_type == RepositoryType.UNKNOWN
 
 
-def test_detected_formats_empty(temp_dir):
+def test_no_tool_types_in_an_empty_repository(temp_dir):
     """Empty repo has no detected formats"""
     context = RepositoryContext(temp_dir)
-    assert context.detected_formats == set()
+    assert context.repo_types == {RepositoryType.UNKNOWN}
 
 
-def test_detected_formats_devin_rules_and_instructions(temp_dir):
+def test_detects_devin_rules_and_instructions(temp_dir):
     """Both directory spellings and Devin-only instruction names are evidence."""
-    from skillsaw.context import HAS_DEVIN
 
     (temp_dir / ".devin" / "rules").mkdir(parents=True)
-    assert HAS_DEVIN in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.DEVIN in RepositoryContext(temp_dir).repo_types
 
     (temp_dir / ".devin").rename(temp_dir / ".unused")
     (temp_dir / "packages" / "api").mkdir(parents=True)
     (temp_dir / "packages" / "api" / "AGENT.md").write_text("Use the API conventions.\n")
-    assert HAS_DEVIN in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.DEVIN in RepositoryContext(temp_dir).repo_types
 
 
 def test_lowercase_agents_md_is_not_devin_or_agents_md_evidence(temp_dir):
     """``docs/agents.md`` is a documentation page. Only Devin Desktop reads
     that spelling as AGENTS.md, so it claims neither format on its own."""
-    from skillsaw.context import HAS_AGENTS_MD, HAS_CLAUDE_MD, HAS_DEVIN
 
     (temp_dir / "CLAUDE.md").write_text("# Project\n\nRun `make test`.\n")
     (temp_dir / "docs").mkdir()
     (temp_dir / "docs" / "agents.md").write_text("# Agents\n\nSDK agent classes.\n")
 
-    assert RepositoryContext(temp_dir).detected_formats == {HAS_CLAUDE_MD}
+    assert RepositoryContext(temp_dir).repo_types == {RepositoryType.CLAUDE_MD}
 
     (temp_dir / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
-    detected = RepositoryContext(temp_dir).detected_formats
-    assert HAS_AGENTS_MD in detected
-    assert HAS_DEVIN not in detected
+    detected = RepositoryContext(temp_dir).repo_types
+    assert RepositoryType.AGENTS_MD in detected
+    assert RepositoryType.DEVIN not in detected
 
 
 def test_nested_devin_and_windsurf_skills_are_discovered(temp_dir):
     """The shared scan finds both skill dialects in nested workspaces."""
-    from skillsaw.context import HAS_DEVIN, RepositoryType
 
     expected = []
     for directory in (".devin", ".windsurf"):
@@ -716,13 +704,12 @@ def test_nested_devin_and_windsurf_skills_are_discovered(temp_dir):
     context = RepositoryContext(temp_dir)
 
     assert RepositoryType.AGENTSKILLS in context.repo_types
-    assert HAS_DEVIN in context.detected_formats
+    assert RepositoryType.DEVIN in context.repo_types
     assert set(context.skills) == set(expected)
 
 
 def test_vendored_devin_content_is_not_discovered(temp_dir):
     """Devin's nested scan honors the existing vendored-tree suppression."""
-    from skillsaw.context import HAS_DEVIN
 
     vendored = temp_dir / "vendor" / "package" / ".devin"
     (vendored / "rules").mkdir(parents=True)
@@ -733,14 +720,13 @@ def test_vendored_devin_content_is_not_discovered(temp_dir):
 
     context = RepositoryContext(temp_dir)
 
-    assert HAS_DEVIN not in context.detected_formats
+    assert RepositoryType.DEVIN not in context.repo_types
     assert context.skills == []
     assert context.instruction_files == []
 
 
 def test_excluded_devin_tree_does_not_drive_detection_or_attachment(temp_dir):
     from skillsaw.blocks import DevinRuleBlock
-    from skillsaw.context import HAS_DEVIN
 
     rule = temp_dir / ".devin" / "rules" / "ignored.md"
     rule.parent.mkdir(parents=True)
@@ -748,38 +734,38 @@ def test_excluded_devin_tree_does_not_drive_detection_or_attachment(temp_dir):
 
     context = RepositoryContext(temp_dir, exclude_patterns=[".devin/**"])
 
-    assert HAS_DEVIN not in context.detected_formats
+    assert RepositoryType.DEVIN not in context.repo_types
     assert context.lint_tree.find(DevinRuleBlock) == []
 
 
-def test_detected_formats_cursor_rules_dir(temp_dir):
+def test_detects_cursor_rules_dir(temp_dir):
     """Detect .cursor/rules/ directory"""
     (temp_dir / ".cursor" / "rules").mkdir(parents=True)
     context = RepositoryContext(temp_dir)
-    assert HAS_CURSOR in context.detected_formats
+    assert RepositoryType.CURSOR in context.repo_types
 
 
-def test_detected_formats_cursorrules_file(temp_dir):
+def test_detects_cursorrules_file(temp_dir):
     """Detect legacy .cursorrules file"""
     (temp_dir / ".cursorrules").write_text("some rules")
     context = RepositoryContext(temp_dir)
-    assert HAS_CURSOR in context.detected_formats
+    assert RepositoryType.CURSOR in context.repo_types
 
 
-def test_detected_formats_copilot(temp_dir):
+def test_detects_copilot(temp_dir):
     """Detect .github/copilot-instructions.md"""
     (temp_dir / ".github").mkdir()
     (temp_dir / ".github" / "copilot-instructions.md").write_text("# Instructions")
     context = RepositoryContext(temp_dir)
-    assert HAS_COPILOT in context.detected_formats
+    assert RepositoryType.COPILOT in context.repo_types
 
 
-def test_detected_formats_copilot_named_instructions_md(temp_dir):
+def test_detects_copilot_named_instructions_md(temp_dir):
     """Detect <name>.instructions.md files (e.g. coding.instructions.md)"""
     (temp_dir / ".github").mkdir()
     (temp_dir / ".github" / "coding.instructions.md").write_text("# Coding")
     context = RepositoryContext(temp_dir)
-    assert HAS_COPILOT in context.detected_formats
+    assert RepositoryType.COPILOT in context.repo_types
 
 
 def test_named_instructions_md_in_instruction_files(temp_dir):
@@ -812,64 +798,64 @@ def test_named_instructions_md_content_analysis(temp_dir):
     assert github_dir / "coding.instructions.md" in paths
 
 
-def test_detected_formats_copilot_prompt_and_agent_dirs(temp_dir):
+def test_detects_copilot_prompt_and_agent_dirs(temp_dir):
     """Prompt files and custom agents are Copilot evidence on their own"""
     (temp_dir / ".github" / "prompts").mkdir(parents=True)
-    assert HAS_COPILOT in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.COPILOT in RepositoryContext(temp_dir).repo_types
 
     (temp_dir / ".github" / "agents").mkdir()
-    assert HAS_COPILOT in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.COPILOT in RepositoryContext(temp_dir).repo_types
 
 
-def test_detected_formats_cursor_commands_dir(temp_dir):
+def test_detects_cursor_commands_dir(temp_dir):
     """A repo may ship Cursor commands without shipping Cursor rules"""
     (temp_dir / ".cursor" / "commands").mkdir(parents=True)
     context = RepositoryContext(temp_dir)
-    assert HAS_CURSOR in context.detected_formats
+    assert RepositoryType.CURSOR in context.repo_types
 
 
-def test_detected_formats_cline_file_and_dir(temp_dir):
+def test_detects_cline_file_and_dir(temp_dir):
     """Detect .clinerules in both of its shapes"""
     (temp_dir / ".clinerules").write_text("Never force push.\n")
-    assert HAS_CLINE in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.CLINE in RepositoryContext(temp_dir).repo_types
 
     (temp_dir / ".clinerules").unlink()
     (temp_dir / ".clinerules").mkdir()
-    assert HAS_CLINE in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.CLINE in RepositoryContext(temp_dir).repo_types
 
 
-def test_detected_formats_opencode_root_config(temp_dir):
+def test_detects_opencode_root_config(temp_dir):
     """A project that configures only a model has no .opencode/ at all"""
     (temp_dir / "opencode.json").write_text('{"model": "anthropic/claude-sonnet-4-5"}')
-    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.OPENCODE in RepositoryContext(temp_dir).repo_types
 
 
-def test_detected_formats_opencode_jsonc_root_config(temp_dir):
+def test_detects_opencode_jsonc_root_config(temp_dir):
     """OpenCode reads both extensions, so both are evidence"""
     (temp_dir / "opencode.jsonc").write_text('{\n  // pinned\n  "model": "x"\n}')
-    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.OPENCODE in RepositoryContext(temp_dir).repo_types
 
 
-def test_detected_formats_opencode_accepts_both_directory_vocabularies(temp_dir):
+def test_detects_opencode_accepts_both_directory_vocabularies(temp_dir):
     """2.0 renamed each content directory to its plural and still loads the 1.x name"""
     (temp_dir / ".opencode" / "command").mkdir(parents=True)
-    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.OPENCODE in RepositoryContext(temp_dir).repo_types
 
     (temp_dir / ".opencode" / "command").rmdir()
     (temp_dir / ".opencode" / "commands").mkdir()
-    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.OPENCODE in RepositoryContext(temp_dir).repo_types
 
 
-def test_detected_formats_opencode_config_inside_the_directory(temp_dir):
+def test_detects_opencode_config_inside_the_directory(temp_dir):
     (temp_dir / ".opencode").mkdir()
     (temp_dir / ".opencode" / "opencode.json").write_text('{"model": "x"}')
-    assert HAS_OPENCODE in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.OPENCODE in RepositoryContext(temp_dir).repo_types
 
 
 def test_an_empty_opencode_directory_is_not_evidence(temp_dir):
     """Detection must agree with attachment: nothing here for a rule to read"""
     (temp_dir / ".opencode").mkdir()
-    assert HAS_OPENCODE not in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.OPENCODE not in RepositoryContext(temp_dir).repo_types
 
 
 def test_opencode_is_not_an_instruction_format(temp_dir):
@@ -878,11 +864,151 @@ def test_opencode_is_not_an_instruction_format(temp_dir):
     OpenCode does read AGENTS.md — but a repository that ships only
     ``opencode.json`` has none, and auto-enabling two rules structurally
     incapable of finding anything is the silent no-op this linter exists to
-    catch. HAS_AGENTS_MD covers the case where the file is actually there.
+    catch. The agents-md type covers the case where the file is actually there.
     """
-    from skillsaw.context import ALL_INSTRUCTION_FORMATS
+    assert RepositoryType.OPENCODE not in INSTRUCTION_REPO_TYPES
 
-    assert HAS_OPENCODE not in ALL_INSTRUCTION_FORMATS
+
+_CODEX_HOOKS = """{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "./scripts/load-policy.sh"}]}
+    ]
+  }
+}
+"""
+
+
+def test_detects_codex_root_hooks(temp_dir):
+    """``.codex/hooks.json`` is the project-layer configuration Codex reads."""
+    (temp_dir / ".codex").mkdir()
+    (temp_dir / ".codex" / "hooks.json").write_text(_CODEX_HOOKS)
+    assert RepositoryType.CODEX_PROJECT in RepositoryContext(temp_dir).repo_types
+
+
+def test_detects_codex_hooks_in_a_subpackage(temp_dir):
+    """Codex reads the ``.codex/`` layer of the project it is started in.
+
+    In a monorepo that is as often a package as the repository root, so the
+    walk finds a nested one — and attachment follows the same lookup.
+    """
+    package = temp_dir / "packages" / "api" / ".codex"
+    package.mkdir(parents=True)
+    (package / "hooks.json").write_text(_CODEX_HOOKS)
+    assert RepositoryType.CODEX_PROJECT in RepositoryContext(temp_dir).repo_types
+
+
+def test_an_empty_codex_directory_is_not_evidence(temp_dir):
+    """Detection must agree with attachment: nothing here for a rule to read.
+
+    ``.codex/plugins/`` is an install location Codex's own plugin discovery
+    walks, not project-layer configuration, so it is not evidence either.
+    """
+    (temp_dir / ".codex" / "plugins").mkdir(parents=True)
+    assert RepositoryType.CODEX_PROJECT not in RepositoryContext(temp_dir).repo_types
+
+
+def test_excluded_codex_hooks_drive_neither_detection_nor_attachment(temp_dir):
+    """An exclude in ``.skillsaw.yaml`` reaches detection through the context."""
+    from skillsaw.blocks import CodexHooksBlock
+
+    (temp_dir / ".codex").mkdir()
+    (temp_dir / ".codex" / "hooks.json").write_text(_CODEX_HOOKS)
+
+    context = RepositoryContext(temp_dir, exclude_patterns=[".codex/**"])
+
+    assert RepositoryType.CODEX_PROJECT not in context.repo_types
+    assert context.lint_tree.find(CodexHooksBlock) == []
+
+
+def test_a_codex_project_is_not_a_codex_plugin(temp_dir):
+    """``.codex/hooks.json`` is project configuration, not a plugin claim:
+    it must not make provenance treat the directory as a Codex plugin, or
+    ``provenance_scope`` would exempt the repository from Claude's rules."""
+    (temp_dir / ".codex").mkdir()
+    (temp_dir / ".codex" / "hooks.json").write_text(_CODEX_HOOKS)
+
+    context = RepositoryContext(temp_dir)
+
+    assert context.repo_types == {RepositoryType.CODEX_PROJECT}
+    assert context.repo_type == RepositoryType.CODEX_PROJECT
+    assert RepositoryType.CODEX_PLUGIN not in context.repo_types
+    assert context.provenance(temp_dir).ecosystems == frozenset()
+
+
+_MUSE_HOOKS = '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "make lint"}]}]}}'
+
+
+def test_detects_muse_root_hooks(temp_dir):
+    """``.muse/hooks.json`` is the committed configuration Muse Code reads."""
+    (temp_dir / ".muse").mkdir()
+    (temp_dir / ".muse" / "hooks.json").write_text(_MUSE_HOOKS)
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.MUSE in context.repo_types
+    assert context.repo_type == RepositoryType.MUSE
+
+
+def test_detects_muse_hooks_in_a_subpackage(temp_dir):
+    """Muse reads the ``.muse/`` layer of the package it is started in, so
+    the walk finds a nested one — and attachment follows the same lookup."""
+    package = temp_dir / "services" / "billing" / ".muse"
+    package.mkdir(parents=True)
+    (package / "hooks.json").write_text(_MUSE_HOOKS)
+
+    assert RepositoryType.MUSE in RepositoryContext(temp_dir).repo_types
+
+
+def test_an_empty_muse_directory_is_not_evidence(temp_dir):
+    """Detection must agree with attachment: nothing here for a rule to read."""
+    (temp_dir / ".muse").mkdir()
+
+    assert RepositoryType.MUSE not in RepositoryContext(temp_dir).repo_types
+
+
+def test_excluded_muse_hooks_are_not_muse_evidence(temp_dir):
+    """An exclude in ``.skillsaw.yaml`` reaches detection through the context."""
+    (temp_dir / ".muse").mkdir()
+    (temp_dir / ".muse" / "hooks.json").write_text(_MUSE_HOOKS)
+
+    context = RepositoryContext(temp_dir, exclude_patterns=[".muse/**"])
+
+    assert RepositoryType.MUSE not in context.repo_types
+    assert context.repo_types == {RepositoryType.UNKNOWN}
+
+
+def test_muse_is_not_an_instruction_format(temp_dir):
+    """Muse reads AGENTS.md, but a repository whose only marker is
+    ``.muse/hooks.json`` has none, and auto-enabling two rules structurally
+    incapable of finding anything is the silent no-op this linter exists to
+    catch. The agents-md type covers the case where the file is there."""
+    assert RepositoryType.MUSE not in INSTRUCTION_REPO_TYPES
+
+
+def test_a_muse_repository_that_also_packages_content_keeps_its_primary_type(temp_dir):
+    """Tool types sort below packaging types, so a marketplace that also
+    configures Muse still reports ``marketplace`` as its primary type."""
+    (temp_dir / ".muse").mkdir()
+    (temp_dir / ".muse" / "hooks.json").write_text(_MUSE_HOOKS)
+    (temp_dir / ".claude-plugin").mkdir()
+    (temp_dir / ".claude-plugin" / "marketplace.json").write_text('{"name": "test", "plugins": []}')
+
+    context = RepositoryContext(temp_dir)
+
+    assert {RepositoryType.MARKETPLACE, RepositoryType.MUSE} <= context.repo_types
+    assert context.repo_type == RepositoryType.MARKETPLACE
+
+
+def test_codex_is_not_an_instruction_format(temp_dir):
+    """The instruction-file rules only read AGENTS.md and friends.
+
+    Codex does read AGENTS.md — but a repository whose only marker is
+    ``.codex/hooks.json`` has none, and auto-enabling two rules structurally
+    incapable of finding anything is the silent no-op this linter exists to
+    catch. The agents-md type covers the case where the file is actually there.
+    """
+    assert RepositoryType.CODEX_PROJECT not in INSTRUCTION_REPO_TYPES
 
 
 def test_a_native_opencode_repo_is_not_apm_compiled_output(temp_dir):
@@ -958,18 +1084,18 @@ def test_an_unreadable_apm_target_list_keeps_apm_owning_the_directory(temp_dir, 
     assert context.in_apm_compiled_dir(temp_dir / ".opencode" / "command" / "x.md")
 
 
-def test_detected_formats_gemini(temp_dir):
+def test_detects_gemini(temp_dir):
     """Detect GEMINI.md at root"""
     (temp_dir / "GEMINI.md").write_text("# Gemini instructions")
     context = RepositoryContext(temp_dir)
-    assert HAS_GEMINI in context.detected_formats
+    assert RepositoryType.GEMINI in context.repo_types
 
 
-def test_detected_formats_qwen(temp_dir):
+def test_detects_qwen(temp_dir):
     """Detect QWEN.md at root"""
     (temp_dir / "QWEN.md").write_text("# Qwen instructions")
     context = RepositoryContext(temp_dir)
-    assert HAS_QWEN in context.detected_formats
+    assert RepositoryType.QWEN in context.repo_types
 
 
 def test_qwen_md_in_instruction_files(temp_dir):
@@ -1005,37 +1131,37 @@ def test_agent_tool_dirs_honours_excludes(temp_dir):
     assert context.agent_tool_dirs(".cursor") == [temp_dir / ".cursor"]
 
 
-def test_detected_formats_agents_md(temp_dir):
+def test_detects_agents_md(temp_dir):
     """Detect AGENTS.md at root"""
     (temp_dir / "AGENTS.md").write_text("# Agent instructions")
     context = RepositoryContext(temp_dir)
-    assert HAS_AGENTS_MD in context.detected_formats
+    assert RepositoryType.AGENTS_MD in context.repo_types
 
 
-def test_detected_formats_kiro(temp_dir):
+def test_detects_kiro(temp_dir):
     """Detect .kiro/ directory"""
     (temp_dir / ".kiro").mkdir()
     context = RepositoryContext(temp_dir)
-    assert HAS_KIRO in context.detected_formats
+    assert RepositoryType.KIRO in context.repo_types
 
 
-def test_detected_formats_claude_md(temp_dir):
+def test_detects_claude_md(temp_dir):
     """Detect CLAUDE.md at root"""
     (temp_dir / "CLAUDE.md").write_text("# Claude instructions")
     context = RepositoryContext(temp_dir)
-    assert HAS_CLAUDE_MD in context.detected_formats
+    assert RepositoryType.CLAUDE_MD in context.repo_types
 
 
-def test_detected_formats_multiple(temp_dir):
+def test_detects_multiple(temp_dir):
     """Detect multiple formats in the same repo"""
     (temp_dir / "CLAUDE.md").write_text("# Claude")
     (temp_dir / "AGENTS.md").write_text("# Agents")
     (temp_dir / ".cursor" / "rules").mkdir(parents=True)
     context = RepositoryContext(temp_dir)
-    assert HAS_CLAUDE_MD in context.detected_formats
-    assert HAS_AGENTS_MD in context.detected_formats
-    assert HAS_CURSOR in context.detected_formats
-    assert HAS_COPILOT not in context.detected_formats
+    assert RepositoryType.CLAUDE_MD in context.repo_types
+    assert RepositoryType.AGENTS_MD in context.repo_types
+    assert RepositoryType.CURSOR in context.repo_types
+    assert RepositoryType.COPILOT not in context.repo_types
 
 
 def test_apm_dir_with_dot_claude_not_dot_claude(temp_dir):
@@ -1161,9 +1287,9 @@ def test_apm_dir_does_not_skip_format_detection(temp_dir):
     (temp_dir / "GEMINI.md").write_text("# Instructions")
     (temp_dir / "AGENTS.md").write_text("# Instructions")
     context = RepositoryContext(temp_dir)
-    assert HAS_CLAUDE_MD in context.detected_formats
-    assert HAS_GEMINI in context.detected_formats
-    assert HAS_AGENTS_MD in context.detected_formats
+    assert RepositoryType.CLAUDE_MD in context.repo_types
+    assert RepositoryType.GEMINI in context.repo_types
+    assert RepositoryType.AGENTS_MD in context.repo_types
 
 
 def test_apm_dir_does_not_override_marketplace(temp_dir):
@@ -1252,11 +1378,11 @@ def test_multi_type_dot_claude_and_agentskills(temp_dir):
     assert context.repo_type == RepositoryType.DOT_CLAUDE
 
 
-def test_detected_formats_coderabbit(temp_dir):
-    """Detect .coderabbit.yaml sets HAS_CODERABBIT format flag"""
+def test_detects_coderabbit(temp_dir):
+    """A `.coderabbit.yaml` makes the repository a coderabbit one."""
     (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
     context = RepositoryContext(temp_dir)
-    assert HAS_CODERABBIT in context.detected_formats
+    assert RepositoryType.CODERABBIT in context.repo_types
 
 
 def test_coderabbit_only_repo_gets_content_rules(temp_dir):
@@ -1294,7 +1420,7 @@ def test_coderabbit_repo_no_command_violations(temp_dir):
             "claude-command-frontmatter",
             "skill-frontmatter",
             "claude-agent-frontmatter",
-            "hooks-json-valid",
+            "claude-hooks-valid",
             "mcp-valid-json",
         }
     ]
@@ -1306,8 +1432,8 @@ def test_coderabbit_with_claude_md_gets_both_formats(temp_dir):
     (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
     (temp_dir / "CLAUDE.md").write_text("# Instructions\n")
     context = RepositoryContext(temp_dir)
-    assert HAS_CODERABBIT in context.detected_formats
-    assert HAS_CLAUDE_MD in context.detected_formats
+    assert RepositoryType.CODERABBIT in context.repo_types
+    assert RepositoryType.CLAUDE_MD in context.repo_types
 
 
 def test_skill_in_node_modules_not_detected(temp_dir):

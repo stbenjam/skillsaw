@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Summarise the ledger policy before doing anything else."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "policy",
+            "tool": "archive_session"
+          },
+          {
+            "type": "command",
+            "command": "./scripts/flush-metrics.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/format.sh",
+            "input": { "path": "." }
+          },
+          {
+            "type": "mcp_tool",
+            "server": "policy"
+          }
+        ]
+      }
+    ]
+  }
+}

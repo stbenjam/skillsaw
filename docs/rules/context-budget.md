@@ -57,6 +57,9 @@ rules:
       skill:
         warn: 4000
         error: 8000
+      memory:            # committed .agents/memory/ notes
+        warn: 6000
+        error: 12000
 ```
 
 ## Configuration
@@ -70,7 +73,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "qwen-md": {"warn": 6000, "error": 12000}, "instruction": {"warn": 4000, "error": 8000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}, "skill-description": {"warn": 200, "error": 500}, "command-description": {"warn": 200, "error": 500}}` |
+| `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "qwen-md": {"warn": 6000, "error": 12000}, "instruction": {"warn": 4000, "error": 8000}, "memory": {"warn": 4000, "error": 8000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}, "skill-description": {"warn": 200, "error": 500}, "command-description": {"warn": 200, "error": 500}}` |
 
 
 *Run `skillsaw explain context-budget` to see this documentation and the rule's effective configuration in your terminal.*

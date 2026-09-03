@@ -38,7 +38,6 @@ class _Section:
 class ContentInstructionDriftRule(Rule):
     """Detect near-duplicate sections that drifted apart across instruction files"""
 
-    formats = None
     repo_types = None  # instruction files appear in every repo type
     default_enabled = "auto"
     since = "0.17.0"

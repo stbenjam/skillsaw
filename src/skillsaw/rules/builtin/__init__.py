@@ -24,29 +24,43 @@ def _reraise(_name):
 
 
 def _discover_rule_classes():
-    """Import every module in this package and collect Rule subclasses."""
+    """Import every module in this package and collect Rule subclasses.
+
+    Returns the classes plus a legacy-name map: a rule renamed by a split
+    keeps its former class name bound in its own module, and that binding is
+    the declaration the root exporter reads (see ``__getattr__``).
+    """
     classes = []
+    legacy_names = {}
     seen = set()
     prefix = __name__ + "."
     for modinfo in pkgutil.walk_packages(__path__, prefix, onerror=_reraise):
         module = importlib.import_module(modinfo.name)
-        for obj in vars(module).values():
-            if (
+        for name, obj in vars(module).items():
+            if not (
                 isinstance(obj, type)
                 and issubclass(obj, Rule)
                 and not inspect.isabstract(obj)
                 and obj.__module__.startswith(prefix)
-                and obj not in seen
             ):
+                continue
+            # Only the defining module declares a legacy name; a binding
+            # elsewhere is an ordinary import, not a rename.
+            if name != obj.__name__ and obj.__module__ == modinfo.name:
+                legacy_names[name] = obj
+            if obj not in seen:
                 seen.add(obj)
                 classes.append(obj)
-    return classes
+    return classes, legacy_names
+
+
+_RULE_CLASSES, _LEGACY_CLASS_NAMES = _discover_rule_classes()
 
 
 def _build_registry():
     """Map rule_id -> rule class, sorted by rule_id, rejecting duplicates."""
     by_id = {}
-    for cls in _discover_rule_classes():
+    for cls in _RULE_CLASSES:
         rule_id = cls().rule_id
         existing = by_id.get(rule_id)
         if existing is not None and existing is not cls:
@@ -104,12 +118,40 @@ def rule_aliases(rule_id: str) -> tuple:
     return cls.aliases if cls is not None else ()
 
 
+def rule_baseline_aliases(rule_id: str) -> tuple:
+    """Former IDs whose baseline fingerprints this rule's findings match.
+
+    Distinct from :func:`rule_aliases`: these names resolve nothing —
+    not a config key, not ``--rule``, not a suppression directive — and
+    exist only so a baseline written before a rule was split out of
+    another keeps suppressing what it recorded. A rule ID with no class
+    here (a plugin or custom rule) contributes none.
+    """
+    cls = BUILTIN_RULE_REGISTRY.get(rule_id)
+    return cls.baseline_aliases if cls is not None else ()
+
+
+_COLLIDING_LEGACY_NAMES = sorted(
+    name for name in _LEGACY_CLASS_NAMES if any(cls.__name__ == name for cls in BUILTIN_RULES)
+)
+if _COLLIDING_LEGACY_NAMES:
+    raise RuntimeError(
+        f"Legacy rule class names shadow live rule classes: {_COLLIDING_LEGACY_NAMES}"
+    )
+
+
 def __getattr__(name):
     # Keep ``from skillsaw.rules.builtin import SkillFrontmatterRule`` working
     # without a hand-maintained re-export block (PEP 562).
     for cls in BUILTIN_RULES:
         if cls.__name__ == name:
             return cls
+    # A rename binds the former class name in the rule's own module, which
+    # leaves ``cls.__name__`` on the new name — so the loop above never sees
+    # it and the root package has to resolve the legacy name separately.
+    cls = _LEGACY_CLASS_NAMES.get(name)
+    if cls is not None:
+        return cls
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -121,5 +163,8 @@ __all__ = [  # noqa: PLE0604
     "RULE_ALIASES",
     "canonical_rule_id",
     "rule_aliases",
-    *sorted(cls.__name__ for cls in BUILTIN_RULES),
+    "rule_baseline_aliases",
+    *sorted(
+        [cls.__name__ for cls in BUILTIN_RULES] + list(_LEGACY_CLASS_NAMES),
+    ),
 ]

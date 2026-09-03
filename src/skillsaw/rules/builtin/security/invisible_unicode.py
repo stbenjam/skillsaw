@@ -147,7 +147,6 @@ def _codepoint_summary(counts: Counter) -> str:
 class SecurityInvisibleUnicodeRule(Rule):
     """Detect invisible and reordering unicode in agent context"""
 
-    formats = None
     repo_types = None
     since = "0.17.0"
 

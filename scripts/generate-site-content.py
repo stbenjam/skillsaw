@@ -212,14 +212,15 @@ RULE_GROUPS = [
         "Hooks",
         "hooks",
         [
-            "hooks-json-valid",
+            "claude-hooks-valid",
             "hooks-dangerous",
             "hooks-prohibited",
         ],
-        "Validates hook configuration. The security rules scan hooks in "
-        "`hooks.json`, `.cursor/hooks.json`, `.claude/settings*.json`, and "
-        "skill, Claude-agent, and Copilot-agent frontmatter (`hooks:` key) for supply-chain "
-        "attack patterns (inspired by the "
+        "Validates hook configuration. The security rules scan every hook a repository "
+        "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
+        "Codex's `.codex/hooks.json` and plugin hooks, Muse Code's `.muse/hooks.json`, "
+        "Cursor's `.cursor/hooks.json`, and skill, Claude-agent, and Copilot-agent "
+        "frontmatter (`hooks:` key) — for supply-chain attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (
@@ -250,9 +251,27 @@ RULE_GROUPS = [
         "package metadata; they never query a package registry.",
     ),
     (
+        "Muse Code",
+        "muse",
+        ["muse-hooks-valid"],
+        "Validates `.muse/hooks.json`, the project hooks Muse Code loads and "
+        "silently refuses when they are malformed. What a defect costs "
+        "depends on where it is: a wrong-typed handler field rejects the "
+        "whole file, a stray key on a matcher group drops that group, an "
+        "unknown event skips its entries, and a bad handler drops that "
+        "handler — none of it reported in a headless run. Muse's handler "
+        "fields are a subset of Claude Code's, so a hooks file copied from "
+        "`.claude/` is the usual way in. Muse reads AGENTS.md for portable "
+        "instructions and the shared `.agents/memory/` convention for "
+        "committed project memory; both get the content and security rules "
+        "every format shares, so no Muse-specific instruction format is "
+        "validated. Enabled automatically when a `.muse/hooks.json` exists.",
+    ),
+    (
         "OpenAI Codex",
         "codex",
         [
+            "codex-hooks-valid",
             "codex-openai-metadata",
             "codex-plugin-json-valid",
             "codex-plugin-structure",
@@ -812,10 +831,39 @@ def generate_research_page(research):
     return "\n".join(lines) + "\n"
 
 
+# The hero sentence's rule count, anchored on the words that lead into it:
+# "…structural flaws, and content dead zones with 89 rules, then applies
+# deterministic autofixes." The whitespace before "zones" is captured rather
+# than matched literally because the sentence wraps across two source lines,
+# and rewriting the count must not reflow the paragraph.
+HERO_RULE_COUNT_RE = re.compile(r"(dead\s+zones with )\d+( rules\b)")
+
+
 def inject_stats(index_path, rules_data):
-    """Replace stat markers in docs/index.md."""
+    """Refresh the rule count in docs/index.md.
+
+    The ``<!-- RULE_COUNT -->`` marker is consumed the first time this runs,
+    which left the literal it became frozen at whatever the count was that
+    day. So the count is also rewritten in place on every run: the pattern
+    matches the rendered form as well as the marker, which makes the
+    substitution idempotent and keeps the page honest after a rule lands.
+
+    The pattern names the hero sentence, not just "with N rules", so it
+    rewrites that sentence and nothing else — a page that mentions "with 5
+    rules" in an unrelated line keeps that count untouched.
+    """
     text = index_path.read_text()
-    text = text.replace("<!-- RULE_COUNT -->", str(len(rules_data)))
+    count = str(len(rules_data))
+    text = text.replace("<!-- RULE_COUNT -->", count)
+    text, injected = HERO_RULE_COUNT_RE.subn(rf"\g<1>{count}\g<2>", text)
+    if not injected:
+        # The hero was reworded out from under the pattern. Saying so beats
+        # shipping a page frozen at whatever the count was that day.
+        print(
+            f"WARNING: no hero rule count found in {index_path.name}; "
+            "update HERO_RULE_COUNT_RE to match the hero sentence.",
+            file=sys.stderr,
+        )
     index_path.write_text(text)
 
 

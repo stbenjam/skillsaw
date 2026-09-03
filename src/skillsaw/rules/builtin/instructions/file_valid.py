@@ -5,7 +5,7 @@ Rule: instruction-file-valid
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
+from skillsaw.context import RepositoryContext, INSTRUCTION_REPO_TYPES
 from skillsaw.rules.builtin.content_analysis import DevinGlobalRuleBlock, InstructionBlock
 from skillsaw.rules.builtin.utils import read_text
 
@@ -15,7 +15,7 @@ from ._helpers import is_instruction_filename
 class InstructionFileValidRule(Rule):
     """Check that instruction files are valid UTF-8 and non-empty"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    repo_types = INSTRUCTION_REPO_TYPES
 
     @property
     def rule_id(self) -> str:

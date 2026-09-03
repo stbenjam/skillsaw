@@ -28,6 +28,9 @@ DEFAULT_LIMITS: Dict[str, Dict[str, int]] = {
     "gemini-md": {"warn": 6000, "error": 12000},
     "qwen-md": {"warn": 6000, "error": 12000},
     "instruction": {"warn": 4000, "error": 8000},
+    # Committed project memory: the index is loaded whole by every agent
+    # that reads the convention, and a topic note is loaded whole on demand.
+    "memory": {"warn": 4000, "error": 8000},
     "skill": {"warn": 3000, "error": 6000},
     "command": {"warn": 2000, "error": 4000},
     "agent": {"warn": 2000, "error": 4000},
@@ -62,7 +65,6 @@ def _estimate_tokens(text: str) -> int:
 class ContextBudgetRule(Rule):
     """Warn or error when files exceed recommended token limits"""
 
-    formats = None
     since = "0.7.0"
     baseline_mode = "ceiling"
 

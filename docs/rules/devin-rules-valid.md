@@ -10,6 +10,7 @@ Devin workspace rules must have valid activation frontmatter and fit its size li
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.20.0 |
+| **Repo Types** | devin |
 | **Category** | [Devin](devin.md) |
 
 ## Why

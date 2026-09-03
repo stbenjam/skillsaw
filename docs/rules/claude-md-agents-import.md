@@ -10,6 +10,7 @@ CLAUDE.md next to an AGENTS.md should import it so both assistants read one sour
 | **Severity** | info (auto) |
 | **Autofix** | auto |
 | **Since** | v0.20.0 |
+| **Repo Types** | agents-md, claude-md |
 | **Category** | [Instruction Files](instruction-files.md) |
 
 ## Why

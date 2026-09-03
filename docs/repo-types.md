@@ -2,6 +2,18 @@
 
 skillsaw automatically detects your repository structure. A repository can match multiple types simultaneously (e.g. an agentskills repo that also has `.coderabbit.yaml`).
 
+A type describes either how the repository *packages* its content — a
+marketplace, a plugin, an APM project — or which *tool* it is configured
+for. Both are the same kind of fact: if the checkout holds a tool's
+configuration, that tool's rules run and `Repo type:` says so. Every value
+below is also accepted by `--type`, which replaces packaging-type detection;
+tool types are always detected from the checkout, and plugin-contributed
+types too.
+
+The tool types sort below the packaging types, so the single "primary" type
+in the JSON report's `repo_type` field is unchanged: a marketplace that also
+ships a `.cursor/` is still a `marketplace`.
+
 ## agentskills.io Skills
 
 Standalone skill repositories following the [agentskills.io](https://agentskills.io) specification:
@@ -192,7 +204,7 @@ skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every 
 
 | Rule | On an installed plugin | Why |
 |---|---|---|
-| `hooks-dangerous`, `hooks-prohibited`, `hooks-json-valid` | **Runs (no autofix)** | These commands execute in this checkout. Whoever wrote them, they are this checkout's exposure. |
+| `hooks-dangerous`, `hooks-prohibited`, `codex-hooks-valid` | **Runs (no autofix)** | These commands execute in this checkout. Whoever wrote them, they are this checkout's exposure. |
 | `mcp-valid-json`, `mcp-prohibited` | **Runs (no autofix)** | Same — the host spawns these commands here. |
 | `agentskill-*` | **Runs (no autofix)** | These skills enter the agent's context window here. |
 | `codex-plugin-json-valid`, `codex-plugin-structure` | **Stands down** | A kebab-case name, a missing `description` or a dangling asset path is a defect in a file the developer cannot edit. |
@@ -244,6 +256,45 @@ Repositories with a `.claude/` directory containing commands, skills, hooks, age
 
 Repositories with a `.coderabbit.yaml` file. skillsaw validates the instruction fragments within the config.
 
+## Muse Code
+
+Repositories with a `.muse/hooks.json`, the committed project hooks
+[Muse Code](https://dev.meta.ai/docs/muse-code) reads. skillsaw finds one at
+the repository root and in any subpackage, because Muse reads the `.muse/`
+layer of the project it is started in; `.muse/worktrees/` holds whole
+checkouts Muse made for child agents and is skipped.
+
+Muse uses the nested hooks format Claude Code pioneered, with its own
+lifecycle events, matcher-group keys and handler fields.
+[`muse-hooks-valid`](rules/muse-hooks-valid.md) checks the file against them.
+This matters more than it sounds: Muse prints no diagnostic for anything it
+refuses, so a rejected file, a dropped matcher group and a skipped handler
+all look like a hook that had nothing to do. The commands themselves are
+scanned by [`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md), including the
+`commandWindows` variant.
+
+Muse reads `AGENTS.md` for portable instructions and `.agents/memory/` for
+committed team memory. Both are shared conventions rather than Muse
+surfaces, so neither is Muse evidence on its own — but both are linted:
+`AGENTS.md` wherever it appears, and committed memory at the repository
+root, `<repo>/.agents/memory/`, which is where Muse documents it.
+
+## OpenAI Codex project configuration
+
+Repositories with a `.codex/hooks.json`, the project layer Codex reads from
+the directory a session starts in — the repository root, or a package inside
+it. This is distinct from a Codex plugin (`.codex-plugin/plugin.json`) and
+from a Codex marketplace: it configures the checkout rather than packaging
+anything, so it is never treated as a plugin claim and never exempts the
+repository from another ecosystem's rules.
+
+[`codex-hooks-valid`](rules/codex-hooks-valid.md) validates the file, and
+[`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md) scan the commands in it.
+`.codex/plugins/` is an install location rather than project configuration —
+see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
+
 ## Promptfoo
 
 Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files in `evals/` directories). Prompt strings in the config are treated as content blocks, so all `content-*` rules apply to them automatically. Dedicated `promptfoo-*` rules validate config structure, assertion coverage, and metadata.
@@ -252,10 +303,11 @@ Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files 
 
 Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output. Package content under `apm_modules/` is externally sourced: it is linted but never autofixed by default, and `lint-external-content: false` omits it from the lint tree.
 
-## Editor and CLI tool files
+## Editor and CLI tools
 
-These are not repository types — skillsaw picks them up in any repository,
-whatever its type, because they ship in the checkout. Every **prose** file
+Each tool below is a repository type of its own, detected from the
+configuration it reads. Their content is picked up in any repository,
+whatever else it is, because it ships in the checkout. Every **prose** file
 listed below gets the `content-*` rules that apply to it (weak language,
 contradictions, attention dead zones, secrets, and the rest) plus the
 security rules, because its text lands in an agent's context window. A few
@@ -275,7 +327,7 @@ visible to rules by default but are never autofixed; see
 [`lint-external-content`](configuration.md#external-content) for the opt-out.
 
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
-— Cursor, Copilot, Cline, OpenCode and Codex all read it, and one well-linted
+— Cursor, Copilot, Cline, OpenCode, Muse Code and Codex all read it, and one well-linted
 AGENTS.md beats five per-vendor copies that drift apart. skillsaw does not
 reimplement a per-vendor instruction format on top of it; what it adds is
 coverage of the prose each tool keeps in its own directory, plus structural
@@ -285,18 +337,34 @@ validation wherever a tool's own metadata can fail silently — see
 [`copilot-agent-valid`](rules/copilot-agent-valid.md), and
 [`opencode-config-valid`](rules/opencode-config-valid.md).
 
-| Tool | Files linted |
-| --- | --- |
-| **Portable** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
-| **Vercel skills CLI** | Every `skills-lock.json`, plus matching installed skill payloads unless `lint-external-content: false` |
-| **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
-| **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
-| **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
-| **OpenCode** | `opencode.json` or `opencode.jsonc` at the root and in `.opencode/`, `.opencode/commands/**/*.md`, `.opencode/agents/**/*.md`, `.opencode/modes/*.md`, `.opencode/skills/*/SKILL.md`, and the 1.x singular spelling of each (`command/`, `agent/`, `mode/`, `skill/`). Repository-local files matched by `instructions` paths or globs are also linted; remote URLs are not fetched. |
-| **Devin CLI / Desktop** | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/rules/`, `.windsurf/global_rules.md`, and `.windsurfrules` |
-| **Windsurf** | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
-| **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
-| **Kiro** | `.kiro/steering/*.md` |
+Each tool is its own repository type, named in the `Type` column. That is
+the value `Repo type:` prints, the JSON report lists under `repo_types`, and
+`--type` accepts.
+
+| Tool | Type | Files linted |
+| --- | --- | --- |
+| **Portable** | `agents-md`, `claude-md`, `gemini`, `qwen` | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md` |
+| **Portable skills** | `agentskills` | `.agents/skills/*/SKILL.md` and the other conventional skill directories |
+| **Vercel skills CLI** | `skills-lock` | Every `skills-lock.json`, plus matching installed skill payloads unless `lint-external-content: false` |
+| **Cursor** | `cursor` | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
+| **Copilot / VS Code** | `copilot` | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
+| **Cline** | `cline` | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
+| **OpenCode** | `opencode` | `opencode.json` or `opencode.jsonc` at the root and in `.opencode/`, `.opencode/commands/**/*.md`, `.opencode/agents/**/*.md`, `.opencode/modes/*.md`, `.opencode/skills/*/SKILL.md`, and the 1.x singular spelling of each (`command/`, `agent/`, `mode/`, `skill/`). Repository-local files matched by `instructions` paths or globs are also linted; remote URLs are not fetched. |
+| **Devin CLI / Desktop** | `devin` | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/rules/`, `.windsurf/global_rules.md`, and `.windsurfrules` |
+| **Windsurf** | `devin` | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
+| **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
+| **Kiro** | `kiro` | `.kiro/steering/*.md` |
+| **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
+| **OpenAI Codex** | `codex-project` | `.codex/hooks.json` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
+| **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
+
+`.agents/memory/` is the one row with no type of its own: the convention
+predates every tool that reads it and none owns it, so committed memory is
+linted without making the repository anything in particular. It is read from
+the repository root only — `<repo>/.agents/memory/`, which is where Muse
+documents it — and everything below that directory is linted. A copy nested
+somewhere else in the tree is not attached, because it is not memory to the
+tools that read it either.
 
 Discovery and validation are separate layers for Copilot. Every Markdown file
 under `.github/agents/` and every `*.chatmode.md` file under the legacy
@@ -397,7 +465,7 @@ repository, so its commands are scanned by
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md) alongside Claude Code hooks
 and settings. Cursor's schema is flatter than Claude's — hooks hang directly
-off the event name rather than off a matcher group — so `hooks-json-valid`
+off the event name rather than off a matcher group — so `claude-hooks-valid`
 leaves the file alone and `cursor-hooks-valid` validates the shape instead.
 A `type: "prompt"` hook injects text rather than spawning a process, so the
 command scanners skip it — but Cursor puts that text into the agent's
@@ -407,6 +475,24 @@ prose. Its `prompt` string is linted as content, so
 the other injection scanners read it, and `hooks-prohibited` counts it as a
 hook. JSON carries no line numbers, so those findings name the file without
 a line.
+
+### Committed project memory
+
+`.agents/memory/` holds notes a team checks into the repository for whatever
+agent reads it — the shared counterpart of Claude Code's per-developer auto
+memory. The convention belongs to no tool: projects were committing it
+before Muse Code shipped, and Muse reads it the way it reads `AGENTS.md`,
+injecting `MEMORY.md` in full at session start (even in an untrusted
+workspace) alongside the paths of the other Markdown files in the directory,
+which it reads on demand. The index is one line per topic by convention;
+Muse lists every Markdown file there whether or not the index mentions it.
+
+skillsaw therefore attaches the directory at the repository root
+unconditionally, and it is evidence of no tool in particular. The index and
+the topic files beside it are agent context, so they get every content and
+security rule, and both are budgeted under the `memory` category — the index
+because a reader loads it whole, a topic file because a reader loads it
+whole once the topic comes up.
 
 ### OpenCode and APM
 

@@ -164,14 +164,15 @@ RULE_GROUPS = [
     (
         "Hooks",
         [
-            "hooks-json-valid",
+            "claude-hooks-valid",
             "hooks-dangerous",
             "hooks-prohibited",
         ],
-        "Validates hook configuration. The security rules scan hooks in "
-        "`hooks.json`, `.cursor/hooks.json`, `.claude/settings*.json`, and "
-        "skill, Claude-agent, and Copilot-agent frontmatter (`hooks:` key) for supply-chain "
-        "attack patterns (inspired by the "
+        "Validates hook configuration. The security rules scan every hook a repository "
+        "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
+        "Codex's `.codex/hooks.json` and plugin hooks, Muse Code's `.muse/hooks.json`, "
+        "Cursor's `.cursor/hooks.json`, and skill, Claude-agent, and Copilot-agent "
+        "frontmatter (`hooks:` key) — for supply-chain attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (
@@ -200,8 +201,25 @@ RULE_GROUPS = [
         "package metadata; they never query a package registry.",
     ),
     (
+        "Muse Code",
+        ["muse-hooks-valid"],
+        "Validates `.muse/hooks.json`, the project hooks Muse Code loads and "
+        "silently refuses when they are malformed. What a defect costs "
+        "depends on where it is: a wrong-typed handler field rejects the "
+        "whole file, a stray key on a matcher group drops that group, an "
+        "unknown event skips its entries, and a bad handler drops that "
+        "handler — none of it reported in a headless run. Muse's handler "
+        "fields are a subset of Claude Code's, so a hooks file copied from "
+        "`.claude/` is the usual way in. Muse reads AGENTS.md for portable "
+        "instructions and the shared `.agents/memory/` convention for "
+        "committed project memory; both get the content and security rules "
+        "every format shares, so no Muse-specific instruction format is "
+        "validated. Enabled automatically when a `.muse/hooks.json` exists.",
+    ),
+    (
         "OpenAI Codex",
         [
+            "codex-hooks-valid",
             "codex-openai-metadata",
             "codex-plugin-json-valid",
             "codex-plugin-structure",

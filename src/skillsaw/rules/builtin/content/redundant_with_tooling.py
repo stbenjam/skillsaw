@@ -13,7 +13,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentRedundantWithToolingRule(Rule):
     """Detect instructions that duplicate existing tooling configuration"""
 
-    formats = None
     since = "0.7.0"
 
     @property

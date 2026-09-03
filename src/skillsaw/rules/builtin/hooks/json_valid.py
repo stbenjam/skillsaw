@@ -1,13 +1,24 @@
 """
-Rule for validating hook configuration JSON structure
+Rule: claude-hooks-valid — the structure of a Claude Code hooks file.
+
+Every vocabulary below is Claude Code's: the event list (``Setup``,
+``InstructionsLoaded``, ``PermissionDenied``, ``TeammateIdle`` and the rest),
+the handler types (``command``, ``http``, ``mcp_tool``, ``prompt``,
+``agent``), and the per-handler fields (``url``, ``headers``,
+``allowedEnvVars``, ``asyncRewake``, ``model``). No other host reads that
+set — Codex runs only ``command`` and ``mcp_tool`` handlers on a shorter
+event list, Muse Code and Cursor have their own — so the rule iterates
+:class:`ClaudeHooksBlock` and leaves each of those to its own rule
+(``codex-hooks-valid``, ``muse-hooks-valid``, ``cursor-hooks-valid``).
 """
 
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.blocks import json_token
 from skillsaw.diagnostics import safe_display
-from skillsaw.rules.builtin.content_analysis import HooksBlock
+from skillsaw.rules.builtin.content_analysis import ClaudeHooksBlock
 
 # Valid hook event types
 _VALID_HOOK_EVENTS = {
@@ -103,18 +114,27 @@ def _format_type_name(expected_type):
     return expected_type.__name__
 
 
-class HooksJsonValidRule(Rule):
-    """Check that hooks.json is valid JSON with proper structure"""
+class ClaudeHooksValidRule(Rule):
+    """Check a Claude Code hooks.json against Claude Code's hook vocabulary.
+
+    Iterates :class:`ClaudeHooksBlock` — a Claude plugin's
+    ``hooks/hooks.json``, APM's compiled copy, and a dual-manifest
+    (Claude + Codex) plugin's hooks file, whose established results are
+    Claude's. Files only another host reads carry their own event names,
+    handler types and fields, and are validated by that host's rule.
+    """
 
     default_enabled = True
 
+    aliases = ("hooks-json-valid",)
+
     @property
     def rule_id(self) -> str:
-        return "hooks-json-valid"
+        return "claude-hooks-valid"
 
     @property
     def description(self) -> str:
-        return "hooks.json must be valid JSON with proper hook configuration structure"
+        return "Claude Code hooks.json must be valid JSON with proper hook configuration structure"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -122,11 +142,7 @@ class HooksJsonValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for block in context.lint_tree.find(HooksBlock):
-            # Conditional strictness, not a skip: Codex-tightened shape
-            # checks apply only inside Codex-ONLY plugins, so dual-manifest
-            # plugins keep their established Claude results.
-            validate_codex_shapes = context.in_codex_only_plugin(block.path)
+        for block in context.lint_tree.find(ClaudeHooksBlock):
             if block.parse_error:
                 violations.append(
                     self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)
@@ -137,6 +153,23 @@ class HooksJsonValidRule(Rule):
             if data is None or not isinstance(data, dict):
                 violations.append(
                     self.violation("hooks.json must be a JSON object", file_path=block.path)
+                )
+                continue
+
+            # The block parses leniently so a duplicate key cannot hide a
+            # command from the security rules, which also admits the bare
+            # tokens NaN and Infinity that Claude Code's JSON parser rejects
+            # — the defect is the file, not the field, and one finding says so.
+            found = block.first_non_finite()
+            if found is not None:
+                path, value = found
+                violations.append(
+                    self.violation(
+                        f"'{json_token(value)}' at {safe_display(path)} is not valid JSON "
+                        "— NaN and Infinity are not JSON tokens, and Claude Code rejects "
+                        "the whole file, so it loads no hooks",
+                        file_path=block.path,
+                    )
                 )
                 continue
 
@@ -180,21 +213,6 @@ class HooksJsonValidRule(Rule):
                             )
                         )
                         continue
-
-                    if (
-                        validate_codex_shapes
-                        and "matcher" in hook_config
-                        and not isinstance(hook_config["matcher"], str)
-                    ):
-                        # The block boundary coerces a non-string matcher so
-                        # nothing crashes; reporting here keeps the coercion
-                        # from hiding the defect.
-                        violations.append(
-                            self.violation(
-                                f"Event '{event_type}[{idx}].matcher' must be a string",
-                                file_path=block.path,
-                            )
-                        )
 
                     if "hooks" not in hook_config:
                         violations.append(
@@ -302,3 +320,9 @@ class HooksJsonValidRule(Rule):
                                 )
 
         return violations
+
+
+# The class name this rule shipped under before 0.20.0 split it by host.
+# Kept for third-party imports; the registry deduplicates by class identity,
+# so binding a second name here adds no second rule.
+HooksJsonValidRule = ClaudeHooksValidRule

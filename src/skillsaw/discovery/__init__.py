@@ -34,6 +34,20 @@ CONVENTIONAL_SKILL_DIRS = (
     ".windsurf/skills",  # Windsurf Cascade (portable Agent Skills dialect)
 )
 
+# Committed project memory: notes a team checks in for whatever agent reads
+# the checkout, the shared counterpart of Claude Code's per-developer auto
+# memory. The convention predates any one tool — projects were committing
+# ``.agents/memory/`` before Muse Code shipped — and Muse Code reads it, the
+# way it and everything else read ``AGENTS.md``. Owned by no ecosystem, so
+# it lives here rather than in a ``formats/`` module.
+AGENT_MEMORY_DIR = (".agents", "memory")
+
+# The index of that directory: one line per topic file by convention. A
+# reader loads it whole (Muse Code injects it at session start, even in an
+# untrusted workspace) and reads topic files on demand — Muse lists the path
+# of every Markdown file there, whether or not the index mentions it.
+AGENT_MEMORY_INDEX = "MEMORY.md"
+
 
 def exact_name_exists(parent: Path, name: str) -> bool:
     """Return whether *parent* contains a file entry with exactly *name*.

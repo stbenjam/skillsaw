@@ -14,7 +14,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentContradictionRule(Rule):
     """Detect likely contradictions within instruction files"""
 
-    formats = None
     since = "0.7.0"
 
     _NEGATION_PREFIX_RE = re.compile(r"(?:non[-\s]|not\s+|un|in|im)$", re.IGNORECASE)

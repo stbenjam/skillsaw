@@ -1,0 +1,106 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          { "type": "command", "command": "./scripts/notify-slack.sh" }
+        ]
+      }
+    ],
+    "sessionstart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "./scripts/bootstrap.sh" }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "description": "Bootstrap the workspace",
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://hooks.internal.example/session"
+          },
+          {
+            "type": "prompt",
+            "prompt": "Summarize the uncommitted changes."
+          },
+          {
+            "command": "./scripts/print-branch.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/audit-command.sh",
+            "args": ["--json", "--strict"]
+          },
+          {
+            "type": "command",
+            "command": "./scripts/scan-secrets.sh",
+            "env": { "SCAN_MODE": "fast" }
+          },
+          {
+            "type": "command",
+            "command": "./scripts/block-force-push.sh",
+            "if": "tool_input.command contains 'push --force'"
+          },
+          {
+            "type": "command",
+            "command": "./scripts/warm-cache.sh",
+            "once": true
+          },
+          {
+            "type": "command",
+            "command": "./scripts/lint-staged.sh",
+            "once": false
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit(",
+        "hooks": [
+          { "type": "command", "command": "./scripts/format-on-edit.sh" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "description": "Wrap up the session",
+        "hooks": [
+          {
+            "type": "command",
+            "commandWindows": "scripts\\summarize.ps1"
+          },
+          {
+            "type": "command",
+            "command": "./scripts/summarize.sh",
+            "timeout": 1.5
+          },
+          {
+            "type": "command",
+            "command": "./scripts/upload-transcript.sh",
+            "timeout": "30"
+          },
+          {
+            "type": "command",
+            "command": ""
+          },
+          {
+            "type": "command",
+            "command": "./scripts/record-metrics.sh",
+            "retries": 3
+          }
+        ]
+      }
+    ],
+    "PostCompact": []
+  }
+}

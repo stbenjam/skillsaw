@@ -23,7 +23,6 @@ class ContentUnlinkedInternalReferenceRule(Rule):
 
     autofix_confidence = AutofixConfidence.SAFE
 
-    formats = None
     since = "0.9.0"
     repo_types = None
 

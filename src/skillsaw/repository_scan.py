@@ -70,8 +70,13 @@ class RepositoryScanMixin:
         """YAML candidates beneath one lexical ``evals/`` directory."""
         return list(self._repository_scan().promptfoo_eval_files.get(evals_dir, ()))
 
-    def _detect_formats(self) -> set[str]:
-        return detect_discovery.instruction_formats(
+    def _detect_tool_type_values(self) -> set[str]:
+        """``RepositoryType`` values for the tools this repository configures.
+
+        Values rather than members: discovery stays state-free and imports
+        nothing from ``context``, which owns the enum.
+        """
+        return detect_discovery.tool_types(
             self.root_path,
             self.instruction_files,
             self.is_path_excluded,

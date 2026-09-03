@@ -8,7 +8,7 @@ import tempfile
 import shutil
 
 from skillsaw.blocks import ClaudeMdBlock
-from skillsaw.context import HAS_AGENTS_MD, HAS_CLAUDE_MD, RepositoryContext
+from skillsaw.context import INSTRUCTION_REPO_TYPES, RepositoryContext, RepositoryType
 from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.rule import AutofixConfidence, Severity
 from skillsaw.rules.builtin import BUILTIN_RULES
@@ -36,7 +36,7 @@ class TestInstructionFileValidRule:
         rule = InstructionFileValidRule()
         assert rule.rule_id == "instruction-file-valid"
         assert rule.default_severity() == Severity.WARNING
-        assert rule.repo_types is None
+        assert rule.repo_types == INSTRUCTION_REPO_TYPES
 
     def test_no_instruction_files_passes(self, temp_dir):
         context = RepositoryContext(temp_dir)
@@ -131,7 +131,7 @@ class TestInstructionImportsValidRule:
         rule = InstructionImportsValidRule()
         assert rule.rule_id == "instruction-imports-valid"
         assert rule.default_severity() == Severity.WARNING
-        assert rule.repo_types is None
+        assert rule.repo_types == INSTRUCTION_REPO_TYPES
 
     def test_no_files_no_violations(self, temp_dir):
         context = RepositoryContext(temp_dir)
@@ -698,7 +698,7 @@ class TestClaudeMdAgentsImportRule:
         assert rule.default_severity() == Severity.INFO
         assert rule.default_enabled == "auto"
         assert rule.since == "0.20.0"
-        assert rule.formats == frozenset({HAS_CLAUDE_MD, HAS_AGENTS_MD})
+        assert rule.repo_types == frozenset({RepositoryType.CLAUDE_MD, RepositoryType.AGENTS_MD})
         assert rule.config_schema["allow-extra"]["default"] is True
         assert rule.supports_autofix
         assert rule.autofix_confidence == AutofixConfidence.SUGGEST

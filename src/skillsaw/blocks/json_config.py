@@ -8,6 +8,7 @@ content-quality rules never see them.  Dedicated rules locate them with
 
 from __future__ import annotations
 
+import math
 from itertools import islice
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,7 +36,21 @@ def _as_str_list(value: Any) -> Optional[List[str]]:
     return [v for v in value if isinstance(v, str)]
 
 
-HOOK_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
+#: VS Code's per-platform command keys, which ``copilot-agent-valid``
+#: enforces as that host's vocabulary — one host's spelling, not the union.
+VSCODE_HOOK_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
+
+#: Every key any host may carry an executable command string under. Each one
+#: is a command something will run, so ``hooks-dangerous`` and
+#: ``hooks-prohibited`` have to scan them all — a handler whose ``command``
+#: is benign and whose Windows variant pipes a download into a shell is
+#: exactly the shape this union exists to catch.
+#:
+#: Codex and Muse Code spell the Windows variant ``commandWindows``, and
+#: Muse Code also accepts ``command_windows``. This is deliberately a
+#: superset of every host's own vocabulary: it drives scanning only, never
+#: validity — a shape rule reads its host's table in ``skillsaw.formats``.
+HOOK_COMMAND_FIELDS = VSCODE_HOOK_COMMAND_FIELDS + ("commandWindows", "command_windows")
 
 
 @dataclass
@@ -63,6 +78,12 @@ class HookHandler:
     source_line: Optional[int] = None
     # Keep new fields at the end to preserve positional construction.
     command_variants: List[Tuple[str, Optional[int]]] = field(default_factory=list)
+    #: Line of the handler's ``type:`` key. ``source_line`` follows the
+    #: ``command``, which an ``http``/``mcp_tool``/``prompt``/``agent``
+    #: handler does not have — every finding about one was line-less until
+    #: this, in YAML frontmatter that does carry line numbers. JSON-backed
+    #: blocks have no lines to give and leave it ``None``, as they should.
+    type_line: Optional[int] = None
 
     def iter_effective_commands(self) -> Iterator[Tuple[str, Optional[int]]]:
         """Yield each effective command and the line that declared it.
@@ -93,10 +114,11 @@ class HookHandler:
         ``hooks-dangerous`` that becomes a rule crash, which stops the scan
         before it reaches later blocks — so one malformed handler can hide
         a real ``curl | sh`` behind it. Dropping the value here leaves the
-        field falsy, which every consumer already handles, and
-        ``hooks-json-valid`` reads the raw document and reports the shape.
+        field falsy, which every consumer already handles, and the host's
+        own shape rule reads the raw document and reports it.
         """
         command_line = commented_key_line(d, "command")
+        type_line = commented_key_line(d, "type")
         command_variants: List[Tuple[str, Optional[int]]] = []
         for key in HOOK_COMMAND_FIELDS:
             value = _as_str(d.get(key))
@@ -127,6 +149,7 @@ class HookHandler:
             shell=_as_str(d.get("shell")),
             allowed_env_vars=_as_str_list(d.get("allowedEnvVars")),
             source_line=command_line + line_offset if command_line is not None else None,
+            type_line=type_line + line_offset if type_line is not None else None,
         )
 
 
@@ -151,7 +174,7 @@ class HookEventConfig:
             # lowercases it while searching, which kills search for the
             # whole page. Codex uses the default when the field is absent,
             # and an invalid value is no more specific than absent.
-            # hooks-json-valid reports it, so coercing hides nothing.
+            # codex-hooks-valid reports it, so coercing hides nothing.
             matcher=_as_str(d.get("matcher")) or ".*",
             handlers=handlers,
         )
@@ -184,6 +207,17 @@ def parse_hooks_events(hooks_obj: Any, *, line_offset: int = 0) -> Dict[str, Lis
         if entries:
             result[event_type] = entries
     return result
+
+
+def json_token(value: float) -> str:
+    """The JSON-source spelling of a non-finite float.
+
+    ``repr`` renders these as ``nan`` and ``inf``, which appear nowhere in
+    the file the author has to edit.
+    """
+    if math.isnan(value):
+        return "NaN"
+    return "Infinity" if value > 0 else "-Infinity"
 
 
 def _parse_json_file(
@@ -246,6 +280,34 @@ class JsonConfigBlock(LintTarget):
         content = read_text(self.path)
         return len(content) // 4 if content else 0
 
+    def first_non_finite(self) -> Optional[Tuple[str, float]]:
+        """The first ``NaN``/``Infinity`` in this document, as ``(path, value)``.
+
+        Only a block left at :attr:`strict_json` ``False`` can have one:
+        ``json.loads`` accepts the bare tokens and no JSON host does, so a
+        lenient block parses a document the tool it configures refuses. A
+        rule that reads such a block asks here, before its shape walk, so
+        the finding names the file's real defect rather than a field's type.
+
+        Document order, iteratively: a document nested deeply enough to
+        parse but deep enough to exhaust the recursion limit on a second
+        walk would cost every other finding in the run.
+        """
+        stack: List[Tuple[str, Any]] = [("", self.raw_data)]
+        while stack:
+            path, value = stack.pop()
+            if isinstance(value, float):
+                if not math.isfinite(value):
+                    return path, value
+            elif isinstance(value, dict):
+                for key, item in reversed(list(value.items())):
+                    name = str(key)
+                    stack.append((f"{path}.{name}" if path else name, item))
+            elif isinstance(value, list):
+                for index in range(len(value) - 1, -1, -1):
+                    stack.append((f"{path}[{index}]", value[index]))
+        return None
+
     def tree_label(self) -> str:
         return f"{self.path.name} ({self.category})"
 
@@ -274,7 +336,26 @@ class McpRegistryNpmPackageBlock(JsonConfigBlock):
 
 @dataclass(eq=False)
 class HooksBlock(JsonConfigBlock):
-    """hooks/hooks.json in a plugin."""
+    """A lifecycle-hooks document, whichever host reads it.
+
+    The shared base for every hooks file in the tree. The security rules
+    (``hooks-dangerous``, ``hooks-prohibited``) find every hooks file
+    through this class and read :attr:`events`, which renders the document
+    as :class:`HookEventConfig` entries whatever the host's shape.
+
+    Shape validation is per host, because each host has its own event
+    list, handler types, and fields: ``claude-hooks-valid`` iterates
+    :class:`ClaudeHooksBlock`, ``codex-hooks-valid`` :class:`CodexHooksBlock`,
+    ``muse-hooks-valid`` :class:`MuseHooksBlock`, and ``cursor-hooks-valid``
+    :class:`CursorHooksBlock` — so a file is checked against the vocabulary
+    of the tool that will actually load it. The tree builder picks the
+    subclass from where the file lives and who claims the directory.
+
+    :attr:`events` parses the nested shape Claude Code defined and Codex and
+    Muse Code adopted: ``{hooks: {Event: [{matcher?, hooks: [{type,
+    command, ...}]}]}}``. A host with a different shape overrides it
+    (Cursor).
+    """
 
     category: str = "hooks"
 
@@ -297,6 +378,49 @@ class HooksBlock(JsonConfigBlock):
             if entries:
                 result[event_type] = entries
         return result
+
+
+@dataclass(eq=False)
+class ClaudeHooksBlock(HooksBlock):
+    """``hooks/hooks.json`` in a Claude Code plugin, or APM's compiled copy.
+
+    Also the block a dual-manifest (Claude + Codex) plugin's hooks file
+    gets: both hosts read it, and its established results are Claude's.
+    """
+
+
+@dataclass(eq=False)
+class CodexHooksBlock(HooksBlock):
+    """A hooks file only Codex reads.
+
+    ``<repo>/.codex/hooks.json``, a Codex-only plugin's ``hooks/hooks.json``,
+    or a file that plugin's manifest names in ``hooks``. Same nested shape as
+    Claude's, with Codex's own events, handler types, and fields.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (codex hooks)"
+
+
+@dataclass(eq=False)
+class MuseHooksBlock(HooksBlock):
+    """``.muse/hooks.json`` — Muse Code's committed project hooks.
+
+    Same nested shape as Claude's. Muse's loader is strict about the shapes
+    it reads — a handler carrying any field Muse does not know is dropped
+    without a diagnostic in a headless run — which is what
+    ``muse-hooks-valid`` exists to report.
+
+    Lenient JSON parsing, deliberately. Muse reads the file with
+    ``serde_json``, which accepts a duplicate key and takes the last value,
+    and runs the file. A strict parser would refuse it, leave a
+    ``parse_error``, and ``hooks-dangerous`` and ``hooks-prohibited`` skip a
+    block that has one — so a second ``"hooks"`` key hiding a ``curl | sh``
+    would evade both security rules on a file Muse happily executes.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (muse hooks)"
 
 
 def _inline_payload_token_count(data: Any) -> int:
@@ -385,7 +509,7 @@ class _InlineJsonPayload:
 
 
 @dataclass(eq=False)
-class CodexInlineHooksBlock(_InlineJsonPayload, HooksBlock):
+class CodexInlineHooksBlock(_InlineJsonPayload, CodexHooksBlock):
     """Hooks written inline in a Codex ``.codex-plugin/plugin.json``."""
 
     inline_data: Optional[Dict[str, Any]] = None
@@ -395,16 +519,18 @@ class CodexInlineHooksBlock(_InlineJsonPayload, HooksBlock):
 
 
 @dataclass(eq=False)
-class CursorHooksBlock(JsonConfigBlock):
+class CursorHooksBlock(HooksBlock):
     """``.cursor/hooks.json`` — Cursor's agent-lifecycle hooks.
 
     Cursor's shape is flatter than Claude's: ``{version, hooks: {event:
     [{command | prompt, type?, matcher?, timeout?}]}}``. There is no
     per-event ``matcher`` wrapper, and ``type`` defaults to ``"command"``
-    rather than being required. :attr:`events` renders it as the shared
-    :class:`HookEventConfig` structure so ``hooks-dangerous`` and
-    ``hooks-prohibited`` scan Cursor hooks with no per-ecosystem branch;
-    ``cursor-hooks-valid`` reads ``raw_data`` for the shape itself.
+    rather than being required. A :class:`HooksBlock` so the security
+    rules find it with every other host's file; the :attr:`events` override
+    renders the flatter shape as the shared :class:`HookEventConfig`
+    structure, so ``hooks-dangerous`` and ``hooks-prohibited`` scan Cursor
+    hooks with no per-ecosystem branch. ``cursor-hooks-valid`` reads
+    ``raw_data`` for the shape itself.
     """
 
     category: str = "hooks"
@@ -428,6 +554,19 @@ class CursorHooksBlock(JsonConfigBlock):
             configs: List[HookEventConfig] = []
             for entry in entries:
                 if not isinstance(entry, dict):
+                    continue
+                # A shared file — `.cursor/hooks.json` symlinked to the
+                # Codex or Muse document — carries the nested
+                # ``{matcher?, hooks: [...]}`` shape instead. Only the first
+                # host to reach a shared file gets a block for it, so an
+                # entry this class skipped would take its commands out of
+                # reach of every security rule. Reading it with the shared
+                # nested parser is shape-agnostic; ``cursor-hooks-valid``
+                # still judges the format on its own terms.
+                if isinstance(entry.get("hooks"), list):
+                    nested = HookEventConfig.from_dict(entry)
+                    if nested.handlers:
+                        configs.append(nested)
                     continue
                 # ``type`` is optional and defaults to a command hook. Set it
                 # explicitly either way: the shared security rules skip any

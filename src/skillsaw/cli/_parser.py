@@ -113,7 +113,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="append",
         default=[],
         metavar="TYPE",
-        help="Override auto-detected repository type (repeatable). "
+        help="Replace packaging-type detection (repeatable). Tool types are "
+        "always detected from the checkout, and plugin-contributed types too. "
         "Values: "
         + ", ".join(t.value for t in RepositoryType if t is not RepositoryType.UNKNOWN)
         + ".",

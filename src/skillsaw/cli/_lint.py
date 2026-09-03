@@ -166,14 +166,10 @@ def _run_lint(args):
             sys.exit(1)
 
         # After Linter construction plugin repo type detectors have run, so
-        # a repository recognized only by a plugin is not warned about. A
-        # repository recognized by an instruction format alone (Cursor,
-        # Copilot, Cline, Kiro, OpenCode, Devin, a root AGENTS.md, …) has no
-        # repo type either, but it is recognized: it is about to be linted.
+        # a repository recognized only by a plugin is not warned about.
         if (
             context.repo_type == RepositoryType.UNKNOWN
             and not context.plugin_repo_types
-            and not context.detected_formats
             and not context.lint_tree.children
         ):
             print(

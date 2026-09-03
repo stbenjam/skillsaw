@@ -14,12 +14,16 @@ from .diagnostics import safe_display
 
 from .blocks import (
     AgentBlock,
+    AgentMemoryBlock,
+    AgentMemoryIndexBlock,
     AgentPluginMcpBlock,
     AgentsMdBlock,
     ChatmodeBlock,
     ClaudeMdBlock,
     ClineWorkflowBlock,
     CodeRabbitContentBlock,
+    ClaudeHooksBlock,
+    CodexHooksBlock,
     CodexInlineHooksBlock,
     CodexInlineMcpBlock,
     CommandBlock,
@@ -41,6 +45,7 @@ from .blocks import (
     McpBlock,
     McpRegistryNpmPackageBlock,
     McpRegistryServerBlock,
+    MuseHooksBlock,
     OpenAIMetadataBlock,
     OpenCodeAgentBlock,
     OpenCodeCommandBlock,
@@ -58,13 +63,16 @@ from .blocks import (
     VsCodeMcpBlock,
 )
 from .formats.codex import (
+    CODEX_DIR_NAME,
+    CODEX_HOOKS_FILENAME,
     codex_declared_hook_files,
     codex_declared_mcp_files,
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
+from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.opencode import contained_instruction_globs
-from .formats import devin
+from .formats import devin, muse
 from .utils import has_apm_generated_header, read_text
 from .paths import (
     contained_resolve,
@@ -287,6 +295,82 @@ class _TreeBuildState:
         parent.children.append(block)
 
 
+def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
+    """Whether *path* is already in the tree under some hooks class.
+
+    Every hooks class is read by the same security rules, so which one a
+    file arrived under does not matter here — a second block for it would
+    report each of its commands twice. The generic root attach and the
+    Claude branch both run before a Codex manifest's declared files, and a
+    manifest may name any of the files they placed: the project layer's
+    ``.codex/hooks.json``, the conventional ``hooks/hooks.json``, or
+    another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``.
+    """
+    resolved = state.resolve_repo_path(path)
+    if resolved is None:
+        return False
+    return any(
+        claimed == resolved and issubclass(block_cls, HooksBlock)
+        for claimed, block_cls in state.seen_roles
+    )
+
+
+def _add_project_hooks(
+    state: _TreeBuildState,
+    root: LintTarget,
+    path: Path,
+    block_cls: type,
+) -> None:
+    """Attach a project-layer hooks file unless another host already has it.
+
+    ``.cursor/hooks.json``, ``.codex/hooks.json`` and ``.muse/hooks.json``
+    are three names for one shape, and a repository supporting several tools
+    commonly symlinks them to a single file. Each host's loop runs
+    independently, so without this the one resolved file gets a block per
+    host and the security rules report each of its commands once per block.
+    Whichever host reaches it first keeps it: the security rules read every
+    hooks class alike, and the later host's shape rule simply does not see a
+    file that host chose to share.
+    """
+    if _attached_as_hooks(state, path):
+        return
+    state.add_parser_block(root, path, block_cls)
+
+
+def _claim_attached_hooks(
+    state: _TreeBuildState,
+    root: LintTarget,
+    path: Path,
+    owner: Path,
+) -> bool:
+    """Claim an already-attached hooks file for *owner*, if there is one.
+
+    Answers "is this file already in the tree?" for the declared-files loop
+    and, when it is, records the plugin that declared it. Nothing but the
+    manifest names such a file, so the declaration is the only evidence of
+    ownership there is — and without it ``skillsaw docs`` lists the plugin
+    without its hooks. An attach that already recorded an owner (the Claude
+    branch, the Codex cluster's conventional file) keeps it.
+
+    Only the tree root is scanned, which is where every ownerless attach
+    puts a hooks block: the project layer's ``.codex/hooks.json`` and
+    another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``. Scanning
+    the subtree would mean ``find()`` mid-build, whose per-node memo the
+    attaches still to come would invalidate.
+    """
+    if not _attached_as_hooks(state, path):
+        return False
+    resolved = state.resolve_repo_path(path)
+    for child in root.children:
+        if (
+            isinstance(child, HooksBlock)
+            and child.plugin_owner is None
+            and safe_resolve(child.path) == resolved
+        ):
+            child.plugin_owner = owner
+    return True
+
+
 def _attach_apm_skills(
     state: _TreeBuildState,
     apm_node: ApmNode,
@@ -339,7 +423,7 @@ def _attach_apm_tree(
             state.add_block(apm_node, markdown_file, block_cls)
 
     # Hooks and settings inside .apm/ are supply-chain attack surfaces.
-    state.add_block(apm_node, apm_dir / "hooks" / "hooks.json", HooksBlock)
+    state.add_block(apm_node, apm_dir / "hooks" / "hooks.json", ClaudeHooksBlock)
     state.add_block(apm_node, apm_dir / "settings.json", SettingsBlock)
     state.add_block(apm_node, apm_dir / "settings.local.json", SettingsBlock)
 
@@ -349,6 +433,11 @@ def _attach_apm_tree(
 
 def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     """Build a tree of all lintable objects in the repository."""
+    # Imported here rather than at module scope: ``context`` reaches this
+    # module through ``RepositoryContext.lint_tree``, so a top-level import
+    # would close the cycle.
+    from .context import RepositoryType
+
     _INSTRUCTION_FILE_BLOCK_TYPES = {
         "AGENTS.md": AgentsMdBlock,
         "CLAUDE.md": ClaudeMdBlock,
@@ -574,7 +663,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # Only Devin Desktop reads ``agents.md`` case-insensitively, so that
     # spelling is an instruction file only where the repository carries other
     # Devin evidence; elsewhere ``docs/agents.md`` is a documentation page.
-    devin_desktop = "HAS_DEVIN" in context.detected_formats
+    devin_desktop = RepositoryType.DEVIN in context.repo_types
     for f in context.instruction_files:
         if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
             continue
@@ -703,7 +792,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         )
         _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
         state.add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
-        state.add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
+        _add_project_hooks(state, root, cursor_dir / "hooks.json", CursorHooksBlock)
 
     for github_dir in context.agent_tool_dirs(".github"):
         # A compiled Copilot copy duplicates its ``.apm/`` source for the
@@ -740,6 +829,29 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     for vscode_dir in context.agent_tool_dirs(".vscode"):
         state.add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
+
+    # Codex loads project hooks from the ``.codex/`` layer of the project it
+    # is started in, plugin or not — and in a monorepo that is as often a
+    # package as the repository root, so a package's own layer is live
+    # configuration. The walk-backed lookup finds both, which is also what
+    # ``RepositoryType.CODEX_PROJECT`` detection reads: detection agrees with
+    # attachment.
+    for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
+        _add_project_hooks(state, root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
+
+    for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
+        _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
+
+    # Committed project memory: notes a team checks in for whatever agent
+    # reads the checkout. The index is loaded whole and every other Markdown
+    # file in the directory on demand — which is why the glob below takes
+    # them all, index entry or not — so all of it is agent context and gets
+    # every content and security rule — unconditionally, because content is
+    # content whether or not a reader for it is configured here. One
+    # directory, at the root, where the convention puts it.
+    memory_dir = context.root_path.joinpath(*AGENT_MEMORY_DIR)
+    state.add_block(root, memory_dir / AGENT_MEMORY_INDEX, AgentMemoryIndexBlock)
+    _add_glob(root, memory_dir, "**/*.md", AgentMemoryBlock)
 
     # The skills CLI writes one project lockfile at each project root. A
     # monorepo may therefore have several, all found by the shared walk.
@@ -1024,12 +1136,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # A repo-root package shares conventional config paths with the
             # repository, so ownership is decided here once.
             root_plugin_owner = resolved_plugin
-            # Only ``.mcp.json`` needs re-tagging: the generic root attach
-            # never adds a HooksBlock (hooks/hooks.json attaches under the
-            # Codex cluster with containment).
-            claimed = {safe_resolve(plugin_path / ".mcp.json")} - {None}
+            # ``.mcp.json`` and the project layer's ``.codex/hooks.json``
+            # need re-tagging. The generic root attach runs first and adds
+            # them untagged, and for a repo-root plugin that project layer
+            # is the plugin's own — but no manifest names either file, so
+            # nothing downstream claims them and this is the only place the
+            # owner can be recorded. A hooks file the manifest *does*
+            # declare needs nothing here: ``_claim_attached_hooks`` tags it
+            # in the declared-files loop below, wherever the plugin sits in
+            # the tree. (``hooks/hooks.json`` needs nothing either: it
+            # attaches under the Codex cluster with containment.)
+            claimed_mcp = {safe_resolve(plugin_path / ".mcp.json")} - {None}
+            claimed_hooks: Set[Optional[Path]] = set()
+            if prov.codex:
+                claimed_hooks = {
+                    safe_resolve(plugin_path / CODEX_DIR_NAME / CODEX_HOOKS_FILENAME)
+                } - {None}
             for child in root.children:
-                if isinstance(child, McpBlock) and safe_resolve(child.path) in claimed:
+                if isinstance(child, McpBlock) and safe_resolve(child.path) in claimed_mcp:
+                    child.plugin_owner = resolved_plugin
+                elif isinstance(child, HooksBlock) and safe_resolve(child.path) in claimed_hooks:
                     child.plugin_owner = resolved_plugin
 
         _add_plugin_prose(container, plugin_path, resolved_plugin)
@@ -1039,7 +1165,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # inherit Claude's hooks, .mcp.json, or settings semantics.
         if prov.claude or (not prov.ecosystems and not is_agent_plugin):
             state.add_block(
-                container, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
+                container,
+                plugin_path / "hooks" / "hooks.json",
+                ClaudeHooksBlock,
+                owner=resolved_plugin,
             )
             native_mcp = plugin_path / ".mcp.json"
             if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
@@ -1077,15 +1206,39 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # Codex "checks that default file automatically", so a plugin
             # can ship executable hooks without declaring them — the same
             # supply-chain surface as a Claude plugin's hooks.
+            #
+            # Typed by provenance, because the block class picks the shape
+            # rule. Only Codex reads a Codex-only plugin's hooks, so they
+            # are ``codex-hooks-valid``'s. A dual-manifest plugin's
+            # conventional file is read by both hosts and keeps the Claude
+            # block the Claude branch attached above: one block per file, so
+            # the security rules report each command once, and Claude's
+            # results for it stand (``TestDualManifestBackwardCompat``).
+            hooks_cls = CodexHooksBlock if prov.codex_only else ClaudeHooksBlock
             _add_contained_plugin_block(
-                node, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
+                node, plugin_path / "hooks" / "hooks.json", hooks_cls, owner=resolved_plugin
             )
             # A manifest may point ``hooks`` at other files, or write them
             # inline; both carry the same executable commands. Inline
             # payloads have no file of their own, so they borrow the
-            # manifest path.
+            # manifest path — and only Codex reads that manifest, so they
+            # are Codex's whatever else claims the directory.
+            #
+            # A declared file is Codex's for the same reason: nothing but the
+            # Codex manifest names it, so no other host loads it, even in a
+            # dual-manifest plugin whose conventional ``hooks/hooks.json``
+            # stayed Claude's above. The exception is a file some earlier
+            # attach already put in the tree as hooks — that same
+            # conventional file when the manifest also declares it, the
+            # project layer's ``.codex/hooks.json``, or another tool's file
+            # a manifest points at. That block is claimed rather than
+            # re-attached: one block per file, or the security rules report
+            # every command in it twice, but the declaration is still what
+            # tells ``skillsaw docs`` whose hooks those are.
             for declared_hooks in codex_declared_hook_files(plugin_path):
-                state.add_parser_block(node, declared_hooks, HooksBlock, owner=resolved_plugin)
+                if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
+                    continue
+                state.add_parser_block(node, declared_hooks, CodexHooksBlock, owner=resolved_plugin)
             for inline_hooks in codex_inline_hooks(plugin_path):
                 inline_block = CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks)
                 inline_block.plugin_owner = resolved_plugin

@@ -178,6 +178,31 @@ def test_text_includes_stats(valid_plugin):
     assert "Rules run:" in output
 
 
+def test_text_repo_type_names_the_tools_configured(tmp_path):
+    """A repository is what it packages *and* what it is configured for, so
+    a `.cursor/` tree reports `cursor` rather than `unknown`."""
+    (tmp_path / ".cursor" / "rules").mkdir(parents=True)
+    (tmp_path / ".cursor" / "rules" / "style.mdc").write_text(
+        "---\ndescription: House style\n---\n\nPrefer explicit imports.\n", encoding="utf-8"
+    )
+    context = RepositoryContext(tmp_path)
+    linter = Linter(context, LinterConfig.default())
+
+    output = format_text(linter.run(), context, linter.rules, "0.0.0")
+
+    assert "Repo type: cursor" in output
+
+
+def test_text_repo_type_is_unknown_when_nothing_is_detected(tmp_path):
+    """The sentinel survives: an empty directory still says so."""
+    context = RepositoryContext(tmp_path)
+    linter = Linter(context, LinterConfig.default())
+
+    output = format_text(linter.run(), context, linter.rules, "0.0.0")
+
+    assert "Repo type: unknown" in output
+
+
 def test_text_counts_codex_plugins(tmp_path):
     """A Codex-only catalog must not report ``Plugins: 0`` — openai/plugins
     holds 180 plugins, all discovered through the Codex manifest path."""

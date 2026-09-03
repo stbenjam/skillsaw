@@ -145,7 +145,6 @@ def _run_explain(args):
         args.rule_id,
         context,
         default_rule.repo_types,
-        default_rule.formats,
         since_version=default_rule.since,
         # Plugin rules have no entry in the builtin defaults registry; their
         # class-level default drives activation (None for builtins).

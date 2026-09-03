@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, List, Optional
 
 from skillsaw.blocks import DevinSkillBlock
-from skillsaw.context import HAS_DEVIN, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats import devin
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -16,7 +16,7 @@ class DevinSkillValidRule(Rule):
     """Check Devin's optional skill fields without imposing the portable dialect."""
 
     since = "0.20.0"
-    formats = frozenset({HAS_DEVIN})
+    repo_types = frozenset({RepositoryType.DEVIN})
 
     @property
     def rule_id(self) -> str:

@@ -140,8 +140,10 @@ class AutofixResult:
 class Rule(ABC):
     """Base class for linting rules"""
 
+    # Repository types this rule applies to under ``enabled: auto``; None
+    # means every repository. Members of ``RepositoryType`` (a plugin rule
+    # may also name a plugin-contributed type by string).
     repo_types = None
-    formats = None
     config_schema = {}
     # Third-party rules with a partially migrated config_schema can set this
     # to False: declared options are still type-checked, while undeclared
@@ -153,6 +155,13 @@ class Rule(ABC):
     # --rule / --skip-rule, inline suppression directives, baseline
     # matching, and ``skillsaw explain``.
     aliases: tuple = ()
+    # Former rule IDs whose baseline fingerprints this rule's findings also
+    # match — for a rule split out of another. Unlike ``aliases``, this
+    # never resolves config, CLI, or suppression names: the new rule is
+    # configured, selected, and suppressed by its own ID. It exists so an
+    # upgrade does not resurface a finding a baseline recorded under the ID
+    # the check used to be reported by.
+    baseline_aliases: tuple = ()
     # Version in which the rule was deprecated (e.g. "0.18.0"); None means
     # active. A deprecated rule no longer runs under ``enabled: auto`` —
     # it only runs when a config sets ``enabled: true`` or a --rule flag
@@ -180,8 +189,8 @@ class Rule(ABC):
     # version/config/skip gates preserve older result sets.
     surface_dependencies: tuple[str, ...] = ()
     # Default activation when the user config doesn't mention the rule:
-    # True (always on), False (opt-in), or "auto" (on when repo_types /
-    # formats match the repository). ``LinterConfig.default()`` is generated
+    # True (always on), False (opt-in), or "auto" (on when repo_types
+    # match the repository). ``LinterConfig.default()`` is generated
     # from this, so the class is the single source of truth. Per project
     # policy new rules must use "auto" or False — never True.
     default_enabled: Any = "auto"
@@ -191,10 +200,12 @@ class Rule(ABC):
     # nodes whose provenance_dir() is claimed exclusively by other
     # ecosystems, so a Codex-only plugin is exempt from Claude manifest,
     # frontmatter, and naming requirements. Dual-manifest and unclaimed
-    # directories stay in scope. Conditional-strictness rules (the
-    # ecosystem-tightened hooks/MCP shape checks) stay None and consult
-    # RepositoryContext.in_codex_only_plugin() instead — tightening is
-    # their semantic, not a skip.
+    # directories stay in scope. Conditional-strictness rules — the
+    # ecosystem-tightened MCP shape checks — stay None and consult
+    # RepositoryContext.in_codex_only_plugin() instead: tightening is
+    # their semantic, not a skip. Hooks need neither mechanism; the tree
+    # builder types each hooks file by the host that reads it, and each
+    # host's shape rule iterates its own block class.
     provenance_scope: Optional[str] = None
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"

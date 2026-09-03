@@ -10,6 +10,7 @@ Devin-native SKILL.md frontmatter must use Devin's documented field shapes
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.20.0 |
+| **Repo Types** | devin |
 | **Category** | [Devin](devin.md) |
 
 ## Why

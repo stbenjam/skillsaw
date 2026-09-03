@@ -105,7 +105,6 @@ def _is_prohibited(line: str, match_start: int) -> bool:
 class ContentMissingStopConditionRule(Rule):
     """Detect open-ended loop instructions without a stopping condition"""
 
-    formats = None
     since = "0.17.0"
     default_enabled = False
 

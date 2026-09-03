@@ -8,6 +8,7 @@ when still referenced.
 """
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -27,8 +28,10 @@ from skillsaw.rules.builtin import (
     RULE_ALIASES,
     canonical_rule_id,
     rule_aliases,
+    rule_baseline_aliases,
 )
 from skillsaw.suppression import build_suppression_map_for_file
+from tests.cli_runner import run_cli
 
 
 @pytest.fixture
@@ -81,6 +84,7 @@ def test_renamed_rules_carry_their_legacy_alias():
         "command-name-format": "claude-command-name-format",
         "command-sections": "claude-command-sections",
         "settings-dangerous": "claude-settings-dangerous",
+        "hooks-json-valid": "claude-hooks-valid",
         "rules-valid": "claude-rules-valid",
     }
     assert RULE_ALIASES == expected
@@ -125,6 +129,49 @@ def test_legacy_config_key_disables_renamed_rule(plugin_repo):
     assert "claude-plugin-readme" not in {v.rule_id for v in results}
     # No invalid-config warning: the legacy name is not an unknown rule.
     assert "invalid-config" not in {v.rule_id for v in results}
+
+
+def test_legacy_hooks_key_configures_the_renamed_hooks_rule(tmp_path):
+    """0.20.0 split ``hooks-json-valid`` per host: Claude Code's half kept
+    the checks under ``claude-hooks-valid``, and a config written against
+    the old name must still reach it."""
+    config_path = tmp_path / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "99.0.0"\nrules:\n  hooks-json-valid:\n    severity: warning\n'
+    )
+    config = LinterConfig.from_file(config_path)
+    assert "hooks-json-valid" not in config.rules
+    assert config.rules["claude-hooks-valid"]["severity"] == "warning"
+
+
+def test_legacy_hooks_key_lowers_the_severity_of_a_real_finding(tmp_path):
+    """End to end, not just the config table: a Claude plugin's malformed
+    hooks file must be reported at the severity the legacy key sets."""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "billing-tools",
+                "description": "Commands for the billing dashboard",
+                "version": "1.0.0",
+            }
+        )
+    )
+    (tmp_path / "hooks").mkdir()
+    (tmp_path / "hooks" / "hooks.json").write_text(
+        json.dumps({"hooks": {"PostToolUse": {"command": "npm run lint"}}})
+    )
+    config_path = tmp_path / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "99.0.0"\nrules:\n  hooks-json-valid:\n    severity: warning\n'
+    )
+
+    results = Linter(
+        RepositoryContext(tmp_path), config=LinterConfig.from_file(config_path), no_plugins=True
+    ).run()
+    found = [v for v in results if v.rule_id == "claude-hooks-valid"]
+    assert found, [v.rule_id for v in results]
+    assert all(v.severity is Severity.WARNING for v in found)
 
 
 # ── --rule / --skip-rule ────────────────────────────────────────
@@ -377,3 +424,161 @@ def test_enabled_reason_mentions_deprecation(plugin_repo):
     )
     assert enabled is False
     assert "deprecated since 0.18.0" in reason
+
+
+# ── Baseline aliases (a rule split out of another) ───────────────
+
+
+def copy_fixture(name, tmp_path):
+    destination = tmp_path / name.replace("/", "_")
+    shutil.copytree(Path(__file__).parent / "fixtures" / name, destination)
+    return destination
+
+
+def test_baseline_aliases_resolve_nothing_but_baselines():
+    """`baseline_aliases` is not an alias: the split rule is named,
+    configured and suppressed by its own ID, and `hooks-json-valid` still
+    resolves to the rule it was renamed to."""
+    assert rule_baseline_aliases("codex-hooks-valid") == ("hooks-json-valid",)
+    assert rule_aliases("codex-hooks-valid") == ()
+    assert RULE_ALIASES["hooks-json-valid"] == "claude-hooks-valid"
+    assert canonical_rule_id("hooks-json-valid") == "claude-hooks-valid"
+    assert "codex-hooks-valid" not in RULE_ALIASES.values()
+
+
+def test_baseline_aliases_never_collide_with_a_rule_id():
+    """The same guard `_build_alias_map` applies to `aliases`: a former
+    name that is also a live rule ID would silently shadow it."""
+    for rule_id, cls in BUILTIN_RULE_REGISTRY.items():
+        for former in cls.baseline_aliases:
+            assert former != rule_id
+            assert former not in BUILTIN_RULE_REGISTRY, (rule_id, former)
+
+
+def test_a_pre_split_baseline_still_suppresses_a_codex_finding(tmp_path):
+    """`codex-hooks-valid` was split out of `hooks-json-valid`, so a
+    baseline written before the split recorded this finding under the old
+    name. Upgrading must not resurface it."""
+    repo = copy_fixture("codex/hooks-pre-split", tmp_path)
+
+    assert run_cli(["baseline", str(repo)]).returncode == 0
+    baseline_path = repo / ".skillsaw-baseline.json"
+    recorded = json.loads(baseline_path.read_text())
+    assert [e["rule_id"] for e in recorded["violations"]] == ["codex-hooks-valid"]
+
+    # Rewrite it the way a pre-split run would have: the fingerprint hashes
+    # the rule ID, so the name and the hash both have to move.
+    violation = RuleViolation(
+        rule_id="codex-hooks-valid",
+        severity=Severity.ERROR,
+        message=recorded["violations"][0]["message"],
+        file_path=repo / "hooks" / "hooks.json",
+    )
+    recorded["violations"][0]["rule_id"] = "hooks-json-valid"
+    recorded["violations"][0]["fingerprint"] = fingerprint_violation(
+        violation, repo, _rule_id="hooks-json-valid"
+    )
+    baseline_path.write_text(json.dumps(recorded, indent=2) + "\n")
+
+    result = run_cli(["lint", "--format", "json", str(repo)])
+    found = [
+        v for v in json.loads(result.stdout)["violations"] if v["rule_id"] == "codex-hooks-valid"
+    ]
+    assert found == [], found
+
+
+def test_the_pre_split_baseline_test_is_not_vacuous(tmp_path):
+    """Without the baseline the same lint reports the finding."""
+    repo = copy_fixture("codex/hooks-pre-split", tmp_path)
+    result = run_cli(["lint", "--format", "json", str(repo)])
+    found = [
+        v for v in json.loads(result.stdout)["violations"] if v["rule_id"] == "codex-hooks-valid"
+    ]
+    assert [v["message"] for v in found] == [
+        "Hook PostToolUse[0] 'matcher' must be a string, got list"
+    ]
+
+
+#: What ``hooks-json-valid`` printed before 0.20.0 split it by host, for the
+#: two files in the fixture. A hooks file is JSON and carries no line
+#: numbers, so its baseline fingerprint hashes the message text — which makes
+#: the wording, not the rule name, what decides whether an old entry still
+#: matches. The first survived the split word-for-word; the second did not.
+_PRE_SPLIT_MESSAGES = {
+    ".codex/hooks.json": "'hooks' must be a JSON object",
+    "hooks/hooks.json": "Event 'PostToolUse[0].matcher' must be a string",
+}
+
+
+def _pre_split_baseline(repo: Path) -> str:
+    """A baseline as ``hooks-json-valid`` would have written it on 0.19.x."""
+    entries = []
+    for relative, message in _PRE_SPLIT_MESSAGES.items():
+        violation = RuleViolation(
+            rule_id="hooks-json-valid",
+            severity=Severity.ERROR,
+            message=message,
+            file_path=repo / relative,
+        )
+        entries.append(
+            {
+                "fingerprint": fingerprint_violation(violation, repo, _rule_id="hooks-json-valid"),
+                "rule_id": "hooks-json-valid",
+                "file_path": relative,
+                "line": None,
+                "message": message,
+                "severity": "error",
+            }
+        )
+    return json.dumps(
+        {
+            "version": "1",
+            "generated_by": "skillsaw 0.19.2",
+            "generated_at": "2026-08-01T00:00:00+00:00",
+            "violations": entries,
+        },
+        indent=2,
+    )
+
+
+def test_a_pre_split_baseline_carries_over_only_the_unchanged_messages(tmp_path):
+    """The alias carries an entry across the rename; the message decides
+    whether it still matches.
+
+    0.20.0 rewrote most of these findings, and a rewritten one comes back on
+    upgrade however the baseline names the rule — worth stating plainly,
+    because the alias reads like a promise that nothing resurfaces.
+    """
+    repo = copy_fixture("codex/hooks-pre-split-messages", tmp_path)
+    (repo / ".skillsaw-baseline.json").write_text(_pre_split_baseline(repo))
+
+    result = run_cli(["lint", "--format", "json", str(repo)])
+    found = [
+        v for v in json.loads(result.stdout)["violations"] if v["rule_id"] == "codex-hooks-valid"
+    ]
+
+    # The kept wording matches, so the old entry still suppresses it; the
+    # rewritten one no longer hashes to anything the baseline recorded.
+    assert [(v["file_path"], v["message"]) for v in found] == [
+        ("hooks/hooks.json", "Hook PostToolUse[0] 'matcher' must be a string, got list")
+    ]
+
+
+def test_the_message_carryover_test_is_not_vacuous(tmp_path):
+    """Both findings are there to begin with, and the fixture's project file
+    really does produce the message that survived the split."""
+    repo = copy_fixture("codex/hooks-pre-split-messages", tmp_path)
+
+    result = run_cli(["lint", "--format", "json", str(repo)])
+    found = {
+        v["file_path"]: v["message"]
+        for v in json.loads(result.stdout)["violations"]
+        if v["rule_id"] == "codex-hooks-valid"
+    }
+
+    assert found == {
+        ".codex/hooks.json": "'hooks' must be a JSON object",
+        "hooks/hooks.json": "Hook PostToolUse[0] 'matcher' must be a string, got list",
+    }
+    assert found[".codex/hooks.json"] == _PRE_SPLIT_MESSAGES[".codex/hooks.json"]
+    assert found["hooks/hooks.json"] != _PRE_SPLIT_MESSAGES["hooks/hooks.json"]

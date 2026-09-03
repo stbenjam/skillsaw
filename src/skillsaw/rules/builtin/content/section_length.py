@@ -12,7 +12,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentSectionLengthRule(Rule):
     """Warn about overly long markdown sections"""
 
-    formats = None
     since = "0.7.0"
 
     _DEFAULT_MAX_TOKENS = 500

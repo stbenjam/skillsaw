@@ -14,7 +14,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentWeakLanguageRule(Rule):
     """Detect hedging, vague, and non-actionable language in instruction files"""
 
-    formats = None
     since = "0.7.0"
 
     @property

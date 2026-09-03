@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": [],
+        "hooks": [
+          {"type": "command", "command": "./scripts/record-tool-use.sh"}
+        ]
+      }
+    ]
+  }
+}

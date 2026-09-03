@@ -1,6 +1,6 @@
 ---
 name: skillsaw-lint
-description: "Use when modifying agentic contextual building blocks like skills (SKILL.md), slash commands, agents, hooks, plugins, marketplaces, and instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md, Cursor, Copilot, Cline, or Kiro rules), and tool configuration such as an OpenCode `opencode.json`. Run skillsaw on the files you touched, apply autofixes, resolve remaining violations with `skillsaw explain` guidance, and re-lint until clean before considering the work complete."
+description: "Use when modifying agentic contextual building blocks like skills (SKILL.md), slash commands, agents, hooks, plugins, marketplaces, and instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md, Cursor, Copilot, Cline, or Kiro rules), tool configuration such as an OpenCode `opencode.json` or Muse Code hooks (`.muse/hooks.json`), and committed project memory (`.agents/memory/`). Run skillsaw on the files you touched, apply autofixes, resolve remaining violations with `skillsaw explain` guidance, and re-lint until clean before considering the work complete."
 compatibility: "Requires skillsaw CLI. Check the project's Makefile, pyproject.toml, or .venv for the pinned version before installing."
 license: Apache-2.0
 metadata:

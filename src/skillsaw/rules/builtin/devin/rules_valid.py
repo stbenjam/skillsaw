@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, List, Optional
 
 from skillsaw.blocks import DevinRuleBlock
-from skillsaw.context import HAS_DEVIN, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import devin
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -31,7 +31,7 @@ class DevinRulesValidRule(Rule):
     """Check that Devin workspace rules parse and can activate."""
 
     since = "0.20.0"
-    formats = frozenset({HAS_DEVIN})
+    repo_types = frozenset({RepositoryType.DEVIN})
 
     config_schema = {
         "max-characters": {

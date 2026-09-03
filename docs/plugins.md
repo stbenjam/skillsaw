@@ -422,8 +422,8 @@ class-level `Rule.default_enabled` (`True`, `False`, or `"auto"` — the base
 class default):
 
 1. An explicit `enabled: true/false` in the repo's `.skillsaw.yaml` wins.
-2. With `default_enabled = "auto"`, rules declaring `repo_types`/`formats`
-   only activate when the repository matches; unscoped auto rules run
+2. With `default_enabled = "auto"`, rules declaring `repo_types` only
+   activate when the repository matches; unscoped auto rules run
    everywhere.
 3. Set `default_enabled = False` for opt-in rules — they run only when the
    user configures them.

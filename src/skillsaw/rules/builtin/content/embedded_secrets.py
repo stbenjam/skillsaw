@@ -390,7 +390,6 @@ def _is_rsa_header_delimiter(character: str) -> bool:
 class ContentEmbeddedSecretsRule(Rule):
     """Detect potential secrets embedded in instruction files"""
 
-    formats = None
     since = "0.7.0"
 
     config_schema = {

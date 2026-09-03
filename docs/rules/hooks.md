@@ -3,11 +3,11 @@
 
 # Hooks
 
-Validates hook configuration. The security rules scan hooks in `hooks.json`, `.cursor/hooks.json`, `.claude/settings*.json`, and skill, Claude-agent, and Copilot-agent frontmatter (`hooks:` key) for supply-chain attack patterns (inspired by the [Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).
+Validates hook configuration. The security rules scan every hook a repository ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, Codex's `.codex/hooks.json` and plugin hooks, Muse Code's `.muse/hooks.json`, Cursor's `.cursor/hooks.json`, and skill, Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain attack patterns (inspired by the [Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - |
+| [`claude-hooks-valid`](claude-hooks-valid.md) | Claude Code hooks.json must be valid JSON with proper hook configuration structure | error | - |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that chain a download into execution (curl\|sh), obfuscate their payload (eval/base64), or perform network requests | error (auto) | - |
-| [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
+| [`hooks-prohibited`](hooks-prohibited.md) | All hooks are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
 

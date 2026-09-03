@@ -1,0 +1,20 @@
+{
+  "description": "Billing service policy hooks",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "./scripts/audit-shell.sh", "timeout": 10}
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {"type": "command", "command": "./scripts/report-failure.sh"}
+        ]
+      }
+    ]
+  }
+}

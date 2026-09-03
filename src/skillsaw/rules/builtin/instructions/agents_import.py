@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from skillsaw.blocks import AgentsMdBlock, ClaudeMdBlock
-from skillsaw.context import HAS_AGENTS_MD, HAS_CLAUDE_MD, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.paths import safe_resolve
 from skillsaw.rule import (
     AutofixConfidence,
@@ -69,8 +69,7 @@ class ClaudeMdAgentsImportRule(Rule):
     recommendation, not a correctness requirement.
     """
 
-    formats = frozenset({HAS_CLAUDE_MD, HAS_AGENTS_MD})
-    repo_types = None
+    repo_types = frozenset({RepositoryType.CLAUDE_MD, RepositoryType.AGENTS_MD})
     default_enabled = "auto"
     since = "0.20.0"
     autofix_confidence = AutofixConfidence.SUGGEST

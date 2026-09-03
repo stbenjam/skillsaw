@@ -86,7 +86,7 @@ Each rule's `enabled` key accepts three values:
 |-------|---------|
 | `true` | Always run the rule, unconditionally |
 | `false` | Never run the rule |
-| `auto` | Run the rule where it applies: when the rule declares repository types or file formats, only where those are detected (e.g. plugin rules only run in plugin repos); rules with no such gating run everywhere |
+| `auto` | Run the rule where it applies: when the rule declares repository types, only where those are detected (e.g. plugin rules only run in plugin repos); rules with no such gating run everywhere |
 
 `auto` also respects the config `version` gate: a rule newer than the
 pinned `version` stays off until you bump it. `enabled: true` bypasses
