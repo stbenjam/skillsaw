@@ -34,7 +34,7 @@ def should_use_pager(args, stream: TextIO | None = None) -> bool:
     if pager_opt is False:
         return False
     if pager_opt is True:
-        return True
+        return resolve_pager_command(force=True) is not None
 
     if stream is None:
         stream = sys.stdout
@@ -66,12 +66,16 @@ def should_use_pager(args, stream: TextIO | None = None) -> bool:
 
 def resolve_pager_command(
     pager_env: str | None = None,
+    *,
+    force: bool = False,
 ) -> tuple[list[str], dict[str, str]] | None:
     """Resolve pager command arguments and environment.
 
     Checks ``MANPAGER``, then ``PAGER``, falling back to ``less`` or ``more``.
     Returns a tuple of (command_parts, environment_dict), or ``None`` if
     no valid pager is available or paging is disabled via empty string.
+    When ``force=True``, an empty environment setting is ignored in favor of
+    an available fallback pager.
     """
     raw_cmd = pager_env
     if raw_cmd is None:
@@ -85,7 +89,11 @@ def resolve_pager_command(
     if raw_cmd is not None:
         raw_cmd = raw_cmd.strip()
         if not raw_cmd:
-            return None
+            if not force:
+                return None
+            raw_cmd = None
+
+    if raw_cmd is not None:
         try:
             cmd_parts = shlex.split(raw_cmd, posix=sys.platform != "win32")
         except ValueError:
@@ -191,8 +199,9 @@ def display_paged(text: str, args, stream: TextIO | None = None) -> None:
     if stream is None:
         stream = sys.stdout
 
+    force = getattr(args, "pager", None) is True
     if should_use_pager(args, stream=stream):
-        resolved = resolve_pager_command()
+        resolved = resolve_pager_command(force=force)
         if resolved is not None:
             cmd_parts, pager_env = resolved
             page_text(text, pager_cmd=cmd_parts, env=pager_env, stream=stream)

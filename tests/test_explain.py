@@ -210,6 +210,24 @@ def test_explain_pager_flag_forced(temp_dir):
     assert "content-weak-language" in result.stdout
 
 
+def test_explain_pager_flag_forced_with_empty_pager_env(temp_dir):
+    env = dict(os.environ)
+    env["PAGER"] = ""
+    env["MANPAGER"] = ""
+    args = [
+        sys.executable,
+        "-m",
+        "skillsaw",
+        "explain",
+        "content-weak-language",
+        str(temp_dir),
+        "--pager",
+    ]
+    result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+    assert result.returncode == 0
+    assert "content-weak-language" in result.stdout
+
+
 def test_explain_interactive_pty_uses_pager(temp_dir):
     try:
         import pty

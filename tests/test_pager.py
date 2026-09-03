@@ -354,7 +354,40 @@ def test_display_paged_pager_enabled():
     buf = io.StringIO()
     args = SimpleNamespace(pager=True)
     with patch("skillsaw.cli._pager.page_text") as mock_page:
-        with patch("skillsaw.cli._pager.resolve_pager_command", return_value=(["cat"], {})):
+        with patch(
+            "skillsaw.cli._pager.resolve_pager_command", return_value=(["cat"], {})
+        ) as mock_resolve:
             display_paged("hello world", args, stream=buf)
             assert mock_page.called
             assert mock_page.call_args[0][0] == "hello world"
+            assert mock_resolve.call_args[1].get("force") is True
+
+
+def test_resolve_pager_empty_pager_with_force(monkeypatch):
+    monkeypatch.delenv("MANPAGER", raising=False)
+    monkeypatch.setenv("PAGER", "   ")
+    with patch("shutil.which", return_value="/usr/bin/less"):
+        resolved = resolve_pager_command(force=True)
+        assert resolved is not None
+        assert resolved[0] == ["less"]
+
+
+def test_should_use_pager_force_with_empty_pager(monkeypatch):
+    monkeypatch.delenv("MANPAGER", raising=False)
+    monkeypatch.setenv("PAGER", "")
+    args = SimpleNamespace(pager=True)
+    with patch("shutil.which", return_value="/usr/bin/less"):
+        assert should_use_pager(args) is True
+
+
+def test_should_use_pager_force_no_pager_installed():
+    args = SimpleNamespace(pager=True)
+    with patch("shutil.which", return_value=None):
+        assert should_use_pager(args) is False
+
+
+def test_display_paged_default_stream(capsys):
+    args = SimpleNamespace(pager=False)
+    display_paged("hello default stream\n", args)
+    captured = capsys.readouterr()
+    assert "hello default stream" in captured.out
