@@ -63,10 +63,11 @@ here costs every hook in the file, including the ones under other events.
   character-class set operators, the `(?<name>...)` capture group and the
   `\z` anchor are Rust's spelling: skillsaw rewrites them rather than
   calling a working matcher broken. Look-around (`(?=`, `(?!`, `(?<=`,
-  `(?<!`), backreferences (`\1`, `\k<name>`, `(?P=name)`) and the `\Z`
-  anchor are the other direction — Python compiles them and Rust does not,
-  so skillsaw names the construct instead of waiting for a compile error
-  that never comes. The rest is the syntax the two dialects share. A matcher longer than 1,000
+  `(?<!`), backreferences (`\1`, `(?P=name)`), the `\Z` anchor, and
+  conditional, comment and atomic groups (`(?(1)`, `(?#`, `(?>`) are the
+  other direction — Python compiles them and Rust does not, so skillsaw
+  names the construct instead of waiting for a compile error that never
+  comes. The rest is the syntax the two dialects share. A matcher longer than 1,000
   characters is left alone: Grok sets no
   length limit, so length is not a defect, and a hooks file is untrusted
   input that the syntax check has no reason to scan without a bound.

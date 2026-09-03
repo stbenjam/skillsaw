@@ -55,14 +55,24 @@ def test_a_rust_only_construct_compiles(pattern) -> None:
         (r"(?!Write)Bash", "Rust's regex has no look-around"),
         (r"(a)\1", "Rust's regex has no backreferences"),
         (r"(?P<n>a)(?P=n)", "Rust's regex has no backreferences"),
-        (r"(?P<n>a)\k<n>", "Rust's regex has no backreferences"),
         (r"Bash\Z", "Rust's regex has no \\Z anchor (write \\z)"),
+        (r"(a)?(?(1)b|c)", "Rust's regex has no conditional groups"),
+        (r"(?#note)Bash", "Rust's regex has no comment groups"),
+        (r"(?>Bash)", "Rust's regex has no atomic groups"),
     ],
 )
 def test_a_python_only_construct_is_named(pattern, message) -> None:
     """Python compiles each of these silently; Rust drops the matcher group
     with no diagnostic, so the rule has to name the construct itself."""
     assert rust_matcher_error(pattern) == message
+
+
+def test_a_perl_backreference_is_named_rather_than_called_a_bad_escape() -> None:
+    """`\\k<name>` is neither dialect's backreference — Python raises
+    `bad escape \\k` — but an author who wrote it reached for one, and
+    "no backreferences" says why the matcher is dead where "bad escape"
+    would not."""
+    assert rust_matcher_error(r"(?P<n>a)\k<n>") == "Rust's regex has no backreferences"
 
 
 def test_the_seam_never_turns_a_look_behind_into_a_named_group() -> None:
@@ -84,6 +94,8 @@ def test_the_seam_never_turns_a_look_behind_into_a_named_group() -> None:
         r"\(\?=\)",
         r"[(?=]x",
         r"\(?=x\)y",
+        r"\(\?\(1\)",
+        r"[(?#>]x",
     ],
 )
 def test_look_around_spelled_as_literal_text_is_not_reported(pattern) -> None:

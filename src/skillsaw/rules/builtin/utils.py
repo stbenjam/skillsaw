@@ -99,7 +99,7 @@ _RUST_NAMED_GROUP = re.compile(r"\(\?<(?![=!])")
 #: A match here is a *candidate*, not a verdict: :func:`_rust_unsupported`
 #: re-walks the pattern to drop one that is escaped (``\(?=``) or inside a
 #: character class (``[(?=]``), both of which are literal text.
-_RUST_UNSUPPORTED_CANDIDATE = re.compile(r"\(\?(?:<[=!]|[=!]|P=)|\\(?:[1-9]|k<|Z)")
+_RUST_UNSUPPORTED_CANDIDATE = re.compile(r"\(\?(?:<[=!]|[=!]|P=|[(#>])|\\(?:[1-9]|k<|Z)")
 
 #: What :func:`rust_matcher_error` reports for each, phrased to follow the
 #: hosts' "does not compile: ".
@@ -108,6 +108,11 @@ _NO_BACKREFERENCES = "Rust's regex has no backreferences"
 #: Rust's end-of-text anchor is ``\z`` alone; Python's ``\Z`` spelling is an
 #: unrecognized escape there (verified: Grok 1.0.13 drops the hook).
 _NO_UPPER_Z = "Rust's regex has no \\Z anchor (write \\z)"
+#: The three remaining ``(?`` group kinds Python has and Rust does not
+#: (verified: Grok 1.0.13 drops a hook carrying any of them).
+_NO_CONDITIONALS = "Rust's regex has no conditional groups"
+_NO_COMMENTS = "Rust's regex has no comment groups"
+_NO_ATOMIC_GROUPS = "Rust's regex has no atomic groups"
 
 #: Longest matcher :func:`rust_matcher_error` will compile-check. A hooks
 #: file is untrusted input and the check translates the matcher — a few
@@ -188,9 +193,12 @@ def _to_python_regex(pattern: str) -> str:
 def _rust_unsupported(pattern: str) -> Optional[str]:
     """Why Rust refuses *pattern* where Python would compile it, if it does.
 
-    Look-around, backreferences and the ``\\Z`` anchor are the whole list:
+    Look-around, backreferences, the ``\\Z`` anchor, and the conditional,
+    comment and atomic group kinds are the whole list of *constructs*:
     everything else Python accepts is either shared with Rust or already
-    caught by the compile.
+    caught by the compile. Possessive quantifiers (``a++``, Python 3.11+)
+    are the one omission — naming them means parsing quantifiers, and no
+    hooks file has carried one.
 
     :data:`_RUST_UNSUPPORTED_CANDIDATE` is the gate, so a matcher without one
     of those runs never reaches the walk. A hit is then confirmed by walking
@@ -231,6 +239,12 @@ def _rust_unsupported(pattern: str) -> Optional[str]:
                 return _NO_LOOK_AROUND
             if opening.startswith("?P="):
                 return _NO_BACKREFERENCES
+            if opening.startswith("?("):
+                return _NO_CONDITIONALS
+            if opening.startswith("?#"):
+                return _NO_COMMENTS
+            if opening.startswith("?>"):
+                return _NO_ATOMIC_GROUPS
         index += 1
     return None
 
@@ -246,8 +260,9 @@ def rust_matcher_error(matcher: str) -> Optional[str]:
 
     Two verdicts, because the dialects diverge in both directions. Python
     rejecting the pattern is one; the other is a construct Python *accepts*
-    and Rust does not — look-around, backreferences, ``\\Z`` — which the
-    compile can never see, so :func:`_rust_unsupported` runs first.
+    and Rust does not — look-around, backreferences, ``\\Z``, conditional,
+    comment and atomic groups — which the compile can never see, so
+    :func:`_rust_unsupported` runs first.
     """
     if len(matcher) > RUST_MATCHER_MAX_LENGTH:
         return None
