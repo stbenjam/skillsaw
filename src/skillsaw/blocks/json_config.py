@@ -367,13 +367,14 @@ class HooksBlock(JsonConfigBlock):
     Shape validation is per host, because each host has its own event
     list, handler types, and fields: ``claude-hooks-valid`` iterates
     :class:`ClaudeHooksBlock`, ``codex-hooks-valid`` :class:`CodexHooksBlock`,
-    ``muse-hooks-valid`` :class:`MuseHooksBlock`, and ``cursor-hooks-valid``
+    ``muse-hooks-valid`` :class:`MuseHooksBlock`, ``grok-hooks-valid``
+    :class:`GrokHooksBlock`, and ``cursor-hooks-valid``
     :class:`CursorHooksBlock` — so a file is checked against the vocabulary
     of the tool that will actually load it. The tree builder picks the
     subclass from where the file lives and who claims the directory.
 
-    :attr:`events` parses the nested shape Claude Code defined and Codex and
-    Muse Code adopted: ``{hooks: {Event: [{matcher?, hooks: [{type,
+    :attr:`events` parses the nested shape Claude Code defined and Codex,
+    Muse Code and Grok Build adopted: ``{hooks: {Event: [{matcher?, hooks: [{type,
     command, ...}]}]}}``. A host with a different shape overrides it
     (Cursor).
     """

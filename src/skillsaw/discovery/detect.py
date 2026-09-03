@@ -49,12 +49,16 @@ AGENT_TOOL_DIR_NAMES = frozenset(
     }
 )
 
-# The subset of those whose ``skills/`` component holds portable Agent
-# Skills. ``CONVENTIONAL_SKILL_DIRS`` names each one's root-relative
-# spelling, which is where a single-package repository puts it; a monorepo
-# package carries its own, and the generic skill walk never finds that one
-# because it skips hidden directories. So the nested roots are handed over
-# explicitly, from the walk that already located the directory.
+# The tool directories whose nested ``skills/`` component is handed to the
+# skill walk today. ``CONVENTIONAL_SKILL_DIRS`` names each one's
+# root-relative spelling, which is where a single-package repository puts
+# it; a monorepo package carries its own, and the generic skill walk never
+# finds that one because it skips hidden directories. So the nested roots
+# are handed over explicitly, from the walk that already located the
+# directory. This is not every tool with a ``skills/`` spelling in that
+# table — ``.cursor``, ``.github``, ``.clinerules`` and ``.opencode`` are
+# not here yet, so a package's copy of those is still found only at the
+# repository root.
 #
 # One tuple for both readers — ``marker_types`` below, which decides whether
 # the repository is an Agent Skills repository at all, and

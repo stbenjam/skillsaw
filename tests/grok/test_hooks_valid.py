@@ -18,6 +18,7 @@ import time
 
 import pytest
 
+from skillsaw.formats import grok
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.linter import Linter
@@ -1004,3 +1005,16 @@ def test_a_configured_severity_moves_the_file_scoped_findings_only(tmp_path) -> 
     # two hardcoded INFO findings are untouched.
     assert {v["severity"] for v in found} == {"warning", "info"}
     assert len([v for v in found if v["severity"] == "info"]) == 2
+
+
+# ── The alias table ───────────────────────────────────────────────
+
+
+def test_the_alias_table_is_the_one_the_matrix_measured() -> None:
+    """39 spellings, verified against Grok Build 1.0.13: every snake_case
+    event, every camelCase event except `userPromptSubmit` (the one Grok
+    rejects), `SubagentEnd`, and Cursor's nine. Every alias must land on a
+    real event, or a spelling Grok accepts is reported as unknown."""
+    assert len(grok.HOOK_EVENT_ALIASES) == 39
+    assert "userPromptSubmit" not in grok.HOOK_EVENT_ALIASES
+    assert set(grok.HOOK_EVENT_ALIASES.values()) <= grok.HOOK_EVENTS

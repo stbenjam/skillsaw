@@ -13,6 +13,12 @@ works.
 Only :class:`GrokAgentBlock` is iterated, a node type that exists only where
 Grok's project layer does, so the rule declares no ``provenance_scope``:
 ``.grok/`` is a tool directory no other ecosystem claims.
+
+There is no ``fix()``, deliberately. ``claude-agent-frontmatter`` prepends a
+``name`` from the filename and an empty ``description``; here an empty
+description registers an agent Grok can never route to, which trades one
+silent failure for another. A fix that lands later needs the
+existing-key guard from the autofix invariants.
 """
 
 from typing import List

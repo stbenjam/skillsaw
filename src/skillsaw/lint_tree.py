@@ -334,7 +334,10 @@ def _add_project_hooks(
     host and the security rules report each of its commands once per block.
     Whichever host reaches it first keeps it: the security rules read every
     hooks class alike, and the later host's shape rule simply does not see a
-    file that host chose to share.
+    file that host chose to share. Grok contributes a directory of candidates
+    (``.grok/hooks/*.json``) rather than one well-known name, and its loop
+    runs last, so a Grok file symlinked to another host's is that host's
+    block.
     """
     if _attached_as_hooks(state, path):
         return
@@ -722,7 +725,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     def _readable_matches(directory: Path, pattern: str) -> List[Path]:
         """Every *pattern* match under *directory*, or nothing if it is unread.
 
-        The four guards below are what any glob of a repository directory
+        The four guards in this helper are what any glob of a repository directory
         needs, and a caller that skips the last one fails *silently*: a
         directory that cannot be read looks exactly like a directory with
         nothing in it, so the run stays green over content nobody scanned.

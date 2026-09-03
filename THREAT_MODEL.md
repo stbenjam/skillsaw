@@ -10,7 +10,7 @@ developer tool or in CI pipelines (GitHub Actions). It has no network
 listeners and no daemon mode.
 
 skillsaw reads files from a target repository, parses them (Markdown,
-YAML, JSON, and JSONC), evaluates them against 87 built-in lint rules,
+YAML, JSON, and JSONC), evaluates them against 91 built-in lint rules,
 and reports violations. It also validates some metadata against bundled
 JSON Schemas. It can automatically fix violations via deterministic
 rewrites. A GitHub Action mode posts lint results as PR review comments.

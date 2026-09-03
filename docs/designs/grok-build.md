@@ -49,10 +49,15 @@ provenance machinery at all.
 
 Grok is one of each, and the split runs along the directory name.
 
-`.grok/` is a tool directory. Nothing else installs into it; there is no second
-ecosystem that could claim it. That is the editor-tool recipe: a
-`RepositoryType`, a `_TOOL_EVIDENCE` entry, block classes, an attach loop, no
-provenance.
+`.grok/` is a tool directory. No other ecosystem packages or installs content
+into it. A second reader exists — `superagent-ai/grok-cli` keeps its own
+project state there, and its hooks loader names a project-level
+`.grok/settings.json` only to skip it — but nothing it reads is a surface
+skillsaw attaches or a name skillsaw detects on, so there is no directory for
+two ecosystems to contend over and nothing for provenance to arbitrate.
+`settings.json` stays reserved: do not attach or detect on it. That is the
+editor-tool recipe: a `RepositoryType`, a `_TOOL_EVIDENCE` entry, block
+classes, an attach loop, no provenance.
 
 `.grok-plugin/` is an ecosystem leg and does need provenance. A single
 directory carrying both `.claude-plugin/plugin.json` and
@@ -122,6 +127,16 @@ and `[a-z&&[^aeiou]]` load; `(?<=x)y` and `(a)\1` drop their groups. `""` and
 uncompilable one there costs nothing — which is why that case is advisory and
 the syntax check does not run. skillsaw shares the Rust-dialect check with the
 Muse Code rule rather than keeping two copies.
+
+**Two tables carry the ERROR findings, and neither has an override.** An
+unknown event is a WARNING scoped to that event, and `extra-events` lets a
+project name one newer than its skillsaw. `HANDLER_FIELDS` and
+`HOOK_HANDLER_TYPES` in `formats/grok.py` are different: a handler type or a
+field's JSON type outside them is a whole-file ERROR, and a hooks file is
+JSON, so the only relief is `.skillsaw.yaml`. Re-measure both tables against
+every Grok minor release before anything else in this record. If Grok ever
+accepts a third handler type or relaxes a field's type, an
+`extra-handler-types` option mirroring `extra-events` is the shape of the fix.
 
 ## Shipping order
 

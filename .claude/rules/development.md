@@ -237,10 +237,11 @@ per-ecosystem attach paths and loses its content silently.
   (`TestDualManifestBackwardCompat` pins this).
 - **Hooks get one subclass per host instead of conditional strictness.**
   Each host's hooks file is its own `HooksBlock` subclass — `ClaudeHooksBlock`,
-  `CodexHooksBlock`, `MuseHooksBlock`, `CursorHooksBlock` — chosen from
-  provenance in `build_lint_tree`, and each host has its own shape rule
-  iterating its own subclass: `claude-hooks-valid`, `codex-hooks-valid`,
-  `muse-hooks-valid`, `cursor-hooks-valid`. `hooks-dangerous` and
+  `CodexHooksBlock`, `MuseHooksBlock`, `CursorHooksBlock`, `GrokHooksBlock` —
+  chosen from provenance in `build_lint_tree`, and each host has its own
+  shape rule iterating its own subclass: `claude-hooks-valid`,
+  `codex-hooks-valid`, `muse-hooks-valid`, `cursor-hooks-valid`,
+  `grok-hooks-valid`. `hooks-dangerous` and
   `hooks-prohibited` read the shared `HooksBlock` base, so a new host
   needs no changes there.
 
