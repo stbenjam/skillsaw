@@ -164,15 +164,26 @@ def test_legacy_hooks_rule_class_name_still_imports():
     """0.20.0 renamed ``hooks-json-valid`` to ``claude-hooks-valid`` and
     split Codex's checks out. Third-party code importing the old class name
     keeps working, as it did through the 0.18.0 renames."""
+    import skillsaw.rules.builtin as builtin
+    from skillsaw.rules.builtin import HooksJsonValidRule as FromRoot
     from skillsaw.rules.builtin.hooks import HooksJsonValidRule
     from skillsaw.rules.builtin.hooks.json_valid import HooksJsonValidRule as FromModule
 
     assert HooksJsonValidRule is FromModule
+    assert FromRoot is FromModule
     assert HooksJsonValidRule().rule_id == "claude-hooks-valid"
     assert (
         "HooksJsonValidRule"
         in __import__("skillsaw.rules.builtin.hooks", fromlist=["__all__"]).__all__
     )
+    # The root exporter keys on ``cls.__name__``, which a rename leaves on the
+    # new name — the legacy name has to reach ``__all__`` from its own map.
+    assert "HooksJsonValidRule" in builtin.__all__
+    assert [rid for rid, cls in BUILTIN_RULE_REGISTRY.items() if cls is FromRoot] == [
+        "claude-hooks-valid"
+    ]
+    with pytest.raises(AttributeError):
+        builtin.NoSuchLegacyRule
 
 
 def test_context_constructor_applies_excludes(tmp_path):

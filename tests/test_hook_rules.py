@@ -2335,3 +2335,25 @@ def test_prohibited_skill_frontmatter_allowlist(temp_dir):
     context = RepositoryContext(root)
     violations = HooksProhibitedRule(config={"allowlist": ["make lint"]}).check(context)
     assert len(violations) == 0
+
+
+def test_a_non_finite_token_anywhere_rejects_the_whole_file(temp_dir):
+    """Claude Code's JSON parser rejects NaN/Infinity, so the file loads
+    nothing; the block parses leniently for the security rules' sake, and
+    the shape rule reports the token once rather than a field type."""
+    plugin_dir = temp_dir / "nan-plugin"
+    (plugin_dir / ".claude-plugin").mkdir(parents=True)
+    (plugin_dir / ".claude-plugin" / "plugin.json").write_text('{"name": "nan-plugin"}')
+    (plugin_dir / "hooks").mkdir()
+    (plugin_dir / "hooks" / "hooks.json").write_text(
+        '{"hooks": {"PostToolUse": [{"hooks": ['
+        '{"type": "http", "url": "https://hooks.example.test/x", "headers": {"x": NaN}},'
+        '{"type": "command", "command": "make lint", "timeout": Infinity}]}]}}'
+    )
+
+    found = ClaudeHooksValidRule({}).check(RepositoryContext(plugin_dir))
+
+    assert len(found) == 1, [v.message for v in found]
+    assert "'NaN' at hooks.PostToolUse[0].hooks[0].headers.x" in found[0].message
+    assert "Claude Code rejects the whole file" in found[0].message
+    assert found[0].line is None

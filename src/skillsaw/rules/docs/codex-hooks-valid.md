@@ -44,6 +44,12 @@ no `type`, an unknown `type`, a missing or mistyped required field, a
 mistyped optional field, and an `mcp_tool` handler on `SessionEnd`, which
 does not support them.
 
+A bare `NaN`, `Infinity` or `-Infinity` anywhere in the document is an
+error too — including where nothing is typed, such as inside an `mcp_tool`
+handler's `input`. None of those three is JSON, whatever a permissive
+parser makes of them: Codex rejects the file and loads no hooks, so it is
+reported once for the file rather than as a field's type.
+
 Three checks are warnings, because the file still loads and the rest of it
 still runs: an event name Codex does not dispatch, a `prompt` or `agent`
 handler Codex parses and skips, and a field that belongs to the other

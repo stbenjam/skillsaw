@@ -758,11 +758,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         state.add_parser_block(root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
 
     # Committed project memory: notes a team checks in for whatever agent
-    # reads the checkout. The index is loaded whole and its topic files on
-    # demand, so all of it is agent context and gets every content and
-    # security rule — unconditionally, because content is content whether or
-    # not a reader for it is configured here. One directory, at the root,
-    # where the convention puts it.
+    # reads the checkout. The index is loaded whole and every other Markdown
+    # file in the directory on demand — which is why the glob below takes
+    # them all, index entry or not — so all of it is agent context and gets
+    # every content and security rule — unconditionally, because content is
+    # content whether or not a reader for it is configured here. One
+    # directory, at the root, where the convention puts it.
     memory_dir = context.root_path.joinpath(*AGENT_MEMORY_DIR)
     state.add_block(root, memory_dir / AGENT_MEMORY_INDEX, AgentMemoryIndexBlock)
     _add_glob(root, memory_dir, "**/*.md", AgentMemoryBlock)

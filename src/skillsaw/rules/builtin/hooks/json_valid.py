@@ -16,6 +16,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.blocks import json_token
 from skillsaw.diagnostics import safe_display
 from skillsaw.rules.builtin.content_analysis import ClaudeHooksBlock
 
@@ -152,6 +153,23 @@ class ClaudeHooksValidRule(Rule):
             if data is None or not isinstance(data, dict):
                 violations.append(
                     self.violation("hooks.json must be a JSON object", file_path=block.path)
+                )
+                continue
+
+            # The block parses leniently so a duplicate key cannot hide a
+            # command from the security rules, which also admits the bare
+            # tokens NaN and Infinity that Claude Code's JSON parser rejects
+            # — the defect is the file, not the field, and one finding says so.
+            found = block.first_non_finite()
+            if found is not None:
+                path, value = found
+                violations.append(
+                    self.violation(
+                        f"'{json_token(value)}' at {safe_display(path)} is not valid JSON "
+                        "— NaN and Infinity are not JSON tokens, and Claude Code rejects "
+                        "the whole file, so it loads no hooks",
+                        file_path=block.path,
+                    )
                 )
                 continue
 

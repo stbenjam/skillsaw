@@ -3,7 +3,8 @@
 A Claude Code `hooks.json` configures commands that run automatically on
 agent events. Invalid JSON, unknown event types, or misconfigured handler
 objects will cause hooks to fail silently — the command never runs and no
-error is surfaced to the user.
+error is surfaced to the user. A bare `NaN` or `Infinity` anywhere in the
+file counts as invalid JSON: Claude Code's parser rejects the whole file.
 
 The event names, the handler types (`command`, `http`, `mcp_tool`,
 `prompt`, `agent`) and the per-handler fields checked here are Claude

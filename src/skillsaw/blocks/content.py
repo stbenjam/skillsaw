@@ -64,9 +64,10 @@ class AgentMemoryIndexBlock(FileContentBlock):
 
     Team notes checked into the repository for whatever agent reads it, the
     shared counterpart of Claude Code's per-developer auto memory. The index
-    is the entry point: one line per topic file, loaded whole by the agents
-    that read the convention — Muse Code injects it at session start, even
-    in an untrusted workspace, and lists the topic paths it names.
+    is the entry point: one line per topic file by convention, loaded whole
+    by the agents that read it — Muse Code injects it at session start, even
+    in an untrusted workspace, alongside the paths of the other Markdown
+    files in the directory.
 
     Not an :class:`InstructionBlock`: the instruction-file rules check
     conventions of the CLAUDE.md family that a memory index does not follow.
@@ -79,9 +80,10 @@ class AgentMemoryIndexBlock(FileContentBlock):
 class AgentMemoryBlock(FileContentBlock):
     """A topic file under ``.agents/memory/``.
 
-    Reached through the index rather than loaded with it — Muse Code lists
-    its path at session start and reads the file when a topic comes up — so
-    it is on-demand prose that still lands whole in a context window. Every
+    Listed rather than loaded with the index — Muse Code lists the path of
+    every Markdown file in the directory at session start, whether or not
+    the index mentions it, and reads the file when a topic comes up — so it
+    is on-demand prose that still lands whole in a context window. Every
     content and security rule reads it.
     """
 

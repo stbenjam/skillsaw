@@ -20,6 +20,7 @@ to report.
 
 from typing import Any, Dict, List, Set
 
+from skillsaw.blocks import json_token
 from skillsaw.context import HAS_CODEX, RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.codex import (
@@ -143,6 +144,26 @@ class CodexHooksValidRule(Rule):
             if not isinstance(data, dict):
                 violations.append(
                     self.violation("hooks.json must be a JSON object", file_path=block.path)
+                )
+                continue
+
+            # Before the shape walk, and instead of it. ``CodexHooksBlock``
+            # parses leniently so a duplicate key cannot hide executable
+            # surface from the security rules, and Python's ``json`` throws
+            # in the bare tokens ``NaN``, ``Infinity`` and ``-Infinity``
+            # along the way. Codex's parser accepts none of them and refuses
+            # the document — so the defect is the file, not the field, and
+            # one finding says so.
+            found = block.first_non_finite()
+            if found is not None:
+                path, value = found
+                violations.append(
+                    self.violation(
+                        f"'{json_token(value)}' at {safe_display(path)} is not valid JSON "
+                        "— NaN and Infinity are not JSON tokens, and Codex rejects the "
+                        "whole file, so it loads no hooks",
+                        file_path=block.path,
+                    )
                 )
                 continue
 

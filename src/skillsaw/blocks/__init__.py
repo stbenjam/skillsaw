@@ -87,6 +87,7 @@ from .json_config import (
     SkillsLockBlock,
     VsCodeMcpBlock,
     _parse_json_file,
+    json_token,
     parse_hooks_events,
 )
 from .coderabbit import (
@@ -150,6 +151,7 @@ __all__ = [
     # json_config
     "HOOK_COMMAND_FIELDS",
     "VSCODE_HOOK_COMMAND_FIELDS",
+    "json_token",
     "HookHandler",
     "HookEventConfig",
     "AgentPluginMcpBlock",

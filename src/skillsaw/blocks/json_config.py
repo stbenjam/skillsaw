@@ -8,6 +8,7 @@ content-quality rules never see them.  Dedicated rules locate them with
 
 from __future__ import annotations
 
+import math
 from itertools import islice
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -200,6 +201,17 @@ def parse_hooks_events(hooks_obj: Any, *, line_offset: int = 0) -> Dict[str, Lis
     return result
 
 
+def json_token(value: float) -> str:
+    """The JSON-source spelling of a non-finite float.
+
+    ``repr`` renders these as ``nan`` and ``inf``, which appear nowhere in
+    the file the author has to edit.
+    """
+    if math.isnan(value):
+        return "NaN"
+    return "Infinity" if value > 0 else "-Infinity"
+
+
 def _parse_json_file(
     path: Path, *, strict: bool = False, jsonc: bool = False
 ) -> Tuple[Optional[Any], Optional[str]]:
@@ -259,6 +271,34 @@ class JsonConfigBlock(LintTarget):
     def estimate_tokens(self) -> int:
         content = read_text(self.path)
         return len(content) // 4 if content else 0
+
+    def first_non_finite(self) -> Optional[Tuple[str, float]]:
+        """The first ``NaN``/``Infinity`` in this document, as ``(path, value)``.
+
+        Only a block left at :attr:`strict_json` ``False`` can have one:
+        ``json.loads`` accepts the bare tokens and no JSON host does, so a
+        lenient block parses a document the tool it configures refuses. A
+        rule that reads such a block asks here, before its shape walk, so
+        the finding names the file's real defect rather than a field's type.
+
+        Document order, iteratively: a document nested deeply enough to
+        parse but deep enough to exhaust the recursion limit on a second
+        walk would cost every other finding in the run.
+        """
+        stack: List[Tuple[str, Any]] = [("", self.raw_data)]
+        while stack:
+            path, value = stack.pop()
+            if isinstance(value, float):
+                if not math.isfinite(value):
+                    return path, value
+            elif isinstance(value, dict):
+                for key, item in reversed(list(value.items())):
+                    name = str(key)
+                    stack.append((f"{path}.{name}" if path else name, item))
+            elif isinstance(value, list):
+                for index in range(len(value) - 1, -1, -1):
+                    stack.append((f"{path}[{index}]", value[index]))
+        return None
 
     def tree_label(self) -> str:
         return f"{self.path.name} ({self.category})"

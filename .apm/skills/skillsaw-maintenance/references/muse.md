@@ -62,10 +62,12 @@ runs — a rejected file, group, event or handler simply never fires — which i
   undocumented); `silent` (anything). A wrong type on any of them rejects the file; a
   key outside the table drops the handler.
 - **Memory layout**: `<repo>/.agents/memory/` — a `MEMORY.md` index (one line per
-  topic file) plus one Markdown file per topic. Muse injects `MEMORY.md` in full at
-  every session start, even in an untrusted workspace — the docs themselves flag this
-  as a prompt-injection surface — and lists up to 48 topic-file paths from the index;
-  beyond that cap a topic file is never surfaced. **This is not Muse's convention.**
+  topic file, by convention) plus one Markdown file per topic. Muse injects
+  `MEMORY.md` in full at every session start, even in an untrusted workspace — the
+  docs themselves flag this as a prompt-injection surface — and lists the paths of
+  the other Markdown files in the directory, whether or not the index mentions them,
+  up to 48; beyond that cap a file is never surfaced. **This is not Muse's
+  convention.**
   Projects were committing `.agents/memory/` before Muse Code shipped, describing it as
   tool-agnostic team memory complementing Claude Code's per-developer auto memory, and
   Muse adopted it the way it adopted `AGENTS.md`. skillsaw treats it as shared:
@@ -104,6 +106,6 @@ empirically if the docs still omit an example:
   `formats/muse.py`. Fields Muse parses and then refuses the handler for are distinct
   from fields it never recognizes at all — both drop the handler, but the diagnostic
   differs.
-- The memory index cap (48 topic files) is a documented Muse behavior with no
+- The memory listing cap (48 Markdown files) is a documented Muse behavior with no
   constant of its own; it is recorded here rather than in code because no rule reads
   it.

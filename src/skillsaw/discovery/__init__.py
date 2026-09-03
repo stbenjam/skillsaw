@@ -42,9 +42,10 @@ CONVENTIONAL_SKILL_DIRS = (
 # it lives here rather than in a ``formats/`` module.
 AGENT_MEMORY_DIR = (".agents", "memory")
 
-# The index of that directory: one line per topic file. A reader loads it
-# whole (Muse Code injects it at session start, even in an untrusted
-# workspace) and follows the paths it lists on demand.
+# The index of that directory: one line per topic file by convention. A
+# reader loads it whole (Muse Code injects it at session start, even in an
+# untrusted workspace) and reads topic files on demand — Muse lists the path
+# of every Markdown file there, whether or not the index mentions it.
 AGENT_MEMORY_INDEX = "MEMORY.md"
 
 

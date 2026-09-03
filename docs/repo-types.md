@@ -298,7 +298,7 @@ validation wherever a tool's own metadata can fail silently — see
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
 | **Muse Code** | `.muse/hooks.json` |
-| **Committed project memory** | `.agents/memory/MEMORY.md` (index) and its topic files |
+| **Committed project memory** | `.agents/memory/MEMORY.md` (index) and every other `**/*.md` beside it |
 
 Discovery and validation are separate layers for Copilot. Every Markdown file
 under `.github/agents/` and every `*.chatmode.md` file under the legacy
@@ -432,10 +432,12 @@ agent reads it — the shared counterpart of Claude Code's per-developer auto
 memory. The convention belongs to no tool: projects were committing it
 before Muse Code shipped, and Muse reads it the way it reads `AGENTS.md`,
 injecting `MEMORY.md` in full at session start (even in an untrusted
-workspace) and listing the topic files it names for reading on demand.
+workspace) alongside the paths of the other Markdown files in the directory,
+which it reads on demand. The index is one line per topic by convention;
+Muse lists every Markdown file there whether or not the index mentions it.
 
 skillsaw therefore attaches the directory unconditionally, and it is
-evidence of no tool in particular. The index and its topic files are agent
+evidence of no tool in particular. The index and the topic files beside it are agent
 context, so they get every content and security rule, and both are budgeted
 under the `memory` category — the index because a reader loads it whole, a
 topic file because a reader loads it whole once the topic comes up.
