@@ -43,8 +43,8 @@ RULE_GROUPS = [
         "These rules validate skills against the [agentskills.io specification]"
         "(https://agentskills.io/specification). They auto-enable wherever skills "
         "are detected — agentskills repos, single plugins, marketplaces, "
-        "`.claude/` directories, Codex plugins and marketplaces, and Agent "
-        "Plugin packages.",
+        "`.claude/` directories, Codex plugins and marketplaces, Grok Build "
+        "plugins and marketplaces, and Agent Plugin packages.",
     ),
     (
         "APM (Agent Package Manager)",

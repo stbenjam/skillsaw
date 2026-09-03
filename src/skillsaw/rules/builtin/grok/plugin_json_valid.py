@@ -22,7 +22,7 @@ from skillsaw.formats import grok
 from skillsaw.lint_target import GrokPluginConfigNode
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import read_json
+from skillsaw.rules.builtin.utils import strict_json
 
 from ._helpers import GROK_PLUGIN_REPO_TYPES, escape_reason, is_semver
 
@@ -81,7 +81,7 @@ class GrokPluginJsonValidRule(Rule):
                 # skills/, agents/, hooks/hooks.json or .mcp.json installs
                 # without one. What that costs is grok-plugin-structure's.
                 continue
-            data, error = read_json(manifest)
+            data, error = strict_json(manifest)
             if error:
                 violations.append(self.violation(f"Invalid JSON: {error}", file_path=manifest))
                 continue
@@ -112,7 +112,7 @@ class GrokPluginJsonValidRule(Rule):
             ]
         if not name:
             return [self.violation("Required field 'name' is an empty string", file_path=manifest)]
-        if not grok.PLUGIN_NAME_RE.match(name):
+        if not grok.PLUGIN_NAME_RE.fullmatch(name):
             return [
                 self.violation(
                     f"Plugin name '{safe_display(name)}' must be 1-{grok.PLUGIN_NAME_MAX_LENGTH} "
@@ -143,11 +143,25 @@ class GrokPluginJsonValidRule(Rule):
         for field in _PATH_FIELDS:
             if field not in data:
                 continue
+            if field in grok.SINGLE_PATH_FIELDS and isinstance(data[field], list):
+                # ``hooks`` and ``mcpServers`` are one path or one inline
+                # object, never an array: measured, a list-valued ``hooks``
+                # loaded as an empty inline document and a list-valued
+                # ``mcpServers`` loaded no servers at all.
+                violations.append(
+                    self.violation(
+                        f"'{field}' is an array; Grok reads one path or one inline object",
+                        file_path=manifest,
+                        severity=Severity.WARNING,
+                    )
+                )
+                continue
             declared = self._declared_paths(data[field])
             if declared is None:
                 # An inline hooks or mcpServers object: the component
                 # itself, which the hooks and MCP rules read from the tree.
                 continue
+            want_dir = grok.COMPONENT_PATHS[field][1]
             resolved: List[Path] = []
             for raw in declared:
                 if not raw:
@@ -180,6 +194,20 @@ class GrokPluginJsonValidRule(Rule):
                                 severity=Severity.WARNING,
                             )
                         )
+                    continue
+                if not (safe_is_dir(target) if want_dir else safe_is_file(target)):
+                    # Discovery reads the three component fields as
+                    # directories and the two file fields as files, so a
+                    # path of the other kind costs exactly what a missing
+                    # one does.
+                    violations.append(
+                        self.violation(
+                            f"'{field}': '{safe_display(raw)}' is not a "
+                            f"{'directory' if want_dir else 'file'}",
+                            file_path=manifest,
+                            severity=Severity.WARNING,
+                        )
+                    )
                     continue
                 contained = contained_resolve(target, root)
                 if contained is not None:

@@ -903,7 +903,19 @@ class GrokMcpBlock(McpBlock):
     plugin: a dual-manifest directory keeps the shared :class:`McpBlock` the
     Claude or Codex branch attached, since two block classes over one file
     would report each of its servers twice.
+
+    Claude's built-in server names are not reserved here — Claude never
+    reads a Grok-only file — and a connection field must be usable rather
+    than merely present. The second is measured: a plugin ``.mcp.json``
+    holding ``{"empty": {"command": ""}, "nourl": {"type": "http"},
+    "good": {"command": "echo"}}`` lost ``nourl`` outright and loaded
+    ``empty`` with an empty target, a server nothing can spawn. This is a
+    new surface with no established results to preserve, so it requires the
+    field from the start, as the editor locations do.
     """
+
+    claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
 
     def tree_label(self) -> str:
         # The filename, not a fixed "mcp.json": a manifest may point

@@ -14,9 +14,12 @@ from typing import TYPE_CHECKING, Iterable, List, Optional, Set
 from .discovery import grok as grok_discovery
 from .formats.grok import PLUGIN_DIR_NAME
 from .paths import safe_resolve
+from .repository_types import RepositoryType
 
-if TYPE_CHECKING:
-    from .repository_types import RepositoryType
+#: The two types the ``--type`` gate selects on. Members rather than their
+#: string values, so a renamed enum member is a type error here instead of a
+#: silently disabled gate.
+_GROK_TYPES = frozenset({RepositoryType.GROK_PLUGIN, RepositoryType.GROK_MARKETPLACE})
 
 
 class RepositoryGrokMixin:
@@ -28,6 +31,10 @@ class RepositoryGrokMixin:
 
     if TYPE_CHECKING:
         root_path: Path
+        plugins: List[Path]
+        codex_plugins: List[Path]
+        agent_plugins: List[Path]
+        skills: List[Path]
         grok_plugins: List[Path]
         _grok_catalog_paths: Optional[List[Path]]
         _grok_claims: Optional[Set[Path]]
@@ -40,7 +47,10 @@ class RepositoryGrokMixin:
 
         def is_path_excluded(self, path: Path) -> bool: ...
 
-    def _init_grok(self, repo_types: Optional[Iterable["RepositoryType"]]) -> None:
+        @staticmethod
+        def _under_any(path: Path, roots: Set[Path]) -> bool: ...
+
+    def _init_grok(self, repo_types: Optional[Iterable[RepositoryType]]) -> None:
         """Set up Grok caches and the ``--type`` gate, then discover plugins.
 
         The gate mirrors Codex's: an override decides which catalogs are
@@ -54,10 +64,10 @@ class RepositoryGrokMixin:
         """
         selected = None
         if repo_types is not None:
-            values = {getattr(repo_type, "value", None) for repo_type in repo_types}
-            selected = bool(values & {"grok-plugin", "grok-marketplace"})
-            self._grok_plugin_forced = "grok-plugin" in values
-            self._grok_marketplace_forced = "grok-marketplace" in values
+            selected_types = set(repo_types)
+            selected = bool(selected_types & _GROK_TYPES)
+            self._grok_plugin_forced = RepositoryType.GROK_PLUGIN in selected_types
+            self._grok_marketplace_forced = RepositoryType.GROK_MARKETPLACE in selected_types
         else:
             self._grok_plugin_forced = False
             self._grok_marketplace_forced = False
@@ -129,7 +139,7 @@ class RepositoryGrokMixin:
         """Local plugin directories declared by a Grok catalog."""
         # Filesystem-enumerated, not discovery-gated: these feed the
         # provenance claim set, which must be ``--type``-invariant.
-        return grok_discovery.grok_local_sources(self.root_path, self._grok_catalog_files())
+        return grok_discovery.grok_local_sources(self._grok_catalog_files())
 
     def grok_local_source_dirs(self) -> List[Path]:
         """Resolved plugin directories a Grok catalog claims as a local source.
@@ -194,8 +204,36 @@ class RepositoryGrokMixin:
         excluded catalog may be the only source for a plugin whose own path
         matches no pattern.
         """
+        before = {r for r in (safe_resolve(p) for p in self.grok_plugins) if r is not None}
         self._grok_catalog_paths = None
         self._grok_claims = None
         self._grok_roots = None
         if filtering and self._grok_discovery_enabled:
             self.grok_plugins = self._discover_grok_plugins()
+            self._prune_skills_of_dropped_grok_plugins(before)
+
+    def _prune_skills_of_dropped_grok_plugins(self, before: Set[Path]) -> None:
+        """Drop skills whose only owner left the Grok set, as the Codex arm does.
+
+        A plugin claimed by a catalog alone leaves ``grok_plugins`` when that
+        catalog is excluded, while its skills were discovered by the shared
+        walk and stay in ``self.skills`` — where they attach as standalone
+        nodes and keep linting the very content the exclusion removed. A
+        skill any other active plugin still claims keeps its owner and is
+        preserved.
+        """
+        dropped = before - {
+            r for r in (safe_resolve(p) for p in self.grok_plugins) if r is not None
+        }
+        if not dropped:
+            return
+        active = {
+            r
+            for p in (*self.plugins, *self.codex_plugins, *self.agent_plugins)
+            if (r := safe_resolve(p)) is not None
+        }
+        self.skills = [
+            skill
+            for skill in self.skills
+            if not self._under_any(skill, dropped) or self._under_any(skill, active)
+        ]

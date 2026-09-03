@@ -21,6 +21,7 @@ import json
 import pytest
 
 from skillsaw.blocks import (
+    AgentBlock,
     CommandBlock,
     GrokHooksBlock,
     GrokInlineHooksBlock,
@@ -39,10 +40,12 @@ from skillsaw.lint_target import (
     GrokPluginConfigNode,
     GrokPluginNode,
 )
+from skillsaw.rules.builtin.description_routing import DescriptionRoutingRule
 from skillsaw.rules.builtin.hooks.dangerous import HooksDangerousRule
 from skillsaw.rules.builtin.hooks.prohibited import HooksProhibitedRule
 from skillsaw.rules.builtin.marketplace.json_valid import MarketplaceJsonValidRule
 from skillsaw.rules.builtin.mcp.prohibited import McpProhibitedRule
+from skillsaw.rules.builtin.mcp.valid_json import McpValidJsonRule
 
 from tests.grok._helpers import (
     HOOKS_JSON,
@@ -473,3 +476,214 @@ def test_a_shared_hooks_file_is_attached_once(temp_dir) -> None:
     context = RepositoryContext(repo)
 
     assert relative(repo, context.lint_tree.find(HooksBlock)) == [".grok/hooks/guards.json"]
+
+
+def test_a_conventional_hooks_file_shared_with_the_project_layer_is_attached_once(
+    temp_dir,
+) -> None:
+    """The same guard as the declared form, on the file Grok finds without a
+    declaration. A plugin's hooks class is a sibling of the project layer's,
+    so the role key cannot deduplicate them and both security rules would
+    report every command in the file twice."""
+    # The plugin is the repository root, which is what puts the project
+    # layer inside it: from anywhere else the symlink leaves the plugin and
+    # containment rejects it before this guard is reached.
+    repo = write_plugin(write_repo(temp_dir / "shared-conventional"), MANIFEST)
+    (repo / ".grok" / "hooks").mkdir(parents=True)
+    (repo / ".grok" / "hooks" / "guards.json").write_text(
+        json.dumps({"hooks": dangerous_hooks()}), encoding="utf-8"
+    )
+    (repo / "hooks").mkdir()
+    (repo / "hooks" / "hooks.json").symlink_to(repo / ".grok" / "hooks" / "guards.json")
+
+    context = RepositoryContext(repo)
+
+    assert relative(repo, context.lint_tree.find(HooksBlock)) == [".grok/hooks/guards.json"]
+    assert len([m for m in messages(HooksDangerousRule().check(context)) if "evil.example" in m])
+
+
+# ── Manifest-declared commands and agents ────────────────────────
+
+
+def _declared_prose_plugin(repo, manifest):
+    plugin = write_plugin(repo / "plugins" / "tide-charts", manifest)
+    for directory, name, front in (
+        ("desk-commands", "tide-report.md", "description: Summarize this week's windows"),
+        ("desk-agents", "berth-reviewer.md", "name: berth-reviewer\ndescription: Review berths"),
+        ("commands", "conventional.md", "description: The command Grok stops loading"),
+    ):
+        (plugin / directory).mkdir(parents=True, exist_ok=True)
+        (plugin / directory / name).write_text(
+            f"---\n{front}\n---\n\n# Heading\n\nDo the work.\n", encoding="utf-8"
+        )
+    return plugin
+
+
+def test_manifest_declared_command_and_agent_directories_are_attached(temp_dir) -> None:
+    """Measured: ``{"commands": "desk-commands"}`` loaded ``desk-commands``
+    and nothing from ``commands/``, the same replacement ``skills`` gets. The
+    files that load need the content, frontmatter and security checks; the
+    conventional pair stays attached too, so what the override drops is still
+    linted and ``grok-plugin-json-valid`` names it."""
+    repo = write_repo(temp_dir / "declared-prose")
+    _declared_prose_plugin(
+        repo, {**MANIFEST, "commands": "desk-commands", "agents": ["desk-agents"]}
+    )
+
+    tree = RepositoryContext(repo).lint_tree
+
+    assert relative(repo, tree.find(CommandBlock)) == [
+        "plugins/tide-charts/commands/conventional.md",
+        "plugins/tide-charts/desk-commands/tide-report.md",
+    ]
+    assert relative(repo, tree.find(AgentBlock)) == [
+        "plugins/tide-charts/desk-agents/berth-reviewer.md"
+    ]
+
+
+def test_a_declared_directory_that_is_the_conventional_one_attaches_once(temp_dir) -> None:
+    repo = write_repo(temp_dir / "declared-conventional")
+    _declared_prose_plugin(repo, {**MANIFEST, "commands": "./commands"})
+
+    tree = RepositoryContext(repo).lint_tree
+
+    assert relative(repo, tree.find(CommandBlock)) == [
+        "plugins/tide-charts/commands/conventional.md"
+    ]
+
+
+def test_declared_prose_reaches_description_routing(temp_dir) -> None:
+    """The routing rule activates on the Grok types, so a Grok-only plugin's
+    commands are checked the way a Codex-only plugin's are."""
+    repo = write_repo(temp_dir / "routing")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "commands": "desk"})
+    (plugin / "desk").mkdir()
+    (plugin / "desk" / "tide-report.md").write_text(
+        "---\ndescription: Tide report\n---\n\n# Report\n\nSummarize the week.\n",
+        encoding="utf-8",
+    )
+
+    context = RepositoryContext(repo, repo_types={RepositoryType.GROK_PLUGIN})
+    found = DescriptionRoutingRule().check(context)
+
+    assert [v.file_path for v in found] == [plugin / "desk" / "tide-report.md"]
+
+
+# ── Exclusions ───────────────────────────────────────────────────
+
+
+SKILL_MD = (
+    "---\nname: tide-window\ndescription: Find the low-tide survey windows.\n---\n\n# Window\n"
+)
+
+
+def _excludable_repo(temp_dir, name):
+    """A catalog claiming a manifest-less plugin that ships one skill."""
+    repo = write_repo(temp_dir / name)
+    write_catalog(repo, local_catalog("./plugins/almanac"))
+    skill = repo / "plugins" / "almanac" / "skills" / "tide-window"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(SKILL_MD, encoding="utf-8")
+    return repo
+
+
+def test_an_excluded_grok_plugin_is_not_discovered(temp_dir) -> None:
+    repo = write_repo(temp_dir / "excluded-plugin")
+    write_plugin(repo / "plugins" / "tide-charts", MANIFEST)
+
+    context = RepositoryContext(repo, exclude_patterns=["plugins/tide-charts/**"])
+
+    assert context.grok_plugins == []
+    assert RepositoryType.GROK_PLUGIN not in context.repo_types
+
+
+def test_an_excluded_catalog_drops_the_plugins_it_claimed(temp_dir) -> None:
+    """A ``Linter`` applies configuration to a context that is already built,
+    so the exclusion arrives after discovery ran. The catalog is the plugin's
+    only declaration and the plugin's own path matches no pattern — nothing
+    but the re-probe can drop it."""
+    repo = _excludable_repo(temp_dir, "excluded-catalog")
+    plugin = repo / "plugins" / "almanac"
+
+    context = RepositoryContext(repo)
+    assert context.grok_plugins == [plugin]
+
+    context.exclude_patterns = [".grok-plugin/**"]
+    context.apply_excludes()
+
+    assert context.grok_plugins == []
+    assert not context.provenance(plugin).grok
+
+
+def test_an_excluded_catalog_prunes_the_skills_it_claimed(temp_dir) -> None:
+    """Otherwise the skill attaches as a standalone node and keeps linting
+    the content the exclusion removed."""
+    repo = _excludable_repo(temp_dir, "excluded-catalog-skills")
+    skill = repo / "plugins" / "almanac" / "skills" / "tide-window"
+
+    context = RepositoryContext(repo)
+    assert skill in context.skills
+
+    context.exclude_patterns = [".grok-plugin/**"]
+    context.apply_excludes()
+
+    assert context.skills == []
+    assert context.lint_tree.find(SkillBlock) == []
+
+
+def test_a_skill_another_plugin_still_owns_survives_the_prune(temp_dir) -> None:
+    repo = _excludable_repo(temp_dir, "dual-owned")
+    (repo / "plugins" / "almanac" / ".claude-plugin").mkdir(parents=True)
+    (repo / "plugins" / "almanac" / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "almanac"}), encoding="utf-8"
+    )
+
+    context = RepositoryContext(repo)
+    context.exclude_patterns = [".grok-plugin/**"]
+    context.apply_excludes()
+
+    assert relative(repo, context.lint_tree.find(SkillBlock)) == [
+        "plugins/almanac/skills/tide-window/SKILL.md"
+    ]
+
+
+# ── What mcp-valid-json makes of a Grok-only server ──────────────
+
+
+def _mcp_plugin(temp_dir, name, servers, *, claude=False):
+    repo = write_repo(temp_dir / name)
+    plugin = write_plugin(repo / "plugins" / "tide-charts", MANIFEST)
+    if claude:
+        (plugin / ".claude-plugin").mkdir()
+        (plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps(MANIFEST), encoding="utf-8"
+        )
+    (plugin / ".mcp.json").write_text(json.dumps({"mcpServers": servers}), encoding="utf-8")
+    return repo
+
+
+def test_a_claude_builtin_name_is_free_in_a_grok_only_plugin(temp_dir) -> None:
+    """Claude never reads a Grok-only file, so its built-in names are not
+    reserved there."""
+    repo = _mcp_plugin(temp_dir, "builtin-name", {"workspace": {"command": "serve"}})
+
+    assert McpValidJsonRule().check(RepositoryContext(repo)) == []
+
+
+def test_a_claude_builtin_name_still_collides_in_a_dual_manifest_plugin(temp_dir) -> None:
+    """The dual directory keeps the shared block, and with it Claude's
+    established results."""
+    repo = _mcp_plugin(temp_dir, "dual-builtin", {"workspace": {"command": "serve"}}, claude=True)
+
+    assert messages(McpValidJsonRule().check(RepositoryContext(repo)))
+
+
+def test_a_grok_only_server_must_name_something_to_spawn(temp_dir) -> None:
+    """Measured: a plugin ``.mcp.json`` holding an empty ``command`` loaded
+    with an empty target, and one holding ``{"type": "http"}`` with no
+    ``url`` was dropped outright."""
+    repo = _mcp_plugin(temp_dir, "unusable", {"empty": {"command": ""}})
+
+    assert messages(McpValidJsonRule().check(RepositoryContext(repo))) == [
+        "MCP server 'empty' 'command' must be a non-empty string"
+    ]

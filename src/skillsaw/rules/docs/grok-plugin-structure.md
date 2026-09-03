@@ -23,8 +23,9 @@ install it — so a marketplace listing one publishes a plugin nobody can add.
 ## Severity
 
 **Warning** — one directory of the repository installs nothing. Everything
-else in the checkout is unaffected, and no diagnostic connects the install's
-success to the runtime's silence.
+else in the checkout is unaffected, and the refusal arrives only at
+`grok plugin install`, as `no plugins found in the source`: `grok plugin
+validate` called the directory fine.
 
 **Info** — a directory with components but no manifest installs under a
 synthesized `<dir>-<hash>` name. That is fine for a plugin nobody addresses

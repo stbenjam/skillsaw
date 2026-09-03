@@ -323,3 +323,115 @@ def test_an_oversized_integer_is_invalid_json_not_a_crash(temp_dir) -> None:
     )
 
     assert any("Invalid JSON" in message for message in at(check(repo), Severity.ERROR))
+
+
+# ── Field shapes and path kinds ──────────────────────────────────
+
+
+def test_a_non_finite_number_is_invalid_json(temp_dir) -> None:
+    """Grok refuses the whole document — ``grok plugin validate`` on this
+    manifest reported "failed to parse … expected value" and exit 1, which
+    costs the whole plugin directory."""
+    repo = write_repo(temp_dir / "nan-manifest")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", None)
+    (plugin / ".grok-plugin" / "plugin.json").write_text(
+        '{"name": "tide-charts", "limit": NaN}', encoding="utf-8"
+    )
+
+    assert at(check(repo), Severity.ERROR) == ["Invalid JSON: non-finite JSON number: NaN"]
+
+
+def test_a_name_with_a_trailing_newline_is_an_error(temp_dir) -> None:
+    """``$`` matches before a final newline and ``\\A``/``\\Z`` do not; the
+    loader refuses the value either way."""
+    repo = plugin_repo(temp_dir, "trailing-newline", {**MANIFEST, "name": "tide-charts\n"})
+
+    assert any("must be 1-64" in message for message in at(check(repo), Severity.ERROR))
+
+
+@pytest.mark.parametrize(
+    "field,value,expected",
+    [
+        pytest.param(
+            "skills", "README.md", "'skills': 'README.md' is not a directory", id="skills"
+        ),
+        pytest.param(
+            "commands", "README.md", "'commands': 'README.md' is not a directory", id="commands"
+        ),
+        pytest.param("hooks", "hooks", "'hooks': 'hooks' is not a file", id="hooks"),
+        pytest.param("mcpServers", "hooks", "'mcpServers': 'hooks' is not a file", id="mcpServers"),
+    ],
+)
+def test_a_declared_path_of_the_wrong_kind_warns(temp_dir, field, value, expected) -> None:
+    """Discovery reads the three component fields as directories and the two
+    file fields as files, so the wrong kind costs what a missing path costs."""
+    repo = write_repo(temp_dir / f"kind-{field}")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, field: value})
+    (plugin / "README.md").write_text("# Tide charts\n", encoding="utf-8")
+    (plugin / "hooks").mkdir()
+
+    assert at(check(repo), Severity.WARNING) == [expected]
+
+
+@pytest.mark.parametrize("field", ["hooks", "mcpServers"])
+def test_an_array_valued_hooks_or_mcp_field_warns(temp_dir, field) -> None:
+    """Measured: ``"hooks": ["hooks/hooks.json"]`` loaded as an empty inline
+    document with no target while the same path as a bare string loaded as a
+    file, and ``"mcpServers": ["servers.json"]`` loaded no servers at all."""
+    repo = write_repo(temp_dir / f"array-{field}")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, field: ["config.json"]})
+    (plugin / "config.json").write_text('{"hooks": {}}', encoding="utf-8")
+
+    assert at(check(repo), Severity.WARNING) == [
+        f"'{field}' is an array; Grok reads one path or one inline object"
+    ]
+
+
+@pytest.mark.parametrize("field", ["commands", "agents"])
+def test_a_commands_or_agents_override_warns_like_skills(temp_dir, field) -> None:
+    """All three override fields replace their conventional directory."""
+    repo = write_repo(temp_dir / f"override-{field}")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, field: f"desk-{field}"})
+    for directory in (field, f"desk-{field}"):
+        (plugin / directory).mkdir()
+        (plugin / directory / "note.md").write_text("---\ndescription: A note\n---\n\n# Note\n")
+
+    assert at(check(repo), Severity.WARNING) == [
+        f"'{field}' replaces '{field}/'; Grok loads nothing under it"
+    ]
+
+
+@pytest.mark.parametrize("field", ["hooks", "mcpServers"])
+def test_the_inline_fields_never_warn_about_an_override(temp_dir, field) -> None:
+    """``hooks`` and ``mcpServers`` name one file rather than a directory of
+    components, so there is nothing for a declaration to displace — and both
+    conventional files are present here."""
+    repo = write_repo(temp_dir / f"no-override-{field}")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, field: "config.json"})
+    (plugin / "config.json").write_text('{"hooks": {}}', encoding="utf-8")
+    (plugin / "hooks").mkdir()
+    (plugin / "hooks" / "hooks.json").write_text('{"hooks": {}}', encoding="utf-8")
+    (plugin / ".mcp.json").write_text('{"mcpServers": {}}', encoding="utf-8")
+
+    assert [m for m in messages(check(repo)) if "replaces" in m] == []
+
+
+# ── Which manifest a finding is filed against ────────────────────
+
+
+def test_each_finding_names_the_manifest_that_carries_it(broken) -> None:
+    """Six plugin directories, and a finding attributed to the neighbouring
+    one — or to the plugin directory instead of its manifest — would leave
+    every message assertion above green."""
+    plugins = broken / "plugins"
+
+    filed = {(v.file_path, v.message.split(":")[0].split(" '")[0]) for v in check(broken)}
+
+    assert (plugins / "Bad_Name" / ".grok-plugin" / "plugin.json", "Plugin name") in filed
+    assert (
+        plugins / "nameless" / ".grok-plugin" / "plugin.json",
+        "Missing required field",
+    ) in filed
+    assert (plugins / "malformed" / ".grok-plugin" / "plugin.json", "Invalid JSON") in filed
+    assert {v.file_path.name for v in check(broken)} == {"plugin.json"}
+    assert {v.file_path.parent.name for v in check(broken)} == {".grok-plugin"}

@@ -349,7 +349,7 @@ my-plugin/
 ├── hooks/
 │   └── hooks.json        # Optional
 ├── .mcp.json             # Optional: bundled MCP servers
-└── .lsp.json             # Optional: not read yet
+└── .lsp.json             # Optional: not linted yet
 ```
 
 Grok resolves a manifest from `plugin.json`, then `.grok-plugin/plugin.json`,
@@ -434,9 +434,9 @@ and the bare string `"./x"` — and, measured against the binary, an object
 with no discriminator or a misspelled one, because the loader keys on `path`
 alone. A `url` is what makes an entry remote, and its own `path` then names a
 subdirectory of the clone rather than a directory here. Local sources are
-resolved against the marketplace root, so a package that is a marketplace of
-its own resolves against the package. Sources that escape the repository are
-dropped.
+resolved and contained against the marketplace root, so a package that is a
+marketplace of its own resolves against the package. Sources that escape
+that root are dropped, by Grok and here.
 
 `plugin-index.json` beside the catalog is what the marketplace browser reads
 before anything is installed, and a `require_sha` deployment installs from

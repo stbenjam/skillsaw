@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 
 from pathlib import Path
-from typing import Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -13,6 +13,11 @@ from skillsaw.formats.codex import (
     codex_local_source_path,
     codex_plugin_name,
     is_remote_source,
+)
+from skillsaw.formats.grok import (
+    grok_local_source_path,
+    grok_plugin_name,
+    is_url_source as is_grok_url_source,
 )
 from skillsaw.paths import safe_is_file, safe_resolve
 from skillsaw.utils import read_json
@@ -43,6 +48,7 @@ from skillsaw.lint_target import (
     AgentPluginConfigNode,
     CodexPluginConfigNode,
     DevinSkillNode,
+    GrokPluginConfigNode,
     LintTarget,
     PluginNode,
     SkillNode,
@@ -77,6 +83,11 @@ def extract_docs(
     # without it the package is absent entirely and its skills surface as
     # standalone repository content.
     documented = {r for p in plugins if (r := safe_resolve(p.path)) is not None}
+    # Grok before Agent Plugins, and both after Claude and Codex: the same
+    # precedence the lint tree picks a container type by, so a directory two
+    # ecosystems claim is documented once, under the strongest declaration.
+    grok_plugins = _extract_grok_plugins(context, documented)
+    plugins = plugins + grok_plugins
     plugins = plugins + _extract_agent_plugins(context, documented)
 
     marketplace = None
@@ -98,25 +109,30 @@ def extract_docs(
         # ``marketplace_data`` only ever loads the Claude marketplace, so a
         # Codex catalog needs its own MarketplaceDoc.
         marketplace = _codex_marketplace_doc(context, plugins)
+    elif RepositoryType.GROK_MARKETPLACE in context.repo_types:
+        marketplace = _grok_marketplace_doc(context, plugins)
 
     standalone_skills: List[SkillDoc] = []
     if RepositoryType.AGENTSKILLS in context.repo_types:
         plugin_skill_paths = {
             (safe_resolve(s.dir_path) or s.dir_path) for p in plugins for s in p.skills
         }
-        # An installed plugin's skills match no PluginDoc, and the
-        # standalone pass would publish someone else's skills as this
+        # Roots whose skills are not this repository's own content. An
+        # installed plugin's match no PluginDoc at all, and a Grok plugin's
+        # can sit outside ``skills/`` when its manifest moves them — either
+        # way the standalone pass would publish someone else's skills as the
         # repository's own top-level content.
-        installed_roots = [
+        borrowed_roots = [
             r
             for p in context.codex_plugins
             if context.is_codex_installed_plugin(p) and (r := safe_resolve(p)) is not None
         ]
+        borrowed_roots.extend(r for p in grok_plugins if (r := safe_resolve(p.path)) is not None)
         for skill_node in _skill_nodes(context.lint_tree):
             resolved = safe_resolve(skill_node.path)
             if resolved is None or resolved in plugin_skill_paths:
                 continue
-            if any(resolved.is_relative_to(root) for root in installed_roots):
+            if any(resolved.is_relative_to(root) for root in borrowed_roots):
                 continue
             doc = _extract_skill(skill_node)
             if doc:
@@ -405,6 +421,130 @@ def _owned_components(
             _owned_blocks(context, node, McpBlock, plugin_resolved), {}
         ),
         rules=_rule_docs(_owned_blocks(context, node, PluginRuleBlock, plugin_resolved)),
+    )
+
+
+def _extract_grok_plugins(
+    context: RepositoryContext,
+    documented: Set[Path],
+) -> List[PluginDoc]:
+    """Plugin docs for Grok plugins no stronger declaration documents.
+
+    A dual-manifest directory is already in *documented* through its Claude
+    or Codex doc; what is left is the Grok-only plugin, whose
+    ``GrokPluginConfigNode`` is the only thing that names it.
+    """
+    docs: List[PluginDoc] = []
+    for node in context.lint_tree.find(GrokPluginConfigNode):
+        # The tree's ownership decision, read back rather than re-derived.
+        plugin_resolved = node.plugin_owner or safe_resolve(node.plugin_dir)
+        if plugin_resolved is None or plugin_resolved in documented:
+            continue
+        documented.add(plugin_resolved)
+        docs.append(_extract_grok_plugin(context, node, plugin_resolved))
+    return docs
+
+
+def _extract_grok_plugin(
+    context: RepositoryContext,
+    node: GrokPluginConfigNode,
+    plugin_resolved: Path,
+) -> PluginDoc:
+    """Build a PluginDoc from a Grok manifest and its subtree.
+
+    The manifest is optional to Grok — a directory of conventional
+    components installs without one — so it is read defensively and the
+    name falls back to the directory, which is what Grok itself installs
+    such a plugin under.
+    """
+    plugin_dir = node.plugin_dir
+    meta = _read_json_dict(node)
+
+    author_val = meta.get("author")
+    if isinstance(author_val, str):
+        author_val = {"name": author_val}
+
+    return PluginDoc(
+        name=grok_plugin_name(plugin_dir),
+        path=plugin_dir,
+        description=str(meta.get("description", "") or ""),
+        version=str(v) if (v := meta.get("version")) is not None else "",
+        author=author_val if isinstance(author_val, dict) else None,
+        keywords=_string_list(meta.get("keywords")),
+        homepage=_safe_url(meta.get("homepage")),
+        repository=_safe_url(meta.get("repository")),
+        license=str(meta.get("license", "") or ""),
+        **_owned_components(context, node, plugin_resolved),
+        has_readme=safe_is_file(plugin_dir / "README.md"),
+    )
+
+
+def _grok_marketplace_doc(
+    context: RepositoryContext, plugins: List[PluginDoc]
+) -> Optional[MarketplaceDoc]:
+    """A MarketplaceDoc built from the Grok catalog.
+
+    Grok catalogs carry no ``owner``, and their top-level ``name`` is
+    optional — nothing observable uses it, so an absent one leaves the
+    marketplace unnamed rather than dropping the listing. The first catalog
+    wins when a repository splits its listing across packages.
+    """
+    name: Optional[str] = None
+    listed: List[PluginDoc] = []
+    seen: Set[int] = set()
+    by_path = {r: p for p in plugins if (r := safe_resolve(p.path)) is not None}
+    for path in context.grok_marketplace_paths():
+        data, error = read_json(path)
+        if error or not isinstance(data, dict):
+            continue
+        if name is None:
+            name = str(data.get("name", "") or "")
+        entries = data.get("plugins")
+        if not isinstance(entries, list):
+            continue  # grok-marketplace-json-valid reports the shape
+        marketplace_root = path.parent.parent
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            doc = _grok_entry_doc(entry, marketplace_root, by_path)
+            if doc is None or id(doc) in seen:
+                continue
+            seen.add(id(doc))
+            category = entry.get("category")
+            if isinstance(category, str) and category and not doc.category:
+                doc.category = category
+            listed.append(doc)
+    if name is None:
+        return None
+    return MarketplaceDoc(name=name, owner=None, plugins=listed)
+
+
+def _grok_entry_doc(
+    entry: dict,
+    marketplace_root: Path,
+    by_path: Dict[Path, PluginDoc],
+) -> Optional[PluginDoc]:
+    """The doc one catalog entry lists, local or remote.
+
+    A local entry names a directory that was extracted above; a url entry
+    has no directory in this checkout and so no lint-tree node, and what
+    the entry itself declares is all there is to list.
+    """
+    local = grok_local_source_path(entry.get("source"))
+    if local is not None:
+        resolved = safe_resolve(marketplace_root / local)
+        return by_path.get(resolved) if resolved is not None else None
+    if not is_grok_url_source(entry.get("source")):
+        return None
+    name = entry.get("name")
+    if not isinstance(name, str) or not name:
+        return None
+    return PluginDoc(
+        name=name,
+        path=Path(name),
+        description=str(entry.get("description", "") or ""),
+        version=str(v) if (v := entry.get("version")) is not None else "",
+        category=str(entry.get("category", "") or ""),
     )
 
 

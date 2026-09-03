@@ -235,24 +235,26 @@ def test_an_unpinned_url_source_is_an_error(temp_dir, source, expected) -> None:
     assert any(expected in message for message in at(check(repo), Severity.ERROR))
 
 
-@pytest.mark.parametrize("sha", [SHA_A, SHA_256])
-def test_a_full_hex_sha_reports_nothing(temp_dir, sha) -> None:
-    repo = catalog_repo(
-        temp_dir, f"pinned-{len(sha)}", {"plugins": [url_entry("almanac", sha=sha)]}
-    )
+def test_a_40_hex_sha_reports_nothing(temp_dir) -> None:
+    repo = catalog_repo(temp_dir, "pinned-40", {"plugins": [url_entry("almanac", sha=SHA_A)]})
 
     assert check(repo) == []
 
 
-def test_an_uppercase_sha_is_info(temp_dir) -> None:
-    """The installer is case-insensitive — an uppercase value passed straight
-    through to fetch-by-sha — so lowercase is the upstream validator's rule."""
-    repo = catalog_repo(temp_dir, "shouty", {"plugins": [url_entry("almanac", sha=SHA_A.upper())]})
+@pytest.mark.parametrize("sha", [SHA_256, SHA_A.upper()], ids=["64-hex", "uppercase"])
+def test_a_sha_the_upstream_validator_refuses_is_one_info(temp_dir, sha) -> None:
+    """The installer takes 40 or 64 hex, case-insensitively — an uppercase
+    value passed straight through to fetch-by-sha — while
+    ``validate-catalog.py`` requires 40 lowercase."""
+    repo = catalog_repo(
+        temp_dir, f"pinned-{len(sha)}", {"plugins": [url_entry("almanac", sha=sha)]}
+    )
 
     found = at(check(repo), Severity.INFO)
 
     assert len(found) == 1
-    assert "is not lowercase" in found[0]
+    assert "is not 40 lowercase hex characters" in found[0]
+    assert at(check(repo), Severity.ERROR) == []
 
 
 def test_require_sha_off_drops_only_the_absent_case(temp_dir) -> None:
@@ -352,3 +354,67 @@ def test_unknown_keys_report_nothing(temp_dir) -> None:
 
 def test_the_clean_fixture_reports_nothing(tmp_path) -> None:
     assert check(copy_fixture("grok/marketplace-clean", tmp_path)) == []
+
+
+@pytest.mark.parametrize(
+    "source", [7, ["./plugins/almanac"], True], ids=["number", "array", "bool"]
+)
+def test_a_source_that_is_neither_a_string_nor_an_object_is_an_error(temp_dir, source) -> None:
+    """Not the softer "names neither a local 'path' nor a 'url'" warning: a
+    source of this shape is not a source at all."""
+    repo = catalog_repo(
+        temp_dir,
+        f"source-{type(source).__name__}",
+        {"plugins": [{"name": "almanac", "description": "Almanac.", "source": source}]},
+    )
+
+    assert at(check(repo), Severity.ERROR) == [
+        "plugins[0].source must be a path string or an object"
+    ]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"source": "url", "sha": SHA_A},
+        {"url": None, "sha": SHA_A},
+        {"source": "url", "url": "", "sha": SHA_A},
+    ],
+    ids=["absent", "null", "empty"],
+)
+def test_a_url_source_with_no_url_is_an_error(temp_dir, source) -> None:
+    """The entry names no repository to clone, and the ``sha`` checks below
+    would otherwise pass it clean."""
+    repo = catalog_repo(
+        temp_dir,
+        f"no-url-{len(str(source))}",
+        {"plugins": [{"name": "almanac", "description": "Almanac.", "source": source}]},
+    )
+
+    assert at(check(repo), Severity.ERROR) == [
+        "plugins[0].source is a url source with no 'url' to clone"
+    ]
+
+
+def test_a_non_finite_number_is_invalid_json(temp_dir) -> None:
+    """Grok's parser refuses the whole document — measured, ``grok plugin
+    validate`` on a manifest holding one reports "failed to parse"."""
+    repo = write_repo(temp_dir / "nan-catalog")
+    write_catalog(repo, {"plugins": []})
+    (repo / ".grok-plugin" / "marketplace.json").write_text(
+        '{"plugins": [], "extra": NaN}', encoding="utf-8"
+    )
+
+    assert at(check(repo), Severity.ERROR) == ["Invalid JSON: non-finite JSON number: NaN"]
+
+
+def test_a_sha_with_a_trailing_newline_is_an_error(temp_dir) -> None:
+    """``$`` matches before a final newline and ``\\A``/``\\Z`` do not; the
+    installer refuses the value either way."""
+    repo = catalog_repo(
+        temp_dir, "trailing-newline", {"plugins": [url_entry("almanac", sha=SHA_A + "\n")]}
+    )
+
+    assert any(
+        "is not a 40 or 64 character" in message for message in at(check(repo), Severity.ERROR)
+    )

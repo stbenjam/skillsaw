@@ -608,6 +608,135 @@ class TestAgentPluginExtractor:
 # ---------------------------------------------------------------------------
 
 
+class TestGrokExtractor:
+    """``skillsaw docs`` on Grok Build packaging.
+
+    A Grok-only plugin has no ``PluginNode`` and no Codex manifest, so its
+    ``GrokPluginConfigNode`` is the only thing that names it — without an
+    extraction of its own the package is absent and its skills surface as
+    the repository's own top-level content.
+    """
+
+    MANIFEST = {
+        "name": "tide-charts",
+        "version": "1.2.0",
+        "description": "Shoreline survey windows from NOAA tide predictions.",
+        "author": "Harbour Tools",
+        "homepage": "https://example.com/plugins/tide-charts",
+        "license": "Apache-2.0",
+        "keywords": ["tides", "survey"],
+    }
+
+    def _plugin(self, plugin_dir, manifest=None, skill="tide-window"):
+        marker = plugin_dir / ".grok-plugin"
+        marker.mkdir(parents=True)
+        (marker / "plugin.json").write_text(
+            json.dumps(manifest if manifest is not None else self.MANIFEST), encoding="utf-8"
+        )
+        (plugin_dir / "README.md").write_text("# Tide charts\n\nSurvey windows.\n")
+        (plugin_dir / "skills" / skill).mkdir(parents=True)
+        (plugin_dir / "skills" / skill / "SKILL.md").write_text(
+            f"---\nname: {skill}\ndescription: Find the low-tide survey windows.\n---\n\n# W\n",
+            encoding="utf-8",
+        )
+        (plugin_dir / "commands").mkdir()
+        (plugin_dir / "commands" / "tide-report.md").write_text(
+            "---\ndescription: Summarize this week's windows\n---\n\n# Report\n",
+            encoding="utf-8",
+        )
+        return plugin_dir
+
+    def test_a_root_plugin_is_published_with_its_content(self, temp_dir):
+        self._plugin(temp_dir)
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert [p.name for p in docs.plugins] == ["tide-charts"]
+        plugin = docs.plugins[0]
+        assert plugin.version == "1.2.0"
+        assert plugin.author == {"name": "Harbour Tools"}
+        assert plugin.license == "Apache-2.0"
+        assert plugin.keywords == ["tides", "survey"]
+        assert plugin.has_readme is True
+        assert [s.name for s in plugin.skills] == ["tide-window"]
+        assert [c.name for c in plugin.commands] == ["tide-report"]
+        # The plugin's skills belong to it, not to the repository at large.
+        assert docs.skills == []
+
+    def test_a_manifest_less_plugin_falls_back_to_its_directory_name(self, temp_dir):
+        """Grok installs such a directory under a synthesized name; the
+        directory is what it is addressed by here."""
+        plugin = temp_dir / "plugins" / "almanac"
+        (temp_dir / ".grok-plugin").mkdir(parents=True)
+        (temp_dir / ".grok-plugin" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "harbour-plugins",
+                    "plugins": [{"name": "almanac", "source": "./plugins/almanac"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        plugin.mkdir(parents=True)
+        (plugin / "skills" / "ebb-window").mkdir(parents=True)
+        (plugin / "skills" / "ebb-window" / "SKILL.md").write_text(
+            "---\nname: ebb-window\ndescription: Find the ebb windows.\n---\n\n# E\n",
+            encoding="utf-8",
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert [p.name for p in docs.plugins] == ["almanac"]
+        assert [s.name for s in docs.plugins[0].skills] == ["ebb-window"]
+        assert docs.skills == []
+
+    def test_the_catalog_is_published_as_a_marketplace(self, temp_dir):
+        (temp_dir / ".grok-plugin").mkdir(parents=True)
+        (temp_dir / ".grok-plugin" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "harbour-plugins",
+                    "plugins": [
+                        {
+                            "name": "tide-charts",
+                            "category": "productivity",
+                            "source": "./plugins/tide-charts",
+                        },
+                        {
+                            "name": "bathymetry",
+                            "description": "Depth overlays, cloned at install.",
+                            "source": {
+                                "source": "url",
+                                "url": "https://example.invalid/bathymetry.git",
+                            },
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        self._plugin(temp_dir / "plugins" / "tide-charts")
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert docs.marketplace is not None
+        assert docs.marketplace.name == "harbour-plugins"
+        assert [p.name for p in docs.marketplace.plugins] == ["tide-charts", "bathymetry"]
+        # The category lives only in the catalog, as it does for Codex.
+        assert docs.marketplace.plugins[0].category == "productivity"
+
+    def test_a_dual_manifest_plugin_is_published_once(self, temp_dir):
+        plugin = self._plugin(temp_dir / "plugins" / "tide-charts")
+        (plugin / ".claude-plugin").mkdir()
+        (plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "tide-charts", "version": "1.2.0"}), encoding="utf-8"
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert [p.name for p in docs.plugins] == ["tide-charts"]
+
+
 class TestHtmlRenderer:
     def test_single_page_valid_html(self, valid_plugin):
         ctx = RepositoryContext(valid_plugin)

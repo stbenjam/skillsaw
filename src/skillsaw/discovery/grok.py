@@ -122,16 +122,17 @@ def enumerate_grok_catalogs(
     return found
 
 
-def grok_local_sources(root_path: Path, catalog_files: Iterable[Path]) -> List[Path]:
+def grok_local_sources(catalog_files: Iterable[Path]) -> List[Path]:
     """Local plugin directories declared by a Grok catalog.
 
-    Each catalog resolves its ``source`` paths against its own marketplace
-    root — the directory holding ``.grok-plugin/`` — so a package that is a
-    marketplace of its own resolves against the package, not the checkout.
-    Sources that escape the repository are dropped here; the catalog rule
-    reports them.
+    Each catalog resolves and contains its ``source`` paths against its own
+    marketplace root — the directory holding ``.grok-plugin/`` — so a package
+    that is a marketplace of its own resolves against the package, not the
+    checkout. Sources that escape the marketplace root are dropped here,
+    which is the boundary Grok enforces and the catalog rule reports: a
+    wider one would claim a sibling package for Grok and take it out of
+    every other ecosystem's format scope.
     """
-    repo_root = safe_resolve(root_path) or root_path
     resolved: List[Path] = []
     for catalog in catalog_files:
         marketplace_root = safe_resolve(catalog.parent.parent)
@@ -149,11 +150,10 @@ def grok_local_sources(root_path: Path, catalog_files: Iterable[Path]) -> List[P
             path = grok_local_source_path(entry.get("source"))
             if path is None:
                 continue
-            candidate = safe_resolve(marketplace_root / path)
+            candidate = contained_resolve(marketplace_root / path, marketplace_root)
             if candidate is None:
                 continue  # the catalog rule reports the unresolvable path
-            if candidate == repo_root or candidate.is_relative_to(repo_root):
-                resolved.append(candidate)
+            resolved.append(candidate)
     return resolved
 
 
@@ -171,12 +171,8 @@ def discover_grok_plugins(
     every one as *marker_dirs* — plus every local source a catalog declares
     (*local_sources*, from :func:`grok_local_sources`). *forced* seeds the
     repository root when a ``--type`` override demands the plugin type with
-    no marker present.
-
-    A ``.claude-plugin/plugin.json`` or a root ``plugin.json`` is not
-    evidence here even though Grok reads both: each is another ecosystem's
-    declaration, and treating it as Grok's would put every Claude plugin and
-    every portable package under Grok's format rules as well.
+    no marker present. Only the :data:`GROK_PLUGIN_MANIFEST` spelling counts,
+    for the reason recorded there.
     """
     found: List[Path] = []
     seen: Set[Path] = set()

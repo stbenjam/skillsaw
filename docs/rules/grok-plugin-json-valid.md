@@ -35,7 +35,12 @@ A finding's severity is how much of the plugin the defect costs.
 **Errors** — Grok skips the whole plugin directory at discovery. The
 conventional `skills/` does not rescue it.
 
-- Invalid JSON.
+- Invalid JSON, including a bare `NaN`, `Infinity` or `-Infinity` token and
+  a duplicated key. Grok's parser refuses all three: `grok plugin validate`
+  on a manifest repeating `name` reported ``duplicate field `name` `` and
+  exit 1. A duplicated key Grok's loader does not read is tolerated by the
+  binary and still reported here — two values for one key is a defect
+  whichever key it is.
 - A manifest that is not a JSON object.
 - `name` missing, not a string, or empty.
 - A `name` outside Grok's own rule, whose message this one quotes: 1-64
@@ -50,6 +55,12 @@ conventional `skills/` does not rescue it.
   target that exists outside the plugin and holds a real `SKILL.md` still
   loads nothing.
 - A declared path that is not in the plugin.
+- A declared path of the wrong kind: `skills`, `commands` and `agents` name
+  directories, `hooks` and `mcpServers` name files.
+- A declared path that is the empty string.
+- `hooks` or `mcpServers` given as an array. Each is *one* path or *one*
+  inline object: a list-valued `hooks` loaded as an empty inline document
+  with no target, and a list-valued `mcpServers` loaded no servers at all.
 - A `skills`, `commands` or `agents` override while the conventional
   directory beside it holds files. Grok **replaces** the conventional
   directory rather than adding to it, so `"skills": ["extra"]` drops
@@ -71,6 +82,8 @@ positive on a plugin that works:
 - An unknown manifest key.
 - A bare string where an array of paths is allowed. `skills`, `commands` and
   `agents` each accept either.
+- A `version` that is not a string. Nothing measured says what the loader
+  does with one, and guessing would report a defect that may not exist.
 - `hooks` or `mcpServers` given as a string. Both fields are *a path or the
   object itself*, so a string naming no file is reported as a path that is
   not in the plugin, never as a type error.

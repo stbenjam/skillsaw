@@ -73,8 +73,8 @@ every Claude plugin and every portable package under Grok's format rules as
 well — a dual claim over content whose author declared one host. The catalog
 has its own chain, `.grok-plugin/marketplace.json` >
 `.claude-plugin/marketplace.json` > `./marketplace.json`, of which exactly
-one is read; note it runs the *opposite* way from the manifest chain, so the
-two lookups share no ordering.
+one is read, and it runs the *opposite* way from the manifest chain: the two
+lookups share no ordering.
 
 ## The hook failure model
 
@@ -146,10 +146,30 @@ unknown event is a WARNING scoped to that event, and `extra-events` lets a
 project name one newer than its skillsaw. `HANDLER_FIELDS` and
 `HOOK_HANDLER_TYPES` in `formats/grok.py` are different: a handler type or a
 field's JSON type outside them is a whole-file ERROR, and a hooks file is
-JSON, so the only relief is `.skillsaw.yaml`. Re-measure both tables against
+JSON, so the only relief is `.skillsaw.yaml`. Re-measure both tables — and
+`PLUGIN_NAME_RE`, `SHA_LENGTHS` and `COMPONENT_PATHS` beside them — against
 every Grok minor release before anything else in this record. If Grok ever
 accepts a third handler type or relaxes a field's type, an
 `extra-handler-types` option mirroring `extra-events` is the shape of the fix.
+
+## What the packaging loader costs
+
+Every row measured against 1.0.13 rather than read off the docs, because the
+loader reports none of it. The scope column is the whole basis for each rule's
+severity.
+
+| Input | Scope of loss |
+|---|---|
+| `plugin.json` that fails to parse, or a `name` outside `PLUGIN_NAME_RE` (1-64 chars, lowercase alphanumeric and hyphens, no leading or trailing hyphen) | The whole plugin directory, skipped at discovery. `grok plugin install` still prints success; `grok inspect` then shows `plugins: []` |
+| A `skills`/`commands`/`agents` path that escapes the plugin root or does not exist | That component list. Containment is enforced, not incidental: a target that exists outside the plugin is still dropped |
+| A `skills`/`commands`/`agents` declaration beside a populated conventional directory | Everything under the conventional directory: the declaration **replaces** it. Measured for all three — `{"commands": "custom-commands"}` beside a populated `commands/` loaded only `custom-commands` |
+| `hooks` or `mcpServers` as an array | Those hooks or servers. The field is one path or one inline object; a list-valued `hooks` loaded as an empty inline document and a list-valued `mcpServers` loaded nothing |
+| A url source's `sha` outside 40 or 64 hex | The install, refused with "git commit SHA must be 40 or 64 hexadecimal characters". Case-insensitive at the runtime; the upstream validator requires 40 lowercase |
+| A catalog entry with no `name`, no `source`, or a `path` that does not resolve or escapes the marketplace root | That entry, silently |
+| Two catalog entries resolving to one manifest name | The plugin becomes uninstallable by name: `Multiple marketplaces provide a plugin named "canary"`, and both suggested qualifiers are identical |
+| A catalog that fails to parse, or whose `plugins` is not an array | The whole catalog — and discovery falls back to scanning `plugins/` only, so a repository keeping third-party plugins anywhere else loses exactly those |
+| `plugin-index.json` whose `sha` disagrees with the catalog entry's | The component listing for that plugin, blanked in the browser |
+| An empty directory, or one holding only `commands/` or only `.lsp.json` | The install, refused with "no plugins found in the source" — even though both are documented components and both load once the directory is installed |
 
 ## Shipping order
 
@@ -167,9 +187,7 @@ security rule. No new rule was written for any of that.
 and four rules over `.grok-plugin/plugin.json`, `marketplace.json` and
 `plugin-index.json`. Separate because provenance is the part that can break
 other ecosystems' results, and it should be reviewed against the dual-manifest
-evidence on its own — which is also why it lands in two pieces: the leg
-first, with the fixtures and the attachment and reuse tests, then the rules
-over the nodes it builds.
+evidence on its own.
 
 One thing the leg does not do is hand plugin hooks to `grok-hooks-valid`. A
 plugin's `hooks/hooks.json` gets its own block class, because Grok loads it

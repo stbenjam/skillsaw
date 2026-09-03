@@ -17,6 +17,8 @@ import json
 
 import pytest
 
+from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import GrokMarketplaceConfigNode, GrokMarketplaceIndexNode
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.grok import GrokMarketplaceIndexParityRule
 
@@ -33,11 +35,19 @@ from tests.grok._helpers import (
 SHA_A = "1f9d0c73a86b24e510" + "7cad3f88b90250e6c147da"
 SHA_B = "70e4d2c81f6a35b09c" + "7e18d4a6f30b25ce817d94"
 
-SKILL = (
-    "---\nname: tide-window\ndescription: Find the low-tide windows long enough for a "
-    "shoreline survey. Use when planning field work.\n---\n\n# Window\n\nAsk for the "
-    "station id, then report each window.\n"
-)
+
+def skill_doc(name: str) -> str:
+    """A SKILL.md whose frontmatter name is *name*.
+
+    Declared per skill rather than shared: the generator writes the
+    frontmatter name into the index, so two directories sharing one would
+    ship one name between them.
+    """
+    return (
+        f"---\nname: {name}\ndescription: Find the low-tide windows long enough for a "
+        "shoreline survey. Use when planning field work.\n---\n\n# Window\n\nAsk for the "
+        "station id, then report each window.\n"
+    )
 
 
 def url_entry(name: str, sha=None) -> dict:
@@ -51,17 +61,23 @@ def index(plugins: dict) -> dict:
     return {"version": 1, "plugins": plugins}
 
 
-def marketplace(temp_dir, name: str, catalog, index_doc, skills=()):
-    """A marketplace holding *catalog*, *index_doc* and a local plugin."""
+def marketplace(temp_dir, name: str, catalog, index_doc, skills=(), manifest=None):
+    """A marketplace holding *catalog*, *index_doc* and a local plugin.
+
+    Each entry in *skills* is a directory name, or a
+    ``(directory, frontmatter name)`` pair when the two differ.
+    """
     repo = write_repo(temp_dir / name)
     write_catalog(repo, catalog)
     if index_doc is not None:
         write_catalog(repo, index_doc, filename="plugin-index.json")
-    if skills:
-        plugin = write_plugin(repo / "plugins" / "almanac", {"name": "almanac"})
+    if skills or manifest:
+        plugin = write_plugin(repo / "plugins" / "almanac", manifest or {"name": "almanac"})
         for skill in skills:
-            (plugin / "skills" / skill).mkdir(parents=True)
-            (plugin / "skills" / skill / "SKILL.md").write_text(SKILL, encoding="utf-8")
+            directory, declared = skill if isinstance(skill, tuple) else (skill, skill)
+            target = plugin / "skills" / directory
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text(skill_doc(declared), encoding="utf-8")
     return repo
 
 
@@ -283,6 +299,136 @@ def test_an_index_away_from_its_catalog_is_reported(temp_dir, location) -> None:
     assert found[0].file_path == stray
 
 
+def test_a_stray_index_is_a_node_under_its_catalog(temp_dir) -> None:
+    """Every file the rule reports on is in the tree: the fallback locations
+    attach as index nodes marked ``stray``, so nothing is discovered by a
+    filesystem probe from inside a rule."""
+    repo = marketplace(temp_dir, "stray-node", {"plugins": []}, None)
+    stray = repo / "plugin-index.json"
+    stray.write_text(json.dumps(index({"almanac": {}})), encoding="utf-8")
+
+    tree = RepositoryContext(repo).lint_tree
+    nodes = tree.find(GrokMarketplaceIndexNode)
+
+    assert [(node.path, node.stray) for node in nodes] == [(stray, True)]
+    assert tree.find(GrokMarketplaceConfigNode)[0].find(GrokMarketplaceIndexNode) == nodes
+
+
+def test_a_stray_index_is_never_compared(temp_dir) -> None:
+    """It is not read, so it has nothing to drift from: the catalog beside it
+    lists a plugin the stray index does not."""
+    repo = marketplace(temp_dir, "stray-not-compared", {"plugins": [url_entry("almanac")]}, None)
+    (repo / "plugin-index.json").write_text(json.dumps(index({})), encoding="utf-8")
+
+    assert [m for m in messages(check(repo)) if "disagrees" in m] == []
+
+
+# ── Index entries Grok cannot use ────────────────────────────────
+
+
+def test_an_index_entry_that_is_not_an_object_is_reported(temp_dir) -> None:
+    """The key is claimed, so no other branch would ever name it, and Grok
+    displays nothing for it."""
+    repo = marketplace(
+        temp_dir,
+        "scalar-entry",
+        {"plugins": [url_entry("almanac", SHA_A)]},
+        index({"almanac": "garbage"}),
+    )
+
+    assert "entries that are not objects: almanac" in only(check(repo), "disagrees").message
+
+
+@pytest.mark.parametrize(
+    "listed",
+    [{}, {"components": {}}, {"components": {"skills": "tide-window"}}],
+    ids=["no-components", "no-skills", "skills-not-a-list"],
+)
+def test_an_index_entry_listing_no_usable_skills_reports_what_ships(temp_dir, listed) -> None:
+    """The index is the browser's only component source, so an entry with no
+    usable ``skills`` displays none — an empty listing, not a comparison to
+    skip."""
+    repo = marketplace(
+        temp_dir,
+        f"empty-listing-{len(str(listed))}",
+        {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
+        index({"almanac": listed}),
+        skills=("tide-window",),
+    )
+
+    assert (
+        "skills only the plugin ships: almanac/tide-window"
+        in only(check(repo), "disagrees").message
+    )
+
+
+# ── Skill names, as the generator writes them ────────────────────
+
+
+def test_a_skill_named_in_its_frontmatter_is_not_drift(temp_dir) -> None:
+    """``plugin_catalog.py`` writes the SKILL.md frontmatter name and falls
+    back to the directory, so an index carrying the declared name is exactly
+    right — reading the directory alone reported the same skill twice, once
+    as missing and once as extra."""
+    repo = marketplace(
+        temp_dir,
+        "declared-name",
+        {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
+        index({"almanac": {"components": {"skills": [{"name": "tide-window-v2"}]}}}),
+        skills=(("tide-window", "tide-window-v2"),),
+    )
+
+    assert check(repo) == []
+
+
+def test_a_skill_named_after_its_directory_is_not_drift(temp_dir) -> None:
+    """The fallback half of the same rule: an index generated before the
+    frontmatter name landed carries the directory name."""
+    repo = marketplace(
+        temp_dir,
+        "directory-name",
+        {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
+        index({"almanac": {"components": {"skills": [{"name": "tide-window"}]}}}),
+        skills=(("tide-window", "tide-window-v2"),),
+    )
+
+    assert check(repo) == []
+
+
+def test_a_declared_skills_path_that_is_itself_a_skill_is_read(temp_dir) -> None:
+    """The generator treats a declared ``skills`` entry as one skill
+    directory and unions it with ``skills/``; the runtime reads the children
+    of the declared directory instead. A name either reader produces is not
+    drift."""
+    repo = marketplace(
+        temp_dir,
+        "declared-root",
+        {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
+        index({"almanac": {"components": {"skills": [{"name": "bundled"}]}}}),
+        manifest={"name": "almanac", "skills": "./bundled"},
+    )
+    bundled = repo / "plugins" / "almanac" / "bundled"
+    bundled.mkdir(parents=True)
+    (bundled / "SKILL.md").write_text(skill_doc("bundled"), encoding="utf-8")
+
+    assert check(repo) == []
+
+
+def test_a_skill_under_a_declared_directory_is_read(temp_dir) -> None:
+    repo = marketplace(
+        temp_dir,
+        "declared-children",
+        {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
+        index({"almanac": {"components": {"skills": [{"name": "ebb-window"}]}}}),
+        manifest={"name": "almanac", "skills": "./bundled"},
+    )
+    nested = repo / "plugins" / "almanac" / "bundled" / "ebb-window"
+    nested.mkdir(parents=True)
+    (nested / "SKILL.md").write_text(skill_doc("ebb-window"), encoding="utf-8")
+
+    assert check(repo) == []
+
+
 # ── Fixtures ─────────────────────────────────────────────────────
 
 
@@ -291,7 +437,10 @@ def test_the_broken_fixture_is_one_consolidated_finding(broken) -> None:
 
     assert len(found) == 1
     message = found[0].message
-    assert "not in the index" in message
+    # The exact clause, so the bound on the sample and the deduplication
+    # behind it are pinned rather than merely executed: the fixture drifts
+    # six names, two of them the duplicated ``escaping``.
+    assert "not in the index: abbreviated, berth-notes, counted, and 3 more" in message
     assert "not in the catalog: retired" in message
     assert "'sha' differs: drifted" in message
     assert "skills only the index lists: current-log/ebb-window" in message

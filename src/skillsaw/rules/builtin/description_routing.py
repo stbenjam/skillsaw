@@ -102,6 +102,11 @@ class DescriptionRoutingRule(Rule):
         RepositoryType.APM,
         RepositoryType.CODEX_PLUGIN,
         RepositoryType.CODEX_MARKETPLACE,
+        # A Grok plugin's ``commands/`` and ``agents/`` prose attaches
+        # through the same shared plugin pass a Codex plugin's does, so a
+        # repository detected only as Grok needs the same activation.
+        RepositoryType.GROK_PLUGIN,
+        RepositoryType.GROK_MARKETPLACE,
         # A Copilot agent's description is what routes it, exactly the
         # metadata this rule checks on a Claude agent, and the same holds for
         # an OpenCode subagent's description. Without these the

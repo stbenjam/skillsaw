@@ -20,26 +20,34 @@ iterated — a node type only Grok populates, so the rule declares no
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, FrozenSet, List, Optional, Set
 
 from skillsaw.context import RepositoryContext
 from skillsaw.formats import grok
 from skillsaw.lint_target import GrokMarketplaceConfigNode, GrokMarketplaceIndexNode
 from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import read_json
+from skillsaw.rules.builtin.utils import parse_frontmatter, read_json, read_text
 
 from ._helpers import GROK_MARKETPLACE_REPO_TYPES, sample
-
-#: Where a ``plugin-index.json`` is never read: beside either catalog
-#: location Grok falls back to, once ``.grok-plugin/marketplace.json`` has
-#: won. Derived from the catalog order rather than restated, so a change to
-#: the fallbacks moves this with it.
-_UNREAD_INDEX_DIRS = tuple(parts[:-1] for parts in grok.CATALOG_PATHS[1:])
 
 #: The file Grok reads a skill from, which is what makes a subdirectory of
 #: ``skills/`` a skill rather than a folder of notes.
 _SKILL_FILE = "SKILL.md"
+
+
+@dataclass(frozen=True)
+class _Skill:
+    """One skill on disk, under every name the index may call it by.
+
+    The upstream generator writes the SKILL.md frontmatter ``name`` and
+    falls back to the directory name, so an index that is exactly right can
+    carry either. Matching on both is what keeps a skill whose declared name
+    differs from its directory out of the drift lists twice over.
+    """
+
+    display: str
+    names: FrozenSet[str]
 
 
 @dataclass
@@ -58,6 +66,7 @@ class _Drift:
 
     missing_from_index: List[str] = field(default_factory=list)
     unknown_in_index: List[str] = field(default_factory=list)
+    malformed_in_index: List[str] = field(default_factory=list)
     sha_catalog_only: List[str] = field(default_factory=list)
     sha_index_only: List[str] = field(default_factory=list)
     sha_differs: List[str] = field(default_factory=list)
@@ -68,6 +77,7 @@ class _Drift:
         labelled = (
             ("not in the index", self.missing_from_index),
             ("not in the catalog", self.unknown_in_index),
+            ("entries that are not objects", self.malformed_in_index),
             ("'sha' in the catalog only", self.sha_catalog_only),
             ("'sha' in the index only", self.sha_index_only),
             ("'sha' differs", self.sha_differs),
@@ -114,32 +124,31 @@ class GrokMarketplaceIndexParityRule(Rule):
         violations: List[RuleViolation] = []
 
         for catalog_node in context.lint_tree.find(GrokMarketplaceConfigNode):
-            violations.extend(self._check_stray(catalog_node.path))
             index_nodes = catalog_node.find(GrokMarketplaceIndexNode)
-            if not index_nodes:
+            # The tree marks a file at a fallback catalog location, which
+            # Grok never reads and so has nothing to compare against.
+            violations.extend(
+                self._stray_violation(node.path, catalog_node.path)
+                for node in index_nodes
+                if node.stray
+            )
+            read = [node for node in index_nodes if not node.stray]
+            if not read:
                 # An absent index is the documented case, not a defect.
                 continue
             entries = self._catalog_entries(catalog_node.path)
-            for index_node in index_nodes:
+            for index_node in read:
                 violations.extend(self._check_index(index_node.path, catalog_node.path, entries))
 
         return violations
 
-    def _check_stray(self, catalog: Path) -> List[RuleViolation]:
+    def _stray_violation(self, index: Path, catalog: Path) -> RuleViolation:
         """A display catalog Grok never reads because it is in the wrong place."""
-        marketplace_root = catalog.parent.parent
-        violations: List[RuleViolation] = []
-        for parts in _UNREAD_INDEX_DIRS:
-            candidate = marketplace_root.joinpath(*parts, grok.PLUGIN_INDEX_FILENAME)
-            if safe_is_file(candidate):
-                violations.append(
-                    self.violation(
-                        f"'{grok.PLUGIN_INDEX_FILENAME}' is not beside "
-                        f"'{catalog.parent.name}/{catalog.name}', where Grok reads it",
-                        file_path=candidate,
-                    )
-                )
-        return violations
+        return self.violation(
+            f"'{grok.PLUGIN_INDEX_FILENAME}' is not beside "
+            f"'{catalog.parent.name}/{catalog.name}', where Grok reads it",
+            file_path=index,
+        )
 
     def _check_index(
         self, index: Path, catalog: Path, entries: Optional[List[_Entry]]
@@ -173,9 +182,12 @@ class GrokMarketplaceIndexParityRule(Rule):
         drift = _Drift()
         claimed: Set[str] = set()
         check_components = self.setting("check-components")
+        # Built once: the intersection below runs per catalog entry, and both
+        # sides are repository-sized.
+        index_keys = set(plugins)
 
         for entry in entries:
-            matched = sorted(entry.names & set(plugins))
+            matched = sorted(entry.names & index_keys)
             if not matched:
                 drift.missing_from_index.append(entry.display)
                 continue
@@ -183,6 +195,10 @@ class GrokMarketplaceIndexParityRule(Rule):
             claimed.add(key)
             listed = plugins.get(key)
             if not isinstance(listed, dict):
+                # A key whose value is not an object: Grok has nothing to
+                # display for it, and it is claimed, so no other branch
+                # would ever name it.
+                drift.malformed_in_index.append(key)
                 continue
             self._compare_sha(entry, listed, drift)
             if check_components and entry.plugin_dir is not None:
@@ -208,46 +224,84 @@ class GrokMarketplaceIndexParityRule(Rule):
             drift.sha_differs.append(entry.display)
 
     def _compare_skills(self, entry: _Entry, listed: Dict[str, Any], drift: _Drift) -> None:
-        """A local source has no ``sha`` to gate on, so a stale index is shown."""
+        """A local source has no ``sha`` to gate on, so a stale index is shown.
+
+        A ``components`` object that is absent, has no ``skills`` key, or
+        holds a non-list under it displays no skills at all, so each is an
+        empty listing rather than a comparison to skip: the browser shows
+        nothing for a plugin that ships skills.
+        """
         components = listed.get("components")
-        if not isinstance(components, dict):
-            return
-        declared = components.get("skills")
-        if not isinstance(declared, list):
-            return
-        index_names = {
-            item.get("name")
-            for item in declared
-            if isinstance(item, dict) and isinstance(item.get("name"), str)
-        }
-        disk_names = self._skill_names(entry.plugin_dir)
-        for name in index_names - disk_names:
+        declared = components.get("skills") if isinstance(components, dict) else None
+        index_names = (
+            {
+                item["name"]
+                for item in declared
+                if isinstance(item, dict) and isinstance(item.get("name"), str)
+            }
+            if isinstance(declared, list)
+            else set()
+        )
+        disk = self._disk_skills(entry.plugin_dir)
+        matched = {name for skill in disk for name in skill.names & index_names}
+        for name in sorted(index_names - matched):
             drift.skills_index_only.append(f"{entry.display}/{name}")
-        for name in disk_names - index_names:
-            drift.skills_disk_only.append(f"{entry.display}/{name}")
+        for skill in disk:
+            if not skill.names & index_names:
+                drift.skills_disk_only.append(f"{entry.display}/{skill.display}")
 
-    def _skill_names(self, plugin_dir: Optional[Path]) -> Set[str]:
-        """Skills the plugin on disk ships, following a manifest override.
+    def _disk_skills(self, plugin_dir: Optional[Path]) -> List[_Skill]:
+        """Skills the plugin on disk ships, as the index generator sees them.
 
-        A declared ``skills`` path replaces the conventional directory
-        rather than adding to it, so a manifest that names one is read
-        instead of ``skills/``, not alongside it.
+        Mirrors ``plugin_catalog.py``, which is what writes the file this
+        rule compares against: the conventional ``skills/`` is scanned one
+        level deep, a declared ``skills`` path is a skill directory *itself*
+        rather than a folder of them, and the two are unioned rather than
+        one replacing the other. The runtime disagrees on both counts — it
+        replaces the conventional directory and scans one level under the
+        declared one — so a skill either reader loads is carried here, and
+        drift is reported only for a name neither produces.
         """
         if plugin_dir is None:
-            return set()
-        if "skills" in grok.grok_manifest(plugin_dir):
-            directories = grok.grok_declared_skill_dirs(plugin_dir)
-        else:
-            conventional = plugin_dir / grok.COMPONENT_PATHS["skills"][0]
-            directories = [conventional] if safe_is_dir(conventional) else []
-        names: Set[str] = set()
-        for directory in directories:
+            return []
+        found: Dict[Path, _Skill] = {}
+
+        def _record(directory: Path) -> None:
+            resolved = safe_resolve(directory)
+            if resolved is None or resolved in found or not safe_is_file(directory / _SKILL_FILE):
+                return
+            found[resolved] = _Skill(
+                display=directory.name, names=self._skill_names(directory / _SKILL_FILE, directory)
+            )
+
+        def _record_children(directory: Path) -> None:
             try:
-                children = list(directory.iterdir())
+                children = sorted(directory.iterdir())
             except OSError:
-                continue
-            names.update(child.name for child in children if safe_is_file(child / _SKILL_FILE))
-        return names
+                return
+            for child in children:
+                _record(child)
+
+        _record_children(plugin_dir / grok.COMPONENT_PATHS["skills"][0])
+        for declared in grok.grok_declared_skill_dirs(plugin_dir):
+            _record(declared)
+            _record_children(declared)
+        return list(found.values())
+
+    def _skill_names(self, skill_md: Path, directory: Path) -> FrozenSet[str]:
+        """Every name the generator could have written for this skill.
+
+        The frontmatter ``name`` with the directory name as fallback, as
+        ``plugin_catalog.py`` does it — and both when they differ, so an
+        index carrying either one is right rather than drifted.
+        """
+        content = read_text(skill_md)
+        data = parse_frontmatter(content)[0] if content is not None else None
+        declared = data.get("name") if isinstance(data, dict) else None
+        names = {directory.name}
+        if isinstance(declared, str) and declared:
+            names.add(declared)
+        return frozenset(names)
 
     def _catalog_entries(self, catalog: Path) -> Optional[List[_Entry]]:
         """The catalog reduced to parity inputs, or ``None`` when unusable."""

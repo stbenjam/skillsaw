@@ -86,8 +86,9 @@ class PluginProvenance:
         The same shape as :attr:`codex_only`, and for the same reason: the
         predicate asks whether Claude's looser reading of hooks and MCP
         still governs the directory, and only a Claude declaration answers
-        yes. It gates the Grok-tightened checks, never a skip — a
-        dual-manifest directory keeps its established Claude results.
+        yes. It gates the package-containment boundary through
+        ``_declares_containment``, never a skip — a dual-manifest directory
+        keeps its established Claude results.
         """
         return self.grok and not self.claude
 
@@ -238,8 +239,8 @@ class RepositoryProvenanceMixin:
     def is_grok_only_plugin(self, plugin_dir: Path) -> bool:
         """Grok-claimed with no Claude declaration.
 
-        The Grok counterpart of :meth:`is_codex_only_plugin`, for the
-        conditional strictness the Grok-tightened checks apply.
+        The Grok counterpart of :meth:`is_codex_only_plugin`: the line the
+        package-containment boundary is drawn on.
         """
         return self.provenance(plugin_dir).grok_only
 
@@ -313,13 +314,19 @@ class RepositoryProvenanceMixin:
     def contained_plugin_owning(self, path: Path) -> Optional[Path]:
         """Nearest plugin root whose package files have containment semantics.
 
-        Codex and Agent Plugins both require supplied files to resolve inside
-        the package. Claude's legacy format has no equivalent package-wide
-        contract, so it deliberately remains outside this helper.
+        Codex, Agent Plugins and Grok all require supplied files to resolve
+        inside the package — Grok's enforcement is measured, a declared path
+        whose target exists outside the plugin loaded nothing. Claude's
+        legacy format has no equivalent package-wide contract, so it
+        deliberately remains outside this helper, and a Grok root a Claude
+        manifest also declares is left on Claude's looser reading for the
+        same reason ``grok_only`` exists.
         """
         if self._contained_plugin_roots is None:
-            self._contained_plugin_roots = set(self.codex_plugin_roots()) | set(
-                self._agent_plugin_root_set()
+            self._contained_plugin_roots = (
+                set(self.codex_plugin_roots())
+                | set(self._agent_plugin_root_set())
+                | {root for root in self.grok_plugin_roots() if self.provenance(root).grok_only}
             )
         roots = self._contained_plugin_roots
         if not roots:
@@ -346,7 +353,7 @@ class RepositoryProvenanceMixin:
         for candidate in (parent, *parent.parents):
             resolved = safe_resolve(candidate)
             if resolved is not None and (
-                resolved in agent_roots or self.provenance(candidate).codex_only
+                resolved in agent_roots or self._declares_containment(candidate)
             ):
                 return resolved
             if candidate == self.root_path or candidate.parent == candidate:
@@ -355,11 +362,25 @@ class RepositoryProvenanceMixin:
 
     def _contained_plugin_claims_possible(self) -> bool:
         """Whether a skill walk can encounter a package containment boundary."""
-        return self._codex_claims_possible() or bool(self._agent_plugin_root_set())
+        return (
+            self._codex_claims_possible()
+            or bool(self._agent_plugin_root_set())
+            or bool(self.grok_plugin_roots())
+        )
 
     def _is_containment_plugin(self, path: Path) -> bool:
         """Whether *path* itself begins a package containment boundary."""
         resolved = safe_resolve(path)
         return resolved is not None and (
-            resolved in self._agent_plugin_root_set() or self.provenance(path).codex_only
+            resolved in self._agent_plugin_root_set() or self._declares_containment(path)
         )
+
+    def _declares_containment(self, path: Path) -> bool:
+        """Whether an ecosystem that contains its package files owns *path*.
+
+        Codex or Grok with no Claude declaration. The ``_only`` half is what
+        keeps a dual-manifest directory on Claude's looser reading, where a
+        supplied file has no package-wide containment contract.
+        """
+        record = self.provenance(path)
+        return record.codex_only or record.grok_only

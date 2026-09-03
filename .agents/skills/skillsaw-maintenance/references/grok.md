@@ -154,7 +154,9 @@ a git repository.
   A catalog that fails to parse, or whose `plugins` is not an array, discards the whole
   catalog — and discovery then falls back to scanning `plugins/` only, so a repository
   keeping third-party plugins under `external_plugins/` loses exactly those with no
-  diagnostic.
+  diagnostic. **Two entries resolving to one manifest name** are not deduplicated:
+  install fails with `Multiple marketplaces provide a plugin named "canary"` and both
+  suggested qualifiers are identical, so the plugin is uninstallable by name.
 - **Local sources are keyed on `path` alone.** `{"type": "local", "path": …}`,
   `{"source": "local", …}`, a bare string, an object with **no** discriminator, and one
   with a **bogus** `type` all install identically. Requiring a discriminator is a false
@@ -274,8 +276,17 @@ user guide, or re-verify empirically with the canary matrix above:
   is what `grok-plugin-json-valid` quotes.
 - `SHA_RE` and `SHA_LENGTHS` = `{40, 64}` in `formats/grok.py`. The catalog loader
   validates nothing at add or list time; rejection happens at install and is
-  **case-insensitive**, so lowercase is the upstream validator's rule and gets its own
-  INFO. An absent `sha` degrades to an unpinned `git clone`.
+  **case-insensitive**, so 40 lowercase is the upstream validator's rule and gets its
+  own INFO. An absent `sha` degrades to an unpinned `git clone`.
+- **Duplicate resolved names are an install failure**, which is what makes the
+  duplicate check in `grok-marketplace-json-valid` an ERROR. Re-verify by installing
+  from a catalog with two entries resolving to one manifest name; the measured message
+  is `Multiple marketplaces provide a plugin named "canary"`.
+- `SINGLE_PATH_FIELDS` = `{"hooks", "mcpServers"}` in `formats/grok.py`: each takes one
+  path or one inline object. Measured, `"hooks": ["hooks/hooks.json"]` loaded as an
+  empty inline document (`hookType: "inline"`, no target) where the bare string loaded
+  the file, and `"mcpServers": ["servers.json"]` loaded no servers. Re-verify with
+  `grok inspect --json` if the manifest type changes upstream.
 - The component set that makes a manifest-less directory installable —
   `skills/<n>/SKILL.md`, `agents/*.md`, `hooks/hooks.json`, `.mcp.json` — in
   `_installable` in `rules/builtin/grok/plugin_structure.py`. `commands/` alone and
@@ -285,8 +296,10 @@ user guide, or re-verify empirically with the canary matrix above:
   conventional directory; the official `plugin_catalog.py` unions the two, so the two
   readers disagree and the binary is the one to follow. `COMPONENT_PATHS` in
   `formats/grok.py` records both, `grok-plugin-json-valid` warns on the loss, and
-  `grok-marketplace-index-parity` follows the same replacement when it reads the skills
-  a plugin ships.
+  the lint tree attaches both, so what an override drops is still linted.
+  `grok-marketplace-index-parity` is the exception: it compares against a file the
+  *generator* wrote, so it carries the union of both readings and reports drift only
+  for a name neither produces.
 - `rules/`, `commands/`, `agents/` and `hooks/` are read **flat**; `skills/` is walked
   recursively. Re-verify with `grok inspect --json` on a nested file. A change here is
   silent under-attachment — skillsaw stops linting real context and reports nothing —

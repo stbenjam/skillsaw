@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, ClassVar, Hashable, Iterator, List, Optional, Type, TypeVar
+from typing import Callable, ClassVar, Hashable, Iterator, List, Optional, Tuple, Type, TypeVar
 from skillsaw.diagnostics import safe_display
 from skillsaw.paths import safe_resolve
 
@@ -469,16 +469,25 @@ class GrokMarketplaceConfigNode(LintTarget):
 
 @dataclass(eq=False)
 class GrokMarketplaceIndexNode(LintTarget):
-    """A ``.grok-plugin/plugin-index.json`` display catalog (Grok Build).
+    """A ``plugin-index.json`` display catalog (Grok Build).
 
     Optional and, per the user guide, "for display only" — but a
     ``require_sha`` deployment installs from the ``sha`` values it
     publishes, so drift from the catalog beside it is a supply-chain
     problem rather than cosmetics.
+
+    :attr:`stray` marks a file at one of the fallback catalog locations,
+    which Grok never reads once ``.grok-plugin/marketplace.json`` has won:
+    the node exists so every file the rules report on is in the tree, and
+    the flag is what tells the parity rule to report the placement rather
+    than compare it.
     """
 
+    stray: bool = False
+
     def tree_label(self) -> str:
-        return f"{self.path.name} [grok]"
+        suffix = " (not read)" if self.stray else ""
+        return f"{self.path.name}{suffix} [grok]"
 
 
 @dataclass(eq=False)
@@ -495,7 +504,7 @@ class GrokPluginConfigNode(LintTarget):
     """
 
     #: Directories a manifest may sit in, as opposed to the plugin root.
-    _MANIFEST_PARENTS = (".grok-plugin", ".claude-plugin")
+    _MANIFEST_PARENTS: ClassVar[Tuple[str, ...]] = (".grok-plugin", ".claude-plugin")
 
     @property
     def plugin_dir(self) -> Path:

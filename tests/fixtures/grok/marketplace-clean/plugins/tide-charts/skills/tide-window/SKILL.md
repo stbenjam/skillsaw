@@ -3,7 +3,7 @@ name: tide-window
 description: Find the low-tide windows long enough for a shoreline survey on a given date and station. Use when planning field work against NOAA tide predictions.
 ---
 
-# Tide Window
+# Tide window
 
 Use this skill when someone needs to know when a stretch of shoreline is
 walkable, not when they want the raw predictions.

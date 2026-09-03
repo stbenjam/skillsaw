@@ -3,7 +3,7 @@ Rules for Grok Build's repository-shipped configuration
 
 Grok Build reads ``AGENTS.md`` for portable instructions and portable Agent
 Skills from ``.grok/skills/``, both of which the shared content, security
-and skill rules already cover. What is Grok's own and structural is the
+and skill rules already cover. What is Grok's own and structural is the two
 surfaces its loader refuses without a word: ``.grok/hooks/*.json``, where one
 wrong-typed field costs the whole file, and ``.grok/agents/*.md``, where a
 missing ``name`` or ``description`` costs the subagent.

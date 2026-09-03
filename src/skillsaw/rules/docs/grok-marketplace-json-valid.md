@@ -28,9 +28,17 @@ from an upstream validator rather than from the runtime are warnings.
 
 **Errors** — the catalog or the entry is lost.
 
-- Invalid JSON, a catalog that is not an object, a missing `plugins`, or a
-  `plugins` that is not an array.
+- Invalid JSON — including a bare `NaN`, `Infinity` or `-Infinity` token and
+  a duplicated key, both of which Grok's parser refuses — a catalog that is
+  not an object, a missing `plugins`, or a `plugins` that is not an array.
+- A catalog file that is not there at all, under an explicit
+  `--type grok-marketplace`. Nothing else would say so: without the override
+  a repository with no catalog is simply not a marketplace.
 - An entry that is not an object.
+- A `source` that is neither a path string nor an object, and a `source`
+  that is the empty string.
+- A url source with no usable `url` to clone, whether the key is absent,
+  `null`, or empty.
 - An entry `name` missing, not a string, or empty.
 - Two entries resolving to the same name. The name that matters is the
   **resolved** one: a local entry named `Bad Name!` pointing at
@@ -63,10 +71,12 @@ upstream rather than from a measurement.
 
 **Info**
 
-- A `sha` of the right length that is not lowercase. The installer is
-  case-insensitive — an uppercase 40-hex value passed straight through to
-  fetch-by-sha when measured — so this is the upstream validator's rule,
-  stricter than the runtime.
+- A `sha` the installer accepts and the upstream validator does not: 64 hex
+  characters, or any casing but lowercase. Both install — an uppercase
+  40-hex value passed straight through to fetch-by-sha when measured — and
+  `validate-catalog.py` in `xai-org/plugin-marketplace` requires 40
+  lowercase, so a submission prepared for that CI gets one advisory rather
+  than an error.
 
 ## What is never reported
 

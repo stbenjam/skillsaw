@@ -1126,9 +1126,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if _is_excluded(grok_marketplace_json):
             continue
         catalog_node = GrokMarketplaceConfigNode(path=grok_marketplace_json)
-        index_json = grok_marketplace_json.parent / grok.PLUGIN_INDEX_FILENAME
-        if safe_is_file(index_json) and not _is_excluded(index_json):
-            catalog_node.children.append(GrokMarketplaceIndexNode(path=index_json))
+        marketplace_root = grok_marketplace_json.parent.parent
+        index_locations = [(grok_marketplace_json.parent / grok.PLUGIN_INDEX_FILENAME, False)]
+        # An index at a fallback catalog location is a file Grok never
+        # reads, and the parity rule reports it — so it is a node here like
+        # every other file the rules report on, rather than a probe of its
+        # own from inside the rule.
+        index_locations.extend(
+            (marketplace_root.joinpath(*parts, grok.PLUGIN_INDEX_FILENAME), True)
+            for parts in grok.UNREAD_INDEX_DIRS
+        )
+        for index_json, stray in index_locations:
+            if safe_is_file(index_json) and not _is_excluded(index_json):
+                catalog_node.children.append(GrokMarketplaceIndexNode(path=index_json, stray=stray))
         root.children.append(catalog_node)
 
     # --- Plugins (build first so skills can nest inside them) ---
@@ -1356,6 +1366,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             )
             node = GrokPluginConfigNode(path=manifest)
             node.plugin_owner = resolved_plugin
+            # A manifest may point ``commands`` or ``agents`` at directories
+            # of its own naming, and Grok then loads those *instead of* the
+            # conventional pair — measured, the same replacement it applies
+            # to ``skills``. ``_add_plugin_prose`` attached the conventional
+            # pair above; these are the files that actually load, and they
+            # need the same content, frontmatter, security and routing
+            # checks. Read flat, as the conventional attach reads them, and
+            # deduplicated by ``add_block``, so a manifest naming the
+            # conventional directory attaches nothing twice.
+            for field_name, prose_cls in (("commands", CommandBlock), ("agents", AgentBlock)):
+                for declared_dir in grok.grok_declared_paths(
+                    plugin_path, field_name, want_dir=True
+                ):
+                    try:
+                        declared_prose = sorted(declared_dir.glob("*.md"))
+                    except OSError:
+                        continue
+                    for md in declared_prose:
+                        if contained_resolve(md, resolved_plugin) is not None:
+                            state.add_block(container, md, prose_cls, owner=resolved_plugin)
             # Whichever host already reads these files keeps its block
             # class: one block per file, or the security rules report every
             # command in it twice, and a dual-manifest plugin's established
@@ -1376,9 +1406,17 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # class: Grok loads them through a different adapter whose
             # per-entry failure scope 1.0.13 publishes no observable for, so
             # ``grok-hooks-valid``'s measured verdicts do not cover them.
-            _add_contained_plugin_block(
-                node, plugin_path / "hooks" / "hooks.json", hooks_cls, owner=resolved_plugin
-            )
+            conventional_hooks = plugin_path / "hooks" / "hooks.json"
+            if not _attached_as_hooks(state, conventional_hooks):
+                # Guarded where the Codex cluster is not: Codex's project and
+                # plugin files share one class, so ``add_parser_block``'s
+                # ``(path, block_cls)`` role key dedupes them. Grok's plugin
+                # class is a sibling of the project layer's, so a plugin file
+                # symlinked to a ``.grok/hooks/*.json`` would arrive twice and
+                # the security rules would report every command in it twice.
+                _add_contained_plugin_block(
+                    node, conventional_hooks, hooks_cls, owner=resolved_plugin
+                )
             for declared_hooks in grok.grok_declared_hook_files(plugin_path):
                 if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
                     continue

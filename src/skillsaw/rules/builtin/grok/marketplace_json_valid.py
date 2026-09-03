@@ -33,7 +33,7 @@ from skillsaw.paths import (
     safe_resolve,
 )
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import read_json
+from skillsaw.rules.builtin.utils import strict_json
 
 from ._helpers import GROK_MARKETPLACE_REPO_TYPES, escape_reason
 
@@ -75,7 +75,7 @@ class GrokMarketplaceJsonValidRule(Rule):
 
         for node in context.lint_tree.find(GrokMarketplaceConfigNode):
             catalog = node.path
-            data, error = read_json(catalog)
+            data, error = strict_json(catalog)
             if error:
                 # An absent file is a ``--type``-seeded node, not a syntax
                 # error: "Invalid JSON: Failed to read" would name the wrong
@@ -261,6 +261,16 @@ class GrokMarketplaceJsonValidRule(Rule):
     def _check_url(self, source: Dict[str, Any], index: int, catalog: Path) -> List[RuleViolation]:
         """A url source is cloned at install; the ``sha`` is what pins it."""
         violations: List[RuleViolation] = []
+        url = source.get("url")
+        if not isinstance(url, str) or not url:
+            # ``{"source": "url"}`` and ``{"url": null}`` both select this
+            # branch and name no repository to clone.
+            return [
+                self.violation(
+                    f"plugins[{index}].source is a url source with no 'url' to clone",
+                    file_path=catalog,
+                )
+            ]
         sha = source.get("sha")
         if sha is None:
             if self.setting("require-sha"):
@@ -277,7 +287,7 @@ class GrokMarketplaceJsonValidRule(Rule):
                     file_path=catalog,
                 )
             )
-        elif not grok.SHA_RE.match(sha):
+        elif not grok.SHA_RE.fullmatch(sha):
             lengths = " or ".join(str(length) for length in sorted(grok.SHA_LENGTHS))
             violations.append(
                 self.violation(
@@ -286,10 +296,15 @@ class GrokMarketplaceJsonValidRule(Rule):
                     file_path=catalog,
                 )
             )
-        elif sha != sha.lower():
+        elif len(sha) != grok.UPSTREAM_SHA_LENGTH or sha != sha.lower():
+            # One advisory for both halves of the same gap: Grok installs a
+            # 64-hex or uppercase value, and ``validate-catalog.py`` in
+            # xai-org/plugin-marketplace refuses it.
             violations.append(
                 self.violation(
-                    f"plugins[{index}].source.sha '{safe_display(sha)}' is not lowercase",
+                    f"plugins[{index}].source.sha '{safe_display(sha)}' is not "
+                    f"{grok.UPSTREAM_SHA_LENGTH} lowercase hex characters, which the "
+                    "upstream marketplace validator requires",
                     file_path=catalog,
                     severity=Severity.INFO,
                 )

@@ -243,10 +243,14 @@ per-ecosystem attach paths and loses its content silently.
   `codex-hooks-valid`, `muse-hooks-valid`, `cursor-hooks-valid`,
   `grok-hooks-valid`. `hooks-dangerous` and
   `hooks-prohibited` read the shared `HooksBlock` base, so a new host
-  needs no changes there.
+  needs no changes there. One deliberate exception: a Grok *plugin's* hooks
+  file is `GrokPluginHooksBlock`, a sibling of `GrokHooksBlock` with no
+  shape rule, because Grok loads it through a different adapter and
+  `grok-hooks-valid`'s verdicts were measured on the project path only.
 
 **Ecosystems and editor tools are different problems.** An *ecosystem*
-packages and installs content (Claude plugins, Codex, Agent Plugins), so it
+packages and installs content (Claude plugins, Codex, Grok Build, Agent
+Plugins), so it
 needs provenance: two of them can claim the same directory, and the format
 rules must stay out of each other's trees. Both are `RepositoryType` members
 — detection produces one set, and that enum is the only vocabulary. An *editor tool* (Cursor,
@@ -301,8 +305,10 @@ resolution, and install-location helpers — in a new
 `src/skillsaw/discovery/<ecosystem>.py` beside the existing discovery modules;
 add its evidence probe to `provenance()` in
 `repository_provenance.py` and its
-context wrappers (caching, `--type` gating) in `context.py` beside
-`_codex_catalog_files()` / `_agent_plugin_claim_set()`; add its config-file
+context wrappers (caching, `--type` gating) beside
+`_codex_catalog_files()` / `_agent_plugin_claim_set()` in `context.py`, or in
+a `repository_<ecosystem>.py` mixin when `test_module_layering` says
+`context.py` is at its line cap — Grok's are there; add its config-file
 cluster to the single
 plugin pass in `build_lint_tree` (attached through a contained helper);
 teach `in_format_scope` nothing — it already reads the

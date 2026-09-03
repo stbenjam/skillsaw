@@ -270,7 +270,10 @@ class TestDualManifestBackwardCompat:
             json.dumps({"name": "Tide_Charts", "version": "2.0.0", "description": "x"}),
             encoding="utf-8",
         )
-        write_catalog(repo / "catalog", local_catalog("../"))
+        # The catalog sits at the repository root and claims it: a source
+        # is contained against its own marketplace root, so a catalog in a
+        # subdirectory could not reach back up to claim its parent.
+        write_catalog(repo, local_catalog("./"))
 
         found = messages(GrokPluginJsonValidRule().check(RepositoryContext(repo)))
 

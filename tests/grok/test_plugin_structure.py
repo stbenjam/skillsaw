@@ -14,6 +14,7 @@ import json
 
 import pytest
 
+from skillsaw.context import RepositoryType
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.grok import GrokPluginStructureRule
 
@@ -140,3 +141,28 @@ def test_the_clean_fixtures_report_nothing(tmp_path) -> None:
     assert check(copy_fixture("grok/plugin-clean", tmp_path)) == []
     assert check(copy_fixture("grok/plugin-declarations", tmp_path)) == []
     assert check(copy_fixture("grok/dual-manifest", tmp_path)) == []
+
+
+# ── A directory no catalog addresses ─────────────────────────────
+
+
+def test_a_directory_no_catalog_names_gets_no_synthesized_name_finding(temp_dir) -> None:
+    """The INFO is about a name the catalog asks for and Grok does not
+    provide. With no catalog there is no name to ask for: a plugin installed
+    from a path is addressed by that path."""
+    repo = write_repo(temp_dir / "unaddressed")
+    (repo / "skills" / "tide-window").mkdir(parents=True)
+    (repo / "skills" / "tide-window" / "SKILL.md").write_text(SKILL, encoding="utf-8")
+
+    assert run_rule(GrokPluginStructureRule, repo, None, {RepositoryType.GROK_PLUGIN}) == []
+
+
+def test_a_forced_type_still_reports_a_directory_grok_installs_nothing_from(temp_dir) -> None:
+    """The forced seed is the whole point of ``--type grok-plugin``: without
+    a node the check the operator asked for never runs."""
+    repo = write_repo(temp_dir / "forced-empty")
+
+    found = run_rule(GrokPluginStructureRule, repo, None, {RepositoryType.GROK_PLUGIN})
+
+    assert [v.severity for v in found] == [Severity.WARNING]
+    assert "Grok installs nothing from" in found[0].message

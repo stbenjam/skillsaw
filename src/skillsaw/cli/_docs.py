@@ -19,6 +19,8 @@ _DOCS_REPO_TYPES = {
     RepositoryType.CODEX_PLUGIN,
     RepositoryType.CODEX_MARKETPLACE,
     RepositoryType.AGENT_PLUGIN,
+    RepositoryType.GROK_PLUGIN,
+    RepositoryType.GROK_MARKETPLACE,
 }
 
 

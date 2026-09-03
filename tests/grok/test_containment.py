@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from skillsaw.blocks import GrokHooksBlock, GrokMcpBlock, SkillBlock
+from skillsaw.blocks import GrokMcpBlock, HooksBlock, SkillBlock, SkillRefBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import GrokMarketplaceConfigNode, GrokPluginNode
 
@@ -138,7 +138,37 @@ def test_a_declared_component_path_escaping_the_plugin_is_not_followed(temp_dir)
 
     tree = RepositoryContext(repo).lint_tree
 
-    assert tree.find(GrokHooksBlock) == []
+    # ``HooksBlock``, the shared base: a plugin's hooks attach as
+    # ``GrokPluginHooksBlock``, a *sibling* of the project layer's
+    # ``GrokHooksBlock``, so asserting on that class could never fail here.
+    assert tree.find(HooksBlock) == []
+    assert tree.find(GrokMcpBlock) == []
+
+
+def test_a_declared_component_path_reaching_a_sibling_plugin_is_not_followed(temp_dir) -> None:
+    """The escape that only the manifest reader can reject: the target stays
+    inside the checkout, so repository containment passes it, and it is still
+    another plugin's file rather than this plugin's."""
+    repo = write_repo(temp_dir / "repo")
+    almanac = write_plugin(repo / "plugins" / "almanac", {**MANIFEST, "name": "almanac"})
+    (almanac / "hooks").mkdir()
+    (almanac / "hooks" / "hooks.json").write_text(HOOKS_JSON, encoding="utf-8")
+    (almanac / "servers.json").write_text(MCP_JSON, encoding="utf-8")
+    write_plugin(
+        repo / "plugins" / "tide-charts",
+        {
+            **MANIFEST,
+            "hooks": "../almanac/hooks/hooks.json",
+            "mcpServers": "../almanac/servers.json",
+        },
+    )
+
+    tree = RepositoryContext(repo).lint_tree
+
+    # ``almanac`` ships its own conventional hooks file, which is its block:
+    # what must not appear is a second block for it under tide-charts, or any
+    # block at all for the sibling's ``servers.json``.
+    assert [block.path for block in tree.find(HooksBlock)] == [almanac / "hooks" / "hooks.json"]
     assert tree.find(GrokMcpBlock) == []
 
 
@@ -157,3 +187,102 @@ def test_a_skill_symlinked_out_of_the_plugin_is_not_discovered(temp_dir) -> None
     context = RepositoryContext(repo)
 
     assert relative(repo, context.lint_tree.find(SkillBlock)) == []
+
+
+def test_a_local_source_escaping_its_marketplace_root_is_dropped(temp_dir) -> None:
+    """A catalog contains its sources against its own marketplace root, not
+    the checkout: a package marketplace reaching into a sibling package is an
+    entry Grok drops, and claiming the directory anyway would take it out of
+    every other ecosystem's format scope."""
+    repo = write_repo(temp_dir / "monorepo")
+    write_catalog(repo / "pkg-a", local_catalog("../pkg-b/plugins/sediment"))
+    borrowed = repo / "pkg-b" / "plugins" / "sediment"
+    borrowed.mkdir(parents=True)
+    (borrowed / ".claude-plugin").mkdir()
+    (borrowed / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "sediment"}), encoding="utf-8"
+    )
+
+    context = RepositoryContext(repo)
+
+    assert context._grok_claim_set() == set()
+    assert not context.provenance(borrowed).grok
+    # Claude declared it and Claude still owns it: a stray Grok claim here
+    # would put the directory in Grok's scope and out of Claude's.
+    assert context.provenance(borrowed).ecosystems == frozenset({"claude"})
+
+
+def test_a_skill_reference_symlinked_out_of_a_grok_plugin_is_not_attached(temp_dir) -> None:
+    """Grok enforces containment on a plugin's own files, so a plugin root is
+    a package boundary like a Codex one: a ``references/`` symlink to an
+    in-repository file outside the plugin is not this plugin's content, and a
+    content fix must never rewrite it through one."""
+    repo = write_repo(temp_dir / "references")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "handbook.md").write_text("# Handbook\n\nHouse style.\n", encoding="utf-8")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", MANIFEST)
+    skill = plugin / "skills" / "tide-window"
+    (skill / "references").mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: tide-window\ndescription: Find low-tide survey windows.\n---\n\n# Window\n",
+        encoding="utf-8",
+    )
+    (skill / "references" / "handbook.md").symlink_to(repo / "docs" / "handbook.md")
+
+    context = RepositoryContext(repo)
+
+    assert context.contained_plugin_owning(skill) == (repo / "plugins" / "tide-charts").resolve()
+    assert relative(repo, context.lint_tree.find(SkillRefBlock)) == []
+
+
+def test_a_claude_only_plugin_keeps_claudes_looser_reading(temp_dir) -> None:
+    """Only the ecosystems that contain their package files draw the
+    boundary. Claude's legacy format has no such contract, so the same
+    layout under a Claude-only plugin keeps its established result."""
+    repo = write_repo(temp_dir / "claude-references")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "handbook.md").write_text("# Handbook\n\nHouse style.\n", encoding="utf-8")
+    plugin = repo / "plugins" / "tide-charts"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin" / "plugin.json").write_text(json.dumps(MANIFEST), encoding="utf-8")
+    skill = plugin / "skills" / "tide-window"
+    (skill / "references").mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: tide-window\ndescription: Find low-tide survey windows.\n---\n\n# Window\n",
+        encoding="utf-8",
+    )
+    (skill / "references" / "handbook.md").symlink_to(repo / "docs" / "handbook.md")
+
+    context = RepositoryContext(repo)
+
+    assert context.contained_plugin_owning(skill) is None
+    assert relative(repo, context.lint_tree.find(SkillRefBlock)) == [
+        "plugins/tide-charts/skills/tide-window/references/handbook.md"
+    ]
+
+
+def test_a_dual_manifest_plugin_keeps_claudes_looser_reading(temp_dir) -> None:
+    """The boundary is drawn on the Grok-*only* line, as Codex's is: a
+    directory Claude also declares stays on Claude's reading, where a
+    supplied file has no package-wide containment contract."""
+    repo = write_repo(temp_dir / "dual-references")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "handbook.md").write_text("# Handbook\n\nHouse style.\n", encoding="utf-8")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", MANIFEST)
+    (plugin / ".claude-plugin").mkdir()
+    (plugin / ".claude-plugin" / "plugin.json").write_text(json.dumps(MANIFEST), encoding="utf-8")
+    skill = plugin / "skills" / "tide-window"
+    (skill / "references").mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: tide-window\ndescription: Find low-tide survey windows.\n---\n\n# Window\n",
+        encoding="utf-8",
+    )
+    (skill / "references" / "handbook.md").symlink_to(repo / "docs" / "handbook.md")
+
+    context = RepositoryContext(repo)
+
+    assert context.provenance(plugin).ecosystems == frozenset({"claude", "grok"})
+    assert context.contained_plugin_owning(skill) is None
+    assert relative(repo, context.lint_tree.find(SkillRefBlock)) == [
+        "plugins/tide-charts/skills/tide-window/references/handbook.md"
+    ]

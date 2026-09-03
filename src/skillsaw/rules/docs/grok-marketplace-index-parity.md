@@ -43,10 +43,15 @@ each disagreement:
   installer treats a commit id that way and
   [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md) already
   owns the casing on its own.
+- Index keys whose value is not an object. Grok has nothing to display for
+  one, and the key is matched, so no other check here would name it.
 - For a **local** source, skills the index lists that the plugin does not
-  ship, and skills it ships that the index does not list. A manifest
-  `skills` override replaces the conventional `skills/` rather than adding
-  to it, and this check follows it the same way Grok does.
+  ship, and skills it ships that the index does not list. An entry with no
+  `components`, no `skills` under it, or a non-list `skills` displays no
+  skills at all, so each reads as an empty listing rather than a check to
+  skip. A skill matches under the SKILL.md frontmatter `name` *or* its
+  directory name: the official generator writes the first and falls back to
+  the second, and a plugin whose two differ is not drift.
 
 Two more, each their own finding:
 
@@ -55,10 +60,11 @@ Two more, each their own finding:
   to a listing that is wrong for any plugin declaring inline `hooks` or
   `mcpServers` — those report `has_hooks: false, has_mcp: false` while both
   load at runtime.
-- A `plugin-index.json` at the repository root or beside
+- A `plugin-index.json` at the marketplace root or beside
   `.claude-plugin/marketplace.json` while the catalog Grok reads is in
-  `.grok-plugin/`. The index must sit beside the catalog it belongs to; a
-  root-level one was measured as never read.
+  `.grok-plugin/`. The index must sit beside the catalog it belongs to; one
+  a level up was measured as never read. It is compared against nothing —
+  Grok does not read it, so it has nothing to drift from.
 
 ## Examples
 
@@ -101,7 +107,7 @@ Two more, each their own finding:
 - Regenerate the index from the catalog rather than editing it by hand. The
   official marketplace generates it in CI for exactly this reason.
 - Keep the index beside the catalog Grok reads — `.grok-plugin/` — and
-  delete any copy left at the repository root or in `.claude-plugin/`.
+  delete any copy left at the marketplace root or in `.claude-plugin/`.
 - Drop index entries for plugins the catalog no longer lists.
 
 A repository whose index is generated from a source the checkout does not

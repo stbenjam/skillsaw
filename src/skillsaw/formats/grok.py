@@ -394,6 +394,12 @@ CATALOG_PATHS = (
     (MARKETPLACE_FILENAME,),
 )
 
+#: Where a ``plugin-index.json`` is never read: beside either catalog
+#: location Grok falls back to, once ``.grok-plugin/marketplace.json`` has
+#: won. Derived from :data:`CATALOG_PATHS` rather than restated, so a change
+#: to the fallbacks moves this with it.
+UNREAD_INDEX_DIRS = tuple(parts[:-1] for parts in CATALOG_PATHS[1:])
+
 #: Where a plugin's manifest may live, in the order Grok resolves them —
 #: verified by building plugins carrying each combination and reading back
 #: ``grok plugin validate``: a plugin with all three resolved to the root
@@ -453,13 +459,22 @@ COMPONENT_PATHS = {
     "lspServers": (".lsp.json", False),
 }
 
+#: The two fields Grok reads as one path *or* one inline object. Neither
+#: arm is an array: measured, ``"hooks": ["hooks/hooks.json"]`` loaded as an
+#: empty inline document (``hookType: "inline"``, no target) while the same
+#: file named as a bare string loaded as a file, and
+#: ``"mcpServers": ["servers.json"]`` loaded no servers at all.
+SINGLE_PATH_FIELDS = frozenset({"hooks", "mcpServers"})
+
 #: The plugin name Grok accepts, measured against the binary rather than
 #: read off the docs: ``-lead``, ``trail-``, ``UPPER``, ``under_score``,
 #: ``dot.name`` and ``""`` are rejected, while ``123``, ``a``, ``a--b`` and
 #: 64 characters are accepted and 65 are not. The loader's own message is
 #: "must be 1-64 chars, lowercase alphanumeric + hyphens, no leading/trailing
-#: hyphens".
-PLUGIN_NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+#: hyphens". Anchored with ``\A``/``\Z`` and read with ``fullmatch``: ``$``
+#: also matches before a final newline, and ``"tide-charts\n"`` is a name
+#: the loader refuses.
+PLUGIN_NAME_RE = re.compile(r"\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\Z")
 PLUGIN_NAME_MAX_LENGTH = 64
 
 #: The ``sha`` a url source must pin. The official validator requires 40
@@ -471,7 +486,13 @@ PLUGIN_NAME_MAX_LENGTH = 64
 #: rule enforcing the validator's lowercase is stricter than the runtime and
 #: owes that its own, softer finding.
 SHA_LENGTHS = frozenset({40, 64})
-SHA_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
+SHA_RE = re.compile(r"\A(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
+
+#: The length ``validate-catalog.py`` in ``xai-org/plugin-marketplace``
+#: requires, in lowercase. A submission prepared against that CI is the
+#: likely reader of this rule, so the gap between it and the runtime is
+#: worth one advisory.
+UPSTREAM_SHA_LENGTH = 40
 
 
 def grok_local_source_path(source: Any) -> Optional[str]:
@@ -549,15 +570,18 @@ def grok_plugin_name(plugin_dir: Path) -> str:
 def grok_declared_paths(plugin_dir: Path, field: str, want_dir: bool) -> List[Path]:
     """Contained paths a Grok manifest names in *field*.
 
-    ``skills``, ``commands``, ``agents``, ``hooks`` and ``mcpServers`` each
-    accept a path or an array of paths; ``hooks`` and ``mcpServers`` also
-    accept the object itself, which :func:`grok_inline_hooks` and
-    :func:`grok_inline_mcp` read. Paths escaping the plugin root are
-    dropped — Grok drops them too, silently, which is what makes them worth
-    reporting elsewhere rather than following here.
+    ``skills``, ``commands`` and ``agents`` accept a path or an array of
+    paths; :data:`SINGLE_PATH_FIELDS` accept one path or the object itself,
+    which :func:`grok_inline_hooks` and :func:`grok_inline_mcp` read. Paths
+    escaping the plugin root are dropped — Grok drops them too, silently,
+    which is what makes them worth reporting elsewhere rather than following
+    here.
     """
     declared = grok_manifest(plugin_dir).get(field)
-    candidates = declared if isinstance(declared, list) else [declared]
+    if isinstance(declared, list):
+        candidates: List[Any] = [] if field in SINGLE_PATH_FIELDS else list(declared)
+    else:
+        candidates = [declared]
     root = safe_resolve(plugin_dir)
     if root is None:
         return []
@@ -590,16 +614,26 @@ def grok_declared_mcp_files(plugin_dir: Path) -> List[Path]:
     return grok_declared_paths(plugin_dir, "mcpServers", want_dir=False)
 
 
+def _grok_inline(plugin_dir: Path, field: str) -> List[Dict[str, Any]]:
+    """The inline object *field* declares, as one document.
+
+    ``inline_documents`` also unpacks an *array* of objects, which Codex
+    accepts and Grok does not: a list-valued ``hooks`` loaded an empty
+    inline document when measured and a list-valued ``mcpServers`` loaded no
+    servers at all, so only the object arm is followed here.
+    """
+    declared = grok_manifest(plugin_dir).get(field)
+    return inline_documents(declared, field) if isinstance(declared, dict) else []
+
+
 def grok_inline_hooks(plugin_dir: Path) -> List[Dict[str, Any]]:
     """Hooks a Grok manifest declares inline, in hooks.json shape.
 
-    The path forms are :func:`grok_declared_hook_files`; this is the object
+    The path form is :func:`grok_declared_hook_files`; this is the object
     form, which carries the same executable commands — the binary logs
-    "plugin uses inline hooks in manifest" when it loads one. One document
-    per object and never a merge, so every occurrence reaches the security
-    rules with its own commands.
+    "plugin uses inline hooks in manifest" when it loads one.
     """
-    return inline_documents(grok_manifest(plugin_dir).get("hooks"), "hooks")
+    return _grok_inline(plugin_dir, "hooks")
 
 
 def grok_inline_mcp(plugin_dir: Path) -> List[Dict[str, Any]]:
@@ -610,7 +644,7 @@ def grok_inline_mcp(plugin_dir: Path) -> List[Dict[str, Any]]:
     {...}}`` and a bare server map are accepted, matching what
     ``McpBlock.servers`` reads.
     """
-    return inline_documents(grok_manifest(plugin_dir).get("mcpServers"), "mcpServers")
+    return _grok_inline(plugin_dir, "mcpServers")
 
 
 def grok_manifest_is_contained(plugin_dir: Path) -> bool:
