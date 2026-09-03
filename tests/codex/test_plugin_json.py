@@ -662,6 +662,20 @@ class TestInterfaceAssetUris:
         assert any("interface.logo" in m and expected_fragment in m for m in warnings)
         assert not any("should start with './'" in m for m in messages(violations))
 
+    def test_unparseable_non_url_falls_through_to_path_validation(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "bad-path",
+                "version": "1.0.0",
+                "description": "Unparseable path",
+                "interface": {"logo": "//["},
+            },
+        )
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        msg_list = messages(violations)
+        assert any("interface.logo" in m and "absolute path" in m for m in msg_list)
+
     def test_local_interface_asset_paths_receive_containment_and_existence_checks(self, tmp_path):
         repo = _codex_plugin_repo(
             tmp_path,
