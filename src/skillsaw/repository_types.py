@@ -1,0 +1,170 @@
+"""The repository type vocabulary.
+
+What a repository *is* — how it packages its content and which tools it is
+configured for — named in one place. ``skillsaw.context`` composes the
+verdict over these; discovery works in the string values so it can stay
+free of any import from the context layer.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any, Dict, Optional, Set
+
+
+class RepositoryType(Enum):
+    """Type of repository.
+
+    One set covers both halves of "what is this repository": how its content
+    is packaged (a marketplace, a plugin, an APM project) and which tools it
+    is configured for (Cursor, Codex, Muse Code). If a repository holds a
+    tool's configuration, the summary says so and that tool's rules run —
+    the two concepts were once split across repository types and format
+    labels, which left a repository whose only agent content was
+    ``.muse/hooks.json`` reporting ``unknown``.
+    """
+
+    SINGLE_PLUGIN = "single-plugin"  # Single plugin at repo root
+    MARKETPLACE = "marketplace"  # Marketplace with multiple plugins
+    AGENTSKILLS = "agentskills"  # agentskills.io skill repo
+    DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
+    CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
+    APM = "apm"  # Repository with .apm/ directory (Agent Package Manager)
+    PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
+    CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
+    CODEX_MARKETPLACE = "codex-marketplace"  # .agents/plugins/marketplace.json
+    # Repository with `.codex/` project-layer configuration such as
+    # `.codex/hooks.json`; distinct from a Codex plugin or marketplace.
+    CODEX_PROJECT = "codex-project"
+    AGENT_PLUGIN = "agent-plugin"  # Portable Agent Plugins plugin.json
+    MCP_REGISTRY = "mcp-registry"  # MCP Registry server.json publisher metadata
+    CURSOR = "cursor"  # Repository with `.cursor/` content or a `.cursorrules`
+    COPILOT = "copilot"  # Repository with Copilot / VS Code content under `.github/`
+    CLINE = "cline"  # Repository with `.clinerules`
+    DEVIN = "devin"  # Repository with `.devin/`, `.windsurf/` or Devin instructions
+    OPENCODE = "opencode"  # Repository with an `opencode.json` or `.opencode/`
+    MUSE = "muse"  # Repository with `.muse/` configuration — Muse Code
+    KIRO = "kiro"  # Repository with `.kiro/` steering files
+    GEMINI = "gemini"  # Repository with a GEMINI.md
+    QWEN = "qwen"  # Repository with a QWEN.md
+    AGENTS_MD = "agents-md"  # Repository with an AGENTS.md
+    CLAUDE_MD = "claude-md"  # Repository with a CLAUDE.md
+    SKILLS_LOCK = "skills-lock"  # Repository with a Vercel skills CLI skills-lock.json
+    UNKNOWN = "unknown"  # Not a recognized repo type
+
+
+# Repository types whose lint tree can hold Agent Skills. One shared set so a
+# newly supported host cannot be wired into some skill rules and forgotten in
+# the rest. The Codex types belong here because Codex plugins ship
+# ``skills/<name>/SKILL.md`` in the same format, and a catalog repository's
+# plugin skills are discovered whether or not CODEX_PLUGIN was also inferred.
+# CODEX_PROJECT does not: ``.codex/`` is the project configuration layer, and
+# the skills Codex loads live in a plugin.
+SKILL_REPO_TYPES = {
+    RepositoryType.AGENTSKILLS,
+    RepositoryType.SINGLE_PLUGIN,
+    RepositoryType.MARKETPLACE,
+    RepositoryType.DOT_CLAUDE,
+    RepositoryType.CODEX_PLUGIN,
+    RepositoryType.CODEX_MARKETPLACE,
+    RepositoryType.AGENT_PLUGIN,
+}
+
+
+#: Types detected from committed tool configuration rather than from how the
+#: repository packages its content. Detection reads the shared walk, so
+#: ``apply_excludes()`` recomputes exactly these when a caller adds patterns
+#: after construction.
+TOOL_REPO_TYPES = frozenset(
+    {
+        RepositoryType.CURSOR,
+        RepositoryType.COPILOT,
+        RepositoryType.CLINE,
+        RepositoryType.DEVIN,
+        RepositoryType.OPENCODE,
+        RepositoryType.MUSE,
+        RepositoryType.CODEX_PROJECT,
+        RepositoryType.KIRO,
+        RepositoryType.GEMINI,
+        RepositoryType.QWEN,
+        RepositoryType.AGENTS_MD,
+        RepositoryType.CLAUDE_MD,
+        RepositoryType.CODERABBIT,
+        RepositoryType.SKILLS_LOCK,
+    }
+)
+
+
+# Repository types that may hold one of ``INSTRUCTION_FILES``. CLINE,
+# OPENCODE, MUSE and CODEX_PROJECT are deliberately absent: the
+# instruction-file rules only ever look at
+# AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose only marker is
+# ``.clinerules``, ``opencode.json``, ``.muse/hooks.json`` or
+# ``.codex/hooks.json`` would auto-enable two rules structurally incapable of
+# finding anything. OpenCode, Muse Code and Codex do read AGENTS.md — and
+# when one is present AGENTS_MD enables them for it.
+INSTRUCTION_REPO_TYPES = frozenset(
+    {
+        RepositoryType.CURSOR,
+        RepositoryType.COPILOT,
+        RepositoryType.DEVIN,
+        RepositoryType.GEMINI,
+        RepositoryType.QWEN,
+        RepositoryType.AGENTS_MD,
+        RepositoryType.KIRO,
+        RepositoryType.CLAUDE_MD,
+        RepositoryType.CODERABBIT,
+    }
+)
+
+#: DEPRECATED alias kept for one release for third-party rules that import it.
+ALL_INSTRUCTION_FORMATS = INSTRUCTION_REPO_TYPES
+
+
+# DEPRECATED format labels. A rule declares where it applies with
+# ``repo_types``; ``Rule.formats`` and these constants are kept for one
+# release so a third-party rule plugin written against the old spelling
+# still activates. Gating unions a legacy declaration into the rule's
+# repository types through this table.
+HAS_CURSOR = "HAS_CURSOR"
+HAS_COPILOT = "HAS_COPILOT"
+HAS_CLINE = "HAS_CLINE"
+HAS_DEVIN = "HAS_DEVIN"
+HAS_GEMINI = "HAS_GEMINI"
+HAS_QWEN = "HAS_QWEN"
+HAS_AGENTS_MD = "HAS_AGENTS_MD"
+HAS_KIRO = "HAS_KIRO"
+HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
+HAS_CODERABBIT = "HAS_CODERABBIT"
+HAS_OPENCODE = "HAS_OPENCODE"
+HAS_SKILLS_LOCK = "HAS_SKILLS_LOCK"
+
+_LEGACY_FORMAT_LABELS: Dict[str, RepositoryType] = {
+    HAS_CURSOR: RepositoryType.CURSOR,
+    HAS_COPILOT: RepositoryType.COPILOT,
+    HAS_CLINE: RepositoryType.CLINE,
+    HAS_DEVIN: RepositoryType.DEVIN,
+    HAS_GEMINI: RepositoryType.GEMINI,
+    HAS_QWEN: RepositoryType.QWEN,
+    HAS_AGENTS_MD: RepositoryType.AGENTS_MD,
+    HAS_KIRO: RepositoryType.KIRO,
+    HAS_CLAUDE_MD: RepositoryType.CLAUDE_MD,
+    HAS_CODERABBIT: RepositoryType.CODERABBIT,
+    HAS_OPENCODE: RepositoryType.OPENCODE,
+    HAS_SKILLS_LOCK: RepositoryType.SKILLS_LOCK,
+}
+
+
+def merge_legacy_formats(repo_types, formats) -> Optional[Set[Any]]:
+    """A rule's repository types, with any legacy ``formats`` folded in.
+
+    ``None`` means "applies everywhere" and only survives when both
+    declarations are absent. Anything that is not a known label passes
+    through unchanged — a repository type reads as itself, and an
+    unrecognized label matches nothing, which is what it did before.
+    """
+    if formats is None:
+        return set(repo_types) if repo_types is not None else None
+    merged: Set[Any] = set(repo_types) if repo_types is not None else set()
+    merged.update(_LEGACY_FORMAT_LABELS.get(label, label) for label in formats)
+    return merged

@@ -13,7 +13,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentInstructionBudgetRule(Rule):
     """Check total instruction count across all instruction files"""
 
-    formats = None
     since = "0.7.0"
     baseline_mode = "ceiling"
 

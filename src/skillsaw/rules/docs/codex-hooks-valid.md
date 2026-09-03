@@ -1,68 +1,63 @@
 ## Why
 
-OpenAI Codex executes lifecycle hooks defined in `<repo>/.codex/hooks.json` as
-well as hooks bundled with installed plugins (in `hooks/hooks.json`, custom paths
-specified by the manifest, or declared inline in `.codex-plugin/plugin.json`).
-Hooks provide a seamless way to run automation and enforce repository policies
-during coding sessions.
+OpenAI Codex runs lifecycle hooks from `<repo>/.codex/hooks.json` and from
+installed plugins — `hooks/hooks.json`, a custom path the manifest names, or
+a payload written inline in `.codex-plugin/plugin.json`.
 
-Codex uses the nested configuration format pioneered by Claude Code —
-`{hooks: {Event: [{matcher?, hooks: [{type, ...}]}]}}` — while tailoring it to
-its own feature set. Codex dispatches twelve lifecycle events and actively runs
-`command` and `mcp_tool` handlers, while gracefully parsing and skipping
-`prompt` and `agent` handlers. When adapting configuration between tools, it can
-be easy to configure an event or handler that Codex quietly skips without
-surfacing an error in the console.
+Codex adopted Claude Code's nested shape —
+`{hooks: {Event: [{matcher?, hooks: [{type, ...}]}]}}` — and kept its own
+vocabulary. It dispatches twelve lifecycle events, runs `command` and
+`mcp_tool` handlers, and parses `prompt` and `agent` handlers without ever
+running them. A file copied from a Claude plugin therefore loads without
+complaint and does less than it says, with nothing on the console to
+explain it.
 
-This rule checks your configuration against Codex's supported events, handler
-types, and options so that your hooks run predictably. To keep your workflow
-secure, commands are also checked by [`hooks-dangerous`](hooks-dangerous.md) for
-risky execution patterns, and can be inventoried with an explicit allowlist
-using [`hooks-prohibited`](hooks-prohibited.md).
+The commands are a separate concern: [`hooks-dangerous`](hooks-dangerous.md)
+scans them for risky execution patterns and
+[`hooks-prohibited`](hooks-prohibited.md) checks them against an explicit
+allowlist.
 
-For dual-manifest plugins shipping both `.claude-plugin/` and `.codex-plugin/`
-manifests with a shared `hooks/hooks.json`, validation is handled by
-[`claude-hooks-valid`](claude-hooks-valid.md) to keep reporting unified. Dedicated
-Codex files and inline manifest hooks are checked here.
+A plugin shipping both `.claude-plugin/` and `.codex-plugin/` manifests has
+its shared `hooks/hooks.json` validated by
+[`claude-hooks-valid`](claude-hooks-valid.md), so one file gets one set of
+results. Dedicated Codex files and inline manifest hooks are checked here.
 
-These checks were originally part of `hooks-json-valid` before version 0.20.0
-split them into host-specific rules. The legacy name resolves to
-[`claude-hooks-valid`](claude-hooks-valid.md) for configuration and suppression
-comments; baselines continue to suppress findings recorded under the earlier
-name.
+These checks were part of `hooks-json-valid` before 0.20.0 split them by
+host. The legacy name resolves to
+[`claude-hooks-valid`](claude-hooks-valid.md) for configuration and
+suppression comments; baselines keep suppressing findings recorded under it.
 
 ## Severity
 
-Finding severities reflect how an issue affects your hook automation:
+A finding's severity is how much of the file the defect costs.
 
-**Errors** identify structural issues that prevent Codex from loading or running
-hooks:
-- Invalid JSON or non-object root structures.
-- Non-standard tokens like bare `NaN` or `Infinity` anywhere in the file (which
-  cause Codex's JSON parser to reject the file).
-- Missing `hooks` mappings, non-array event lists, or malformed matcher groups.
-- Handlers missing a `type` field, unrecognized handler types, or missing
-  required fields (`command` for command handlers; `server` and `tool` for MCP
-  tool handlers).
-- Unsupported combinations, such as configuring an `mcp_tool` handler on
-  `SessionEnd` (which does not support MCP tools).
+**Errors** — Codex loads nothing, or a handler cannot run.
 
-**Warnings** highlight valid files where specific hooks won't execute as
-expected:
-- Event names that Codex does not currently dispatch.
-- `prompt` or `agent` handlers (which Codex parses but skips during execution).
-- Fields that belong to a different handler type (such as `commandWindows` on an
-  MCP tool handler).
-- `timeout` values exceeding 3 seconds on `SessionEnd` or `Interrupt` events
-  (Codex automatically caps timeouts for these quick-exit events).
+- *The whole file is skipped*: invalid JSON, a non-object root, a missing or
+  non-object `hooks` key, or a non-finite number (`NaN`, `Infinity`,
+  `-Infinity`) anywhere in the document.
+- *The entry or handler is unusable*: an event whose value is not an array, a
+  malformed matcher group, a handler with no `type` or an unrecognized one,
+  or a handler missing a required field (`command` for command handlers,
+  `server` and `tool` for MCP tool handlers).
+- *The combination is not supported*: an `mcp_tool` handler on `SessionEnd`.
 
-**Info** notes helpful configuration advice, such as specifying a `matcher` on
-an event that does not filter on tool names (which Codex accepts but ignores).
+**Warnings** — the file loads and something in it does not fire.
+
+- An event name Codex does not dispatch. The rest of the file still loads.
+- A `prompt` or `agent` handler: parsed, never run.
+- A field belonging to a different handler type, such as `commandWindows` on
+  an MCP tool handler.
+- A `timeout` above 3 seconds on `SessionEnd` or `Interrupt`, which Codex
+  caps for these quick-exit events.
+
+**Info** — a `matcher` on an event that does not filter on tool names. Codex
+accepts it and ignores it.
 
 ## Examples
 
-**Needs improvement** — an unrecognized Claude Code event that Codex does not
-dispatch, and a prompt handler that Codex parses but skips:
+**Needs improvement** — an event Codex does not dispatch, and a prompt
+handler it parses and skips:
 
 ```json
 {
@@ -77,7 +72,8 @@ dispatch, and a prompt handler that Codex parses but skips:
 }
 ```
 
-**Good** — a command hook filtered by `matcher`, and a structured MCP tool hook:
+**Good** — a command hook filtered by `matcher`, and a structured MCP tool
+hook:
 
 ```json
 {
@@ -109,25 +105,21 @@ dispatch, and a prompt handler that Codex parses but skips:
 
 ## How to fix
 
-- Ensure event names match one of the twelve events Codex dispatches. If Codex
-  has added a new event recently, you can easily accept it via the
-  `extra-events` setting:
+- Use one of the twelve event names Codex dispatches.
+- Rewrite `prompt` and `agent` handlers as `command` or `mcp_tool` handlers.
+- Give every command handler a `command`, and every MCP tool handler both
+  `server` and `tool`. Keep handler-specific fields with their type:
+  `commandWindows`, `additionalContextLimit` and `async` belong to command
+  handlers, `input` to MCP tools.
+- Drop `mcp_tool` handlers from `SessionEnd`, which does not support them.
+- Keep `SessionEnd` and `Interrupt` timeouts under 3 seconds.
 
-  ```yaml
-  rules:
-    codex-hooks-valid:
-      extra-events:
-        - SomethingNew
-  ```
+Codex ships events faster than skillsaw releases. Rather than turning the
+rule off, name a newer one:
 
-- Rewrite any `prompt` or `agent` handlers as `command` or `mcp_tool` handlers
-  so Codex can execute them.
-- Provide a `command` string for each `command` handler, and both `server` and
-  `tool` for each `mcp_tool` handler. Make sure handler-specific fields match
-  their type: `commandWindows`, `additionalContextLimit`, and `async` belong to
-  command handlers, while `input` is for MCP tools.
-- Avoid using `mcp_tool` handlers on `SessionEnd`, where MCP tools are not
-  supported.
-- Keep `SessionEnd` and `Interrupt` hook timeouts under 3 seconds, matching
-  Codex's automatic execution cap.
-
+```yaml
+rules:
+  codex-hooks-valid:
+    extra-events:
+      - SomethingNew
+```

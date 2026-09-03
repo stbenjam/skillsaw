@@ -1,90 +1,69 @@
 ## Why
 
-`.muse/hooks.json` lets you automate shell commands during Muse Code agent
-lifecycle events — such as right before a tool runs, when a new session starts,
-or when the agent finishes its work. Because hooks are committed to the
-repository, they provide a reliable, shared way to automate checks and setup for
-everyone collaborating on the project.
+`.muse/hooks.json` automates shell commands during Muse Code agent lifecycle
+events — right before a tool runs, when a session starts, when the agent
+finishes. The file is committed, so those commands are shared by everyone
+working on the project.
 
-During headless runs, Muse Code executes hooks quietly and does not display
-error diagnostics if it encounters an unrecognized field or invalid syntax. When
-a hook doesn't run as expected, it can be tricky to tell whether it simply
-didn't match or was skipped due to a configuration detail.
+Muse prints no diagnostic when it refuses something. A rejected file, a
+dropped matcher group, a skipped event and a discarded handler all look
+identical from the outside: a hook that had nothing to do. This rule reads
+the file the way Muse's loader does, so the mistake shows up before the
+silence does.
 
-Depending on where an issue occurs, Muse responds in one of four distinct
-ways:
-
-- **The whole file is skipped** — if the file contains invalid JSON, non-finite
-  numbers (`NaN`, `Infinity`, or `-Infinity`), an event value that is not an
-  array, a matcher group that is not an object, a non-string `matcher`, a group
-  missing its `hooks` array, a handler that is not an object, or any known
-  handler field with the wrong data type (such as `timeout: "10"` or `async: 1`).
-  Muse skips the file at parse time, so none of its hooks will run.
-- **A matcher group is skipped** — if a group includes keys other than `matcher`
-  and `hooks`, or contains a `matcher` regex that fails to compile. For example,
-  a leftover `"description"` field from another tool will cause Muse to ignore
-  that particular group, while sibling groups and other events continue to load.
-- **An event's entries are skipped** — if an event name is unrecognized or uses
-  the wrong casing (event names are case-sensitive). For instance, `sessionStart`
-  will not match, though hooks under other correctly cased events will still
-  run.
-- **An individual handler is skipped** — if a handler is missing its `type`,
-  uses a type other than `command`, has an empty `command` string, includes
-  unrecognized keys, or sets unsupported options like `once: true` or
-  `asyncRewake: true`. Other handlers in the same group continue to run normally.
-
-Because Muse supports a curated subset of hook options, configuration copied
-from other agent setups (such as Claude Code) may include fields Muse does not
-use (like `args`, `env`, or `description`), or options it doesn't currently
-support (such as `if`, `once`, or `asyncRewake`).
-
-This rule verifies your configuration in advance so all your hooks run smoothly.
-For security, the commands themselves are checked for risky patterns by
-[`hooks-dangerous`](hooks-dangerous.md) and can be inventoried with an explicit
-allowlist using [`hooks-prohibited`](hooks-prohibited.md).
+The commands themselves are a separate concern — they are scanned for risky
+patterns by [`hooks-dangerous`](hooks-dangerous.md) and can be inventoried
+against an explicit allowlist with
+[`hooks-prohibited`](hooks-prohibited.md).
 
 ## Severity
 
-Because Muse runs quietly in headless mode, skillsaw matches finding severities
-to the practical impact on your automation:
+A finding's severity is how much of the file the defect costs.
 
-**Errors** identify configuration issues where a hook cannot execute:
-- Any issue that causes Muse to skip the whole file (such as invalid JSON,
-  missing `hooks` objects, or incorrect field types).
-- Extra keys inside a matcher group that cause the group to be ignored.
-- Missing, empty, or unsupported handler fields (`command`, `type`, or unsupported
-  keys).
-- Type mismatches on known fields (such as `timeout`, which must be a
-  non-negative integer rather than a float or string).
+**Errors** — nothing runs, or one handler never does.
 
-**Warnings** point out valid files where specific events or platforms are skipped,
-or where a setting may not behave as expected:
-- Unrecognized event names (which Muse skips while continuing to load other
-  events). If Muse added a new event in a recent version, you can accept it
-  immediately using the `extra-events` setting.
-- `Setup` events (which Muse recognizes from Claude Code conventions but does
-  not execute).
-- Empty `hooks` objects, event arrays, or matcher groups that configure no
-  actions.
-- A `matcher` regular expression that fails to compile. Matchers are compiled
-  using Rust's regex engine, which differs slightly from Python's syntax (for
-  example, Rust does not support lookarounds or backreferences). skillsaw checks
-  the shared syntax and issues a warning if a pattern appears invalid.
-- Handlers that only provide `commandWindows` (which run on Windows systems but
-  do nothing on Linux or macOS).
+- *The whole file is skipped*: invalid JSON, a non-finite number (`NaN`,
+  `Infinity`, `-Infinity`), an event value that is not an array, a matcher
+  group that is not an object, a non-string `matcher`, a group missing its
+  `hooks` array, a handler that is not an object, or a known handler field
+  of the wrong type (`timeout: "10"`, `async: 1`). Muse refuses the document
+  at parse time, so no hook in it runs.
+- *The matcher group is dropped*: a key other than `matcher` and `hooks`.
+  A `description` left over from a Claude Code hooks file costs that group;
+  sibling groups and other events keep loading.
+- *The handler is dropped*: a missing `type`, a type other than `command`,
+  an empty `command`, an unrecognized key, or an option Muse parses and then
+  refuses (`if`, `once: true`, `asyncRewake: true`). Other handlers in the
+  same group still run.
 
-**Info** notes highlight helpful context, such as events present in Muse's
-underlying binary that are not yet officially documented (`Notification`,
-`PostToolUseFailure`, `StopFailure`, `PostToolBatch`).
+**Warnings** — the file loads and something in it does not fire.
 
-When an unknown key appears across multiple groups or handlers (a common pattern
-when adapting an existing file), skillsaw conveniently groups them into a single,
-clean finding that lists all affected locations.
+- An unrecognized event name. Event names are case-sensitive, so
+  `sessionStart` matches nothing while correctly cased events keep running.
+- `Setup`, which Muse recognizes from Claude Code's vocabulary and
+  deliberately does not run.
+- An empty `hooks` object, event array, or matcher group — valid, and it
+  configures nothing.
+- A `matcher` that does not compile. Muse compiles matchers with Rust's
+  regex engine, which differs from Python's at the edges (no lookarounds or
+  backreferences, plus Unicode classes and set operators Python lacks), so
+  skillsaw checks the syntax the two dialects share and warns rather than
+  errors.
+- A handler with `commandWindows` and no `command`: it runs on Windows and
+  does nothing on Linux or macOS.
+
+**Info** — an event present in Muse's binary but not in its documented list
+(`Notification`, `PostToolUseFailure`, `StopFailure`, `PostToolBatch`).
+Verify it actually fires before relying on it.
+
+An unknown key that appears in several groups or handlers — the usual shape
+when a file is adapted from another tool — is reported once, listing where
+it appears.
 
 ## Examples
 
-**Needs improvement** — an unexpected key causes the first matcher group to be
-ignored, and an unsupported Claude Code handler is skipped:
+**Needs improvement** — an unexpected key drops the first matcher group, and
+an unsupported Claude Code handler is dropped with it:
 
 ```json
 {
@@ -105,7 +84,7 @@ ignored, and an unsupported Claude Code handler is skipped:
 }
 ```
 
-**Good** — cleanly structured matcher groups with valid command handlers:
+**Good** — matcher groups carrying only what Muse reads:
 
 ```json
 {
@@ -137,30 +116,31 @@ ignored, and an unsupported Claude Code handler is skipped:
 
 ## How to fix
 
-- Ensure each matcher group contains only `hooks` and, optionally, `matcher`.
-  Since Muse ignores extra keys here, keep any explanatory notes or documentation
-  in a companion Markdown file rather than in the JSON.
-- Provide `"type": "command"` and a non-empty `command` string for every
-  handler. If your command uses `commandWindows`, include a standard `command`
-  as well so it works across platforms.
-- When adapting hooks from Claude Code: integrate `args` directly into the
-  `command` string, set environment variables within your script, and check any
-  conditional logic in the script itself (since Muse does not evaluate `if` or
-  `once: true`).
-- Specify `timeout` as a non-negative integer in seconds (for example, `30`
-  instead of `30.0` or `"30"`).
-- Make sure event names match Muse's supported lifecycle events and casing. If
-  Muse introduces new events, handler fields, or group keys, you can easily
-  allow them using your skillsaw configuration:
+- Give each matcher group only `hooks` and, optionally, `matcher`. Notes
+  belong in a companion Markdown file.
+- Give every handler `"type": "command"` and a non-empty `command`. Keep a
+  POSIX `command` beside any `commandWindows` so the hook runs everywhere.
+- Adapting from Claude Code: fold `args` into the `command` string, set
+  environment variables inside the script, and move conditional logic there
+  too — Muse evaluates neither `if` nor `once: true`.
+- Write `timeout` as a non-negative integer of seconds (`30`, not `30.0` or
+  `"30"`).
+- Match Muse's event names and their casing.
 
-  ```yaml
-  rules:
-    muse-hooks-valid:
-      extra-events:
-        - PreSomethingNew
-      extra-handler-fields:
-        - retries
-      extra-group-keys:
-        - priority
-  ```
+Muse adds events, handler fields and matcher-group keys faster than skillsaw
+releases. Rather than turning the rule off, name the new one:
 
+```yaml
+rules:
+  muse-hooks-valid:
+    # An event name Muse dispatches that this release has not heard of.
+    extra-events:
+      - PreSomethingNew
+    # A handler field Muse reads. Declared fields are accepted whatever they
+    # hold — skillsaw has no type to check them against.
+    extra-handler-fields:
+      - retries
+    # A matcher-group key beside `matcher` and `hooks`.
+    extra-group-keys:
+      - priority
+```

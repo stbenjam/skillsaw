@@ -152,11 +152,12 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     )
 
 
-#: Per-editor evidence inside a discovered tool directory. Any one of these
-#: means the tool is configured here, so a repository whose only Cursor
-#: artifact is ``hooks.json`` still activates the Cursor rules.
-_EDITOR_EVIDENCE = {
-    "HAS_CURSOR": (
+#: Per-tool evidence inside a discovered tool directory, keyed by the
+#: ``RepositoryType`` value it proves. Any one entry means the tool is
+#: configured here, so a repository whose only Cursor artifact is
+#: ``hooks.json`` still activates the Cursor rules.
+_TOOL_EVIDENCE = {
+    "cursor": (
         ".cursor",
         (
             ("rules", True),
@@ -166,10 +167,10 @@ _EDITOR_EVIDENCE = {
             ("hooks.json", False),
         ),
     ),
-    # ``.vscode`` is walked for attachment but contributes no format label:
-    # the only thing skillsaw reads there is ``mcp.json``, and the MCP rules
-    # are ungated, so there is no format-gated rule left looking at nothing.
-    "HAS_COPILOT": (
+    # ``.vscode`` is walked for attachment but contributes no repository
+    # type: the only thing skillsaw reads there is ``mcp.json``, and the MCP
+    # rules are ungated, so there is no gated rule left looking at nothing.
+    "copilot": (
         ".github",
         (
             ("copilot-instructions.md", False),
@@ -186,8 +187,8 @@ _EDITOR_EVIDENCE = {
     # fired on only one of them would go quiet the day a project migrated.
     # ``opencode.json`` and ``opencode.jsonc`` inside ``.opencode/`` are
     # listed here; the root
-    # copy is a separate marker check in ``instruction_formats``.
-    "HAS_OPENCODE": (
+    # copy is a separate marker check in ``tool_types``.
+    "opencode": (
         ".opencode",
         (
             ("opencode.json", False),
@@ -211,19 +212,19 @@ _EDITOR_EVIDENCE = {
         ),
     ),
     # Muse Code project hooks in `.muse/hooks.json`.
-    "HAS_MUSE": (
+    "muse": (
         muse.TOOL_DIR_NAME,
         ((muse.HOOKS_FILENAME, False),),
     ),
     # Codex project-level hooks in `.codex/hooks.json`.
-    "HAS_CODEX": (
+    "codex-project": (
         codex.CODEX_DIR_NAME,
         ((codex.CODEX_HOOKS_FILENAME, False),),
     ),
 }
 
 
-def instruction_formats(
+def tool_types(
     root: Path,
     files: Iterable[Path],
     is_excluded: Callable[[Path], bool],
@@ -231,12 +232,15 @@ def instruction_formats(
     legacy_editor_files: Optional[Mapping[str, Iterable[Path]]] = None,
     skills_lock_files: Optional[Iterable[Path]] = None,
 ) -> Set[str]:
-    """Return instruction-format evidence labels from non-excluded markers.
+    """Return ``RepositoryType`` values for the tools configured here.
+
+    Values rather than enum members: discovery is state-free and imports
+    nothing from ``context``, which owns the enum.
 
     Detection reads the same walk that drives attachment. A tool directory
     found in a monorepo subpackage is evidence just as the root one is —
-    otherwise the lint tree grows blocks that no format-gated rule ever
-    looks at, which is the silent-no-op this linter exists to catch.
+    otherwise the lint tree grows blocks that no gated rule ever looks at,
+    which is the silent-no-op this linter exists to catch.
     """
 
     def marker(*parts: str, is_dir: bool = False) -> bool:
@@ -248,9 +252,9 @@ def instruction_formats(
 
     dirs: Mapping[str, Iterable[Path]] = tool_dirs or {}
 
-    def editor_marker(label: str) -> bool:
-        """Whether any discovered directory holds this editor's evidence."""
-        dir_name, entries = _EDITOR_EVIDENCE[label]
+    def tool_marker(type_value: str) -> bool:
+        """Whether any discovered directory holds this tool's evidence."""
+        dir_name, entries = _TOOL_EVIDENCE[type_value]
         candidates = list(dirs.get(dir_name) or ())
         if not candidates:
             candidates = [root / dir_name]
@@ -313,39 +317,38 @@ def instruction_formats(
 
     found: Set[str] = set()
     checks = (
-        ("HAS_CURSOR", editor_marker("HAS_CURSOR") or legacy_cursor()),
+        ("cursor", tool_marker("cursor") or legacy_cursor()),
         (
-            "HAS_COPILOT",
-            editor_marker("HAS_COPILOT")
-            or any(path.name.endswith(".instructions.md") for path in files),
+            "copilot",
+            tool_marker("copilot") or any(path.name.endswith(".instructions.md") for path in files),
         ),
-        ("HAS_CLINE", cline_marker()),
-        ("HAS_DEVIN", devin_marker()),
+        ("cline", cline_marker()),
+        ("devin", devin_marker()),
         (
-            "HAS_OPENCODE",
-            editor_marker("HAS_OPENCODE")
+            "opencode",
+            tool_marker("opencode")
             # OpenCode reads the project config from the repository root as
             # well as from ``.opencode/``, and a repository that configures
             # only a model and an MCP server has no ``.opencode/`` at all.
             or marker("opencode.json") or marker("opencode.jsonc"),
         ),
-        # Tool format markers based on committed configuration files.
-        ("HAS_MUSE", editor_marker("HAS_MUSE")),
-        ("HAS_CODEX", editor_marker("HAS_CODEX")),
-        ("HAS_GEMINI", marker("GEMINI.md")),
-        ("HAS_QWEN", marker("QWEN.md")),
+        # Tool markers based on committed configuration files.
+        ("muse", tool_marker("muse")),
+        ("codex-project", tool_marker("codex-project")),
+        ("gemini", marker("GEMINI.md")),
+        ("qwen", marker("QWEN.md")),
         (
-            "HAS_AGENTS_MD",
+            "agents-md",
             any(path.name == "AGENTS.md" and not is_excluded(path) for path in files),
         ),
-        ("HAS_KIRO", marker(".kiro", is_dir=True)),
+        ("kiro", marker(".kiro", is_dir=True)),
         (
-            "HAS_CLAUDE_MD",
+            "claude-md",
             any(path.name == "CLAUDE.md" and not is_excluded(path) for path in files),
         ),
-        ("HAS_CODERABBIT", marker(".coderabbit.yaml")),
+        ("coderabbit", marker(".coderabbit.yaml")),
         (
-            "HAS_SKILLS_LOCK",
+            "skills-lock",
             any(not is_excluded(path) for path in (skills_lock_files or ())),
         ),
     )
@@ -482,8 +485,6 @@ def marker_types(
                     devin_skill_roots.append(skill_root)
     if is_agentskills_repo(root, should_skip, devin_skill_roots):
         found.add("agentskills")
-    if (root / ".coderabbit.yaml").exists():
-        found.add("coderabbit")
     if apm:
         found.add("apm")
     if is_dot_claude(root, apm):

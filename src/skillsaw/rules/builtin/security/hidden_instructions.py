@@ -303,7 +303,6 @@ def _snippet(text: str) -> str:
 class SecurityHiddenInstructionsRule(Rule):
     """Detect directives hidden in HTML comments or Markdown link labels."""
 
-    formats = None
     repo_types = None
     since = "0.17.0"
 

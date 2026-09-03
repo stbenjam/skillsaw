@@ -12,7 +12,7 @@ from skillsaw.blocks import (
     McpConfigRole,
 )
 from skillsaw.config import LinterConfig
-from skillsaw.context import HAS_COPILOT, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.linter import Linter
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.copilot.agent_valid import CopilotAgentValidRule
@@ -52,7 +52,7 @@ def test_rule_metadata():
     rule = CopilotAgentValidRule()
 
     assert rule.rule_id == "copilot-agent-valid"
-    assert rule.formats == frozenset({HAS_COPILOT})
+    assert rule.repo_types == frozenset({RepositoryType.COPILOT})
     assert rule.default_enabled == "auto"
     assert rule.default_severity() is Severity.ERROR
 

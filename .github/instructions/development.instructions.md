@@ -251,7 +251,8 @@ per-ecosystem attach paths and loses its content silently.
 **Ecosystems and editor tools are different problems.** An *ecosystem*
 packages and installs content (Claude plugins, Codex, Agent Plugins), so it
 needs provenance: two of them can claim the same directory, and the format
-rules must stay out of each other's trees. An *editor tool* (Cursor,
+rules must stay out of each other's trees. Both are `RepositoryType` members
+— detection produces one set, and that enum is the only vocabulary. An *editor tool* (Cursor,
 Copilot, Cline, Qwen) reads its own configuration locations, which no other
 tool claims — nothing else installs into `.cursor/`, and `QWEN.md` belongs
 to one reader — so it needs no provenance machinery at all. Pick
@@ -262,15 +263,17 @@ builds machinery that design does not need.
 name to `AGENT_TOOL_DIR_NAMES` in the `detect.py` discovery module if it reads a
 directory rather than a single root file, so one walk finds it anywhere in
 the tree; add its skill directory to `CONVENTIONAL_SKILL_DIRS` in the
-`discovery` package; add its evidence to `_EDITOR_EVIDENCE` (or a
-`marker()` check) in `instruction_formats()` — **detection must agree with
-attachment**, or the lint tree grows blocks no format-gated rule ever looks
-at; add block classes whose `category` encodes the budget role (`command`
+`discovery` package; add a `RepositoryType` member in `repository_types.py`,
+list it in `TOOL_REPO_TYPES`, and key its evidence by that member's value in
+`_TOOL_EVIDENCE` (or a `marker()` check) in `tool_types()` — **detection
+must agree with attachment**, or the lint tree grows blocks no gated rule
+ever looks at; add block classes whose `category` encodes the budget role (`command`
 for on-demand prompts, `instruction` for always-on prose, `agent` for
 subagents); attach them in the editor-directory loop in `build_lint_tree`.
-Structural rules for the tool declare `formats = frozenset({HAS_<TOOL>})`
-and iterate their own block type — never `provenance_scope`, which is for
-shared node types only. Prefer subclassing a shared block
+Structural rules for the tool declare
+`repo_types = frozenset({RepositoryType.<TOOL>})` and iterate their own
+block type — never `provenance_scope`, which is for shared node types only,
+and never the deprecated `Rule.formats`. Prefer subclassing a shared block
 (`VsCodeMcpBlock(McpBlock)`) over editing existing rule files, so the
 security rules pick the tool up without a visit.
 

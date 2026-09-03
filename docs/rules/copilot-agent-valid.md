@@ -10,6 +10,7 @@ Copilot and VS Code custom agents must use target-compatible frontmatter
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.20.0 |
+| **Repo Types** | copilot |
 | **Category** | [Copilot / VS Code](copilot.md) |
 
 ## Why

@@ -14,7 +14,7 @@ import pytest
 
 from skillsaw.blocks import ClaudeHooksBlock, CodexHooksBlock
 from skillsaw.config import LinterConfig
-from skillsaw.context import HAS_CODEX, RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.codex import CodexHooksValidRule
 from skillsaw.rules.builtin.hooks import ClaudeHooksValidRule, HooksDangerousRule
@@ -102,12 +102,12 @@ class TestCodexHookLocations:
         """Discovery and the lint tree read the directory and filename from
         ``formats.codex``. A second spelling is how detection and attachment
         drift apart and a hooks file reaches no rule."""
-        from skillsaw.discovery.detect import AGENT_TOOL_DIR_NAMES, _EDITOR_EVIDENCE
+        from skillsaw.discovery.detect import AGENT_TOOL_DIR_NAMES, _TOOL_EVIDENCE
         from skillsaw.formats.codex import CODEX_DIR_NAME, CODEX_HOOKS_FILENAME
 
         assert (CODEX_DIR_NAME, CODEX_HOOKS_FILENAME) == (".codex", "hooks.json")
         assert CODEX_DIR_NAME in AGENT_TOOL_DIR_NAMES
-        assert _EDITOR_EVIDENCE["HAS_CODEX"] == (
+        assert _TOOL_EVIDENCE[RepositoryType.CODEX_PROJECT.value] == (
             CODEX_DIR_NAME,
             ((CODEX_HOOKS_FILENAME, False),),
         )
@@ -139,11 +139,13 @@ class TestActivation:
     def test_the_rule_is_not_force_enabled(self):
         rule = CodexHooksValidRule({})
         assert rule.default_enabled == "auto"
-        assert rule.repo_types == {
-            RepositoryType.CODEX_PLUGIN,
-            RepositoryType.CODEX_MARKETPLACE,
-        }
-        assert rule.formats == frozenset({HAS_CODEX})
+        assert rule.repo_types == frozenset(
+            {
+                RepositoryType.CODEX_PLUGIN,
+                RepositoryType.CODEX_MARKETPLACE,
+                RepositoryType.CODEX_PROJECT,
+            }
+        )
 
     def test_a_repository_with_no_codex_evidence_does_not_run_it(self, tmp_path):
         """A Claude repository with hooks of its own is Claude's business."""
@@ -159,14 +161,14 @@ class TestActivation:
         enabled, reason = _enabled_reason(repo)
 
         assert enabled is True
-        assert reason == "enabled: auto — detected format: HAS_CODEX"
+        assert reason == "enabled: auto — detected repo type: codex-project"
 
     def test_a_codex_plugin_repository_turns_it_on(self, tmp_path):
         """A plugin ships hooks whether or not the checkout commits a
         project layer, so repo type carries this one."""
         repo = copy_fixture("codex/clean", tmp_path)
         context = RepositoryContext(repo)
-        assert HAS_CODEX not in context.detected_formats
+        assert RepositoryType.CODEX_PROJECT not in context.repo_types
 
         enabled, reason = _enabled_reason(repo)
         assert enabled is True
@@ -206,14 +208,14 @@ class TestBrokenFixture:
             ("Unknown hook event 'PostToolUseFailure'", Severity.WARNING),
             # ``matcher`` is accepted and ignored outside the events that
             # filter on one — worth knowing, not worth failing a build.
-            ("Event 'UserPromptSubmit[0].matcher' is ignored on this event", Severity.INFO),
+            ("Hook UserPromptSubmit[0].matcher has no effect on UserPromptSubmit", Severity.INFO),
             # Codex parses ``prompt``/``agent`` handlers and never runs
             # them. Claude Code runs them, so a shared file may carry one.
-            ("Event 'SessionStart[0].hooks[0]' has type 'prompt'", Severity.WARNING),
-            ("SessionEnd does not support MCP tool hooks", Severity.ERROR),
-            ("field 'timeout' is 30s, but Codex caps SessionEnd hooks at 3s", Severity.WARNING),
-            ("field 'input' is only valid on types: mcp_tool", Severity.WARNING),
-            ("of type 'mcp_tool' requires a 'tool' field", Severity.ERROR),
+            ("Hook SessionStart[0].hooks[0] type 'prompt' is not run by Codex", Severity.WARNING),
+            ("'mcp_tool' is not allowed on SessionEnd", Severity.ERROR),
+            ("'timeout' is 30s; the limit is 3s", Severity.WARNING),
+            ("'input' is not a 'command' field", Severity.WARNING),
+            ("of type 'mcp_tool' is missing 'tool'", Severity.ERROR),
         ],
     )
     def test_each_check_fires_once(self, tmp_path, fragment, severity):
@@ -268,11 +270,11 @@ class TestStructuralShape:
             ({"description": "no hooks here"}, "must contain a 'hooks' key"),
             ({"hooks": []}, "'hooks' must be a JSON object"),
             ({"hooks": {"SessionStart": {"type": "command"}}}, "must have an array"),
-            ({"hooks": {"SessionStart": ["echo hi"]}}, "configuration must be an object"),
-            ({"hooks": {"SessionStart": [{"matcher": ".*"}]}}, "must have a 'hooks' array"),
-            ({"hooks": {"SessionStart": [{"hooks": {}}]}}, "hooks' must be an array"),
+            ({"hooks": {"SessionStart": ["echo hi"]}}, "Hook SessionStart[0] must be an object"),
+            ({"hooks": {"SessionStart": [{"matcher": ".*"}]}}, "is missing 'hooks'"),
+            ({"hooks": {"SessionStart": [{"hooks": {}}]}}, "'hooks' must be an array"),
             ({"hooks": {"SessionStart": [{"hooks": ["echo"]}]}}, "must be an object"),
-            ({"hooks": {"SessionStart": [{"hooks": [{}]}]}}, "must have a 'type' field"),
+            ({"hooks": {"SessionStart": [{"hooks": [{}]}]}}, "is missing 'type'"),
         ],
     )
     def test_a_malformed_shape_is_reported(self, tmp_path, document, fragment):
@@ -327,7 +329,7 @@ class TestStructuralShape:
     def test_a_missing_required_field_is_reported(self, tmp_path):
         repo = _root_hooks_repo(tmp_path, _one_command_hook("SessionStart", {"type": "command"}))
         found = messages(_findings(repo))
-        assert any("requires a 'command' field" in m for m in found), found
+        assert found == ["Hook SessionStart[0].hooks[0] of type 'command' is missing 'command'"]
 
     def test_a_non_string_required_field_is_reported(self, tmp_path):
         repo = _root_hooks_repo(
@@ -335,7 +337,7 @@ class TestStructuralShape:
             _one_command_hook("SessionStart", {"type": "command", "command": ["echo", "hi"]}),
         )
         found = messages(_findings(repo))
-        assert any("field 'command' must be a str" in m for m in found), found
+        assert any("'command' must be a str" in m for m in found), found
 
     @pytest.mark.parametrize(
         "field,value,expected",
@@ -356,7 +358,7 @@ class TestStructuralShape:
             ),
         )
         found = messages(_findings(repo))
-        assert any(f"field '{field}' {expected}" in m for m in found), found
+        assert any(f"'{field}' {expected}" in m for m in found), found
 
     @pytest.mark.parametrize("bad", ["30s", True, [30]])
     def test_a_non_numeric_timeout_is_reported(self, tmp_path, bad):
@@ -420,7 +422,7 @@ class TestStructuralShape:
         found = _findings(repo)
 
         assert len(found) == 1, messages(found)
-        assert "is ignored on this event" in found[0].message
+        assert "has no effect on UserPromptSubmit" in found[0].message
         assert found[0].severity is Severity.INFO
 
     def test_entries_under_an_unknown_event_are_still_shape_checked(self, tmp_path):
@@ -429,16 +431,13 @@ class TestStructuralShape:
         repo = _root_hooks_repo(tmp_path, _one_command_hook("SomethingNew", {"type": "command"}))
         found = messages(_findings(repo))
         assert any("Unknown hook event" in m for m in found), found
-        assert any("requires a 'command' field" in m for m in found), found
+        assert any("is missing 'command'" in m for m in found), found
 
 
 # ── Tokens Python accepts and Codex does not ────────────────────
 
 
-_NON_FINITE_VERDICT = (
-    "is not valid JSON — NaN and Infinity are not JSON tokens, and "
-    "Codex rejects the whole file, so it loads no hooks"
-)
+_NON_FINITE_VERDICT = "is not valid JSON"
 
 
 class TestNonFiniteTokens:
@@ -616,7 +615,7 @@ class TestHandlerTypeWithoutAFieldTable:
         # Nothing is known about the new type's fields, so nothing is said
         # about them — and the sibling handler is still reported.
         assert messages(found) == [
-            "Event 'SessionStart[0].hooks[1]' of type 'command' requires a 'command' field"
+            "Hook SessionStart[0].hooks[1] of type 'command' is missing 'command'"
         ]
 
 
@@ -709,7 +708,7 @@ class TestInlineHooksInADualPlugin:
         found = CodexHooksValidRule({}).check(context)
 
         assert len(found) == 1, messages(found)
-        assert "Interrupt[0].hooks[0]' has type 'prompt'" in found[0].message
+        assert found[0].message == ("Hook Interrupt[0].hooks[0] type 'prompt' is not run by Codex")
         assert found[0].file_path == repo / ".codex-plugin" / "plugin.json"
 
     def test_claudes_rule_says_nothing_about_the_inline_payload(self, tmp_path):
@@ -775,6 +774,25 @@ class TestCodexHooksThroughTheCli:
             ".codex/hooks.json",
             "plugins/policy-guard/hooks/hooks.json",
         }
+
+    def test_the_summary_reports_a_project_layer_repository_as_codex(self, tmp_path):
+        """`.codex/hooks.json` alone used to report `unknown`."""
+        repo = copy_fixture("codex/hooks-subpackage", tmp_path)
+        result = run_cli(["lint", str(repo)])
+
+        assert "Repo type: agents-md, codex-project" in result.stdout
+        report = json.loads(run_cli(["lint", "--format", "json", str(repo)]).stdout)
+        assert "codex-project" in report["stats"]["repo_types"]
+
+    def test_forcing_the_project_type_runs_the_rule_without_a_marker(self, tmp_path):
+        """``--type codex-project`` turns the rule on and, deliberately, no
+        plugin discovery with it: `.codex/hooks.json` is not a plugin claim."""
+        repo = copy_fixture("supply-chain-hooks", tmp_path)
+        result = run_cli(["lint", "-v", "--type", "codex-project", str(repo)])
+        log = result.stdout + result.stderr
+
+        assert "Rule codex-hooks-valid              skipped (not applicable)" not in log
+        assert [v for v in self._run(repo) if v["rule_id"] == "codex-hooks-valid"] == []
 
     def test_the_clean_fixture_reports_nothing_through_the_cli(self, tmp_path):
         repo = copy_fixture("codex/hooks-clean", tmp_path)

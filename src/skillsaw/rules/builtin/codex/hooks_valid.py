@@ -4,13 +4,14 @@ Rule: codex-hooks-valid
 Validates Codex hooks configuration files (such as `.codex/hooks.json` or
 manifest hook declarations) against Codex's supported lifecycle events,
 handler types, and fields. Configuration constants are centralized in
-`skillsaw.formats.codex` to keep validation rules consistent and maintainable.
+`skillsaw.formats.codex`. Severity carries the blast radius — what each
+defect costs, and how to fix it, is on the rule's documentation page.
 """
 
 from typing import Any, Dict, List, Set
 
 from skillsaw.blocks import json_token
-from skillsaw.context import HAS_CODEX, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.codex import (
     CODEX_HOOK_EVENTS,
@@ -24,7 +25,6 @@ from skillsaw.formats.codex import (
     CODEX_HOOK_SKIPPED_HANDLER_TYPES,
 )
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.codex._helpers import CODEX_PLUGIN_REPO_TYPES
 from skillsaw.rules.builtin.content_analysis import CodexHooksBlock
 from skillsaw.utils import is_finite_number
 
@@ -65,8 +65,13 @@ class CodexHooksValidRule(Rule):
 
     # Auto-enable when Codex configurations are present: within Codex plugins,
     # marketplace repositories, or checkouts with `.codex/hooks.json`.
-    repo_types = CODEX_PLUGIN_REPO_TYPES
-    formats = frozenset({HAS_CODEX})
+    repo_types = frozenset(
+        {
+            RepositoryType.CODEX_PLUGIN,
+            RepositoryType.CODEX_MARKETPLACE,
+            RepositoryType.CODEX_PROJECT,
+        }
+    )
 
     # Backward-compatible alias for baselines written before codex-hooks-valid
     # was split from hooks-json-valid.
@@ -126,9 +131,7 @@ class CodexHooksValidRule(Rule):
                 path, value = found
                 violations.append(
                     self.violation(
-                        f"'{json_token(value)}' at {safe_display(path)} is not valid JSON "
-                        "— NaN and Infinity are not JSON tokens, and Codex rejects the "
-                        "whole file, so it loads no hooks",
+                        f"'{json_token(value)}' at {safe_display(path)} is not valid JSON",
                         file_path=block.path,
                     )
                 )
@@ -163,13 +166,10 @@ class CodexHooksValidRule(Rule):
         if not known:
             # A warning, not an error, on two counts: Codex loads the file
             # and skips the key, and Codex ships events faster than skillsaw
-            # releases. ``extra-events`` is named so a false positive has a
-            # same-day remedy.
+            # releases. ``extra-events`` accepts a newer one.
             violations.append(
                 self.violation(
-                    f"Unknown hook event '{name}' — Codex dispatches no such event, so "
-                    "these hooks never run. If Codex added it after this skillsaw "
-                    "release, list it under codex-hooks-valid 'extra-events'.",
+                    f"Unknown hook event '{name}'",
                     file_path=block.path,
                     severity=Severity.WARNING,
                 )
@@ -180,7 +180,7 @@ class CodexHooksValidRule(Rule):
         if not isinstance(entries, list):
             violations.append(
                 self.violation(
-                    f"Event '{name}' must have an array of hook configurations",
+                    f"Hook event '{name}' must have an array of hook configurations",
                     file_path=block.path,
                 )
             )
@@ -204,11 +204,7 @@ class CodexHooksValidRule(Rule):
         where = f"{name}[{index}]"
 
         if not isinstance(entry, dict):
-            return [
-                self.violation(
-                    f"Event '{where}' configuration must be an object", file_path=block.path
-                )
-            ]
+            return [self.violation(f"Hook {where} must be an object", file_path=block.path)]
 
         if "matcher" in entry:
             matcher = entry["matcher"]
@@ -216,17 +212,15 @@ class CodexHooksValidRule(Rule):
                 # Non-string matchers are flagged so hooks filter as expected.
                 violations.append(
                     self.violation(
-                        f"Event '{where}.matcher' must be a string", file_path=block.path
+                        f"Hook {where} 'matcher' must be a string, got "
+                        f"{type(matcher).__name__}",
+                        file_path=block.path,
                     )
                 )
             elif known and event not in CODEX_HOOK_MATCHER_EVENTS:
-                # Provide an advisory note if a matcher is configured on an event
-                # that does not evaluate matchers.
                 violations.append(
                     self.violation(
-                        f"Event '{where}.matcher' is ignored on this event — Codex "
-                        "filters on 'matcher' only for: "
-                        f"{', '.join(sorted(CODEX_HOOK_MATCHER_EVENTS))}",
+                        f"Hook {where}.matcher has no effect on {name}",
                         file_path=block.path,
                         severity=Severity.INFO,
                     )
@@ -234,13 +228,13 @@ class CodexHooksValidRule(Rule):
 
         if "hooks" not in entry:
             return violations + [
-                self.violation(f"Event '{where}' must have a 'hooks' array", file_path=block.path)
+                self.violation(f"Hook {where} is missing 'hooks'", file_path=block.path)
             ]
 
         handlers = entry["hooks"]
         if not isinstance(handlers, list):
             return violations + [
-                self.violation(f"Event '{where}.hooks' must be an array", file_path=block.path)
+                self.violation(f"Hook {where} 'hooks' must be an array", file_path=block.path)
             ]
 
         for handler_index, handler in enumerate(handlers):
@@ -254,32 +248,27 @@ class CodexHooksValidRule(Rule):
     ) -> List[RuleViolation]:
         """Validate the structure and options of an individual hook handler."""
         if not isinstance(handler, dict):
-            return [self.violation(f"Event '{where}' must be an object", file_path=block.path)]
+            return [self.violation(f"Hook {where} must be an object", file_path=block.path)]
 
         if "type" not in handler:
-            return [
-                self.violation(f"Event '{where}' must have a 'type' field", file_path=block.path)
-            ]
+            return [self.violation(f"Hook {where} is missing 'type'", file_path=block.path)]
 
         handler_type = handler["type"]
         # Ensure the handler type is a string before checking membership.
         if not isinstance(handler_type, str) or handler_type not in _KNOWN_HANDLER_TYPES:
             return [
                 self.violation(
-                    f"Event '{where}' has invalid type '{safe_display(handler_type)}'. "
-                    f"Valid types: {', '.join(sorted(CODEX_HOOK_HANDLER_TYPES))}",
+                    f"Hook {where} has invalid type '{safe_display(handler_type)}'",
                     file_path=block.path,
                 )
             ]
 
         if handler_type in CODEX_HOOK_SKIPPED_HANDLER_TYPES:
-            # Claude Code supports prompt and agent handlers, but Codex parses
-            # and skips them. Provide a clear warning for shared configurations.
+            # Claude Code runs prompt and agent handlers; Codex parses and
+            # skips them, so a shared file may carry one.
             return [
                 self.violation(
-                    f"Event '{where}' has type '{handler_type}' — Codex parses this "
-                    "handler and never runs it. Codex runs only: "
-                    f"{', '.join(sorted(CODEX_HOOK_HANDLER_TYPES))}",
+                    f"Hook {where} type '{handler_type}' is not run by Codex",
                     file_path=block.path,
                     severity=Severity.WARNING,
                 )
@@ -290,8 +279,7 @@ class CodexHooksValidRule(Rule):
         if handler_type == "mcp_tool" and event in CODEX_HOOK_NO_MCP_TOOL_EVENTS:
             violations.append(
                 self.violation(
-                    f"Event '{where}' is an 'mcp_tool' handler — {safe_display(event)} "
-                    "does not support MCP tool hooks",
+                    f"Hook {where} 'mcp_tool' is not allowed on {safe_display(event)}",
                     file_path=block.path,
                 )
             )
@@ -309,15 +297,13 @@ class CodexHooksValidRule(Rule):
             if field not in handler:
                 violations.append(
                     self.violation(
-                        f"Event '{where}' of type '{handler_type}' requires a " f"'{field}' field",
+                        f"Hook {where} of type '{handler_type}' is missing '{field}'",
                         file_path=block.path,
                     )
                 )
             elif not _matches_type(handler[field], str):
                 violations.append(
-                    self.violation(
-                        f"Event '{where}' field '{field}' must be a str", file_path=block.path
-                    )
+                    self.violation(f"Hook {where} '{field}' must be a str", file_path=block.path)
                 )
 
         for field in handler:
@@ -325,8 +311,7 @@ class CodexHooksValidRule(Rule):
             if owners is not None and handler_type not in owners:
                 violations.append(
                     self.violation(
-                        f"Event '{where}' field '{field}' is only valid on types: "
-                        f"{', '.join(sorted(owners))}",
+                        f"Hook {where} '{field}' is not a '{handler_type}' field",
                         file_path=block.path,
                         severity=Severity.WARNING,
                     )
@@ -338,7 +323,7 @@ class CodexHooksValidRule(Rule):
             if not _matches_type(handler[field], expected):
                 violations.append(
                     self.violation(
-                        f"Event '{where}' field '{field}' must be a {expected.__name__}",
+                        f"Hook {where} '{field}' must be a {expected.__name__}",
                         file_path=block.path,
                     )
                 )
@@ -355,8 +340,7 @@ class CodexHooksValidRule(Rule):
         if not is_finite_number(timeout):
             return [
                 self.violation(
-                    f"Event '{where}' field 'timeout' must be a number, got "
-                    f"{type(timeout).__name__}",
+                    f"Hook {where} 'timeout' must be a number, got {type(timeout).__name__}",
                     file_path=block.path,
                 )
             ]
@@ -365,8 +349,7 @@ class CodexHooksValidRule(Rule):
         ):
             return [
                 self.violation(
-                    f"Event '{where}' field 'timeout' is {timeout}s, but Codex caps "
-                    f"{safe_display(event)} hooks at "
+                    f"Hook {where} 'timeout' is {timeout}s; the limit is "
                     f"{CODEX_HOOK_SHORT_TIMEOUT_MAX_SECONDS}s",
                     file_path=block.path,
                     severity=Severity.WARNING,

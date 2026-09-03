@@ -65,7 +65,6 @@ def _estimate_tokens(text: str) -> int:
 class ContextBudgetRule(Rule):
     """Warn or error when files exceed recommended token limits"""
 
-    formats = None
     since = "0.7.0"
     baseline_mode = "ceiling"
 

@@ -140,7 +140,14 @@ class AutofixResult:
 class Rule(ABC):
     """Base class for linting rules"""
 
+    # Repository types this rule applies to under ``enabled: auto``; None
+    # means every repository. Members of ``RepositoryType`` (a plugin rule
+    # may also name a plugin-contributed type by string).
     repo_types = None
+    # DEPRECATED alias kept for one release: third-party rules written
+    # against the old ``HAS_*`` format labels still activate, because gating
+    # folds a declaration here into ``repo_types``. New rules declare
+    # ``repo_types``.
     formats = None
     config_schema = {}
     # Third-party rules with a partially migrated config_schema can set this
@@ -184,8 +191,8 @@ class Rule(ABC):
     # version/config/skip gates preserve older result sets.
     surface_dependencies: tuple[str, ...] = ()
     # Default activation when the user config doesn't mention the rule:
-    # True (always on), False (opt-in), or "auto" (on when repo_types /
-    # formats match the repository). ``LinterConfig.default()`` is generated
+    # True (always on), False (opt-in), or "auto" (on when repo_types
+    # match the repository). ``LinterConfig.default()`` is generated
     # from this, so the class is the single source of truth. Per project
     # policy new rules must use "auto" or False — never True.
     default_enabled: Any = "auto"

@@ -6,7 +6,7 @@ import re
 from typing import Any, List, Optional, Tuple
 
 from skillsaw.blocks import VSCODE_HOOK_COMMAND_FIELDS
-from skillsaw.context import HAS_COPILOT, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import CopilotAgentBlock
@@ -95,7 +95,7 @@ class CopilotAgentValidRule(Rule):
     """Validate target-aware custom-agent YAML and cross-field semantics."""
 
     since = "0.20.0"
-    formats = frozenset({HAS_COPILOT})
+    repo_types = frozenset({RepositoryType.COPILOT})
     target_dependencies = ("content-description-routing",)
     target_dependency_scopes = {
         "content-description-routing": (CopilotAgentBlock,),

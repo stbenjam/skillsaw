@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.blocks import OpenCodeConfigBlock, OpenCodeMcpBlock
-from skillsaw.context import HAS_OPENCODE, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import opencode as oc
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -144,7 +144,7 @@ class OpenCodeConfigValidRule(Rule):
     target_dependencies = ("mcp-valid-json",)
     target_dependency_scopes = {"mcp-valid-json": (OpenCodeMcpBlock,)}
 
-    formats = frozenset({HAS_OPENCODE})
+    repo_types = frozenset({RepositoryType.OPENCODE})
 
     config_schema = {
         "extra-keys": {

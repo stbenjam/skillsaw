@@ -22,7 +22,6 @@ class ContentUnclosedFenceRule(Rule):
 
     autofix_confidence = AutofixConfidence.SUGGEST
 
-    formats = None
     since = "0.17.0"
     repo_types = None
 

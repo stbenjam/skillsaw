@@ -12,7 +12,7 @@ from skillsaw.blocks import (
     McpConfigRole,
     OpenCodeMcpBlock,
 )
-from skillsaw.context import HAS_OPENCODE, RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.utils import is_finite_number
 from skillsaw.lint_target import PluginNode
@@ -170,7 +170,10 @@ class McpValidJsonRule(Rule):
             # therefore stays here, where no version gate can reach it; see
             # ``_dialect_neutral_violations``. Policy rules are unaffected —
             # they read ``server_names``, which the block normalizes.
-            if isinstance(block, OpenCodeMcpBlock) and HAS_OPENCODE in context.detected_formats:
+            if (
+                isinstance(block, OpenCodeMcpBlock)
+                and RepositoryType.OPENCODE in context.repo_types
+            ):
                 violations.extend(self._dialect_neutral_violations(block))
                 continue
             if block.parse_error:

@@ -22,7 +22,7 @@ import pytest
 
 from skillsaw.blocks import AgentsMdBlock, InstructionBlock, MuseHooksBlock
 from skillsaw.config import LinterConfig
-from skillsaw.context import HAS_MUSE, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import LintTarget
 from skillsaw.linter import Linter
 from skillsaw.rule import RuleViolation, Severity
@@ -99,11 +99,10 @@ def test_rule_metadata() -> None:
     assert rule.default_severity() == Severity.ERROR
     assert rule.default_enabled == "auto"
     assert rule.since == "0.20.0"
-    assert rule.formats == frozenset({HAS_MUSE})
+    assert rule.repo_types == frozenset({RepositoryType.MUSE})
     # A tool directory nobody else claims needs no provenance filtering, and
     # the rule reads a file rather than a repository layout.
     assert rule.provenance_scope is None
-    assert rule.repo_types is None
     assert not rule.supports_autofix
     assert "extra-events" in rule.config_schema
 
@@ -119,10 +118,16 @@ def test_generated_defaults_match_the_class() -> None:
 
 
 def test_hooks_file_alone_detects_muse(temp_dir) -> None:
+    """A repository whose only agent content is Muse's is a Muse repository,
+    and the summary says so rather than reporting `unknown`."""
     (temp_dir / ".muse").mkdir()
     (temp_dir / ".muse" / "hooks.json").write_text(HOOKS_JSON)
 
-    assert HAS_MUSE in RepositoryContext(temp_dir).detected_formats
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.MUSE in context.repo_types
+    assert context.repo_type == RepositoryType.MUSE
+    assert "muse" in context.repo_type_names()
 
 
 def test_memory_alone_is_not_muse_evidence(temp_dir) -> None:
@@ -132,7 +137,7 @@ def test_memory_alone_is_not_muse_evidence(temp_dir) -> None:
     memory.mkdir(parents=True)
     (memory / "MEMORY.md").write_text("# Memory Index\n\n- [Deploys](deploy.md)\n")
 
-    assert HAS_MUSE not in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.MUSE not in RepositoryContext(temp_dir).repo_types
 
 
 def test_a_nested_hooks_file_is_the_only_muse_marker_a_monorepo_needs(temp_dir) -> None:
@@ -144,7 +149,7 @@ def test_a_nested_hooks_file_is_the_only_muse_marker_a_monorepo_needs(temp_dir) 
 
     context = RepositoryContext(temp_dir)
 
-    assert HAS_MUSE in context.detected_formats
+    assert RepositoryType.MUSE in context.repo_types
     assert relative(temp_dir, context.lint_tree.find(MuseHooksBlock)) == [
         "services/billing/.muse/hooks.json"
     ]
@@ -155,7 +160,7 @@ def test_an_empty_muse_directory_is_not_evidence(temp_dir) -> None:
     """Detection must agree with attachment: nothing here for a rule to read."""
     (temp_dir / ".muse").mkdir()
 
-    assert HAS_MUSE not in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.MUSE not in RepositoryContext(temp_dir).repo_types
 
 
 def test_an_excluded_hooks_file_drives_neither_detection_nor_attachment(temp_dir) -> None:
@@ -164,7 +169,7 @@ def test_an_excluded_hooks_file_drives_neither_detection_nor_attachment(temp_dir
 
     context = RepositoryContext(temp_dir, exclude_patterns=[".muse/**"])
 
-    assert HAS_MUSE not in context.detected_formats
+    assert RepositoryType.MUSE not in context.repo_types
     assert context.lint_tree.find(MuseHooksBlock) == []
 
 
@@ -276,71 +281,60 @@ def broken(tmp_path) -> List[RuleViolation]:
     return check(copy_fixture("muse/broken", tmp_path))
 
 
-#: Every finding the broken fixture makes, as (needle, severity, verdict).
-#: The verdict is the point of the finding — a wrong-typed ``timeout`` costs
-#: every hook in the file, an unknown handler key costs one handler — so each
-#: case pins the scope the canary matrix measured, not only the message.
-_WHOLE_FILE = "Muse rejects the whole file"
-_GROUP = "so no hook in"
-_HANDLER = "so it never runs"
-_SKIPPED = "never fires"
-
-
+#: Every finding the broken fixture makes, as (message, severity). Severity
+#: is the blast radius — a wrong-typed ``timeout`` costs every hook in the
+#: file, an unknown handler key costs one handler — so each case pins the
+#: scope the canary matrix measured through the level it is filed at. The
+#: message states the defect and stops; the rule page carries the rest.
 @pytest.mark.parametrize(
-    ("needle", "severity", "verdict"),
+    ("message", "severity"),
     [
         # An event in Muse's enum but not its documented list: parsed, but
         # unproven, so advisory rather than a warning.
-        ("Hook event 'Notification' is in Muse's event set", Severity.INFO, "verify"),
+        ("Hook event 'Notification' is not in Muse's documented event list", Severity.INFO),
         # Event names are case-sensitive, so this is not `SessionStart`.
-        ("Unknown hook event 'sessionstart'", Severity.WARNING, _SKIPPED),
-        ("Hook event 'PostCompact' has an empty array", Severity.WARNING, "configures no hook"),
+        ("Unknown hook event 'sessionstart'", Severity.WARNING),
+        ("Hook event 'PostCompact' has an empty array", Severity.WARNING),
         # Muse runs command handlers and nothing else.
-        ("SessionStart[0].hooks[0] has type 'http'", Severity.ERROR, _HANDLER),
-        ("SessionStart[0].hooks[1] has type 'prompt'", Severity.ERROR, _HANDLER),
-        ("SessionStart[0].hooks[2] is missing 'type'", Severity.ERROR, _HANDLER),
+        ("Hook SessionStart[0].hooks[0] 'type' must be 'command', got 'http'", Severity.ERROR),
+        ("Hook SessionStart[0].hooks[1] 'type' must be 'command', got 'prompt'", Severity.ERROR),
+        ("Hook SessionStart[0].hooks[2] is missing 'type'", Severity.ERROR),
         # Fields Muse parses and then refuses the handler for.
-        ("PreToolUse[0].hooks[2] sets 'if'", Severity.ERROR, _HANDLER),
-        ("PreToolUse[0].hooks[3] sets 'once: true'", Severity.ERROR, _HANDLER),
+        ("Hook PreToolUse[0].hooks[2] 'if' is not supported by Muse", Severity.ERROR),
+        ("Hook PreToolUse[0].hooks[3] 'once' must not be true", Severity.ERROR),
         # Rust and Python regex dialects differ at the edges, so a pattern
-        # neither can compile is still only a warning — and it costs the
-        # group, not the file.
-        ("PreToolUse[1] 'matcher' 'Write|Edit(' does not compile", Severity.WARNING, _GROUP),
-        ("Stop[0].hooks[0] sets only a Windows command", Severity.WARNING, "Linux or macOS"),
+        # neither can compile is still only a warning.
+        (
+            "Hook PreToolUse[1] 'matcher' 'Write|Edit(' does not compile: "
+            "missing ), unterminated subpattern",
+            Severity.WARNING,
+        ),
+        ("Hook Stop[0].hooks[0] has 'commandWindows' but no 'command'", Severity.WARNING),
         # A known field of the wrong type is refused at parse time, before
-        # anything decides which handlers to keep.
+        # anything decides which handlers to keep — hence ERROR.
+        ("Hook Stop[0].hooks[1] 'timeout' must be a non-negative integer, got 1.5", Severity.ERROR),
         (
-            "Stop[0].hooks[1] 'timeout' must be a non-negative integer, got 1.5",
+            "Hook Stop[0].hooks[2] 'timeout' must be a non-negative integer, got '30'",
             Severity.ERROR,
-            _WHOLE_FILE,
         ),
-        (
-            "Stop[0].hooks[2] 'timeout' must be a non-negative integer, got '30'",
-            Severity.ERROR,
-            _WHOLE_FILE,
-        ),
-        ("Stop[0].hooks[3] 'command' is empty", Severity.ERROR, _HANDLER),
+        ("Hook Stop[0].hooks[3] 'command' is empty", Severity.ERROR),
         # Stray keys, consolidated: one finding per key, naming where it is.
-        ("2 matcher groups carry 'description'", Severity.ERROR, _GROUP),
-        ("1 handler sets 'args'", Severity.ERROR, _HANDLER),
-        ("1 handler sets 'env'", Severity.ERROR, _HANDLER),
-        ("1 handler sets 'retries'", Severity.ERROR, _HANDLER),
+        (
+            "'description' is not a matcher-group field (SessionStart[0], Stop[0])",
+            Severity.ERROR,
+        ),
+        ("'args' is not a handler field (PreToolUse[0].hooks[0])", Severity.ERROR),
+        ("'env' is not a handler field (PreToolUse[0].hooks[1])", Severity.ERROR),
+        ("'retries' is not a handler field (Stop[0].hooks[4])", Severity.ERROR),
     ],
 )
-def test_each_defect_is_reported_once_with_its_scope(broken, needle, severity, verdict) -> None:
-    violation = only(broken, needle)
+def test_each_defect_is_reported_once(broken, message, severity) -> None:
+    """The whole message, not a fragment: a finding states the problem, the
+    place and the offending value, and says nothing else."""
+    matched = [v for v in broken if v.message == message]
 
-    assert violation.severity == severity
-    assert verdict in violation.message
-
-
-def test_a_stray_group_key_costs_the_group_not_the_file(broken) -> None:
-    """The claim the fixture exists to pin: a `description` copied from a
-    Claude Code hooks file drops its group and leaves the rest loading."""
-    message = only(broken, "carry 'description'").message
-
-    assert "Muse drops each of them" in message
-    assert "Muse rejects the whole file" not in message
+    assert len(matched) == 1, messages(broken)
+    assert matched[0].severity == severity
 
 
 def test_a_once_false_handler_is_accepted(broken) -> None:
@@ -367,7 +361,7 @@ def test_a_type_defect_is_one_finding_not_several(broken) -> None:
     """The http handler's `url` is not also reported as an unknown field:
     another host's handler carries that host's fields, which are evidence of
     the type problem rather than a second defect."""
-    assert only(broken, "SessionStart[0].hooks[0] has type 'http'")
+    assert only(broken, "SessionStart[0].hooks[0] 'type' must be 'command'")
     assert not [m for m in messages(broken) if "'url'" in m]
 
 
@@ -380,42 +374,35 @@ def broken_groups(tmp_path) -> List[RuleViolation]:
 
 
 @pytest.mark.parametrize(
-    "needle",
+    "message",
     [
-        "PreToolUse[0] 'matcher' must be a string, got list",
-        "PreToolUse[2] is missing 'hooks'",
+        "Hook PreToolUse[0] 'matcher' must be a string, got list",
+        "Hook PreToolUse[2] is missing 'hooks'",
         "Hook event 'Stop' must be an array of matcher groups",
-        "SessionEnd[0] must be an object",
+        "Hook SessionEnd[0] must be an object",
     ],
 )
-def test_a_malformed_group_shape_rejects_the_whole_file(broken_groups, needle) -> None:
-    violation = only(broken_groups, needle)
+def test_a_malformed_group_shape_rejects_the_whole_file(broken_groups, message) -> None:
+    """Each of these costs every other hook in the file, which is what the
+    ERROR level says; the message names the shape and the place."""
+    matched = [v for v in broken_groups if v.message == message]
 
-    assert violation.severity == Severity.ERROR
-    # The blast radius is the finding's value: a group Muse cannot parse
-    # costs every other hook in the file, and Muse says nothing about it.
-    assert "Muse rejects the whole file" in violation.message
+    assert len(matched) == 1, messages(broken_groups)
+    assert matched[0].severity == Severity.ERROR
 
 
 def test_a_stray_group_key_costs_only_that_group(broken_groups) -> None:
     """A `enabled: false` copied from Cursor drops its group; the file and
     its sibling groups still load."""
-    violation = only(broken_groups, "carries 'enabled'")
+    violation = only(broken_groups, "'enabled'")
 
     assert violation.severity == Severity.ERROR
-    assert "Muse drops it, so no hook in it runs" in violation.message
-    assert "Muse rejects the whole file" not in violation.message
+    assert violation.message == "'enabled' is not a matcher-group field (PreToolUse[1])"
 
 
 def test_the_group_fixture_reports_nothing_else(broken_groups) -> None:
     assert len(at(broken_groups, Severity.ERROR)) == 5, messages(broken_groups)
     assert at(broken_groups, Severity.WARNING) == []
-
-
-def test_the_allowed_group_keys_are_named(broken_groups) -> None:
-    message = only(broken_groups, "carries 'enabled'").message
-
-    assert "'hooks' and 'matcher'" in message
 
 
 # ── File-level defects ───────────────────────────────────────────
@@ -440,7 +427,6 @@ def test_a_file_muse_cannot_load_is_an_error(tmp_path, body, expected) -> None:
     assert len(violations) == 1
     assert expected in violations[0].message
     assert violations[0].severity == Severity.ERROR
-    assert "Muse loads no hooks from this file" in violations[0].message
 
 
 def test_an_empty_hooks_object_configures_nothing(tmp_path) -> None:
@@ -450,9 +436,10 @@ def test_an_empty_hooks_object_configures_nothing(tmp_path) -> None:
 
     violations = check(repo)
 
+    assert violations == check(repo)
     assert len(violations) == 1
     assert violations[0].severity == Severity.WARNING
-    assert "configures nothing" in violations[0].message
+    assert violations[0].message == "'hooks' is empty"
 
 
 def test_top_level_keys_other_than_hooks_are_ignored(tmp_path) -> None:
@@ -526,11 +513,10 @@ def test_a_pattern_neither_engine_can_compile_is_still_reported(tmp_path) -> Non
         )
     )
 
-    violation = only(check(repo), "does not compile as a regex")
+    violation = only(check(repo), "does not compile")
 
     assert violation.severity == Severity.WARNING
-    assert "Rust's regex engine" in violation.message
-    assert "Muse drops this matcher group" in violation.message
+    assert violation.message.startswith("Hook PreToolUse[0] 'matcher' 'Write|Edit(' does not")
 
 
 @pytest.mark.parametrize(
@@ -562,11 +548,9 @@ def test_a_rust_only_atom_does_not_waive_the_rest_of_the_pattern(tmp_path, match
         )
     )
 
-    violation = only(check(repo), "does not compile as a regex")
+    violation = only(check(repo), "does not compile")
 
     assert violation.severity == Severity.WARNING
-    assert "Rust's regex engine" in violation.message
-    assert "Muse drops this matcher group" in violation.message
 
 
 def test_a_pathological_pattern_does_not_crash_the_rule(tmp_path) -> None:
@@ -625,9 +609,9 @@ def test_a_known_field_of_the_wrong_type_rejects_the_whole_file(
 
     assert len(violations) == 1
     assert expected in violations[0].message
+    # Refused at parse time, before anything decides which handlers to keep,
+    # which is what ERROR says here.
     assert violations[0].severity == Severity.ERROR
-    # Refused at parse time, before anything decides which handlers to keep.
-    assert "Muse rejects the whole file" in violations[0].message
 
 
 @pytest.mark.parametrize(
@@ -685,8 +669,10 @@ def test_a_non_list_output_capabilities_rejects_the_file(tmp_path) -> None:
     violations = check(repo)
 
     assert len(violations) == 1
-    assert "'outputCapabilities' must be a list" in violations[0].message
-    assert "Muse rejects the whole file" in violations[0].message
+    assert (
+        violations[0].message
+        == "Hook Stop[0].hooks[0] 'outputCapabilities' must be a list, got str"
+    )
 
 
 def test_an_unhashable_handler_type_does_not_crash_the_rule(tmp_path) -> None:
@@ -706,18 +692,14 @@ def test_an_unhashable_handler_type_does_not_crash_the_rule(tmp_path) -> None:
     violations = check(repo)
 
     assert len(violations) == 2, messages(violations)
-    assert "'type' must be a str" in violations[0].message
-    assert "Muse rejects the whole file" in violations[0].message
-    assert "'command' is empty" in violations[1].message
+    assert violations[0].message == "Hook Stop[0].hooks[0] 'type' must be a str, got list"
+    assert violations[1].message == "Hook Stop[0].hooks[1] 'command' is empty"
 
 
 # ── Tokens Python accepts and serde_json does not ────────────────
 
 
-NON_FINITE_VERDICT = (
-    "is not valid JSON — NaN and Infinity are not JSON tokens, and "
-    "Muse rejects the whole file, so no hook in it runs"
-)
+NON_FINITE_VERDICT = "is not valid JSON"
 
 
 def write_hooks(tmp_path: Path, name: str, body: str) -> Path:
@@ -846,7 +828,7 @@ def test_extra_events_accepts_an_event_newer_than_this_release(tmp_path) -> None
 
     assert not [m for m in messages(silenced) if "'sessionstart'" in m]
     # Only the named event is accepted; the undocumented one still shows.
-    assert only(silenced, "Hook event 'Notification' is in Muse's event set")
+    assert only(silenced, "Hook event 'Notification' is not in Muse's documented event list")
 
 
 def test_an_accepted_event_keeps_its_entries_shape_checked(tmp_path) -> None:
@@ -900,7 +882,7 @@ def test_extra_handler_fields_accepts_a_field_newer_than_this_release(tmp_path) 
 
     assert not [m for m in messages(silenced) if "'retries'" in m]
     # Only the named field is accepted; the others still fire.
-    assert only(silenced, "1 handler sets 'args'")
+    assert only(silenced, "'args' is not a handler field")
 
 
 def test_a_declared_handler_field_is_never_type_checked(tmp_path) -> None:
@@ -918,7 +900,7 @@ def test_a_declared_handler_field_is_never_type_checked(tmp_path) -> None:
         )
     )
 
-    assert only(check(repo), "1 handler sets 'retries'")
+    assert only(check(repo), "'retries' is not a handler field")
     assert check(repo, {"extra-handler-fields": ["retries"]}) == []
 
 
@@ -930,13 +912,13 @@ def test_extra_group_keys_accepts_a_group_key_newer_than_this_release(tmp_path) 
     same-day remedy its events and handler fields do."""
     repo = copy_fixture("muse/broken", tmp_path)
     baseline = messages(check(repo))
-    assert [m for m in baseline if "carry 'description'" in m]
+    assert [m for m in baseline if m.startswith("'description' is not")]
 
     silenced = messages(check(repo, {"extra-group-keys": ["description"]}))
 
     # The declared key alone stops being a finding; every other verdict in
     # the file is unchanged, including the handler-level stray keys.
-    assert silenced == [m for m in baseline if "carry 'description'" not in m]
+    assert silenced == [m for m in baseline if not m.startswith("'description' is not")]
 
 
 def test_extra_group_keys_is_configurable_through_a_config_file(tmp_path) -> None:
@@ -1069,7 +1051,7 @@ def test_a_windows_only_handler_is_still_scanned(tmp_path) -> None:
     assert len(violations) == 1, messages(violations)
     assert "downloads and executes remote code" in violations[0].message
     # And the shape rule still says the POSIX spelling is missing.
-    assert only(check(repo), "sets only a Windows command").severity == Severity.WARNING
+    assert only(check(repo), "has 'commandWindows' but no 'command'").severity == Severity.WARNING
 
 
 def test_a_duplicate_hooks_key_does_not_hide_a_dangerous_command(tmp_path) -> None:
@@ -1110,7 +1092,7 @@ def test_the_rule_is_not_loaded_without_muse_evidence(tmp_path) -> None:
     repo = write_repo(tmp_path / "no-muse")
     context = RepositoryContext(repo)
 
-    assert HAS_MUSE not in context.detected_formats
+    assert RepositoryType.MUSE not in context.repo_types
     loaded = {rule.rule_id for rule in Linter(context, no_plugins=True).rules}
     assert "muse-hooks-valid" not in loaded
     # And it finds nothing even when a unit test calls it directly.
@@ -1139,6 +1121,46 @@ def test_the_cli_reports_every_finding_against_the_hooks_file(tmp_path) -> None:
     assert all(v["fixable"] is False for v in found)
 
 
+def test_the_summary_reports_the_repository_as_muse(tmp_path) -> None:
+    """A repository whose only agent content is Muse's used to report
+    `unknown`; a tool's configuration is what the repository is."""
+    repo = copy_fixture("muse/clean", tmp_path)
+
+    result = run_cli(["lint", repo])
+
+    assert result.returncode == 0
+    assert "Repo type: agents-md, muse" in result.stdout
+
+
+def test_the_json_report_lists_muse_among_the_repo_types(tmp_path) -> None:
+    repo = copy_fixture("muse/clean", tmp_path)
+
+    assert "muse" in lint_json(repo)["stats"]["repo_types"]
+
+
+def test_forcing_the_type_runs_the_rule_without_a_marker(tmp_path) -> None:
+    """``--type muse`` is the operator's answer, so the rule runs even
+    where detection would not have turned it on — and finds nothing,
+    because there is no hooks file to read."""
+    repo = write_repo(tmp_path / "forced")
+
+    result = run_cli(["lint", "-v", repo])
+    assert "Rule muse-hooks-valid" in result.stdout + result.stderr
+    assert "skipped (not applicable)" in _rule_line(result, "muse-hooks-valid")
+
+    forced = run_cli(["lint", "-v", "--type", "muse", repo])
+    assert forced.returncode == 0
+    assert "skipped" not in _rule_line(forced, "muse-hooks-valid")
+
+
+def _rule_line(result, rule_id: str) -> str:
+    """The verbose log line naming *rule_id*, so a gate change is visible."""
+    log = result.stdout + result.stderr
+    lines = [line for line in log.splitlines() if f"Rule {rule_id} " in line]
+    assert lines, log
+    return lines[0]
+
+
 def test_the_cli_fails_on_a_rejected_file(tmp_path) -> None:
     repo = copy_fixture("muse/broken-groups", tmp_path)
 
@@ -1161,15 +1183,14 @@ def test_the_cli_fails_on_a_rejected_file(tmp_path) -> None:
         ('{"hooks": ["make lint"]}', "must be an object"),
         (
             '{"hooks": [{"type": "Command", "command": "make lint"}]}',
-            "'type' must be exactly 'command', got 'Command'",
+            "'type' must be 'command', got 'Command'",
         ),
         ('{"hooks": [{"type": "command"}]}', "is missing 'command'"),
     ],
 )
-def test_each_remaining_shape_defect_names_its_verdict(tmp_path, group, needle) -> None:
+def test_each_remaining_shape_defect_is_reported(tmp_path, group, needle) -> None:
     """A non-array `hooks`, a bare-string handler, a miscased type, and a
-    handler with nothing to run each get one finding that says what Muse
-    does with it."""
+    handler with nothing to run each get exactly one finding."""
     repo = write_repo(tmp_path / "shape")
     (repo / ".muse").mkdir()
     (repo / ".muse" / "hooks.json").write_text('{"hooks": {"Stop": [' + group + "]}}")

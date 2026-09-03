@@ -76,8 +76,9 @@ catch issues early. Re-running the test matrix is recommended when updating thes
 - Vocabulary (events, handler fields, failure scopes) — one module,
   `src/skillsaw/formats/muse.py`, so a behavior change is an edit there rather than a
   hunt through rule code.
-- Detection — `src/skillsaw/discovery/detect.py` (`HAS_MUSE`: a `.muse/hooks.json`,
-  and nothing else); `src/skillsaw/context.py` exposes the format flag.
+- Detection — `src/skillsaw/discovery/detect.py` (`muse`: a `.muse/hooks.json`,
+  and nothing else); `RepositoryType.MUSE` in `src/skillsaw/repository_types.py`
+  is what the rule gates on and what `Repo type:` reports.
 - Lint tree nodes — `src/skillsaw/blocks/json_config.py` (`MuseHooksBlock`, a
   `HooksBlock` subclass so `hooks-dangerous` and `hooks-prohibited` scan it like every
   other host's hooks file; lenient JSON on purpose, because Muse's `serde_json` reader

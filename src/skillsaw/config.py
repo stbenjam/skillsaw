@@ -441,7 +441,8 @@ class LinterConfig:
             rule_id: Rule identifier
             context: Repository context
             repo_types: Set of RepositoryType values the rule applies to (None = all)
-            formats: Set of detected format constants the rule requires (None = all)
+            formats: DEPRECATED legacy format labels the rule requires; folded
+                into ``repo_types`` for matching (None = all)
             since_version: Minimum config version required for this rule
             default_enabled: Class-level default (``Rule.default_enabled``) for
                 rules outside the builtin registry — plugin rules
@@ -541,22 +542,22 @@ class LinterConfig:
         enabled = rule_config.get("enabled", fallback_enabled)
 
         if enabled == "auto":
-            if repo_types is None and formats is None:
+            # A rule declares where it applies with ``repo_types``. A legacy
+            # ``formats`` declaration from a third-party plugin folds into
+            # the same set, so there is one match to make.
+            from .repository_types import merge_legacy_formats
+
+            applies_to = merge_legacy_formats(repo_types, formats)
+            if applies_to is None:
                 return True, "enabled: auto (applies to all repo types)"
-            if repo_types is not None:
-                # ``repo_types`` may mix RepositoryType members with string
-                # names of plugin-contributed types (see skillsaw.plugins.
-                # PluginRepoType); strings match against the plugin set.
-                plugin_types = getattr(context, "plugin_repo_types", set())
-                matched_types = {
-                    t for t in repo_types if t in context.repo_types or t in plugin_types
-                }
-                if matched_types:
-                    matched = sorted(getattr(t, "value", t) for t in matched_types)
-                    return True, f"enabled: auto — detected repo type: {', '.join(matched)}"
-            if formats is not None and formats & context.detected_formats:
-                matched = sorted(formats & context.detected_formats)
-                return True, f"enabled: auto — detected format: {', '.join(matched)}"
+            # ``applies_to`` may mix RepositoryType members with string names
+            # of plugin-contributed types (see skillsaw.plugins.
+            # PluginRepoType); strings match against the plugin set.
+            plugin_types = getattr(context, "plugin_repo_types", set())
+            matched_types = {t for t in applies_to if t in context.repo_types or t in plugin_types}
+            if matched_types:
+                matched = sorted(getattr(t, "value", t) for t in matched_types)
+                return True, f"enabled: auto — detected repo type: {', '.join(matched)}"
             return False, "enabled: auto — no matching repo type or format detected"
 
         if bool(enabled):

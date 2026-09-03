@@ -15,7 +15,7 @@ import shutil
 from pathlib import Path
 
 from skillsaw.blocks import AgentMemoryBlock, AgentMemoryIndexBlock
-from skillsaw.context import HAS_MUSE, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.content.progressive_disclosure import (
     ContentProgressiveDisclosureRule,
@@ -50,7 +50,7 @@ def test_memory_alone_is_not_evidence_of_muse(tmp_path) -> None:
     that commits memory and configures no hooks is not a Muse repository."""
     repo = copy_fixture("agent-memory/notes", tmp_path)
 
-    assert HAS_MUSE not in RepositoryContext(repo).detected_formats
+    assert RepositoryType.MUSE not in RepositoryContext(repo).repo_types
 
 
 def test_memory_is_attached_without_any_tool_evidence(tmp_path) -> None:

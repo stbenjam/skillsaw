@@ -402,6 +402,11 @@ def _attach_apm_tree(
 
 def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     """Build a tree of all lintable objects in the repository."""
+    # Imported here rather than at module scope: ``context`` reaches this
+    # module through ``RepositoryContext.lint_tree``, so a top-level import
+    # would close the cycle.
+    from .context import RepositoryType
+
     _INSTRUCTION_FILE_BLOCK_TYPES = {
         "AGENTS.md": AgentsMdBlock,
         "CLAUDE.md": ClaudeMdBlock,
@@ -627,7 +632,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # Only Devin Desktop reads ``agents.md`` case-insensitively, so that
     # spelling is an instruction file only where the repository carries other
     # Devin evidence; elsewhere ``docs/agents.md`` is a documentation page.
-    devin_desktop = "HAS_DEVIN" in context.detected_formats
+    devin_desktop = RepositoryType.DEVIN in context.repo_types
     for f in context.instruction_files:
         if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
             continue

@@ -13,7 +13,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentNegativeOnlyRule(Rule):
     """Detect 'never/don't/avoid X' without a positive alternative"""
 
-    formats = None
     since = "0.7.0"
 
     _NEGATIVE_RE = re.compile(

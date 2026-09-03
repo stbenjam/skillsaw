@@ -55,6 +55,17 @@ class QuietRule(Rule):
         return []
 
 
+class LegacyFormatsRule(AlwaysFiresRule):
+    """A third-party rule written against the pre-0.21 ``formats`` labels."""
+
+    default_enabled = "auto"
+    formats = frozenset({"HAS_CURSOR"})
+
+    @property
+    def rule_id(self) -> str:
+        return "plugin-legacy-formats"
+
+
 class InvalidSurfaceDependencyRule(AlwaysFiresRule):
     surface_dependencies = ("plugin-owned-surface",)
 
@@ -294,6 +305,30 @@ def test_plugin_rule_runs_and_sets_source(fake_plugin, repo):
     fired = [v for v in violations if v.rule_id == "plugin-always-fires"]
     assert len(fired) == 1
     assert fired[0].source == "plugin:testplug"
+
+
+def test_a_plugin_rule_declaring_legacy_formats_still_activates(fake_plugin, tmp_path):
+    """``Rule.formats`` is deprecated, not removed: a plugin published
+    against the old ``HAS_*`` labels keeps working for one release."""
+    (tmp_path / ".cursor" / "rules").mkdir(parents=True)
+    (tmp_path / ".cursor" / "rules" / "style.mdc").write_text(
+        "---\ndescription: House style\n---\n\nPrefer explicit imports.\n", encoding="utf-8"
+    )
+    fake_plugin("fake_legacy", module_attrs={"SKILLSAW_RULES": [LegacyFormatsRule]})
+
+    linter, violations = _lint(tmp_path)
+
+    assert "plugin-legacy-formats" in {r.rule_id for r in linter.rules}
+    assert [v for v in violations if v.rule_id == "plugin-legacy-formats"]
+
+
+def test_a_plugin_rule_declaring_legacy_formats_stays_off_elsewhere(fake_plugin, repo):
+    """The other half: the label still has to match the repository."""
+    fake_plugin("fake_legacy_off", module_attrs={"SKILLSAW_RULES": [LegacyFormatsRule]})
+
+    linter, _ = _lint(repo)
+
+    assert "plugin-legacy-formats" not in {r.rule_id for r in linter.rules}
 
 
 def test_plugin_rule_with_invalid_surface_dependency_is_isolated(fake_plugin, repo):

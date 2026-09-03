@@ -225,8 +225,9 @@ class Linter:
         # Prefer contexts constructed with the config's filters (see
         # RepositoryContext.__init__); only reconfigure when a legacy caller
         # passed a bare context that disagrees with the config.
-        # apply_excludes() refreshes derived state (detected_formats, cached
-        # lint tree), so this path cannot leave the context stale — but it
+        # apply_excludes() refreshes derived state (the tool repository
+        # types, cached lint tree), so this path cannot leave the context
+        # stale — but it
         # only narrows: it won't rediscover paths an earlier filter removed.
         if (
             self.context.content_paths != self.config.content_paths

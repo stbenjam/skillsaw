@@ -15,7 +15,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentActionabilityScoreRule(Rule):
     """Compute an actionability score for instruction files"""
 
-    formats = None
     since = "0.7.0"
     # Subjective prose scoring that rarely drove a useful edit; newer models
     # don't need instruction density policed.

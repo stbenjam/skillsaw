@@ -494,4 +494,6 @@ def test_the_pre_split_baseline_test_is_not_vacuous(tmp_path):
     found = [
         v for v in json.loads(result.stdout)["violations"] if v["rule_id"] == "codex-hooks-valid"
     ]
-    assert [v["message"] for v in found] == ["Event 'PostToolUse[0].matcher' must be a string"]
+    assert [v["message"] for v in found] == [
+        "Hook PostToolUse[0] 'matcher' must be a string, got list"
+    ]

@@ -43,7 +43,7 @@ def test_new_rules_are_not_force_enabled():
 
     ``default_enabled = True`` runs the rule in every repository the day a
     user upgrades, whether or not it has anything the rule can read. ``auto``
-    with ``repo_types``/``formats`` is how a rule says where it applies.
+    with ``repo_types`` is how a rule says where it applies.
     """
     offenders = [
         cls.__name__
@@ -51,7 +51,7 @@ def test_new_rules_are_not_force_enabled():
         if _version(cls.since) >= (0, 20, 0) and cls.default_enabled not in ("auto", False)
     ]
     assert offenders == [], (
-        f"{offenders} default to enabled: true — declare repo_types/formats "
+        f"{offenders} default to enabled: true — declare repo_types "
         "and leave default_enabled at 'auto', or set it to False for opt-in"
     )
 
@@ -201,9 +201,9 @@ def test_context_constructor_applies_excludes(tmp_path):
     assert "my-skill" not in skill_names
 
 
-def test_context_constructor_excludes_precede_format_detection(tmp_path):
-    """Excluded instruction files must not drive format detection."""
-    from skillsaw.context import HAS_COPILOT
+def test_context_constructor_excludes_precede_tool_detection(tmp_path):
+    """Excluded instruction files must not drive tool detection."""
+    from skillsaw.context import RepositoryType
 
     vendored = tmp_path / "vendor"
     vendored.mkdir()
@@ -211,38 +211,67 @@ def test_context_constructor_excludes_precede_format_detection(tmp_path):
 
     context = RepositoryContext(tmp_path, exclude_patterns=["vendor/**"])
     assert not context.instruction_files
-    assert HAS_COPILOT not in context.detected_formats
+    assert RepositoryType.COPILOT not in context.repo_types
 
     unfiltered = RepositoryContext(tmp_path)
-    assert HAS_COPILOT in unfiltered.detected_formats
+    assert RepositoryType.COPILOT in unfiltered.repo_types
 
 
-def test_excluded_root_marker_does_not_set_format(tmp_path):
-    """Excluded root marker files must not flip format flags."""
-    from skillsaw.context import HAS_CLAUDE_MD
+def test_excluded_root_marker_does_not_set_a_repo_type(tmp_path):
+    """Excluded root marker files must not add a tool repository type."""
+    from skillsaw.context import RepositoryType
 
     (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
 
     context = RepositoryContext(tmp_path, exclude_patterns=["CLAUDE.md"])
-    assert HAS_CLAUDE_MD not in context.detected_formats
+    assert RepositoryType.CLAUDE_MD not in context.repo_types
 
     unfiltered = RepositoryContext(tmp_path)
-    assert HAS_CLAUDE_MD in unfiltered.detected_formats
+    assert RepositoryType.CLAUDE_MD in unfiltered.repo_types
 
 
-def test_apply_excludes_refreshes_detected_formats(tmp_path):
-    """Legacy callers mutating exclude_patterns get recomputed formats."""
-    from skillsaw.context import HAS_CLAUDE_MD
+def test_apply_excludes_refreshes_the_tool_repo_types(tmp_path):
+    """Legacy callers mutating exclude_patterns get recomputed types.
+
+    The last marker going away leaves nothing detected, so the repository
+    falls back to ``unknown`` rather than keeping a type it no longer has.
+    """
+    from skillsaw.context import RepositoryType
 
     (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
 
     context = RepositoryContext(tmp_path)
-    assert HAS_CLAUDE_MD in context.detected_formats
+    assert RepositoryType.CLAUDE_MD in context.repo_types
 
     context.exclude_patterns = ["CLAUDE.md"]
     context.apply_excludes()
-    assert HAS_CLAUDE_MD not in context.detected_formats
+    assert RepositoryType.CLAUDE_MD not in context.repo_types
+    assert context.repo_types == {RepositoryType.UNKNOWN}
     assert not context.instruction_files
+
+
+def test_an_explicit_type_override_survives_apply_excludes(tmp_path):
+    """``--type`` is the operator's answer; detection never overrules it."""
+    from skillsaw.context import RepositoryType
+
+    (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
+
+    context = RepositoryContext(tmp_path, repo_types={RepositoryType.MUSE})
+    context.apply_excludes()
+
+    assert context.repo_types == {RepositoryType.MUSE}
+
+
+def test_the_deprecated_detected_formats_property_maps_the_types(tmp_path):
+    """Kept for one release so third-party code reading it keeps working."""
+    from skillsaw.context import HAS_CLAUDE_MD, HAS_CURSOR
+
+    (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
+
+    formats = RepositoryContext(tmp_path).detected_formats
+
+    assert HAS_CLAUDE_MD in formats
+    assert HAS_CURSOR not in formats
 
 
 def test_severity_enum_matches():

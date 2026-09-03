@@ -10,6 +10,7 @@ Cursor .mdc rules must have frontmatter that lets the rule activate
 | **Severity** | error (auto) |
 | **Autofix** | auto |
 | **Since** | v0.19.0 |
+| **Repo Types** | cursor |
 | **Category** | [Cursor](cursor.md) |
 
 ## Why

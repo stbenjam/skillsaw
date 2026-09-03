@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Set, Tuple, TYPE_CHECKING
 import logging
@@ -30,82 +29,39 @@ from .repository_mcp_registry import RepositoryMcpRegistryMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 from .repository_scan import RepositoryScanMixin
 
+# Re-exported here: ``skillsaw.context`` has always been the import site for
+# the repository vocabulary, and rules and plugins read it from there.
+from . import repository_types
+from .repository_types import (  # noqa: F401
+    ALL_INSTRUCTION_FORMATS,
+    HAS_AGENTS_MD,
+    HAS_CLAUDE_MD,
+    HAS_CLINE,
+    HAS_CODERABBIT,
+    HAS_COPILOT,
+    HAS_CURSOR,
+    HAS_DEVIN,
+    HAS_GEMINI,
+    HAS_KIRO,
+    HAS_OPENCODE,
+    HAS_QWEN,
+    HAS_SKILLS_LOCK,
+    INSTRUCTION_REPO_TYPES,
+    SKILL_REPO_TYPES,
+    TOOL_REPO_TYPES,
+    RepositoryType,
+    merge_legacy_formats,
+)
+
 if TYPE_CHECKING:
     from .lint_target import LintTarget
 
 logger = logging.getLogger(__name__)
 
 
-class RepositoryType(Enum):
-    """Type of repository"""
-
-    SINGLE_PLUGIN = "single-plugin"  # Single plugin at repo root
-    MARKETPLACE = "marketplace"  # Marketplace with multiple plugins
-    AGENTSKILLS = "agentskills"  # agentskills.io skill repo
-    DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
-    CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
-    APM = "apm"  # Repository with .apm/ directory (Agent Package Manager)
-    PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
-    CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
-    CODEX_MARKETPLACE = "codex-marketplace"  # .agents/plugins/marketplace.json
-    AGENT_PLUGIN = "agent-plugin"  # Portable Agent Plugins plugin.json
-    MCP_REGISTRY = "mcp-registry"  # MCP Registry server.json publisher metadata
-    UNKNOWN = "unknown"  # Not a recognized repo type
-
-
-# Repository types whose lint tree can hold Agent Skills. One shared set so a
-# newly supported host cannot be wired into some skill rules and forgotten in
-# the rest. The Codex types belong here because Codex plugins ship
-# ``skills/<name>/SKILL.md`` in the same format, and a catalog repository's
-# plugin skills are discovered whether or not CODEX_PLUGIN was also inferred.
-SKILL_REPO_TYPES = {
-    RepositoryType.AGENTSKILLS,
-    RepositoryType.SINGLE_PLUGIN,
-    RepositoryType.MARKETPLACE,
-    RepositoryType.DOT_CLAUDE,
-    RepositoryType.CODEX_PLUGIN,
-    RepositoryType.CODEX_MARKETPLACE,
-    RepositoryType.AGENT_PLUGIN,
-}
-
-
-HAS_CURSOR = "HAS_CURSOR"
-HAS_COPILOT = "HAS_COPILOT"
-HAS_CLINE = "HAS_CLINE"
-HAS_DEVIN = "HAS_DEVIN"
-HAS_GEMINI = "HAS_GEMINI"
-HAS_QWEN = "HAS_QWEN"
-HAS_AGENTS_MD = "HAS_AGENTS_MD"
-HAS_KIRO = "HAS_KIRO"
-HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
-HAS_CODERABBIT = "HAS_CODERABBIT"
-HAS_OPENCODE = "HAS_OPENCODE"
-HAS_MUSE = "HAS_MUSE"
-HAS_CODEX = "HAS_CODEX"
-HAS_SKILLS_LOCK = "HAS_SKILLS_LOCK"
-# Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE,
-# HAS_OPENCODE, HAS_MUSE and HAS_CODEX are deliberately absent: the
-# instruction-file rules only ever look at
-# AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose only marker is
-# ``.clinerules``, ``opencode.json``, ``.muse/hooks.json`` or
-# ``.codex/hooks.json`` would auto-enable two rules structurally incapable of
-# finding anything. OpenCode, Muse Code and Codex do read AGENTS.md — and
-# when one is present HAS_AGENTS_MD enables them for it.
-ALL_INSTRUCTION_FORMATS = frozenset(
-    {
-        HAS_CURSOR,
-        HAS_COPILOT,
-        HAS_DEVIN,
-        HAS_GEMINI,
-        HAS_QWEN,
-        HAS_AGENTS_MD,
-        HAS_KIRO,
-        HAS_CLAUDE_MD,
-        HAS_CODERABBIT,
-    }
-)
-
-
+# Gates Codex *plugin* discovery under an explicit ``--type``. CODEX_PROJECT
+# is absent on purpose: ``.codex/hooks.json`` is project configuration, not a
+# plugin claim, so forcing it must not make skillsaw walk catalogs.
 _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 
 # Distinguishes "not computed yet" from a computed ``None`` (the install
@@ -139,6 +95,22 @@ class RepositoryContext(
         RepositoryType.MCP_REGISTRY,
         RepositoryType.CODERABBIT,
         RepositoryType.PROMPTFOO,
+        # Tool configuration sorts below everything that describes how the
+        # repository packages its content, so a marketplace that also ships
+        # a `.cursor/` keeps `marketplace` as its primary type.
+        RepositoryType.CODEX_PROJECT,
+        RepositoryType.MUSE,
+        RepositoryType.CURSOR,
+        RepositoryType.COPILOT,
+        RepositoryType.CLINE,
+        RepositoryType.DEVIN,
+        RepositoryType.OPENCODE,
+        RepositoryType.KIRO,
+        RepositoryType.SKILLS_LOCK,
+        RepositoryType.CLAUDE_MD,
+        RepositoryType.AGENTS_MD,
+        RepositoryType.GEMINI,
+        RepositoryType.QWEN,
     ]
 
     # Compiled output directories that APM generates from .apm/ sources.
@@ -239,11 +211,12 @@ class RepositoryContext(
         self.agent_plugins: List[Path] = (
             self._discover_agent_plugins() if self._agent_plugin_discovery_enabled else []
         )
+        self._types_overridden = repo_types is not None
+        # Types describing how content is packaged. The tool types are folded
+        # in by ``_refresh_tool_types()`` once instruction-file discovery has
+        # run — an AGENTS.md is evidence of a tool, and it is not found yet.
         self.repo_types: Set[RepositoryType] = (
             set(repo_types) if repo_types is not None else self._detect_types()
-        )
-        logger.info(
-            "Detected repo types: %s", ", ".join(t.value for t in self.repo_types) or "none"
         )
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = {}
@@ -257,7 +230,6 @@ class RepositoryContext(
         self.plugins = self._discover_plugins()
         self.skills: List[Path] = self._discover_skills()
         self.instruction_files: List[Path] = self._discover_instruction_files()
-        self.detected_formats: Set[str] = set()
         # Plugin-contributed extension state, registered by the Linter after
         # plugin loading (see Linter._register_plugin_extensions).
         self.plugin_repo_types: Set[str] = set()
@@ -276,10 +248,13 @@ class RepositoryContext(
         # shared context (e.g. two Linters over one context) are no-ops.
         self._plugin_extensions_registered = False
         self._lint_tree: Optional["LintTarget"] = None
-        # Excludes must be applied before format detection so excluded files
-        # (e.g. *.instructions.md under an excluded directory) don't flip
-        # format flags like HAS_COPILOT.
+        # Excludes must be applied before tool detection so excluded files
+        # (e.g. *.instructions.md under an excluded directory) don't add a
+        # repository type like ``copilot``.
         self.apply_excludes()
+        logger.info(
+            "Detected repo types: %s", ", ".join(sorted(t.value for t in self.repo_types)) or "none"
+        )
 
     @property
     def lint_tree(self) -> "LintTarget":
@@ -472,8 +447,41 @@ class RepositoryContext(
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
         self.reset_external_content_provenance()
-        self.detected_formats = self._detect_formats()
+        self._refresh_tool_types()
         self._lint_tree = None
+
+    def _refresh_tool_types(self) -> None:
+        """Fold committed tool configuration into the detected types.
+
+        Runs at the end of ``__init__`` — tool evidence includes AGENTS.md
+        and friends, which are not discovered when the packaging types are
+        worked out — and again whenever a caller mutates
+        ``exclude_patterns``, so an exclude added after construction takes
+        that tool's rules with it. An explicit ``--type`` is the operator's
+        answer and is never second-guessed.
+        """
+        if self._types_overridden:
+            return
+        self.repo_types -= TOOL_REPO_TYPES
+        self.repo_types |= {RepositoryType(value) for value in self._detect_tool_type_values()}
+        if len(self.repo_types) > 1:
+            self.repo_types.discard(RepositoryType.UNKNOWN)
+        elif not self.repo_types:
+            self.repo_types.add(RepositoryType.UNKNOWN)
+
+    @property
+    def detected_formats(self) -> Set[str]:
+        """DEPRECATED: the legacy ``HAS_*`` labels for the detected types.
+
+        Format labels and repository types were one concept described twice.
+        Kept for one release so third-party code reading this attribute
+        keeps working; read ``repo_types`` instead.
+        """
+        return {
+            label
+            for label, repo_type in repository_types._LEGACY_FORMAT_LABELS.items()
+            if repo_type in self.repo_types
+        }
 
     def _detect_types(self) -> Set[RepositoryType]:
         """Detect all applicable repository types.

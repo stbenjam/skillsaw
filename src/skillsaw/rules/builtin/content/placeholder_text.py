@@ -14,7 +14,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentPlaceholderTextRule(Rule):
     """Detect TODO markers, bracket placeholders, and unfilled template text"""
 
-    formats = None
     since = "0.9.0"
     repo_types = None
 

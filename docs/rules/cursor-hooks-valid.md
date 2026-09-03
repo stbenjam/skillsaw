@@ -10,6 +10,7 @@
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.19.0 |
+| **Repo Types** | cursor |
 | **Category** | [Cursor](cursor.md) |
 
 ## Why

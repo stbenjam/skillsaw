@@ -105,7 +105,6 @@ _IMPORT_CATEGORIES = frozenset({"claude-md", "agents-md", "gemini-md", "qwen-md"
 class ContentProgressiveDisclosureRule(Rule):
     """Large files should split detail into referenced files that load on demand"""
 
-    formats = None
     repo_types = None
     default_enabled = "auto"
     since = "0.19.0"
