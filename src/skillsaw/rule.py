@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Callable, List, Optional, Dict, Any, Type, TypeVar, TYPE_CHECKING
+from typing import Callable, List, Optional, Dict, Any, Tuple, Type, TypeVar, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -77,6 +77,16 @@ class RuleViolation:
     # sibling findings at the same path and line. Rules should set this from
     # their first release so existing external fingerprints never churn.
     fingerprint_discriminator: Optional[str] = None
+    # The findings this one stands in for when a rule reports a pile of
+    # them as one (a directory of dead files, say). A baseline written before
+    # the rule consolidated lists the parts; the whole stays baselined while
+    # every part still is.
+    constituents: Tuple["RuleViolation", ...] = field(default=(), repr=False, compare=False)
+    # The whole this finding would fold into when the rule consolidates:
+    # the dual of ``constituents``. A pile baselined as one finding may
+    # shrink until the rule reports its files one by one; those stay
+    # baselined under the whole's ceiling.
+    consolidated_into: Optional["RuleViolation"] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         if self.block is None and self.file_path is not None:
@@ -380,6 +390,8 @@ class Rule(ABC):
         fixable: Optional[bool] = None,
         fix_confidence: Optional[AutofixConfidence] = None,
         fingerprint_discriminator: Optional[str] = None,
+        constituents: Tuple[RuleViolation, ...] = (),
+        consolidated_into: Optional[RuleViolation] = None,
     ) -> RuleViolation:
         """Create a violation for this rule.
 
@@ -388,6 +400,10 @@ class Rule(ABC):
         ``metric`` disambiguates multiple ratchet violations per file.
         ``fingerprint_discriminator`` disambiguates sibling findings at the
         same path and line without changing identities for other rules.
+        ``constituents`` are the findings a consolidated one stands in for,
+        so a baseline that lists them keeps suppressing the whole;
+        ``consolidated_into`` is the whole a part would fold into, so a
+        baseline that lists the whole keeps suppressing the parts.
 
         ``fixable`` defaults from the rule: True when the rule overrides
         ``fix()`` and declares a class-level ``autofix_confidence``.  Rules
@@ -414,4 +430,6 @@ class Rule(ABC):
             fixable=fixable,
             fix_confidence=fix_confidence,
             fingerprint_discriminator=fingerprint_discriminator,
+            constituents=constituents,
+            consolidated_into=consolidated_into,
         )

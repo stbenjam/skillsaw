@@ -14,10 +14,16 @@ Detect banned or deprecated model names, APIs, and custom patterns
 
 ## Why
 
-Deprecated model names, retired API endpoints, and other banned references
-rot silently — the model will still try to use them, producing errors or
-unexpected behavior. Keeping references current avoids wasted tokens on
-instructions that cannot succeed.
+Deprecated model names, retired API endpoints, and outdated references can
+cause models to fail or use obsolete interfaces. Keeping references up to date
+ensures instructions work smoothly and efficiently.
+
+When a line maps a name from skillsaw's built-in deprecation list to a
+replacement (such as in a migration table, arrow syntax, or key/value pair),
+skillsaw recognizes that the older name is being retired rather than
+recommended. The replacement itself is still checked to ensure it points to a
+current, supported model. Patterns you configure under `banned` are always
+reported: they express your own policy, not a deprecation.
 
 ## Examples
 
@@ -33,6 +39,14 @@ Call the `/v1/complete` endpoint.
 ```markdown
 Use `claude-sonnet-4-6` for completions.
 Call the `/v1/messages` endpoint.
+```
+
+**Also good — a migration guide naming what it retires:**
+
+```markdown
+| Retired id | Replacement |
+| --- | --- |
+| `claude-2.1` | `claude-sonnet-4-6` |
 ```
 
 ## How to fix
@@ -52,6 +66,7 @@ rules:
       - pattern: "\\blegacy-api\\b"
         message: "Use v2-api instead"
     skip-builtins: false
+    report-migrations: false   # true also reports the retired side of a mapping
 ```
 
 ## Configuration
@@ -68,6 +83,7 @@ rules:
 | `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
 | `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
 | `regex-timeout` | Per-pattern wall-clock budget (seconds) for custom banned patterns; guards against catastrophic-backtracking regexes (clamped to 10s max) | `2.0` |
+| `report-migrations` | Report a banned name even on a line that maps it to a current replacement (a table row, arrow, or key/value entry) | `false` |
 
 ## Research Basis
 

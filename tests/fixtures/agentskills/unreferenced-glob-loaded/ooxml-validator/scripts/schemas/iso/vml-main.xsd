@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:v="urn:schemas-microsoft-com:vml"
+    targetNamespace="urn:schemas-microsoft-com:vml"
+    elementFormDefault="qualified">
+  <xsd:complexType name="CT_Shape">
+    <xsd:attribute name="style" type="xsd:string"/>
+    <xsd:attribute name="fillcolor" type="xsd:string"/>
+  </xsd:complexType>
+</xsd:schema>

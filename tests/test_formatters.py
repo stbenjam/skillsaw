@@ -14,7 +14,7 @@ from skillsaw.formatters import (
     parse_output_spec,
     relative_path,
 )
-from skillsaw.formatters.text import format_text
+from skillsaw.formatters.text import TOP_RULES_THRESHOLD, format_text
 from skillsaw.formatters.json_fmt import format_json
 from skillsaw.formatters.sarif import format_sarif
 from skillsaw.formatters.html import format_html
@@ -1487,3 +1487,304 @@ def test_html_no_fixable_marker_when_unknown(valid_plugin):
     output = format_html(_make_violations(), context, [], "1.0.0", verbose=True)
 
     assert 'class="fixable"' not in output
+
+
+# --- Top rules block ---
+
+
+def _repeat_violations(rule_id, severity, count, *, files=None, fixable=None, confidence=None):
+    """`count` violations of one rule, spread over `files` distinct paths."""
+    files = count if files is None else files
+    return [
+        RuleViolation(
+            rule_id=rule_id,
+            severity=severity,
+            message=f"{rule_id} finding {i}",
+            file_path=Path(f"skills/{rule_id}-{i % files}/SKILL.md"),
+            line=i + 1,
+            fixable=fixable,
+            fix_confidence=confidence,
+        )
+        for i in range(count)
+    ]
+
+
+def test_text_no_top_rules_below_threshold(valid_plugin):
+    """One finding short of the threshold: the totals already say enough."""
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations(
+        "content-description-routing", Severity.WARNING, TOP_RULES_THRESHOLD - 1
+    )
+
+    output = format_text(violations, context, [], "0.0.0")
+
+    assert "Top rules" not in output
+
+
+def test_text_top_rules_at_threshold(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations(
+        "content-description-routing", Severity.WARNING, TOP_RULES_THRESHOLD
+    )
+
+    output = format_text(violations, context, [], "0.0.0")
+
+    assert "Top rules (50 of 50 findings):" in output
+
+
+def test_text_top_rules_ranks_mixed_severities_and_marks_fixable(valid_plugin):
+    """Five rules, ranked by count, each labelled with its own severity and
+    the strongest fix available for it."""
+    context = RepositoryContext(valid_plugin)
+    violations = (
+        _repeat_violations("content-description-routing", Severity.WARNING, 30)
+        + _repeat_violations(
+            "agentskill-name",
+            Severity.ERROR,
+            20,
+            fixable=True,
+            confidence=AutofixConfidence.SAFE,
+        )
+        + _repeat_violations(
+            "content-broken-internal-reference",
+            Severity.WARNING,
+            10,
+            fixable=True,
+            confidence=AutofixConfidence.SUGGEST,
+        )
+        + _repeat_violations("context-budget", Severity.ERROR, 5)
+        + _repeat_violations("content-weak-language", Severity.INFO, 4)
+        + _repeat_violations("content-section-length", Severity.INFO, 3)
+    )
+
+    output = format_text(violations, context, [], "0.0.0", verbose=True)
+    block = output.split("Top rules")[1]
+    top = block.splitlines()
+
+    assert top[0] == " (69 of 72 findings):"
+    assert top[1].split() == [
+        "content-description-routing",
+        "30",
+        "warning",
+        "30",
+        "files",
+        "skillsaw",
+        "explain",
+        "content-description-routing",
+    ]
+    assert top[2].split() == [
+        "agentskill-name",
+        "20",
+        "error",
+        "20",
+        "files",
+        "[*]",
+        "safe",
+        "autofix",
+    ]
+    assert top[3].split() == [
+        "content-broken-internal-reference",
+        "10",
+        "warning",
+        "10",
+        "files",
+        "[?]",
+        "fix",
+        "--suggest",
+    ]
+    assert top[4].split()[:3] == ["context-budget", "5", "error"]
+    assert top[5].split()[:3] == ["content-weak-language", "4", "info"]
+    # Capped at five rows — the sixth rule never appears in the block.
+    assert len(top) == 6
+    assert "content-section-length" not in block
+
+
+def test_text_top_rules_shows_highest_severity_when_mixed(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations(
+        "claude-plugin-json-valid", Severity.WARNING, 49
+    ) + _repeat_violations("claude-plugin-json-valid", Severity.ERROR, 1)
+
+    output = format_text(violations, context, [], "0.0.0")
+    row = output.split("Top rules")[1].splitlines()[1]
+
+    assert row.split()[:3] == ["claude-plugin-json-valid", "50", "error"]
+
+
+def test_text_top_rules_counts_distinct_files(valid_plugin):
+    """Many findings in one file count once in the files column."""
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations("content-repeated-directive", Severity.WARNING, 60, files=3)
+
+    output = format_text(violations, context, [], "0.0.0")
+    row = output.split("Top rules")[1].splitlines()[1]
+
+    assert row.split()[:5] == ["content-repeated-directive", "60", "warning", "3", "files"]
+
+
+def test_text_top_rules_singular_file(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations("content-section-length", Severity.WARNING, 55, files=1)
+
+    output = format_text(violations, context, [], "0.0.0")
+    row = output.split("Top rules")[1].splitlines()[1]
+
+    assert row.split()[:5] == ["content-section-length", "55", "warning", "1", "file"]
+
+
+def test_text_top_rules_hint_names_only_rules_explain_resolves(valid_plugin):
+    """`skillsaw explain` knows builtin and plugin rules; a custom rule and
+    the linter's own `invalid-config` id would only answer "Unknown rule"."""
+    from skillsaw.rules.builtin import BUILTIN_RULE_REGISTRY
+
+    context = RepositoryContext(valid_plugin)
+    custom = _repeat_violations("team-house-style", Severity.WARNING, 30)
+    for v in custom:
+        v.source = "custom"
+    violations = (
+        _repeat_violations("content-description-routing", Severity.WARNING, 40)
+        + custom
+        + _repeat_violations("invalid-config", Severity.WARNING, 20)
+    )
+    rules = [BUILTIN_RULE_REGISTRY["content-description-routing"]()]
+
+    output = format_text(violations, context, rules, "0.0.0")
+    rows = output.split("Top rules")[1].splitlines()[1:4]
+
+    assert "skillsaw explain content-description-routing" in rows[0]
+    assert rows[1].split()[0] == "team-house-style"
+    assert "custom rule" in rows[1] and "explain" not in rows[1]
+    assert rows[2].split()[0] == "invalid-config"
+    assert "explain" not in rows[2]
+
+
+def test_text_top_rules_counts_only_displayed_findings(valid_plugin):
+    """Info findings are hidden without -v, so they neither trip the
+    threshold nor appear in the block."""
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations("content-weak-language", Severity.INFO, 60)
+
+    hidden = format_text(violations, context, [], "0.0.0")
+    assert "Top rules" not in hidden
+
+    shown = format_text(violations, context, [], "0.0.0", verbose=True)
+    assert "Top rules (60 of 60 findings):" in shown
+
+    # `--fail-on info` displays them too, without -v.
+    failing = format_text(violations, context, [], "0.0.0", fail_level="info")
+    assert "Top rules (60 of 60 findings):" in failing
+
+
+def test_text_top_rules_header_reports_share_of_findings(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = []
+    for i, count in enumerate([30, 20, 10, 5, 4, 3, 2]):
+        violations += _repeat_violations(f"content-rule-{i}", Severity.WARNING, count)
+
+    output = format_text(violations, context, [], "0.0.0")
+
+    assert "Top rules (69 of 74 findings):" in output
+
+
+def test_text_top_rules_plain_without_color(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations(
+        "agentskill-name",
+        Severity.ERROR,
+        60,
+        fixable=True,
+        confidence=AutofixConfidence.SAFE,
+    )
+
+    output = format_text(violations, context, [], "0.0.0", color=False)
+
+    assert "\033" not in output
+    assert "Top rules (60 of 60 findings):" in output
+
+
+def test_text_top_rules_colors_severity_and_hint(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations(
+        "agentskill-name",
+        Severity.ERROR,
+        60,
+        fixable=True,
+        confidence=AutofixConfidence.SAFE,
+    )
+
+    output = format_text(violations, context, [], "0.0.0", color=True)
+    row = output.split("Top rules")[1].splitlines()[1]
+
+    assert "\033[91merror" in row
+    assert "\033[92m[*] safe autofix\033[0m" in row
+
+
+def test_text_top_rules_columns_align(valid_plugin):
+    """Rule ids of different lengths still line the counts up."""
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations(
+        "content-broken-internal-reference", Severity.WARNING, 40
+    ) + _repeat_violations("agentskill-name", Severity.WARNING, 30)
+
+    output = format_text(violations, context, [], "0.0.0")
+    rows = output.split("Top rules")[1].splitlines()[1:3]
+
+    assert rows[0].index("40") == rows[1].index("30")
+
+
+def test_text_top_rules_links_rule_ids_when_hyperlinks(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, LinterConfig.default())
+    violations = _repeat_violations("agentskill-name", Severity.WARNING, 60)
+
+    output = format_text(violations, context, linter.rules, "0.0.0", color=True, hyperlinks=True)
+    row = output.split("Top rules")[1].splitlines()[1]
+
+    assert "\x1b]8;;https://skillsaw.org/rules/agentskill-name/\x1b\\agentskill-name" in row
+
+
+def test_text_top_rules_hint_follows_fix_scope(valid_plugin):
+    """An info-level safe fix is outside the default fix scope, so the row
+    points at the docs instead of promising `skillsaw fix` will help."""
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations(
+        "content-unlinked-internal-reference",
+        Severity.INFO,
+        60,
+        fixable=True,
+        confidence=AutofixConfidence.SAFE,
+    )
+
+    scoped_out = format_text(violations, context, [], "0.0.0", verbose=True)
+    assert "skillsaw explain content-unlinked-internal-reference" in scoped_out
+    assert "safe autofix" not in scoped_out
+
+    widened = format_text(violations, context, [], "0.0.0", verbose=True, fix_level="info")
+    assert "[*] safe autofix" in widened
+
+
+def test_text_top_rules_absent_from_other_formats(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _repeat_violations("content-weak-language", Severity.WARNING, 60)
+
+    for fmt in ("json", "sarif", "html", "code-climate", "gitlab"):
+        assert "Top rules" not in format_report(fmt, violations, context, [], "0.0.0")
+
+
+def test_text_top_rules_drops_files_column_for_repo_wide_findings(valid_plugin):
+    """A whole-repository rule reports no path — the column goes away
+    instead of leaving a gap in every row."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="context-budget",
+            severity=Severity.WARNING,
+            message=f"Instruction budget exceeded ({i})",
+        )
+        for i in range(55)
+    ]
+
+    output = format_text(violations, context, [], "0.0.0")
+    row = output.split("Top rules")[1].splitlines()[1]
+
+    assert row == "  context-budget  55  warning  skillsaw explain context-budget"

@@ -1,6 +1,6 @@
 ---
 name: skillsaw-onboard
-description: "Onboard a repository to skillsaw — run the linter, apply autofixes, manually fix remaining violations, set up CI, and create a baseline. Use when adopting skillsaw on a new or existing project."
+description: "Onboard a repository to skillsaw — run the linter, triage the findings by rule, apply autofixes, manually fix what remains, set up CI, and create a baseline. Use when adopting skillsaw on a new or existing project."
 compatibility: "Requires skillsaw (uvx skillsaw or pip install skillsaw). Optional: gh CLI for GitHub Actions setup."
 license: Apache-2.0
 metadata:
@@ -39,17 +39,24 @@ If no working skillsaw command is known, read
 [initial scan](references/02-initial-scan.md) and report its violations before
 offering changes.
 
-### 2. Apply safe fixes
+### 2. Triage findings by rule
 
-If the scan identifies safe deterministic fixes, ask:
+Run `skillsaw lint --format json -v` to see all violations, including the info-level ones the first scan hid. Group the results by `rule_id` and sort them by count. Sample 3–5 examples from any large cluster (e.g. >10% of total findings or >20 issues) to understand the root cause before deciding on an action.
 
-> The scan found safe deterministic fixes for {count} violations. Applying them
-> will edit the affected context files; I will show the changes and lint again
-> afterward. Should I apply those fixes now?
+Follow [triage](references/12-triage.md) to categorize each group into **Fix now**, **Baseline**, or **Configure**, and present a clear summary table to the user for confirmation before making changes. Carry the agreed buckets into the subsequent steps.
+
+### 3. Apply autofixes
+
+If the **Fix now** bucket holds autofixable findings, ask:
+
+> The plan includes autofixes for {count} violations: {safe count} safe and
+> {suggest count} suggested. Applying them will edit the affected context
+> files; I will show the changes and lint again afterward. Should I apply
+> those fixes now?
 
 If yes, read [autofix](references/03-autofix.md). If no, preserve the count.
 
-### 3. Make judgment-based fixes
+### 4. Make judgment-based fixes
 
 If violations remain, offer manual fixes and a baseline as alternatives. A
 baseline is especially useful when hundreds of findings would otherwise block
@@ -57,7 +64,7 @@ adoption or the user wants to move forward from a clean starting point. Ask:
 
 > {count} violations remain and need judgment rather than a mechanical fix. I
 > can inspect and fix them now, or review them as accepted existing debt and
-> baseline them in the next step so onboarding can move forward while CI catches
+> baseline them in step 6 so onboarding can move forward while CI catches
 > new findings. Which path would you prefer?
 
 If the user chooses fixes, read [manual fixes](references/04-manual-fixes.md).
@@ -68,7 +75,20 @@ accept before continuing; pause onboarding if that cannot be done safely. Then
 preserve the accepted remaining set for the baseline decision. Do not require
 accepted findings to be fixed first.
 
-### 4. Baseline accepted violations
+### 5. Add or update configuration
+
+If the triage plan placed any rule in **Configure**, read
+[configuration](references/06-configuration.md) without asking again; the
+user confirmed those settings in step 2. Otherwise, if `.skillsaw.yaml` is
+missing, ask:
+
+> This repository has no `.skillsaw.yaml`. I can add the default tracked
+> configuration so rule settings and exclusions have an explicit place; lint
+> behavior remains at the defaults until it is customized. Should I create it?
+
+If yes, read [configuration](references/06-configuration.md).
+
+### 6. Baseline accepted violations
 
 If reviewed violations remain, ask:
 
@@ -79,17 +99,7 @@ If reviewed violations remain, ask:
 
 If yes, read [baseline](references/05-baseline.md).
 
-### 5. Add configuration
-
-If `.skillsaw.yaml` is missing, ask:
-
-> This repository has no `.skillsaw.yaml`. I can add the default tracked
-> configuration so rule settings and exclusions have an explicit place; lint
-> behavior remains at the defaults until it is customized. Should I create it?
-
-If yes, read [configuration](references/06-configuration.md).
-
-### 6. Add skillsaw CI
+### 7. Add skillsaw CI
 
 Ask:
 
@@ -100,7 +110,7 @@ Ask:
 
 If yes, read [CI](references/07-ci.md), using the named CI system.
 
-### 7. Add external link checking
+### 8. Add external link checking
 
 If GitHub Actions is available, ask separately:
 
@@ -114,7 +124,7 @@ If GitHub Actions is available, ask separately:
 
 If yes, read [external links](references/08-external-links.md).
 
-### 8. Add local commands
+### 9. Add local commands
 
 Ask:
 
@@ -124,7 +134,7 @@ Ask:
 
 If yes, read [Makefile](references/09-makefile.md).
 
-### 9. Add a grade badge
+### 10. Add a grade badge
 
 If the repository has a README, ask:
 
@@ -134,7 +144,7 @@ If the repository has a README, ask:
 
 If yes, read [badge](references/10-badge.md).
 
-### 10. Verify the result
+### 11. Verify the result
 
 After all accepted routes finish, always read
 [verification](references/11-verify.md).

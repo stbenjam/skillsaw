@@ -727,6 +727,57 @@ class TestUnreferencedSkillFiles:
         flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
         assert "log-analyzer/scripts/analyze.py" not in flagged
 
+    def test_relative_mention_from_a_mixed_case_directory(self, tmp_path):
+        """Matching is case-insensitive on both sides: a source under
+        ``References/`` reaches ``References/Child/`` as ``./Child``."""
+        repo = tmp_path / "mixed-case"
+        skill = repo / ".claude" / "skills" / "ledger"
+        (skill / "References" / "Child").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: ledger\ndescription: Reconcile ledgers. Use when asked to reconcile.\n---\n"
+            "Read [the guide](References/guide.md) first.\n"
+        )
+        (skill / "References" / "guide.md").write_text(
+            "# Guide\n\nFixture ledgers live in ./Child and load at run time.\n"
+        )
+        for name in ("one.csv", "two.csv"):
+            (skill / "References" / "Child" / name).write_text("account,balance\n")
+
+        assert by_rule(run_lint(repo)).get(self.RULE, []) == []
+
+    def test_directory_loaded_across_lines(self, tmp_path):
+        """A formatter may break `os.listdir(` and its argument across lines."""
+        repo = tmp_path / "wrapped-load"
+        skill = repo / ".claude" / "skills" / "ledger"
+        (skill / "data").mkdir(parents=True)
+        (skill / "scripts").mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: ledger\ndescription: Reconcile ledgers. Use when asked to reconcile.\n---\n"
+            "Run `scripts/load.py` first.\n"
+        )
+        (skill / "scripts" / "load.py").write_text(
+            'import os\n\nFIXTURES = sorted(\n    os.listdir(\n        "data"\n    )\n)\n'
+        )
+        (skill / "data" / "one.csv").write_text("account,balance\n")
+
+        assert by_rule(run_lint(repo)).get(self.RULE, []) == []
+
+    def test_lowercase_readme_is_read(self, tmp_path):
+        """A `readme.md` is excused as documentation, so what it links counts."""
+        repo = tmp_path / "lowercase-readme"
+        skill = repo / ".claude" / "skills" / "ledger"
+        (skill / "assets").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: ledger\ndescription: Reconcile ledgers. Use when asked to reconcile.\n---\n"
+            "Body.\n"
+        )
+        (skill / "readme.md").write_text(
+            "# Ledger\n\nStart from [the template](assets/template.csv).\n"
+        )
+        (skill / "assets" / "template.csv").write_text("account,balance\n")
+
+        assert by_rule(run_lint(repo)).get(self.RULE, []) == []
+
     def test_transitive_reference_counts(self, tmp_path):
         """SKILL.md links references/guide.md, which mentions release-weeks.md."""
         repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
@@ -796,6 +847,310 @@ class TestUnreferencedSkillFiles:
         r = run_lint(repo)
         assert r["rc"] == 0
         assert self.RULE not in rule_ids(r)
+
+
+@pytest.mark.integration
+class TestUnreferencedGlobLoadedDirectories:
+    """A directory a bundled script loads as a whole is referenced.
+
+    The fixture mirrors anthropics/skills' office skills: a validator
+    joins `"schemas"` onto a base path and globs `reports/*.j2`, so every
+    file under those directories is loaded at runtime even though nothing
+    names it.
+    """
+
+    RULE = "agentskill-unreferenced-files"
+    FIXTURE = "agentskills/unreferenced-glob-loaded"
+
+    def _flagged(self, r):
+        return {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+
+    def test_only_the_dead_directory_is_flagged(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert self._flagged(run_lint(repo)) == {"ooxml-validator/scripts/legacy/old_parser.py"}
+
+    def test_joined_directory_covers_schemas_no_script_names(self, tmp_path):
+        """`Path(__file__).parent.parent / "schemas"` covers the whole tree.
+
+        Two of the schemas are named by nothing at all — not by the
+        validator's mapping, not by another schema's import — so turning
+        directory coverage off is what brings them back. That is the proof
+        the directory load, and not a filename mention, is covering them.
+        """
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert not (
+            self._flagged(run_lint(repo))
+            & {
+                "ooxml-validator/scripts/schemas/iso/shared-math.xsd",
+                "ooxml-validator/scripts/schemas/iso/vml-main.xsd",
+            }
+        )
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n    directory_mention_covers: false\n"
+        )
+        assert self._flagged(run_lint(repo, config=config)) == {
+            "ooxml-validator/scripts/legacy/old_parser.py",
+            "ooxml-validator/scripts/reports/failures.html.j2",
+            "ooxml-validator/scripts/reports/summary.html.j2",
+            "ooxml-validator/scripts/schemas/iso/shared-math.xsd",
+            "ooxml-validator/scripts/schemas/iso/vml-main.xsd",
+        }
+
+    def test_globbed_directory_covers_report_shells(self, tmp_path):
+        """`HERE.glob("reports/*.j2")` names the directory, not the files."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert not (
+            self._flagged(run_lint(repo))
+            & {
+                "ooxml-validator/scripts/reports/failures.html.j2",
+                "ooxml-validator/scripts/reports/summary.html.j2",
+            }
+        )
+
+    def test_bare_word_is_not_a_directory_load(self, tmp_path):
+        """SKILL.md's English "Legacy" must not cover scripts/legacy/."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        skill_md = (repo / "ooxml-validator" / "SKILL.md").read_text()
+        assert "Legacy flat-file exports" in skill_md
+        assert "ooxml-validator/scripts/legacy/old_parser.py" in self._flagged(run_lint(repo))
+
+    def test_quoted_word_alone_is_not_a_directory_load(self, tmp_path):
+        """A JSON value spelled like a directory name never covers it.
+
+        `dgallitelli/aws-hyperpod-skill` ships `"workload_manager":
+        "slurm"` beside an `orchestrators/slurm/` directory; the quoted
+        word is a config value, not a path.
+        """
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        skill = repo / "ooxml-validator"
+        (skill / "scripts" / "validators" / "base.py").write_text(
+            '"""Validate document parts."""\n\n' 'MODE = {"parser": "legacy", "strict": False}\n'
+        )
+        assert "ooxml-validator/scripts/legacy/old_parser.py" in self._flagged(run_lint(repo))
+
+    def test_lowercase_license_never_flagged(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert (repo / "ooxml-validator" / "license.txt").is_file()
+        assert "ooxml-validator/license.txt" not in self._flagged(run_lint(repo))
+
+
+@pytest.mark.integration
+class TestUnreferencedExclusionsAreDocumentation:
+    """The built-in exclusions name documentation, not bundled code."""
+
+    RULE = "agentskill-unreferenced-files"
+
+    def _repo(self, tmp_path, files):
+        repo = tmp_path / "excl"
+        skill = repo / ".claude" / "skills" / "tool"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: tool\ndescription: A tool. Use when asked for the tool.\n---\n"
+            "Run `scripts/main.py`.\n"
+        )
+        (skill / "scripts").mkdir()
+        (skill / "scripts" / "main.py").write_text('print("hi")\n')
+        for rel, content in files.items():
+            path = skill / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        return repo
+
+    def _flagged(self, repo):
+        return {
+            v["file_path"].split("/tool/", 1)[1] for v in by_rule(run_lint(repo)).get(self.RULE, [])
+        }
+
+    def test_license_documents_are_excluded_but_license_code_is_not(self, tmp_path):
+        repo = self._repo(
+            tmp_path,
+            {
+                "license.txt": "MIT\n",
+                "LICENSE-APACHE": "Apache 2.0\n",
+                "NOTICE.md": "Third-party notices.\n",
+                "scripts/license_check.py": "import sys\n",
+                "scripts/notice_dispatch.py": "import sys\n",
+            },
+        )
+        assert self._flagged(repo) == {"scripts/license_check.py", "scripts/notice_dispatch.py"}
+
+    def test_test_scaffolding_exclusions_are_case_insensitive(self, tmp_path):
+        repo = self._repo(
+            tmp_path,
+            {
+                "Tests/Test_Helper.PY": "pass\n",
+                "TestData/sample.json": "{}\n",
+                "Evals/e.json": "{}\n",
+            },
+        )
+        assert self._flagged(repo) == set()
+
+    def test_a_helper_ending_in_a_loader_name_does_not_cover_a_directory(self, tmp_path):
+        repo = self._repo(
+            tmp_path,
+            {
+                "scripts/main.py": 'print(artifact_path("schemas"))\nprint(classpath("data"))\n',
+                "schemas/a.xsd": "<xs/>\n",
+                "data/b.json": "{}\n",
+            },
+        )
+        assert self._flagged(repo) == {"schemas/a.xsd", "data/b.json"}
+
+
+class TestUnreferencedDirectoryCollapse:
+    """A directory full of dead files reports once, naming the directory."""
+
+    RULE = "agentskill-unreferenced-files"
+    FIXTURE = "agentskills/unreferenced-directory-pile"
+
+    def _found(self, r):
+        return by_rule(r).get(self.RULE, [])
+
+    def test_pile_collapses_to_one_finding(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        collapsed = [v for v in self._found(run_lint(repo)) if v["file_path"].endswith("snapshots")]
+        assert len(collapsed) == 1
+        message = collapsed[0]["message"]
+        assert message.startswith("8 unreferenced files under 'snapshots/' (")
+        # Names a sample, then says how many it left out.
+        assert "ledger-2024-q1.csv, ledger-2024-q2.csv, ledger-2024-q3.csv, and 5 more" in message
+        # A directory has no line to point at.
+        assert collapsed[0]["line"] is None
+        assert collapsed[0]["severity"] == "warning"
+
+    def test_directory_below_threshold_stays_per_file(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        flagged = {v["file_path"] for v in self._found(run_lint(repo))}
+        assert flagged == {
+            "quarterly-report/snapshots",
+            "quarterly-report/notes/board-deck-order.md",
+            "quarterly-report/notes/pricing-changes.md",
+            "quarterly-report/notes/segment-definitions.md",
+        }
+
+    def test_root_pile_stays_per_file(self, tmp_path):
+        """Files beside SKILL.md never collapse: "reference the directory" is
+        not a remedy the rule could accept for the skill root."""
+        repo = tmp_path / "root-pile"
+        skill = repo / ".claude" / "skills" / "flat"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: flat\ndescription: A flat skill. Use when asked to be flat.\n---\nBody.\n"
+        )
+        for index in range(8):
+            (skill / f"note-{index}.md").write_text(f"# Note {index}\n")
+
+        flagged = [v["file_path"] for v in self._found(run_lint(repo))]
+
+        assert len(flagged) == 8
+        assert all(path.endswith(".md") for path in flagged)
+
+    def test_collapsed_finding_fingerprint_survives_the_pile_changing(self, tmp_path):
+        """A baselined pile must not resurface because one more file landed
+        in it or a sampled name changed; the ratchet resurfaces it only when
+        the count grows past the baselined value."""
+        from skillsaw.baseline import fingerprint_violation
+        from skillsaw.context import RepositoryContext
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+        from skillsaw.utils import invalidate_read_caches
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        pile = repo / "quarterly-report" / "snapshots"
+
+        def collapsed():
+            found = AgentSkillUnreferencedFilesRule().check(RepositoryContext(repo))
+            return [v for v in found if v.file_path == pile]
+
+        before = collapsed()
+        assert [(v.value, v.metric) for v in before] == [(8.0, "unreferenced-directory")]
+        (pile / "ledger-2027-q1.csv").write_text("quarter,revenue\n")
+        invalidate_read_caches()
+        after = collapsed()
+        assert [v.value for v in after] == [9.0]
+        assert fingerprint_violation(before[0], repo) == fingerprint_violation(after[0], repo)
+
+    @pytest.mark.parametrize(
+        "config_text",
+        [
+            'version: "0.20.0"\nexclude:\n  - "**/snapshots/**"\n',
+            "rules:\n  agentskill-unreferenced-files:\n    exclude:\n"
+            '      - "quarterly-report/snapshots/*.csv"\n',
+        ],
+        ids=["global", "per-rule-repo-relative"],
+    )
+    def test_excluded_files_never_form_a_pile(self, tmp_path, config_text):
+        """The linter drops a per-file finding whose path matches an exclude,
+        but a collapsed finding names the directory, which a file pattern
+        never matches — so excluded files must leave before the count."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(config_text)
+        flagged = {v["file_path"] for v in self._found(run_lint(repo, config=config))}
+        assert not any("snapshots" in path for path in flagged)
+        assert "quarterly-report/notes/pricing-changes.md" in flagged
+
+    def test_baseline_written_before_collapsing_still_suppresses_the_pile(self, tmp_path):
+        """Upgrading must not fail CI on an unchanged repository: the
+        per-file entries an older baseline holds keep suppressing the
+        collapsed finding, and read as stale only once the pile grows."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n    collapse_directory_threshold: 0\n"
+        )
+        assert run_baseline(repo)["rc"] == 0
+        config.unlink()
+
+        r = run_lint(repo)
+        assert self._found(r) == []
+        assert "stale" not in r["stderr"]
+
+        (repo / "quarterly-report" / "snapshots" / "ledger-2027-q1.csv").write_text("q,r\n")
+        r = run_lint(repo)
+        assert [v["file_path"] for v in self._found(r)] == ["quarterly-report/snapshots"]
+        assert "8 stale" in r["stderr"]
+
+    def test_shrinking_a_baselined_pile_below_the_threshold_stays_quiet(self, tmp_path):
+        """Deleting dead files is an improvement: the per-file findings that
+        reappear under the threshold stay covered by the directory's
+        baselined ceiling, and nothing reads as stale."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert run_baseline(repo)["rc"] == 0
+        for name in ("ledger-2024-q1.csv", "ledger-2024-q2.csv", "ledger-2024-q3.csv"):
+            (repo / "quarterly-report" / "snapshots" / name).unlink()
+
+        r = run_lint(repo)
+        assert self._found(r) == []
+        assert "stale" not in r["stderr"]
+
+    def test_threshold_is_configurable(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n    collapse_directory_threshold: 2\n"
+        )
+        flagged = {v["file_path"] for v in self._found(run_lint(repo, config=config))}
+        assert flagged == {"quarterly-report/snapshots", "quarterly-report/notes"}
+
+    def test_zero_threshold_reports_every_file(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n    collapse_directory_threshold: 0\n"
+        )
+        flagged = {v["file_path"] for v in self._found(run_lint(repo, config=config))}
+        assert len(flagged) == 11
+        assert "quarterly-report/snapshots/ledger-2024-q1.csv" in flagged
+        assert "quarterly-report/snapshots" not in flagged
+
+    def test_safe_autofix_fixture_is_unaffected(self, tmp_path):
+        """Collapsing must not disturb the SAFE-autofix idempotency fixture."""
+        repo = copy_fixture("autofix/safe-idempotency", tmp_path)
+        flagged = {v["file_path"] for v in self._found(run_lint(repo))}
+        assert flagged == {"skills/bad-name-alpha/references/usage.md"}
 
 
 # ── File Path Argument ──────────────────────────────────────────
@@ -4818,6 +5173,52 @@ class TestInstructionDrift:
 
 
 @pytest.mark.integration
+class TestContentBannedReferencesMigration:
+    """End-to-end tests for content-banned-references on a migration guide.
+
+    The fixture SKILL.md retires three model ids twice — once in a prose
+    replacement table, once in a Python ``MODEL_MIGRATIONS`` dict — and
+    still names four retired ids for real: one pinned in a YAML config
+    example and three in a stale routing table.
+    """
+
+    FIXTURE = "content/banned-references-migration"
+    SKILL = ".claude/skills/model-upgrade/SKILL.md"
+
+    def _lines(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-banned-references", [])
+        assert all(v["file_path"] == self.SKILL for v in vs), vs
+        return sorted({v["line"] for v in vs})
+
+    def test_migration_rows_are_not_reported(self, tmp_path):
+        """A row that maps a retired id to a current one is retiring it."""
+        # 17-19: the replacement table.  28-30: the MODEL_MIGRATIONS dict.
+        assert not {17, 18, 19, 28, 29, 30} & set(self._lines(tmp_path))
+
+    def test_pinned_and_stale_ids_still_reported(self, tmp_path):
+        """A retired id that is not being replaced is still a live reference."""
+        # 46: 'model: claude-2' pinned in a YAML config example.
+        # 60-61: a routing table that names retired ids on both sides.
+        assert self._lines(tmp_path) == [46, 60, 61]
+
+    def test_report_migrations_opt_in_restores_them(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n'
+            "rules:\n"
+            "  content-banned-references:\n"
+            "    report-migrations: true\n"
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        lines = sorted({v["line"] for v in by_rule(r).get("content-banned-references", [])})
+        assert lines == [17, 18, 19, 28, 29, 30, 46, 60, 61]
+
+
+@pytest.mark.integration
 class TestContentRepeatedDirective:
     """End-to-end tests for content-repeated-directive.
 
@@ -4842,6 +5243,15 @@ class TestContentRepeatedDirective:
         cluster = next(v for v in vs if "approval policy" in v["message"])
         assert cluster["line"] == 28
         assert "line 15" in cluster["message"]
+
+    def test_findings_are_advisory(self, tmp_path):
+        """Repetition is advice — it reports at info and leaves CI green."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-repeated-directive", [])
+        assert vs and all(v["severity"] == "info" for v in vs)
+        assert r["rc"] == 0, f"advisory findings must not fail a lint, got rc={r['rc']}"
 
     def test_inline_suppression_silences_finding(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
@@ -7583,3 +7993,42 @@ class TestQuietStderrOnRealContent:
 
         assert "SyntaxWarning" not in r["stderr"]
         assert "<unknown>" not in r["stderr"]
+
+
+@pytest.mark.integration
+class TestTopRulesBlock:
+    """A first run over a repository with hundreds of findings needs to say
+    where they are concentrated, not just how many there are."""
+
+    def test_large_repo_text_output_ends_with_top_rules(self, tmp_path):
+        repo = copy_fixture("large-skill-library", tmp_path)
+
+        r = run_lint(repo, fmt="text", verbose=False)
+
+        assert "Top rules (62 of 62 findings):" in r["stdout"]
+        rows = r["stdout"].split("Top rules")[1].splitlines()[1:]
+        assert [row.split()[0] for row in rows] == [
+            "content-broken-internal-reference",
+            "content-description-routing",
+            "agentskill-name",
+        ]
+        # Counts, severities, distinct files, and the fix hint for the one
+        # rule `skillsaw fix` can repair.
+        assert rows[0].split()[1:5] == ["42", "warning", "16", "files"]
+        assert rows[2].split()[1:] == ["4", "error", "4", "files", "[*]", "safe", "autofix"]
+        assert "skillsaw explain content-description-routing" in rows[1]
+
+    def test_small_repo_has_no_top_rules_block(self, tmp_path):
+        repo = copy_fixture("agentskills", tmp_path)
+
+        r = run_lint(repo, fmt="text", verbose=True)
+
+        assert "Warnings:" in r["stdout"]
+        assert "Top rules" not in r["stdout"]
+
+    def test_machine_readable_formats_are_unchanged(self, tmp_path):
+        repo = copy_fixture("large-skill-library", tmp_path)
+
+        for fmt in ("json", "sarif", "html", "code-climate", "gitlab"):
+            r = run_lint(repo, fmt=fmt, verbose=False)
+            assert "Top rules" not in r["stdout"]

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+    targetNamespace="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+    elementFormDefault="qualified">
+  <xsd:element name="coreProperties" type="cp:CT_CoreProperties"/>
+  <xsd:complexType name="CT_CoreProperties">
+    <xsd:sequence>
+      <xsd:element name="title" type="xsd:string" minOccurs="0"/>
+      <xsd:element name="creator" type="xsd:string" minOccurs="0"/>
+    </xsd:sequence>
+  </xsd:complexType>
+</xsd:schema>

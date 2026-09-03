@@ -555,6 +555,68 @@ class TestRatchetBaseline:
         kept, stale = filter_baselined_violations([], baseline, tmp_path)
         assert len(stale) == 1
 
+    def _pile(self, tmp_path, names):
+        """A consolidated finding over *names* and the per-file findings it
+        stands in for."""
+        pile = tmp_path / "skill" / "data"
+        pile.mkdir(parents=True, exist_ok=True)
+        parts = []
+        for name in names:
+            path = pile / name
+            path.write_text("x\n")
+            parts.append(
+                _make_violation(rule_id="dead-files", file_path=path, message=f"'{name}' is dead")
+            )
+        whole = _make_violation(
+            rule_id="dead-files", file_path=pile, message=f"{len(names)} dead files"
+        )
+        whole.value = float(len(names))
+        whole.constituents = tuple(parts)
+        return whole, parts
+
+    def test_consolidated_violation_is_baselined_by_its_parts(self, tmp_path):
+        whole, parts = self._pile(tmp_path, ["a", "b", "c"])
+        baseline = build_baseline(parts, tmp_path, "test")
+        kept, stale = filter_baselined_violations([whole], baseline, tmp_path)
+        assert kept == []
+        assert stale == []
+
+    def test_consolidated_violation_reports_when_a_part_is_new(self, tmp_path):
+        whole, parts = self._pile(tmp_path, ["a", "b", "c"])
+        baseline = build_baseline(parts[:2], tmp_path, "test")
+        kept, stale = filter_baselined_violations([whole], baseline, tmp_path)
+        assert kept == [whole]
+        # Nothing was consumed: the listed parts read as stale, which
+        # prompts the re-baseline that records the whole.
+        assert len(stale) == 2
+
+    def test_regenerated_baseline_records_the_whole(self, tmp_path):
+        whole, _ = self._pile(tmp_path, ["a", "b", "c"])
+        baseline = build_baseline([whole], tmp_path, "test", {"dead-files": "ceiling"})
+        assert [(e.value, e.baseline_mode) for e in baseline.violations] == [(3.0, "ceiling")]
+
+    def test_parts_stay_baselined_under_a_baselined_whole(self, tmp_path):
+        """The pile shrank below the point where the rule consolidates: the
+        per-file findings name the whole, which the baseline holds as a
+        ceiling, so an improvement reports nothing and nothing is stale."""
+        whole, parts = self._pile(tmp_path, ["a", "b", "c"])
+        for part in parts:
+            part.consolidated_into = whole
+        baseline = build_baseline([whole], tmp_path, "test", {"dead-files": "ceiling"})
+        kept, stale = filter_baselined_violations(parts, baseline, tmp_path)
+        assert kept == []
+        assert stale == []
+
+    def test_parts_beyond_the_whole_ceiling_report(self, tmp_path):
+        whole, parts = self._pile(tmp_path, ["a", "b", "c"])
+        for part in parts:
+            part.consolidated_into = whole
+        whole.value = 2.0
+        baseline = build_baseline([whole], tmp_path, "test", {"dead-files": "ceiling"})
+        kept, stale = filter_baselined_violations(parts, baseline, tmp_path)
+        assert kept == [parts[2]]
+        assert stale == []
+
     def test_ratchet_fingerprint_stable_across_values(self, tmp_path):
         src = tmp_path / "CLAUDE.md"
         src.write_text("content\n")

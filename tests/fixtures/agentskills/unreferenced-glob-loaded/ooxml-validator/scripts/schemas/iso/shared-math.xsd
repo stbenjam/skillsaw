@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"
+    targetNamespace="http://schemas.openxmlformats.org/officeDocument/2006/math"
+    elementFormDefault="qualified">
+  <xsd:complexType name="CT_OMath">
+    <xsd:sequence>
+      <xsd:element name="r" type="m:CT_R" minOccurs="0" maxOccurs="unbounded"/>
+    </xsd:sequence>
+  </xsd:complexType>
+  <xsd:complexType name="CT_R">
+    <xsd:attribute name="literal" type="xsd:boolean"/>
+  </xsd:complexType>
+</xsd:schema>

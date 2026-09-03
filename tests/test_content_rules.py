@@ -1492,6 +1492,107 @@ class TestContentBannedReferencesRule:
         assert elapsed < 5.0
         assert any("Skipped banned pattern" in v.message for v in violations)
 
+    def _messages(self, temp_dir, body, config=None):
+        (temp_dir / "CLAUDE.md").write_text(body)
+        rule = ContentBannedReferencesRule(config or {})
+        return [v.message for v in rule.check(RepositoryContext(temp_dir))]
+
+    def test_mapping_entry_retiring_a_name_is_not_reported(self, temp_dir):
+        body = (
+            "```python\n" "MODEL_MIGRATIONS = {\n" '    "claude-2": "claude-sonnet-5",\n' "}\n```\n"
+        )
+        assert self._messages(temp_dir, body) == []
+
+    def test_table_row_retiring_a_name_is_not_reported(self, temp_dir):
+        body = (
+            "| Retired id | Retired on | Replacement |\n"
+            "| --- | --- | --- |\n"
+            "| `claude-3-opus-20240229` | 2026-01-05 | `claude-opus-4-8` |\n"
+        )
+        assert self._messages(temp_dir, body) == []
+
+    def test_arrow_retiring_a_name_is_not_reported(self, temp_dir):
+        body = "Rewrite `gpt-3.5-turbo` -> `gpt-5-mini` before the cutover.\n"
+        assert self._messages(temp_dir, body) == []
+
+    def test_pinned_id_in_a_fenced_config_is_reported(self, temp_dir):
+        body = "```yaml\nservice: summarizer\nmodel: claude-2\n```\n"
+        assert self._messages(temp_dir, body) == ["Banned reference: claude-2 is deprecated"]
+
+    def test_replacement_side_is_still_reported(self, temp_dir):
+        """Migrating onto a deprecated id reports the id being adopted."""
+        body = '    "claude-2": "claude-3-haiku",\n'
+        assert sorted(self._messages(temp_dir, body)) == [
+            "Banned reference: claude-2 is deprecated",
+            "Banned reference: claude-3-haiku is deprecated",
+        ]
+
+    def test_recommendation_table_is_not_a_migration(self, temp_dir):
+        """A table pairing two retired ids recommends both — report both."""
+        body = (
+            "| Request kind | Model | Fallback |\n"
+            "| --- | --- | --- |\n"
+            "| Short answers | `claude-3-haiku` | `claude-3-opus` |\n"
+        )
+        assert sorted(self._messages(temp_dir, body)) == [
+            "Banned reference: claude-3-haiku is deprecated",
+            "Banned reference: claude-3-opus is deprecated",
+        ]
+
+    def test_hyphenated_prose_is_not_a_replacement(self, temp_dir):
+        """A cell of ordinary hyphenated English must not pass for a model id."""
+        body = "| Model | Notes |\n| --- | --- |\n| `claude-3-opus` | best-in-class reasoning |\n"
+        assert self._messages(temp_dir, body) == ["Banned reference: claude-3-opus is deprecated"]
+
+    def test_return_annotation_is_not_a_migration(self, temp_dir):
+        body = "```python\n" 'def call(model: str = "gpt-3.5-turbo") -> str:\n' "    ...\n```\n"
+        assert self._messages(temp_dir, body) == ["Banned reference: gpt-3.5 is deprecated"]
+
+    def test_report_migrations_restores_the_finding(self, temp_dir):
+        body = "```python\n" '    "claude-2": "claude-sonnet-5",\n' "```\n"
+        assert self._messages(temp_dir, body, {"report-migrations": True}) == [
+            "Banned reference: claude-2 is deprecated"
+        ]
+
+    def test_configured_ban_is_never_treated_as_a_migration(self, temp_dir):
+        """A custom pattern is project policy, not deprecation knowledge:
+        mapping the forbidden name onto a current model is still a use."""
+        body = "forbidden-mode: gpt-5-mini\n"
+        config = {"banned": [{"pattern": "forbidden-mode", "message": "forbidden-mode is banned"}]}
+        assert self._messages(temp_dir, body, config) == [
+            "Banned reference: forbidden-mode is banned"
+        ]
+
+    def test_pipe_row_without_outer_delimiters_is_a_migration(self, temp_dir):
+        body = "`claude-2` | `claude-sonnet-5`\n"
+        assert self._messages(temp_dir, body) == []
+
+    def test_markdown_formatted_mapping_keys_are_migrations(self, temp_dir):
+        """A bold key or an ordered-list prefix is still a key/value mapping."""
+        body = "- **claude-2**: **gpt-5-mini**\n\n1. claude-2: gpt-5-mini\n"
+        assert self._messages(temp_dir, body) == []
+
+    def test_shell_pipeline_is_not_a_migration_row(self, temp_dir):
+        """Two cells split on a pipe are a row only when each is one token."""
+        body = "Run `grep claude-2 | grep o3` to find stale configs.\n"
+        assert self._messages(temp_dir, body) != []
+
+    def test_long_digit_free_operand_is_linear(self):
+        """The replacement lookahead must not rescan a long operand from
+        every position: one such line would stall the whole lint."""
+        import time
+
+        rule = ContentBannedReferencesRule()
+        deprecated = rule._builtin_patterns()
+        for line in ("claude-2 -> " + "a" * 80_000, "claude-2 -> 1" + "a" * 80_000):
+            started = time.perf_counter()
+            assert rule._migration_cutoff(line, deprecated) == -1
+            assert time.perf_counter() - started < 1.0
+
+    def test_single_token_replacement_is_a_current_model(self, temp_dir):
+        body = "claude-2 -> o3\n"
+        assert self._messages(temp_dir, body) == []
+
     def test_timeout_is_clamped_and_zero_disables(self, temp_dir):
         rule = ContentBannedReferencesRule({"regex-timeout": 999})
         assert rule._regex_timeout() == 10.0
@@ -3084,7 +3185,8 @@ class TestContentRepeatedDirectiveRule:
     def test_rule_metadata(self):
         rule = ContentRepeatedDirectiveRule()
         assert rule.rule_id == "content-repeated-directive"
-        assert rule.default_severity() == Severity.WARNING
+        # Advice, not correctness — it must not redden a default CI run.
+        assert rule.default_severity() == Severity.INFO
 
     def test_detects_exact_duplicate_directive(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(

@@ -110,6 +110,28 @@ from the markdown-it-py AST — read it via `block.markdown` (a
   Never force-enable a new rule that could break existing users.
 - **Use the lint tree for discovery** — call `context.lint_tree.find(NodeType)`.
 
+### Making rules helpful by default
+
+Setting `enabled: auto` means a rule provides clear, actionable value on typical repositories without extra setup. Before shipping a rule with `auto` enabled, test it against real-world repositories rather than just unit test fixtures.
+
+Evaluate every new rule against these three practical questions:
+
+1. **Is it actionable on common setups?** Findings should point to things developers genuinely want to fix. If a check only applies to niche or rare configurations, make it opt-in (`default_enabled = False`). Be especially mindful of JSON files, which lack inline disable comments and require configuration tweaks to silence.
+2. **Is it accurate?** Test the rule against at least 10 real repositories. Validate edge cases directly against the official schema, loader, or CLI rather than memory. Aim for a false-positive rate under 10% for `auto` rules, and zero known false positives for `ERROR` rules.
+3. **Is it high signal?** A rule that fires dozens of times across healthy, working projects quickly becomes noise. When a pattern appears frequently across a repository, aggregate related issues or provide sensible thresholds so the output stays helpful and focused.
+
+**Match severity to impact:**
+- **ERROR**: The tool will fail to load or run the file, or the issue presents a real security risk.
+- **WARNING**: The file functions, but quality or maintainability is noticeably degraded.
+- **INFO**: Gentle suggestions, style guidance, or advisory review prompts.
+
+Always respect the configured severity: never hardcode `severity=` on the primary violation, so user overrides in `.skillsaw.yaml` work seamlessly.
+
+**Keep findings concise and consolidated:**
+- **One defect, one finding**: Group related issues together. For example, report invalid list items or a folder of unreferenced files as a single consolidated finding with examples.
+- **Recognize common placeholders**: Understand standard templates and sample strings (such as `${VERSION}`, dummy auth tokens, or example endpoints) so helpful documentation isn't flagged as invalid.
+- **Clear, actionable messages**: State what happened and how to fix it. Suggest rule configuration options (like exclusions or custom thresholds) before suggesting a disable comment. Focus checks on what files actually do rather than just where they are placed.
+
 ### Line numbers and the parse tree
 
 - **Always report line numbers** on every violation traceable to a specific line, except whole-file violations.

@@ -76,7 +76,7 @@ skillsaw includes **87** built-in rules organized into the following categories:
 | [`content-unlinked-internal-reference`](content-unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto | Content Intelligence |
 | [`content-placeholder-text`](content-placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - | Content Intelligence |
 | [`content-unclosed-fence`](content-unclosed-fence.md) | Detect code fences opened but never closed, hiding the rest of the file from content rules | warning (auto) | auto | Content Intelligence |
-| [`content-repeated-directive`](content-repeated-directive.md) | Detect the same directive stated more than once within a file | warning (auto) | - | Content Intelligence |
+| [`content-repeated-directive`](content-repeated-directive.md) | Detect the same directive stated more than once within a file | info (auto) | - | Content Intelligence |
 | [`content-emphasis-density`](content-emphasis-density.md) | Detect emphasis inflation: too many ALWAYS/NEVER/MUST/IMPORTANT directives per file | warning (auto) | - | Content Intelligence |
 | [`content-missing-stop-condition`](content-missing-stop-condition.md) | Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition | warning (disabled) | - | Content Intelligence |
 | [`content-inline-tool-examples`](content-inline-tool-examples.md) | Detect consecutive code-block examples that all invoke the same tool | info (disabled) | - | Content Intelligence |
