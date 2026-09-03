@@ -81,6 +81,7 @@ def test_should_use_pager_empty_pager(monkeypatch):
 
 
 def test_should_use_pager_active_when_tty(monkeypatch):
+    monkeypatch.delenv("MANPAGER", raising=False)
     monkeypatch.setenv("PAGER", "cat")
     monkeypatch.setenv("TERM", "xterm-256color")
     tty = MockTTYStream()
@@ -193,6 +194,7 @@ def test_write_fallback_default_stream(capsys):
 
 
 def test_should_use_pager_stream_none_defaults_to_stdout(monkeypatch):
+    monkeypatch.delenv("MANPAGER", raising=False)
     monkeypatch.setenv("PAGER", "cat")
     monkeypatch.setenv("TERM", "xterm")
     args = SimpleNamespace(pager=None)
@@ -288,7 +290,7 @@ def test_resolve_pager_windows_path_semantics(monkeypatch):
 def test_page_text_with_pager_cmd_none(tmp_path):
     out_file = tmp_path / "out.txt"
     cmd = f'{sys.executable} -c "import sys, pathlib; pathlib.Path({repr(str(out_file))}).write_text(sys.stdin.read())"'
-    with patch.dict(os.environ, {"PAGER": cmd}):
+    with patch.dict(os.environ, {"PAGER": cmd, "MANPAGER": ""}):
         page_text("Paging with resolved command")
     assert out_file.read_text() == "Paging with resolved command\n"
 

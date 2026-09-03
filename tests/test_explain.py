@@ -194,6 +194,7 @@ def test_explain_no_pager_flag(temp_dir):
 
 def test_explain_pager_flag_forced(temp_dir):
     env = dict(os.environ)
+    env["MANPAGER"] = ""
     env["PAGER"] = f"{sys.executable} -c \"import sys; print('PAGED:'); print(sys.stdin.read())\""
     args = [
         sys.executable,
@@ -236,6 +237,7 @@ def test_explain_interactive_pty_uses_pager(temp_dir):
 
     master, slave = pty.openpty()
     env = dict(os.environ)
+    env["MANPAGER"] = ""
     env["PAGER"] = (
         f"{sys.executable} -c \"import sys; print('PTY_PAGED:'); print(sys.stdin.read())\""
     )
@@ -275,6 +277,7 @@ def test_explain_interactive_pty_no_pager_flag(temp_dir):
 
     master, slave = pty.openpty()
     env = dict(os.environ)
+    env["MANPAGER"] = ""
     env["PAGER"] = (
         f"{sys.executable} -c \"import sys; print('PTY_PAGED:'); print(sys.stdin.read())\""
     )
