@@ -13,6 +13,7 @@ import os
 from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
+from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.formats import codex, devin, grok, muse
 from skillsaw.paths import contained_resolve, safe_resolve
@@ -446,6 +447,7 @@ def has_skill_md_recursive(
     should_skip: Callable[[Path], bool],
     _visited: Optional[Set[Path]] = None,
     _boundary: Optional[Path] = None,
+    is_excluded: Callable[[Path], bool] = lambda _: False,
 ) -> bool:
     """Return whether a contained recursive walk finds an Agent Skill."""
     if _visited is None:
@@ -461,13 +463,17 @@ def has_skill_md_recursive(
     if (
         exact_name_exists(root, "SKILL.md")
         and contained_resolve(root / "SKILL.md", _boundary) is not None
+        and not is_excluded(root / "SKILL.md")
+        and not is_excluded(root)
     ):
         return True
     try:
         for item in root.iterdir():
-            if should_skip(item):
+            if should_skip(item) or is_excluded(item):
                 continue
-            if item.is_dir() and has_skill_md_recursive(item, should_skip, _visited, _boundary):
+            if item.is_dir() and has_skill_md_recursive(
+                item, should_skip, _visited, _boundary, is_excluded=is_excluded
+            ):
                 return True
     except OSError:
         pass
@@ -478,6 +484,7 @@ def is_agentskills_repo(
     root: Path,
     should_skip: Callable[[Path], bool],
     extra_skill_roots: Iterable[Path] = (),
+    is_excluded: Callable[[Path], bool] = lambda _: False,
 ) -> bool:
     """Return whether the repository contains an Agent Skill entrypoint."""
     resolved_root = safe_resolve(root)
@@ -486,6 +493,8 @@ def is_agentskills_repo(
     if (
         exact_name_exists(root, "SKILL.md")
         and contained_resolve(root / "SKILL.md", resolved_root) is not None
+        and not is_excluded(root / "SKILL.md")
+        and not is_excluded(root)
     ):
         return True
     for rel in CONVENTIONAL_SKILL_DIRS:
@@ -493,17 +502,25 @@ def is_agentskills_repo(
         if (
             contained_resolve(path, resolved_root) is not None
             and path.is_dir()
-            and has_skill_md_recursive(path, should_skip, _boundary=resolved_root)
+            and not is_root_or_ancestor_excluded(path, resolved_root, is_excluded)
+            and has_skill_md_recursive(
+                path, should_skip, _boundary=resolved_root, is_excluded=is_excluded
+            )
         ):
             return True
     for path in extra_skill_roots:
         if (
             contained_resolve(path, resolved_root) is not None
             and path.is_dir()
-            and has_skill_md_recursive(path, should_skip, _boundary=resolved_root)
+            and not is_root_or_ancestor_excluded(path, resolved_root, is_excluded)
+            and has_skill_md_recursive(
+                path, should_skip, _boundary=resolved_root, is_excluded=is_excluded
+            )
         ):
             return True
-    return has_skill_md_recursive(root, should_skip, _boundary=resolved_root)
+    return has_skill_md_recursive(
+        root, should_skip, _boundary=resolved_root, is_excluded=is_excluded
+    )
 
 
 def is_dot_claude(root: Path, apm: bool) -> bool:
@@ -544,6 +561,7 @@ def marker_types(
     promptfoo_named_files: Iterable[Path],
     promptfoo_eval_files: Mapping[Path, Iterable[Path]],
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
+    is_excluded: Callable[[Path], bool] = lambda _: False,
 ) -> Set[str]:
     """Return independently detectable type labels (excluding ecosystems)."""
     found: Set[str] = set()
@@ -558,7 +576,7 @@ def marker_types(
                     resolved_root
                 ):
                     nested_skill_roots.append(skill_root)
-    if is_agentskills_repo(root, should_skip, nested_skill_roots):
+    if is_agentskills_repo(root, should_skip, nested_skill_roots, is_excluded=is_excluded):
         found.add("agentskills")
     if apm:
         found.add("apm")

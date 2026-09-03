@@ -4433,6 +4433,17 @@ class TestConfigFeatures:
         violated_files = {v["file_path"] for v in violations(r)}
         assert not any("generated.md" in f for f in violated_files)
 
+    def test_exact_directory_exclude_covers_conventional_skill_root(self, tmp_path):
+        """Exact directory exclude on a conventional skill root suppresses its skills (issue #581)."""
+        repo = copy_fixture("config/exclude-conventional-skill-root", tmp_path)
+        r = run_lint(repo)
+        assert r["out"] is not None
+        assert r["rc"] == 0
+        assert r["out"]["stats"]["skills"] == []
+        assert "agentskills" not in r["out"]["stats"]["repo_types"]
+        violated_files = {v["file_path"] for v in violations(r)}
+        assert not any(".claude/skills" in f for f in violated_files)
+
     def test_default_exclude_covers_top_level_templates(self, tmp_path):
         """Default **/templates/** must exclude a templates/ dir at the repo
         root, not just nested ones (issue #322)."""
