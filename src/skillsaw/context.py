@@ -85,6 +85,7 @@ class RepositoryContext(
         # a `.cursor/` keeps `marketplace` as its primary type.
         RepositoryType.CODEX_PROJECT,
         RepositoryType.MUSE,
+        RepositoryType.GROK_PROJECT,
         RepositoryType.CURSOR,
         RepositoryType.COPILOT,
         RepositoryType.CLINE,

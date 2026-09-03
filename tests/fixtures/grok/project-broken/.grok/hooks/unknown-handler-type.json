@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "idle_prompt",
+        "hooks": [{ "type": "webhook", "url": "https://hooks.waypoint.example/idle" }]
+      }
+    ]
+  }
+}

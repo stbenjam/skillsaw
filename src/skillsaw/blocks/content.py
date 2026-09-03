@@ -91,6 +91,19 @@ class AgentMemoryBlock(FileContentBlock):
 
 
 @dataclass(eq=False)
+class GrokRuleBlock(FileContentBlock):
+    """.grok/rules/*.md — Grok Build's always-on project instructions.
+
+    Grok reports these beside ``AGENTS.md`` under "Project Instructions" and
+    loads them whether or not the folder is trusted, so they are always-on
+    context and budgeted as ``instruction``. Plain Markdown: the directory
+    is read flat, and no frontmatter is defined for it.
+    """
+
+    category: str = "instruction"
+
+
+@dataclass(eq=False)
 class ClineWorkflowBlock(FileContentBlock):
     """.clinerules/workflows/*.md — Cline workflows, invoked on demand.
 

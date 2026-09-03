@@ -14,7 +14,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
-from skillsaw.formats import codex, devin, muse
+from skillsaw.formats import codex, devin, grok, muse
 from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
@@ -31,9 +31,10 @@ VENDOR_DIR_NAMES = frozenset(
 )
 
 # Editor-owned directories whose contents ship in a repository. Cursor,
-# Copilot/VS Code, Cline, Devin and OpenCode all read these from the nearest
-# enclosing folder as well as the repository root, so a monorepo package can
-# carry its own set — hence a walk rather than a root-anchored lookup.
+# Copilot/VS Code, Cline, Devin, OpenCode and Grok Build all read these from
+# the nearest enclosing folder as well as the repository root, so a monorepo
+# package can carry its own set — hence a walk rather than a root-anchored
+# lookup.
 AGENT_TOOL_DIR_NAMES = frozenset(
     {
         ".cursor",
@@ -42,6 +43,7 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         ".vscode",
         ".opencode",
         codex.CODEX_DIR_NAME,
+        grok.TOOL_DIR_NAME,
         muse.TOOL_DIR_NAME,
         *devin.TOOL_DIR_NAMES,
     }
@@ -218,6 +220,28 @@ _TOOL_EVIDENCE = {
         muse.TOOL_DIR_NAME,
         ((muse.HOOKS_FILENAME, False),),
     ),
+    # Grok Build reads a whole project layer from ``.grok/``, and any one
+    # piece of it is enough: the skills, rules, commands and agents load
+    # unconditionally, while hooks and LSP additionally need folder trust.
+    # ``config.toml`` and ``lsp.json`` are listed even though nothing parses
+    # them yet — a repository that configures only an MCP server through
+    # ``.grok/config.toml`` is still a Grok repository, and the summary
+    # should say so. ``plugins/`` is an install location Grok's own plugin
+    # discovery owns, so it is deliberately not evidence, and there is no
+    # ``.grok/mcp.json``: Grok reads project MCP servers from
+    # ``config.toml`` and the repository-root ``.mcp.json`` only.
+    "grok-project": (
+        grok.TOOL_DIR_NAME,
+        (
+            (grok.RULES_DIR_NAME, True),
+            (grok.SKILLS_DIR_NAME, True),
+            (grok.AGENTS_DIR_NAME, True),
+            (grok.COMMANDS_DIR_NAME, True),
+            (grok.HOOKS_DIR_NAME, True),
+            (grok.CONFIG_FILENAME, False),
+            (grok.LSP_FILENAME, False),
+        ),
+    ),
     # ``hooks.json`` is the only committed project-layer configuration
     # skillsaw reads from ``.codex/``. ``.codex/plugins/`` is an install
     # location — vendor-managed content that Codex's own plugin discovery
@@ -343,6 +367,10 @@ def tool_types(
         # convention Muse reads — projects were committing them before Muse
         # shipped — so they are no more evidence of Muse than AGENTS.md is.
         ("muse", tool_marker("muse")),
+        # Grok reads ``AGENTS.md`` and ``CLAUDE.md`` too, and both already
+        # carry their own types, so ``.grok/`` itself is the only marker
+        # that is Grok Build's alone.
+        ("grok-project", tool_marker("grok-project")),
         ("codex-project", tool_marker("codex-project")),
         ("gemini", marker("GEMINI.md")),
         ("qwen", marker("QWEN.md")),

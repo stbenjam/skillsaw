@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "search_replace|run_terminal_command(",
+        "hooks": [{ "type": "command", "command": "./scripts/audit-command.sh" }]
+      },
+      {
+        "matcher": "read_file",
+        "hooks": [{ "type": "command", "command": "./scripts/note-read.sh" }]
+      }
+    ]
+  }
+}

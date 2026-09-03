@@ -423,6 +423,30 @@ class MuseHooksBlock(HooksBlock):
         return f"{self.path.name} (muse hooks)"
 
 
+@dataclass(eq=False)
+class GrokHooksBlock(HooksBlock):
+    """One file from ``.grok/hooks/`` — Grok Build's committed project hooks.
+
+    Grok reads that directory as a flat ``*.json`` glob and merges every
+    file, so a repository has as many of these blocks as it has files. The
+    label carries the filename for that reason: "hooks.json" alone would not
+    say which of them a finding is about.
+
+    Same nested shape as Claude's, with Grok's own events, alias table and
+    handler fields. Its loader refuses a whole file over one wrong-typed
+    field and reports nothing when it does, which is what
+    ``grok-hooks-valid`` exists to say.
+
+    Lenient JSON parsing, deliberately, for the reason
+    :class:`MuseHooksBlock` documents: Grok reads the file with
+    ``serde_json``, which takes the last of two duplicate keys and runs it,
+    and both security rules skip a block carrying a ``parse_error``.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (grok hooks)"
+
+
 def _inline_payload_token_count(data: Any) -> int:
     """Estimate tokens for an inline payload with bounded graph traversal.
 

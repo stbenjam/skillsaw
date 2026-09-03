@@ -40,6 +40,10 @@ from .blocks import (
     DevinSkillBlock,
     ExtraBlock,
     GeminiMdBlock,
+    GrokAgentBlock,
+    GrokCommandBlock,
+    GrokHooksBlock,
+    GrokRuleBlock,
     HooksBlock,
     InstructionBlock,
     McpBlock,
@@ -72,7 +76,7 @@ from .formats.codex import (
 )
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.opencode import contained_instruction_globs
-from .formats import devin, muse
+from .formats import devin, grok, muse
 from .utils import has_apm_generated_header, read_text
 from .paths import (
     contained_resolve,
@@ -841,6 +845,32 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
+
+    # Grok Build reads the ``.grok/`` layer of the project it is started in,
+    # as Codex does, so a monorepo package's own layer is live configuration
+    # and the walk-backed lookup finds both. Every directory here is read
+    # *flat* — a nested ``rules/theme/style.md`` or ``commands/git/sync.md``
+    # is not loaded, and a recursive glob would budget context Grok never
+    # sees. ``skills/`` is the exception and is walked recursively through
+    # ``CONVENTIONAL_SKILL_DIRS``, which earns the whole skill rule set.
+    # ``plugins/`` is Grok's install location and belongs to its own plugin
+    # discovery, so nothing here descends into it.
+    for grok_dir in context.agent_tool_dirs(grok.TOOL_DIR_NAME):
+        _add_glob(root, grok_dir / grok.RULES_DIR_NAME, "*.md", GrokRuleBlock)
+        _add_glob(root, grok_dir / grok.COMMANDS_DIR_NAME, "*.md", GrokCommandBlock)
+        _add_glob(root, grok_dir / grok.AGENTS_DIR_NAME, "*.md", GrokAgentBlock)
+        # One block per file: Grok merges every ``.json`` in the directory,
+        # so a repository has as many hooks blocks as it has files. Contain
+        # the glob base as ``_add_glob`` does — a ``hooks -> /`` symlink
+        # would otherwise be walked before a single match was rejected.
+        hooks_dir = grok_dir / grok.HOOKS_DIR_NAME
+        if (
+            safe_is_dir(hooks_dir)
+            and not _is_excluded(hooks_dir)
+            and state.resolve_repo_path(hooks_dir) is not None
+        ):
+            for hooks_file in sorted(hooks_dir.glob(grok.HOOKS_GLOB)):
+                _add_project_hooks(state, root, hooks_file, GrokHooksBlock)
 
     # Committed project memory: notes a team checks in for whatever agent
     # reads the checkout. The index is loaded whole and every other Markdown

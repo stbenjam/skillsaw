@@ -16,7 +16,7 @@ hide:
 skillsaw lints the files that steer your AI coding agents: skills, plugins,
 instructions, and tool configs across Claude Code, Codex, Copilot, Agent Skills,
 OpenCode, and more. It catches security risks, structural flaws, and content dead
-zones with 89 rules, then applies deterministic autofixes.
+zones with 90 rules, then applies deterministic autofixes.
 </p>
 
 <p class="hero-badges" markdown>

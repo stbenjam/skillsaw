@@ -162,6 +162,24 @@ RULE_GROUPS = [
         "automatically when Devin repository context is present.",
     ),
     (
+        "Grok Build",
+        ["grok-hooks-valid"],
+        "Validates `.grok/hooks/*.json`, the project hooks Grok Build loads and "
+        "silently refuses when they are malformed. What a defect costs depends "
+        "on where it is: a wrong-typed field or a handler with no `type` "
+        "refuses the whole file, an uncompilable matcher drops that group, an "
+        "unknown event skips its entries, and a handler with nothing to run "
+        "drops that handler — none of it reported, because `grok inspect` "
+        "emits no configuration warning for any of them. Grok accepts several "
+        "spellings of every event, including Cursor's, so a shared hooks file "
+        "is not reported for the spelling it uses. Grok reads AGENTS.md for "
+        "portable instructions and portable Agent Skills from `.grok/skills/`, "
+        "and its rules, commands and agents get the content and security rules "
+        "every format shares, so no Grok-specific instruction format is "
+        "validated. Enabled automatically when a `.grok/` project layer "
+        "exists.",
+    ),
+    (
         "Hooks",
         [
             "claude-hooks-valid",

@@ -43,6 +43,10 @@ class RepositoryType(Enum):
     DEVIN = "devin"  # Repository with `.devin/`, `.windsurf/` or Devin instructions
     OPENCODE = "opencode"  # Repository with an `opencode.json` or `.opencode/`
     MUSE = "muse"  # Repository with `.muse/` configuration — Muse Code
+    # Repository with a `.grok/` project layer — skills, rules, commands,
+    # agents, hooks, MCP. Grok plugins and marketplaces are separate
+    # packaging concerns and are not this type.
+    GROK_PROJECT = "grok-project"
     KIRO = "kiro"  # Repository with `.kiro/` steering files
     GEMINI = "gemini"  # Repository with a GEMINI.md
     QWEN = "qwen"  # Repository with a QWEN.md
@@ -82,6 +86,7 @@ TOOL_REPO_TYPES = frozenset(
         RepositoryType.DEVIN,
         RepositoryType.OPENCODE,
         RepositoryType.MUSE,
+        RepositoryType.GROK_PROJECT,
         RepositoryType.CODEX_PROJECT,
         RepositoryType.KIRO,
         RepositoryType.GEMINI,
@@ -95,13 +100,15 @@ TOOL_REPO_TYPES = frozenset(
 
 
 # Repository types that may hold one of ``INSTRUCTION_FILES``. CLINE,
-# OPENCODE, MUSE and CODEX_PROJECT are deliberately absent: the
-# instruction-file rules only ever look at
+# OPENCODE, MUSE, GROK_PROJECT and CODEX_PROJECT are deliberately absent:
+# the instruction-file rules only ever look at
 # AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose only marker is
-# ``.clinerules``, ``opencode.json``, ``.muse/hooks.json`` or
+# ``.clinerules``, ``opencode.json``, ``.muse/hooks.json``, ``.grok/`` or
 # ``.codex/hooks.json`` would auto-enable two rules structurally incapable of
-# finding anything. OpenCode, Muse Code and Codex do read AGENTS.md — and
-# when one is present AGENTS_MD enables them for it.
+# finding anything. OpenCode, Muse Code, Grok Build and Codex do read
+# AGENTS.md — and when one is present AGENTS_MD enables them for it. Grok's
+# own always-on prose lives in ``.grok/rules/``, which the content rules
+# read as content rather than as an instruction file.
 INSTRUCTION_REPO_TYPES = frozenset(
     {
         RepositoryType.CURSOR,

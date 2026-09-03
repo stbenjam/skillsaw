@@ -446,6 +446,12 @@ rules:
     enabled: auto
     severity: error
 
+  # .grok/hooks/*.json must use Grok's hook events, handler types and fields
+  grok-hooks-valid:
+    enabled: auto
+    severity: error
+    # extra-events: []
+
   # Flags hook commands that chain a download into execution (curl|sh), obfuscate their payload (eval/base64), or perform network requests
   hooks-dangerous:
     enabled: auto
