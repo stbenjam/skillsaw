@@ -16,6 +16,7 @@ ecosystem's private helpers to reuse them.
 
 import json
 import re
+import warnings
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
@@ -85,16 +86,17 @@ _RUST_CLASS_SET_OPERATOR = re.compile(r"&&|--|~~")
 #: group name and passes.
 _RUST_NAMED_GROUP = re.compile(r"\(\?<(?![=!])")
 
-#: The two constructs the compile check alone cannot see: Python's ``re``
+#: The constructs the compile check alone cannot see: Python's ``re``
 #: accepts them and Rust's ``regex`` crate — a finite-automaton engine —
 #: refuses them, so the host drops the matcher group while ``re.compile``
 #: reports nothing. Verified against Grok Build 1.0.13, where ``(?<=x)y`` and
 #: ``(a)\1`` each dropped their group.
 #:
-#: Group openings: the four look-around spellings, and ``(?P=name)``, which
-#: is Python's named backreference. ``(?<name>...)`` is a *named group* in
-#: Rust and is deliberately absent — only ``(?<=`` and ``(?<!`` are
-#: look-around. Escapes: ``\1``…``\9`` and ``\k<name>``.
+#: Group openings: the four look-around spellings, ``(?P=name)`` (Python's
+#: named backreference), and the conditional, comment and atomic group kinds
+#: (``(?(``, ``(?#``, ``(?>``). ``(?<name>...)`` is a *named group* in Rust
+#: and is deliberately absent — only ``(?<=`` and ``(?<!`` are look-around.
+#: Escapes: ``\1``…``\9``, ``\k<name>`` and ``\Z``.
 #:
 #: A match here is a *candidate*, not a verdict: :func:`_rust_unsupported`
 #: re-walks the pattern to drop one that is escaped (``\(?=``) or inside a
@@ -273,7 +275,14 @@ def rust_matcher_error(matcher: str) -> Optional[str]:
         # Rewritten, not skipped: a pattern carrying a Rust-only atom still
         # has the structure both dialects share, and an unclosed group costs
         # the matcher group whatever engine reads it.
-        re.compile(_to_python_regex(matcher))
+        #
+        # A POSIX class Rust accepts (``[[:alpha:]]+``) makes CPython emit
+        # ``FutureWarning: Possible nested set`` — a warning the ``except``
+        # below cannot catch, printed into the middle of the lint report for
+        # a matcher that works.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            re.compile(_to_python_regex(matcher))
     except (re.error, RecursionError, OverflowError) as err:
         return getattr(err, "msg", None) or str(err)
     return None

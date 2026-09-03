@@ -93,6 +93,7 @@ cases that reject the whole file.
 | No top-level `hooks` object, or a non-object one | Whole file | ERROR |
 | An event whose value is not an array | Whole file | ERROR |
 | A group that is not an object, or has no `hooks` array | Whole file | ERROR |
+| A `matcher` that is not a string | Whole file | ERROR |
 | A handler that is not an object, or has no `type` | Whole file | ERROR |
 | A known field of the wrong JSON type | Whole file | ERROR |
 | A `timeout` above `2**64-1` | Whole file | ERROR |

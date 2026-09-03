@@ -22,7 +22,7 @@ from skillsaw.blocks import (
     HooksBlock,
     SkillBlock,
 )
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import INSTRUCTION_REPO_TYPES, RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.hooks.dangerous import HooksDangerousRule
 from tests.cli_runner import run_cli
 from tests.grok._helpers import (
@@ -114,6 +114,29 @@ def test_an_excluded_project_layer_drives_neither_detection_nor_attachment(temp_
 
     assert RepositoryType.GROK_PROJECT not in context.repo_types
     assert context.lint_tree.find(GrokHooksBlock) == []
+
+
+def test_grok_is_not_an_instruction_format() -> None:
+    """The instruction-file rules read only AGENTS.md and its siblings, so a
+    repository whose only marker is `.grok/` would auto-enable two rules
+    structurally incapable of finding anything. Grok's own always-on prose
+    is `.grok/rules/`, which the content rules read as content."""
+    assert RepositoryType.GROK_PROJECT not in INSTRUCTION_REPO_TYPES
+
+
+def test_a_grok_repository_that_also_packages_content_keeps_its_primary_type(
+    temp_dir,
+) -> None:
+    """Tool types sort below packaging types, so a marketplace that also
+    configures Grok still reports `marketplace` as its primary type."""
+    write_hooks(temp_dir, HOOKS_JSON)
+    (temp_dir / ".claude-plugin").mkdir()
+    (temp_dir / ".claude-plugin" / "marketplace.json").write_text('{"name": "t", "plugins": []}')
+
+    context = RepositoryContext(temp_dir)
+
+    assert {RepositoryType.MARKETPLACE, RepositoryType.GROK_PROJECT} <= context.repo_types
+    assert context.repo_type == RepositoryType.MARKETPLACE
 
 
 def test_configured_exclude_silences_the_rule(tmp_path) -> None:

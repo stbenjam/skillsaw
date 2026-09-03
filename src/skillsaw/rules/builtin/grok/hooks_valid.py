@@ -330,7 +330,7 @@ class _FileCheck:
         return violations
 
     def _check_env(self, where: str, handler: Dict[str, Any]) -> List[RuleViolation]:
-        """Values the hook runner overwrites whatever the file says.
+        """Values the hook runner overwrites, whatever the file says.
 
         Only for an ``env`` of the right shape. A non-mapping one, or one
         holding a non-string value, refuses the whole document — so nothing

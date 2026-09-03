@@ -226,6 +226,48 @@ def test_description_routing_reaches_grok_commands_and_agents(temp_dir) -> None:
     ]
 
 
+def test_an_agent_without_frontmatter_is_two_defects_and_a_command_is_one(temp_dir) -> None:
+    """`grok-agent-valid` owns whether Grok's loader registers the file;
+    `content-description-routing` owns whether the description routes what
+    is registered. An agent with no frontmatter fails both — it is missing
+    from the agent list, and nothing would route to it if it were there. A
+    command with no frontmatter loads and runs, so the picker showing no
+    blurb is the whole of what it costs."""
+    repo = write_repo(temp_dir / "no-frontmatter")
+    for directory, body in (
+        (".grok/agents", "# Migration reviewer\n\nRead the migration and report what it does.\n"),
+        (".grok/commands", "# Tile check\n\nRun `make test-tiles` and report the failures.\n"),
+    ):
+        target = repo / directory
+        target.mkdir(parents=True)
+        target.joinpath("no-frontmatter.md").write_text(body)
+
+    report = lint_json(repo, returncode=1)
+    owned = {"grok-agent-valid", "content-description-routing"}
+
+    assert sorted(
+        (v["file_path"], v["rule_id"], v["message"])
+        for v in report["violations"]
+        if v["rule_id"] in owned
+    ) == [
+        (
+            ".grok/agents/no-frontmatter.md",
+            "content-description-routing",
+            "Description is missing; add frontmatter describing this agent",
+        ),
+        (
+            ".grok/agents/no-frontmatter.md",
+            "grok-agent-valid",
+            "Agent no-frontmatter.md has no frontmatter; add 'name' and 'description'",
+        ),
+        (
+            ".grok/commands/no-frontmatter.md",
+            "content-description-routing",
+            "Description is missing; add frontmatter describing this command",
+        ),
+    ]
+
+
 def test_a_grok_command_keeps_the_exemption_from_trigger_phrasing(temp_dir) -> None:
     """A command's description is the blurb `grok` shows in its picker, not a
     selector the model routes on — the same reason Claude and OpenCode

@@ -1,17 +1,18 @@
 """Direct unit tests for ``skillsaw.rules.builtin.utils``'s shared helpers.
 
 ``rust_matcher_error()`` is a public helper two rules share
-(``muse-hooks-valid``, ``grok-hooks-valid``) but had no test of its own —
-only end-to-end coverage through those two rules, which never pins the
-length-cap boundary independently of whatever pattern size each rule's own
-tests happen to use. These tests pin the helper's contract directly: every
-construct Rust accepts and Python does not, every construct Python accepts
-and Rust does not (correctly named), the ``(?<name>...)`` /
+(``muse-hooks-valid``, ``grok-hooks-valid``). These tests pin its contract
+directly rather than through either rule, so the length-cap boundary is
+covered independently of whatever pattern size those rules' own tests use:
+every construct Rust accepts and Python does not, every construct Python
+accepts and Rust does not (correctly named), the ``(?<name>...)`` /
 ``(?<=``/``(?<!`` seam the helper's docstring calls out, the length cap, and
 the ``\\z`` anchor rewrite.
 """
 
 from __future__ import annotations
+
+import warnings
 
 import pytest
 
@@ -34,6 +35,7 @@ from skillsaw.rules.builtin.utils import (
         r"[\w--\d]",
         r"[a-g~~b-h]",
         r"(?<tool>Bash|Write)",
+        r"[[:alpha:]]+",
         r"Bash|Write",
     ],
 )
@@ -41,6 +43,18 @@ def test_a_rust_only_construct_compiles(pattern) -> None:
     """Rewritten to a Python-compatible spelling rather than reported as
     broken — these are all constructs Grok Build and Muse Code accept."""
     assert rust_matcher_error(pattern) is None
+
+
+def test_a_posix_class_prints_no_interpreter_warning() -> None:
+    """`[[:alpha:]]+` is a Rust POSIX class that Python compiles while
+    emitting `FutureWarning: Possible nested set`. A warning is not an
+    exception, so the compile's `except` cannot catch it and it would land
+    in the middle of the lint report."""
+    # `re` caches by pattern, so a spelling no other test compiles is what
+    # makes this reach the parser at all.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert rust_matcher_error(r"[[:digit:]]{2}") is None
 
 
 # ── Constructs Python's `re` accepts that Rust's `regex` crate does not ──
@@ -80,7 +94,7 @@ def test_the_seam_never_turns_a_look_behind_into_a_named_group() -> None:
     look-behind, which Rust does not have. The two tables that draw this
     line — the named-group rewrite and the unsupported-construct scan — must
     agree on which `(?<` is which, or a look-behind silently becomes a group
-    name and passes uncompiled-checked."""
+    name and is never reported."""
     assert rust_matcher_error(r"(?<=x)y") == "Rust's regex has no look-around"
     assert rust_matcher_error(r"(?<!x)y") == "Rust's regex has no look-around"
     # Confirms the rewrite itself never touches these two spellings.

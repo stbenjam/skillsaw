@@ -47,7 +47,8 @@ author nothing.
   ``-Infinity`` token, which Python's ``json`` accepts as a float and
   ``serde_json`` refuses; no top-level ``hooks`` object; an event whose
   value is not an array; a matcher group that is not an object; a group
-  with no ``hooks`` key or a non-array one; a handler that is not an
+  with no ``hooks`` key or a non-array one; a ``matcher`` that is not a
+  string, which never reaches the regex compiler; a handler that is not an
   object; a handler with no ``type``; and any field in
   :data:`HANDLER_FIELDS` carrying the wrong JSON type, including a
   ``timeout`` above :data:`TIMEOUT_MAX`. One mistyped ``timeout`` costs the

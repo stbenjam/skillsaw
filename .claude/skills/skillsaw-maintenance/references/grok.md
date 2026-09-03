@@ -48,7 +48,8 @@ that matrix before changing a rule here.
     checked before anything else); malformed JSON; a bare `NaN`/`Infinity`/`-Infinity`;
     no top-level `hooks` object, or one that is not an object; an event whose value is
     not an array; a matcher group that is not an object; a group with no `hooks` key or
-    a non-array one; a handler that is not an object; a handler with no `type`; any
+    a non-array one; a `matcher` that is not a string, which never reaches the regex
+    compiler; a handler that is not an object; a handler with no `type`; any
     known handler field carrying the wrong JSON type — including a `timeout` above
     `2**64-1`, the field's own `u64` ceiling, which fails the same way as a float or a
     negative even though the value is a plain non-negative integer.
@@ -114,9 +115,11 @@ that matrix before changing a rule here.
   module, `src/skillsaw/formats/grok.py`, so a behavior change is an edit there rather
   than a hunt through rule code.
 - Detection — `src/skillsaw/discovery/detect.py` (`grok-project`: any of `rules/`,
-  `skills/`, `agents/`, `commands/`, `hooks/`, `config.toml` or `lsp.json` inside a
-  `.grok/`); `RepositoryType.GROK_PROJECT` in `src/skillsaw/repository_types.py` is
-  what the rule gates on and what `Repo type:` reports.
+  `skills/`, `agents/`, `commands/`, `hooks/`, `workflows/`, `roles/`, `personas/`,
+  `config.toml`, `lsp.json` or `sandbox.toml` inside a `.grok/` — eleven entries in
+  `_TOOL_EVIDENCE["grok-project"]`); `RepositoryType.GROK_PROJECT` in
+  `src/skillsaw/repository_types.py` is what the rule gates on and what `Repo type:`
+  reports.
 - Skills — `.grok/skills` in `CONVENTIONAL_SKILL_DIRS`
   (`src/skillsaw/discovery/__init__.py`), which is what earns the whole skill rule set
   without a Grok rule.
@@ -130,8 +133,8 @@ that matrix before changing a rule here.
   `rust_matcher_error` in `src/skillsaw/rules/builtin/utils.py`.
 
 ## Sync notes
-Hand-copied value sets that drift — re-check each against the shipped user guide, or
-re-verify empirically with the canary matrix above:
+Hand-copied values and measured facts that drift — re-check each against the shipped
+user guide, or re-verify empirically with the canary matrix above:
 - `HOOK_EVENTS` (the 15 above) in `formats/grok.py`.
 - `HOOK_EVENT_ALIASES` — 39 entries. The irregular one is `userPromptSubmit`, which
   Grok does *not* accept although every other camelCase spelling loads; verify a new
@@ -143,6 +146,17 @@ re-verify empirically with the canary matrix above:
 - `WILDCARD_MATCHERS` = `{"", "*"}` — `*` is special-cased by Grok, not compiled.
 - `REQUIRED_FIELDS` = `("name", "description")` in `rules/builtin/grok/agent_valid.py` —
   the keys Grok's subagent loader requires; an empty value still registers.
+- `TIMEOUT_MAX` = `2**64 - 1` in `formats/grok.py`, the `u64` ceiling `timeout`
+  deserializes into. It has to track Grok's timeout type: widen or narrow the field
+  upstream and the boundary this reports moves with it.
+- `rules/`, `commands/`, `agents/` and `hooks/` are read **flat**; `skills/` is walked
+  recursively. Re-verify with `grok inspect --json` on a nested file. A change here is
+  silent under-attachment — skillsaw stops linting real context and reports nothing —
+  not a false positive, so nothing fails to draw attention to it.
+- `.grok/settings.json` is **reserved**. superagent-ai/grok-cli is a second reader of a
+  project `.grok/`, and its hooks loader names a project-level `settings.json` there
+  only to skip it. Never attach it and never make it detection evidence — it is not a
+  surface Grok Build reads, and claiming it would claim another tool's state.
 
 ## Not covered yet
 Deliberate gaps, each with the reason it is a separate piece of work:
@@ -160,5 +174,6 @@ Deliberate gaps, each with the reason it is a separate piece of work:
   conditional `tomli` dependency that should be argued on its own.
 - **`.grok/lsp.json`, `.grok/sandbox.toml`, `.grok/roles/`, `.grok/personas/`,
   `.grok/workflows/*.rhai`** — no public schema, a TOML dependency, or a scripting
-  language a regex would misread. `lsp.json` and `config.toml` are detection evidence
-  today and nothing more.
+  language a regex would misread. Those five and `config.toml` are detection evidence
+  today and nothing more: nothing parses or attaches them, so detection and attachment
+  cannot disagree about them.

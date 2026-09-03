@@ -8,7 +8,17 @@ repository, and not in the agent list — and Grok says nothing about it.
 Commands are deliberately not checked here. Grok loads a
 ``.grok/commands/*.md`` with no frontmatter at all, naming it from the
 filename, so the same demand there would be a false positive on a file that
-works.
+works. ``content-description-routing`` still reports one, and that is the
+whole of what a frontmatter-less command costs: Grok runs it, and the
+picker shows no blurb.
+
+The two rules answer different questions. This one owns *will the loader
+register the file*; ``content-description-routing`` owns *does the
+description route what is registered*. A ``.grok/agents/*.md`` with no
+frontmatter fails both, and both report: the subagent is missing from the
+agent list, and nothing would route to it if it were there. That is two
+defects rather than one said twice, exactly as it is for a Claude agent
+under ``claude-agent-frontmatter``.
 
 Only :class:`GrokAgentBlock` is iterated, a node type that exists only where
 Grok's project layer does, so the rule declares no ``provenance_scope``:
@@ -33,7 +43,9 @@ from skillsaw.rules.builtin.content_analysis import GrokAgentBlock
 #: presence of the key, not the usefulness of what is under it —
 #: ``content-description-routing`` owns the quality of a description that is
 #: there, and reporting an empty one twice would be one defect with two
-#: names.
+#: names. A *missing* ``description`` is the other case: the loader drops
+#: the agent and nothing routes it either, so both rules report and the
+#: author has two things to fix.
 REQUIRED_FIELDS = ("name", "description")
 
 

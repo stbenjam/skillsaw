@@ -51,6 +51,9 @@ def test_rule_metadata() -> None:
     # `.grok/agents/` is a tool directory no other ecosystem claims, and the
     # node type exists nowhere else, so there is nothing to filter.
     assert rule.provenance_scope is None
+    # An empty `description` registers an agent Grok can never route to, so
+    # there is deliberately no fix to prepend one.
+    assert not rule.supports_autofix
 
 
 # ── What Grok refuses ────────────────────────────────────────────
@@ -112,6 +115,34 @@ def test_malformed_frontmatter_is_one_finding_not_two_missing_keys(temp_dir) -> 
 
     assert len(violations) == 1, messages(violations)
     assert violations[0].message.startswith("Agent migration-reviewer.md has invalid frontmatter: ")
+    assert violations[0].severity == Severity.ERROR
+    # The one line-reporting path in the rule: the line the YAML parser
+    # stopped on, which is where the author has to look.
+    assert violations[0].line == 3
+
+
+@pytest.mark.parametrize(
+    ("body", "note"),
+    [
+        ("---\n---\n", "empty frontmatter"),
+        ("---\n- a\n---\n", "a sequence where a mapping belongs"),
+    ],
+)
+def test_frontmatter_that_is_not_a_mapping_of_keys_is_the_same_finding(
+    temp_dir, body, note
+) -> None:
+    """Neither shape has keys to be missing, so both take the invalid-
+    frontmatter branch rather than reporting `name` and `description` as
+    absent. An empty document is what a template stub leaves behind."""
+    repo = write_repo(temp_dir / f"agent-{abs(hash(note))}")
+    write_agent(repo, body)
+
+    violations = check(repo)
+
+    assert messages(violations) == [
+        "Agent migration-reviewer.md has invalid frontmatter: "
+        "Invalid frontmatter (malformed YAML or missing closing ---)"
+    ], note
     assert violations[0].severity == Severity.ERROR
 
 

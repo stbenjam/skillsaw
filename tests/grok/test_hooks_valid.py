@@ -1015,6 +1015,50 @@ def test_the_alias_table_is_the_one_the_matrix_measured() -> None:
     event, every camelCase event except `userPromptSubmit` (the one Grok
     rejects), `SubagentEnd`, and Cursor's nine. Every alias must land on a
     real event, or a spelling Grok accepts is reported as unknown."""
-    assert len(grok.HOOK_EVENT_ALIASES) == 39
+    assert set(grok.HOOK_EVENT_ALIASES) == {
+        # snake_case, all 16 names
+        "session_start",
+        "session_end",
+        "user_prompt_submit",
+        "pre_tool_use",
+        "post_tool_use",
+        "post_tool_use_failure",
+        "permission_denied",
+        "stop",
+        "stop_failure",
+        "stop_cancelled",
+        "notification",
+        "subagent_start",
+        "subagent_stop",
+        "subagent_end",
+        "pre_compact",
+        "post_compact",
+        # camelCase, every event but `userPromptSubmit`
+        "sessionStart",
+        "sessionEnd",
+        "preToolUse",
+        "postToolUse",
+        "postToolUseFailure",
+        "permissionDenied",
+        "stopFailure",
+        "stopCancelled",
+        "subagentStart",
+        "subagentStop",
+        "subagentEnd",
+        "preCompact",
+        "postCompact",
+        # Grok's own documented alias
+        "SubagentEnd",
+        # Cursor's per-operation names
+        "beforeShellExecution",
+        "beforeMCPExecution",
+        "beforeReadFile",
+        "afterShellExecution",
+        "afterMCPExecution",
+        "afterFileEdit",
+        "afterAgentResponse",
+        "afterAgentThought",
+        "beforeSubmitPrompt",
+    }
     assert "userPromptSubmit" not in grok.HOOK_EVENT_ALIASES
     assert set(grok.HOOK_EVENT_ALIASES.values()) <= grok.HOOK_EVENTS

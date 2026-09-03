@@ -7,9 +7,10 @@ the handler types (``command``, ``http``, ``mcp_tool``, ``prompt``,
 ``agent``), and the per-handler fields (``url``, ``headers``,
 ``allowedEnvVars``, ``asyncRewake``, ``model``). No other host reads that
 set — Codex runs only ``command`` and ``mcp_tool`` handlers on a shorter
-event list, Muse Code and Cursor have their own — so the rule iterates
-:class:`ClaudeHooksBlock` and leaves each of those to its own rule
-(``codex-hooks-valid``, ``muse-hooks-valid``, ``cursor-hooks-valid``).
+event list, Muse Code, Cursor and Grok Build have their own — so the rule
+iterates :class:`ClaudeHooksBlock` and leaves each of those to its own rule
+(``codex-hooks-valid``, ``muse-hooks-valid``, ``cursor-hooks-valid``,
+``grok-hooks-valid``).
 """
 
 from typing import List
