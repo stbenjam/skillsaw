@@ -10,7 +10,7 @@ Skill name must be lowercase letters, numbers, and hyphens and match directory n
 | **Severity** | error (auto) |
 | **Autofix** | auto |
 | **Since** | v0.1.0 |
-| **Repo Types** | agent-plugin, agentskills, codex-marketplace, codex-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, single-plugin |
+| **Repo Types** | agent-plugin, agentskills, antigravity-plugin, codex-marketplace, codex-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, single-plugin |
 | **Category** | [agentskills.io](agentskills.md) |
 
 ## Why

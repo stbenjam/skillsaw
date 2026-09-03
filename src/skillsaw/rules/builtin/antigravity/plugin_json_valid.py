@@ -87,28 +87,6 @@ class AntigravityPluginJsonValidRule(Rule):
                 )
                 continue
 
-            if "name" not in data:
-                violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message="plugin.json: missing required field 'name'",
-                        file_path=target.path,
-                        severity=self.default_severity(),
-                        fingerprint_discriminator="missing required field 'name'",
-                    )
-                )
-
-            if "version" not in data:
-                violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message="plugin.json: missing required field 'version'",
-                        file_path=target.path,
-                        severity=self.default_severity(),
-                        fingerprint_discriminator="missing required field 'version'",
-                    )
-                )
-
             for err in validate_antigravity_manifest(data):
                 violations.append(
                     RuleViolation(

@@ -41,6 +41,7 @@ from .repository_types import (  # noqa: F401
     INSTRUCTION_REPO_TYPES,
     SKILL_REPO_TYPES,
     TOOL_REPO_TYPES,
+    TYPE_PRIORITY,
     RepositoryType,
 )
 
@@ -72,44 +73,7 @@ class RepositoryContext(
 
     _INSTRUCTION_FILENAMES = ("AGENTS.md", "ANTIGRAVITY.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
 
-    _TYPE_PRIORITY = [
-        RepositoryType.MARKETPLACE,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.APM,
-        RepositoryType.DOT_CLAUDE,
-        # Below the Claude equivalents, so a repository that is both keeps
-        # its Claude primary type — but above the generic fallbacks: an
-        # authored Codex plugin whose skills also match the Agent Skills
-        # convention is a Codex plugin first, not an agentskills.io repo.
-        RepositoryType.CODEX_MARKETPLACE,
-        RepositoryType.CODEX_PLUGIN,
-        RepositoryType.GROK_MARKETPLACE,
-        RepositoryType.GROK_PLUGIN,
-        RepositoryType.ANTIGRAVITY_PLUGIN,
-        RepositoryType.AGENT_PLUGIN,
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.MCP_REGISTRY,
-        RepositoryType.CODERABBIT,
-        RepositoryType.PROMPTFOO,
-        # Tool configuration sorts below everything that describes how the
-        # repository packages its content, so a marketplace that also ships
-        # a `.cursor/` keeps `marketplace` as its primary type.
-        RepositoryType.CODEX_PROJECT,
-        RepositoryType.MUSE,
-        RepositoryType.GROK_PROJECT,
-        RepositoryType.CURSOR,
-        RepositoryType.COPILOT,
-        RepositoryType.CLINE,
-        RepositoryType.DEVIN,
-        RepositoryType.OPENCODE,
-        RepositoryType.ANTIGRAVITY,
-        RepositoryType.KIRO,
-        RepositoryType.SKILLS_LOCK,
-        RepositoryType.CLAUDE_MD,
-        RepositoryType.AGENTS_MD,
-        RepositoryType.GEMINI,
-        RepositoryType.QWEN,
-    ]
+    _TYPE_PRIORITY = TYPE_PRIORITY
 
     # Compiled output directories that APM generates from .apm/ sources.
     # When .apm/ is present these are generated artifacts and should not be linted.
@@ -193,14 +157,18 @@ class RepositoryContext(
         # is missing — otherwise ``--type codex-plugin`` on a repository
         # without ``.codex-plugin/`` would discover no plugin, create no
         # node, and never run the requested check.
-        self._codex_plugin_forced = repo_types is not None and RepositoryType.CODEX_PLUGIN in repo_types
+        self._codex_plugin_forced = (
+            repo_types is not None and RepositoryType.CODEX_PLUGIN in repo_types
+        )
         self._codex_marketplace_forced = repo_types is not None and (
             RepositoryType.CODEX_MARKETPLACE in repo_types
         )
         self._agent_plugin_discovery_enabled = (
             repo_types is None or RepositoryType.AGENT_PLUGIN in repo_types
         )
-        self._agent_plugin_forced = repo_types is not None and RepositoryType.AGENT_PLUGIN in repo_types
+        self._agent_plugin_forced = (
+            repo_types is not None and RepositoryType.AGENT_PLUGIN in repo_types
+        )
         self.codex_plugins: List[Path] = (
             self._discover_codex_plugins() if self._codex_discovery_enabled else []
         )
@@ -391,7 +359,6 @@ class RepositoryContext(
             self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
             self.codex_plugins = [p for p in self.codex_plugins if not self.is_path_excluded(p)]
             self.agent_plugins = [p for p in self.agent_plugins if not self.is_path_excluded(p)]
-            self.antigravity_plugins = [p for p in self.antigravity_plugins if not self.is_path_excluded(p)]
             self.skills = [
                 p
                 for p in self.skills

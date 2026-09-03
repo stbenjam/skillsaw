@@ -230,7 +230,7 @@ class RepositoryProvenanceMixin:
             and not grok_marker_escapes(plugin_dir)
         ):
             ecosystems.add("grok")
-        if antigravity_manifest_is_contained(plugin_dir) or (
+        if (
             resolved is not None
             and resolved in getattr(self, "_antigravity_claim_set", lambda: set())()
         ):

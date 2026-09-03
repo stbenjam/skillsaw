@@ -63,7 +63,10 @@ class TestAntigravityPluginJsonValidRule:
         findings = Linter(context, config=config).run()
         manifest_findings = [f for f in findings if f.rule_id == "antigravity-plugin-json-valid"]
         assert len(manifest_findings) >= 1
-        assert "not found" in manifest_findings[0].message.lower() or "missing" in manifest_findings[0].message.lower()
+        assert (
+            "not found" in manifest_findings[0].message.lower()
+            or "missing" in manifest_findings[0].message.lower()
+        )
 
 
 class TestAntigravityHooksValidRule:

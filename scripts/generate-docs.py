@@ -162,6 +162,18 @@ RULE_GROUPS = [
         "automatically when Devin repository context is present.",
     ),
     (
+        "Google Antigravity",
+        [
+            "antigravity-config-json-valid",
+            "antigravity-hooks-valid",
+            "antigravity-plugin-json-valid",
+        ],
+        "Validates Google Antigravity primitives: plugin manifests "
+        "(`plugin.json`), lifecycle hooks (`hooks.json`), and configuration "
+        "registries (`skills.json`, `plugins.json`). Auto-enabled when Antigravity "
+        "primitives or `.agents/` / `.agent/` directories are detected.",
+    ),
+    (
         "Grok Build",
         [
             "grok-agent-valid",

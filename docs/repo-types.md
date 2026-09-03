@@ -448,6 +448,37 @@ resolved and contained against the marketplace root, so a package that is a
 marketplace of its own resolves against the package. Sources that escape
 that root are dropped, by Grok and here.
 
+## Google Antigravity
+
+Repositories configured for Google Antigravity, or declaring Antigravity customizations.
+Antigravity uses `ANTIGRAVITY.md` (or `.agent/ANTIGRAVITY.md` / `.agents/ANTIGRAVITY.md`) for
+instructions, dedicated JSON registry files (`skills.json`, `plugins.json`, `mcp_config.json`)
+under `.agent/` or `.agents/`, and lifecycle hooks in `hooks.json`.
+
+Supported Antigravity configuration files are validated by:
+
+- [`antigravity-hooks-valid`](rules/antigravity-hooks-valid.md): validates lifecycle events and handler definitions in `hooks.json`.
+- [`antigravity-config-json-valid`](rules/antigravity-config-json-valid.md): validates configuration registries (`skills.json`, `plugins.json`, `mcp_config.json`).
+
+Instructions in `ANTIGRAVITY.md` receive the full suite of content-quality and context-budgeting rules.
+
+## Google Antigravity Plugin
+
+Plugin directories declaring an Antigravity plugin with `plugin.json` (or referenced as local sources
+in a `plugins.json` registry):
+
+```text
+my-plugin/
+├── plugin.json           # Manifest declaring name, version, author, description
+├── skills/               # Optional skills
+│   └── my-skill/
+│       └── SKILL.md
+└── hooks.json            # Optional lifecycle hooks
+```
+
+[`antigravity-plugin-json-valid`](rules/antigravity-plugin-json-valid.md) validates the plugin manifest schema, field types, and identifier formatting.
+
+
 `plugin-index.json` beside the catalog is what the marketplace browser reads
 before anything is installed, and a `require_sha` deployment installs from
 the `sha` values it publishes. skillsaw attaches it under its catalog.

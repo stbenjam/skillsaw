@@ -61,6 +61,46 @@ class RepositoryType(Enum):
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
+TYPE_PRIORITY: list[RepositoryType] = [
+    RepositoryType.MARKETPLACE,
+    RepositoryType.SINGLE_PLUGIN,
+    RepositoryType.APM,
+    RepositoryType.DOT_CLAUDE,
+    # Below the Claude equivalents, so a repository that is both keeps
+    # its Claude primary type — but above the generic fallbacks: an
+    # authored Codex plugin whose skills also match the Agent Skills
+    # convention is a Codex plugin first, not an agentskills.io repo.
+    RepositoryType.CODEX_MARKETPLACE,
+    RepositoryType.CODEX_PLUGIN,
+    RepositoryType.GROK_MARKETPLACE,
+    RepositoryType.GROK_PLUGIN,
+    RepositoryType.ANTIGRAVITY_PLUGIN,
+    RepositoryType.AGENT_PLUGIN,
+    RepositoryType.AGENTSKILLS,
+    RepositoryType.MCP_REGISTRY,
+    RepositoryType.CODERABBIT,
+    RepositoryType.PROMPTFOO,
+    # Tool configuration sorts below everything that describes how the
+    # repository packages its content, so a marketplace that also ships
+    # a `.cursor/` keeps `marketplace` as its primary type.
+    RepositoryType.CODEX_PROJECT,
+    RepositoryType.MUSE,
+    RepositoryType.GROK_PROJECT,
+    RepositoryType.CURSOR,
+    RepositoryType.COPILOT,
+    RepositoryType.CLINE,
+    RepositoryType.DEVIN,
+    RepositoryType.OPENCODE,
+    RepositoryType.ANTIGRAVITY,
+    RepositoryType.KIRO,
+    RepositoryType.SKILLS_LOCK,
+    RepositoryType.CLAUDE_MD,
+    RepositoryType.AGENTS_MD,
+    RepositoryType.GEMINI,
+    RepositoryType.QWEN,
+]
+
+
 # Repository types whose lint tree can hold Agent Skills. One shared set so a
 # newly supported host cannot be wired into some skill rules and forgotten in
 # the rest. The Codex types belong here because Codex plugins ship

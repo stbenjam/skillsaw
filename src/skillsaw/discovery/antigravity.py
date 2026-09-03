@@ -64,9 +64,7 @@ def enumerate_antigravity_local_sources(
             if not isinstance(raw_path, str) or not raw_path.strip():
                 continue
             candidate = (
-                (base_dir / raw_path)
-                if not Path(raw_path).is_absolute()
-                else Path(raw_path)
+                (base_dir / raw_path) if not Path(raw_path).is_absolute() else Path(raw_path)
             )
             resolved_candidate = contained_resolve(candidate, resolved_root)
             if (

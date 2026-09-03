@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **95** built-in rules organized into the following categories:
+skillsaw includes **98** built-in rules organized into the following categories:
 
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
@@ -15,6 +15,7 @@ skillsaw includes **95** built-in rules organized into the following categories:
 - [Copilot / VS Code](copilot.md) (1 rule)
 - [Cursor](cursor.md) (2 rules)
 - [Devin](devin.md) (2 rules)
+- [Google Antigravity](antigravity.md) (3 rules)
 - [Grok Build](grok.md) (6 rules)
 - [Hooks](hooks.md) (3 rules)
 - [Instruction Files](instruction-files.md) (3 rules)
@@ -90,6 +91,9 @@ skillsaw includes **95** built-in rules organized into the following categories:
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
+| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity skills.json and plugins.json must conform to the Antigravity JSON config specification | error (auto) | - | Google Antigravity |
+| [`antigravity-hooks-valid`](antigravity-hooks-valid.md) | hooks.json must declare valid Antigravity lifecycle hooks | error (auto) | - | Google Antigravity |
+| [`antigravity-plugin-json-valid`](antigravity-plugin-json-valid.md) | plugin.json must declare a valid Antigravity plugin manifest | error (auto) | - | Google Antigravity |
 | [`grok-agent-valid`](grok-agent-valid.md) | .grok/agents/*.md must declare a name and a description in frontmatter | error (auto) | - | Grok Build |
 | [`grok-hooks-valid`](grok-hooks-valid.md) | .grok/hooks/*.json must use Grok's hook events, handler types and fields | error (auto) | - | Grok Build |
 | [`grok-marketplace-index-parity`](grok-marketplace-index-parity.md) | .grok-plugin/plugin-index.json must agree with the catalog beside it | warning (auto) | - | Grok Build |

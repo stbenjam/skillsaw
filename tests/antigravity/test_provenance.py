@@ -205,9 +205,7 @@ class TestDiscoverAntigravityPlugins:
         assert discovered == []
 
         # When declared in local_sources, it is discovered
-        discovered_with_sources = discover_antigravity_plugins(
-            tmp_path, local_sources=[plug_a]
-        )
+        discovered_with_sources = discover_antigravity_plugins(tmp_path, local_sources=[plug_a])
         assert discovered_with_sources == [plug_a]
 
     @pytest.mark.parametrize("config_dir", ANTIGRAVITY_CONFIG_DIR_NAMES)

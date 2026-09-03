@@ -10,7 +10,7 @@ Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must po
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
-| **Repo Types** | agents-md, claude-md, coderabbit, copilot, cursor, devin, gemini, kiro, qwen |
+| **Repo Types** | agents-md, antigravity, claude-md, coderabbit, copilot, cursor, devin, gemini, kiro, qwen |
 | **Category** | [Instruction Files](instruction-files.md) |
 
 ## Why
