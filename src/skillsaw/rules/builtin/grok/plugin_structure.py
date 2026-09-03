@@ -22,7 +22,7 @@ from typing import List, Set
 from skillsaw.context import RepositoryContext
 from skillsaw.formats import grok
 from skillsaw.lint_target import GrokPluginConfigNode
-from skillsaw.paths import safe_is_dir, safe_is_file, safe_resolve
+from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import GROK_PLUGIN_REPO_TYPES
@@ -82,6 +82,10 @@ class GrokPluginStructureRule(Rule):
                 continue
             if not self._installable(plugin_dir):
                 if not check_installable:
+                    # The naming advisory below still applies: a directory
+                    # whose components are generated at build time installs
+                    # under a synthesized name all the same.
+                    violations.extend(self._synthesized_name(plugin_dir, addressed))
                     continue
                 violations.append(
                     self.violation(
@@ -92,35 +96,62 @@ class GrokPluginStructureRule(Rule):
                     )
                 )
                 continue
-            resolved = safe_resolve(plugin_dir)
-            if resolved is not None and resolved in addressed:
-                violations.append(
-                    self.violation(
-                        f"'{plugin_dir.name}/' has no manifest; Grok installs it as "
-                        f"'{plugin_dir.name}-<hash>', not under the catalog's name",
-                        file_path=plugin_dir,
-                        severity=Severity.INFO,
-                    )
-                )
+            violations.extend(self._synthesized_name(plugin_dir, addressed))
 
         return violations
 
+    def _synthesized_name(self, plugin_dir: Path, addressed: Set[Path]) -> List[RuleViolation]:
+        """The name a manifest-less directory installs under, when a catalog
+        asks for another one."""
+        resolved = safe_resolve(plugin_dir)
+        if resolved is None or resolved not in addressed:
+            return []
+        return [
+            self.violation(
+                f"'{plugin_dir.name}/' has no manifest; Grok installs it as "
+                f"'{plugin_dir.name}-<hash>', not under the catalog's name",
+                file_path=plugin_dir,
+                severity=Severity.INFO,
+            )
+        ]
+
     def _installable(self, plugin_dir: Path) -> bool:
-        """Whether ``grok plugin install`` accepts *plugin_dir* with no manifest."""
+        """Whether ``grok plugin install`` accepts *plugin_dir* with no manifest.
+
+        Every candidate is contained against the plugin first: Grok drops a
+        component that resolves outside the plugin root, so one that does
+        cannot make the directory installable, and counting it would call a
+        directory fine that the installer refuses.
+        """
+        root = safe_resolve(plugin_dir)
+        if root is None:
+            return False
         skills = plugin_dir / grok.COMPONENT_PATHS["skills"][0]
-        if any(safe_is_file(child / grok.SKILL_FILENAME) for child in _children(skills)):
+        if any(
+            _contained_file(child / grok.SKILL_FILENAME, root) for child in _children(skills, root)
+        ):
             return True
         agents = plugin_dir / grok.COMPONENT_PATHS["agents"][0]
-        if any(child.suffix == ".md" and safe_is_file(child) for child in _children(agents)):
+        if any(
+            child.suffix == ".md" and _contained_file(child, root)
+            for child in _children(agents, root)
+        ):
             return True
         for field in ("hooks", "mcpServers"):
-            if safe_is_file(plugin_dir / grok.COMPONENT_PATHS[field][0]):
+            if _contained_file(plugin_dir / grok.COMPONENT_PATHS[field][0], root):
                 return True
         return False
 
 
-def _children(directory: Path) -> List[Path]:
-    """Entries of *directory*, or none when it cannot be listed."""
+def _contained_file(path: Path, root: Path) -> bool:
+    """Whether *path* is a regular file that stays inside *root*."""
+    return contained_resolve(path, root) is not None and safe_is_file(path)
+
+
+def _children(directory: Path, root: Path) -> List[Path]:
+    """Entries of *directory*, or none when it cannot be listed or escapes."""
+    if contained_resolve(directory, root) is None:
+        return []
     try:
         return list(directory.iterdir())
     except OSError:

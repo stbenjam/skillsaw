@@ -353,14 +353,23 @@ my-plugin/
 ```
 
 Grok resolves a manifest from `plugin.json`, then `.grok-plugin/plugin.json`,
-then `.claude-plugin/plugin.json`, and reads the first it finds. skillsaw
-claims only the middle one for Grok. The other two are another ecosystem's
-declaration — a root `plugin.json` is the Agent Plugins entrypoint, and
-`.claude-plugin/` is Claude's — and claiming them would put every Claude
-plugin and every portable package under Grok's rules as well. A directory
-carrying both `.grok-plugin/plugin.json` and `.claude-plugin/plugin.json` is
-both a Grok plugin and a Claude plugin, and each ecosystem's rules apply
-independently.
+then `.claude-plugin/plugin.json`, and reads the first it finds. Two
+different questions follow from that chain, and skillsaw answers them
+separately.
+
+*Which directory is Grok's* is decided by `.grok-plugin/plugin.json` alone,
+or by a Grok catalog listing the directory. The other two spellings are
+another ecosystem's declaration — a root `plugin.json` is the Agent Plugins
+entrypoint, and `.claude-plugin/` is Claude's — and claiming them would put
+every Claude plugin and every portable package under Grok's rules as well.
+
+*Which file Grok reads once the directory is claimed* is the whole chain. So
+`grok-plugin-json-valid` reports against a root `plugin.json` or a
+`.claude-plugin/plugin.json` when that is the one Grok resolves to — the
+finding names the file, and it is the file to open. A directory carrying
+both `.grok-plugin/plugin.json` and `.claude-plugin/plugin.json` is both a
+Grok plugin and a Claude plugin, and each ecosystem's rules apply
+independently to the manifest its own host reads.
 
 A manifest is optional to Grok: a directory holding `skills/`, `agents/`,
 `hooks/hooks.json` or `.mcp.json` loads without one. skillsaw still needs a

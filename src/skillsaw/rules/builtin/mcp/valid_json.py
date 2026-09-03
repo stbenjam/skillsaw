@@ -11,6 +11,7 @@ from skillsaw.blocks import (
     CopilotAgentMcpBlock,
     McpConfigRole,
     OpenCodeMcpBlock,
+    json_token,
 )
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
@@ -189,12 +190,40 @@ class McpValidJsonRule(Rule):
                 )
                 continue
 
-            # Conditional strictness, not a skip: the tightened
-            # non-empty-string checks apply only inside Codex-ONLY plugins,
-            # so dual-manifest plugins keep their established Claude results.
-            require_usable = block.require_usable_connection or context.in_codex_only_plugin(
-                block.path
+            # Conditional strictness, not a skip: the tightened checks
+            # apply inside Codex-ONLY and Grok-ONLY plugins, so
+            # dual-manifest plugins keep their established Claude results.
+            #
+            # Asked of provenance as well as of the block, because the block
+            # class does not always carry the answer: a repo-root plugin's
+            # conventional ``.mcp.json`` is attached by the generic root
+            # attach — one block per file — before any plugin cluster runs,
+            # so it arrives as the shared ``McpBlock`` however the directory
+            # is claimed.
+            grok_only = context.in_grok_only_plugin(block.path)
+            require_usable = (
+                block.require_usable_connection
+                or context.in_codex_only_plugin(block.path)
+                or grok_only
             )
+            # Claude never reads a Grok-only plugin's file, so its built-in
+            # server names are not reserved there.
+            check_reserved = block.claude_builtins_reserved and not grok_only
+            if grok_only and not block.strict_json:
+                # The same document Grok's parser refuses outright. A
+                # leniently-parsed block reached the shape walk with a value
+                # ``serde_json`` never produced, so the defect is the file.
+                non_finite = block.first_non_finite()
+                if non_finite is not None:
+                    token_path, value = non_finite
+                    violations.append(
+                        self.violation(
+                            f"Invalid JSON: '{json_token(value)}' at "
+                            f"{safe_display(token_path)} is not valid JSON",
+                            file_path=block.path,
+                        )
+                    )
+                    continue
             # Hosts spell the wrapper key differently (VS Code uses
             # ``servers``); the block knows its own.
             servers_key = block.servers_key
@@ -264,7 +293,7 @@ class McpValidJsonRule(Rule):
                     block.path,
                     require_usable=require_usable,
                     servers_key=servers_key,
-                    check_reserved=block.claude_builtins_reserved,
+                    check_reserved=check_reserved,
                     type_aliases=block.type_aliases,
                     line=getattr(block, "source_line", None),
                     line_for=getattr(block, "source_line_for", None),

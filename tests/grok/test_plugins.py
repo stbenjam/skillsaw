@@ -45,6 +45,7 @@ from skillsaw.rules.builtin.agents.frontmatter import AgentFrontmatterRule
 from skillsaw.rules.builtin.commands.frontmatter import CommandFrontmatterRule
 from skillsaw.rules.builtin.commands.naming import CommandNamingRule
 from skillsaw.rules.builtin.description_routing import DescriptionRoutingRule
+from skillsaw.rules.builtin.grok import GrokHooksValidRule
 from skillsaw.rules.builtin.hooks.dangerous import HooksDangerousRule
 from skillsaw.rules.builtin.hooks.prohibited import HooksProhibitedRule
 from skillsaw.rules.builtin.marketplace.json_valid import MarketplaceJsonValidRule
@@ -53,6 +54,7 @@ from skillsaw.rules.builtin.mcp.valid_json import McpValidJsonRule
 
 from tests.grok._helpers import (
     HOOKS_JSON,
+    write_hooks,
     copy_fixture,
     lint_json,
     local_catalog,
@@ -468,9 +470,9 @@ def test_plugin_hooks_stay_out_of_the_project_layers_shape_rule(temp_dir) -> Non
 
 
 def test_a_shared_hooks_file_is_attached_once(temp_dir) -> None:
-    """A plugin whose ``hooks/hooks.json`` is the project layer's file under
-    another name gets one block, or both security rules report each of its
-    commands twice."""
+    """A plugin declaring a path that resolves out of the plugin gets no
+    block at all: containment rejects it before the dedup is reached. The
+    repo-root case below is the one that reaches ``_claim_attached_hooks``."""
     repo = write_repo(temp_dir / "shared")
     (repo / ".grok" / "hooks").mkdir(parents=True)
     (repo / ".grok" / "hooks" / "guards.json").write_text(HOOKS_JSON, encoding="utf-8")
@@ -890,3 +892,197 @@ def test_a_dual_manifest_plugin_keeps_claudes_reading_of_an_empty_command(temp_d
     repo = _mcp_plugin(temp_dir, "dual-unusable", {"empty": {"command": ""}}, claude=True)
 
     assert McpValidJsonRule().check(RepositoryContext(repo)) == []
+
+
+def test_a_forced_type_seeds_a_marker_directory_with_no_manifest(temp_dir) -> None:
+    """A contained ``.grok-plugin/`` with no manifest beside a conventional
+    ``skills/`` is exactly what ``--type grok-plugin`` was asked about; only
+    an escaping or unresolvable marker blocks the seed."""
+    repo = write_plugin(write_repo(temp_dir / "marker-no-manifest"), None)
+    (repo / "skills" / "tide-window").mkdir(parents=True)
+    (repo / "skills" / "tide-window" / "SKILL.md").write_text(SKILL_MD, encoding="utf-8")
+
+    context = RepositoryContext(repo, repo_types={RepositoryType.GROK_PLUGIN})
+
+    assert context.grok_plugins == [repo]
+    assert [node.path for node in context.lint_tree.find(GrokPluginConfigNode)] == [
+        repo / ".grok-plugin" / "plugin.json"
+    ]
+
+
+# ── The Grok MCP tightening, on every surface ────────────────────
+
+
+@pytest.mark.parametrize(
+    "manifest_extra,mcp_file",
+    [
+        pytest.param({}, ".mcp.json", id="conventional-file"),
+        pytest.param({"mcpServers": "config/servers.json"}, "config/servers.json", id="declared"),
+        pytest.param({"mcpServers": {"empty": {"command": ""}}}, None, id="inline"),
+    ],
+)
+def test_every_grok_server_form_must_name_something_to_spawn(
+    temp_dir, manifest_extra, mcp_file
+) -> None:
+    repo = write_repo(temp_dir / f"unusable-{len(str(manifest_extra))}")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, **manifest_extra})
+    if mcp_file is not None:
+        target = plugin / mcp_file
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({"mcpServers": {"empty": {"command": ""}}}), encoding="utf-8")
+
+    assert messages(McpValidJsonRule().check(RepositoryContext(repo))) == [
+        "MCP server 'empty' 'command' must be a non-empty string"
+    ]
+
+
+def test_a_declared_mcp_file_in_a_dual_plugin_is_still_groks(temp_dir) -> None:
+    """Only the Grok manifest names this file, so no other host loads it —
+    the same reasoning as a declared hooks file."""
+    repo = write_repo(temp_dir / "dual-declared-mcp")
+    plugin = write_plugin(
+        repo / "plugins" / "tide-charts", {**MANIFEST, "mcpServers": "config/servers.json"}
+    )
+    (plugin / ".claude-plugin").mkdir()
+    (plugin / ".claude-plugin" / "plugin.json").write_text(json.dumps(MANIFEST), encoding="utf-8")
+    (plugin / "config").mkdir()
+    (plugin / "config" / "servers.json").write_text(
+        json.dumps({"mcpServers": {"empty": {"command": ""}, "workspace": {"command": "serve"}}}),
+        encoding="utf-8",
+    )
+
+    context = RepositoryContext(repo)
+    found = messages(McpValidJsonRule().check(context))
+
+    assert relative(repo, context.lint_tree.find(GrokMcpBlock)) == [
+        "plugins/tide-charts/config/servers.json"
+    ]
+    assert found == ["MCP server 'empty' 'command' must be a non-empty string"]
+
+
+def test_a_repo_root_grok_plugin_gets_the_tightened_mcp_checks(temp_dir) -> None:
+    """The generic root attach places ``.mcp.json`` before any plugin
+    cluster runs, so the block class cannot carry the answer — provenance
+    does."""
+    repo = write_plugin(write_repo(temp_dir / "root-plugin"), MANIFEST)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers": {"empty": {"command": ""}, "workspace": {"command": "serve"},'
+        ' "counted": {"command": "serve", "retries": NaN}}}',
+        encoding="utf-8",
+    )
+
+    context = RepositoryContext(repo)
+
+    assert context.provenance(repo).grok_only
+    assert messages(McpValidJsonRule().check(context)) == [
+        "Invalid JSON: 'NaN' at mcpServers.counted.retries is not valid JSON"
+    ]
+
+
+def test_a_repo_root_grok_plugin_with_readable_json_reports_the_empty_command(temp_dir) -> None:
+    repo = write_plugin(write_repo(temp_dir / "root-plugin-usable"), MANIFEST)
+    (repo / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"empty": {"command": ""}, "workspace": {"command": "serve"}}}),
+        encoding="utf-8",
+    )
+
+    assert messages(McpValidJsonRule().check(RepositoryContext(repo))) == [
+        "MCP server 'empty' 'command' must be a non-empty string"
+    ]
+
+
+def test_a_repo_root_claude_plugin_keeps_its_established_mcp_results(temp_dir) -> None:
+    """The other half: a Claude declaration keeps Claude's presence-only
+    reading and its reserved built-in names."""
+    repo = write_repo(temp_dir / "root-claude-plugin")
+    (repo / ".claude-plugin").mkdir()
+    (repo / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "tide-charts"}), encoding="utf-8"
+    )
+    (repo / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"empty": {"command": ""}, "workspace": {"command": "serve"}}}),
+        encoding="utf-8",
+    )
+
+    found = messages(McpValidJsonRule().check(RepositoryContext(repo)))
+
+    assert not any("must be a non-empty string" in message for message in found)
+    assert any("workspace" in message for message in found)
+
+
+def test_a_catalog_grok_cannot_parse_claims_nothing(temp_dir) -> None:
+    """A bare ``NaN`` is a document Grok's parser refuses outright, so the
+    catalog declares no local sources — while the catalog rule still reports
+    it, because the node is built on the file's existence."""
+    repo = write_repo(temp_dir / "nan-catalog-claims")
+    write_catalog(repo, local_catalog("./plugins/almanac"))
+    catalog = repo / ".grok-plugin" / "marketplace.json"
+    catalog.write_text(
+        '{"plugins": [{"name": "almanac", "source": "./plugins/almanac"}], "extra": NaN}',
+        encoding="utf-8",
+    )
+    (repo / "plugins" / "almanac").mkdir(parents=True)
+
+    context = RepositoryContext(repo)
+
+    assert context._grok_claim_set() == set()
+    assert not context.provenance(repo / "plugins" / "almanac").grok
+    assert context.lint_tree.find(GrokMarketplaceConfigNode) != []
+
+
+def test_a_package_catalog_does_not_silence_the_root_marketplace_rule(temp_dir) -> None:
+    """The stand-down is about the root ``plugins/`` directory, and Codex's
+    half is root-anchored because its enumeration only looks there. A
+    package marketplace explains its own ``plugins/``, not the repository's."""
+    repo = write_repo(temp_dir / "package-catalog")
+    (repo / "plugins" / "tide-charts").mkdir(parents=True)
+    write_catalog(repo / "packages" / "harbour", local_catalog("./plugins/almanac"))
+    (repo / "packages" / "harbour" / "plugins" / "almanac").mkdir(parents=True)
+
+    found = messages(MarketplaceJsonValidRule().check(RepositoryContext(repo)))
+
+    assert any("Marketplace file not found" in message for message in found)
+
+
+def test_a_root_catalog_still_silences_the_root_marketplace_rule(temp_dir) -> None:
+    repo = write_repo(temp_dir / "root-catalog")
+    (repo / "plugins" / "tide-charts").mkdir(parents=True)
+    write_catalog(repo, local_catalog("./plugins/tide-charts"))
+
+    found = messages(MarketplaceJsonValidRule().check(RepositoryContext(repo)))
+
+    assert not any("Marketplace file not found" in message for message in found)
+
+
+def test_a_declared_project_hooks_file_is_claimed_rather_than_re_attached(temp_dir) -> None:
+    """A repo-root plugin may declare the project layer's own hooks file.
+    One block per file, and the declaration is what records whose hooks
+    those are — the half only ``_claim_attached_hooks`` supplies."""
+    repo = write_plugin(
+        write_repo(temp_dir / "declared-project-hooks"),
+        {**MANIFEST, "hooks": ".grok/hooks/guards.json"},
+    )
+    (repo / ".grok" / "hooks").mkdir(parents=True)
+    (repo / ".grok" / "hooks" / "guards.json").write_text(HOOKS_JSON, encoding="utf-8")
+
+    blocks = RepositoryContext(repo).lint_tree.find(HooksBlock)
+
+    assert relative(repo, blocks) == [".grok/hooks/guards.json"]
+    assert [block.plugin_owner for block in blocks] == [safe_resolve(repo)]
+
+
+def test_grok_hooks_valid_stays_off_plugin_hooks_by_behaviour(temp_dir) -> None:
+    """The same document, in the two locations: the project layer's file is
+    judged by the measured failure model, a plugin's is not, because 1.0.13
+    publishes no observable for the adapter that loads it."""
+    broken = json.dumps({"hooks": {"Stop": [{"hooks": [{"command": "make lint"}]}]}})
+
+    project = write_repo(temp_dir / "hooks-project")
+    write_hooks(project, broken)
+    plugin_repo = write_repo(temp_dir / "hooks-plugin")
+    plugin = write_plugin(plugin_repo / "plugins" / "tide-charts", MANIFEST)
+    (plugin / "hooks").mkdir()
+    (plugin / "hooks" / "hooks.json").write_text(broken, encoding="utf-8")
+
+    assert messages(GrokHooksValidRule().check(RepositoryContext(project)))
+    assert GrokHooksValidRule().check(RepositoryContext(plugin_repo)) == []

@@ -124,9 +124,12 @@ class MarketplaceJsonValidRule(Rule):
             # and codex-marketplace-json-valid reports what is wrong with it.
             # A Grok catalog says the same thing about the same ``plugins/``
             # directory — a Grok-only marketplace is not a Claude one with a
-            # missing manifest.
+            # missing manifest. Both are asked of the repository root only:
+            # a catalog in a monorepo package explains that package's
+            # ``plugins/``, and letting it stand the check down here would
+            # silence the root's missing manifest.
             if (
-                context.codex_catalog_exists() or context.grok_catalog_exists()
+                context.codex_catalog_exists() or context.grok_root_catalog_exists()
             ) and not self._has_claude_plugin(context):
                 # MARKETPLACE was inferred from a bare plugins/ directory, and
                 # a Codex marketplace already explains that directory — the

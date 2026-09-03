@@ -20,10 +20,16 @@ from skillsaw.lint_target import (
     GrokPluginNode,
 )
 
+from skillsaw.rules.builtin.grok import (
+    GrokMarketplaceIndexParityRule,
+    GrokPluginStructureRule,
+)
+
 from tests.grok._helpers import (
     HOOKS_JSON,
     local_catalog,
     relative,
+    run_rule,
     write_catalog,
     write_plugin,
     write_repo,
@@ -311,3 +317,81 @@ def test_an_index_symlinked_out_of_the_marketplace_is_not_attached(temp_dir) -> 
 
     assert tree.find(GrokMarketplaceConfigNode) != []
     assert tree.find(GrokMarketplaceIndexNode) == []
+
+
+def test_a_skill_symlinked_out_of_the_checkout_is_not_read_by_the_parity_walk(temp_dir) -> None:
+    """The parity rule stats and reads every SKILL.md it finds, so its walk
+    is held to the plugin root the way the manifest reader is."""
+    outside = _outside(temp_dir)
+    (outside / "borrowed").mkdir()
+    (outside / "borrowed" / "SKILL.md").write_text(
+        "---\nname: borrowed\ndescription: Out of the checkout entirely.\n---\n\n# Borrowed\n",
+        encoding="utf-8",
+    )
+    repo = write_repo(temp_dir / "repo")
+    write_catalog(repo, local_catalog("./plugins/almanac"))
+    write_catalog(
+        repo,
+        {"version": 1, "plugins": {"almanac": {"components": {"skills": []}}}},
+        filename="plugin-index.json",
+    )
+    plugin = write_plugin(repo / "plugins" / "almanac", {"name": "almanac"})
+    (plugin / "skills").mkdir()
+    (plugin / "skills" / "borrowed").symlink_to(outside / "borrowed")
+
+    assert run_rule(GrokMarketplaceIndexParityRule, repo) == []
+
+
+def test_a_component_symlinked_out_of_the_plugin_does_not_make_it_installable(temp_dir) -> None:
+    """Grok drops a component that leaves the plugin root, so counting one
+    would call a directory installable that the installer refuses."""
+    outside = _outside(temp_dir)
+    (outside / "borrowed").mkdir()
+    (outside / "borrowed" / "SKILL.md").write_text(
+        "---\nname: borrowed\ndescription: Out of the checkout entirely.\n---\n\n# Borrowed\n",
+        encoding="utf-8",
+    )
+    repo = write_repo(temp_dir / "repo")
+    write_catalog(repo, local_catalog("./plugins/almanac"))
+    plugin = repo / "plugins" / "almanac"
+    (plugin / "skills").mkdir(parents=True)
+    (plugin / "skills" / "borrowed").symlink_to(outside / "borrowed")
+
+    found = run_rule(GrokPluginStructureRule, repo)
+
+    assert [v.message for v in found] == [
+        "Grok installs nothing from 'almanac/': no .grok-plugin/plugin.json and none of "
+        "skills/<name>/SKILL.md, agents/*.md, hooks/hooks.json or .mcp.json"
+    ]
+
+
+def test_a_stray_index_symlinked_out_of_the_marketplace_is_not_attached(temp_dir) -> None:
+    """The fallback locations are held to the same boundary as the one Grok
+    reads."""
+    outside = _outside(temp_dir)
+    (outside / "plugin-index.json").write_text(
+        json.dumps({"version": 1, "plugins": {}}), encoding="utf-8"
+    )
+    repo = write_repo(temp_dir / "repo")
+    write_catalog(repo, local_catalog("./plugins/almanac"))
+    (repo / "plugins" / "almanac").mkdir(parents=True)
+    (repo / "plugin-index.json").symlink_to(outside / "plugin-index.json")
+
+    tree = RepositoryContext(repo).lint_tree
+
+    assert tree.find(GrokMarketplaceConfigNode) != []
+    assert tree.find(GrokMarketplaceIndexNode) == []
+
+
+def test_one_index_reached_by_two_locations_is_one_node(temp_dir) -> None:
+    """A stray location symlinked at the one Grok reads is one file; a
+    second node would report it twice."""
+    repo = write_repo(temp_dir / "repo")
+    write_catalog(repo, local_catalog("./plugins/almanac"))
+    (repo / "plugins" / "almanac").mkdir(parents=True)
+    index = write_catalog(repo, {"version": 1, "plugins": {}}, filename="plugin-index.json")
+    (repo / "plugin-index.json").symlink_to(index)
+
+    nodes = RepositoryContext(repo).lint_tree.find(GrokMarketplaceIndexNode)
+
+    assert [node.path for node in nodes] == [index]

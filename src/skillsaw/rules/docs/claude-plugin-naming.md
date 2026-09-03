@@ -24,12 +24,13 @@ case-sensitive systems.
 Rename the plugin to use kebab-case in `plugin.json` and rename the
 plugin directory to match.
 
-## Codex plugins
+## Another ecosystem's plugins
 
-This is a Claude-format convention. A directory claimed only by OpenAI
-Codex — a `.codex-plugin/plugin.json`, or a local-source listing in a
-Codex catalog, with no `.claude-plugin` marker or Claude marketplace
-listing — is exempt: `codex-plugin-json-valid` already checks the
+This is a Claude-format convention. A directory claimed only by another
+ecosystem — OpenAI Codex or Grok Build, through a
+`.codex-plugin/plugin.json`, a `.grok-plugin/plugin.json`, or a
+local-source listing in either's catalog, with no `.claude-plugin` marker
+and no Claude marketplace listing — is exempt: `codex-plugin-json-valid` already checks the
 manifest name for that ecosystem, and a second directory-name report
 would double up. A dual-manifest
 directory keeps this check, and the ecosystem-neutral content and

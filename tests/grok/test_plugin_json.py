@@ -218,7 +218,9 @@ def test_an_override_beside_a_populated_conventional_directory_warns(broken) -> 
     found = only(check(broken), "replaces")
 
     assert found.severity == Severity.WARNING
-    assert found.message == "'skills' replaces 'skills/'; Grok loads nothing under it"
+    assert found.message == (
+        "'skills' replaces 'skills/'; Grok loads nothing under it, including 'chart-margins'"
+    )
 
 
 def test_naming_the_conventional_directory_alongside_the_override_is_clean(temp_dir) -> None:
@@ -397,7 +399,7 @@ def test_a_commands_or_agents_override_warns_like_skills(temp_dir, field) -> Non
         (plugin / directory / "note.md").write_text("---\ndescription: A note\n---\n\n# Note\n")
 
     assert at(check(repo), Severity.WARNING) == [
-        f"'{field}' replaces '{field}/'; Grok loads nothing under it"
+        f"'{field}' replaces '{field}/'; Grok loads nothing under it, including 'note.md'"
     ]
 
 
@@ -452,3 +454,98 @@ def test_check_overrides_off_keeps_the_path_checks(temp_dir) -> None:
 
     assert not any("replaces" in message for message in found)
     assert "'skills': './nope' is not in the plugin" in found
+
+
+@pytest.mark.parametrize(
+    "field,contents",
+    [
+        pytest.param("skills", {".gitkeep": "", "README.md": "# Skills\n"}, id="skills"),
+        pytest.param("commands", {".gitkeep": "", "notes.txt": "not markdown\n"}, id="commands"),
+        pytest.param("agents", {"draft/notes.md": "# Draft\n"}, id="agents-nested"),
+    ],
+)
+def test_an_override_beside_a_directory_grok_loads_nothing_from_is_clean(
+    temp_dir, field, contents
+) -> None:
+    """A conventional directory holding a README, a ``.gitkeep`` or a nested
+    tree loads nothing, so an override displaces nothing. The conventional
+    scan is one level deep and reads ``SKILL.md`` for skills, flat ``*.md``
+    for the two prose fields."""
+    repo = write_repo(temp_dir / f"empty-of-components-{field}")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, field: f"desk-{field}"})
+    (plugin / f"desk-{field}").mkdir()
+    (plugin / f"desk-{field}" / "note.md").write_text("---\ndescription: A note\n---\n\n# Note\n")
+    for relative_path, body in contents.items():
+        target = plugin / field / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+
+    assert [m for m in messages(check(repo)) if "replaces" in m] == []
+
+
+def test_a_declaration_covering_the_conventional_directory_displaces_nothing(temp_dir) -> None:
+    """A declared ancestor still loads what the conventional scan would."""
+    repo = write_repo(temp_dir / "covered")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "skills": "./skills"})
+    (plugin / "skills" / "tide-window").mkdir(parents=True)
+    (plugin / "skills" / "tide-window" / "SKILL.md").write_text(SKILL, encoding="utf-8")
+
+    assert [m for m in messages(check(repo)) if "replaces" in m] == []
+
+
+def test_a_skills_directory_symlinked_out_of_the_plugin_displaces_nothing(temp_dir) -> None:
+    """Grok drops the escaping directory itself, so an override costs
+    nothing — and nothing here lists a directory outside the checkout."""
+    repo = write_repo(temp_dir / "escaping-conventional")
+    outside = temp_dir / "outside" / "skills"
+    (outside / "borrowed").mkdir(parents=True)
+    (outside / "borrowed" / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "skills": "./extra"})
+    (plugin / "extra" / "tide-window").mkdir(parents=True)
+    (plugin / "extra" / "tide-window" / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    (plugin / "skills").symlink_to(outside)
+
+    assert [m for m in messages(check(repo)) if "replaces" in m] == []
+
+
+@pytest.mark.parametrize(
+    "declared,reported",
+    [
+        pytest.param({"Stop": []}, False, id="inline-object"),
+        pytest.param(42, False, id="number"),
+        pytest.param(["ok", 7], True, id="list-with-a-non-string"),
+    ],
+)
+def test_a_declared_value_the_loader_has_no_arm_for_is_left_alone(
+    temp_dir, declared, reported
+) -> None:
+    """Two silences, pinned apart: an inline ``hooks`` object is the
+    component itself, and a value neither arm reads is a shape nothing
+    measured — reporting either would name a defect that may not exist. A
+    *list* still has its string elements read."""
+    field = "hooks" if isinstance(declared, dict) else "skills"
+    repo = plugin_repo(temp_dir, f"arm-{reported}-{field}", {**MANIFEST, field: declared})
+
+    found = [m for m in messages(check(repo)) if f"'{field}'" in m]
+
+    assert bool(found) is reported
+    if reported:
+        assert found == ["'skills': 'ok' is not in the plugin"]
+
+
+def test_an_unreadable_conventional_directory_reports_no_override(temp_dir) -> None:
+    """The scan cannot say what would be lost, so it says nothing."""
+    repo = write_repo(temp_dir / "unreadable-conventional")
+    plugin = write_plugin(repo / "plugins" / "tide-charts", {**MANIFEST, "skills": "./extra"})
+    (plugin / "extra" / "tide-window").mkdir(parents=True)
+    (plugin / "extra" / "tide-window" / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    conventional = plugin / "skills"
+    (conventional / "tide-window").mkdir(parents=True)
+    (conventional / "tide-window" / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    conventional.chmod(0o000)
+    try:
+        found = [m for m in messages(check(repo)) if "replaces" in m]
+    finally:
+        conventional.chmod(0o755)
+
+    assert found == []

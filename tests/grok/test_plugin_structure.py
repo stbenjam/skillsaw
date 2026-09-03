@@ -170,9 +170,25 @@ def test_a_forced_type_still_reports_a_directory_grok_installs_nothing_from(temp
 
 def test_check_installable_off_keeps_the_synthesized_name_finding(temp_dir) -> None:
     """A repository whose components are generated at build time can drop
-    the installability finding without losing the naming advisory."""
+    the installability finding without losing the naming advisory — which
+    applies either way, because a manifest-less directory installs under a
+    synthesized name whatever it ships."""
     repo = catalog_repo(temp_dir, "installable-off", {"README.md": "# Almanac\n"})
     named = catalog_repo(temp_dir, "installable-off-named", {"skills/tide/SKILL.md": SKILL})
 
-    assert check(repo, {"check-installable": False}) == []
-    assert at(check(named, {"check-installable": False}), Severity.INFO) != []
+    for target in (repo, named):
+        found = check(target, {"check-installable": False})
+        assert at(found, Severity.WARNING) == []
+        assert at(found, Severity.INFO) == [
+            "'almanac/' has no manifest; Grok installs it as 'almanac-<hash>', "
+            "not under the catalog's name"
+        ]
+
+
+def test_the_severity_override_reaches_the_primary_finding(temp_dir) -> None:
+    repo = catalog_repo(temp_dir, "downgraded", {"README.md": "# Almanac\n"})
+
+    found = check(repo, {"severity": "info"})
+
+    assert at(found, Severity.WARNING) == []
+    assert any("Grok installs nothing from" in message for message in at(found, Severity.INFO))

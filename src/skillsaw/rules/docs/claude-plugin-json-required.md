@@ -34,13 +34,14 @@ Create a `.claude-plugin/plugin.json` file with the required fields
 (`name`, `description`, `version`). Put commands, agents, skills, and other
 plugin content beside the `.claude-plugin/` directory.
 
-## Codex plugins
+## Another ecosystem's plugins
 
-A directory that carries a `.codex-plugin/plugin.json` manifest is an
-OpenAI Codex plugin, and this rule stands down on it — it has a
-manifest, just not a Claude one, and `codex-plugin-json-valid`
-validates it instead. The exemption is withdrawn when
-`.codex-plugin/plugin.json` resolves outside the plugin directory
-(discovery rejects it, so no Codex rule covers the directory either),
-when a Claude marketplace lists the directory, or when the directory also
-carries a Claude `.claude-plugin/` directory whose manifest is missing.
+A directory that carries a `.codex-plugin/plugin.json` or a
+`.grok-plugin/plugin.json` manifest is another ecosystem's plugin, and
+this rule stands down on it — it has a manifest, just not a Claude one,
+and `codex-plugin-json-valid` or `grok-plugin-json-valid` validates it
+instead. The exemption is withdrawn when that manifest resolves outside
+the plugin directory (discovery rejects it, so no rule of its own covers
+the directory either), when a Claude marketplace lists the directory, or
+when the directory also carries a Claude `.claude-plugin/` directory
+whose manifest is missing.

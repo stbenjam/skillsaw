@@ -27,6 +27,7 @@ from skillsaw.formats.grok import (
     PLUGIN_DIR_NAME,
     PLUGIN_MANIFEST,
     grok_local_source_path,
+    grok_marker_escapes,
 )
 from skillsaw.paths import (
     contained_resolve,
@@ -35,7 +36,7 @@ from skillsaw.paths import (
     safe_is_symlink,
     safe_resolve,
 )
-from skillsaw.utils import read_json
+from skillsaw.utils import read_json_strict
 
 # Grok reads a marketplace catalog from ``<root>/.grok-plugin/marketplace.json``
 # and a plugin manifest from ``<plugin>/.grok-plugin/plugin.json``. Each has a
@@ -49,12 +50,16 @@ GROK_PLUGIN_MANIFEST = (PLUGIN_DIR_NAME, PLUGIN_MANIFEST)
 
 
 def _read_json_or_none(path: Path) -> Any:
-    """Parsed JSON at *path*, or ``None`` when absent or unparseable.
+    """Parsed JSON at *path*, or ``None`` when Grok could not read it.
 
-    Uses the shared cached reader: strips a UTF-8 BOM, and repeated reads
-    of the same catalog cost nothing.
+    Strict, and the one place in discovery that is: a catalog carrying a
+    bare ``NaN`` or a duplicated key is a document Grok's parser refuses
+    outright, so it declares no local sources and claims no directory. The
+    catalog rule still reports it — the node is built on the file's
+    existence, never on its contents. Uses the shared cached reader, so
+    repeated reads of one catalog cost nothing.
     """
-    data, error = read_json(path)
+    data, error = read_json_strict(path)
     return None if error else data
 
 
@@ -222,12 +227,14 @@ def discover_grok_plugins(
         _add(source, require_manifest=False)
 
     if not found and forced:
-        # Seed only when the root has no marker at all: discovery rejects a
-        # ``.grok-plugin`` that resolves outside the checkout, and
-        # unconditional seeding would hand that rejected marker straight
-        # back past the containment gate.
-        marker = root_path / PLUGIN_DIR_NAME
-        if not (safe_exists(marker) or safe_is_symlink(marker)) and _contained(root_path):
+        # One predicate: a marker that escapes the plugin, or a root that
+        # will not resolve, is what blocks the seed — unconditional seeding
+        # would hand a rejected marker straight back past the containment
+        # gate. A *contained* marker with no manifest beside it does not
+        # block it: that directory is exactly what ``--type grok-plugin``
+        # was asked about, and its conventional components are what Grok
+        # installs it from.
+        if _contained(root_path) and not grok_marker_escapes(root_path):
             found.append(root_path)
 
     return found

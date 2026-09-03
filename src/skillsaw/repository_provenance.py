@@ -239,10 +239,9 @@ class RepositoryProvenanceMixin:
     def is_grok_only_plugin(self, plugin_dir: Path) -> bool:
         """Grok-claimed with no Claude declaration.
 
-        The Grok counterpart of :meth:`is_codex_only_plugin`: the line the
-        package-containment boundary is drawn on. Reserved — the boundary
-        reads :attr:`PluginProvenance.grok_only` through
-        ``_declares_containment``, and no rule consults this view yet.
+        Reserved: the per-directory view of
+        :attr:`PluginProvenance.grok_only`, which the containment boundary
+        reads through ``_declares_containment``. Nothing consults this one.
         """
         return self.provenance(plugin_dir).grok_only
 

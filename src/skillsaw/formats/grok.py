@@ -80,7 +80,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Set
 
 # ``inline_documents`` unpacks the "a path, an array of paths, or the object
 # itself" manifest shape Claude Code defined and both Codex and Grok
@@ -353,13 +353,13 @@ PLUGIN_DIR_NAME = ".grok-plugin"
 #: is the optional display catalog beside it, whose ``sha`` values a
 #: ``require_sha`` deployment installs from.
 PLUGIN_MANIFEST = "plugin.json"
-
-#: The file that makes a directory a skill rather than a folder of notes.
-#: Named here because both the structure rule and the parity rule ask the
-#: same question of the same directories.
-SKILL_FILENAME = "SKILL.md"
 MARKETPLACE_FILENAME = "marketplace.json"
 PLUGIN_INDEX_FILENAME = "plugin-index.json"
+
+#: The file that makes a directory a skill rather than a folder of notes.
+#: Named here because the structure rule, the parity rule and the override
+#: check ask the same question of the same directories.
+SKILL_FILENAME = "SKILL.md"
 
 #: Where a marketplace's catalog may live, in the order Grok resolves them.
 #: Exactly one is read, never merged — verified by building a repository
@@ -398,9 +398,7 @@ MANIFEST_PATHS = (
 #: Every manifest key Grok's loader reads. Unknown keys are tolerated, so
 #: this is the vocabulary a rule may check the *shape* of, never a
 #: whitelist to report against.
-#: Reserved: no rule reads this yet. Kept because a shape check over an
-#: unknown key is the first thing a manifest rule reaches for, and the
-#: answer — Grok tolerates unknown keys — is the vocabulary's to record.
+#: Reserved: no rule reads this yet.
 MANIFEST_KEYS = frozenset(
     {
         "name",
@@ -573,7 +571,7 @@ def grok_declared_paths(plugin_dir: Path, field: str, want_dir: bool) -> List[Pa
     if root is None:
         return []
     found: List[Path] = []
-    seen: set = set()
+    seen: Set[Path] = set()
     for item in candidates:
         if not isinstance(item, str) or not item:
             continue
@@ -583,10 +581,10 @@ def grok_declared_paths(plugin_dir: Path, field: str, want_dir: bool) -> List[Pa
             # caller walks what it gets back — a directory listed twice
             # would be read twice.
             continue
+        seen.add(candidate)
         if candidate == root and not want_dir:
             continue
         if safe_is_dir(candidate) if want_dir else safe_is_file(candidate):
-            seen.add(candidate)
             found.append(candidate)
     return found
 

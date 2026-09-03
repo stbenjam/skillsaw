@@ -445,3 +445,19 @@ def test_a_local_source_symlinked_out_of_the_marketplace_is_an_error(temp_dir) -
         "plugins[0].source: './plugins/sediment' resolves outside the marketplace root "
         "— check for a symlink"
     ]
+
+
+def test_the_severity_override_reaches_the_primary_finding(temp_dir) -> None:
+    """No finding hardcodes the rule's own severity, so a project that wants
+    the catalog errors as warnings gets them."""
+    repo = catalog_repo(
+        temp_dir,
+        "downgraded",
+        {"plugins": [{"source": "./plugins/almanac"}]},
+        plugins=(("plugins/almanac", {"name": "almanac"}),),
+    )
+
+    found = check(repo, {"severity": "warning"})
+
+    assert at(found, Severity.ERROR) == []
+    assert at(found, Severity.WARNING) == ["plugins[0] missing required 'name'"]

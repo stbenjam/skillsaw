@@ -135,6 +135,21 @@ class RepositoryGrokMixin:
         """Whether any Grok catalog file is present in the checkout."""
         return bool(self._grok_catalog_files())
 
+    def grok_root_catalog_exists(self) -> bool:
+        """Whether the repository *root* carries a Grok catalog.
+
+        Narrower than :meth:`grok_catalog_exists`, and deliberately: the
+        Claude stand-down it answers is about the root ``plugins/``
+        directory, and Codex's half is root-anchored because
+        ``enumerate_codex_catalogs`` only ever looks there. Grok's walk
+        finds a package's catalog too, and a package marketplace explains
+        its own ``plugins/``, not the repository's.
+        """
+        root = safe_resolve(grok_discovery.grok_marketplace_path(self.root_path))
+        if root is None:
+            return False
+        return any(safe_resolve(path) == root for path in self._grok_catalog_files())
+
     def _grok_local_sources(self) -> List[Path]:
         """Local plugin directories declared by a Grok catalog."""
         # Filesystem-enumerated, not discovery-gated: these feed the

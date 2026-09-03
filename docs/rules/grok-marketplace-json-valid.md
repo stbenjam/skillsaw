@@ -63,7 +63,9 @@ from an upstream validator rather than from the runtime are warnings.
   suggested qualifiers are identical, so the plugin becomes uninstallable by
   name. Counted per catalog: two independent marketplaces in one monorepo
   shipping the same name is a packaging choice, not a defect.
-- A local `source.path` that is not a directory in the repository. This is
+- A local `source.path` that is not a directory under the marketplace root — the
+  directory holding `.grok-plugin/`, which in a monorepo package is the
+  package. This is
   the highest-frequency authoring mistake here and nothing in the toolchain
   reports it: `marketplace add` succeeds, `plugin list --available` shows
   nothing, and `plugin install` says the plugin does not exist.

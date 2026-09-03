@@ -138,7 +138,7 @@ a git repository.
   refused by `grok plugin install`. So skillsaw claims a manifest-less directory only
   when a catalog lists it as a local source.
 - **Manifest failure scope**: unparseable JSON, or a `name` that is missing, non-string
-  or outside `^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`, makes discovery **skip the whole
+  or outside `\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\Z`, makes discovery **skip the whole
   plugin directory** — `skills/` does not rescue it, `grok plugin install` still prints
   success, and `grok inspect` then shows `plugins: []`. A declared path that escapes the
   plugin root or does not exist costs that component list only, and an override
@@ -228,7 +228,9 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
 - Catalogs — `grok-marketplace-json-valid` (ERROR): the whole-catalog defects (invalid
   JSON, a non-object root, a missing or non-array `plugins`) and the entry defects that
   drop a plugin silently, plus the `sha` contract. The url `path` shape and a source
-  object naming neither a `path` nor a `url` are WARNING, an uppercase `sha` is INFO.
+  object naming neither a `path` nor a `url` are WARNING, and a `sha` the installer
+  takes but the upstream validator refuses — 64 hex, or any casing but lowercase — is
+  one INFO.
   It never requires a source discriminator or a top-level catalog `name`.
 - Index parity — `grok-marketplace-index-parity` (WARNING): one consolidated finding
   per `plugin-index.json` for name, `sha` and (local sources only) skill drift, one for
@@ -272,7 +274,8 @@ user guide, or re-verify empirically with the canary matrix above:
 - `TIMEOUT_MAX` = `2**64 - 1` in `formats/grok.py`, the `u64` ceiling `timeout`
   deserializes into. It has to track Grok's timeout type: widen or narrow the field
   upstream and the boundary this reports moves with it.
-- `PLUGIN_NAME_RE` = `^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$` and
+- `PLUGIN_NAME_RE` = `\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\Z`, read with `.fullmatch()`
+  so a trailing newline is refused as the loader refuses it, and
   `PLUGIN_NAME_MAX_LENGTH` = 64 in `formats/grok.py`, measured boundary by boundary:
   `-lead`, `trail-`, `UPPER`, `under_score`, `dot.name`, `""` and 65 characters are
   rejected; `123`, `a`, `a--b` and 64 characters are accepted. The loader's own message

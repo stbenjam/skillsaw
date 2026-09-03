@@ -761,8 +761,8 @@ class TestGrokExtractor:
         assert [p.name for p in docs.plugins] == ["tide-charts"]
 
     def test_a_grok_catalog_beside_a_claude_one_is_published_too(self, temp_dir):
-        """The branches are additive: an if/elif chain published the Claude
-        catalog and dropped the Grok one entirely."""
+        """The branches are additive: an if/elif chain would publish the
+        Claude catalog and drop the Grok one entirely."""
         (temp_dir / ".claude-plugin").mkdir(parents=True)
         (temp_dir / ".claude-plugin" / "marketplace.json").write_text(
             json.dumps(
@@ -811,6 +811,48 @@ class TestGrokExtractor:
             "tide-charts",
             "bathymetry",
         ]
+
+    def test_a_catalog_grok_cannot_parse_publishes_nothing(self, temp_dir):
+        """A document Grok's parser refuses lists nothing, and publishing a
+        page from it would advertise plugins no install can deliver."""
+        (temp_dir / ".grok-plugin").mkdir(parents=True)
+        (temp_dir / ".grok-plugin" / "marketplace.json").write_text(
+            '{"name": "harbour-plugins", "plugins": [{"name": "tide-charts", '
+            '"source": "./plugins/tide-charts"}], "generated": NaN}',
+            encoding="utf-8",
+        )
+        self._plugin(temp_dir / "plugins" / "tide-charts")
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert docs.marketplace is None
+        # The plugin is still its own declaration; what the catalog loses is
+        # the listing.
+        assert [p.name for p in docs.plugins] == ["tide-charts"]
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            {"source": "url", "sha": "1f9d0c73a86b24e510" + "7cad3f88b90250e6c147da"},
+            {"url": None},
+            {"source": "url", "url": ""},
+        ],
+        ids=["absent", "null", "empty"],
+    )
+    def test_a_url_entry_with_no_url_is_not_published(self, temp_dir, source):
+        """It names no repository to clone, so there is nothing to list."""
+        (temp_dir / ".grok-plugin").mkdir(parents=True)
+        (temp_dir / ".grok-plugin" / "marketplace.json").write_text(
+            json.dumps(
+                {"name": "harbour-plugins", "plugins": [{"name": "bathymetry", "source": source}]}
+            ),
+            encoding="utf-8",
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert docs.marketplace is not None
+        assert docs.marketplace.plugins == []
 
 
 class TestHtmlRenderer:

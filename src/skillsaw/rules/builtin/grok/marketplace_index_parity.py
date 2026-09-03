@@ -60,14 +60,17 @@ class _Entry:
 class _Drift:
     """Every disagreement found between one catalog and one index."""
 
-    missing_from_index: List[str] = field(default_factory=list)
-    unknown_in_index: List[str] = field(default_factory=list)
-    malformed_in_index: List[str] = field(default_factory=list)
-    sha_catalog_only: List[str] = field(default_factory=list)
-    sha_index_only: List[str] = field(default_factory=list)
-    sha_differs: List[str] = field(default_factory=list)
-    skills_index_only: List[str] = field(default_factory=list)
-    skills_disk_only: List[str] = field(default_factory=list)
+    # Sets, not lists: ``parts()`` deduplicates and sorts, so nothing
+    # downstream reads order or multiplicity, and a catalog and an index
+    # both sized by the repository cannot multiply into an unbounded list.
+    missing_from_index: Set[str] = field(default_factory=set)
+    unknown_in_index: Set[str] = field(default_factory=set)
+    malformed_in_index: Set[str] = field(default_factory=set)
+    sha_catalog_only: Set[str] = field(default_factory=set)
+    sha_index_only: Set[str] = field(default_factory=set)
+    sha_differs: Set[str] = field(default_factory=set)
+    skills_index_only: Set[str] = field(default_factory=set)
+    skills_disk_only: Set[str] = field(default_factory=set)
 
     def parts(self) -> List[str]:
         labelled = (
@@ -80,9 +83,9 @@ class _Drift:
             ("skills only the index lists", self.skills_index_only),
             ("skills only the plugin ships", self.skills_disk_only),
         )
-        # Deduplicated: a catalog listing one name twice is one defect for
-        # grok-marketplace-json-valid to report, not two drifted names here.
-        return [f"{label}: {sample(sorted(set(names)))}" for label, names in labelled if names]
+        # Deduplicated by the sets above: a catalog listing one name twice
+        # is one defect for grok-marketplace-json-valid, not two here.
+        return [f"{label}: {sample(sorted(names))}" for label, names in labelled if names]
 
 
 class GrokMarketplaceIndexParityRule(Rule):
@@ -119,9 +122,9 @@ class GrokMarketplaceIndexParityRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         # One walk per plugin directory for the whole run: a directory a
-        # dozen catalog entries resolve to is read once. Bound to the call
-        # rather than the instance, so nothing survives into the next run.
-        self._skills_by_dir: Dict[Path, List[_Skill]] = {}
+        # dozen catalog entries resolve to is read once. Reset here, so
+        # nothing survives into the next run.
+        self.__dict__["_skills_by_dir"] = {}
 
         for catalog_node in context.lint_tree.find(GrokMarketplaceConfigNode):
             index_nodes = catalog_node.find(GrokMarketplaceIndexNode)
@@ -192,7 +195,7 @@ class GrokMarketplaceIndexParityRule(Rule):
         for entry in entries:
             matched = sorted(entry.names & index_keys)
             if not matched:
-                drift.missing_from_index.append(entry.display)
+                drift.missing_from_index.add(entry.display)
                 continue
             key = matched[0]
             claimed.add(key)
@@ -201,7 +204,7 @@ class GrokMarketplaceIndexParityRule(Rule):
                 # A key whose value is not an object: Grok has nothing to
                 # display for it, and it is claimed, so no other branch
                 # would ever name it.
-                drift.malformed_in_index.append(key)
+                drift.malformed_in_index.add(key)
                 continue
             self._compare_sha(entry, listed, drift)
             if check_components and entry.plugin_dir is not None:
@@ -209,7 +212,7 @@ class GrokMarketplaceIndexParityRule(Rule):
 
         for key in plugins:
             if key not in claimed:
-                drift.unknown_in_index.append(key)
+                drift.unknown_in_index.add(key)
 
         return drift
 
@@ -217,14 +220,14 @@ class GrokMarketplaceIndexParityRule(Rule):
         listed_sha = listed.get("sha")
         listed_sha = listed_sha if isinstance(listed_sha, str) and listed_sha else None
         if entry.sha and listed_sha is None:
-            drift.sha_catalog_only.append(entry.display)
+            drift.sha_catalog_only.add(entry.display)
         elif listed_sha and entry.sha is None:
-            drift.sha_index_only.append(entry.display)
+            drift.sha_index_only.add(entry.display)
         elif entry.sha and listed_sha and entry.sha.lower() != listed_sha.lower():
             # Compared case-insensitively: the installer treats a commit id
             # that way, and grok-marketplace-json-valid already owns the
             # casing on its own.
-            drift.sha_differs.append(entry.display)
+            drift.sha_differs.add(entry.display)
 
     def _compare_skills(self, entry: _Entry, listed: Dict[str, Any], drift: _Drift) -> None:
         """A local source has no ``sha`` to gate on, so a stale index is shown.
@@ -248,10 +251,10 @@ class GrokMarketplaceIndexParityRule(Rule):
         disk = self._disk_skills(entry.plugin_dir)
         matched = {name for skill in disk for name in skill.names & index_names}
         for name in sorted(index_names - matched):
-            drift.skills_index_only.append(f"{entry.display}/{name}")
+            drift.skills_index_only.add(f"{entry.display}/{name}")
         for skill in disk:
             if not skill.names & index_names:
-                drift.skills_disk_only.append(f"{entry.display}/{skill.display}")
+                drift.skills_disk_only.add(f"{entry.display}/{skill.display}")
 
     def _disk_skills(self, plugin_dir: Optional[Path]) -> List[_Skill]:
         """Skills the plugin on disk ships, as the index generator sees them.
@@ -267,25 +270,37 @@ class GrokMarketplaceIndexParityRule(Rule):
         """
         if plugin_dir is None:
             return []
-        memo = self._skills_by_dir.get(plugin_dir)
+        # Through ``__dict__`` rather than an attribute: ``check()`` seeds
+        # it per run, and a caller that reaches the walk another way gets an
+        # instance-local map rather than an ``AttributeError`` or a default
+        # shared across instances.
+        cache: Dict[Path, List[_Skill]] = self.__dict__.setdefault("_skills_by_dir", {})
+        memo = cache.get(plugin_dir)
         if memo is not None:
             return memo
         found: Dict[Path, _Skill] = {}
+        # ``_local_dir`` already resolved this, so it is the containment
+        # root the walk below is held to.
+        plugin_dir = safe_resolve(plugin_dir) or plugin_dir
 
         def _record(directory: Path) -> None:
-            resolved = safe_resolve(directory)
-            if (
-                resolved is None
-                or resolved in found
-                or not safe_is_file(directory / grok.SKILL_FILENAME)
-            ):
+            # Contained against the plugin, not merely resolvable: Grok
+            # drops a skill directory that leaves the plugin root, and this
+            # walk stats and reads the SKILL.md it finds.
+            resolved = contained_resolve(directory, plugin_dir)
+            if resolved is None or resolved in found:
+                return
+            skill_md = directory / grok.SKILL_FILENAME
+            if contained_resolve(skill_md, plugin_dir) is None or not safe_is_file(skill_md):
                 return
             found[resolved] = _Skill(
                 display=directory.name,
-                names=self._skill_names(directory / grok.SKILL_FILENAME, directory),
+                names=self._skill_names(skill_md, directory),
             )
 
         def _record_children(directory: Path) -> None:
+            if contained_resolve(directory, plugin_dir) is None:
+                return
             try:
                 children = sorted(directory.iterdir())
             except OSError:
@@ -298,7 +313,7 @@ class GrokMarketplaceIndexParityRule(Rule):
             _record(declared)
             _record_children(declared)
         skills = list(found.values())
-        self._skills_by_dir[plugin_dir] = skills
+        cache[plugin_dir] = skills
         return skills
 
     def _skill_names(self, skill_md: Path, directory: Path) -> FrozenSet[str]:
@@ -333,12 +348,18 @@ class GrokMarketplaceIndexParityRule(Rule):
                 continue
             name = entry.get("name")
             name = name if isinstance(name, str) and name else None
-            plugin_dir = self._local_dir(entry.get("source"), marketplace_root, resolved_root)
+            source = entry.get("source")
+            plugin_dir = self._local_dir(source, marketplace_root, resolved_root)
+            if plugin_dir is None and not self._is_usable_url(source):
+                # An entry Grok drops — no local directory and no repository
+                # to clone. ``grok-marketplace-json-valid`` names it, and
+                # reporting it here too would say the index is behind on a
+                # plugin that installs nowhere.
+                continue
             resolved = grok.grok_plugin_name(plugin_dir) if plugin_dir is not None else None
             names = {value for value in (name, resolved) if value}
             if not names:
                 continue
-            source = entry.get("source")
             # Only a url source is pinned: Grok reads no ``sha`` on a local
             # one, so carrying it here would report a sha-less index as
             # catalog-only or drifted against a value nothing installs from.
@@ -352,6 +373,14 @@ class GrokMarketplaceIndexParityRule(Rule):
                 )
             )
         return found
+
+    @staticmethod
+    def _is_usable_url(source: Any) -> bool:
+        """Whether *source* is a url entry with a repository to clone."""
+        if not grok.is_url_source(source):
+            return False
+        url = source.get("url") if isinstance(source, dict) else None
+        return isinstance(url, str) and bool(url)
 
     def _local_dir(
         self, source: Any, marketplace_root: Path, resolved_root: Optional[Path]

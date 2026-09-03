@@ -439,8 +439,10 @@ def test_the_broken_fixture_is_one_consolidated_finding(broken) -> None:
     message = found[0].message
     # The exact clause, so the bound on the sample and the deduplication
     # behind it are pinned rather than merely executed: the fixture drifts
-    # six names, two of them the duplicated ``escaping``.
-    assert "not in the index: abbreviated, berth-notes, counted, and 3 more" in message
+    # five names, one of them the duplicated ``escaping`` — and ``moved``,
+    # whose local path resolves nowhere, is not one of them.
+    assert "not in the index: abbreviated, berth-notes, counted, and 2 more" in message
+    assert "moved" not in message
     assert "not in the catalog: retired" in message
     assert "'sha' differs: drifted" in message
     assert "skills only the index lists: current-log/ebb-window" in message
@@ -483,3 +485,39 @@ def test_a_sha_on_a_local_source_is_not_compared(temp_dir) -> None:
     )
 
     assert check(repo) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param("./plugins/nowhere", id="local-missing"),
+        pytest.param("../outside", id="local-escaping"),
+        pytest.param({"source": "url", "sha": SHA_A}, id="url-without-url"),
+    ],
+)
+def test_an_entry_grok_drops_is_not_also_index_drift(temp_dir, source) -> None:
+    """``grok-marketplace-json-valid`` names an unloadable entry. Reporting
+    it here too would say the index is behind on a plugin that installs
+    nowhere."""
+    repo = marketplace(
+        temp_dir,
+        f"unloadable-{len(str(source))}",
+        {"plugins": [{"name": "almanac", "source": source}]},
+        index({}),
+    )
+
+    assert check(repo) == []
+
+
+def test_the_severity_override_reaches_the_primary_finding(temp_dir) -> None:
+    repo = marketplace(
+        temp_dir,
+        "downgraded",
+        {"plugins": [url_entry("almanac", SHA_A), url_entry("tides", SHA_B)]},
+        index({"almanac": {"sha": SHA_A}}),
+    )
+
+    found = check(repo, {"severity": "info"})
+
+    assert [v.severity for v in found] == [Severity.INFO]
+    assert "not in the index: tides" in found[0].message

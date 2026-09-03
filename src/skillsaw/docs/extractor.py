@@ -20,7 +20,7 @@ from skillsaw.formats.grok import (
     is_url_source as is_grok_url_source,
 )
 from skillsaw.paths import contained_resolve, safe_is_file, safe_resolve
-from skillsaw.utils import read_json
+from skillsaw.utils import read_json, read_json_strict
 from skillsaw.docs.models import (
     AgentDoc,
     CommandDoc,
@@ -507,7 +507,10 @@ def _grok_marketplace_doc(
     seen: Set[Path] = set()
     by_path = {r: p for p in plugins if (r := safe_resolve(p.path)) is not None}
     for path in context.grok_marketplace_paths():
-        data, error = read_json(path)
+        # Strict, as discovery and the catalog rule read it: a document
+        # Grok's parser refuses lists nothing, and publishing a page from
+        # it would advertise plugins no install can deliver.
+        data, error = read_json_strict(path)
         if error or not isinstance(data, dict):
             continue
         if name is None:
@@ -553,7 +556,13 @@ def _grok_entry_doc(
         # and publish it as this catalog's listing.
         resolved = contained_resolve(marketplace_root / local, marketplace_root)
         return by_path.get(resolved) if resolved is not None else None
-    if not is_grok_url_source(entry.get("source")):
+    source = entry.get("source")
+    if not is_grok_url_source(source):
+        return None
+    url = source.get("url") if isinstance(source, dict) else None
+    if not isinstance(url, str) or not url:
+        # A url entry with no repository to clone installs nothing;
+        # grok-marketplace-json-valid reports it.
         return None
     name = entry.get("name")
     if not isinstance(name, str) or not name:

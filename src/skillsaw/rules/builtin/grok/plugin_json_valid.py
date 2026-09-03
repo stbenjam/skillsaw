@@ -257,29 +257,60 @@ class GrokPluginJsonValidRule(Rule):
         nothing from ``skills/``. The official catalog tool unions the two,
         so a plugin that validates against it still loses everything under
         the conventional directory at runtime.
+
+        What counts as a loss is what the conventional scan would *load*: a
+        child directory holding ``SKILL.md``, or a flat ``*.md`` for the two
+        prose fields. A directory holding a README, a ``.gitkeep`` or a
+        nested tree Grok never reads loses nothing to an override, and a
+        declaration that covers the conventional directory — as itself or as
+        an ancestor — displaces nothing either.
         """
         if field not in _OVERRIDE_FIELDS or not declared:
             return []
         conventional_name = grok.COMPONENT_PATHS[field][0]
         conventional = plugin_dir / conventional_name
-        if not safe_is_dir(conventional):
-            return []
-        resolved_conventional = contained_resolve(conventional, root)
-        if resolved_conventional is not None and resolved_conventional in declared:
-            return []
-        try:
-            populated = any(True for _ in conventional.iterdir())
-        except OSError:
-            return []
-        if not populated:
+        dropped = sorted(
+            component.name
+            for component in self._conventional_components(conventional, field, root)
+            if not any(
+                component == covered or component.is_relative_to(covered) for covered in declared
+            )
+        )
+        if not dropped:
             return []
         return [
             self.violation(
-                f"'{field}' replaces '{conventional_name}/'; Grok loads nothing under it",
+                f"'{field}' replaces '{conventional_name}/'; Grok loads nothing under it, "
+                f"including '{safe_display(dropped[0])}'",
                 file_path=manifest,
                 severity=Severity.WARNING,
             )
         ]
+
+    def _conventional_components(self, directory: Path, field: str, root: Path) -> List[Path]:
+        """Resolved components the conventional one-level scan would load.
+
+        Contained before it is listed: an override beside a ``skills``
+        symlinked out of the plugin displaces nothing Grok would have
+        loaded, and listing it would read a directory outside the checkout.
+        """
+        if contained_resolve(directory, root) is None or not safe_is_dir(directory):
+            return []
+        try:
+            children = sorted(directory.iterdir())
+        except OSError:
+            return []
+        found: List[Path] = []
+        for child in children:
+            loadable = (
+                safe_is_file(child / grok.SKILL_FILENAME)
+                if field == "skills"
+                else child.suffix == ".md" and safe_is_file(child)
+            )
+            resolved = contained_resolve(child, root) if loadable else None
+            if resolved is not None:
+                found.append(resolved)
+        return found
 
     def _check_metadata(self, data: Dict[str, Any], manifest: Path) -> List[RuleViolation]:
         """Metadata the marketplace browser shows. Nothing here stops a load."""

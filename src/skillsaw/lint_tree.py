@@ -202,6 +202,12 @@ class _TreeBuildState:
     repo_root: Path
     seen: Set[Path] = field(default_factory=set)
     seen_roles: Set[Tuple[Path, type]] = field(default_factory=set)
+    # Two indexes over ``seen_roles``, written beside it: "is this file
+    # already in the tree as hooks / as MCP" is asked once per plugin, and
+    # scanning every role on each question is O(plugins x blocks) on a
+    # marketplace with hundreds of each.
+    hooks_paths: Set[Path] = field(default_factory=set)
+    mcp_paths: Set[Path] = field(default_factory=set)
     openai_seen: Set[Tuple[Path, Path]] = field(default_factory=set)
     opencode_configs: List[OpenCodeConfigBlock] = field(default_factory=list)
 
@@ -227,7 +233,7 @@ class _TreeBuildState:
         ):
             return
         self.seen.add(resolved)
-        self.seen_roles.add((resolved, block_cls))
+        self._record_role(resolved, block_cls)
         block = block_cls(path=p)
         block.plugin_owner = owner
         block.content_suppressed = content_suppressed
@@ -262,12 +268,20 @@ class _TreeBuildState:
         # declare ``hooks``/``mcpServers`` at any in-plugin markdown file,
         # and poisoning ``seen`` would drop that file from every content
         # rule that attaches later.
-        self.seen_roles.add(role)
+        self._record_role(resolved, block_cls)
         block = block_cls(path=p)
         block.plugin_owner = owner
         block.content_suppressed = content_suppressed
         parent.children.append(block)
         return block
+
+    def _record_role(self, resolved: Path, block_cls: type) -> None:
+        """Record one attached role, and index it by the two roles asked about."""
+        self.seen_roles.add((resolved, block_cls))
+        if issubclass(block_cls, HooksBlock):
+            self.hooks_paths.add(resolved)
+        elif issubclass(block_cls, McpBlock):
+            self.mcp_paths.add(resolved)
 
     def add_openai_metadata(
         self,
@@ -319,12 +333,7 @@ def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
     another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``.
     """
     resolved = state.resolve_repo_path(path)
-    if resolved is None:
-        return False
-    return any(
-        claimed == resolved and issubclass(block_cls, HooksBlock)
-        for claimed, block_cls in state.seen_roles
-    )
+    return resolved is not None and resolved in state.hooks_paths
 
 
 def _attached_as_mcp(state: _TreeBuildState, path: Path) -> bool:
@@ -338,12 +347,7 @@ def _attached_as_mcp(state: _TreeBuildState, path: Path) -> bool:
     plugin's own conventional file under a different class.
     """
     resolved = state.resolve_repo_path(path)
-    if resolved is None:
-        return False
-    return any(
-        claimed == resolved and issubclass(block_cls, McpBlock)
-        for claimed, block_cls in state.seen_roles
-    )
+    return resolved is not None and resolved in state.mcp_paths
 
 
 def _add_project_hooks(
@@ -1141,15 +1145,22 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 (marketplace_root.joinpath(*parts, grok.PLUGIN_INDEX_FILENAME), True)
                 for parts in grok.UNREAD_INDEX_DIRS
             )
+            # These attach straight onto the catalog node rather than
+            # through ``add_parser_block``, so nothing else deduplicates
+            # them: a stray location symlinked at the conventional one is
+            # one file, and a second node would report it twice.
+            index_seen: set[Path] = set()
             for index_json, stray in index_locations:
                 # Contained against the marketplace root, the boundary the
                 # catalog's own sources are held to: an index symlinked out
                 # of the marketplace is not this marketplace's display
                 # catalog, and the parity rule would report a file it does
                 # not own.
-                if contained_resolve(index_json, marketplace_root) is None:
+                resolved_index = contained_resolve(index_json, marketplace_root)
+                if resolved_index is None or resolved_index in index_seen:
                     continue
                 if safe_is_file(index_json) and not _is_excluded(index_json):
+                    index_seen.add(resolved_index)
                     catalog_node.children.append(
                         GrokMarketplaceIndexNode(path=index_json, stray=stray)
                     )
@@ -1460,7 +1471,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                     declared_mcp, agent_plugin_mcp
                 ) or _attached_as_mcp(state, declared_mcp):
                     continue
-                state.add_parser_block(node, declared_mcp, mcp_cls, owner=resolved_plugin)
+                # Grok's own class, whatever else claims the directory —
+                # the same reasoning as the declared hooks above: only the
+                # Grok manifest names this file, so no other host loads it.
+                state.add_parser_block(node, declared_mcp, GrokMcpBlock, owner=resolved_plugin)
             for inline_mcp in grok.grok_inline_mcp(plugin_path):
                 inline_mcp_block = GrokInlineMcpBlock(path=manifest, inline_data=inline_mcp)
                 inline_mcp_block.plugin_owner = resolved_plugin

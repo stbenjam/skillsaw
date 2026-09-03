@@ -25,11 +25,6 @@ if TYPE_CHECKING:
 
 MCP_REGISTRY_REPO_TYPES = {RepositoryType.MCP_REGISTRY}
 
-# Semantic Versioning 2.0.0, re-exported: it is generic vocabulary and lives
-# in the shared rule utils, so no ecosystem package imports another's private
-# helpers to reuse it.
-from skillsaw.rules.builtin.utils import SEMVER  # noqa: E402,F401
-
 _VERSION_ATOM = r"v?[0-9]+(?:\.[0-9]+){0,3}(?:-[0-9A-Za-z.-]+)?"
 _COMPARATOR = rf"(?:\^|~|>=|<=|>|<|=)\s*{_VERSION_ATOM}"
 _COMPARATOR_SET = rf"{_COMPARATOR}(?:\s+{_COMPARATOR})*"
