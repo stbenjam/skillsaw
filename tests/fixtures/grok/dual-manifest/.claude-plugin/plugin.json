@@ -1,0 +1,8 @@
+{
+  "name": "tide-charts",
+  "version": "2.0.0",
+  "description": "Shoreline survey windows from NOAA tide predictions, for Claude Code.",
+  "author": {
+    "name": "Harbour Tools"
+  }
+}

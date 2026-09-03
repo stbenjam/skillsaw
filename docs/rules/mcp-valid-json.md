@@ -79,9 +79,12 @@ or a clearly recognizable placeholder instead.
 ```
 
 An empty `command` is a narrower case: the key is present, so the
-presence-only check passes it in a Claude-family file. Codex-only plugins
-and the editor files (`.cursor/mcp.json`, `.vscode/mcp.json`) require the
-value to name something spawnable — a non-empty `command` string or `url`.
+presence-only check passes it in a Claude-family file. The editor files
+(`.cursor/mcp.json`, `.vscode/mcp.json`), Codex-only plugins, and every
+Grok plugin surface require the value to name something spawnable: a
+non-empty `command` string or `url`. Grok's surfaces are its manifest's
+`mcpServers` path and inline map, which only Grok reads whatever else
+claims the directory, and a Grok-only plugin's conventional `.mcp.json`.
 
 **Good:**
 
@@ -121,13 +124,21 @@ Inside an OpenAI Codex-only plugin (Codex-claimed, with neither a
 counts as a Claude declaration), `command` and `url`
 must also be **non-empty strings** — Codex resolves servers through the
 manifest, and an empty value produces a server that silently never
-starts. Plugins that ship both manifests are checked to the Claude
-requirements, where presence alone satisfies the rule.
+starts. A plugin that ships both manifests keeps the Claude requirements
+on its conventional `.mcp.json`, where presence alone satisfies the rule.
+
+Grok Build requires the same, and on one more file: a path its manifest
+names in `mcpServers` is Grok's whatever else claims the directory, so a
+dual-manifest plugin's declared file is held to it too. Grok also refuses a
+document carrying a duplicated key or a bare `NaN`/`Infinity`, which is
+reported as invalid JSON rather than as a field's type.
 
 Avoid naming a server after one of Claude Code's built-in servers
 (`workspace`, `claude-in-chrome`, `computer-use`, `Claude Preview`,
 `Claude Browser`) — those names are reserved and a user server that
-shadows one is ignored.
+shadows one is ignored. The reserved names apply wherever Claude Code reads
+the file, which includes the repository-root `.mcp.json` of a repository
+that is also a Grok plugin.
 
 ## Configuration
 

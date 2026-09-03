@@ -1,0 +1,29 @@
+{
+  "name": "buoy-watch",
+  "version": "0.5.0",
+  "description": "Watch the harbour buoy telemetry feed and flag readings that drift.",
+  "license": "Apache-2.0",
+  "keywords": [
+    "buoys",
+    "telemetry"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "make buoy-cache",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "buoys": {
+      "type": "http",
+      "url": "https://buoys.harbour.example/mcp"
+    }
+  }
+}

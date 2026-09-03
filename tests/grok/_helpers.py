@@ -29,12 +29,26 @@ HOOKS_JSON = '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "mak
 
 def copy_fixture(name: str, tmp_path: Path) -> Path:
     destination = tmp_path / name.replace("/", "_")
-    shutil.copytree(FIXTURES / name, destination)
+    # symlinks=True: a fixture that ships an escaping symlink is copied as
+    # the symlink, not as the contents behind it — copying the contents
+    # would rebuild the layout as an ordinary directory and quietly turn a
+    # containment test into a no-op.
+    shutil.copytree(FIXTURES / name, destination, symlinks=True)
     return destination
 
 
 def check(repo: Path, config: Optional[Dict[str, Any]] = None) -> List[RuleViolation]:
     return GrokHooksValidRule(config).check(RepositoryContext(repo))
+
+
+def run_rule(
+    rule_cls: Any,
+    repo: Path,
+    config: Optional[Dict[str, Any]] = None,
+    repo_types: Optional[Any] = None,
+) -> List[RuleViolation]:
+    """Findings *rule_cls* reports for the repository at *repo*."""
+    return rule_cls(config).check(RepositoryContext(repo, repo_types=repo_types))
 
 
 def messages(violations: List[RuleViolation]) -> List[str]:
@@ -98,3 +112,48 @@ def repo_with_hooks(tmp_path: Path, name: str, body: str) -> Path:
     repo = write_repo(tmp_path / name)
     write_hooks(repo, body)
     return repo
+
+
+def write_plugin(plugin_dir: Path, manifest: Optional[Dict[str, Any]]) -> Path:
+    """A plugin directory declaring *manifest* in ``.grok-plugin/``.
+
+    ``None`` writes the marker directory with no manifest inside it, which
+    is the "declared nothing" case: Grok treats a manifest as optional, so
+    the marker alone must not make the directory a plugin.
+    """
+    marker = plugin_dir / ".grok-plugin"
+    marker.mkdir(parents=True, exist_ok=True)
+    if manifest is not None:
+        (marker / "plugin.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return plugin_dir
+
+
+def write_catalog(root: Path, catalog: Dict[str, Any], filename: str = "marketplace.json") -> Path:
+    """Write *catalog* to ``<root>/.grok-plugin/<filename>``."""
+    marker = root / ".grok-plugin"
+    marker.mkdir(parents=True, exist_ok=True)
+    path = marker / filename
+    path.write_text(json.dumps(catalog, indent=2), encoding="utf-8")
+    return path
+
+
+def local_catalog(*paths: str) -> Dict[str, Any]:
+    """A catalog whose entries are local sources at *paths*.
+
+    Alternates the two discriminator spellings the official catalog uses —
+    ``{"type": "local"}`` and the bare string — so a claim test cannot pass
+    by reading only one of them. Every entry is named, because a nameless
+    one is an entry Grok drops and discovery claims nothing for: ``"./"``
+    has no basename, so it borrows the marketplace's own word for itself.
+    """
+    plugins = []
+    for index, path in enumerate(paths):
+        source: Any = {"type": "local", "path": path} if index % 2 == 0 else path
+        plugins.append(
+            {
+                "name": Path(path).name or "harbour-root",
+                "description": f"Local plugin at {path}.",
+                "source": source,
+            }
+        )
+    return {"name": "harbour-plugins", "description": "Local catalog", "plugins": plugins}

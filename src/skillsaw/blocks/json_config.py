@@ -574,6 +574,44 @@ class CodexInlineHooksBlock(_InlineJsonPayload, CodexHooksBlock):
 
 
 @dataclass(eq=False)
+class GrokPluginHooksBlock(HooksBlock):
+    """A hooks file a Grok plugin ships — its ``hooks/hooks.json``, or one
+    the manifest names in ``hooks``.
+
+    Deliberately a sibling of :class:`GrokHooksBlock` rather than a
+    subclass. Grok loads plugin hooks through a different adapter from the
+    project layer's, and in 1.0.13 that path publishes no observable at all:
+    ``grok inspect --json`` reports one opaque entry for a plugin's hooks
+    file whether the file is valid, empty or unparseable, so the failure
+    scopes ``grok-hooks-valid`` reports were measured on ``.grok/hooks/*.json``
+    and on that path only. Keeping the class separate is what keeps that
+    rule off files its evidence does not cover.
+
+    ``hooks-dangerous`` and ``hooks-prohibited`` read the shared
+    :class:`HooksBlock` base, so the commands in here still reach them.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (grok plugin hooks)"
+
+
+@dataclass(eq=False)
+class GrokInlineHooksBlock(_InlineJsonPayload, GrokPluginHooksBlock):
+    """Hooks written inline in a Grok ``.grok-plugin/plugin.json``.
+
+    The manifest's ``hooks`` field takes a path or the object itself, and
+    the binary logs "plugin hooks loaded from manifest inline" when it loads
+    the object form. Same commands, so the same security rules — and the
+    same unobservable per-entry scope as the file form, hence the same base.
+    """
+
+    inline_data: Optional[Dict[str, Any]] = None
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (inline hooks)"
+
+
+@dataclass(eq=False)
 class CursorHooksBlock(HooksBlock):
     """``.cursor/hooks.json`` — Cursor's agent-lifecycle hooks.
 
@@ -856,6 +894,43 @@ class CursorMcpBlock(McpBlock):
 
 
 @dataclass(eq=False)
+class GrokMcpBlock(McpBlock):
+    """A ``.mcp.json`` only Grok Build reads.
+
+    A Grok-only plugin's conventional file, or one its manifest names in
+    ``mcpServers``. A declared path is Grok's whatever else claims the
+    directory, since only the Grok manifest names it. The conventional file
+    is the exception: a dual-manifest directory keeps the shared
+    :class:`McpBlock` the Claude or Codex branch attached, since two block
+    classes over one file would report each of its servers twice.
+
+    Claude's built-in server names are not reserved here — Claude reads
+    neither a Grok-only plugin's conventional file nor a path only Grok's
+    manifest names — and a connection field must be usable rather than
+    merely present. The second is measured: a plugin ``.mcp.json``
+    holding ``{"empty": {"command": ""}, "nourl": {"type": "http"},
+    "good": {"command": "echo"}}`` lost ``nourl`` outright and loaded
+    ``empty`` with an empty target, a server nothing can spawn. This is a
+    new surface with no established results to preserve, so it requires the
+    field from the start, as the editor locations do.
+    """
+
+    claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    #: Grok's parser refuses a bare ``NaN``/``Infinity`` token and a
+    #: duplicated key — measured on a plugin manifest, which fails to load
+    #: and takes the whole plugin with it. Only Grok reads this file, and it
+    #: is a new surface with no established results to preserve.
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        # The filename, not a fixed "mcp.json": a manifest may point
+        # ``mcpServers`` at a file of its own naming, and the label has to
+        # say which file a finding is about.
+        return f"{self.path.name} (grok MCP)"
+
+
+@dataclass(eq=False)
 class VsCodeMcpBlock(McpBlock):
     """``.vscode/mcp.json`` — the Copilot/VS Code MCP configuration.
 
@@ -1028,6 +1103,21 @@ class OpenCodeMcpBlock(McpBlock):
 @dataclass(eq=False)
 class CodexInlineMcpBlock(_InlineJsonPayload, McpBlock):
     """MCP servers written inline in a Codex ``.codex-plugin/plugin.json``."""
+
+    inline_data: Optional[Dict[str, Any]] = None
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (inline mcpServers)"
+
+
+@dataclass(eq=False)
+class GrokInlineMcpBlock(_InlineJsonPayload, GrokMcpBlock):
+    """MCP servers written inline in a Grok ``.grok-plugin/plugin.json``.
+
+    Always Grok's, whatever else claims the directory: nothing but the Grok
+    manifest carries this payload, so no other host loads it and no second
+    block can exist for it.
+    """
 
     inline_data: Optional[Dict[str, Any]] = None
 

@@ -10,7 +10,7 @@ Validate evals/evals.json format when present
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
-| **Repo Types** | agent-plugin, agentskills, codex-marketplace, codex-plugin, dot-claude, marketplace, single-plugin |
+| **Repo Types** | agent-plugin, agentskills, codex-marketplace, codex-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, single-plugin |
 | **Category** | [agentskills.io](agentskills.md) |
 
 ## Why

@@ -9,12 +9,13 @@ from pathlib import Path
 from skillsaw.blocks import (
     AgentPluginMcpBlock,
     CopilotAgentMcpBlock,
+    JsonConfigBlock,
     McpConfigRole,
     OpenCodeMcpBlock,
 )
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
-from skillsaw.utils import is_finite_number
+from skillsaw.utils import is_finite_number, read_json_strict
 from skillsaw.lint_target import PluginNode
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.secret_detection import (
@@ -189,12 +190,53 @@ class McpValidJsonRule(Rule):
                 )
                 continue
 
-            # Conditional strictness, not a skip: the tightened
-            # non-empty-string checks apply only inside Codex-ONLY plugins,
-            # so dual-manifest plugins keep their established Claude results.
-            require_usable = block.require_usable_connection or context.in_codex_only_plugin(
-                block.path
+            # Conditional strictness, not a skip: the tightened checks
+            # apply inside Codex-ONLY and Grok-ONLY plugins, so
+            # dual-manifest plugins keep their established Claude results.
+            #
+            # Asked of provenance as well as of the block, because the block
+            # class does not always carry the answer: a repo-root plugin's
+            # conventional ``.mcp.json`` is attached by the generic root
+            # attach — one block per file — before any plugin cluster runs,
+            # so it arrives as the shared ``McpBlock`` however the directory
+            # is claimed.
+            grok_only = context.in_grok_only_plugin(block.path)
+            require_usable = (
+                block.require_usable_connection
+                or context.in_codex_only_plugin(block.path)
+                or grok_only
             )
+            # A tightening only, never a subtraction: ``check_reserved`` stays
+            # on the block class. ``<repo>/.mcp.json`` is Claude Code's
+            # project-scope configuration, read because of where it sits and
+            # not because a manifest declared anything, and a Claude or Codex
+            # plugin nested under a Grok-claimed root is still its own host's
+            # file. Two hosts reading one file want the union of their checks.
+            # The block class already exempts what Claude never reads:
+            # ``GrokMcpBlock`` sets ``claude_builtins_reserved = False``.
+            check_reserved = block.claude_builtins_reserved
+            if (
+                grok_only
+                and isinstance(block, JsonConfigBlock)
+                and not (block.strict_json or block.jsonc)
+            ):
+                # The same document Grok's parser refuses outright. This block
+                # was parsed leniently, so it reached the shape walk carrying
+                # a duplicate key ``json.loads`` collapsed or a bare
+                # ``NaN``/``Infinity`` no JSON host produces; the strict
+                # reader names whichever it is, and the defect is the file.
+                #
+                # ``isinstance`` because the loop reaches every
+                # :class:`McpConfigRole`, and a frontmatter-embedded one
+                # (``CopilotAgentMcpBlock``) has no file to re-read and none
+                # of this machinery. ``jsonc`` is asked separately because it
+                # leaves ``strict_json`` at its default while parsing
+                # strictly, and re-reading a commented file as plain JSON
+                # would report the comments its host accepts.
+                _, strict_error = read_json_strict(block.path)
+                if strict_error is not None:
+                    violations.append(self.violation(strict_error, file_path=block.path))
+                    continue
             # Hosts spell the wrapper key differently (VS Code uses
             # ``servers``); the block knows its own.
             servers_key = block.servers_key
@@ -264,7 +306,7 @@ class McpValidJsonRule(Rule):
                     block.path,
                     require_usable=require_usable,
                     servers_key=servers_key,
-                    check_reserved=block.claude_builtins_reserved,
+                    check_reserved=check_reserved,
                     type_aliases=block.type_aliases,
                     line=getattr(block, "source_line", None),
                     line_for=getattr(block, "source_line_for", None),
