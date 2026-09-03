@@ -114,6 +114,85 @@ that matrix before changing a rule here.
   `.mcp.json`. A `.grok/mcp.json` placed in a trusted project loaded nothing, and the
   file appears nowhere in the docs. Do not attach it.
 
+## Project `config.toml`
+One file read at four layers, of which the project layer is the narrow one. The
+shipped `26-config-reference.md` says so twice — "Project `.grok/config.toml`: only
+`[mcp_servers]`, `[plugins]`, `[permission]`, and `[mcp] max_output_bytes`" — but the
+documented four are not equally real when measured against 1.0.13.
+
+**Where Grok is silent, and where it is not.** `configWarnings` is a *user-layer*
+diagnostic: a typo'd table or key in a project file is invisible in every observable
+Grok offers, and its own warning list is not a trustworthy oracle anyway (it calls
+`hooks` unrecognized while the hook loads, and `mcp` unrecognized though the reference
+documents `mcp.max_output_bytes`). The one exception is `mcpConfigProblems`, which *is*
+produced for project-scope `[mcp_servers]` entries — a bad server shape, an unknown
+server field. So Grok already tells an author about bad MCP shapes and tells them
+nothing about ignored tables or bad permission shapes, which is where a rule adds the
+signal.
+
+### What a project file contributes
+
+- **Measured honored**: `[mcp_servers]` and `[permission]`
+  (`PROJECT_CONFIG_TABLES_MEASURED`). **Documented but unmeasured**: `[plugins]` and
+  `[mcp] max_output_bytes` — no observable at *either* scope. `PROJECT_CONFIG_TABLES`
+  holds all four, because a rule must not report a documented table as ignored; the
+  measured subset is what a message may make a claim about.
+- **Measured refused**: `[hooks]` (the honored path for a project's hooks is
+  `.grok/hooks/*.json`, which loads), `[skills].paths` and `[sandbox].profile`, each
+  with a positive user-scope control (`PROJECT_CONFIG_TABLES_REFUSED`).
+- **`[plugins]`**: `enabled` and `disabled` are documented and were **not** reproduced
+  at project *or* user scope against a `.grok/plugins/` directory, so nothing may be
+  asserted to work and no rule reports an unrecognized key inside the table. `paths`
+  is user-scope only — three independent runs ignored a project `paths`, relative or
+  absolute, git repository or not, and the user layer's `paths` plugin arrived
+  `scope: "config"` and `enabled: false`. That is the one measured refusal inside an
+  honored table, and `PROJECT_CONFIG_KEYS_REFUSED` is where it lives.
+
+### `[mcp_servers]`
+
+- **Fields**: `MCP_SERVER_FIELDS` is the accepted set; an unknown
+  field raises an `mcpConfigProblems` *warning* and the server still loads, so it is
+  never a reason to call the file broken. `transport` is the plausible misspelling of
+  `type` and is not an alias — reported unrecognized, ignored.
+- **Transport derivation** (`mcp_transport()`), exactly Grok's order: a non-empty
+  `command` → `stdio`, winning even beside a `url`; else a `url` with `type = "sse"` →
+  `sse`; else a `url` → `http`; else Grok drops that server, per server and
+  order-independent, leaving its siblings and `[permission]` untouched. `type` is
+  otherwise advisory, and neither field's content is validated — `url = "not a url"`
+  loads as an HTTP server. `enabled = false` omits the server from `inspect`;
+  `GrokConfigBlock` keeps it anyway, because the command is committed and one word
+  turns it back on.
+
+### `[permission]` and the spellings that load nothing
+
+- **`[permission]`**: `allow`/`deny`/`ask` hold compact rule strings and `rules` holds
+  verbose tables. `rules` is discarded **entirely** whenever any of the three list keys
+  is present, in any order, with no diagnostic — a file carrying both loses every
+  verbose rule it wrote. An unparseable entry costs that entry alone, also silently.
+  A **wrong-typed entry** splits by key, measured: a non-string in a list key costs
+  that entry (`allow = ["Bash(git *)", 42]` loaded 1), while a non-table in `rules`
+  costs the whole array (two valid rules beside a bare integer loaded 0).
+  `defaultMode` is a `.claude/settings.json` key with no meaning here.
+- **Silent misspellings**, each loading nothing and saying nothing: `[[mcp.servers]]`,
+  `[mcp-servers.<n>]`, `[mcpServers.<n>]`, and `[permissions]` (plural, which also
+  drops the file out of `permissions.sources`).
+
+### Parsing
+
+- **Malformed TOML** — a syntax error, a duplicate key, a duplicate table header — is
+  **whole-file**, including tables above the error. Grok exits 0 with an empty stderr;
+  the sole signal is a `configSources[].note` of `"parse error"` in `grok inspect`. An
+  empty file reads as `note: "empty"`.
+- **Parsing**: `read_toml()` in `src/skillsaw/utils.py`, `tomllib` on 3.11+ and `tomli`
+  below it. Errors are file-level: stdlib `tomllib` gained `TOMLDecodeError.lineno`
+  only in 3.14, so 3.11 through 3.13 carry no position, while the floor's `tomli`
+  2.2.1 does expose one — and one contract across both parsers beats a line number
+  on some legs. A leading UTF-8 BOM is stripped by `read_text` before the parser
+  sees it.
+- **Do not claim** that `mcpServers[].source.path` attributes a server to its config
+  file: it always prints the user `$GROK_HOME/config.toml` path, even for project-only
+  servers and even when that file does not exist.
+
 ## Plugins and the marketplace
 A plugin bundles skills, commands, agents, `hooks/hooks.json`, `.mcp.json` and
 `.lsp.json` into one installable directory; a marketplace is a repository listing
@@ -218,6 +297,22 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
 - Subagents — `src/skillsaw/rules/builtin/grok/`: `grok-agent-valid`, the `name` and
   `description` Grok's loader registers a `.grok/agents/*.md` by. An empty value
   satisfies it; presence is the whole test.
+- Project `config.toml` — `src/skillsaw/rules/builtin/grok/`: `grok-config-valid`
+  (ERROR) reports the parse error that costs the whole file, and at a hardcoded
+  WARNING the per-server and per-key defects that cost one server or one key — a
+  non-table `mcp_servers`, a server naming neither a `command` nor a `url` (or an
+  empty one), a wrong-typed `args`/`env`/`headers`/`url`/`command`, a non-array
+  `allow`/`deny`/`ask` or `rules`, and `rules` written beside a list key. It never
+  reports an unknown server field or an unknown permission key, both of which load.
+  `grok-config-project-scope` (WARNING, option `extra-tables`) reports what the
+  project layer drops: a top-level table or scalar outside `PROJECT_CONFIG_TABLES`
+  (only `hooks` carries a hint — it is the one refusal with somewhere else in the
+  repository to go — and the rest are one consolidated finding), the keys in
+  `PROJECT_CONFIG_KEYS_REFUSED`, and the silent misspellings. It reports no
+  unrecognized key inside `[plugins]` or `[mcp]`: nothing was measured there in
+  either direction, and `extra-tables` reaches top-level names only. Neither rule
+  claims anything for `[plugins] enabled`/`disabled` or `[mcp] max_output_bytes`,
+  which are documented and unmeasured.
 - Plugin manifests — `grok-plugin-json-valid` (ERROR): invalid JSON and a `name` that
   is missing, non-string, empty or outside `PLUGIN_NAME_RE`, each of which makes Grok
   skip the whole directory. Component paths that escape or do not exist, and an
@@ -255,8 +350,11 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   `HooksBlock` subclass so `hooks-dangerous` and `hooks-prohibited` scan it like every
   other host's hooks file; lenient JSON on purpose, because Grok's `serde_json` reader
   accepts a duplicate key and runs the file), `src/skillsaw/blocks/content.py`
-  (`GrokRuleBlock`) and `src/skillsaw/blocks/frontmatter.py` (`GrokCommandBlock`,
-  `GrokAgentBlock`), attached in `src/skillsaw/lint_tree.py`.
+  (`GrokRuleBlock`), `src/skillsaw/blocks/frontmatter.py` (`GrokCommandBlock`,
+  `GrokAgentBlock`) and `src/skillsaw/blocks/grok.py` (`GrokConfigBlock`, a direct
+  `LintTarget` carrying `McpConfigRole` — never a `ContentBlock`, which would lint TOML
+  as prose, and never a `JsonConfigBlock`, whose hierarchy parses JSON), attached in
+  `src/skillsaw/lint_tree.py`.
 - The Rust-dialect matcher check is shared with Muse Code:
   `rust_matcher_error` in `src/skillsaw/rules/builtin/utils.py`.
 
@@ -309,6 +407,24 @@ user guide, or re-verify empirically with the canary matrix above:
   `grok-marketplace-index-parity` is the exception: it compares against a file the
   *generator* wrote, so it carries the union of both readings and reports drift only
   for a name neither produces.
+- `PROJECT_CONFIG_TABLES` and its `_MEASURED` / `_REFUSED` companions,
+  `PROJECT_CONFIG_KEYS_REFUSED`, `MCP_SERVER_FIELDS` and `mcp_transport()` in
+  `formats/grok.py`.
+  The split between measured and documented is the thing to preserve: re-measure before
+  moving a name across it, and never widen a rule's claim on the reference's word alone.
+  `PROJECT_CONFIG_TABLES` is the allow-list `grok-config-project-scope` reports
+  against, so a table added upstream reads as ignored until it is added here — which
+  is what the rule's `extra-tables` option is for in the meantime. A "use this
+  instead" hint needs both `_REFUSED` membership and an entry in the rule's
+  `_REFUSED_HINTS`, which today holds `hooks` alone.
+  `MCP_SERVER_FIELDS` came from the `mcp_servers.<name>.*` rows of
+  `26-config-reference.md` and was confirmed accepted by watching for
+  `mcpConfigProblems`; a field added upstream reads as unknown until it is added here.
+  It is vocabulary only — `grok-config-valid` type-checks the fields it names and
+  never reports membership, because an unknown field warns and the server still loads.
+  `MCP_TYPE_MISSPELLED_FIELD` (`transport`) and `PERMISSION_MISSPELLED_KEY`
+  (`defaultMode`) sit beside it: a spelling that would become real upstream must move
+  out of the misspelling constants, not gain an exception in a rule.
 - `rules/`, `commands/`, `agents/` and `hooks/` are read **flat**; `skills/` is walked
   recursively. Re-verify with `grok inspect --json` on a nested file. A change here is
   silent under-attachment — skillsaw stops linting real context and reports nothing —
@@ -322,13 +438,8 @@ user guide, or re-verify empirically with the canary matrix above:
 Deliberate gaps, each with the reason it is a separate piece of work:
 - **`.lsp.json`** — no public schema, and no LSP entries in the official marketplace, so
   there is nothing to calibrate a rule against.
-- **`.grok/config.toml`** — only `[mcp_servers]`, `[plugins]`, `[permission]` and
-  `[mcp] max_output_bytes` are honored at project scope and everything else is silently
-  ignored, which is a high-signal check. It needs a TOML parser, and `tomllib` is
-  stdlib only from Python 3.11 while this project supports 3.9, so it carries a new
-  conditional `tomli` dependency that should be argued on its own.
 - **`.grok/lsp.json`, `.grok/sandbox.toml`, `.grok/roles/`, `.grok/personas/`,
-  `.grok/workflows/*.rhai`** — no public schema, a TOML dependency, or a scripting
-  language a regex would misread. Those five and `config.toml` are detection evidence
-  today and nothing more: nothing parses or attaches them, so detection and attachment
-  cannot disagree about them.
+  `.grok/workflows/*.rhai`** — no public schema, subtle semantics, or a scripting
+  language a regex would misread. Those five are detection evidence today and nothing
+  more: nothing parses or attaches them, so detection and attachment cannot disagree
+  about them. `config.toml` is the one that graduated — it is parsed and attached.

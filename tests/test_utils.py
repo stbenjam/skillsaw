@@ -11,7 +11,12 @@ import stat
 import pytest
 
 from skillsaw import utils as skillsaw_utils
-from skillsaw.utils import mkdir_parents_anchored, rename_path_anchored, write_bytes_atomic
+from skillsaw.utils import (
+    mkdir_parents_anchored,
+    read_toml,
+    rename_path_anchored,
+    write_bytes_atomic,
+)
 
 from skillsaw.rules.builtin.utils import (
     read_text,
@@ -496,6 +501,94 @@ def test_read_json_returns_error_on_missing(temp_dir):
     data, error = read_json(temp_dir / "missing.json")
     assert data is None
     assert "Failed to read" in error
+
+
+def test_read_toml_parses_valid(temp_dir):
+    f = temp_dir / "config.toml"
+    f.write_text('[mcp_servers.berths]\ncommand = "bin/harbourmaster"\n', encoding="utf-8")
+    data, error = read_toml(f)
+    assert data == {"mcp_servers": {"berths": {"command": "bin/harbourmaster"}}}
+    assert error is None
+
+
+def test_read_toml_returns_error_on_syntax_error(temp_dir):
+    """The parser's own wording carries the position this two-element
+    contract cannot; what is pinned is that an error came back, not how
+    ``tomli`` phrases it — the 3.9 floor resolves a separately versioned
+    copy."""
+    f = temp_dir / "bad.toml"
+    f.write_text("[mcp_servers.berths\n", encoding="utf-8")
+    data, error = read_toml(f)
+    assert data is None
+    assert "line 1" in error
+
+
+def test_read_toml_returns_error_on_duplicate_key(temp_dir):
+    """A duplicate key is a parse error in TOML, not a last-one-wins merge as
+    it is in the JSON readers."""
+    f = temp_dir / "dup.toml"
+    f.write_text("[mcp]\nmax_output_bytes = 1\nmax_output_bytes = 2\n", encoding="utf-8")
+    data, error = read_toml(f)
+    assert data is None
+    assert "Cannot overwrite a value" in error
+
+
+def test_read_toml_returns_error_on_duplicate_table_header(temp_dir):
+    f = temp_dir / "dup-table.toml"
+    f.write_text(
+        '[mcp_servers.berths]\ncommand = "a"\n\n[mcp_servers.berths]\ncommand = "b"\n',
+        encoding="utf-8",
+    )
+    data, error = read_toml(f)
+    assert data is None
+    assert "Cannot declare" in error
+
+
+def test_read_toml_accepts_a_utf8_bom(temp_dir):
+    """``read_text`` decodes with ``utf-8-sig``, so the mark never reaches the
+    parser — which would refuse it. Whether Grok's Rust reader refuses one is
+    unmeasured, so this stays permissive rather than inventing a verdict."""
+    f = temp_dir / "bom.toml"
+    f.write_bytes(b"\xef\xbb\xbf" + b'[permission]\nallow = ["Bash(make test)"]\n')
+    data, error = read_toml(f)
+    assert error is None
+    assert data == {"permission": {"allow": ["Bash(make test)"]}}
+
+
+def test_read_toml_returns_error_on_missing(temp_dir):
+    data, error = read_toml(temp_dir / "missing.toml")
+    assert data is None
+    assert "Failed to read" in error
+
+
+def test_read_toml_returns_error_on_undecodable_bytes(temp_dir):
+    """A config saved as cp1252 never reaches the parser: ``read_text``
+    refuses it, and the reader reports rather than raising."""
+    f = temp_dir / "cp1252.toml"
+    f.write_bytes(b'[permission]\nallow = ["Bash(caf\x92 *)"]\n')
+    data, error = read_toml(f)
+    assert data is None
+    assert "Failed to read" in error
+
+
+def test_read_toml_reports_deep_nesting(temp_dir):
+    """A ``RecursionError`` from the parser becomes an error string; escaping
+    it would abort the whole lint."""
+    f = temp_dir / "deep.toml"
+    f.write_text("a = " + "[" * 2000 + "]" * 2000, encoding="utf-8")
+    assert read_toml(f) == (None, "Nesting too deep to parse")
+
+
+def test_read_toml_reports_an_oversized_integer(temp_dir, oversized_integer_digits):
+    """Past the interpreter's digit limit the parser raises bare
+    ``ValueError``, not its own decode error."""
+    if oversized_integer_digits is None:
+        pytest.skip("interpreter enforces no int-parse digit limit")
+    f = temp_dir / "big.toml"
+    f.write_text(f"a = {oversized_integer_digits}\n", encoding="utf-8")
+    data, error = read_toml(f)
+    assert data is None
+    assert "digits" in error
 
 
 def test_frontmatter_key_line_finds_key(temp_dir):

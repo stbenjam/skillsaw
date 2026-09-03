@@ -135,6 +135,9 @@ Always respect the configured severity: never hardcode `severity=` on the primar
   `yaml.safe_load()` or `read_yaml()`. Keep line numbers via the ruamel.yaml
   objects `read_yaml_commented()` returns.
 - **Use `commented_key_line(node, key)` / `commented_item_line(node, index)`** to extract 1-based line numbers from ruamel data structures.
+- **Use `read_toml()`** (from `utils.py`) for TOML. It returns
+  `(data, error)`: no interpreter in the supported range gives a position,
+  so TOML rules report at file level.
 - **Never fabricate line numbers** — if a field is missing, omit the line.
 - **Declare `repo_types`** to control when `enabled: auto` fires.
 - **Declare `config_schema`** when the rule accepts parameters.
@@ -145,14 +148,15 @@ Always respect the configured severity: never hardcode `severity=` on the primar
   hooks, MCP JSON) subclass `JsonConfigBlock` instead; dedicated rules find
   them with `find(SettingsBlock)`. Never add a config file type under
   `ContentBlock` — content rules would then lint its JSON as instruction text.
-- **Structured YAML config gets a direct `LintTarget` subclass, never
-  `ContentBlock`** — `OpenAIMetadataBlock` is the pattern. It is deliberately
-  neither `ContentBlock` (content rules would lint its YAML as instruction
-  text) nor `JsonConfigBlock` (that hierarchy is JSON-specific and file-level;
-  YAML keeps line numbers via `read_yaml_commented()`).
+- **Structured YAML or TOML config gets a direct `LintTarget` subclass, never
+  `ContentBlock`** — `OpenAIMetadataBlock` and `GrokConfigBlock` are the
+  patterns. Not `ContentBlock` (content rules would lint the document as
+  instruction text) and not `JsonConfigBlock` (that hierarchy is
+  JSON-specific).
 
-Never require line numbers for JSON files — the `json` module does not
-preserve them. Keep JSON rules at file-level reporting.
+Never require line numbers for JSON and TOML files — neither the `json`
+module nor `tomllib` preserves them. Keep JSON and TOML rules at file-level
+reporting.
 
 ## Autofix invariants
 
@@ -236,27 +240,23 @@ per-ecosystem attach paths and loses its content silently.
   dual-manifest plugins keep their established Claude results
   (`TestDualManifestBackwardCompat` pins this).
 - **Hooks get one subclass per host instead of conditional strictness.**
-  Each host's hooks file is its own `HooksBlock` subclass — `ClaudeHooksBlock`,
-  `CodexHooksBlock`, `MuseHooksBlock`, `CursorHooksBlock`, `GrokHooksBlock` —
-  chosen from provenance in `build_lint_tree`, and each host has its own
-  shape rule iterating its own subclass: `claude-hooks-valid`,
-  `codex-hooks-valid`, `muse-hooks-valid`, `cursor-hooks-valid`,
-  `grok-hooks-valid`. `hooks-dangerous` and
-  `hooks-prohibited` read the shared `HooksBlock` base, so a new host
-  needs no changes there. Exception: a Grok *plugin's* hooks file is
-  `GrokPluginHooksBlock`, a sibling with no shape rule: another adapter
-  loads it, and 1.0.13 shows no observable.
+  Each host's hooks file is its own `HooksBlock` subclass — Claude, Codex,
+  Muse, Cursor, Grok — chosen from provenance in `build_lint_tree`, with a
+  `<host>-hooks-valid` rule iterating it. `hooks-dangerous` and
+  `hooks-prohibited` read the shared `HooksBlock` base, so a new host needs
+  no changes there. Exception: `GrokPluginHooksBlock` has no shape rule —
+  another adapter loads a Grok plugin's hooks file, and 1.0.13 shows no
+  observable.
 
 **Ecosystems and editor tools are different problems.** An *ecosystem*
 packages and installs content (Claude plugins, Codex, Grok Build, Agent
 Plugins), so it needs provenance: two can claim one directory, and the
-format rules must stay out of each other's trees. Both are `RepositoryType` members
-— detection produces one set, and that enum is the only vocabulary. An *editor tool* (Cursor,
+format rules must stay out of each other's trees. An *editor tool* (Cursor,
 Copilot, Cline, Qwen) reads its own configuration locations, which no other
-tool claims — nothing else installs into `.cursor/`, and `QWEN.md` belongs
-to one reader — so it needs no provenance machinery at all. Pick
-the recipe that matches; following the ecosystem one for an editor tool
-builds machinery that design does not need.
+tool claims, so it needs no provenance machinery at all. Both are
+`RepositoryType` members — detection produces one set, and that enum is the
+only vocabulary. Pick the recipe that matches; following the ecosystem one
+for an editor tool builds machinery that design does not need.
 
 **Adding an editor tool** (Cursor is the worked example): add its directory
 name to `AGENT_TOOL_DIR_NAMES` in the `detect.py` discovery module if it reads a
@@ -293,8 +293,10 @@ Claude-family one; keep configuration vocabulary — key sets, alias tables —
 in `formats/<tool>.py`, not restated in rules; and when a dialect diverges
 enough that a shared rule's every check misfires, subclassing isn't
 enough — defer to the tool's own, as `mcp-valid-json` does for Agent
-Plugins and OpenCode. Two inline branches is deliberate; at a third, hoist
-the condition to a ClassVar.
+Plugins, OpenCode and Grok. Declare that deferral on the block, never as a
+branch in the rule: `McpShapeDeferral` carries the gating repository type,
+whether the dialect-neutral checks survive, and which rule owns the syntax
+failure.
 
 **Adding an ecosystem** (Codex and Agent Plugins are the worked examples):
 put its discovery leg — the state-free plugin/manifest walks, catalog

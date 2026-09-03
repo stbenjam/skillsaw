@@ -163,6 +163,7 @@ be defined:
 | Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
 | `.muse/hooks.json` | hooks-dangerous, hooks-prohibited |
 | `.grok/hooks/*.json` (repo root or any package) | hooks-dangerous, hooks-prohibited |
+| `.grok/config.toml` `[mcp_servers]` (repo root or any package) | mcp-prohibited, mcp-valid-json, grok-config-valid |
 | Grok plugin `hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | Grok manifest-declared or inline `hooks` | hooks-dangerous, hooks-prohibited |
 | Grok plugin `.mcp.json`, declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |

@@ -122,8 +122,10 @@ COMMANDS_DIR_NAME = "commands"
 AGENTS_DIR_NAME = "agents"
 SKILLS_DIR_NAME = "skills"
 
-#: Project configuration and LSP servers. Neither is parsed yet — file
-#: existence alone is what makes the directory Grok's.
+#: Project configuration, parsed as TOML and attached — see
+#: :data:`PROJECT_CONFIG_TABLES` for the four tables that survive project
+#: scope. LSP servers are not parsed; file existence alone is what makes
+#: that one evidence.
 #:
 #: There is deliberately no ``.grok/mcp.json`` here. Grok's MCP sources are
 #: ``config.toml`` ``[mcp_servers]``, ``~/.claude.json``,
@@ -135,7 +137,7 @@ CONFIG_FILENAME = "config.toml"
 LSP_FILENAME = "lsp.json"
 
 #: The rest of the project layer, on the same footing as
-#: :data:`CONFIG_FILENAME`: Grok configuration nothing here parses or
+#: :data:`LSP_FILENAME`: Grok configuration nothing here parses or
 #: attaches, listed because *existence* is what makes a directory Grok's.
 #: A repository whose only Grok artifact is a sandbox policy is a Grok
 #: repository, and the summary saying ``unknown`` would be wrong about it.
@@ -322,6 +324,175 @@ def normalize_event(event: str) -> str:
     """The event *event* dispatches as, following Grok's alias table."""
     return HOOK_EVENT_ALIASES.get(event, event)
 
+
+# -- Project ``config.toml`` --------------------------------------------------
+#
+# ``config.toml`` is one file read at four layers, and the project layer is
+# the narrow one. The shipped user guide says so twice — "Project
+# ``.grok/config.toml``: only ``[mcp_servers]``, ``[plugins]``,
+# ``[permission]``, and ``[mcp] max_output_bytes``"
+# (``26-config-reference.md``, restated under ``## config.toml``).
+#
+# Measured against 1.0.13, the documented four are not equally real. A
+# project file's ``[mcp_servers]`` and ``[permission]`` load and are
+# observable; ``[plugins]`` and ``[mcp] max_output_bytes`` produce no
+# observable at *either* scope, and the user layer even calls ``mcp`` an
+# unrecognized table. Everything else an author writes is dropped, and
+# dropped **silently**: ``configWarnings`` is a user-layer diagnostic, so a
+# typo'd table or key in a project file is invisible in every observable
+# Grok offers. The one exception is ``mcpConfigProblems``, which *is*
+# produced for project-scope ``[mcp_servers]`` entries — so a rule adds the
+# most signal on the permission and scope defects, where the runtime says
+# nothing at all.
+#
+# A malformed file costs the whole file, including tables above the error,
+# and Grok exits 0 with an empty stderr; the sole signal is a
+# ``configSources[].note`` of ``"parse error"`` inside ``grok inspect``.
+
+#: The top-level tables a project ``.grok/config.toml`` contributes. Names
+#: only: what a rule may report is a name outside this set, never a key
+#: inside one of them — see :data:`PROJECT_CONFIG_KEYS_REFUSED` for the one
+#: exception, which is measured.
+#:
+#: Only ``mcp_servers`` and ``permission`` are measured — see
+#: :data:`PROJECT_CONFIG_TABLES_MEASURED`. The other two are here on the
+#: reference's word, and a rule must not report against a table this set
+#: lists, whichever half it comes from: reporting a *documented* table as
+#: ignored would be a false positive on a file the docs endorse.
+PROJECT_CONFIG_TABLES = frozenset({"mcp_servers", "permission", "plugins", "mcp"})
+
+#: Keys a project file was measured to drop from inside a table it
+#: otherwise honors. ``[plugins].paths`` is the only one: three
+#: independent runs ignored a project ``paths`` — relative, absolute, git
+#: repository or not — while the user layer's ``paths`` loaded a plugin.
+#:
+#: Deliberately a refusal list rather than an allow-list. The reference's
+#: other keys here — ``[plugins]`` ``enabled``/``disabled`` and ``[mcp]``
+#: ``max_output_bytes`` — produced no observable at either scope, in either
+#: direction, so an unknown-key finding inside these tables would rest on
+#: nothing and would fire on a working config the first time Grok adds a
+#: key. Top-level names are different: a table Grok does not read is
+#: measurably inert, and ``extra-tables`` is there for the release that
+#: adds one.
+PROJECT_CONFIG_KEYS_REFUSED: Mapping[str, frozenset] = {
+    "plugins": frozenset({"paths"}),
+}
+
+#: The half of :data:`PROJECT_CONFIG_TABLES` a project file was seen to
+#: load. Split out because the two halves support different sentences: a
+#: message may say a measured table is honored, and must not claim as much
+#: for ``[plugins]`` or ``[mcp]``.
+PROJECT_CONFIG_TABLES_MEASURED = frozenset({"mcp_servers", "permission"})
+
+#: Tables a project file was measured to *not* contribute, each with a
+#: positive user-scope control so "nothing happened" is a refusal rather
+#: than a mis-run. ``hooks`` is the sharp one: the honored path for a
+#: project's hooks is ``.grok/hooks/*.json``, which loads.
+PROJECT_CONFIG_TABLES_REFUSED = frozenset({"hooks", "skills", "sandbox"})
+
+#: Every field Grok accepts inside ``[mcp_servers.<name>]``. Anything else
+#: raises an ``mcpConfigProblems`` warning and the server still loads, so
+#: this is the vocabulary a rule may check membership against, never a
+#: reason to call a file broken.
+#:
+#: ``transport`` is deliberately absent; see
+#: :data:`MCP_TYPE_MISSPELLED_FIELD`.
+MCP_SERVER_FIELDS = frozenset(
+    {
+        "args",
+        "bearer_token_env_var",
+        "command",
+        "cwd",
+        "enabled",
+        "env",
+        "expose_image_base64",
+        "headers",
+        "oauth",
+        "oauth_client_id",
+        "oauth_client_secret_env_var",
+        "oauth_scopes",
+        "setup",
+        "startup_timeout_sec",
+        "tool_timeout_sec",
+        "tool_timeouts",
+        "type",
+        "url",
+    }
+)
+
+#: The fields that carry each transport, in the portable spelling every
+#: other MCP host uses — which is what lets a ``config.toml`` server read
+#: through the same :class:`~skillsaw.blocks.json_config.McpConfigRole` an
+#: ``.mcp.json`` server does. ``connection`` is the field the transport
+#: cannot start without.
+MCP_TRANSPORT_FIELDS: Mapping[str, Mapping[str, str]] = {
+    "stdio": {"connection": "command", "arguments": "args", "environment": "env"},
+    "http": {"connection": "url", "environment": "headers"},
+    "sse": {"connection": "url", "environment": "headers"},
+}
+
+#: The ``type`` value that selects SSE over HTTP for a URL server. ``type``
+#: is otherwise advisory: a bogus one beside a ``command`` loads as stdio
+#: with no diagnostic.
+MCP_SSE_TYPE = "sse"
+
+
+def mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
+    """The transport Grok derives for one ``[mcp_servers.<name>]`` table.
+
+    Exactly Grok's own order, measured: a non-empty ``command`` wins even
+    when ``url`` is also set; otherwise a ``url`` is SSE when ``type`` says
+    so and HTTP when it does not. ``None`` means Grok drops that server —
+    per server and order-independent, so its siblings and ``[permission]``
+    are untouched.
+
+    Neither field's *content* is validated. ``url = "not a url"`` loads as
+    an HTTP server.
+    """
+    command = server.get("command")
+    if isinstance(command, str) and command.strip():
+        return "stdio"
+    url = server.get("url")
+    if isinstance(url, str) and url.strip():
+        return MCP_SSE_TYPE if server.get("type") == MCP_SSE_TYPE else "http"
+    return None
+
+
+#: The ``[permission]`` keys that hold compact rule strings, and the verbose
+#: table array beside them. Measured: ``rules`` is discarded **entirely**
+#: whenever any of the three list keys is present, in any order, with no
+#: diagnostic — which is the defect worth reporting, since a file carrying
+#: both loses every verbose rule it wrote.
+#:
+#: The two forms also fail at different scopes, measured. A non-string entry
+#: in a list key costs that entry: ``allow = ["Bash(git *)", 42]`` loads the
+#: string beside the integer. A non-table entry in ``rules`` costs the whole
+#: array: two valid rules beside a bare integer loaded nothing. Both are
+#: silent, and an unparseable rule *string* costs its entry alone.
+PERMISSION_TABLE = "permission"
+PERMISSION_LIST_KEYS = frozenset({"allow", "deny", "ask"})
+PERMISSION_RULES_KEY = "rules"
+
+#: ``defaultMode``, a ``.claude/settings.json`` key with no meaning in a
+#: ``[permission]`` table. Ignored, and Grok says nothing about it.
+PERMISSION_MISSPELLED_KEY = "defaultMode"
+
+#: Spellings that load no server and say nothing about it. The first is an
+#: array-of-tables under ``[mcp]``; the other two are the top-level table
+#: name written the way another host spells it. Each is a plausible
+#: misreading of ``[mcp_servers.<name>]`` and each is a silent, total loss
+#: of the declaration.
+MCP_SERVERS_MISSPELLING = ("mcp", "servers")
+MCP_SERVERS_MISSPELLED_TABLES = frozenset({"mcp-servers", "mcpServers"})
+
+#: ``transport``, the plausible misspelling of the ``type`` field inside a
+#: server table — deliberately absent from :data:`MCP_SERVER_FIELDS`, because
+#: it is not an alias: measured, it is reported unrecognized and ignored.
+MCP_TYPE_MISSPELLED_FIELD = "transport"
+
+#: ``[permissions]``, the plural, loads nothing — and the file drops out of
+#: ``permissions.sources`` altogether, so nothing marks its absence.
+PERMISSION_MISSPELLED_TABLE = "permissions"
 
 # -- Plugins and the marketplace ----------------------------------------------
 #

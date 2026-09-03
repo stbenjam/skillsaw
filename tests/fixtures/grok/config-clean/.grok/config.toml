@@ -1,0 +1,20 @@
+# Project-scoped Grok Build configuration. A project file contributes its
+# [mcp_servers] and [permission] tables; everything else it might hold is
+# dropped without a word.
+
+[mcp_servers.berths]
+command = "bin/harbourmaster"
+args = ["mcp", "--read-only"]
+
+[mcp_servers.berths.env]
+HARBOURMASTER_PROFILE = "readonly"
+
+[mcp_servers.tideboard]
+url = "https://tideboard.internal.example/mcp"
+
+[mcp_servers.tideboard.headers]
+X-Terminal = "quay-north"
+
+[permission]
+allow = ["Bash(make test)", "Bash(make lint)"]
+deny = ["Bash(psql *)"]

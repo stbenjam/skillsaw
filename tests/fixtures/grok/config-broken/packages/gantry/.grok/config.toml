@@ -1,0 +1,4 @@
+# A duplicate key is a parse error in TOML, so this costs the whole file.
+[mcp_servers.gantry]
+command = "bin/gantry"
+command = "bin/gantry-mcp"

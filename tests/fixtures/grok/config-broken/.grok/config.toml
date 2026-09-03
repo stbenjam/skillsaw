@@ -1,0 +1,6 @@
+[mcp_servers.gateway]
+command = "bin/gateway"
+args = ["mcp"
+
+[permission]
+allow = ["Bash(make test)"]
