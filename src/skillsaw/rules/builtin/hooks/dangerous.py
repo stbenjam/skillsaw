@@ -182,45 +182,35 @@ _NETWORK_FETCH_RE = re.compile(
 _PS_WORD_START = r"(?:^|[^\w.-])"
 _PS_WORD_END = r"(?:$|[^\w.-])"
 
-# Fetching a remote resource: the web cmdlets and their aliases, or a
-# WebClient download member (`(New-Object Net.WebClient).DownloadString(…)`).
-# A fetch alone is not dangerous — `Invoke-WebRequest -OutFile tool.zip` is
-# an ordinary install step — so this only ever pairs with an execution.
+# Patterns for remote downloads via PowerShell web cmdlets (iwr, irm)
+# or WebClient methods. These are paired with execution primitives below.
 _PS_DOWNLOAD_RE = re.compile(
     rf"{_PS_WORD_START}(?:iwr|irm|invoke-webrequest|invoke-restmethod){_PS_WORD_END}"
     r"|\.download(?:string|file|data)\s*\("
 )
-# Running what was just fetched: `iex`/`Invoke-Expression`, a pipe into
-# another PowerShell, or the call operator on an expression (`& (…)`).
+# Patterns for immediate execution of fetched content (Invoke-Expression,
+# pipeline to PowerShell, or call operators).
 _PS_EXECUTE_RE = re.compile(
     rf"{_PS_WORD_START}(?:iex|invoke-expression){_PS_WORD_END}"
     rf"|\|\s*&?\s*(?:powershell|pwsh)(?:\.exe)?{_PS_WORD_END}"
     r"|&\s*\("
 )
 
-# `powershell -EncodedCommand <base64>` (and the `-enc` / `-e`
-# abbreviations PowerShell accepts) keeps the payload out of the file
-# entirely — the Windows spelling of the `base64 -d` pattern above.
+# Encoded PowerShell commands (e.g. `powershell -EncodedCommand <base64>`).
 _PS_EXE_RE = re.compile(rf"{_PS_WORD_START}(?:powershell|pwsh)(?:\.exe)?{_PS_WORD_END}")
-# The bare ``-e`` is also an ordinary script parameter (``deploy.ps1 -e
-# production``), so that spelling needs a blob long enough to be an
-# encoded script — UTF-16 base64 of even a short command runs past forty.
+# Match encoded command arguments with sufficiently long payloads.
 _PS_ENCODED_FLAG_RE = re.compile(
     r"[-/](?:encodedcommand|enc|ec)\s+[a-z0-9+/=]{16,}" r"|[-/]e\s+[a-z0-9+/=]{40,}"
 )
 
-# Living-off-the-land binaries: signed Windows executables that fetch a
-# remote payload (and, for mshta and regsvr32, run it). Each needs its own
-# download flag *and* a URL, so `certutil -hashfile` or a local
-# `regsvr32 x.dll` is untouched.
+# Built-in Windows utilities commonly used for remote file retrieval
+# (certutil, bitsadmin, mshta, regsvr32) paired with remote URLs.
 _URL_RE = re.compile(r"https?://")
 _CERTUTIL_RE = re.compile(rf"{_PS_WORD_START}certutil(?:\.exe)?{_PS_WORD_END}")
 _CERTUTIL_URLCACHE_RE = re.compile(rf"[-/]urlcache{_PS_WORD_END}")
 _BITSADMIN_RE = re.compile(rf"{_PS_WORD_START}bitsadmin(?:\.exe)?{_PS_WORD_END}")
 _BITSADMIN_TRANSFER_RE = re.compile(rf"[-/]transfer{_PS_WORD_END}")
-# `mshta` takes the remote page as its first argument, either directly or
-# behind a script scheme (`mshta javascript:GetObject("script:https://…")`).
-# The scheme branch bounds its run, so both stay linear.
+# Match mshta executions referencing remote HTTP/HTTPS endpoints directly or via scripts.
 _MSHTA_URL_RE = re.compile(
     rf"{_PS_WORD_START}mshta(?:\.exe)?\s+[\"']?https?://"
     rf"|{_PS_WORD_START}mshta(?:\.exe)?\s+[\"']?(?:javascript|vbscript):"
@@ -232,7 +222,7 @@ _LOLBIN_DESCRIPTION = (
     "uses a Windows living-off-the-land downloader (certutil/bitsadmin/mshta/regsvr32)"
 )
 
-#: Cheap substring gate for the POSIX patterns above.
+#: Fast keyword checks for POSIX download and execution utilities.
 _POSIX_TOKENS = (
     "curl",
     "wget",
@@ -242,8 +232,7 @@ _POSIX_TOKENS = (
     "base64",
     "bun",
 )
-#: Cheap substring gate for the Windows patterns. Every Windows finding
-#: needs one of these, so a clean command still runs no Windows regex.
+#: Fast keyword checks for Windows download and execution utilities.
 _WINDOWS_TOKENS = (
     "iwr",
     "irm",
@@ -262,21 +251,21 @@ _WINDOWS_TOKENS = (
 
 
 def _windows_downloads_and_executes(lower_command: str) -> bool:
-    """A PowerShell fetch and an execution primitive in one command."""
+    """Detect paired PowerShell download and execution commands."""
     return bool(_PS_DOWNLOAD_RE.search(lower_command)) and bool(
         _PS_EXECUTE_RE.search(lower_command)
     )
 
 
 def _windows_encoded_command(lower_command: str) -> bool:
-    """`powershell -enc <base64>`: the payload never appears in the file."""
+    """Detect PowerShell commands using encoded command flags."""
     return bool(_PS_EXE_RE.search(lower_command)) and bool(
         _PS_ENCODED_FLAG_RE.search(lower_command)
     )
 
 
 def _windows_lolbin_download(lower_command: str) -> bool:
-    """A signed Windows binary fetching a remote payload."""
+    """Detect Windows living-off-the-land binaries downloading remote content."""
     if not _URL_RE.search(lower_command):
         return False
     if (

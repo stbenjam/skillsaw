@@ -1,32 +1,29 @@
 ## Why
 
-Hooks execute arbitrary shell commands with no human review on every
-matching event. In high-security environments, any hook that was not
-explicitly reviewed and allowlisted represents an uncontrolled
-execution vector — even legitimate hooks should be inventoried. This
-rule inventories hooks in plugin `hooks/hooks.json` (Claude and Codex,
-including Codex's manifest-declared and inline hooks), APM's compiled
-copy, `.claude/settings*.json`, **skill/agent frontmatter** (`hooks:` key),
-`<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`,
-`.muse/hooks.json`, and Cursor's `.cursor/hooks.json`.
+In security-conscious environments, maintaining an inventory of all active hooks
+gives teams full visibility and confidence over what runs during agent sessions.
+This rule lets you maintain an explicit allowlist of approved hooks across your
+project.
 
-Not every hook spawns a process. Claude Code also dispatches `http`,
-`mcp_tool`, `prompt` and `agent` handlers, and Codex dispatches `mcp_tool`
-ones; each fires on the same lifecycle events and each is inventoried here.
-A handler is inventoried whichever host's file it sits in — an `http`
-handler in `.muse/hooks.json` is reported even though Muse runs only
-`command` handlers, because the entry is in the repository and a reviewer
-reads the file. Whether a given host actually dispatches it is what that
-host's shape rule (`muse-hooks-valid`, `cursor-hooks-valid`) reports.
+It scans hook configurations defined across supported tools and formats: plugin
+`hooks/hooks.json` (Claude and Codex, including Codex manifest-declared and inline
+hooks), APM's compiled files, `.claude/settings*.json`, **skill and agent
+frontmatter** (`hooks:` key), `<repo>/.codex/hooks.json`, `.muse/hooks.json`, and
+Cursor's `.cursor/hooks.json`.
 
-A prompt handler is named by its text: `prompt:<text>` in the nested shape
-Claude Code defines, and the same spelling for a Cursor `type: "prompt"`
-entry in the flatter `.cursor/hooks.json` — so one allowlist entry covers a
-prompt whichever host's file it sits in.
+In addition to traditional command hooks that spawn shell processes, this inventory
+also tracks non-process action handlers — such as `http` endpoints, `mcp_tool`
+invocations, `prompt` templates, and `agent` workflows. Tracking these handlers
+ensures team reviewers can inspect and approve all automated behaviors declared
+in the repository.
+
+Prompt handlers are identified by their text (`prompt:<text>`), using a consistent
+format across both Claude Code's nested structure and Cursor's
+`.cursor/hooks.json`, making it easy to share allowlist entries across hosts.
 
 ## Examples
 
-**Bad (no allowlist configured):**
+**Needs review (no allowlist configured):**
 
 ```json
 {
@@ -38,7 +35,7 @@ prompt whichever host's file it sits in.
 }
 ```
 
-**Good (with allowlist):**
+**Approved (with allowlist):**
 
 ```yaml
 # .skillsaw.yml
@@ -50,18 +47,17 @@ rules:
 
 ## How to fix
 
-Review the flagged hook and, if it is safe, add it to the `allowlist` in
-your skillsaw config. Entries match the spelling shown in the diagnostic
-exactly. This rule is disabled by default — enable it for
-supply-chain-sensitive repositories.
+Review the flagged hook and, once verified as safe, add it to the `allowlist` in
+your skillsaw configuration. Entries match the identifier shown in the finding
+message exactly. This rule is disabled by default — enable it whenever your
+project requires strict supply-chain policy enforcement.
 
-For a `command` hook that spelling is the command itself. For an exec-form
-hook it joins `command` and `args` with spaces; it does not preserve
-argument boundaries, so allowlisting only the executable does not permit
-arbitrary arguments passed to it.
+For standard `command` hooks, use the command string itself. For exec-form hooks,
+arguments are joined with spaces (`command arg1 arg2`). Note that allowlisting
+only the base executable does not permit arbitrary arguments passed to it.
 
-A hook that runs no command is named by an identity built from the fields
-that say what it invokes:
+For handlers that invoke actions without running a shell command, the allowlist
+uses a descriptive identity based on what the handler triggers:
 
 | Handler `type` | Allowlist entry |
 | --- | --- |
@@ -70,10 +66,9 @@ that say what it invokes:
 | `prompt` | `prompt:<prompt>` |
 | `agent` | `agent:<prompt>` |
 
-A handler missing those fields falls back to its bare type — `http` on its
-own, say. That entry permits every payload-less `http` handler in the
-repository, so fix the handler rather than allowlisting it; its host's shape
-rule (`claude-hooks-valid`, `codex-hooks-valid`) reports the missing field.
+If a handler is missing these identifying fields, it falls back to its bare type
+(such as `http`). Rather than allowlisting an empty handler, update the handler
+configuration with its required target so it can be properly validated.
 
 ```yaml
 # .skillsaw.yml
@@ -84,3 +79,4 @@ rules:
       - "mcp_tool:linter/format"
       - "http:https://ci.example.com/hooks/post-tool-use"
 ```
+

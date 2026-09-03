@@ -239,14 +239,14 @@ per-ecosystem attach paths and loses its content silently.
   spelling of "does a Codex-exclusive plugin own this file" — so
   dual-manifest plugins keep their established Claude results
   (`TestDualManifestBackwardCompat` pins this).
-- **Hooks get one subclass per host instead of conditional strictness.**
-  Each host's hooks file is its own `HooksBlock` subclass — `ClaudeHooksBlock`,
-  `CodexHooksBlock`, `MuseHooksBlock`, `CursorHooksBlock` — chosen from
-  provenance in `build_lint_tree`, and each host has its own shape rule
-  iterating its own subclass: `claude-hooks-valid`, `codex-hooks-valid`,
-  `muse-hooks-valid`, `cursor-hooks-valid`. `hooks-dangerous` and
-  `hooks-prohibited` read the shared `HooksBlock` base, so a new host
-  needs no changes there.
+- **Hooks use dedicated subclasses per host instead of conditional branching.**
+  Each tool or host uses its own `HooksBlock` subclass — `ClaudeHooksBlock`,
+  `CodexHooksBlock`, `MuseHooksBlock`, and `CursorHooksBlock` — selected based on
+  file location and provenance during `build_lint_tree`. Dedicated shape rules
+  (`claude-hooks-valid`, `codex-hooks-valid`, `muse-hooks-valid`, and
+  `cursor-hooks-valid`) iterate over their corresponding subclass. Meanwhile,
+  shared security rules (`hooks-dangerous` and `hooks-prohibited`) target the
+  common `HooksBlock` base, automatically protecting every supported host.
 
 **Ecosystems and editor tools are different problems.** An *ecosystem*
 packages and installs content (Claude plugins, Codex, Agent Plugins), so it

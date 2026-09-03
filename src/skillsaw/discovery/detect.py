@@ -94,8 +94,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
         # directory in the repository, and constructing the pathlib view of
         # every one of them to read a string costs more than the walk.
         if os.path.basename(dirpath) == muse.TOOL_DIR_NAME:
-            # Muse's per-agent worktrees are whole checkouts of this
-            # repository; walking them would attach every file twice.
+            # Skip Muse scratch worktree directories so files are not scanned multiple times.
             dirnames[:] = [name for name in dirnames if name not in muse.SCRATCH_DIR_NAMES]
         # Slice relative directory parts from dirpath to avoid repeatedly calling
         # Path.relative_to() for every directory and file during the walk.
@@ -211,17 +210,12 @@ _EDITOR_EVIDENCE = {
             ("plugin", True),
         ),
     ),
-    # ``hooks.json`` is the only committed file Muse reads from ``.muse/``;
-    # ``worktrees/`` is child-agent scratch.
+    # Muse Code project hooks in `.muse/hooks.json`.
     "HAS_MUSE": (
         muse.TOOL_DIR_NAME,
         ((muse.HOOKS_FILENAME, False),),
     ),
-    # ``hooks.json`` is the only committed project-layer configuration
-    # skillsaw reads from ``.codex/``. ``.codex/plugins/`` is an install
-    # location — vendor-managed content that Codex's own plugin discovery
-    # finds and that the Codex plugin rules gate on repository type — so it
-    # is deliberately not evidence here.
+    # Codex project-level hooks in `.codex/hooks.json`.
     "HAS_CODEX": (
         codex.CODEX_DIR_NAME,
         ((codex.CODEX_HOOKS_FILENAME, False),),
@@ -335,10 +329,7 @@ def instruction_formats(
             # only a model and an MCP server has no ``.opencode/`` at all.
             or marker("opencode.json") or marker("opencode.jsonc"),
         ),
-        # ``.muse/hooks.json`` is the only thing in a checkout that is Muse
-        # Code's alone. Committed ``.agents/memory/`` notes are a shared
-        # convention Muse reads — projects were committing them before Muse
-        # shipped — so they are no more evidence of Muse than AGENTS.md is.
+        # Tool format markers based on committed configuration files.
         ("HAS_MUSE", editor_marker("HAS_MUSE")),
         ("HAS_CODEX", editor_marker("HAS_CODEX")),
         ("HAS_GEMINI", marker("GEMINI.md")),

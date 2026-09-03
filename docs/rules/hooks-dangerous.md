@@ -14,20 +14,18 @@ Flags hook commands that chain a download into execution (curl|sh), obfuscate th
 
 ## Why
 
-Hooks execute arbitrary shell commands automatically whenever a matching
-agent event fires — no human review, every session. That makes them the
-highest-value target in an agent repository for supply-chain attacks:
-the 2025 Shai-Hulud npm compromise used exactly this pattern, hiding
-download-and-execute payloads in lifecycle hooks.
+Hooks run shell commands automatically during agent events, providing powerful
+automation throughout your development workflow. Because these commands execute
+automatically without interactive prompts, it is important to keep them safe from
+supply-chain risks (such as the 2025 Shai-Hulud npm incident, which hid
+download-and-execute payloads in lifecycle scripts).
 
-Hooks can be declared in plugin `hooks/hooks.json` (Claude and Codex
-plugins, including Codex's manifest-declared and inline hooks), APM's
-compiled copy, `.claude/settings*.json`, **skill and agent frontmatter**
-(the `hooks:` YAML key, same schema as settings hooks),
-`<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`,
-`.muse/hooks.json`, and Cursor's `.cursor/hooks.json`. This rule scans
-every one of them — a `curl | sh` hook hidden in SKILL.md frontmatter or
-in a Cursor lifecycle hook is just as dangerous as one in `hooks.json`.
+Hooks can be declared in many places across a project: Claude and Codex plugin
+`hooks/hooks.json` (including Codex manifest-declared and inline hooks), APM's
+compiled files, `.claude/settings*.json`, **skill and agent frontmatter**
+(`hooks:` YAML key), `<repo>/.codex/hooks.json`, `.muse/hooks.json`, and Cursor's
+`.cursor/hooks.json`. This rule scans every configured hook to help keep your
+repository safe.
 
 This rule flags hook commands that:
 
@@ -35,18 +33,22 @@ This rule flags hook commands that:
 - obfuscate their payload (`eval`, `base64 -d`)
 - make network requests
 
-A handler's Windows variant (`commandWindows` in Codex and Muse Code,
-`command_windows` in Muse Code) runs a real command too, and it is written
-in PowerShell rather than POSIX shell — so the same primitives are
-recognised in that vocabulary: a fetch (`iwr`, `irm`, `Invoke-WebRequest`,
-`Invoke-RestMethod`, `(New-Object Net.WebClient).DownloadString`) combined
-with an execution (`iex`, `Invoke-Expression`, a pipe into `powershell`,
-the `& (...)` call operator); an encoded payload
-(`powershell -EncodedCommand <base64>`, and the `-enc` / `-e`
-abbreviations); and the living-off-the-land downloaders
-`certutil -urlcache`, `bitsadmin /transfer`, `mshta http(s)://...` and
-`regsvr32 /i:http(s)://...`. A fetch on its own is not flagged —
-`Invoke-WebRequest -Uri ... -OutFile tool.zip` is an ordinary install step.
+Windows commands (`commandWindows` in Codex and Muse Code, or `command_windows` in
+Muse Code) are scanned with equal care using PowerShell patterns:
+
+- download-and-execute chains (combining web requests like `iwr`, `irm`,
+  `Invoke-WebRequest`, `Invoke-RestMethod`, or `Net.WebClient` with execution
+  via `iex`, `Invoke-Expression`, piping into `powershell`, or the `& (...)` call
+  operator)
+- obfuscated payloads (such as `powershell -EncodedCommand` base64 strings and
+  shorthand flags like `-enc` or `-e`)
+- utility downloaders (`certutil -urlcache`, `bitsadmin /transfer`,
+  `mshta http(s)://...`, and `regsvr32 /i:http(s)://...`)
+
+Ordinary setup commands, such as downloading a specific archive to disk
+(`Invoke-WebRequest -Uri ... -OutFile tool.zip`), remain fully supported and
+unflagged.
+
 
 ## Examples
 

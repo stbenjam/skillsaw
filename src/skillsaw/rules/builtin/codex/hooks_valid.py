@@ -1,21 +1,10 @@
 """
 Rule: codex-hooks-valid
 
-Codex adopted Claude Code's nested hooks shape and gave it its own
-vocabulary: twelve events, two handler types it runs and two it parses and
-skips, and per-handler fields of its own. The vocabulary lives in
-``skillsaw.formats.codex`` — this rule reads it and never restates it.
-
-Only :class:`CodexHooksBlock` is iterated: a repository's
-``.codex/hooks.json``, a Codex-only plugin's ``hooks/hooks.json``, files that
-plugin's manifest names in ``hooks``, and hooks written inline in a
-``.codex-plugin/plugin.json``. Those blocks exist only where Codex content
-does, and the rule is gated to match: ``enabled: auto`` fires on a Codex
-plugin or marketplace repository, or on ``HAS_CODEX`` — the format label a
-committed ``.codex/hooks.json`` raises. It declares no ``provenance_scope``:
-the node type already scopes it, and declaring one would make a forced
-``--type codex`` with no filesystem claim skip the very files the rule exists
-to report.
+Validates Codex hooks configuration files (such as `.codex/hooks.json` or
+manifest hook declarations) against Codex's supported lifecycle events,
+handler types, and fields. Configuration constants are centralized in
+`skillsaw.formats.codex` to keep validation rules consistent and maintainable.
 """
 
 from typing import Any, Dict, List, Set
@@ -39,23 +28,16 @@ from skillsaw.rules.builtin.codex._helpers import CODEX_PLUGIN_REPO_TYPES
 from skillsaw.rules.builtin.content_analysis import CodexHooksBlock
 from skillsaw.utils import is_finite_number
 
-#: Every handler type this rule can say something useful about: the two
-#: Codex runs plus the two it parses and skips. A type outside this set is
-#: a typo or another host's vocabulary.
+#: Every handler type this rule evaluates: both actively executed types
+#: and parsed types.
 _KNOWN_HANDLER_TYPES = CODEX_HOOK_HANDLER_TYPES | CODEX_HOOK_SKIPPED_HANDLER_TYPES
 
-#: ``timeout`` needs a finiteness check rather than an ``isinstance``, so it
-#: is handled on its own path instead of through the generic type table.
+#: Field name for timeout configurations.
 _TIMEOUT = "timeout"
 
 
 def _fields_by_handler_type() -> Dict[str, frozenset]:
-    """Which handler types accept each field, derived from the vocabulary.
-
-    Inverted from the required/optional tables rather than written out, so
-    a field added to ``skillsaw.formats.codex`` is placed on the right
-    handler type here without a second edit.
-    """
+    """Map handler fields to the handler types that support them."""
     owners: Dict[str, Set[str]] = {}
     for handler_type, fields in CODEX_HOOK_REQUIRED_FIELDS.items():
         for field in fields:
@@ -81,17 +63,13 @@ class CodexHooksValidRule(Rule):
 
     since = "0.20.0"
 
-    # ``enabled: auto`` on the base default, gated on the two places Codex
-    # hooks live: a Codex plugin or marketplace repository, and any checkout
-    # that commits a ``.codex/hooks.json``. Project policy forbids a new rule
-    # defaulting to ``True``.
+    # Auto-enable when Codex configurations are present: within Codex plugins,
+    # marketplace repositories, or checkouts with `.codex/hooks.json`.
     repo_types = CODEX_PLUGIN_REPO_TYPES
     formats = frozenset({HAS_CODEX})
 
-    # These checks used to be reported by ``hooks-json-valid``, so a
-    # baseline written before the split recorded a Codex-only plugin's
-    # findings under that ID. Not an ``alias``: the rule is configured and
-    # suppressed by its own name — only the baseline lookup follows this.
+    # Backward-compatible alias for baselines written before codex-hooks-valid
+    # was split from hooks-json-valid.
     baseline_aliases = ("hooks-json-valid",)
 
     config_schema = {
@@ -117,13 +95,7 @@ class CodexHooksValidRule(Rule):
         return Severity.ERROR
 
     def _known_events(self) -> Set[str]:
-        """Codex's events plus any the project declares.
-
-        The declared type is not enforced when the config loads, so
-        ``extra-events: 42`` arrives here as an int. Iterating it would
-        raise ``TypeError`` and cost every structural finding in every
-        Codex hooks file over one bad config line.
-        """
+        """Return recognized hook events, including built-in and user-configured events."""
         extra = self.setting("extra-events") or []
         if not isinstance(extra, (list, tuple, set, frozenset)):
             return set(CODEX_HOOK_EVENTS)
@@ -147,13 +119,8 @@ class CodexHooksValidRule(Rule):
                 )
                 continue
 
-            # Before the shape walk, and instead of it. ``CodexHooksBlock``
-            # parses leniently so a duplicate key cannot hide executable
-            # surface from the security rules, and Python's ``json`` throws
-            # in the bare tokens ``NaN``, ``Infinity`` and ``-Infinity``
-            # along the way. Codex's parser accepts none of them and refuses
-            # the document — so the defect is the file, not the field, and
-            # one finding says so.
+            # Check for non-finite numeric tokens like NaN or Infinity, which are
+            # rejected by standard JSON parsers.
             found = block.first_non_finite()
             if found is not None:
                 path, value = found
@@ -207,9 +174,8 @@ class CodexHooksValidRule(Rule):
                     severity=Severity.WARNING,
                 )
             )
-            # Fall through rather than skipping: if the name is a real event
-            # this release has not heard of, its entries are live
-            # configuration and deserve the same shape checks.
+            # Continue checking entries so valid handlers under newer events
+            # receive helpful shape and type validation.
 
         if not isinstance(entries, list):
             violations.append(
@@ -233,7 +199,7 @@ class CodexHooksValidRule(Rule):
         block: CodexHooksBlock,
         known: bool = True,
     ) -> List[RuleViolation]:
-        """One ``{matcher?, hooks: [...]}`` entry under an event."""
+        """Validate an individual {matcher?, hooks: [...]} event entry."""
         violations: List[RuleViolation] = []
         where = f"{name}[{index}]"
 
@@ -247,20 +213,15 @@ class CodexHooksValidRule(Rule):
         if "matcher" in entry:
             matcher = entry["matcher"]
             if not isinstance(matcher, str):
-                # The block boundary coerces a non-string matcher so nothing
-                # crashes; reporting here keeps the coercion from hiding the
-                # defect — Codex matches tool names against the pattern, and
-                # a non-string value disables the hook without an error.
+                # Non-string matchers are flagged so hooks filter as expected.
                 violations.append(
                     self.violation(
                         f"Event '{where}.matcher' must be a string", file_path=block.path
                     )
                 )
             elif known and event not in CODEX_HOOK_MATCHER_EVENTS:
-                # Only for an event Codex actually dispatches. On a typo the
-                # unknown-event warning already says the entry never fires,
-                # and "your matcher is ignored" on top of it is a second
-                # finding for one mistake.
+                # Provide an advisory note if a matcher is configured on an event
+                # that does not evaluate matchers.
                 violations.append(
                     self.violation(
                         f"Event '{where}.matcher' is ignored on this event — Codex "
@@ -291,7 +252,7 @@ class CodexHooksValidRule(Rule):
     def _check_handler(
         self, where: str, event: Any, handler: Any, block: CodexHooksBlock
     ) -> List[RuleViolation]:
-        """One handler object: its type, then the fields that type takes."""
+        """Validate the structure and options of an individual hook handler."""
         if not isinstance(handler, dict):
             return [self.violation(f"Event '{where}' must be an object", file_path=block.path)]
 
@@ -301,11 +262,7 @@ class CodexHooksValidRule(Rule):
             ]
 
         handler_type = handler["type"]
-        # An unhashable ``type`` (list/dict) would raise TypeError in the set
-        # membership test — a rule crash that silences hook validation for
-        # every remaining block. A dict value can also carry a credentialed
-        # URL into text/JSON/SARIF output, so it is redacted like every other
-        # manifest value echoed into a message.
+        # Ensure the handler type is a string before checking membership.
         if not isinstance(handler_type, str) or handler_type not in _KNOWN_HANDLER_TYPES:
             return [
                 self.violation(
@@ -316,9 +273,8 @@ class CodexHooksValidRule(Rule):
             ]
 
         if handler_type in CODEX_HOOK_SKIPPED_HANDLER_TYPES:
-            # Not an error: the file loads and the rest of it runs. Claude
-            # Code runs these types, so a shared hooks file may carry one
-            # deliberately — but under Codex it is dead configuration.
+            # Claude Code supports prompt and agent handlers, but Codex parses
+            # and skips them. Provide a clear warning for shared configurations.
             return [
                 self.violation(
                     f"Event '{where}' has type '{handler_type}' — Codex parses this "
@@ -346,14 +302,7 @@ class CodexHooksValidRule(Rule):
     def _check_fields(
         self, where: str, handler_type: str, handler: Dict[str, Any], block: CodexHooksBlock
     ) -> List[RuleViolation]:
-        """Required fields, this type's optional fields, and the other type's.
-
-        Both tables are read with a default: a handler type added to
-        ``CODEX_HOOK_HANDLER_TYPES`` without an entry beside it passes the
-        membership test above and would otherwise ``KeyError`` here, taking
-        every remaining hooks finding down with it. Nothing is known about
-        such a type's fields, so nothing is reported about them.
-        """
+        """Validate required fields, allowed optional fields, and type correctness."""
         violations: List[RuleViolation] = []
 
         for field in CODEX_HOOK_REQUIRED_FIELDS.get(handler_type, ()):
@@ -399,12 +348,7 @@ class CodexHooksValidRule(Rule):
     def _check_timeout(
         self, where: str, event: Any, handler: Dict[str, Any], block: CodexHooksBlock
     ) -> List[RuleViolation]:
-        """``timeout`` must be a finite number, and short events cap it.
-
-        ``bool`` is an ``int`` subclass and ``timeout: true`` is not a
-        duration; a huge integer literal is finite and stays accepted,
-        without the float conversion that would kill the rule.
-        """
+        """Validate timeout settings and ensure short-timeout events stay within limits."""
         if _TIMEOUT not in handler:
             return []
         timeout = handler[_TIMEOUT]

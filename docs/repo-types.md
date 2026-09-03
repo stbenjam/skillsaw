@@ -412,35 +412,32 @@ a line.
 
 ### Muse Code hooks
 
-`.muse/hooks.json` is [Muse Code's](https://dev.meta.ai/docs/muse-code)
-committed project hooks file, and the one thing in a checkout that is Muse's
-alone — it is what marks a repository as Muse Code. It uses the nested shape
-Claude Code defined, but Muse's loader is strict, and how strict depends on
-where the defect is: a known handler field of the wrong type rejects the
-whole file, a matcher group carrying a stray key drops that group, an
-unknown event skips its entries, and a handler Muse cannot use is dropped on
-its own. None of it is reported in a headless run.
-[`muse-hooks-valid`](rules/muse-hooks-valid.md) validates the shape against
-Muse's own events and fields, the same way `cursor-hooks-valid` does for
-Cursor, and every message names what the defect costs. `hooks-dangerous` and
-`hooks-prohibited` scan the commands like any other host's hooks file.
+`.muse/hooks.json` defines committed project hooks for [Muse Code](https://dev.meta.ai/docs/muse-code).
+Muse uses the nested configuration format pioneered by Claude Code, while
+introducing its own lifecycle events and validation rules. Because Muse Code runs
+silently during headless workflows, configuration mistakes — like an unsupported
+field, an unrecognized event, or an invalid matcher regex — can cause hooks to be
+skipped without surfacing an error.
+
+[`muse-hooks-valid`](rules/muse-hooks-valid.md) verifies your `.muse/hooks.json`
+configuration in advance, clearly explaining whether an issue affects a single
+handler, a matcher group, or the whole file so you can fix it with confidence.
+Security rules [`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md) also scan these hooks to safeguard
+your project.
 
 ### Committed project memory
 
-`.agents/memory/` holds notes a team checks into the repository for whatever
-agent reads it — the shared counterpart of Claude Code's per-developer auto
-memory. The convention belongs to no tool: projects were committing it
-before Muse Code shipped, and Muse reads it the way it reads `AGENTS.md`,
-injecting `MEMORY.md` in full at session start (even in an untrusted
-workspace) alongside the paths of the other Markdown files in the directory,
-which it reads on demand. The index is one line per topic by convention;
-Muse lists every Markdown file there whether or not the index mentions it.
+The `.agents/memory/` directory offers a convenient, tool-agnostic way for teams to
+share durable project knowledge with coding agents. It serves as a version-controlled
+team counterpart to local, per-user memory stores. Muse Code and other tools read
+this folder, loading `MEMORY.md` as an index at session start and referencing
+individual topic files as questions arise.
 
-skillsaw therefore attaches the directory unconditionally, and it is
-evidence of no tool in particular. The index and the topic files beside it are agent
-context, so they get every content and security rule, and both are budgeted
-under the `memory` category — the index because a reader loads it whole, a
-topic file because a reader loads it whole once the topic comes up.
+skillsaw includes `.agents/memory/` in the lint tree to ensure your team notes remain
+high quality. The index and topic files are scanned with skillsaw's content quality
+and security rules, and tracked under the `memory` budget category so instructions
+remain focused, accurate, and within recommended token limits.
 
 ### OpenCode and APM
 
