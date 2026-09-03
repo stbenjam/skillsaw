@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from skillsaw.paths import relative_to_str, safe_resolve
 
@@ -35,3 +35,25 @@ def path_matches_patterns(
     return any(
         fnmatch.fnmatch(rel, variant) for pattern in patterns for variant in variants_for(pattern)
     )
+
+
+def is_root_or_ancestor_excluded(
+    path: Path,
+    boundary: Optional[Path],
+    is_excluded: Callable[[Path], bool],
+) -> bool:
+    """Whether *path* or any ancestor within *boundary* is excluded."""
+    current = path
+    resolved_boundary = safe_resolve(boundary) if boundary is not None else None
+    while True:
+        if is_excluded(current):
+            return True
+        if boundary is not None and current == boundary:
+            break
+        if resolved_boundary is not None and current == resolved_boundary:
+            break
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return False
