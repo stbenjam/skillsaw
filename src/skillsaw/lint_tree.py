@@ -315,6 +315,40 @@ def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
     )
 
 
+def _claim_attached_hooks(
+    state: _TreeBuildState,
+    root: LintTarget,
+    path: Path,
+    owner: Path,
+) -> bool:
+    """Claim an already-attached hooks file for *owner*, if there is one.
+
+    Answers "is this file already in the tree?" for the declared-files loop
+    and, when it is, records the plugin that declared it. Nothing but the
+    manifest names such a file, so the declaration is the only evidence of
+    ownership there is — and without it ``skillsaw docs`` lists the plugin
+    without its hooks. An attach that already recorded an owner (the Claude
+    branch, the Codex cluster's conventional file) keeps it.
+
+    Only the tree root is scanned, which is where every ownerless attach
+    puts a hooks block: the project layer's ``.codex/hooks.json`` and
+    another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``. Scanning
+    the subtree would mean ``find()`` mid-build, whose per-node memo the
+    attaches still to come would invalidate.
+    """
+    if not _attached_as_hooks(state, path):
+        return False
+    resolved = state.resolve_repo_path(path)
+    for child in root.children:
+        if (
+            isinstance(child, HooksBlock)
+            and child.plugin_owner is None
+            and safe_resolve(child.path) == resolved
+        ):
+            child.plugin_owner = owner
+    return True
+
+
 def _attach_apm_skills(
     state: _TreeBuildState,
     apm_node: ApmNode,
@@ -1074,24 +1108,21 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # A repo-root package shares conventional config paths with the
             # repository, so ownership is decided here once.
             root_plugin_owner = resolved_plugin
-            # ``.mcp.json`` and hooks both need re-tagging. The generic root
-            # attach runs first and adds them untagged: ``.codex/hooks.json``
-            # from the project layer — which for a repo-root plugin is that
-            # plugin's own layer — and any hooks file the manifest declares
-            # by path. The declared-files loop below then sees one block for
-            # the file already and leaves it, so this is the only place the
-            # owner can be recorded, and without it ``skillsaw docs`` lists
-            # the plugin without its hooks. (``hooks/hooks.json`` needs
-            # nothing: it attaches under the Codex cluster with containment.)
+            # ``.mcp.json`` and the project layer's ``.codex/hooks.json``
+            # need re-tagging. The generic root attach runs first and adds
+            # them untagged, and for a repo-root plugin that project layer
+            # is the plugin's own — but no manifest names either file, so
+            # nothing downstream claims them and this is the only place the
+            # owner can be recorded. A hooks file the manifest *does*
+            # declare needs nothing here: ``_claim_attached_hooks`` tags it
+            # in the declared-files loop below, wherever the plugin sits in
+            # the tree. (``hooks/hooks.json`` needs nothing either: it
+            # attaches under the Codex cluster with containment.)
             claimed_mcp = {safe_resolve(plugin_path / ".mcp.json")} - {None}
             claimed_hooks: Set[Optional[Path]] = set()
             if prov.codex:
                 claimed_hooks = {
-                    safe_resolve(path)
-                    for path in (
-                        plugin_path / CODEX_DIR_NAME / CODEX_HOOKS_FILENAME,
-                        *codex_declared_hook_files(plugin_path),
-                    )
+                    safe_resolve(plugin_path / CODEX_DIR_NAME / CODEX_HOOKS_FILENAME)
                 } - {None}
             for child in root.children:
                 if isinstance(child, McpBlock) and safe_resolve(child.path) in claimed_mcp:
@@ -1172,10 +1203,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # attach already put in the tree as hooks — that same
             # conventional file when the manifest also declares it, the
             # project layer's ``.codex/hooks.json``, or another tool's file
-            # a manifest points at. One block per file, or the security
-            # rules report every command in it twice.
+            # a manifest points at. That block is claimed rather than
+            # re-attached: one block per file, or the security rules report
+            # every command in it twice, but the declaration is still what
+            # tells ``skillsaw docs`` whose hooks those are.
             for declared_hooks in codex_declared_hook_files(plugin_path):
-                if _attached_as_hooks(state, declared_hooks):
+                if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
                     continue
                 state.add_parser_block(node, declared_hooks, CodexHooksBlock, owner=resolved_plugin)
             for inline_hooks in codex_inline_hooks(plugin_path):

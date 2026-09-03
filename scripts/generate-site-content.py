@@ -831,6 +831,14 @@ def generate_research_page(research):
     return "\n".join(lines) + "\n"
 
 
+# The hero sentence's rule count, anchored on the words that lead into it:
+# "…structural flaws, and content dead zones with 89 rules, then applies
+# deterministic autofixes." The whitespace before "zones" is captured rather
+# than matched literally because the sentence wraps across two source lines,
+# and rewriting the count must not reflow the paragraph.
+HERO_RULE_COUNT_RE = re.compile(r"(dead\s+zones with )\d+( rules\b)")
+
+
 def inject_stats(index_path, rules_data):
     """Refresh the rule count in docs/index.md.
 
@@ -840,14 +848,22 @@ def inject_stats(index_path, rules_data):
     matches the rendered form as well as the marker, which makes the
     substitution idempotent and keeps the page honest after a rule lands.
 
-    The pattern carries the hero sentence's ``with`` so it rewrites that
-    sentence and nothing else — a page that says "with 89 rules" here and
-    "three of those rules" elsewhere keeps the second count untouched.
+    The pattern names the hero sentence, not just "with N rules", so it
+    rewrites that sentence and nothing else — a page that mentions "with 5
+    rules" in an unrelated line keeps that count untouched.
     """
     text = index_path.read_text()
     count = str(len(rules_data))
     text = text.replace("<!-- RULE_COUNT -->", count)
-    text = re.sub(r"\bwith \d+ rules\b", f"with {count} rules", text)
+    text, injected = HERO_RULE_COUNT_RE.subn(rf"\g<1>{count}\g<2>", text)
+    if not injected:
+        # The hero was reworded out from under the pattern. Saying so beats
+        # shipping a page frozen at whatever the count was that day.
+        print(
+            f"WARNING: no hero rule count found in {index_path.name}; "
+            "update HERO_RULE_COUNT_RE to match the hero sentence.",
+            file=sys.stderr,
+        )
     index_path.write_text(text)
 
 

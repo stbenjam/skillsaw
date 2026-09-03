@@ -8,7 +8,13 @@ import pytest
 from skillsaw.config import LinterConfig
 from skillsaw.docs.extractor import extract_docs
 from skillsaw.context import RepositoryContext
-from skillsaw.blocks import CodexHooksBlock, CodexInlineHooksBlock, HooksBlock, McpBlock
+from skillsaw.blocks import (
+    CodexHooksBlock,
+    CodexInlineHooksBlock,
+    CursorHooksBlock,
+    HooksBlock,
+    McpBlock,
+)
 from skillsaw.lint_target import PluginNode
 from skillsaw.linter import Linter
 from skillsaw.formats.codex import codex_inline_hooks
@@ -448,6 +454,77 @@ class TestRootPluginDeclaredHooksAreOwned:
 
     def test_hooks_dangerous_reports_the_command_once(self, tmp_path):
         repo = self._repo(tmp_path)
+
+        found = _hooks_dangerous_findings(repo)
+
+        assert len(found) == 1
+
+
+#: Declared paths an earlier attach places at the tree root with no owner,
+#: with the block class and event the claim has to leave intact. The root
+#: plugin's re-tag cannot reach these: the plugin is nested, so its own
+#: ``.codex/`` layer is not the repository's.
+ROOT_ATTACHED_HOOKS_FILES = {
+    "./.codex/hooks.json": (DANGEROUS_HOOKS, CodexHooksBlock, "SessionStart"),
+    "./.cursor/hooks.json": (
+        FOREIGN_HOOKS_FILES["./.cursor/hooks.json"],
+        CursorHooksBlock,
+        "beforeShellExecution",
+    ),
+}
+
+
+class TestNestedPluginDeclaredHooksAreOwned:
+    """A nested plugin's declared hooks file is claimed, not re-attached.
+
+    The project layer (and the other editor-tool loops) attach these files
+    at the tree root before the plugin pass runs, untagged. The declared
+    files loop leaves the one block alone — so it has to record the owner
+    there, or ``skillsaw docs`` lists the plugin without its hooks."""
+
+    def _repo(self, tmp_path, declared):
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        plugin = _write_plugin(
+            repo / "plugins" / "policy",
+            {
+                "name": "policy",
+                "version": "1.0.0",
+                "description": "x",
+                "hooks": declared,
+            },
+        )
+        document, _, _ = ROOT_ATTACHED_HOOKS_FILES[declared]
+        target = plugin / Path(declared)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(document), encoding="utf-8")
+        return repo, plugin, target
+
+    @pytest.mark.parametrize("declared", list(ROOT_ATTACHED_HOOKS_FILES))
+    def test_one_block_carries_the_plugin_as_its_owner(self, tmp_path, declared):
+        repo, plugin, target = self._repo(tmp_path, declared)
+        _, block_cls, _ = ROOT_ATTACHED_HOOKS_FILES[declared]
+
+        blocks = [b for b in RepositoryContext(repo).lint_tree.find(HooksBlock) if b.path == target]
+
+        assert len(blocks) == 1
+        # The attaching host keeps the file: claiming records ownership, it
+        # does not re-file the block under Codex's class.
+        assert type(blocks[0]) is block_cls
+        assert blocks[0].plugin_owner == plugin.resolve()
+
+    @pytest.mark.parametrize("declared", list(ROOT_ATTACHED_HOOKS_FILES))
+    def test_the_plugin_doc_lists_the_declared_hooks(self, tmp_path, declared):
+        repo, _, _ = self._repo(tmp_path, declared)
+        _, _, event_type = ROOT_ATTACHED_HOOKS_FILES[declared]
+
+        docs = extract_docs(RepositoryContext(repo))
+
+        assert [plugin.name for plugin in docs.plugins] == ["policy"]
+        assert [hook.event_type for hook in docs.plugins[0].hooks] == [event_type]
+
+    @pytest.mark.parametrize("declared", list(ROOT_ATTACHED_HOOKS_FILES))
+    def test_hooks_dangerous_reports_the_command_once(self, tmp_path, declared):
+        repo, _, _ = self._repo(tmp_path, declared)
 
         found = _hooks_dangerous_findings(repo)
 
