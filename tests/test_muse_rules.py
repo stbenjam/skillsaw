@@ -675,6 +675,131 @@ def test_an_unhashable_handler_type_does_not_crash_the_rule(tmp_path) -> None:
     assert "'command' is empty" in violations[1].message
 
 
+# ── Tokens Python accepts and serde_json does not ────────────────
+
+
+NON_FINITE_VERDICT = (
+    "is not valid JSON — NaN and Infinity are not JSON tokens, and "
+    "Muse rejects the whole file, so no hook in it runs"
+)
+
+
+def write_hooks(tmp_path: Path, name: str, body: str) -> Path:
+    """A repository whose ``.muse/hooks.json`` is *body*, written verbatim.
+
+    Verbatim because these cases are JSON that no serializer will emit:
+    ``NaN`` and ``Infinity`` are Python's spelling of a token the format
+    does not have.
+    """
+    repo = write_repo(tmp_path / name)
+    (repo / ".muse").mkdir()
+    (repo / ".muse" / "hooks.json").write_text(body)
+    return repo
+
+
+@pytest.mark.parametrize(
+    ("name", "field", "token", "path"),
+    [
+        # An untyped field: nothing in the shape checks would look at it.
+        ("silent", '"silent": NaN', "NaN", "hooks.Stop[0].hooks[0].silent"),
+        (
+            "capabilities",
+            '"outputCapabilities": [Infinity]',
+            "Infinity",
+            "hooks.Stop[0].hooks[0].outputCapabilities[0]",
+        ),
+        (
+            "negative",
+            '"statusMessage": -Infinity',
+            "-Infinity",
+            "hooks.Stop[0].hooks[0].statusMessage",
+        ),
+    ],
+)
+def test_a_non_finite_token_rejects_the_whole_file(tmp_path, name, field, token, path) -> None:
+    """``json.loads`` accepts ``NaN``/``Infinity``; ``serde_json`` refuses the
+    document, so Muse runs no hook in the file and skillsaw must say so."""
+    repo = write_hooks(
+        tmp_path,
+        f"non-finite-{name}",
+        '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "make lint", '
+        + field
+        + "}]}]}}",
+    )
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert violations[0].severity == Severity.ERROR
+    assert violations[0].message == f"'{token}' at {path} {NON_FINITE_VERDICT}"
+    assert violations[0].file_path == repo / ".muse" / "hooks.json"
+    assert violations[0].line is None
+
+
+def test_a_non_finite_typed_field_is_one_finding_not_two(tmp_path) -> None:
+    """``timeout`` is type-checked, but the file never reaches a loader that
+    could care about the field: one defect, one finding."""
+    repo = write_hooks(
+        tmp_path,
+        "non-finite-timeout",
+        '{"hooks": {"Stop": [{"hooks": ['
+        '{"type": "command", "command": "make lint", "timeout": NaN}]}]}}',
+    )
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert violations[0].message == f"'NaN' at hooks.Stop[0].hooks[0].timeout {NON_FINITE_VERDICT}"
+    assert "must be a non-negative integer" not in violations[0].message
+
+
+def test_a_non_finite_token_costs_every_other_finding_in_the_file(tmp_path) -> None:
+    """The whole document is refused, so a second defect in it is moot —
+    and the finding names the first token in document order."""
+    repo = write_hooks(
+        tmp_path,
+        "non-finite-and-more",
+        '{"hooks": {"Stop": [{"hooks": ['
+        '{"type": "command", "command": "make lint", "silent": NaN}]}],'
+        '"sessionStart": [{"hooks": [{"type": "command", "command": ""}]}]}}',
+    )
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert "hooks.Stop[0].hooks[0].silent" in violations[0].message
+
+
+def test_a_non_finite_token_is_reported_through_the_cli(tmp_path) -> None:
+    repo = write_hooks(
+        tmp_path,
+        "non-finite-cli",
+        '{"hooks": {"Stop": [{"hooks": ['
+        '{"type": "command", "command": "make lint", "silent": NaN}]}]}}',
+    )
+
+    found = violations_for(lint_json(repo, returncode=1), "muse-hooks-valid")
+
+    assert [v["file_path"] for v in found] == [".muse/hooks.json"]
+    assert "not valid JSON" in found[0]["message"]
+
+
+def test_a_finite_float_is_left_to_the_field_type_check(tmp_path) -> None:
+    """The scan is about tokens JSON has no spelling for, not about floats:
+    ``30.0`` is valid JSON, and ``timeout`` rejecting it is a field verdict."""
+    repo = write_hooks(
+        tmp_path,
+        "finite-float",
+        '{"hooks": {"Stop": [{"hooks": ['
+        '{"type": "command", "command": "make lint", "timeout": 30.0}]}]}}',
+    )
+
+    violations = check(repo)
+
+    assert len(violations) == 1, messages(violations)
+    assert "'timeout' must be a non-negative integer" in violations[0].message
+
+
 # ── extra-events ─────────────────────────────────────────────────
 
 

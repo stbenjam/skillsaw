@@ -14,9 +14,12 @@ What a defect costs depends on where it is, and the message says which:
 
 - **The whole file** — an event whose value is not an array, a matcher group
   that is not an object, a non-string group `matcher`, a group with a missing
-  or non-array `hooks`, a handler that is not an object, or any known handler
-  field carrying the wrong JSON type. Muse refuses the document at parse
-  time, so no hook in it runs.
+  or non-array `hooks`, a handler that is not an object, any known handler
+  field carrying the wrong JSON type, or a bare `NaN`, `Infinity` or
+  `-Infinity` anywhere in the document — including where nothing is typed,
+  such as `silent` or a member of `outputCapabilities`. None of those three
+  is JSON, whatever a permissive parser makes of them. Muse refuses the
+  document at parse time, so no hook in it runs.
 - **That matcher group** — a group carrying any key beyond `matcher` and
   `hooks`, or a `matcher` that does not compile. A stray `"description"`
   copied from a Claude Code hooks file drops its own group; sibling groups

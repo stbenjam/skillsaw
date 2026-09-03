@@ -35,7 +35,12 @@ worth reporting — a whole-file rejection costs every hook in the file:
   that is not an object; a group ``matcher`` that is not a string; a group
   with no ``hooks`` key or a non-array one; a handler that is not an
   object; any known handler field carrying the wrong JSON type
-  (:data:`HANDLER_FIELDS`).
+  (:data:`HANDLER_FIELDS`); a bare ``NaN``, ``Infinity`` or ``-Infinity``
+  token anywhere in the document, including somewhere nothing is typed
+  (``silent``, a member of ``outputCapabilities``). Those three are not
+  JSON and ``serde_json`` refuses the document for them, while Python's
+  ``json`` accepts them as floats — so skillsaw scans for them rather than
+  inheriting a verdict from its parser.
 * **That matcher group** — a group carrying any key outside ``matcher``
   and ``hooks``, whatever its value; a ``matcher`` string that does not
   compile as a regex. Sibling groups and other events still load.

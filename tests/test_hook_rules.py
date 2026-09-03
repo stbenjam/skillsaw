@@ -1768,9 +1768,9 @@ def test_prohibited_allowlist_flags_unlisted(temp_dir):
     assert "non-allowlisted" in violations[0].message
 
 
-def test_prohibited_non_command_hooks_ignored(temp_dir):
-    """Non-command hook types should not trigger."""
-    plugin_dir = _make_hooks_plugin(
+def _non_command_plugin(temp_dir):
+    """A Claude plugin whose hooks all fire without spawning a process."""
+    return _make_hooks_plugin(
         temp_dir,
         {
             "hooks": {
@@ -1779,16 +1779,145 @@ def test_prohibited_non_command_hooks_ignored(temp_dir):
                         "matcher": ".*",
                         "hooks": [
                             {"type": "http", "url": "https://example.test/hook"},
+                            {"type": "mcp_tool", "server": "linter", "tool": "format"},
                         ],
                     }
                 ]
             }
         },
     )
-    context = RepositoryContext(plugin_dir)
-    rule = HooksProhibitedRule()
-    violations = rule.check(context)
-    assert len(violations) == 0
+
+
+def test_prohibited_reports_hooks_that_run_no_command(temp_dir):
+    """Claude Code dispatches http and mcp_tool handlers, so the policy
+    gate has to inventory them — they were exempt while the rule read only
+    ``type == "command"``."""
+    context = RepositoryContext(_non_command_plugin(temp_dir))
+
+    violations = HooksProhibitedRule().check(context)
+
+    assert sorted(v.message for v in violations) == [
+        "Hook PostToolUse: http hooks are prohibited — 'http:https://example.test/hook'",
+        "Hook PostToolUse: mcp_tool hooks are prohibited — 'mcp_tool:linter/format'",
+    ]
+
+
+def test_prohibited_allowlist_permits_a_non_command_identity(temp_dir):
+    """The identity in the diagnostic is the spelling the allowlist takes."""
+    context = RepositoryContext(_non_command_plugin(temp_dir))
+
+    violations = HooksProhibitedRule(
+        config={
+            "allowlist": [
+                "http:https://example.test/hook",
+                "mcp_tool:linter/format",
+            ]
+        }
+    ).check(context)
+
+    assert violations == []
+
+
+def test_prohibited_allowlisting_one_identity_leaves_the_other(temp_dir):
+    """An allowlist is not an off switch: entries match one identity each."""
+    context = RepositoryContext(_non_command_plugin(temp_dir))
+
+    violations = HooksProhibitedRule(config={"allowlist": ["mcp_tool:linter/format"]}).check(
+        context
+    )
+
+    assert [v.message for v in violations] == [
+        "Hook PostToolUse: non-allowlisted http hook — 'http:https://example.test/hook'"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("handler", "identity"),
+    [
+        pytest.param(
+            {"type": "prompt", "prompt": "Summarise the diff before continuing."},
+            "prompt:Summarise the diff before continuing.",
+            id="prompt",
+        ),
+        pytest.param(
+            {"type": "agent", "prompt": "Review the change.", "model": "opus"},
+            "agent:Review the change.",
+            id="agent",
+        ),
+        pytest.param(
+            # No payload to name: the bare type is the coarsest entry, and
+            # the host's shape rule reports the missing field.
+            {"type": "http"},
+            "http",
+            id="payloadless",
+        ),
+        pytest.param(
+            # A server without a tool names nothing invocable either.
+            {"type": "mcp_tool", "server": "linter"},
+            "mcp_tool",
+            id="partial-mcp-tool",
+        ),
+    ],
+)
+def test_prohibited_names_each_handler_kind(temp_dir, handler, identity):
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {"hooks": {"SessionStart": [{"matcher": ".*", "hooks": [handler]}]}},
+    )
+
+    violations = HooksProhibitedRule().check(RepositoryContext(plugin_dir))
+
+    assert [v.message for v in violations] == [
+        f"Hook SessionStart: {handler['type']} hooks are prohibited — {identity!r}"
+    ]
+
+
+def test_prohibited_ignores_a_handler_with_no_type(temp_dir):
+    """No host dispatches a handler without a ``type``, and its host's shape
+    rule already reports it — naming it here would invent an allowlist
+    spelling that no working hook ever matches."""
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {"hooks": {"SessionStart": [{"matcher": ".*", "hooks": [{"url": "https://x.test/h"}]}]}},
+    )
+
+    assert HooksProhibitedRule().check(RepositoryContext(plugin_dir)) == []
+
+
+def test_prohibited_reports_a_codex_mcp_tool_hook(temp_dir):
+    """Codex runs ``command`` and ``mcp_tool`` handlers, and ``.codex/hooks.json``
+    reaches the rule through the same shared ``HooksBlock`` base."""
+    repo = temp_dir / "codex-repo"
+    (repo / ".codex").mkdir(parents=True)
+    (repo / "AGENTS.md").write_text(
+        "# Ledger service\n\nRun `make test` before opening a pull request.\n"
+    )
+    (repo / ".codex" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "mcp_tool",
+                                    "server": "policy",
+                                    "tool": "check_command",
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    violations = HooksProhibitedRule().check(RepositoryContext(repo))
+
+    assert [v.message for v in violations] == [
+        "Hook PreToolUse: mcp_tool hooks are prohibited — 'mcp_tool:policy/check_command'"
+    ]
+    assert violations[0].file_path == repo / ".codex" / "hooks.json"
 
 
 @pytest.mark.parametrize(

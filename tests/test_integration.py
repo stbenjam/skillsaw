@@ -2415,7 +2415,11 @@ class TestCursorRules:
         messages = [
             v["message"] for v in by_rule(run_lint(repo, config=config))["hooks-prohibited"]
         ]
-        assert any("prompt hooks are prohibited" in m for m in messages)
+        # Exactly once: the rule reports non-command handlers off
+        # ``HooksBlock.events`` too, and Cursor's ``events`` override drops
+        # its prompt entries — reporting them from both surfaces would
+        # double-count every prompt hook in the repository.
+        assert len([m for m in messages if "prompt hooks are prohibited" in m]) == 1
         assert any("gofmt-check.sh" in m for m in messages)
 
     def test_prompt_hook_findings_are_never_advertised_as_fixable(self, tmp_path):

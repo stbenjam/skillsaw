@@ -10,10 +10,18 @@ copy, `.claude/settings*.json`, **skill/agent frontmatter** (`hooks:` key),
 `<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`,
 `.muse/hooks.json`, and Cursor's `.cursor/hooks.json`.
 
-A Cursor `type: "prompt"` hook runs no command, so there is nothing for a
-command allowlist to match — it is reported whenever the rule is on. It is
-still a hook: it fires on the same lifecycle events, and what it injects is
-text the model acts on.
+Not every hook spawns a process. Claude Code also dispatches `http`,
+`mcp_tool`, `prompt` and `agent` handlers, and Codex dispatches `mcp_tool`
+ones; each fires on the same lifecycle events and each is inventoried here.
+A handler is inventoried whichever host's file it sits in — an `http`
+handler in `.muse/hooks.json` is reported even though Muse runs only
+`command` handlers, because the entry is in the repository and a reviewer
+reads the file. Whether a given host actually dispatches it is what that
+host's shape rule (`muse-hooks-valid`, `cursor-hooks-valid`) reports.
+
+A Cursor `type: "prompt"` hook runs no command either, and is reported
+whenever the rule is on: it has no identity an allowlist can name, because
+Cursor puts the prose inline rather than behind a server or a URL.
 
 ## Examples
 
@@ -41,11 +49,37 @@ rules:
 
 ## How to fix
 
-Review the flagged hook command and, if it is safe, add it to the
-`allowlist` in your skillsaw config. Entries match the command spelling
-shown in the diagnostic. This rule is disabled by default — enable it for
+Review the flagged hook and, if it is safe, add it to the `allowlist` in
+your skillsaw config. Entries match the spelling shown in the diagnostic
+exactly. This rule is disabled by default — enable it for
 supply-chain-sensitive repositories.
 
-For an exec-form hook, the diagnostic spelling joins `command` and `args`
-with spaces; it does not preserve argument boundaries. Allowlisting only the
-executable does not permit arbitrary arguments passed to it.
+For a `command` hook that spelling is the command itself. For an exec-form
+hook it joins `command` and `args` with spaces; it does not preserve
+argument boundaries, so allowlisting only the executable does not permit
+arbitrary arguments passed to it.
+
+A hook that runs no command is named by an identity built from the fields
+that say what it invokes:
+
+| Handler `type` | Allowlist entry |
+| --- | --- |
+| `mcp_tool` | `mcp_tool:<server>/<tool>` |
+| `http` | `http:<url>` |
+| `prompt` | `prompt:<prompt>` |
+| `agent` | `agent:<prompt>` |
+
+A handler missing those fields falls back to its bare type — `http` on its
+own, say. That entry permits every payload-less `http` handler in the
+repository, so fix the handler rather than allowlisting it; its host's shape
+rule (`claude-hooks-valid`, `codex-hooks-valid`) reports the missing field.
+
+```yaml
+# .skillsaw.yml
+rules:
+  hooks-prohibited:
+    allowlist:
+      - "scripts/format.sh"
+      - "mcp_tool:linter/format"
+      - "http:https://ci.example.com/hooks/post-tool-use"
+```

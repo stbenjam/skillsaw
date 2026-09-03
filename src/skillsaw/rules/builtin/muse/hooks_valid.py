@@ -8,8 +8,9 @@ one handler. Every message here names that scope, and
 :mod:`skillsaw.formats.muse` is where the scopes are recorded.
 """
 
+import math
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from skillsaw.context import HAS_MUSE, RepositoryContext
 from skillsaw.diagnostics import safe_display
@@ -51,6 +52,40 @@ _RUST_UNICODE_CLASS = re.compile(r"\\[pP](?:\{[^}]*\}|[A-Za-z])")
 #: Rust's character-class set operators: ``[a-z&&[^aeiou]]``,
 #: ``[\w--\d]``, ``[a-g~~b-h]``. Python has no equivalent syntax.
 _RUST_CLASS_SET_OPERATORS = ("&&", "--", "~~")
+
+
+def _json_token(value: float) -> str:
+    """The JSON-source spelling of a non-finite float.
+
+    ``repr`` renders these as ``nan`` and ``inf``, which appear nowhere in
+    the file the author has to edit.
+    """
+    if math.isnan(value):
+        return "NaN"
+    return "Infinity" if value > 0 else "-Infinity"
+
+
+def _first_non_finite(data: Any) -> Optional[Tuple[str, float]]:
+    """The first ``NaN``/``Infinity`` in *data*, as ``(path, value)``.
+
+    Document order, iteratively: a hooks file nested deeply enough to parse
+    but deep enough to exhaust the recursion limit on a second walk would
+    cost every other finding in the run.
+    """
+    stack: List[Tuple[str, Any]] = [("", data)]
+    while stack:
+        path, value = stack.pop()
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                return path, value
+        elif isinstance(value, dict):
+            for key, item in reversed(list(value.items())):
+                name = str(key)
+                stack.append((f"{path}.{name}" if path else name, item))
+        elif isinstance(value, list):
+            for index in range(len(value) - 1, -1, -1):
+                stack.append((f"{path}[{index}]", value[index]))
+    return None
 
 
 def _uses_rust_only_regex_syntax(pattern: str) -> bool:
@@ -157,6 +192,25 @@ class MuseHooksValidRule(Rule):
                 violations.append(
                     self.violation(
                         "hooks.json must be a JSON object — Muse loads no hooks from this file",
+                        file_path=block.path,
+                    )
+                )
+                continue
+
+            # Before the shape walk, and instead of it. ``MuseHooksBlock``
+            # parses leniently so a duplicate key cannot hide executable
+            # surface from the security rules, and Python's ``json`` throws
+            # in the bare tokens ``NaN``, ``Infinity`` and ``-Infinity``
+            # along the way. Muse reads the file with ``serde_json``, which
+            # accepts none of them and refuses the document — so the defect
+            # is the file, not the field, and one finding says so.
+            found = _first_non_finite(data)
+            if found is not None:
+                path, value = found
+                violations.append(
+                    self.violation(
+                        f"'{_json_token(value)}' at {safe_display(path)} is not valid JSON "
+                        f"— NaN and Infinity are not JSON tokens, and {_WHOLE_FILE}",
                         file_path=block.path,
                     )
                 )
