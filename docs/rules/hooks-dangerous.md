@@ -35,6 +35,19 @@ This rule flags hook commands that:
 - obfuscate their payload (`eval`, `base64 -d`)
 - make network requests
 
+A handler's Windows variant (`commandWindows` in Codex and Muse Code,
+`command_windows` in Muse Code) runs a real command too, and it is written
+in PowerShell rather than POSIX shell — so the same primitives are
+recognised in that vocabulary: a fetch (`iwr`, `irm`, `Invoke-WebRequest`,
+`Invoke-RestMethod`, `(New-Object Net.WebClient).DownloadString`) combined
+with an execution (`iex`, `Invoke-Expression`, a pipe into `powershell`,
+the `& (...)` call operator); an encoded payload
+(`powershell -EncodedCommand <base64>`, and the `-enc` / `-e`
+abbreviations); and the living-off-the-land downloaders
+`certutil -urlcache`, `bitsadmin /transfer`, `mshta http(s)://...` and
+`regsvr32 /i:http(s)://...`. A fetch on its own is not flagged —
+`Invoke-WebRequest -Uri ... -OutFile tool.zip` is an ordinary install step.
+
 ## Examples
 
 **Bad:**

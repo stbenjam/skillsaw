@@ -162,6 +162,145 @@ _NETWORK_FETCH_RE = re.compile(
     rf"{_CMD_WRAPPERS}{_ENV_PREFIX}(?:\S+/)?(?:curl|wget|nc|ncat)\b"
 )
 
+# ── Windows command variants ────────────────────────────────────
+#
+# A handler's `commandWindows` / `command_windows` is what Codex and Muse
+# Code run on Windows, and it reaches this scan like any other command —
+# but the grammar above is POSIX shell, so a PowerShell one-liner sails
+# through it. These patterns cover the Windows spellings of the same two
+# primitives the POSIX ones cover: a download fed into execution, and an
+# obfuscated payload.
+#
+# PowerShell is case-insensitive, so they run against the already-computed
+# lowercased command rather than paying for `re.IGNORECASE`. Each one is a
+# token match against the whole string — never a bounded run nested inside
+# another — so a pathological command costs one linear pass per pattern.
+
+# A PowerShell word boundary. Cmdlet names and aliases are word characters
+# and hyphens, and `.` joins a member access, so `piexif` never yields the
+# alias `iex` and `-noiex` is not a call either.
+_PS_WORD_START = r"(?:^|[^\w.-])"
+_PS_WORD_END = r"(?:$|[^\w.-])"
+
+# Fetching a remote resource: the web cmdlets and their aliases, or a
+# WebClient download member (`(New-Object Net.WebClient).DownloadString(…)`).
+# A fetch alone is not dangerous — `Invoke-WebRequest -OutFile tool.zip` is
+# an ordinary install step — so this only ever pairs with an execution.
+_PS_DOWNLOAD_RE = re.compile(
+    rf"{_PS_WORD_START}(?:iwr|irm|invoke-webrequest|invoke-restmethod){_PS_WORD_END}"
+    r"|\.download(?:string|file|data)\s*\("
+)
+# Running what was just fetched: `iex`/`Invoke-Expression`, a pipe into
+# another PowerShell, or the call operator on an expression (`& (…)`).
+_PS_EXECUTE_RE = re.compile(
+    rf"{_PS_WORD_START}(?:iex|invoke-expression){_PS_WORD_END}"
+    rf"|\|\s*&?\s*(?:powershell|pwsh)(?:\.exe)?{_PS_WORD_END}"
+    r"|&\s*\("
+)
+
+# `powershell -EncodedCommand <base64>` (and the `-enc` / `-e`
+# abbreviations PowerShell accepts) keeps the payload out of the file
+# entirely — the Windows spelling of the `base64 -d` pattern above.
+_PS_EXE_RE = re.compile(rf"{_PS_WORD_START}(?:powershell|pwsh)(?:\.exe)?{_PS_WORD_END}")
+# The bare ``-e`` is also an ordinary script parameter (``deploy.ps1 -e
+# production``), so that spelling needs a blob long enough to be an
+# encoded script — UTF-16 base64 of even a short command runs past forty.
+_PS_ENCODED_FLAG_RE = re.compile(
+    r"[-/](?:encodedcommand|enc|ec)\s+[a-z0-9+/=]{16,}" r"|[-/]e\s+[a-z0-9+/=]{40,}"
+)
+
+# Living-off-the-land binaries: signed Windows executables that fetch a
+# remote payload (and, for mshta and regsvr32, run it). Each needs its own
+# download flag *and* a URL, so `certutil -hashfile` or a local
+# `regsvr32 x.dll` is untouched.
+_URL_RE = re.compile(r"https?://")
+_CERTUTIL_RE = re.compile(rf"{_PS_WORD_START}certutil(?:\.exe)?{_PS_WORD_END}")
+_CERTUTIL_URLCACHE_RE = re.compile(rf"[-/]urlcache{_PS_WORD_END}")
+_BITSADMIN_RE = re.compile(rf"{_PS_WORD_START}bitsadmin(?:\.exe)?{_PS_WORD_END}")
+_BITSADMIN_TRANSFER_RE = re.compile(rf"[-/]transfer{_PS_WORD_END}")
+# `mshta` takes the remote page as its first argument, either directly or
+# behind a script scheme (`mshta javascript:GetObject("script:https://…")`).
+# The scheme branch bounds its run, so both stay linear.
+_MSHTA_URL_RE = re.compile(
+    rf"{_PS_WORD_START}mshta(?:\.exe)?\s+[\"']?https?://"
+    rf"|{_PS_WORD_START}mshta(?:\.exe)?\s+[\"']?(?:javascript|vbscript):"
+    r"[^\n]{0,120}?https?://"
+)
+_REGSVR32_RE = re.compile(rf"{_PS_WORD_START}regsvr32(?:\.exe)?{_PS_WORD_END}")
+_REGSVR32_REMOTE_RE = re.compile(r"[-/]i:\s*[\"']?https?://")
+_LOLBIN_DESCRIPTION = (
+    "uses a Windows living-off-the-land downloader (certutil/bitsadmin/mshta/regsvr32)"
+)
+
+#: Cheap substring gate for the POSIX patterns above.
+_POSIX_TOKENS = (
+    "curl",
+    "wget",
+    "ncat",
+    "nc ",
+    "eval",
+    "base64",
+    "bun",
+)
+#: Cheap substring gate for the Windows patterns. Every Windows finding
+#: needs one of these, so a clean command still runs no Windows regex.
+_WINDOWS_TOKENS = (
+    "iwr",
+    "irm",
+    "invoke-web",
+    "invoke-rest",
+    "invoke-expression",
+    "iex",
+    ".download",
+    "powershell",
+    "pwsh",
+    "certutil",
+    "bitsadmin",
+    "mshta",
+    "regsvr32",
+)
+
+
+def _windows_downloads_and_executes(lower_command: str) -> bool:
+    """A PowerShell fetch and an execution primitive in one command."""
+    return bool(_PS_DOWNLOAD_RE.search(lower_command)) and bool(
+        _PS_EXECUTE_RE.search(lower_command)
+    )
+
+
+def _windows_encoded_command(lower_command: str) -> bool:
+    """`powershell -enc <base64>`: the payload never appears in the file."""
+    return bool(_PS_EXE_RE.search(lower_command)) and bool(
+        _PS_ENCODED_FLAG_RE.search(lower_command)
+    )
+
+
+def _windows_lolbin_download(lower_command: str) -> bool:
+    """A signed Windows binary fetching a remote payload."""
+    if not _URL_RE.search(lower_command):
+        return False
+    if (
+        "certutil" in lower_command
+        and _CERTUTIL_RE.search(lower_command)
+        and _CERTUTIL_URLCACHE_RE.search(lower_command)
+    ):
+        return True
+    if (
+        "bitsadmin" in lower_command
+        and _BITSADMIN_RE.search(lower_command)
+        and _BITSADMIN_TRANSFER_RE.search(lower_command)
+    ):
+        return True
+    if "mshta" in lower_command and _MSHTA_URL_RE.search(lower_command):
+        return True
+    if (
+        "regsvr32" in lower_command
+        and _REGSVR32_RE.search(lower_command)
+        and _REGSVR32_REMOTE_RE.search(lower_command)
+    ):
+        return True
+    return False
+
 
 def _mask_quoted_separators(line: str) -> str:
     """Blank `&`, `|`, `;` inside single/double quotes before tokenizing.
@@ -438,37 +577,42 @@ def _downloads_and_executes(command: str) -> bool:
 def dangerous_command_descriptions(command: str) -> List[str]:
     """Return messages for dangerous patterns in a command."""
     lower_command = command.lower()
-    relevant = (
-        "curl",
-        "wget",
-        "ncat",
-        "nc ",
-        "eval",
-        "base64",
-        "bun",
-    )
-    if not any(token in lower_command for token in relevant):
+    posix_seen = any(token in lower_command for token in _POSIX_TOKENS)
+    windows_seen = any(token in lower_command for token in _WINDOWS_TOKENS)
+    if not posix_seen and not windows_seen:
         return []
 
     # Quote-aware view: separators inside quotes are argument data, so the
     # anchored patterns must not treat them as command boundaries. Masking
     # is idempotent, and _downloads_and_executes masks again per line.
+    # The Windows patterns read the unmasked lowercased command instead:
+    # they pair two independent primitives rather than reading a POSIX
+    # command boundary, and PowerShell quoting is not the shell's.
     raw_command = command
     command = _mask_quoted_separators(raw_command)
     findings: List[str] = []
 
-    if ("curl" in lower_command or "wget" in lower_command) and _downloads_and_executes(
-        raw_command
-    ):
+    downloads_and_executes = ("curl" in lower_command or "wget" in lower_command) and (
+        _downloads_and_executes(raw_command)
+    )
+    if not downloads_and_executes and windows_seen:
+        downloads_and_executes = _windows_downloads_and_executes(lower_command)
+    if downloads_and_executes:
         findings.append("downloads and executes remote code")
 
-    if _OBFUSCATION_RE.search(command):
+    if posix_seen and _OBFUSCATION_RE.search(command):
         findings.append("uses obfuscation techniques (eval/base64)")
 
-    if not findings and _BUN_RE.search(command):
+    if windows_seen and _windows_encoded_command(lower_command):
+        findings.append("uses obfuscation techniques (PowerShell encoded command)")
+
+    if windows_seen and _windows_lolbin_download(lower_command):
+        findings.append(_LOLBIN_DESCRIPTION)
+
+    if not findings and posix_seen and _BUN_RE.search(command):
         findings.append("uses bun runtime (uncommon in hooks, verify intent)")
 
-    if not findings and _NETWORK_FETCH_RE.search(command):
+    if not findings and posix_seen and _NETWORK_FETCH_RE.search(command):
         findings.append("performs network requests (verify intent)")
 
     return findings
