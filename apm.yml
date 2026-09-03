@@ -15,3 +15,4 @@ dependencies:
     - ./skills/skillsaw-fix
     - ./skills/skillsaw-lint
     - ./skills/skillsaw-onboard
+    - ./skills/skillsaw-update

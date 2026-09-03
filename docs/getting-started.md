@@ -74,6 +74,13 @@ fingerprinting works and configuration options.
     Or consult your agent's documentation for how to install a new
     [agentskills.io](https://agentskills.io) skill.
 
+## Keep skillsaw updated
+
+When a new skillsaw release is out, the **`/skillsaw-update`** skill walks
+your agent through the upgrade: it installs the newest version, reports which
+rules are new and what they find in your repository, and bumps pinned
+versions in GitHub Actions workflows, Makefile targets, and pre-commit hooks.
+
 ## Installation
 
 === "uvx (no install required)"
