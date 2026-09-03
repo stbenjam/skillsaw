@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gates": {
+      "type": "http",
+      "url": "https://gates.harbour.example/mcp"
+    }
+  }
+}

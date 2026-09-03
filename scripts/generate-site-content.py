@@ -81,8 +81,8 @@ RULE_GROUPS = [
         "These rules validate skills against the [agentskills.io specification]"
         "(https://agentskills.io/specification). They auto-enable wherever skills "
         "are detected — agentskills repos, single plugins, marketplaces, "
-        "`.claude/` directories, Codex plugins and marketplaces, and Agent "
-        "Plugin packages.",
+        "`.claude/` directories, Codex plugins and marketplaces, Grok Build "
+        "plugins and marketplaces, and Agent Plugin packages.",
     ),
     (
         "APM (Agent Package Manager)",
@@ -210,7 +210,14 @@ RULE_GROUPS = [
     (
         "Grok Build",
         "grok",
-        ["grok-agent-valid", "grok-hooks-valid"],
+        [
+            "grok-agent-valid",
+            "grok-hooks-valid",
+            "grok-marketplace-index-parity",
+            "grok-marketplace-json-valid",
+            "grok-plugin-json-valid",
+            "grok-plugin-structure",
+        ],
         "Validates `.grok/hooks/*.json`, the project hooks Grok Build loads and "
         "silently refuses when they are malformed. What a defect costs depends "
         "on where it is: a wrong-typed field or a handler with no `type` "
@@ -221,13 +228,22 @@ RULE_GROUPS = [
         "spellings of every event, including Cursor's, so a shared hooks file "
         "is not reported for the spelling it uses. `grok-agent-valid` covers the "
         "other surface Grok refuses in silence: a `.grok/agents/*.md` subagent "
-        "missing the `name` or `description` its loader registers it by. Grok "
-        "reads AGENTS.md for "
+        "missing the `name` or `description` its loader registers it by."
+        "\n\nPackaging fails the same way: `grok-plugin-json-valid` reports a "
+        "manifest Grok skips the whole plugin directory over while "
+        "`grok plugin install` still prints success, `grok-plugin-structure` "
+        "reports a directory the installer refuses, "
+        "`grok-marketplace-json-valid` reports a catalog Grok discards for "
+        "a scan of `plugins/` and entries it drops one at a time, and "
+        "`grok-marketplace-index-parity` reports a `plugin-index.json` that "
+        "has drifted from the catalog beside it, which blanks what the "
+        "marketplace browser shows.\n\nGrok reads AGENTS.md for "
         "portable instructions and portable Agent Skills from `.grok/skills/`, "
         "and its rules, commands and agent prose get the content and security "
         "rules every format shares, so no Grok-specific instruction format "
-        "is validated. Enabled automatically when a `.grok/` project layer "
-        "exists.",
+        "is validated.\n\nThe hooks and subagent rules are enabled automatically "
+        "when a `.grok/` project layer exists; the packaging rules when a "
+        "`.grok-plugin/` manifest or catalog does.",
     ),
     (
         "Hooks",
@@ -240,7 +256,8 @@ RULE_GROUPS = [
         "Validates hook configuration. The security rules scan every hook a repository "
         "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
         "Codex's `.codex/hooks.json` and plugin hooks, Muse Code's `.muse/hooks.json`, "
-        "Grok Build's `.grok/hooks/*.json`, Cursor's `.cursor/hooks.json`, and skill, "
+        "Grok Build's `.grok/hooks/*.json` and its plugin hooks, Cursor's "
+        "`.cursor/hooks.json`, and skill, "
         "Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain "
         "attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",

@@ -1,0 +1,8 @@
+{
+  "name": "chart-notes",
+  "version": "0.6.0",
+  "description": "Annotations for harbour approach charts, kept with the survey notes.",
+  "skills": [
+    "./extra-skills"
+  ]
+}

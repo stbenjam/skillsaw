@@ -208,6 +208,34 @@ def test_root_agent_plugin_keeps_empty_plugins_marketplace_inference(temp_dir):
     assert RepositoryType.MARKETPLACE in context.repo_types
 
 
+def test_a_package_grok_catalog_keeps_empty_plugins_marketplace_inference(temp_dir):
+    """A package's own catalog explains that package's directory, not the
+    repository's — the stand-down is asked of the root, as Codex's is."""
+    package = temp_dir / "packages" / "foo" / ".grok-plugin"
+    package.mkdir(parents=True)
+    (package / "marketplace.json").write_text(json.dumps({"plugins": []}), encoding="utf-8")
+    (temp_dir / "plugins").mkdir()
+
+    context = RepositoryContext(temp_dir)
+
+    assert context.grok_catalog_exists()
+    assert not context.grok_root_catalog_exists()
+    assert RepositoryType.MARKETPLACE in context.repo_types
+
+
+def test_a_root_grok_catalog_suppresses_marketplace_inference(temp_dir):
+    """The other half: a catalog at the root does explain the root's own
+    empty ``plugins/``."""
+    marker = temp_dir / ".grok-plugin"
+    marker.mkdir()
+    (marker / "marketplace.json").write_text(json.dumps({"plugins": []}), encoding="utf-8")
+    (temp_dir / "plugins").mkdir()
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.MARKETPLACE not in context.repo_types
+
+
 def test_declaring_plugins_child_suppresses_marketplace_inference(temp_dir):
     """A portable package under plugins/* explains the directory, so the
     Claude MARKETPLACE inference stands down."""

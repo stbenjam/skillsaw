@@ -1,0 +1,134 @@
+{
+  "name": "harbour-plugins-staging",
+  "description": "Staging catalog for the harbour field team",
+  "owner": {
+    "name": "Harbour Tools"
+  },
+  "plugins": [
+    {
+      "name": "unpinned",
+      "description": "Bathymetry overlays, installed from a moving branch.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/bathymetry.git"
+      }
+    },
+    {
+      "name": "abbreviated",
+      "description": "Buoy telemetry lookups, pinned to an abbreviated commit.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/buoys.git",
+        "sha": "4b7c1e9"
+      }
+    },
+    {
+      "name": "escaping",
+      "description": "Sediment sampling checklists from outside the repository.",
+      "category": "productivity",
+      "source": {
+        "type": "local",
+        "path": "../outside/sediment"
+      }
+    },
+    {
+      "name": "escaping",
+      "description": "Sediment sampling checklists, cloned instead of vendored.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/sediment.git",
+        "sha": "4b7c1e9a02d5f38c6b149e07aa2135c8de640f7b"
+      }
+    },
+    {
+      "name": "drifted",
+      "description": "Chart annotations whose pin disagrees with the index.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/annotations.git",
+        "sha": "4b7c1e9a02d5f38c6b149e07aa2135c8de640f7b"
+      }
+    },
+    {
+      "name": "drifted",
+      "description": "The same name a second time, shadowing the entry above.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/annotations-mirror.git",
+        "sha": "4b7c1e9a02d5f38c6b149e07aa2135c8de640f7b"
+      }
+    },
+    {
+      "name": "moved",
+      "description": "Lock-gate timings from a directory that was renamed.",
+      "category": "productivity",
+      "source": {
+        "type": "local",
+        "path": "./plugins/gate-timings"
+      }
+    },
+    {
+      "name": "counted",
+      "description": "Vessel counts, pinned with a commit id read as a number.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/vessel-counts.git",
+        "sha": 12345
+      }
+    },
+    {
+      "name": "shouty",
+      "description": "Dredging schedules, pinned in upper case.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/dredging.git",
+        "sha": "9C1F04AB77D2E35860B4F19C2AD7E8350FB61C02"
+      }
+    },
+    {
+      "name": "subdir",
+      "description": "Wave heights from a subdirectory of a shared repository.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/monorepo.git",
+        "sha": "70e4d2c81f6a35b09c7e18d4a6f30b25ce817d94",
+        "path": "../plugins/waves"
+      }
+    },
+    {
+      "description": "Wind fetch tables, listed before the entry was named.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harbour-example/wind-fetch.git",
+        "sha": "70e4d2c81f6a35b09c7e18d4a6f30b25ce817d94"
+      }
+    },
+    {
+      "name": "berth-notes",
+      "description": "Berth handover notes, kept as slash commands.",
+      "category": "productivity",
+      "source": {
+        "type": "local",
+        "path": "./plugins/berth-notes"
+      }
+    },
+    {
+      "name": "current-log",
+      "description": "Tidal current readings for the approach channel.",
+      "category": "productivity",
+      "source": {
+        "type": "local",
+        "path": "./plugins/current-log"
+      }
+    }
+  ]
+}

@@ -25,16 +25,6 @@ if TYPE_CHECKING:
 
 MCP_REGISTRY_REPO_TYPES = {RepositoryType.MCP_REGISTRY}
 
-# Semantic Versioning 2.0.0. The released Registry schema deliberately permits
-# non-semantic versions, so this is used by a warning rule rather than schema
-# validity.
-SEMVER = re.compile(
-    r"\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-    r"(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
-    r"(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\Z"
-)
-
 _VERSION_ATOM = r"v?[0-9]+(?:\.[0-9]+){0,3}(?:-[0-9A-Za-z.-]+)?"
 _COMPARATOR = rf"(?:\^|~|>=|<=|>|<|=)\s*{_VERSION_ATOM}"
 _COMPARATOR_SET = rf"{_COMPARATOR}(?:\s+{_COMPARATOR})*"

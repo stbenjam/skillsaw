@@ -47,6 +47,8 @@ class RepositoryType(Enum):
     # agents, hooks, MCP. Grok plugins and marketplaces are separate
     # packaging concerns and are not this type.
     GROK_PROJECT = "grok-project"
+    GROK_PLUGIN = "grok-plugin"  # Grok Build plugin (.grok-plugin/plugin.json)
+    GROK_MARKETPLACE = "grok-marketplace"  # .grok-plugin/marketplace.json
     KIRO = "kiro"  # Repository with `.kiro/` steering files
     GEMINI = "gemini"  # Repository with a GEMINI.md
     QWEN = "qwen"  # Repository with a QWEN.md
@@ -62,7 +64,9 @@ class RepositoryType(Enum):
 # ``skills/<name>/SKILL.md`` in the same format, and a catalog repository's
 # plugin skills are discovered whether or not CODEX_PLUGIN was also inferred.
 # CODEX_PROJECT does not: ``.codex/`` is the project configuration layer, and
-# the skills Codex loads live in a plugin.
+# the skills Codex loads live in a plugin. The Grok plugin types are here for
+# the same reason as the Codex ones; GROK_PROJECT is not, because ``.grok/``
+# earns its skills through ``CONVENTIONAL_SKILL_DIRS`` instead.
 SKILL_REPO_TYPES = {
     RepositoryType.AGENTSKILLS,
     RepositoryType.SINGLE_PLUGIN,
@@ -71,6 +75,8 @@ SKILL_REPO_TYPES = {
     RepositoryType.CODEX_PLUGIN,
     RepositoryType.CODEX_MARKETPLACE,
     RepositoryType.AGENT_PLUGIN,
+    RepositoryType.GROK_PLUGIN,
+    RepositoryType.GROK_MARKETPLACE,
 }
 
 

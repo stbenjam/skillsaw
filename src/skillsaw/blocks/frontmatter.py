@@ -733,11 +733,16 @@ class CommandBlock(FrontmatteredBlock):
     category: str = "command"
 
     def provenance_dir(self) -> Optional[Path]:
-        # Attached from ``<claimed dir>/commands/*.md`` (one level — see
-        # ``_add_plugin_prose``), so ``parent.parent`` is the claimed
-        # directory wherever the block hangs in the tree (PluginNode,
-        # CodexPluginNode, or the tree root for a root-level Codex plugin).
-        return self.path.parent.parent
+        # The owner the attach recorded, which is the claimed directory
+        # itself. The fallback is the ``<claimed dir>/commands/*.md`` layout
+        # (one level — see ``_add_plugin_prose``), and it is a guess: a Grok
+        # manifest may point ``commands`` at any contained path, and
+        # ``parent.parent`` on ``tools/commands/x.md`` names an intermediate
+        # directory no ecosystem claims — which puts every Claude-scoped
+        # rule back on content this repository declared for another host.
+        # Repository-level ``.claude/commands/*.md`` carries no owner and
+        # keeps the layout answer.
+        return self.plugin_owner or self.path.parent.parent
 
     def section(self, heading: str, level: int = 2) -> str:
         content = read_text(self.path)
@@ -753,9 +758,10 @@ class AgentBlock(FrontmatteredBlock):
     category: str = "agent"
 
     def provenance_dir(self) -> Optional[Path]:
-        # Same one-level layout as CommandBlock. APM agent files land on
+        # Same rule as CommandBlock: the recorded owner first, the one-level
+        # layout as the fallback. APM agent files carry no owner and land on
         # ``.apm/``, which no ecosystem claims, keeping them in every scope.
-        return self.path.parent.parent
+        return self.plugin_owner or self.path.parent.parent
 
 
 @dataclass(eq=False)

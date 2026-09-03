@@ -29,6 +29,17 @@ from skillsaw.utils import (  # noqa: F401  — underscore names ``*`` does not 
 )
 from skillsaw.utils import read_text
 
+#: Semantic Versioning 2.0.0, shared by every rule that reads a version
+#: string: the MCP Registry's (whose schema deliberately permits
+#: non-semantic versions, so a warning rule reads this rather than schema
+#: validity) and Grok's plugin manifest.
+SEMVER = re.compile(
+    r"\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\Z"
+)
+
 
 def reject_nonfinite_json_number(value: str) -> None:
     """Reject JavaScript number extensions that strict JSON does not allow.

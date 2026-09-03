@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **91** built-in rules organized into the following categories:
+skillsaw includes **95** built-in rules organized into the following categories:
 
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
@@ -15,7 +15,7 @@ skillsaw includes **91** built-in rules organized into the following categories:
 - [Copilot / VS Code](copilot.md) (1 rule)
 - [Cursor](cursor.md) (2 rules)
 - [Devin](devin.md) (2 rules)
-- [Grok Build](grok.md) (2 rules)
+- [Grok Build](grok.md) (6 rules)
 - [Hooks](hooks.md) (3 rules)
 - [Instruction Files](instruction-files.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (5 rules)
@@ -91,6 +91,10 @@ skillsaw includes **91** built-in rules organized into the following categories:
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
 | [`grok-agent-valid`](grok-agent-valid.md) | .grok/agents/*.md must declare a name and a description in frontmatter | error (auto) | - | Grok Build |
 | [`grok-hooks-valid`](grok-hooks-valid.md) | .grok/hooks/*.json must use Grok's hook events, handler types and fields | error (auto) | - | Grok Build |
+| [`grok-marketplace-index-parity`](grok-marketplace-index-parity.md) | .grok-plugin/plugin-index.json must agree with the catalog beside it | warning (auto) | - | Grok Build |
+| [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md) | .grok-plugin/marketplace.json must be valid JSON with installable entries | error (auto) | - | Grok Build |
+| [`grok-plugin-json-valid`](grok-plugin-json-valid.md) | .grok-plugin/plugin.json must be valid JSON with a name Grok's loader accepts | error (auto) | - | Grok Build |
+| [`grok-plugin-structure`](grok-plugin-structure.md) | A Grok plugin directory needs a manifest or a component Grok installs | warning (auto) | - | Grok Build |
 | [`claude-hooks-valid`](claude-hooks-valid.md) | Claude Code hooks.json must be valid JSON with proper hook configuration structure | error | - | Hooks |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that chain a download into execution (curl\|sh), obfuscate their payload (eval/base64), or perform network requests | error (auto) | - | Hooks |
 | [`hooks-prohibited`](hooks-prohibited.md) | All hooks are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Hooks |

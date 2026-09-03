@@ -8,9 +8,10 @@ from skillsaw.blocks import McpRegistryServerBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Rule, RuleViolation, Severity
 
+from skillsaw.rules.builtin.utils import SEMVER
+
 from ._helpers import (
     MCP_REGISTRY_REPO_TYPES,
-    SEMVER,
     declares_unsupported_schema,
     is_release_source_placeholder,
     is_version_range,

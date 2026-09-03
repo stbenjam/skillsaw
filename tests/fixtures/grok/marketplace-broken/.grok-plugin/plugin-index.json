@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "plugins": {
+    "unpinned": {
+      "sha": "4b7c1e9a02d5f38c6b149e07aa2135c8de640f7b",
+      "version": "0.5.0",
+      "components": {}
+    },
+    "drifted": {
+      "sha": "aa11bb22cc33dd44ee5566ff77889900abcdef12",
+      "version": "0.2.0",
+      "components": {}
+    },
+    "shouty": {
+      "version": "0.7.0",
+      "components": {}
+    },
+    "retired": {
+      "sha": "4b7c1e9a02d5f38c6b149e07aa2135c8de640f7b",
+      "version": "0.1.0",
+      "components": {}
+    },
+    "current-log": {
+      "version": "0.3.0",
+      "components": {
+        "skills": [
+          {
+            "name": "current-log",
+            "description": "Read tidal current logs for the approach channel."
+          },
+          {
+            "name": "ebb-window",
+            "description": "Find the ebb windows a tow can be moved in."
+          }
+        ]
+      }
+    }
+  }
+}

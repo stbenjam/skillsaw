@@ -1,0 +1,17 @@
+{
+  "name": "tide-charts",
+  "version": "1.1.0",
+  "description": "Read NOAA tide predictions and turn them into a slack-window plan for field work on the shoreline.",
+  "author": {
+    "name": "Harbour Tools",
+    "url": "https://harbour.example"
+  },
+  "homepage": "https://harbour.example/tide-charts",
+  "repository": "https://github.com/harbour-example/tide-charts",
+  "license": "Apache-2.0",
+  "keywords": [
+    "tides",
+    "noaa",
+    "fieldwork"
+  ]
+}

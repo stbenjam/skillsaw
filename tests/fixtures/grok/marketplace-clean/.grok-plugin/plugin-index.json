@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "plugins": {
+    "tide-charts": {
+      "version": "1.1.0",
+      "components": {
+        "skills": [
+          {
+            "name": "tide-window",
+            "description": "Find the low-tide windows long enough for a survey."
+          }
+        ]
+      }
+    },
+    "almanac": {
+      "sha": "1f9d0c73a86b24e5107cad3f88b90250e6c147da",
+      "version": "0.4.0",
+      "components": {
+        "skills": [
+          {
+            "name": "daylight",
+            "description": "Sunrise, sunset and civil twilight for a date."
+          }
+        ]
+      }
+    }
+  }
+}

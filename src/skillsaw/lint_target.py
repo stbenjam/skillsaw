@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, ClassVar, Hashable, Iterator, List, Optional, Type, TypeVar
+from typing import Callable, ClassVar, Hashable, Iterator, List, Optional, Tuple, Type, TypeVar
 from skillsaw.diagnostics import safe_display
 from skillsaw.paths import safe_resolve
 
@@ -375,6 +375,20 @@ class CodexPluginNode(LintTarget):
 
 
 @dataclass(eq=False)
+class GrokPluginNode(LintTarget):
+    """A Grok-only plugin directory.
+
+    Deliberately not a ``PluginNode`` subclass, for the reason
+    :class:`CodexPluginNode` documents: Claude plugin rules select
+    ``PluginNode`` targets, and a Grok-only directory needs a hierarchy
+    container without acquiring Claude semantics.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name}/ [grok plugin]"
+
+
+@dataclass(eq=False)
 class AgentPluginNode(LintTarget):
     """A portable Agent Plugins package nested below the lint root."""
 
@@ -434,6 +448,76 @@ class CodexPluginConfigNode(LintTarget):
 
     def tree_label(self) -> str:
         return "plugin.json [codex]"
+
+
+@dataclass(eq=False)
+class GrokMarketplaceConfigNode(LintTarget):
+    """A ``.grok-plugin/marketplace.json`` catalog (Grok Build).
+
+    Grok also accepts ``.claude-plugin/marketplace.json``, and that path
+    stays owned by ``MarketplaceConfigNode``: the schemas differ (Grok's
+    entries carry ``category`` and two ``source`` discriminators Claude has
+    no reading for), so linting one file against both would contradict
+    itself. The optional ``plugin-index.json`` beside it attaches as a
+    :class:`GrokMarketplaceIndexNode` child, which is what lets a parity
+    check pair the two without re-probing the filesystem.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} [grok]"
+
+
+@dataclass(eq=False)
+class GrokMarketplaceIndexNode(LintTarget):
+    """A ``plugin-index.json`` display catalog (Grok Build).
+
+    Optional and, per the user guide, "for display only" — but a
+    ``require_sha`` deployment installs from the ``sha`` values it
+    publishes, so drift from the catalog beside it is a supply-chain
+    problem rather than cosmetics.
+
+    :attr:`stray` marks a file at one of the fallback catalog locations,
+    which Grok never reads once ``.grok-plugin/marketplace.json`` has won:
+    the node exists so every file the rules report on is in the tree, and
+    the flag is what tells the parity rule to report the placement rather
+    than compare it.
+    """
+
+    stray: bool = False
+
+    def tree_label(self) -> str:
+        suffix = " (not read)" if self.stray else ""
+        return f"{self.path.name}{suffix} [grok]"
+
+
+@dataclass(eq=False)
+class GrokPluginConfigNode(LintTarget):
+    """A Grok plugin manifest file (Grok Build).
+
+    The node addresses the manifest rather than the plugin directory, so a
+    directory that is both a Claude and a Grok plugin keeps a single
+    ``PluginNode`` subtree. Grok resolves the manifest from ``plugin.json``,
+    ``.grok-plugin/plugin.json`` or ``.claude-plugin/plugin.json`` in that
+    order, so :attr:`plugin_dir` reads the reserved parent rather than
+    assuming a depth; when a plugin ships no manifest at all — which Grok
+    permits — the path is the conventional location and does not exist.
+    """
+
+    #: Directories a manifest may sit in, as opposed to the plugin root.
+    #: Literal rather than derived from ``formats.grok.MANIFEST_PATHS``, and
+    #: deliberately: this module is the tree's own vocabulary and imports
+    #: nothing but ``diagnostics`` and ``paths``, so every node type stays
+    #: constructible without loading an ecosystem's format module.
+    _MANIFEST_PARENTS: ClassVar[Tuple[str, ...]] = (".grok-plugin", ".claude-plugin")
+
+    @property
+    def plugin_dir(self) -> Path:
+        """The plugin directory that owns this manifest."""
+        parent = self.path.parent
+        return parent.parent if parent.name in self._MANIFEST_PARENTS else parent
+
+    def tree_label(self) -> str:
+        return "plugin.json [grok]"
 
 
 @dataclass(eq=False)

@@ -20,8 +20,9 @@ highest-value target in an agent repository for supply-chain attacks:
 the 2025 Shai-Hulud npm compromise used exactly this pattern, hiding
 download-and-execute payloads in lifecycle hooks.
 
-Hooks can be declared in plugin `hooks/hooks.json` (Claude and Codex
-plugins, including Codex's manifest-declared and inline hooks), APM's
+Hooks can be declared in plugin `hooks/hooks.json` (Claude, Codex and
+Grok Build plugins, including Codex's and Grok's manifest-declared and
+inline hooks), APM's
 compiled copy, `.claude/settings*.json`, **skill and agent frontmatter**
 (the `hooks:` YAML key, same schema as settings hooks),
 `<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`,

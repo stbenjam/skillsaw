@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "make gate-log-flush",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

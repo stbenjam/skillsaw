@@ -21,9 +21,10 @@ from skillsaw.formats.mcp_registry import (
 )
 from skillsaw.rule import Rule, RuleViolation, Severity
 
+from skillsaw.rules.builtin.utils import SEMVER
+
 from ._helpers import (
     MCP_REGISTRY_REPO_TYPES,
-    SEMVER,
     analyze_http_url_template,
     is_clean_repository_subfolder,
     is_loopback_hostname,

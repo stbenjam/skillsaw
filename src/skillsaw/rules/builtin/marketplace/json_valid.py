@@ -122,7 +122,15 @@ class MarketplaceJsonValidRule(Rule):
             # codex_catalog_exists() checks existence, not validity: a broken
             # catalog is still the author saying this is a Codex marketplace,
             # and codex-marketplace-json-valid reports what is wrong with it.
-            if context.codex_catalog_exists() and not self._has_claude_plugin(context):
+            # A Grok catalog says the same thing about the same ``plugins/``
+            # directory — a Grok-only marketplace is not a Claude one with a
+            # missing manifest. Both are asked of the repository root only:
+            # a catalog in a monorepo package explains that package's
+            # ``plugins/``, and letting it stand the check down here would
+            # silence the root's missing manifest.
+            if (
+                context.codex_catalog_exists() or context.grok_root_catalog_exists()
+            ) and not self._has_claude_plugin(context):
                 # MARKETPLACE was inferred from a bare plugins/ directory, and
                 # a Codex marketplace already explains that directory — the
                 # Codex docs prescribe storing plugins under

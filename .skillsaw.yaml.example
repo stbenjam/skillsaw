@@ -452,6 +452,31 @@ rules:
     severity: error
     # extra-events: []
 
+  # .grok-plugin/plugin-index.json must agree with the catalog beside it
+  grok-marketplace-index-parity:
+    enabled: auto
+    severity: warning
+    # check-components: true
+
+  # .grok-plugin/marketplace.json must be valid JSON with installable entries
+  grok-marketplace-json-valid:
+    enabled: auto
+    severity: error
+    # require-sha: true
+
+  # .grok-plugin/plugin.json must be valid JSON with a name Grok's loader accepts
+  grok-plugin-json-valid:
+    enabled: auto
+    severity: error
+    # check-paths-exist: true
+    # check-overrides: true
+
+  # A Grok plugin directory needs a manifest or a component Grok installs
+  grok-plugin-structure:
+    enabled: auto
+    severity: warning
+    # check-installable: true
+
   # Flags hook commands that chain a download into execution (curl|sh), obfuscate their payload (eval/base64), or perform network requests
   hooks-dangerous:
     enabled: auto

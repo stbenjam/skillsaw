@@ -43,10 +43,14 @@ class RepositoryScanMixin:
     def agent_tool_dirs(self, name: str) -> List[Path]:
         """Return every non-excluded directory called *name* in the repository.
 
-        Cursor (``.cursor``), Copilot/VS Code (``.github``), Cline
-        (``.clinerules``), Devin (``.devin``/``.windsurf``), and OpenCode
-        (``.opencode``) all read customizations from the nearest enclosing
-        directory, so a monorepo package may carry its own alongside the root.
+        Two kinds of caller, one walk. Editor tools — Cursor (``.cursor``),
+        Copilot/VS Code (``.github``), Cline (``.clinerules``), Devin
+        (``.devin``/``.windsurf``), OpenCode (``.opencode``) — read
+        customizations from the nearest enclosing directory, so a monorepo
+        package may carry its own alongside the root. Ecosystem markers
+        (``.grok-plugin``) are the same shape of question: a plugin or a
+        catalog in a package is found here rather than by a second
+        traversal.
         """
         return [
             path
