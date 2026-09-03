@@ -163,7 +163,14 @@ RULE_GROUPS = [
     ),
     (
         "Grok Build",
-        ["grok-agent-valid", "grok-hooks-valid"],
+        [
+            "grok-agent-valid",
+            "grok-hooks-valid",
+            "grok-marketplace-index-parity",
+            "grok-marketplace-json-valid",
+            "grok-plugin-json-valid",
+            "grok-plugin-structure",
+        ],
         "Validates `.grok/hooks/*.json`, the project hooks Grok Build loads and "
         "silently refuses when they are malformed. What a defect costs depends "
         "on where it is: a wrong-typed field or a handler with no `type` "
@@ -174,13 +181,23 @@ RULE_GROUPS = [
         "spellings of every event, including Cursor's, so a shared hooks file "
         "is not reported for the spelling it uses. `grok-agent-valid` covers the "
         "other surface Grok refuses in silence: a `.grok/agents/*.md` subagent "
-        "missing the `name` or `description` its loader registers it by. Grok "
+        "missing the `name` or `description` its loader registers it by. "
+        "Packaging fails the same way: `grok-plugin-json-valid` reports a "
+        "manifest Grok skips the whole plugin directory over while "
+        "`grok plugin install` still prints success, `grok-plugin-structure` "
+        "reports a directory the installer refuses, "
+        "`grok-marketplace-json-valid` reports a catalog Grok discards for "
+        "a scan of `plugins/` and entries it drops one at a time, and "
+        "`grok-marketplace-index-parity` reports a `plugin-index.json` that "
+        "has drifted from the catalog beside it, which blanks what the "
+        "marketplace browser shows. Grok "
         "reads AGENTS.md for "
         "portable instructions and portable Agent Skills from `.grok/skills/`, "
         "and its rules, commands and agent prose get the content and security "
         "rules every format shares, so no Grok-specific instruction format "
-        "is validated. Enabled automatically when a `.grok/` project layer "
-        "exists.",
+        "is validated. The hooks and subagent rules are enabled automatically "
+        "when a `.grok/` project layer exists; the packaging rules when a "
+        "`.grok-plugin/` manifest or catalog does.",
     ),
     (
         "Hooks",

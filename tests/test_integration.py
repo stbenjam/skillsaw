@@ -4958,6 +4958,8 @@ BROKEN_FIXTURES = [
     "opencode/malformed-shapes",
     "muse/broken",
     "grok/project-broken",
+    "grok/plugin-broken",
+    "grok/marketplace-broken",
     "skills-lock/invalid",
 ]
 
@@ -4989,6 +4991,10 @@ CLEAN_FIXTURES = [
     "opencode/native-v2",
     "muse/clean",
     "grok/project-clean",
+    "grok/plugin-clean",
+    "grok/plugin-declarations",
+    "grok/marketplace-clean",
+    "grok/dual-manifest",
     "agent-memory/notes",
 ]
 
