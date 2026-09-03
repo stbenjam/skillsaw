@@ -59,6 +59,13 @@ class QwenMdBlock(InstructionBlock):
 
 
 @dataclass(eq=False)
+class AntigravityMdBlock(InstructionBlock):
+    """ANTIGRAVITY.md instruction file."""
+
+    category: str = "antigravity-md"
+
+
+@dataclass(eq=False)
 class AgentMemoryIndexBlock(FileContentBlock):
     """``.agents/memory/MEMORY.md`` — the index of committed project memory.
 

@@ -1,0 +1,19 @@
+{
+  "bad-hook": {
+    "InvalidEvent": [
+      {
+        "command": 123
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "[invalid regex",
+        "hooks": [
+          {
+            "type": "unsupported"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -719,6 +719,50 @@ class CursorHooksBlock(HooksBlock):
         return found
 
 
+@dataclass(eq=False)
+class AntigravityHooksBlock(HooksBlock):
+    """Antigravity lifecycle hooks file (``hooks.json``).
+
+    Structure is ``{hook_name: {event_name: [...]}}``, where tool events use
+    grouped ``{matcher, hooks: [...]}`` entries and non-tool events use flat
+    handler lists.
+    """
+
+    category: str = "hooks"
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (antigravity hooks)"
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        data = self.raw_data
+        if not isinstance(data, dict):
+            return {}
+        result: Dict[str, List[HookEventConfig]] = {}
+        for hook_name, hook_spec in data.items():
+            if not isinstance(hook_spec, dict):
+                continue
+            for event_type, entries in hook_spec.items():
+                if event_type == "enabled" or not isinstance(entries, list):
+                    continue
+                configs: List[HookEventConfig] = []
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    if isinstance(entry.get("hooks"), list):
+                        nested = HookEventConfig.from_dict(entry)
+                        if nested:
+                            configs.append(nested)
+                    else:
+                        handler = HookHandler.from_dict(entry)
+                        if handler:
+                            configs.append(HookEventConfig(matcher="", handlers=[handler]))
+                if configs:
+                    result.setdefault(event_type, []).extend(configs)
+        return result
+
+
 @dataclass
 class McpServerConfig:
     """A single MCP server configuration."""
@@ -1179,3 +1223,27 @@ class SettingsBlock(JsonConfigBlock):
         if data is None:
             return {}
         return parse_hooks_events(data.get("hooks", {}))
+
+
+@dataclass(eq=False)
+class AntigravityMcpBlock(McpBlock):
+    """Antigravity ``mcp_config.json`` configuration."""
+
+    allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (antigravity MCP)"
+
+
+@dataclass(eq=False)
+class AntigravityConfigBlock(JsonConfigBlock):
+    """Antigravity ``skills.json`` or ``plugins.json`` registry."""
+
+    category: str = "antigravity config"
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (antigravity config)"

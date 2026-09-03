@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
+from .discovery.antigravity import antigravity_manifest_is_contained
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
 from .formats.grok import grok_manifest_is_contained, grok_marker_escapes
 from .paths import safe_exists, safe_resolve
@@ -91,6 +92,15 @@ class PluginProvenance:
         keeps its established Claude results.
         """
         return self.grok and not self.claude
+
+    @property
+    def antigravity(self) -> bool:
+        return "antigravity" in self.ecosystems
+
+    @property
+    def antigravity_only(self) -> bool:
+        """Antigravity claims the directory and Claude does not."""
+        return self.antigravity and not self.claude
 
 
 class RepositoryProvenanceMixin:
@@ -220,6 +230,11 @@ class RepositoryProvenanceMixin:
             and not grok_marker_escapes(plugin_dir)
         ):
             ecosystems.add("grok")
+        if antigravity_manifest_is_contained(plugin_dir) or (
+            resolved is not None
+            and resolved in getattr(self, "_antigravity_claim_set", lambda: set())()
+        ):
+            ecosystems.add("antigravity")
         record = PluginProvenance(
             ecosystems=frozenset(ecosystems),
             installed=self.is_codex_installed_plugin(plugin_dir),
@@ -237,6 +252,23 @@ class RepositoryProvenanceMixin:
         still read its prose either way.
         """
         return self.provenance(plugin_dir).codex_only
+
+    def is_antigravity_only_plugin(self, plugin_dir: Path) -> bool:
+        """Antigravity-claimed with no Claude declaration."""
+        return self.provenance(plugin_dir).antigravity_only
+
+    def antigravity_plugin_owning(self, path: Path) -> Optional[Path]:
+        """The Antigravity plugin *path* sits in, nearest first, or ``None``."""
+        roots = getattr(self, "antigravity_plugin_roots", lambda: [])()
+        if not roots:
+            return None
+        resolved = safe_resolve(path)
+        if resolved is None:
+            return None
+        for candidate in (resolved, *resolved.parents):
+            if candidate in roots:
+                return candidate
+        return None
 
     def is_grok_only_plugin(self, plugin_dir: Path) -> bool:
         """Grok-claimed with no Claude declaration.

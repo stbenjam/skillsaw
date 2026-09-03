@@ -18,6 +18,10 @@ from .blocks import (
     AgentMemoryIndexBlock,
     AgentPluginMcpBlock,
     AgentsMdBlock,
+    AntigravityConfigBlock,
+    AntigravityHooksBlock,
+    AntigravityMcpBlock,
+    AntigravityMdBlock,
     ChatmodeBlock,
     ClaudeMdBlock,
     ClineWorkflowBlock,
@@ -100,6 +104,8 @@ from .formats.promptfoo import (
 from .lint_target import (
     AgentPluginConfigNode,
     AgentPluginNode,
+    AntigravityPluginConfigNode,
+    AntigravityPluginNode,
     LintTarget,
     ApmConfigNode,
     ApmNode,
@@ -478,6 +484,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     _INSTRUCTION_FILE_BLOCK_TYPES = {
         "AGENTS.md": AgentsMdBlock,
+        "ANTIGRAVITY.md": AntigravityMdBlock,
         "CLAUDE.md": ClaudeMdBlock,
         "GEMINI.md": GeminiMdBlock,
         "QWEN.md": QwenMdBlock,
@@ -915,6 +922,21 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         for hooks_file in _readable_matches(grok_dir / grok.HOOKS_DIR_NAME, grok.HOOKS_GLOB):
             _add_project_hooks(state, root, hooks_file, GrokHooksBlock)
 
+    # Antigravity project configuration and rules from .agents/ and .agent/
+    for agents_dir_name in (".agents", ".agent"):
+        for agents_dir in context.agent_tool_dirs(agents_dir_name):
+            _add_project_hooks(state, root, agents_dir / "hooks.json", AntigravityHooksBlock)
+            state.add_parser_block(root, agents_dir / "mcp_config.json", AntigravityMcpBlock)
+            state.add_parser_block(root, agents_dir / "skills.json", AntigravityConfigBlock)
+            state.add_parser_block(root, agents_dir / "plugins.json", AntigravityConfigBlock)
+            _add_glob(root, agents_dir / "rules", "**/*.md", PluginRuleBlock)
+
+    # Repository-root Antigravity configuration files
+    _add_project_hooks(state, root, context.root_path / "hooks.json", AntigravityHooksBlock)
+    state.add_parser_block(root, context.root_path / "mcp_config.json", AntigravityMcpBlock)
+    state.add_parser_block(root, context.root_path / "skills.json", AntigravityConfigBlock)
+    state.add_parser_block(root, context.root_path / "plugins.json", AntigravityConfigBlock)
+
     # Committed project memory: notes a team checks in for whatever agent
     # reads the checkout. The index is loaded whole and every other Markdown
     # file in the directory on demand — which is why the glob below takes
@@ -1170,6 +1192,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     plugin_nodes: dict[Path, PluginNode] = {}
     codex_plugin_nodes: dict[Path, CodexPluginNode] = {}
     grok_plugin_nodes: dict[Path, GrokPluginNode] = {}
+    antigravity_plugin_nodes: dict[Path, AntigravityPluginNode] = {}
     agent_plugin_nodes: dict[Path, AgentPluginNode] = {}
     marketplace_dir = context.root_path / "plugins"
     marketplace_node: MarketplaceNode | None = None
@@ -1192,9 +1215,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *context.plugins,
         *context.codex_plugins,
         *context.grok_plugins,
+        *context.antigravity_plugins,
         *context.agent_plugins,
         *sorted(p for p in context._codex_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._grok_claim_set() if not context.is_path_excluded(p)),
+        *sorted(p for p in context._antigravity_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._agent_plugin_claim_set() if not context.is_path_excluded(p)),
     ):
         resolved_candidate = safe_resolve(candidate)
@@ -1235,7 +1260,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if prov.claude:
             container = PluginNode(path=plugin_path)
             plugin_nodes[resolved_plugin] = container
-        elif resolved_plugin == root.resolved_path and (prov.codex or prov.grok or is_agent_plugin):
+        elif resolved_plugin == root.resolved_path and (
+            prov.codex or prov.grok or prov.antigravity or is_agent_plugin
+        ):
             container = root
         elif prov.codex:
             container = CodexPluginNode(path=plugin_path)
@@ -1243,6 +1270,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         elif prov.grok:
             container = GrokPluginNode(path=plugin_path)
             grok_plugin_nodes[resolved_plugin] = container
+        elif prov.antigravity:
+            container = AntigravityPluginNode(path=plugin_path)
+            antigravity_plugin_nodes[resolved_plugin] = container
         elif is_agent_plugin:
             container = AgentPluginNode(path=plugin_path)
             agent_plugin_nodes[resolved_plugin] = container
@@ -1506,6 +1536,29 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             )
             container.children.append(node)
 
+        # Antigravity manifest cluster. A directory claimed by Antigravity
+        # attaches its plugin.json manifest, hooks.json, and mcp_config.json.
+        if prov.antigravity:
+            node = AntigravityPluginConfigNode(path=plugin_path / "plugin.json")
+            node.plugin_owner = resolved_plugin
+            conventional_hooks = plugin_path / "hooks.json"
+            if not _attached_as_hooks(state, conventional_hooks):
+                _add_contained_plugin_block(
+                    node,
+                    conventional_hooks,
+                    AntigravityHooksBlock,
+                    owner=resolved_plugin,
+                )
+            native_mcp = plugin_path / "mcp_config.json"
+            if not _attached_as_mcp(state, native_mcp):
+                _add_contained_plugin_block(
+                    node,
+                    native_mcp,
+                    AntigravityMcpBlock,
+                    owner=resolved_plugin,
+                )
+            container.children.append(node)
+
         if container is not root:
             if marketplace_node is not None and resolved_plugin.is_relative_to(
                 (safe_resolve(marketplace_dir) or marketplace_dir)
@@ -1556,6 +1609,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 plugin_nodes.get(candidate)
                 or codex_plugin_nodes.get(candidate)
                 or grok_plugin_nodes.get(candidate)
+                or antigravity_plugin_nodes.get(candidate)
                 or agent_plugin_nodes.get(candidate)
             )
             if node is not None:

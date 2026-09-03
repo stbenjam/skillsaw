@@ -1,0 +1,22 @@
+{
+  "test-hook": {
+    "PreInvocation": [
+      {
+        "command": "echo test",
+        "timeout": 10,
+        "type": "command"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "command": "echo lint",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

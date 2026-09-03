@@ -10,21 +10,23 @@ import logging
 # from skillsaw.context, so no import cycle while ``context`` is mid-import.
 # ``merge_plugin_dirs`` and ``codex_local_source_path`` are re-exported here
 # for callers that import them from ``skillsaw.context``.
-from .discovery import merge_plugin_dirs
-from .discovery import codex as codex_discovery
-from .discovery import claude as claude_discovery
-from .discovery import agent_plugins as agent_plugins_discovery
+from .discovery import (
+    agent_plugins as agent_plugins_discovery,
+    claude as claude_discovery,
+    codex as codex_discovery,
+    detect as detect_discovery,
+    merge_plugin_dirs,
+)
 from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_local_source_path,  # noqa: F401 - compatibility re-export
 )
-from .discovery import detect as detect_discovery
-from .discovery.excludes import pattern_variants as _pattern_variants
-from .discovery.excludes import path_matches_patterns
+from .discovery.excludes import path_matches_patterns, pattern_variants as _pattern_variants
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
 from .repository_external_content import RepositoryExternalContentMixin
 from .repository_grok import RepositoryGrokMixin
+from .repository_antigravity import RepositoryAntigravityMixin
 from .repository_mcp_registry import RepositoryMcpRegistryMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 from .repository_scan import RepositoryScanMixin
@@ -59,11 +61,12 @@ class RepositoryContext(
     RepositoryMcpRegistryMixin,
     RepositoryExternalContentMixin,
     RepositoryGrokMixin,
+    RepositoryAntigravityMixin,
     RepositoryProvenanceMixin,
 ):
     """Detected repository metadata used during linting."""
 
-    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
+    _INSTRUCTION_FILENAMES = ("AGENTS.md", "ANTIGRAVITY.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
 
     _TYPE_PRIORITY = [
         RepositoryType.MARKETPLACE,
@@ -78,6 +81,7 @@ class RepositoryContext(
         RepositoryType.CODEX_PLUGIN,
         RepositoryType.GROK_MARKETPLACE,
         RepositoryType.GROK_PLUGIN,
+        RepositoryType.ANTIGRAVITY_PLUGIN,
         RepositoryType.AGENT_PLUGIN,
         RepositoryType.AGENTSKILLS,
         RepositoryType.MCP_REGISTRY,
@@ -94,6 +98,7 @@ class RepositoryContext(
         RepositoryType.CLINE,
         RepositoryType.DEVIN,
         RepositoryType.OPENCODE,
+        RepositoryType.ANTIGRAVITY,
         RepositoryType.KIRO,
         RepositoryType.SKILLS_LOCK,
         RepositoryType.CLAUDE_MD,
@@ -184,18 +189,14 @@ class RepositoryContext(
         # is missing — otherwise ``--type codex-plugin`` on a repository
         # without ``.codex-plugin/`` would discover no plugin, create no
         # node, and never run the requested check.
-        self._codex_plugin_forced = repo_types is not None and (
-            RepositoryType.CODEX_PLUGIN in repo_types
-        )
+        self._codex_plugin_forced = repo_types is not None and RepositoryType.CODEX_PLUGIN in repo_types
         self._codex_marketplace_forced = repo_types is not None and (
             RepositoryType.CODEX_MARKETPLACE in repo_types
         )
         self._agent_plugin_discovery_enabled = (
-            RepositoryType.AGENT_PLUGIN in set(repo_types) if repo_types is not None else True
+            repo_types is None or RepositoryType.AGENT_PLUGIN in repo_types
         )
-        self._agent_plugin_forced = repo_types is not None and (
-            RepositoryType.AGENT_PLUGIN in repo_types
-        )
+        self._agent_plugin_forced = repo_types is not None and RepositoryType.AGENT_PLUGIN in repo_types
         self.codex_plugins: List[Path] = (
             self._discover_codex_plugins() if self._codex_discovery_enabled else []
         )
@@ -203,6 +204,7 @@ class RepositoryContext(
             self._discover_agent_plugins() if self._agent_plugin_discovery_enabled else []
         )
         self._init_grok(repo_types)
+        self._init_antigravity(repo_types)
         # An explicit ``--type`` answers "how is this content packaged", and
         # ``_refresh_tool_types()`` keeps it authoritative for that half while
         # still folding in the tools the checkout configures.
@@ -385,6 +387,7 @@ class RepositoryContext(
             self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
             self.codex_plugins = [p for p in self.codex_plugins if not self.is_path_excluded(p)]
             self.agent_plugins = [p for p in self.agent_plugins if not self.is_path_excluded(p)]
+            self.antigravity_plugins = [p for p in self.antigravity_plugins if not self.is_path_excluded(p)]
             self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
             self.instruction_files = [
                 p for p in self.instruction_files if not self.is_path_excluded(p)
@@ -441,6 +444,7 @@ class RepositoryContext(
         self._agent_plugin_claims = None
         self._agent_plugin_roots = None
         self._reset_grok_caches(filtering=bool(self.exclude_patterns))
+        self._reset_antigravity_caches(filtering=bool(self.exclude_patterns))
         self._contained_plugin_roots = self._mcp_registry_paths = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
@@ -519,6 +523,8 @@ class RepositoryContext(
             types.add(RepositoryType.GROK_MARKETPLACE)
         if self.grok_plugins:
             types.add(RepositoryType.GROK_PLUGIN)
+        if self.antigravity_plugins:
+            types.add(RepositoryType.ANTIGRAVITY_PLUGIN)
         if self.mcp_registry_server_paths():
             types.add(RepositoryType.MCP_REGISTRY)
 
@@ -689,7 +695,11 @@ class RepositoryContext(
         manifest-only Codex catalog or a portable Agent Plugins collection.
         """
         return merge_plugin_dirs(
-            self.plugins, self.codex_plugins, self.agent_plugins, self.grok_plugins
+            self.plugins,
+            self.codex_plugins,
+            self.agent_plugins,
+            self.grok_plugins,
+            self.antigravity_plugins,
         )
 
     def codex_marketplace_paths(self) -> List[Path]:
@@ -701,21 +711,15 @@ class RepositoryContext(
         layouts (see :func:`skillsaw.discovery.codex.discover_codex_plugins`).
         """
         return codex_discovery.discover_codex_plugins(
-            self.root_path,
-            self._codex_local_sources(),
-            forced=self._codex_plugin_forced,
+            self.root_path, self._codex_local_sources(), forced=self._codex_plugin_forced
         )
 
     def _discover_agent_plugins(self) -> List[Path]:
         """Portable packages declared at the root or under ``plugins/*``."""
-        return [
-            path
-            for path in agent_plugins_discovery.discover_agent_plugins(
-                self.root_path,
-                forced=self._agent_plugin_forced,
-            )
-            if not self.is_path_excluded(path)
-        ]
+        found = agent_plugins_discovery.discover_agent_plugins(
+            self.root_path, forced=self._agent_plugin_forced
+        )
+        return [p for p in found if not self.is_path_excluded(p)]
 
     def _agent_plugin_claim_set(self) -> Set[Path]:
         """Filesystem-declared portable plugin roots, independent of ``--type``."""
@@ -858,6 +862,7 @@ class RepositoryContext(
             ],
             codex_plugins=self.codex_plugins,
             grok_plugins=self.grok_plugins,
+            antigravity_plugins=self.antigravity_plugins,
             # Declaration-invariant roots keep portable skills visible under
             # an unrelated ``--type`` override while still enforcing their
             # fixed immediate-child discovery semantics.

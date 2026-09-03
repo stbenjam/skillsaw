@@ -228,6 +228,7 @@ def test_every_detected_tool_type_is_listed_in_tool_repo_types(tmp_path):
     (tmp_path / ".grok" / "hooks" / "session-start.json").write_text('{"hooks": {}}\n')
     (tmp_path / ".kiro").mkdir()
     (tmp_path / "GEMINI.md").write_text("# Gemini\n\nRun `make test`.\n")
+    (tmp_path / "ANTIGRAVITY.md").write_text("# Antigravity\n\nRun `make test`.\n")
     (tmp_path / "QWEN.md").write_text("# Qwen\n\nRun `make test`.\n")
     (tmp_path / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
     (tmp_path / "CLAUDE.md").write_text("# Claude\n\nRun `make test`.\n")

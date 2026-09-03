@@ -47,6 +47,7 @@ from skillsaw.blocks import (  # noqa: F401
     DevinGlobalRuleBlock,
     DevinRuleBlock,
     DevinSkillBlock,
+    AntigravityMdBlock,
     ExtraBlock,
     FileContentBlock,
     FrontmatterField,

@@ -208,6 +208,7 @@ def discover_skills(
     plugins: Iterable[Path],
     codex_plugins: Iterable[Path],
     grok_plugins: Iterable[Path],
+    antigravity_plugins: Iterable[Path] = (),
     agent_plugins: Iterable[Path],
     recursive_agent_plugins: Iterable[Path],
     in_apm_compiled_dir: Callable[[Path], bool],
@@ -355,6 +356,8 @@ def discover_skills(
         contained_plugin_skills(plugin, codex_declared_skill_dirs(plugin))
     for plugin in grok_plugins:
         contained_plugin_skills(plugin, grok_declared_skill_dirs(plugin))
+    for plugin in antigravity_plugins:
+        contained_plugin_skills(plugin, ())
     for plugin in agent_plugin_packages:
         for skill in agent_plugins_discovery.discover_agent_plugin_skills(plugin):
             resolved = safe_resolve(skill)

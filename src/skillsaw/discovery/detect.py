@@ -42,6 +42,8 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         ".github",
         ".vscode",
         ".opencode",
+        ".agents",
+        ".agent",
         codex.CODEX_DIR_NAME,
         grok.TOOL_DIR_NAME,
         muse.TOOL_DIR_NAME,
@@ -383,6 +385,33 @@ def tool_types(
             for path in files
         )
 
+    def antigravity_marker() -> bool:
+        if marker("ANTIGRAVITY.md"):
+            return True
+        for dirname in (".agents", ".agent"):
+            candidates = list(dirs.get(dirname) or ())
+            if not candidates:
+                candidates = [root / dirname]
+            for base in candidates:
+                if is_excluded(base):
+                    continue
+                for name, is_dir in (
+                    ("skills.json", False),
+                    ("plugins.json", False),
+                    ("mcp_config.json", False),
+                    ("hooks.json", False),
+                    ("rules", True),
+                    ("plugins", True),
+                ):
+                    p = base / name
+                    if not is_excluded(p) and (p.is_dir() if is_dir else p.exists()):
+                        return True
+        for root_name in ("skills.json", "plugins.json", "mcp_config.json"):
+            p = root / root_name
+            if not is_excluded(p) and p.exists():
+                return True
+        return False
+
     found: Set[str] = set()
     checks = (
         ("cursor", tool_marker("cursor") or legacy_cursor()),
@@ -410,6 +439,7 @@ def tool_types(
         # that is Grok Build's alone.
         ("grok-project", tool_marker("grok-project")),
         ("codex-project", tool_marker("codex-project")),
+        ("antigravity", antigravity_marker()),
         ("gemini", marker("GEMINI.md")),
         ("qwen", marker("QWEN.md")),
         (
