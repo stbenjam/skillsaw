@@ -114,6 +114,36 @@ def repo_with_hooks(tmp_path: Path, name: str, body: str) -> Path:
     return repo
 
 
+def write_config(root: Path, body: str) -> Path:
+    """Write *body* verbatim to ``<root>/.grok/config.toml``.
+
+    Verbatim because some cases are TOML no serializer will emit: an
+    unclosed array and a table header written twice are the file the parser
+    refuses, not a document with a value in it.
+    """
+    grok_dir = root / ".grok"
+    grok_dir.mkdir(parents=True, exist_ok=True)
+    path = grok_dir / "config.toml"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def repo_with_config(tmp_path: Path, name: str, body: str) -> Path:
+    """A repository whose only Grok content is a ``config.toml`` of *body*."""
+    repo = write_repo(tmp_path / name)
+    write_config(repo, body)
+    return repo
+
+
+def where(repo: Path, violation: RuleViolation) -> str:
+    """A finding's file, relative to *repo*.
+
+    Every Grok project config is named ``config.toml``, so the package
+    directory is the only thing that tells two of them apart.
+    """
+    return str(violation.file_path.relative_to(repo))
+
+
 def write_plugin(plugin_dir: Path, manifest: Optional[Dict[str, Any]]) -> Path:
     """A plugin directory declaring *manifest* in ``.grok-plugin/``.
 

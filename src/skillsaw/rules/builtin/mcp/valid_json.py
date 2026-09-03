@@ -9,6 +9,7 @@ from pathlib import Path
 from skillsaw.blocks import (
     AgentPluginMcpBlock,
     CopilotAgentMcpBlock,
+    GrokConfigBlock,
     JsonConfigBlock,
     McpConfigRole,
     OpenCodeMcpBlock,
@@ -176,6 +177,18 @@ class McpValidJsonRule(Rule):
                 and RepositoryType.OPENCODE in context.repo_types
             ):
                 violations.extend(self._dialect_neutral_violations(block))
+                continue
+            # Grok's project config is TOML, and only its ``[mcp_servers]``
+            # tables are servers. Every shape check below reads the document
+            # as a JSON MCP file: the "no ``mcp_servers`` key" branch would
+            # report a config that legitimately declares only ``[permission]``,
+            # and a parse error would be announced as invalid JSON. What the
+            # document must be is Grok's own question and belongs to the Grok
+            # config rules; what a *server* must not carry is the same in
+            # every dialect and stays here.
+            if isinstance(block, GrokConfigBlock):
+                if block.parse_error is None:
+                    violations.extend(self._dialect_neutral_violations(block))
                 continue
             if block.parse_error:
                 violations.append(
