@@ -3,13 +3,14 @@
 
 # Deprecated
 
-These rules are deprecated and will be removed in a future release. They no longer run under `enabled: auto`; set `enabled: true` in `.skillsaw.yaml` to keep running one during the transition. The content rules encoded attention-era heuristics that newer models no longer need; `skill-frontmatter` is replaced by [`agentskill-valid`](agentskill-valid.md).
+These rules are deprecated and will be removed in a future release. They no longer run under `enabled: auto`; set `enabled: true` in `.skillsaw.yaml` to keep running one during the transition. The content rules encoded attention-era heuristics that newer models no longer need; `skill-frontmatter` is replaced by [`agentskill-valid`](agentskill-valid.md); `claude-plugin-readme` can be enforced as a custom rule if needed.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | [`content-critical-position`](content-critical-position.md) | Detect critical instructions in the middle of files where LLM attention is lowest | info (deprecated) | - |
 | [`content-actionability-score`](content-actionability-score.md) | Score instruction files on actionability (verb density, commands, file references) | info (deprecated) | - |
 | [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning (deprecated) | auto |
+| [`claude-plugin-readme`](claude-plugin-readme.md) | Plugin should have a README.md file | warning (deprecated) | - |
 
 ## Why these rules were deprecated
 
@@ -24,4 +25,8 @@ Scored prose by its ratio of imperative verbs to hedging and descriptive text. T
 ### [`skill-frontmatter`](skill-frontmatter.md)
 
 Superseded by agentskill-valid, which validates the same name and description frontmatter against the agentskills.io specification and carries the same missing-frontmatter autofix — running both reported every problem twice.
+
+### [`claude-plugin-readme`](claude-plugin-readme.md)
+
+A missing README.md does not affect plugin execution or validity. Repositories requiring README documentation can enforce it with a custom rule.
 

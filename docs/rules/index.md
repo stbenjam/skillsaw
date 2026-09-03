@@ -8,7 +8,7 @@ skillsaw includes **91** built-in rules organized into the following categories:
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
-- [Claude Code](claude.md) (13 rules)
+- [Claude Code](claude.md) (12 rules)
 - [CodeRabbit](coderabbit.md) (2 rules)
 - [Content Intelligence](content-intelligence.md) (24 rules)
 - [Context Budget](context-budget.md) (1 rule)
@@ -26,7 +26,7 @@ skillsaw includes **91** built-in rules organized into the following categories:
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [Security](security.md) (4 rules)
 - [Vercel](vercel.md) (1 rule)
-- [Deprecated](deprecated.md) (3 rules)
+- [Deprecated](deprecated.md) (4 rules)
 
 ## All Rules
 
@@ -48,7 +48,6 @@ skillsaw includes **91** built-in rules organized into the following categories:
 | [`claude-plugin-json-required`](claude-plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - | Claude Code |
 | [`claude-plugin-json-valid`](claude-plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - | Claude Code |
 | [`claude-plugin-naming`](claude-plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - | Claude Code |
-| [`claude-plugin-readme`](claude-plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - | Claude Code |
 | [`claude-command-naming`](claude-command-naming.md) | Command files should use kebab-case naming | warning | auto | Claude Code |
 | [`claude-command-frontmatter`](claude-command-frontmatter.md) | Command files must have valid frontmatter with description | error | auto | Claude Code |
 | [`claude-command-sections`](claude-command-sections.md) | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - | Claude Code |
@@ -123,3 +122,4 @@ skillsaw includes **91** built-in rules organized into the following categories:
 | [`content-critical-position`](content-critical-position.md) | Detect critical instructions in the middle of files where LLM attention is lowest | info (deprecated) | - | Deprecated |
 | [`content-actionability-score`](content-actionability-score.md) | Score instruction files on actionability (verb density, commands, file references) | info (deprecated) | - | Deprecated |
 | [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning (deprecated) | auto | Deprecated |
+| [`claude-plugin-readme`](claude-plugin-readme.md) | Plugin should have a README.md file | warning (deprecated) | - | Deprecated |

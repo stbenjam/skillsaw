@@ -17,6 +17,12 @@ class PluginReadmeRule(Rule):
     repo_types = PLUGIN_REPO_TYPES
 
     aliases = ("plugin-readme",)
+    deprecated = "0.20.0"
+    deprecated_reason = (
+        "A missing README.md does not affect plugin execution or validity. "
+        "Repositories requiring README documentation can enforce it with a "
+        "custom rule."
+    )
 
     @property
     def rule_id(self) -> str:

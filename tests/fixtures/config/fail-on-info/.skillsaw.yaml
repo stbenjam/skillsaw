@@ -2,5 +2,5 @@ version: "99.0.0"
 fail-on: info
 
 rules:
-  claude-plugin-readme:
+  claude-plugin-naming:
     severity: info

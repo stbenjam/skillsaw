@@ -363,6 +363,8 @@ def test_deprecated_rules_are_marked():
     ):
         assert BUILTIN_RULE_REGISTRY[rule_id].deprecated == "0.18.0", rule_id
     assert BUILTIN_RULE_REGISTRY["skill-frontmatter"].replaced_by == "agentskill-valid"
+    assert BUILTIN_RULE_REGISTRY["claude-plugin-readme"].deprecated == "0.20.0"
+    assert BUILTIN_RULE_REGISTRY["claude-plugin-readme"].replaced_by is None
 
 
 def test_deprecated_rules_left_out_of_generated_defaults():
@@ -378,6 +380,7 @@ def test_deprecated_rule_does_not_run_by_default(plugin_repo):
     loaded = {r.rule_id for r in linter.rules}
     assert "skill-frontmatter" not in loaded
     assert "content-critical-position" not in loaded
+    assert "claude-plugin-readme" not in loaded
 
 
 def test_deprecated_rule_runs_when_explicitly_enabled(plugin_repo):
@@ -393,6 +396,23 @@ def test_deprecated_rule_runs_when_explicitly_enabled(plugin_repo):
     assert "skill-frontmatter" in deprecation[0].message
     assert "removed in a future release" in deprecation[0].message
     assert "agentskill-valid" in deprecation[0].message
+
+
+def test_deprecated_plugin_readme_runs_when_explicitly_enabled(plugin_repo):
+    config = LinterConfig.default()
+    config.rules["claude-plugin-readme"] = {"enabled": True}
+    context = RepositoryContext(plugin_repo)
+    linter = Linter(context, config=config, no_plugins=True)
+    assert "claude-plugin-readme" in {r.rule_id for r in linter.rules}
+    results = linter.run()
+    deprecation = [v for v in results if v.rule_id == "deprecated-rule"]
+    assert len(deprecation) == 1
+    assert deprecation[0].severity == Severity.WARNING
+    assert "claude-plugin-readme" in deprecation[0].message
+    assert "removed in a future release" in deprecation[0].message
+    readme_violations = [v for v in results if v.rule_id == "claude-plugin-readme"]
+    assert len(readme_violations) == 1
+    assert "Missing README.md" in readme_violations[0].message
 
 
 def test_deprecated_rule_config_mention_warns_but_does_not_run(plugin_repo):
