@@ -38,8 +38,9 @@ inventoried against an allowlist with
   case-sensitive: `"COMMAND"` is refused.
 - A command hook carrying `prompt` or `model`, or a prompt hook carrying
   `command`.
-- A `timeout` that is not a whole number. It is a 32-bit integer: `0` and
-  negative values load, a float or a string does not.
+- A `timeout` that is not a whole number, or one outside `-2147483648` to
+  `2147483647`. It is a 32-bit integer: `0` and negative values load; a
+  float, a string, or a number past either end does not.
 
 **Warnings** — the file loads and something in it never runs:
 
@@ -133,7 +134,8 @@ that carries no `command`:
 
 ## How to fix
 
-- Write `timeout` as a whole number of seconds (`5`, not `5.0` or `"5"`).
+- Write `timeout` as a whole number of seconds inside the 32-bit range
+  (`5`, not `5.0`, `"5"` or `1099511627776`).
 - Give a command hook a `command` and nothing else from the prompt side;
   give a prompt hook a `prompt` and optionally a `model`.
 - Match against Antigravity's own tool names — `run_command`, `view_file`,

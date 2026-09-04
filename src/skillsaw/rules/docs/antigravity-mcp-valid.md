@@ -21,8 +21,8 @@ This rule reports both and says which one a finding is.
 Antigravity's dialect is its own — `serverUrl` rather than `url`, and a
 server with no connection field at all is legal. What it keeps are the
 checks no dialect changes: a file that is not JSON, a connection URL
-carrying user information, and a credential written into `env`, `headers`
-or `oauth`.
+carrying user information, and a credential written into `env`, `headers`,
+`oauth`, or a server's own `clientId` / `clientSecret`.
 
 ## Severity
 
@@ -42,9 +42,10 @@ or `oauth`.
 - `args` that is not an array, or an element that is not a string.
 - `serverUrl` that is not a string.
 - `disabledTools` that is not an array of strings.
-- `authProviderType` with any value but `google_credentials`. The proto
-  enum's `MCP_AUTH_PROVIDER_TYPE_GOOGLE_CREDENTIALS` spelling drops the
-  server; only the lowercase JSON alias parses.
+- `authProviderType` with any value but the string `google_credentials` —
+  another string, a number, an array or an object alike. The proto enum's
+  `MCP_AUTH_PROVIDER_TYPE_GOOGLE_CREDENTIALS` spelling drops the server;
+  only the lowercase JSON alias parses.
 
 ## What is not reported
 
@@ -109,5 +110,5 @@ says nothing:
 - Switch a server off with `"disabled": true`.
 - Write `authProviderType` as `"google_credentials"`, or leave it out.
 - Keep credentials out of the file: reference an environment variable
-  (`"${GTFS_FEED_TOKEN}"`) rather than pasting a token into `env`, `headers`
-  or `oauth`.
+  (`"${GTFS_FEED_TOKEN}"`) rather than pasting a token into `env`,
+  `headers`, `oauth`, or a server's own `clientId` / `clientSecret`.

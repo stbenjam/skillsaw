@@ -278,8 +278,9 @@ def mapped_secret_description(
     *,
     header: bool,
     markers: Sequence[str] = DEFAULT_PLACEHOLDER_MARKERS,
+    kind: Optional[str] = None,
 ) -> Optional[str]:
-    """Describe a secret embedded in an MCP env/header mapping entry.
+    """Describe a secret embedded in a named MCP configuration value.
 
     Structured tokens are always reportable, including in a value that also
     contains a placeholder. Otherwise placeholders are permitted, and values
@@ -288,6 +289,10 @@ def mapped_secret_description(
     caller extend the placeholder allowlist with a project's own convention;
     it never weakens the structured-token check above it. The return value
     never includes the candidate value.
+
+    *kind* names what carried the value for a caller that is not scanning a
+    map — a server-level scalar has no environment variable or header to
+    name, and saying it does sends the author looking for one.
     """
     structured = structured_secret_description(value)
     if structured is not None:
@@ -295,6 +300,8 @@ def mapped_secret_description(
     if is_secret_placeholder(value, markers):
         return None
     if _credential_name(name, header=header):
+        if kind is not None:
+            return f"credential-bearing {kind}"
         return (
             "credential-bearing HTTP header"
             if header

@@ -1086,6 +1086,20 @@ def test_root_mcp_json_valid_json(temp_dir):
     assert len(violations) == 0
 
 
+def test_root_mcp_json_ignores_a_server_level_credential_field(temp_dir):
+    """``credential_fields`` is opt-in per host; the Claude family declares none.
+
+    Antigravity loads ``clientSecret`` on the server itself, so its block
+    lists it. ``.mcp.json`` does not, and reading the key here would report
+    a field no Claude-family host acts on.
+    """
+    secret = "sk-live-" + "9f2c41a8" + "b7de4c6390af"  # assembled: no literal token in the tree
+    mcp_config = {"mcpServers": {"my-server": {"command": "node", "clientSecret": secret}}}
+    (temp_dir / ".mcp.json").write_text(json.dumps(mcp_config, indent=2))
+    violations = McpValidJsonRule().check(RepositoryContext(temp_dir))
+    assert [v.message for v in violations if "clientSecret" in v.message] == []
+
+
 def test_root_mcp_json_invalid_json(temp_dir):
     """Test that mcp-valid-json detects invalid JSON at root level"""
     (temp_dir / ".mcp.json").write_text("{ this is not valid json }")

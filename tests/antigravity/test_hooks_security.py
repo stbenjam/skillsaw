@@ -65,6 +65,32 @@ class TestCommandsReachTheScanners:
                     "a": {"Stop": [{"command": PAYLOAD}]},
                 },
             ),
+            # A flat event binds to ``[]HookHandler``, so ``hooks`` there is
+            # an ignored handler key and the entry's own ``command`` runs.
+            # Reading the key as a group would make this an empty group and
+            # take the command out of the scanners' reach.
+            (
+                "flat-with-a-hooks-key",
+                "Stop",
+                {"a": {"Stop": [{"command": PAYLOAD, "hooks": []}]}},
+            ),
+            (
+                "pre-invocation-with-a-hooks-key",
+                "PreInvocation",
+                {
+                    "a": {
+                        "PreInvocation": [{"command": PAYLOAD, "hooks": [{"command": "make lint"}]}]
+                    }
+                },
+            ),
+            # An event this release does not know has no binding to consult,
+            # so the entry's shape decides and its handlers still render.
+            (
+                "unknown-event-grouped",
+                "PreCompact",
+                {"a": {"PreCompact": [{"matcher": "*", "hooks": [{"command": PAYLOAD}]}]}},
+            ),
+            ("unknown-event-flat", "PreCompact", {"a": {"PreCompact": [{"command": PAYLOAD}]}}),
         ],
     )
     def test_dangerous_command_is_reported(
@@ -93,6 +119,16 @@ class TestCommandsReachTheScanners:
             tmp_path,
             "prohibited",
             json.dumps({"audit": {"Stop": [{"command": "rm -rf /srv/ferrymark"}]}}),
+        )
+        config = {"enabled": True, "patterns": ["rm -rf*"]}
+        assert messages(run_rule(HooksProhibitedRule, repo, config))
+
+    def test_prohibited_rule_reads_a_flat_entry_carrying_a_hooks_key(self, tmp_path: Path) -> None:
+        """The same evasion shape, against the other command scanner."""
+        repo = repo_with_hooks(
+            tmp_path,
+            "prohibited-flat-hooks",
+            json.dumps({"audit": {"Stop": [{"command": "rm -rf /srv/ferrymark", "hooks": []}]}}),
         )
         config = {"enabled": True, "patterns": ["rm -rf*"]}
         assert messages(run_rule(HooksProhibitedRule, repo, config))
@@ -156,6 +192,25 @@ class TestEventsRendering:
     def test_absent_type_is_normalized_to_command(self, tmp_path: Path) -> None:
         events = self._events(tmp_path, "typeless-render", {"a": {"Stop": [{"command": "x"}]}})
         assert [h.type for cfg in events["Stop"] for h in cfg.handlers] == ["command"]
+
+    def test_a_grouped_event_still_renders_its_group_handlers(self, tmp_path: Path) -> None:
+        """``PreToolUse`` binds to groups, and a stray top-level ``command``
+        in one is a key its parser discards — the group's own handlers are
+        what runs, and they still reach the scanners."""
+        document = {
+            "a": {
+                "PreToolUse": [
+                    {"matcher": "run_command", "command": PAYLOAD, "hooks": [{"command": "audit"}]}
+                ]
+            }
+        }
+        events = self._events(tmp_path, "grouped-stray-command", document)
+        assert [h.command for cfg in events["PreToolUse"] for h in cfg.handlers] == ["audit"]
+
+    def test_a_flat_event_reads_the_entry_and_ignores_its_hooks_key(self, tmp_path: Path) -> None:
+        document = {"a": {"Stop": [{"command": "audit", "hooks": [{"command": "ignored"}]}]}}
+        events = self._events(tmp_path, "flat-hooks-key", document)
+        assert [h.command for cfg in events["Stop"] for h in cfg.handlers] == ["audit"]
 
     def test_unparseable_file_renders_nothing(self, tmp_path: Path) -> None:
         repo = repo_with_hooks(tmp_path, "unparseable", "{not json")

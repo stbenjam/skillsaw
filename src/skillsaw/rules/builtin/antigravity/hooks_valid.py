@@ -253,6 +253,14 @@ class _FileCheck:
                 # An int32 in Go: ``0`` and negatives load, a float or a
                 # string kills the file.
                 self._fatal(where, "'timeout' must be a whole number of seconds")
+            elif not antigravity.HOOK_TIMEOUT_MIN <= timeout <= antigravity.HOOK_TIMEOUT_MAX:
+                # Measured: an integer past either end of the int32 range
+                # empties the file exactly as a float does.
+                self._fatal(
+                    where,
+                    f"'timeout' must be between {antigravity.HOOK_TIMEOUT_MIN} and "
+                    f"{antigravity.HOOK_TIMEOUT_MAX}",
+                )
 
         self._report_unknown_keys(where, handler, antigravity.HOOK_HANDLER_KEYS, "handler key")
 

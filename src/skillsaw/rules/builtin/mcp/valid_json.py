@@ -326,11 +326,12 @@ class McpValidJsonRule(Rule):
         everything that does not depend on the host's spelling. A document
         that is not JSON is unreadable to every host. A ``url`` carrying
         user information is the same defect in every dialect. So is a
-        credential sitting in a per-server map — the map's *name* differs
+        credential sitting on a server — the *name* that carries it differs
         between hosts, which is why the block declares it in
-        :attr:`McpBlock.credential_maps` rather than this rule naming it,
-        and why the URL field itself comes from
-        :attr:`McpBlock.connection_url_keys`.
+        :attr:`McpBlock.credential_maps` (a map of values) and
+        :attr:`McpBlock.credential_fields` (a scalar on the server itself)
+        rather than this rule naming it, and why the URL field itself comes
+        from :attr:`McpBlock.connection_url_keys`.
 
         Keeping them here rather than in the deferring rule is what makes
         them survive a ``.skillsaw.yaml`` pinning a ``version:`` older than
@@ -388,6 +389,42 @@ class McpValidJsonRule(Rule):
                         location=key,
                     )
                 )
+            violations.extend(self._field_secret_violations(server, server_name=shown, block=block))
+        return violations
+
+    def _field_secret_violations(
+        self, server: Dict[str, Any], *, server_name: str, block: McpConfigRole
+    ) -> List[RuleViolation]:
+        """Report a credential written as a scalar on the server itself.
+
+        The same placeholder and structured-token rules a map value gets:
+        ``"${CLIENT_SECRET}"`` is a reference, a literal is a committed
+        credential. Only the keys :attr:`McpBlock.credential_fields` names
+        are read, so a host that puts every credential in a map does no
+        extra work here.
+        """
+        violations: List[RuleViolation] = []
+        for key in block.credential_fields:
+            value = server.get(key)
+            if not isinstance(value, str):
+                continue
+            description = mapped_secret_description(
+                block.credential_key_aliases.get(key, key),
+                value,
+                header=False,
+                markers=self._placeholder_markers(),
+                kind="server field",
+            )
+            if description is None:
+                continue
+            violations.append(
+                self.violation(
+                    f"MCP server '{server_name}' '{safe_display(key)}' embeds "
+                    f"{description}; use a placeholder or environment substitution "
+                    "instead of a credential value",
+                    file_path=block.path,
+                )
+            )
         return violations
 
     def _validate_plugin_json_mcp(self, plugin_json: Path) -> List[RuleViolation]:

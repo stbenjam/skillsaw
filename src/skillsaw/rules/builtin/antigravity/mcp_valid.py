@@ -161,7 +161,10 @@ class AntigravityMcpValidRule(Rule):
             )
 
         auth = server.get("authProviderType")
-        if auth is not None and auth not in _AUTH_PROVIDER_TYPES:
+        # ``isinstance`` first: an array or an object is unhashable, and
+        # testing set membership on one raises rather than reporting the
+        # server ``agy`` drops for exactly that reason.
+        if auth is not None and (not isinstance(auth, str) or auth not in _AUTH_PROVIDER_TYPES):
             accepted = ", ".join(f"'{value}'" for value in sorted(_AUTH_PROVIDER_TYPES))
             violations.append(
                 self._dropped(

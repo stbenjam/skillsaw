@@ -51,6 +51,28 @@ def _normalize_antigravity_handler_type(handler: "HookHandler") -> None:
         handler.type = "command"
 
 
+def _antigravity_entry_is_group(canonical: Any, entry: Dict[str, Any]) -> bool:
+    """Whether *entry* is a tool-hook group rather than a flat handler.
+
+    The **event** decides, not the entry's shape. ``agy`` binds
+    ``PreToolUse`` and ``PostToolUse`` to ``[]ToolHookGroup`` and the other
+    four events to ``[]HookHandler``, so a flat event reads a ``hooks`` key
+    the way it reads any other unrecognised handler key: it ignores it and
+    runs the handler's own ``command``. Deciding on the key's presence
+    instead makes ``{"Stop": [{"command": "…", "hooks": []}]}`` an empty
+    group, and the command ``agy`` runs never reaches ``hooks-dangerous``.
+
+    An event this release does not know — one a project declares through
+    ``antigravity-hooks-valid``'s ``extra-events`` — has no binding to
+    consult, so the shape decides and its handlers still render.
+    """
+    if canonical in antigravity.TOOL_HOOK_EVENTS:
+        return True
+    if canonical in antigravity.FLAT_HOOK_EVENTS:
+        return False
+    return isinstance(entry.get("hooks"), list)
+
+
 def _as_str_list(value: Any) -> Optional[List[str]]:
     """*value* with non-string members filtered out, or ``None`` for non-lists.
 
@@ -836,7 +858,7 @@ class AntigravityHooksBlock(HooksBlock):
     branch. ``antigravity-hooks-valid`` reads ``raw_data`` for the shape
     itself.
 
-    Two deliberate readings, both measured against ``agy`` 1.1.25:
+    Three deliberate readings, all measured against ``agy`` 1.1.25:
 
     * A top-level ``enabled`` is **not** a kill switch. Every top-level key
       is a hook *name*, so a boolean there is a hard parse error that drops
@@ -846,6 +868,11 @@ class AntigravityHooksBlock(HooksBlock):
       command is committed either way, and the one-word commit that arms it
       is not the diff a reviewer should first learn of it from. skillsaw
       reports what a repository ships, not what it currently runs.
+    * Which of the two shapes an entry is read as follows the **event**,
+      never the entry's own keys; see :func:`_antigravity_entry_is_group`.
+      A ``hooks`` key on a flat event is an ignored handler key, so reading
+      it as a group would drop the ``command`` beside it out of every
+      security rule's reach while ``agy`` ran it.
     """
 
     category: str = "hooks"
@@ -879,7 +906,7 @@ class AntigravityHooksBlock(HooksBlock):
                 for entry in entries:
                     if not isinstance(entry, dict):
                         continue
-                    if isinstance(entry.get("hooks"), list):
+                    if _antigravity_entry_is_group(canonical, entry):
                         nested = HookEventConfig.from_dict(entry)
                         for handler in nested.handlers:
                             _normalize_antigravity_handler_type(handler)
@@ -1020,6 +1047,12 @@ class McpConfigRole:
         ("env", False),
         ("headers", True),
     )
+    #: Per-server keys whose *scalar* string value may hold a committed
+    #: credential — Antigravity accepts ``clientSecret`` on the server
+    #: itself, not only inside ``oauth``. Scanned by the same rules as a map
+    #: value, so a placeholder is still a placeholder. Empty for a host that
+    #: puts every credential in a map.
+    credential_fields: ClassVar[Tuple[str, ...]] = ()
     #: Per-server keys holding the URL a remote server is reached at, read
     #: by the dialect-neutral user-information check ``mcp-valid-json``
     #: keeps for a block whose *shape* it defers. Declared on the block
@@ -1449,8 +1482,8 @@ class AntigravityMcpBlock(McpBlock):
     checks here and ``antigravity-mcp-valid`` performs them instead; the
     policy rules and the dialect-neutral checks — a file that is not JSON,
     a ``url`` carrying user information, and the credentials in the maps
-    :attr:`credential_maps` declares — still read this block where they
-    read every other host's.
+    :attr:`credential_maps` and the scalars :attr:`credential_fields`
+    declare — still read this block where they read every other host's.
     """
 
     #: A document with no ``mcpServers`` wrapper is silently ignored:
@@ -1466,6 +1499,9 @@ class AntigravityMcpBlock(McpBlock):
     strict_json: ClassVar[bool] = True
     surface_rule: ClassVar[Optional[str]] = "antigravity-mcp-valid"
     credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = antigravity.MCP_CREDENTIAL_MAPS
+    #: ``clientId`` and ``clientSecret`` load at a server's own top level as
+    #: well as inside ``oauth``, so the flatter spelling is scanned too.
+    credential_fields: ClassVar[Tuple[str, ...]] = antigravity.MCP_CREDENTIAL_FIELDS
     credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType(
         dict(antigravity.MCP_CREDENTIAL_KEY_ALIASES)
     )

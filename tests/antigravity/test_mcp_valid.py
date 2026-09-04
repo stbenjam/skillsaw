@@ -142,6 +142,21 @@ class TestDroppedServers:
                 ' "authProviderType": "MCP_AUTH_PROVIDER_TYPE_GOOGLE_CREDENTIALS"}}}',
                 "'authProviderType' must be 'google_credentials'",
             ),
+            # An array and an object are unhashable, so a membership test
+            # that reaches them raises instead of reporting. Measured: ``agy``
+            # drops the server for either, exactly as for an unknown string.
+            (
+                "auth-provider-array",
+                '{"mcpServers": {"t": {"url": "https://e.example",'
+                ' "authProviderType": ["google_credentials"]}}}',
+                "'authProviderType' must be 'google_credentials'",
+            ),
+            (
+                "auth-provider-object",
+                '{"mcpServers": {"t": {"url": "https://e.example",'
+                ' "authProviderType": {"type": "google_credentials"}}}}',
+                "'authProviderType' must be 'google_credentials'",
+            ),
         ],
     )
     def test_reported_at_warning(self, tmp_path: Path, name: str, body: str, needle: str) -> None:
@@ -174,6 +189,26 @@ class TestSharedRuleStandsDown:
         )
         repo = repo_with_mcp(tmp_path, "oauth-secret", body)
         assert any("clientSecret" in m for m in messages(run_rule(McpValidJsonRule, repo)))
+
+    def test_credentials_in_a_server_level_field_are_scanned(self, tmp_path: Path) -> None:
+        """``clientSecret`` loads as a scalar on the server, not only in ``oauth``."""
+        secret = "sk-live-" + "9f2c41a8" + "b7de4c6390af"  # assembled: no literal token in the tree
+        body = (
+            '{"mcpServers": {"t": {"url": "https://e.example",'
+            f' "clientId": "ferrymark", "clientSecret": "{secret}"}}}}}}'
+        )
+        repo = repo_with_mcp(tmp_path, "field-secret", body)
+        found = only(run_rule(McpValidJsonRule, repo), "clientSecret")
+        assert "credential-bearing server field" in found.message
+        assert secret not in found.message
+
+    def test_a_placeholder_server_level_field_is_not_a_finding(self, tmp_path: Path) -> None:
+        body = (
+            '{"mcpServers": {"t": {"url": "https://e.example",'
+            ' "clientId": "ferrymark", "clientSecret": "${ANTIGRAVITY_CLIENT_SECRET}"}}}'
+        )
+        repo = repo_with_mcp(tmp_path, "field-placeholder", body)
+        assert messages(run_rule(McpValidJsonRule, repo)) == []
 
     def test_credentials_in_headers_are_still_scanned(self, tmp_path: Path) -> None:
         body = (

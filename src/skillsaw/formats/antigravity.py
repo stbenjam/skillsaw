@@ -150,6 +150,13 @@ HOOK_HANDLER_TYPES = frozenset({"command", "prompt"})
 #: with one never does what its author expects.
 HOOK_HANDLER_KEYS = frozenset({"type", "command", "prompt", "model", "timeout"})
 
+#: ``timeout``'s bounds. It is a Go ``int32``, and the range is the whole
+#: of the check: ``0`` and negatives load, while ``2147483648`` fails the
+#: file with the same ``cannot unmarshal number … of type int32`` a float
+#: or a string draws — measured at both ends.
+HOOK_TIMEOUT_MIN = -(2**31)
+HOOK_TIMEOUT_MAX = 2**31 - 1
+
 #: ``ToolHookGroup``'s fields. ``type``, ``command``, ``tools`` and
 #: ``event`` inside a group are silently ignored.
 #:
@@ -171,11 +178,13 @@ HOOK_SPEC_NON_EVENT_KEYS = frozenset({"enabled"})
 #: Per-server maps in ``mcp_config.json`` whose values may hold a committed
 #: credential, as ``(key, is_http_header)``. All three are measured to
 #: load: ``env``, ``headers``, and ``oauth`` carrying ``clientId`` /
-#: ``clientSecret``. A server may also spell those two at its own top
-#: level, where they are scalars rather than a map — the shared scan reads
-#: maps, so that spelling stays out of reach of every host, Antigravity
-#: included.
+#: ``clientSecret``.
 MCP_CREDENTIAL_MAPS = (("env", False), ("headers", True), ("oauth", False))
+
+#: The same two keys spelled at a server's own top level, where they are
+#: scalars rather than a map. Measured to load there too, so a secret
+#: written this way ships and runs exactly like one inside ``oauth``.
+MCP_CREDENTIAL_FIELDS = ("clientId", "clientSecret")
 
 #: The ``oauth`` map's keys, renamed to the snake_case spelling the shared
 #: credential-*name* detector knows. Without this ``clientSecret`` reads as

@@ -44,9 +44,11 @@ class TestAcceptedFiles:
             ("empty-type", '{"audit": {"Stop": [{"type": "", "command": "make lint"}]}}'),
             ("prompt-type", '{"audit": {"Stop": [{"type": "prompt", "prompt": "Check UTC."}]}}'),
             ("prompt-without-text", '{"audit": {"Stop": [{"type": "prompt"}]}}'),
-            # ``timeout`` is an int32; zero and negatives load.
+            # ``timeout`` is an int32; zero, negatives and both ends load.
             ("timeout-zero", '{"audit": {"Stop": [{"command": "x", "timeout": 0}]}}'),
             ("timeout-negative", '{"audit": {"Stop": [{"command": "x", "timeout": -5}]}}'),
+            ("timeout-max", '{"audit": {"Stop": [{"command": "x", "timeout": 2147483647}]}}'),
+            ("timeout-min", '{"audit": {"Stop": [{"command": "x", "timeout": -2147483648}]}}'),
             # Event keys bind case-insensitively.
             ("lowercase-event", '{"audit": {"pretooluse": [{"hooks": []}]}}'),
             ("uppercase-event", '{"audit": {"STOP": [{"command": "make lint"}]}}'),
@@ -166,6 +168,18 @@ class TestFileScopedDefects:
                 "boolean-timeout",
                 '{"audit": {"Stop": [{"command": "x", "timeout": true}]}}',
                 "'timeout' must be a whole number of seconds",
+            ),
+            # Measured: an integer past either end of the int32 range empties
+            # the file exactly as a float does.
+            (
+                "timeout-over-int32",
+                '{"audit": {"Stop": [{"command": "x", "timeout": 1099511627776}]}}',
+                "'timeout' must be between -2147483648 and 2147483647",
+            ),
+            (
+                "timeout-under-int32",
+                '{"audit": {"Stop": [{"command": "x", "timeout": -2147483649}]}}',
+                "'timeout' must be between -2147483648 and 2147483647",
             ),
             (
                 "command-not-string",

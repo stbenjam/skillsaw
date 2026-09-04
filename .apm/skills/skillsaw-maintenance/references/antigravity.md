@@ -58,15 +58,20 @@ changing a rule here.
     switch.
   - `PreToolUse` / `PostToolUse` hold `{matcher, hooks: [handler, ...]}` groups;
     `PreInvocation`, `PostInvocation`, `Stop` and **`SessionStart`** hold flat handler
-    lists. `SessionStart` is undocumented and real.
+    lists. `SessionStart` is undocumented and real. **The event picks the shape, not
+    the entry's keys**: a `hooks` key on a flat event is an ignored handler key, so
+    `{"Stop": [{"command": "…", "hooks": []}]}` runs that `command`. Reading the key
+    instead of the event makes it an empty group and hides the command from the
+    security rules.
   - **Event keys bind case-insensitively** — `pretooluse` reaches `PreToolUse`. An
     unknown event key is silently ignored.
   - Handler types: `command` (the default when `type` is absent or `""`) and `prompt`.
     Any other value fails the file, case-sensitively. A command hook may not carry
     `prompt` or `model`; a prompt hook may not carry `command`.
   - Handler keys: `type`, `command`, `prompt`, `model`, `timeout`. Anything else is
-    ignored. `timeout` is an **int32**: `0` and negatives load, a float or a string
-    kills the file. Group keys: `matcher`, `hooks`; anything else ignored.
+    ignored. `timeout` is an **int32**: `0` and negatives load, while a float, a
+    string, or an integer past either end of `-2147483648`…`2147483647` kills the
+    file. Group keys: `matcher`, `hooks`; anything else ignored.
   - `matcher` must be a string and is **never compiled at load time** — `"[unclosed"`
     loads clean. `""` and `"*"` are documented catch-alls. The engine is unproven: the
     binary is Go and carries `regexp/syntax` types, which implies RE2.
