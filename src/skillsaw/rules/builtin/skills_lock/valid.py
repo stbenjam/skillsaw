@@ -266,6 +266,7 @@ class SkillsLockValidRule(Rule):
         if (
             isinstance(source, str)
             and source.strip()
+            and isinstance(source_type, str)
             and source_type in {"git", "gitlab"}
             and skills_lock.is_bare_git_source(source)
             and "sourceUrl" not in entry

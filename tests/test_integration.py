@@ -489,6 +489,48 @@ class TestMcpRegistry:
         } & rule_ids(r)
 
 
+# ── Skills lock ──────────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestSkillsLock:
+    def test_malformed_source_types_preserve_field_and_sibling_diagnostics(self, tmp_path):
+        repo = copy_fixture("skills-lock/malformed-source-types", tmp_path)
+
+        result = run_lint(repo, "--rule", "skills-lock-valid", "--no-custom-rules", "--no-plugins")
+
+        assert result["rc"] == 1
+        assert result["out"] is not None
+        found = violations(result)
+        assert {v["rule_id"] for v in found} == {"skills-lock-valid"}
+        assert {v["file_path"] for v in found} == {"skills-lock.json"}
+        assert all(v["line"] is None for v in found)
+        messages = {v["message"] for v in found}
+        assert messages == {
+            f"Skill '{name}-source' field 'sourceType' must be a non-empty string"
+            for name in ("array", "object", "null", "empty")
+        } | {
+            "Skill 'future-source' uses unrecognized sourceType 'future-registry'. "
+            "If it was added after this skillsaw release, list it under "
+            "skills-lock-valid 'extra-source-types'.",
+            "Skill 'broken-hash' field 'computedHash' must be a lowercase "
+            "64-character SHA-256 hex digest",
+        }
+        assert summary(result)["errors"] == 5
+        assert summary(result)["info"] == 1
+
+    def test_valid_root_and_nested_lockfiles_are_clean(self, tmp_path):
+        repo = copy_fixture("skills-lock/valid", tmp_path)
+
+        result = run_lint(repo, "--rule", "skills-lock-valid", "--no-custom-rules", "--no-plugins")
+
+        assert result["rc"] == 0
+        assert result["out"] is not None
+        assert "skills-lock" in result["out"]["stats"]["repo_types"]
+        assert result["out"]["stats"]["rules_run"] == ["skills-lock-valid"]
+        assert violations(result) == []
+
+
 # ── Agent Plugins v1 ─────────────────────────────────────────────
 
 
