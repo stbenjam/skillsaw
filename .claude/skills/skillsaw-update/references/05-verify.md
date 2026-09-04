@@ -1,8 +1,9 @@
 # Run final verification
 
-Re-run the linter with `<new-prefix>` until it exits successfully.
-Then run `<new-prefix>` from the repository root and confirm that it exits
-successfully; bare `skillsaw` may be absent or still the old release when the
+Re-run the linter with `<new-prefix>`. If it exits non-zero only on findings
+the user declined to fix, baseline or configure, report them and stop; retry
+only after an accepted remediation. Then run `<new-prefix>` from the
+repository root and confirm that it exits successfully; bare `skillsaw` may be absent or still the old release when the
 retained prefix is `uvx` or a container. Summarize:
 
 - verification checks completed (targeted re-lint and root lint both passing);

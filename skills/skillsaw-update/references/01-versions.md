@@ -16,12 +16,14 @@ installed container runtime. For containers, define `{installed-prefix}` as a
 complete run command mounting the repository at `/workspace`:
 
 ```console
-podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}
+podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:v{latest}
 ```
 
 (or `docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`).
 The user mapping lets the later `fix` and `baseline` steps write to the
-checkout, which the image's non-root user otherwise cannot.
+checkout, which the image's non-root user otherwise cannot, and `:Z` relabels
+the mount for SELinux hosts, as the Podman commands in the other skills do;
+Docker forms take neither.
 Verify with `<installed-prefix> --version` and treat that version as both
 `{installed}` and the starting prefix.
 
@@ -36,14 +38,16 @@ python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('
 If PyPI is unreachable:
 
 ```console
-git -c 'versionsort.suffix=-' ls-remote --tags --sort='v:refname' https://github.com/stbenjam/skillsaw.git 'v*' | tail -1
+git -c 'versionsort.suffix=-' ls-remote --tags --sort='v:refname' https://github.com/stbenjam/skillsaw.git 'v*' | tail -1 | sed 's|.*refs/tags/v||; s|\^{}$||'
 ```
 
-Strip the leading `v` (and any trailing `^{}`) from the tag for the `{latest}`
-version number.
+The `sed` drops the object id, the `refs/tags/v` prefix and a trailing `^{}`,
+leaving the `{latest}` version number alone.
 
-If `{installed}` equals `{latest}`, report that the install is current and
-continue: there are no new rules, but pins may still lag behind.
+If `{installed}` equals `{latest}`, report that the install is current, retain
+`<installed-prefix>` as `<new-prefix>`, skip the upgrade question below, and
+continue from "Capture the old rule list": there are no new rules, but pins
+may still lag behind.
 
 ## Capture the old rule list
 
@@ -71,7 +75,7 @@ If yes, follow the method behind the retained prefix:
 - **Container**: pull the pinned image
   (`podman pull ghcr.io/stbenjam/skillsaw:v{latest}` or `docker pull ...`)
   and define `<new-prefix>` as
-  `podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`
+  `podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:v{latest}`
   (or `docker run ...`).
 - **Local binary (`skillsaw`)**: upgrade via `pip install --upgrade "skillsaw=={latest}"`
   or the project's package manager, retaining `skillsaw` as `<new-prefix>`.
@@ -79,7 +83,7 @@ If yes, follow the method behind the retained prefix:
 If no:
 Do not modify the local installation. Offer to select an isolated, zero-install
 command as `<new-prefix>` (such as `uvx skillsaw=={latest}` or
-`podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`) to
+`podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:v{latest}`) to
 evaluate new rules and bump version pins without modifying local packages.
 If the user agrees, use that prefix for `<new-prefix>` and continue below;
 if the user also declines running the new version, stop the update workflow

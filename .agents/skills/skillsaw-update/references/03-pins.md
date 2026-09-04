@@ -15,8 +15,9 @@ grep -rnE "stbenjam/skillsaw(@|/review@)" .
 This covers both the lint action (`stbenjam/skillsaw@<SHA>`) and the review
 action (`stbenjam/skillsaw/review@<SHA>`).
 
-For GitHub Actions workflows (`.github/workflows/*.yml`), resolve the commit
-SHA of the newest release tag before editing:
+For every `uses:` line the search found, in workflows (`.yml` or `.yaml`) and
+in action metadata alike, resolve the commit SHA of the newest release tag
+before editing:
 
 ```console
 git ls-remote https://github.com/stbenjam/skillsaw.git 'refs/tags/v{latest}' 'refs/tags/v{latest}^{}'
@@ -24,8 +25,9 @@ git ls-remote https://github.com/stbenjam/skillsaw.git 'refs/tags/v{latest}' 're
 
 The exact refs keep `v{latest}-rc1` and `v{latest}0` out of the answer. An
 annotated tag yields two lines; use the SHA on the `^{}` line, which is the
-commit the tag points to. Replace the old SHA with it and refresh the
-trailing version comment to `# v{latest}`:
+commit the tag points to. A lightweight tag yields one line; its SHA is the
+commit. Replace the old SHA with it in every matching `uses:` line and refresh
+the trailing version comment to `# v{latest}`:
 
 ```yaml
 - uses: stbenjam/skillsaw@<NEW_SHA> # v{latest}
@@ -41,11 +43,12 @@ If the repository defines its own actions, check every action metadata file
 for a skillsaw version input with a pinned default:
 
 ```console
-grep -rn -B3 "default: '[0-9]" --include=action.yml --include=action.yaml . | grep -iA3 skillsaw
+grep -rn -iA4 skillsaw --include=action.yml --include=action.yaml . | grep -E 'default: *["'"'"']?v?[0-9]'
 ```
 
-Update that input's `default: '{old}'` to `default: '{latest}'`; leave other
-inputs' defaults alone.
+Update that input's default from `{old}` to `{latest}`, keeping whatever
+quoting and `v` prefix the file already uses; leave other inputs' defaults
+alone.
 
 ## Makefile targets
 
@@ -87,8 +90,10 @@ grep -rn "ghcr.io/stbenjam/skillsaw" . 2>/dev/null
 ```
 
 Retag `:v{old}` to `:v{latest}` in every file the search found: Dockerfiles,
-Containerfiles, `.gitlab-ci.yml`, and any GitLab CI file it includes. A `:latest` tag floats onto the new release
-by itself; recommend pinning it to `:v{latest}` for repeatable pipelines,
+Containerfiles, `.gitlab-ci.yml`, and any GitLab CI file it includes. When
+the tag is indirect (`:v${SKILLSAW_VERSION}`, or a `FROM` built from an
+`ARG`), update the variable or build argument it reads instead. A `:latest`
+tag floats onto the new release by itself; recommend pinning it to `:v{latest}` for repeatable pipelines,
 but only change it after the user agrees.
 
 Return to the router with the list of edited files.

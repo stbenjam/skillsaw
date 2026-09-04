@@ -14,29 +14,31 @@ Best for high-priority issues and quick wins:
 - All `error` severity findings by default; an error the user accepts as debt
   may move to Baseline instead
 - Findings with `"fixable": true`: safe fixes apply with
-  `skillsaw fix --rule <rule-id>`, suggested ones with `--suggest` added.
+  `<new-prefix> fix --rule <rule-id>`, suggested ones with `--suggest` added.
   Naming the rule repairs it at any severity
 - Small groups of straightforward corrections
 
 ## 2. Baseline
 
 Best for valid findings that are not urgent to fix immediately. Recording them
-with `skillsaw baseline` absorbs the new findings into the existing baseline
+with `<new-prefix> baseline` absorbs the new findings into the existing baseline
 file so CI passes while preventing regressions on future changes. Only errors
-and warnings can go here: `skillsaw baseline` never records info findings.
+and warnings can go here: `<new-prefix> baseline` never records info findings.
 
 A removed rule may leave stale baseline entries behind. Before refreshing,
 run `<new-prefix>` and confirm the only unbaselined findings are the added
-rules' or ones the user has just agreed to baseline: `skillsaw baseline`
+rules' or ones the user has just agreed to baseline: `<new-prefix> baseline`
 records every current non-info finding, so refreshing over an unrelated
 regression from an existing rule would accept it silently. If other findings
 are present, delete the removed rule's entries from `.skillsaw-baseline.json`
-instead of regenerating, or resolve those findings first.
+instead of regenerating, or resolve those findings first. An ID the new
+version still resolves (`<new-prefix> explain <id>` succeeds) is an alias of a
+live rule, not a removed rule; leave its entries.
 
 ## 3. Configure
 
 Best when a new rule clashes with an intentional project convention. Check
-`skillsaw explain <rule-id>` for options such as `exclude` or limits first,
+`<new-prefix> explain <rule-id>` for options such as `exclude` or limits first,
 then consider lowering to `severity: info`, and use `enabled: false` only as
 a last resort for advisory content rules. Always add a brief `#` comment in
 `.skillsaw.yaml` explaining the rationale.
@@ -63,4 +65,4 @@ Share the summary table and confirm the plan:
 
 The fix-now set drives the next edits, the configure set becomes
 `.skillsaw.yaml` settings, and the baseline set is recorded with
-`skillsaw baseline`. Then return to the router.
+`<new-prefix> baseline`. Then return to the router.
