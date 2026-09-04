@@ -85,13 +85,13 @@ If yes, follow the method behind the retained prefix:
   the `skillsaw` script (`head -1 "$(command -v skillsaw)"`) names its
   interpreter (`…/pipx/venvs/skillsaw/…`, `…/uv/tools/skillsaw/…`, or a
   plain virtualenv). Then upgrade with that manager, keeping the rule
-  plugins it carries: `pipx upgrade skillsaw` keeps injected packages
-  (`pipx list --include-injected` shows them); `uv tool install
-  "skillsaw=={latest}"` with one `--with <plugin>` per extra requirement
-  `uv tool list --show-with` prints, because a reinstall replaces the
-  environment and `uv tool upgrade` keeps a pinned install's constraint
-  without upgrading; `pip install "skillsaw=={latest}"` leaves the other
-  packages in its environment alone. Retain `skillsaw` as `<new-prefix>`.
+  plugins it carries: `pipx upgrade skillsaw` keeps injected packages;
+  `uv tool install "skillsaw=={latest}"` with one `--with <plugin>` per
+  extra requirement `uv tool list --show-with` prints, since a reinstall
+  replaces the environment and `uv tool upgrade` keeps a pinned install's
+  constraint without upgrading; `pip install "skillsaw=={latest}"` leaves
+  the environment's other packages alone. Retain `skillsaw` as
+  `<new-prefix>`.
 - **Container**: pull the pinned image
   (`podman pull ghcr.io/stbenjam/skillsaw:{latest}` or `docker pull ...`) and
   define `<new-prefix>` as the run command from "Installed version" with
