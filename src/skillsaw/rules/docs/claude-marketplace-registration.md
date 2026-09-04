@@ -35,15 +35,3 @@ cannot be rewritten safely: `marketplace.json` is not valid JSON, its
 root is not an object, `plugins` is not an array, or the plugin lives
 outside `metadata.pluginRoot` (no valid relative `source` exists —
 move the plugin under the plugin root or adjust `pluginRoot`).
-
-## Codex plugins
-
-This rule covers the Claude marketplace. A directory claimed only by
-OpenAI Codex — a `.codex-plugin/plugin.json`, or a local-source listing
-in a Codex catalog, with no `.claude-plugin` marker or Claude
-marketplace listing — is exempt here, but registration is still
-required: `codex-marketplace-registration` checks the same obligation
-against the Codex catalog (`.agents/plugins/marketplace.json`). A
-dual-manifest directory keeps this check, and the ecosystem-neutral
-content and security rules read every plugin's files regardless of
-provenance.

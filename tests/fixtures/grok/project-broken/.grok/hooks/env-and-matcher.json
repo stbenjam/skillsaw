@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/tag-subagent.sh",
+            "env": { "GROK_SESSION_ID": "waypoint-local", "WAYPOINT_LOG": "debug" }
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "end_turn",
+        "hooks": [{ "type": "command", "command": "make lint", "timeout": 600 }]
+      }
+    ]
+  }
+}

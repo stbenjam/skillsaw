@@ -1,0 +1,10 @@
+{
+  "name": "policy-guard",
+  "version": "1.4.0",
+  "description": "Enforce ledger policy on tool calls and archive each session.",
+  "author": {
+    "name": "Payments Platform"
+  },
+  "license": "Apache-2.0",
+  "hooks": "./hooks/hooks.json"
+}

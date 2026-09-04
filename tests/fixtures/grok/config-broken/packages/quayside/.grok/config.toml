@@ -1,0 +1,7 @@
+# Neither command nor url, so Grok drops this server and keeps its siblings.
+[mcp_servers.quayside]
+args = ["mcp"]
+cwd = "services/quayside"
+
+[mcp_servers.berths]
+command = "bin/harbourmaster"

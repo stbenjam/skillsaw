@@ -13,7 +13,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentCriticalPositionRule(Rule):
     """Detect critical instructions buried in the attention dead zone"""
 
-    formats = None
     since = "0.7.0"
     # Newer models no longer show the lost-in-the-middle attention dip this
     # rule polices, so it stopped earning its noise.

@@ -12,8 +12,7 @@ from skillsaw.config import LinterConfig, find_config
 from skillsaw.context import (
     RepositoryContext,
     RepositoryType,
-    HAS_CURSOR,
-    ALL_INSTRUCTION_FORMATS,
+    INSTRUCTION_REPO_TYPES,
 )
 
 
@@ -250,23 +249,24 @@ def test_auto_without_repo_types_always_enabled(valid_plugin):
     assert config.is_rule_enabled("some-rule", context, None) is True
 
 
-def test_auto_with_formats_enabled_when_format_detected(temp_dir):
-    """Test that auto with formats fires when the format is detected"""
+def test_auto_with_tool_repo_type_enabled_when_tool_detected(temp_dir):
+    """A rule declaring a tool repository type activates where that tool
+    is configured."""
     (temp_dir / ".cursor" / "rules").mkdir(parents=True)
     context = RepositoryContext(temp_dir)
     config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
-    assert config.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is True
+    assert config.is_rule_enabled("test-rule", context, {RepositoryType.CURSOR}) is True
 
 
-def test_auto_with_formats_disabled_when_format_missing(temp_dir):
-    """Test that auto with formats does not fire when format is absent"""
+def test_auto_with_tool_repo_type_disabled_when_tool_missing(temp_dir):
+    """The other half: no `.cursor/`, no activation."""
     context = RepositoryContext(temp_dir)
     config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
-    assert config.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is False
+    assert config.is_rule_enabled("test-rule", context, {RepositoryType.CURSOR}) is False
 
 
-def test_auto_with_formats_or_repo_types(temp_dir):
-    """Test that either repo_types or formats match enables the rule"""
+def test_auto_with_either_declared_repo_type_matching(temp_dir):
+    """Any one of the declared types matching enables the rule."""
     (temp_dir / "CLAUDE.md").write_text("# Instructions")
     context = RepositoryContext(temp_dir)
     config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
@@ -274,23 +274,21 @@ def test_auto_with_formats_or_repo_types(temp_dir):
         config.is_rule_enabled(
             "test-rule",
             context,
-            {RepositoryType.MARKETPLACE},
-            ALL_INSTRUCTION_FORMATS,
+            {RepositoryType.MARKETPLACE} | INSTRUCTION_REPO_TYPES,
         )
         is True
     )
 
 
-def test_auto_with_formats_and_repo_types_both_miss(temp_dir):
-    """Test that rule is disabled when neither repo_types nor formats match"""
+def test_auto_with_no_declared_repo_type_matching(temp_dir):
+    """No declared type matches, so the rule stays off."""
     context = RepositoryContext(temp_dir)
     config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
     assert (
         config.is_rule_enabled(
             "test-rule",
             context,
-            {RepositoryType.MARKETPLACE},
-            {HAS_CURSOR},
+            {RepositoryType.MARKETPLACE, RepositoryType.CURSOR},
         )
         is False
     )
@@ -300,10 +298,10 @@ def test_explicit_enabled_overrides_auto_detection(temp_dir):
     """Test that explicit enabled: true/false in config overrides auto"""
     context = RepositoryContext(temp_dir)
     config = LinterConfig(rules={"test-rule": {"enabled": False}})
-    assert config.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is False
+    assert config.is_rule_enabled("test-rule", context, {RepositoryType.CURSOR}) is False
 
     config2 = LinterConfig(rules={"test-rule": {"enabled": True}})
-    assert config2.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is True
+    assert config2.is_rule_enabled("test-rule", context, {RepositoryType.CURSOR}) is True
 
 
 def test_format_specific_rules_default_to_auto():
@@ -354,8 +352,7 @@ def test_no_config_skips_version_gate(temp_dir):
     assert config.is_rule_enabled(
         "content-weak-language",
         context,
-        repo_types=None,
-        formats=frozenset({"HAS_CLAUDE_MD"}),
+        repo_types=frozenset({RepositoryType.CLAUDE_MD}),
         since_version="0.7.0",
     )
 
@@ -430,14 +427,14 @@ def test_prerelease_version_does_not_crash_version_gate(temp_dir, tmp_path):
     assert config.is_rule_enabled(
         "content-weak-language",
         context,
-        formats=ALL_INSTRUCTION_FORMATS,
+        repo_types=INSTRUCTION_REPO_TYPES,
         since_version="0.7.0",
     )
     assert (
         config.is_rule_enabled(
             "content-weak-language",
             context,
-            formats=ALL_INSTRUCTION_FORMATS,
+            repo_types=INSTRUCTION_REPO_TYPES,
             since_version="99.0.0",
         )
         is False
@@ -454,7 +451,7 @@ def test_v_prefixed_version_does_not_crash_version_gate(temp_dir, tmp_path):
     assert config.is_rule_enabled(
         "content-weak-language",
         context,
-        formats=ALL_INSTRUCTION_FORMATS,
+        repo_types=INSTRUCTION_REPO_TYPES,
         since_version="0.7.0",
     )
 
@@ -469,7 +466,7 @@ def test_version_gates_new_rules(temp_dir):
         config.is_rule_enabled(
             "content-weak-language",
             context,
-            formats=ALL_INSTRUCTION_FORMATS,
+            repo_types=INSTRUCTION_REPO_TYPES,
             since_version="0.7.0",
         )
         is False
@@ -488,7 +485,7 @@ def test_version_allows_matching_rules(temp_dir):
         config.is_rule_enabled(
             "content-weak-language",
             context,
-            formats=ALL_INSTRUCTION_FORMATS,
+            repo_types=INSTRUCTION_REPO_TYPES,
             since_version="0.7.0",
         )
         is True
@@ -506,7 +503,7 @@ def test_explicit_true_overrides_version_gate(temp_dir):
         config.is_rule_enabled(
             "content-weak-language",
             context,
-            formats=ALL_INSTRUCTION_FORMATS,
+            repo_types=INSTRUCTION_REPO_TYPES,
             since_version="0.7.0",
         )
         is True
@@ -524,7 +521,7 @@ def test_explicit_false_overrides_version(temp_dir):
         config.is_rule_enabled(
             "content-weak-language",
             context,
-            formats=ALL_INSTRUCTION_FORMATS,
+            repo_types=INSTRUCTION_REPO_TYPES,
             since_version="0.7.0",
         )
         is False
@@ -543,7 +540,7 @@ def test_no_version_means_all_rules_active(temp_dir):
         config.is_rule_enabled(
             "content-weak-language",
             context,
-            formats=ALL_INSTRUCTION_FORMATS,
+            repo_types=INSTRUCTION_REPO_TYPES,
             since_version="0.7.0",
         )
         is True
@@ -562,7 +559,7 @@ def test_severity_override_bypasses_version_gate(temp_dir):
         config.is_rule_enabled(
             "content-weak-language",
             context,
-            formats=ALL_INSTRUCTION_FORMATS,
+            repo_types=INSTRUCTION_REPO_TYPES,
             since_version="0.7.0",
         )
         is True
@@ -583,7 +580,7 @@ def test_explicit_auto_overrides_version_gate(temp_dir):
         config.is_rule_enabled(
             "content-weak-language",
             context,
-            formats=ALL_INSTRUCTION_FORMATS,
+            repo_types=INSTRUCTION_REPO_TYPES,
             since_version="0.7.0",
         )
         is True

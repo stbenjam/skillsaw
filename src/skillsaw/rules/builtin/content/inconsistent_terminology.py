@@ -17,7 +17,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentInconsistentTerminologyRule(Rule):
     """Detect inconsistent terminology across instruction files"""
 
-    formats = None
     since = "0.7.0"
 
     _TERM_GROUPS: List[Tuple[str, List[re.Pattern]]] = [

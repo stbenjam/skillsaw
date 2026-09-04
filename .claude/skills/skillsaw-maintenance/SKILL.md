@@ -41,6 +41,8 @@ to check, the rules that map, and sync notes (hand-copied values that can drift)
 | Model Context Protocol and MCP Registry | [references/mcp.md](references/mcp.md) | `mcp/`, `mcp_registry/` |
 | CodeRabbit (`.coderabbit.yaml`) | [references/coderabbit.md](references/coderabbit.md) | `coderabbit/` |
 | APM (`.apm/`) | [references/apm.md](references/apm.md) | `apm/` |
+| Muse Code (hooks) | [references/muse.md](references/muse.md) | `muse/`, `formats/muse.py` |
+| Grok Build (`.grok/` project layer) | [references/grok.md](references/grok.md) | `grok/`, `formats/grok.py` |
 
 Pay special attention to the **Sync notes** in each reference: rules that hand-copy
 upstream value sets (OpenClaw's install kinds/os/archive, MCP transport types, APM

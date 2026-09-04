@@ -1,0 +1,142 @@
+## Why
+
+`.grok/hooks/*.json` allows you to automate shell commands and HTTP requests
+during Grok Build agent lifecycle events — such as right before a tool runs,
+when a session begins, or when the agent completes its work. Because hooks are
+committed to the repository, they provide a reliable, shared mechanism for
+running checks and automations across your team.
+
+Grok Build reads all `*.json` files directly inside `.grok/hooks/` and merges
+their hook definitions. If a hook file has syntax or structural issues, Grok
+may skip the file or individual handlers quietly during headless sessions.
+This rule verifies your `.grok/hooks/*.json` files against Grok's supported
+events, handler types, and options so that your automations run reliably.
+
+Command execution patterns are also scanned for security by
+[`hooks-dangerous`](hooks-dangerous.md) and can be inventoried against an
+explicit allowlist with [`hooks-prohibited`](hooks-prohibited.md).
+
+## Severity
+
+Severity reflects how much of the hook configuration is affected by an issue:
+
+**Errors** — issues that prevent Grok Build from loading the hooks file:
+
+- Invalid JSON syntax, non-finite numbers (`NaN`, `Infinity`, `-Infinity`), or
+  a file starting with a UTF-8 Byte Order Mark (BOM).
+- Missing top-level `hooks` object, or an object that is not a dictionary.
+- Event values that are not arrays, matcher groups that are not objects, or
+  matcher groups missing their `hooks` array.
+- Handlers missing a `type` field.
+- A `matcher` that is not a string.
+- Handler fields with incompatible data types: `type`, `command`, and `url`
+  must be strings; `timeout` must be a non-negative integer; and `env` must be
+  an object with string values.
+
+**Warnings** — the file loads, but specific events or handlers may not run:
+
+- Unrecognized hook event names.
+- A regex `matcher` that does not compile under Rust's regex engine. Rust's
+  regex syntax supports Unicode property classes (`\p{...}`) and set operations
+  (`&&`, `--`, `~~`), but does not support lookarounds, backreferences, or
+  conditional groups. Matchers longer than 1,000 characters are skipped to keep
+  checks responsive.
+- A `command` handler missing a `command` string, or an `http` handler missing
+  a `url` string.
+- Handlers specifying an unsupported `type` (supported types are `command` and
+  `http`).
+- An empty `hooks` object or empty event array (valid JSON, but configures no
+  actions).
+
+**Info** — helpful configuration tips:
+
+- Environment variables in `env` that are automatically provided by Grok's
+  hook runner (such as `GROK_HOOK_EVENT`, `GROK_SESSION_ID`, or
+  `GROK_WORKSPACE_ROOT`), as the runner's values take precedence.
+- Defining a `matcher` on events like `Stop` or `UserPromptSubmit` where
+  matchers are not evaluated by Grok.
+
+## Event names
+
+Grok accepts several spellings of each event and normalizes them, making it easy
+to share hooks across tools like Claude Code or Cursor. Accepted variations
+include:
+
+- Standard Grok event names: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
+  `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionDenied`, `Stop`,
+  `StopFailure`, `StopCancelled`, `Notification`, `SubagentStart`, `SubagentStop`,
+  `PreCompact`, `PostCompact`.
+- Documented aliases: `SubagentEnd` (alias for `SubagentStop`).
+- The `snake_case` representation passed to `GROK_HOOK_EVENT`.
+- Cased variants, with the note that `userPromptSubmit` should be written as
+  `UserPromptSubmit`, `user_prompt_submit`, or Cursor's `beforeSubmitPrompt`.
+- Cursor lifecycle events: `beforeShellExecution`, `beforeMCPExecution`, and
+  `beforeReadFile` map to `PreToolUse`; `afterShellExecution`,
+  `afterMCPExecution`, `afterFileEdit`, `afterAgentResponse`, and
+  `afterAgentThought` map to `PostToolUse`.
+
+## Examples
+
+**Bad** — a string `timeout` prevents the file from loading:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "./scripts/version.sh", "timeout": "10" }
+        ]
+      }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "make lint" }] }
+    ]
+  }
+}
+```
+
+**Good** — well-formed matcher groups and appropriate handler options:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|run_terminal_command",
+        "hooks": [
+          { "type": "command", "command": "./scripts/audit-command.sh", "timeout": 5 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "make lint", "timeout": 600 },
+          { "type": "http", "url": "https://hooks.example.com/turn-ended", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## How to fix
+
+- Specify `timeout` as a non-negative integer of seconds (`30`, rather than
+  `30.0` or `"30"`). For longer tasks like test suites in `Stop` hooks, generous
+  timeouts (such as 600 seconds) work well.
+- Provide each handler with `"type": "command"` and a `command` string, or
+  `"type": "http"` and a `url` string.
+- Keep `env` values as strings. Variables provided by Grok's runner do not
+  need to be repeated in `env`.
+- Use standard Grok event names or supported aliases.
+
+If Grok introduces newer event names, you can allow them in `.skillsaw.yaml`:
+
+```yaml
+rules:
+  grok-hooks-valid:
+    extra-events:
+      - PreSomethingNew
+```

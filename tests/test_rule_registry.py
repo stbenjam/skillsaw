@@ -37,6 +37,41 @@ def test_registry_classes_are_concrete_rules():
         assert rule.description
 
 
+def test_new_rules_are_not_force_enabled():
+    """Project policy: a rule that ships after 0.20.0 defaults to ``auto``
+    or ``False``, never ``True``.
+
+    ``default_enabled = True`` runs the rule in every repository the day a
+    user upgrades, whether or not it has anything the rule can read. ``auto``
+    with ``repo_types`` is how a rule says where it applies.
+    """
+    offenders = [
+        cls.__name__
+        for cls in BUILTIN_RULES
+        if _version(cls.since) >= (0, 20, 0) and cls.default_enabled not in ("auto", False)
+    ]
+    assert offenders == [], (
+        f"{offenders} default to enabled: true — declare repo_types "
+        "and leave default_enabled at 'auto', or set it to False for opt-in"
+    )
+
+
+def test_class_import_aliases_do_not_duplicate_a_rule():
+    """Renamed rules keep their old class name importable (0.18.0's
+    ``claude-*`` renames set the precedent, and ``HooksJsonValidRule`` follows
+    it). Discovery dedupes by class identity, so a second binding must not
+    become a second registry entry."""
+    from skillsaw.rules.builtin.hooks import ClaudeHooksValidRule, HooksJsonValidRule
+
+    assert HooksJsonValidRule is ClaudeHooksValidRule
+    assert [cls for cls in BUILTIN_RULES if cls is ClaudeHooksValidRule] == [ClaudeHooksValidRule]
+
+
+def _version(text):
+    parts = (text or "0.1.0").split(".")
+    return tuple(int(part) for part in parts[:3])
+
+
 def test_default_enabled_values_are_valid():
     for cls in BUILTIN_RULES:
         assert cls.default_enabled in (True, False, "auto"), (
@@ -125,6 +160,102 @@ def test_backward_compatible_class_imports():
         from skillsaw.rules.builtin import NoSuchRule  # noqa: F401
 
 
+def test_legacy_hooks_rule_class_name_still_imports():
+    """0.20.0 renamed ``hooks-json-valid`` to ``claude-hooks-valid`` and
+    split Codex's checks out. Third-party code importing the old class name
+    keeps working, as it did through the 0.18.0 renames."""
+    import skillsaw.rules.builtin as builtin
+    from skillsaw.rules.builtin import HooksJsonValidRule as FromRoot
+    from skillsaw.rules.builtin.hooks import HooksJsonValidRule
+    from skillsaw.rules.builtin.hooks.json_valid import HooksJsonValidRule as FromModule
+
+    assert HooksJsonValidRule is FromModule
+    assert FromRoot is FromModule
+    assert HooksJsonValidRule().rule_id == "claude-hooks-valid"
+    assert (
+        "HooksJsonValidRule"
+        in __import__("skillsaw.rules.builtin.hooks", fromlist=["__all__"]).__all__
+    )
+    # The root exporter keys on ``cls.__name__``, which a rename leaves on the
+    # new name — the legacy name has to reach ``__all__`` from its own map.
+    assert "HooksJsonValidRule" in builtin.__all__
+    assert [rid for rid, cls in BUILTIN_RULE_REGISTRY.items() if cls is FromRoot] == [
+        "claude-hooks-valid"
+    ]
+    with pytest.raises(AttributeError):
+        builtin.NoSuchLegacyRule
+
+
+def test_no_builtin_rule_declares_a_formats_attribute():
+    """0.20.0 folded the ``HAS_*`` format labels into ``RepositoryType``, so
+    a rule now gates on ``repo_types`` alone.
+
+    Nothing reads ``formats`` any more. A rule class that still declared one
+    would look gated and be ungated — the silent no-op this suite exists to
+    catch — so the removal is pinned rather than trusted.
+    """
+    offenders = [cls.__name__ for cls in BUILTIN_RULES if hasattr(cls, "formats")]
+
+    assert offenders == [], (
+        f"{offenders} still declare a 'formats' attribute; gate on repo_types "
+        "instead — nothing reads formats"
+    )
+
+
+def test_every_detected_tool_type_is_listed_in_tool_repo_types(tmp_path):
+    """``TOOL_REPO_TYPES`` is what ``_refresh_tool_types`` recomputes.
+
+    A tool type detection can produce but that set omits would be added once
+    at construction and never refreshed — it would survive an exclude that
+    removed its marker, and it would not be unioned back in under a
+    ``--type`` override.
+    """
+    from skillsaw.context import RepositoryType
+    from skillsaw.discovery.detect import tool_types
+    from skillsaw.repository_types import TOOL_REPO_TYPES
+
+    (tmp_path / ".cursor" / "rules").mkdir(parents=True)
+    (tmp_path / ".github").mkdir()
+    (tmp_path / ".github" / "copilot-instructions.md").write_text("Use tabs in Makefiles.\n")
+    (tmp_path / ".clinerules").write_text("Prefer small commits.\n")
+    (tmp_path / ".devin" / "rules").mkdir(parents=True)
+    (tmp_path / "opencode.json").write_text('{"$schema": "https://opencode.ai/config.json"}\n')
+    (tmp_path / ".muse").mkdir()
+    (tmp_path / ".muse" / "hooks.json").write_text('{"hooks": {}}\n')
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".codex" / "hooks.json").write_text('{"hooks": {}}\n')
+    (tmp_path / ".grok" / "hooks").mkdir(parents=True)
+    (tmp_path / ".grok" / "hooks" / "session-start.json").write_text('{"hooks": {}}\n')
+    (tmp_path / ".kiro").mkdir()
+    (tmp_path / "GEMINI.md").write_text("# Gemini\n\nRun `make test`.\n")
+    (tmp_path / "QWEN.md").write_text("# Qwen\n\nRun `make test`.\n")
+    (tmp_path / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+    (tmp_path / "CLAUDE.md").write_text("# Claude\n\nRun `make test`.\n")
+    (tmp_path / ".coderabbit.yaml").write_text("reviews:\n  profile: chill\n")
+    (tmp_path / "skills-lock.json").write_text('{"skills": {}}\n')
+
+    context = RepositoryContext(tmp_path)
+    scan = context._repository_scan()
+    # ``RepositoryType(value)`` raises on a value the enum does not have, so
+    # the conversion itself pins detection to the vocabulary.
+    detected = {
+        RepositoryType(value)
+        for value in tool_types(
+            tmp_path,
+            context.instruction_files,
+            context.is_path_excluded,
+            scan.tool_dirs,
+            scan.legacy_editor_files,
+            scan.skills_lock_files,
+        )
+    }
+
+    assert detected <= TOOL_REPO_TYPES, sorted(t.value for t in detected - TOOL_REPO_TYPES)
+    # The fixture carries one marker per tool, so the two sets should meet:
+    # a member here that detection never produces is a type nothing can set.
+    assert detected == TOOL_REPO_TYPES, sorted(t.value for t in TOOL_REPO_TYPES - detected)
+
+
 def test_context_constructor_applies_excludes(tmp_path):
     """Excludes passed to the constructor filter discovery from the start."""
     skill = tmp_path / "templates" / "my-skill"
@@ -140,9 +271,9 @@ def test_context_constructor_applies_excludes(tmp_path):
     assert "my-skill" not in skill_names
 
 
-def test_context_constructor_excludes_precede_format_detection(tmp_path):
-    """Excluded instruction files must not drive format detection."""
-    from skillsaw.context import HAS_COPILOT
+def test_context_constructor_excludes_precede_tool_detection(tmp_path):
+    """Excluded instruction files must not drive tool detection."""
+    from skillsaw.context import RepositoryType
 
     vendored = tmp_path / "vendor"
     vendored.mkdir()
@@ -150,38 +281,61 @@ def test_context_constructor_excludes_precede_format_detection(tmp_path):
 
     context = RepositoryContext(tmp_path, exclude_patterns=["vendor/**"])
     assert not context.instruction_files
-    assert HAS_COPILOT not in context.detected_formats
+    assert RepositoryType.COPILOT not in context.repo_types
 
     unfiltered = RepositoryContext(tmp_path)
-    assert HAS_COPILOT in unfiltered.detected_formats
+    assert RepositoryType.COPILOT in unfiltered.repo_types
 
 
-def test_excluded_root_marker_does_not_set_format(tmp_path):
-    """Excluded root marker files must not flip format flags."""
-    from skillsaw.context import HAS_CLAUDE_MD
+def test_excluded_root_marker_does_not_set_a_repo_type(tmp_path):
+    """Excluded root marker files must not add a tool repository type."""
+    from skillsaw.context import RepositoryType
 
     (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
 
     context = RepositoryContext(tmp_path, exclude_patterns=["CLAUDE.md"])
-    assert HAS_CLAUDE_MD not in context.detected_formats
+    assert RepositoryType.CLAUDE_MD not in context.repo_types
 
     unfiltered = RepositoryContext(tmp_path)
-    assert HAS_CLAUDE_MD in unfiltered.detected_formats
+    assert RepositoryType.CLAUDE_MD in unfiltered.repo_types
 
 
-def test_apply_excludes_refreshes_detected_formats(tmp_path):
-    """Legacy callers mutating exclude_patterns get recomputed formats."""
-    from skillsaw.context import HAS_CLAUDE_MD
+def test_apply_excludes_refreshes_the_tool_repo_types(tmp_path):
+    """Legacy callers mutating exclude_patterns get recomputed types.
+
+    The last marker going away leaves nothing detected, so the repository
+    falls back to ``unknown`` rather than keeping a type it no longer has.
+    """
+    from skillsaw.context import RepositoryType
 
     (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
 
     context = RepositoryContext(tmp_path)
-    assert HAS_CLAUDE_MD in context.detected_formats
+    assert RepositoryType.CLAUDE_MD in context.repo_types
 
     context.exclude_patterns = ["CLAUDE.md"]
     context.apply_excludes()
-    assert HAS_CLAUDE_MD not in context.detected_formats
+    assert RepositoryType.CLAUDE_MD not in context.repo_types
+    assert context.repo_types == {RepositoryType.UNKNOWN}
     assert not context.instruction_files
+
+
+def test_an_explicit_type_override_survives_apply_excludes(tmp_path):
+    """``--type`` is the operator's answer; detection never takes it away.
+
+    Detection still adds to it: the override answers how the content is
+    packaged, not which tools the checkout configures, so the CLAUDE.md here
+    contributes its own type alongside the forced one.
+    """
+    from skillsaw.context import RepositoryType
+
+    (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
+
+    context = RepositoryContext(tmp_path, repo_types={RepositoryType.MUSE})
+    context.apply_excludes()
+
+    assert {RepositoryType.MUSE} <= context.repo_types
+    assert RepositoryType.CLAUDE_MD in context.repo_types
 
 
 def test_severity_enum_matches():

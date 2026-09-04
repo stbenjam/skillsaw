@@ -13,8 +13,9 @@ import os
 from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
+from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
-from skillsaw.formats import devin
+from skillsaw.formats import codex, devin, grok, muse
 from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
@@ -31,12 +32,53 @@ VENDOR_DIR_NAMES = frozenset(
 )
 
 # Editor-owned directories whose contents ship in a repository. Cursor,
-# Copilot/VS Code, Cline, Devin and OpenCode all read these from the nearest
-# enclosing folder as well as the repository root, so a monorepo package can
-# carry its own set — hence a walk rather than a root-anchored lookup.
+# Copilot/VS Code, Cline, Devin, OpenCode and Grok Build all read these from
+# the nearest enclosing folder as well as the repository root, so a monorepo
+# package can carry its own set — hence a walk rather than a root-anchored
+# lookup.
 AGENT_TOOL_DIR_NAMES = frozenset(
-    {".cursor", ".clinerules", ".github", ".vscode", ".opencode", *devin.TOOL_DIR_NAMES}
+    {
+        ".cursor",
+        ".clinerules",
+        ".github",
+        ".vscode",
+        ".opencode",
+        codex.CODEX_DIR_NAME,
+        grok.TOOL_DIR_NAME,
+        muse.TOOL_DIR_NAME,
+        *devin.TOOL_DIR_NAMES,
+    }
 )
+
+# The tool directories whose nested ``skills/`` component is handed to the
+# skill walk today. ``CONVENTIONAL_SKILL_DIRS`` names each one's
+# root-relative spelling, which is where a single-package repository puts
+# it; a monorepo package carries its own, and the generic skill walk never
+# finds that one because it skips hidden directories. So the nested roots
+# are handed over explicitly, from the walk that already located the
+# directory. This is not every tool with a ``skills/`` spelling in that
+# table — ``.cursor``, ``.github``, ``.clinerules`` and ``.opencode`` are
+# not here yet, so a package's copy of those is still found only at the
+# repository root.
+#
+# One tuple for both readers — ``marker_types`` below, which decides whether
+# the repository is an Agent Skills repository at all, and
+# ``RepositoryContext._discover_skills``, which passes them to
+# ``discover_skills``. A name in only one of the two is a skill that is
+# counted but never linted, or found but never counted.
+NESTED_TOOL_SKILL_DIRS = (*devin.TOOL_DIR_NAMES, grok.TOOL_DIR_NAME)
+
+# Reserved marker directories an *ecosystem* uses to declare a plugin or a
+# catalog, as opposed to a tool's configuration directory above. Grok Build's
+# ``.grok-plugin`` is here because a monorepo package can be a plugin or a
+# marketplace of its own, and the one walk is what finds those without a
+# second traversal. Recorded in the same ``tool_dirs`` mapping and read
+# through ``agent_tool_dirs``; kept a separate name so the editor-tool
+# vocabulary above keeps meaning editor tools.
+PLUGIN_MARKER_DIR_NAMES = frozenset({grok.PLUGIN_DIR_NAME})
+
+#: Every directory name the walk records, from both sets above.
+SCANNED_DIR_NAMES = AGENT_TOOL_DIR_NAMES | PLUGIN_MARKER_DIR_NAMES
 
 
 @dataclass
@@ -70,7 +112,7 @@ LEGACY_EDITOR_FILES = (".cursorrules", ".clinerules")
 def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     """Walk *root* once, collecting instruction files and editor directories."""
     found = {root / name for name in root_names if (root / name).exists()}
-    tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
+    tool_dirs: Dict[str, List[Path]] = {name: [] for name in SCANNED_DIR_NAMES}
     legacy_editor: Dict[str, List[Path]] = {name: [] for name in LEGACY_EDITOR_FILES}
     mcp_registry_files: List[Path] = []
     package_json_files: List[Path] = []
@@ -81,6 +123,13 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     for dirpath, dirnames, filenames in os.walk(root_str):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
+        # ``os.path.basename`` rather than ``here.name``: this runs once per
+        # directory in the repository, and constructing the pathlib view of
+        # every one of them to read a string costs more than the walk.
+        if os.path.basename(dirpath) == muse.TOOL_DIR_NAME:
+            # Muse's per-agent worktrees are whole checkouts of this
+            # repository; walking them would attach every file twice.
+            dirnames[:] = [name for name in dirnames if name not in muse.SCRATCH_DIR_NAMES]
         # Slice relative directory parts from dirpath to avoid repeatedly calling
         # Path.relative_to() for every directory and file during the walk.
         relative_dir = dirpath[len(root_str) :].lstrip(os.sep)
@@ -118,7 +167,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
             # Instruction files keep the historical behaviour — the sweep
             # above already collected them — but a tool directory is a new
             # claim, so vendored trees stay out of it.
-            if name in AGENT_TOOL_DIR_NAMES and not vendored:
+            if name in SCANNED_DIR_NAMES and not vendored:
                 tool_dirs[name].append(here / name)
     return RepositoryScan(
         instruction_files=tuple(sorted(found)),
@@ -137,11 +186,12 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     )
 
 
-#: Per-editor evidence inside a discovered tool directory. Any one of these
-#: means the tool is configured here, so a repository whose only Cursor
-#: artifact is ``hooks.json`` still activates the Cursor rules.
-_EDITOR_EVIDENCE = {
-    "HAS_CURSOR": (
+#: Per-tool evidence inside a discovered tool directory, keyed by the
+#: ``RepositoryType`` value it proves. Any one entry means the tool is
+#: configured here, so a repository whose only Cursor artifact is
+#: ``hooks.json`` still activates the Cursor rules.
+_TOOL_EVIDENCE = {
+    "cursor": (
         ".cursor",
         (
             ("rules", True),
@@ -151,10 +201,10 @@ _EDITOR_EVIDENCE = {
             ("hooks.json", False),
         ),
     ),
-    # ``.vscode`` is walked for attachment but contributes no format label:
-    # the only thing skillsaw reads there is ``mcp.json``, and the MCP rules
-    # are ungated, so there is no format-gated rule left looking at nothing.
-    "HAS_COPILOT": (
+    # ``.vscode`` is walked for attachment but contributes no repository
+    # type: the only thing skillsaw reads there is ``mcp.json``, and the MCP
+    # rules are ungated, so there is no gated rule left looking at nothing.
+    "copilot": (
         ".github",
         (
             ("copilot-instructions.md", False),
@@ -171,8 +221,8 @@ _EDITOR_EVIDENCE = {
     # fired on only one of them would go quiet the day a project migrated.
     # ``opencode.json`` and ``opencode.jsonc`` inside ``.opencode/`` are
     # listed here; the root
-    # copy is a separate marker check in ``instruction_formats``.
-    "HAS_OPENCODE": (
+    # copy is a separate marker check in ``tool_types``.
+    "opencode": (
         ".opencode",
         (
             ("opencode.json", False),
@@ -195,10 +245,62 @@ _EDITOR_EVIDENCE = {
             ("plugin", True),
         ),
     ),
+    # ``hooks.json`` is the only committed file Muse reads from ``.muse/``;
+    # ``worktrees/`` is child-agent scratch.
+    "muse": (
+        muse.TOOL_DIR_NAME,
+        ((muse.HOOKS_FILENAME, False),),
+    ),
+    # Grok Build reads a whole project layer from ``.grok/``, and any one
+    # piece of it is enough: the skills, rules, commands and agents load
+    # unconditionally, while hooks and LSP additionally need folder trust.
+    # The second group is listed even though nothing parses or attaches it
+    # yet — a repository that configures only an MCP server through
+    # ``.grok/config.toml``, or only a sandbox policy, is still a Grok
+    # repository, and the summary should say so rather than ``unknown``.
+    # Existence is the whole test for those, which is why adding one is a
+    # line here and nothing else: with nothing attached there is no
+    # attachment for detection to disagree with. ``plugins/`` is an install
+    # location Grok's own plugin discovery owns, so it is deliberately not
+    # evidence, and there is no ``.grok/mcp.json``: Grok reads project MCP
+    # servers from ``config.toml`` and the repository-root ``.mcp.json``
+    # only.
+    "grok-project": (
+        grok.TOOL_DIR_NAME,
+        (
+            (grok.RULES_DIR_NAME, True),
+            (grok.SKILLS_DIR_NAME, True),
+            (grok.AGENTS_DIR_NAME, True),
+            (grok.COMMANDS_DIR_NAME, True),
+            (grok.HOOKS_DIR_NAME, True),
+            (grok.CONFIG_FILENAME, False),
+            (grok.LSP_FILENAME, False),
+            (grok.WORKFLOWS_DIR_NAME, True),
+            (grok.ROLES_DIR_NAME, True),
+            (grok.PERSONAS_DIR_NAME, True),
+            (grok.SANDBOX_FILENAME, False),
+        ),
+    ),
+    # ``hooks.json`` and ``config.toml`` are the committed project-layer
+    # files skillsaw reads from ``.codex/``: Codex loads hooks from both and
+    # merges them, and a config declares this project's MCP servers, so
+    # either one alone is a Codex project. Existence is the whole test for
+    # the config, as it is for Grok's.
+    # ``.codex/plugins/`` is an install location — vendor-managed content
+    # that Codex's own plugin discovery finds and that the Codex plugin
+    # rules gate on repository type — so it is deliberately not evidence
+    # here.
+    "codex-project": (
+        codex.CODEX_DIR_NAME,
+        (
+            (codex.CODEX_HOOKS_FILENAME, False),
+            (codex.CODEX_CONFIG_FILENAME, False),
+        ),
+    ),
 }
 
 
-def instruction_formats(
+def tool_types(
     root: Path,
     files: Iterable[Path],
     is_excluded: Callable[[Path], bool],
@@ -206,12 +308,15 @@ def instruction_formats(
     legacy_editor_files: Optional[Mapping[str, Iterable[Path]]] = None,
     skills_lock_files: Optional[Iterable[Path]] = None,
 ) -> Set[str]:
-    """Return instruction-format evidence labels from non-excluded markers.
+    """Return ``RepositoryType`` values for the tools configured here.
+
+    Values rather than enum members: discovery is state-free and imports
+    nothing from ``context``, which owns the enum.
 
     Detection reads the same walk that drives attachment. A tool directory
     found in a monorepo subpackage is evidence just as the root one is —
-    otherwise the lint tree grows blocks that no format-gated rule ever
-    looks at, which is the silent-no-op this linter exists to catch.
+    otherwise the lint tree grows blocks that no gated rule ever looks at,
+    which is the silent-no-op this linter exists to catch.
     """
 
     def marker(*parts: str, is_dir: bool = False) -> bool:
@@ -223,9 +328,9 @@ def instruction_formats(
 
     dirs: Mapping[str, Iterable[Path]] = tool_dirs or {}
 
-    def editor_marker(label: str) -> bool:
-        """Whether any discovered directory holds this editor's evidence."""
-        dir_name, entries = _EDITOR_EVIDENCE[label]
+    def tool_marker(type_value: str) -> bool:
+        """Whether any discovered directory holds this tool's evidence."""
+        dir_name, entries = _TOOL_EVIDENCE[type_value]
         candidates = list(dirs.get(dir_name) or ())
         if not candidates:
             candidates = [root / dir_name]
@@ -288,36 +393,45 @@ def instruction_formats(
 
     found: Set[str] = set()
     checks = (
-        ("HAS_CURSOR", editor_marker("HAS_CURSOR") or legacy_cursor()),
+        ("cursor", tool_marker("cursor") or legacy_cursor()),
         (
-            "HAS_COPILOT",
-            editor_marker("HAS_COPILOT")
-            or any(path.name.endswith(".instructions.md") for path in files),
+            "copilot",
+            tool_marker("copilot") or any(path.name.endswith(".instructions.md") for path in files),
         ),
-        ("HAS_CLINE", cline_marker()),
-        ("HAS_DEVIN", devin_marker()),
+        ("cline", cline_marker()),
+        ("devin", devin_marker()),
         (
-            "HAS_OPENCODE",
-            editor_marker("HAS_OPENCODE")
+            "opencode",
+            tool_marker("opencode")
             # OpenCode reads the project config from the repository root as
             # well as from ``.opencode/``, and a repository that configures
             # only a model and an MCP server has no ``.opencode/`` at all.
             or marker("opencode.json") or marker("opencode.jsonc"),
         ),
-        ("HAS_GEMINI", marker("GEMINI.md")),
-        ("HAS_QWEN", marker("QWEN.md")),
+        # ``.muse/hooks.json`` is the only thing in a checkout that is Muse
+        # Code's alone. Committed ``.agents/memory/`` notes are a shared
+        # convention Muse reads — projects were committing them before Muse
+        # shipped — so they are no more evidence of Muse than AGENTS.md is.
+        ("muse", tool_marker("muse")),
+        # Grok reads ``AGENTS.md`` and ``CLAUDE.md`` too, and both already
+        # carry their own types, so ``.grok/`` itself is the only marker
+        # that is Grok Build's alone.
+        ("grok-project", tool_marker("grok-project")),
+        ("codex-project", tool_marker("codex-project")),
+        ("gemini", marker("GEMINI.md")),
+        ("qwen", marker("QWEN.md")),
         (
-            "HAS_AGENTS_MD",
+            "agents-md",
             any(path.name == "AGENTS.md" and not is_excluded(path) for path in files),
         ),
-        ("HAS_KIRO", marker(".kiro", is_dir=True)),
+        ("kiro", marker(".kiro", is_dir=True)),
         (
-            "HAS_CLAUDE_MD",
+            "claude-md",
             any(path.name == "CLAUDE.md" and not is_excluded(path) for path in files),
         ),
-        ("HAS_CODERABBIT", marker(".coderabbit.yaml")),
+        ("coderabbit", marker(".coderabbit.yaml")),
         (
-            "HAS_SKILLS_LOCK",
+            "skills-lock",
             any(not is_excluded(path) for path in (skills_lock_files or ())),
         ),
     )
@@ -340,6 +454,7 @@ def has_skill_md_recursive(
     should_skip: Callable[[Path], bool],
     _visited: Optional[Set[Path]] = None,
     _boundary: Optional[Path] = None,
+    is_excluded: Callable[[Path], bool] = lambda _: False,
 ) -> bool:
     """Return whether a contained recursive walk finds an Agent Skill."""
     if _visited is None:
@@ -355,13 +470,17 @@ def has_skill_md_recursive(
     if (
         exact_name_exists(root, "SKILL.md")
         and contained_resolve(root / "SKILL.md", _boundary) is not None
+        and not is_excluded(root / "SKILL.md")
+        and not is_excluded(root)
     ):
         return True
     try:
         for item in root.iterdir():
-            if should_skip(item):
+            if should_skip(item) or is_excluded(item):
                 continue
-            if item.is_dir() and has_skill_md_recursive(item, should_skip, _visited, _boundary):
+            if item.is_dir() and has_skill_md_recursive(
+                item, should_skip, _visited, _boundary, is_excluded=is_excluded
+            ):
                 return True
     except OSError:
         pass
@@ -372,6 +491,7 @@ def is_agentskills_repo(
     root: Path,
     should_skip: Callable[[Path], bool],
     extra_skill_roots: Iterable[Path] = (),
+    is_excluded: Callable[[Path], bool] = lambda _: False,
 ) -> bool:
     """Return whether the repository contains an Agent Skill entrypoint."""
     resolved_root = safe_resolve(root)
@@ -380,6 +500,8 @@ def is_agentskills_repo(
     if (
         exact_name_exists(root, "SKILL.md")
         and contained_resolve(root / "SKILL.md", resolved_root) is not None
+        and not is_excluded(root / "SKILL.md")
+        and not is_excluded(root)
     ):
         return True
     for rel in CONVENTIONAL_SKILL_DIRS:
@@ -387,17 +509,25 @@ def is_agentskills_repo(
         if (
             contained_resolve(path, resolved_root) is not None
             and path.is_dir()
-            and has_skill_md_recursive(path, should_skip, _boundary=resolved_root)
+            and not is_root_or_ancestor_excluded(path, resolved_root, is_excluded)
+            and has_skill_md_recursive(
+                path, should_skip, _boundary=resolved_root, is_excluded=is_excluded
+            )
         ):
             return True
     for path in extra_skill_roots:
         if (
             contained_resolve(path, resolved_root) is not None
             and path.is_dir()
-            and has_skill_md_recursive(path, should_skip, _boundary=resolved_root)
+            and not is_root_or_ancestor_excluded(path, resolved_root, is_excluded)
+            and has_skill_md_recursive(
+                path, should_skip, _boundary=resolved_root, is_excluded=is_excluded
+            )
         ):
             return True
-    return has_skill_md_recursive(root, should_skip, _boundary=resolved_root)
+    return has_skill_md_recursive(
+        root, should_skip, _boundary=resolved_root, is_excluded=is_excluded
+    )
 
 
 def is_dot_claude(root: Path, apm: bool) -> bool:
@@ -438,24 +568,23 @@ def marker_types(
     promptfoo_named_files: Iterable[Path],
     promptfoo_eval_files: Mapping[Path, Iterable[Path]],
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
+    is_excluded: Callable[[Path], bool] = lambda _: False,
 ) -> Set[str]:
     """Return independently detectable type labels (excluding ecosystems)."""
     found: Set[str] = set()
     resolved_root = safe_resolve(root)
-    devin_skill_roots: List[Path] = []
+    nested_skill_roots: List[Path] = []
     if resolved_root is not None:
-        for name in devin.TOOL_DIR_NAMES:
+        for name in NESTED_TOOL_SKILL_DIRS:
             for directory in (tool_dirs or {}).get(name, ()):
                 skill_root = directory / "skills"
                 resolved_skill_root = safe_resolve(skill_root)
                 if resolved_skill_root is not None and resolved_skill_root.is_relative_to(
                     resolved_root
                 ):
-                    devin_skill_roots.append(skill_root)
-    if is_agentskills_repo(root, should_skip, devin_skill_roots):
+                    nested_skill_roots.append(skill_root)
+    if is_agentskills_repo(root, should_skip, nested_skill_roots, is_excluded=is_excluded):
         found.add("agentskills")
-    if (root / ".coderabbit.yaml").exists():
-        found.add("coderabbit")
     if apm:
         found.add("apm")
     if is_dot_claude(root, apm):

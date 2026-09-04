@@ -15,6 +15,9 @@ single rule module.  Split across submodules by family:
 * :mod:`~skillsaw.blocks.json_config` — ``JsonConfigBlock`` + hooks/MCP/settings
 * :mod:`~skillsaw.blocks.coderabbit` — ``CodeRabbitContentBlock``
 * :mod:`~skillsaw.blocks.promptfoo` — ``PromptfooPromptBlock``
+* :mod:`~skillsaw.blocks.toml_config` — ``TomlMcpConfigBlock`` (project TOML)
+* :mod:`~skillsaw.blocks.grok` — ``GrokConfigBlock`` (Grok's project TOML)
+* :mod:`~skillsaw.blocks.codex` — ``CodexConfigBlock`` (Codex's project TOML)
 * :mod:`~skillsaw.blocks.gather` — ``gather_all_content_blocks`` and friends
 
 Everything is re-exported here so ``from skillsaw.blocks import X`` keeps
@@ -33,8 +36,11 @@ from .content import (
     DevinGlobalRuleBlock,
     ExtraBlock,
     GeminiMdBlock,
+    GrokRuleBlock,
     InstructionBlock,
     PromptBlock,
+    AgentMemoryBlock,
+    AgentMemoryIndexBlock,
     QwenMdBlock,
     ReadmeBlock,
     SkillRefBlock,
@@ -51,6 +57,8 @@ from .frontmatter import (
     DevinSkillBlock,
     FrontmatterField,
     FrontmatteredBlock,
+    GrokAgentBlock,
+    GrokCommandBlock,
     OpenCodeAgentBlock,
     OpenCodeCommandBlock,
     ParsedFrontmatterBlock,
@@ -60,15 +68,25 @@ from .frontmatter import (
 )
 from .json_config import (
     HOOK_COMMAND_FIELDS,
+    VSCODE_HOOK_COMMAND_FIELDS,
     HookEventConfig,
     HookHandler,
     AgentPluginMcpBlock,
+    ClaudeHooksBlock,
+    CodexConfigHooksBlock,
+    CodexHooksBlock,
     CodexInlineHooksBlock,
     CodexInlineMcpBlock,
     CopilotAgentMcpBlock,
     CursorHooksBlock,
     CursorMcpBlock,
+    GrokHooksBlock,
+    GrokInlineHooksBlock,
+    GrokInlineMcpBlock,
+    GrokMcpBlock,
+    GrokPluginHooksBlock,
     HooksBlock,
+    MuseHooksBlock,
     JsonConfigBlock,
     McpConfigRole,
     McpBlock,
@@ -81,6 +99,7 @@ from .json_config import (
     SkillsLockBlock,
     VsCodeMcpBlock,
     _parse_json_file,
+    json_token,
     parse_hooks_events,
 )
 from .coderabbit import (
@@ -94,6 +113,9 @@ from .coderabbit import (
 )
 from .promptfoo import PromptfooPromptBlock
 from .openai import OpenAIMetadataBlock
+from .toml_config import TomlMcpConfigBlock
+from .codex import CodexConfigBlock
+from .grok import GrokConfigBlock
 from .gather import (
     gather_all_content_blocks,
     gather_all_content_files,
@@ -113,6 +135,9 @@ __all__ = [
     "ClaudeMdBlock",
     "AgentsMdBlock",
     "GeminiMdBlock",
+    "GrokRuleBlock",
+    "AgentMemoryBlock",
+    "AgentMemoryIndexBlock",
     "QwenMdBlock",
     "ClineWorkflowBlock",
     "SkillRefBlock",
@@ -134,6 +159,8 @@ __all__ = [
     "CopilotAgentBlock",
     "OpenCodeCommandBlock",
     "OpenCodeAgentBlock",
+    "GrokCommandBlock",
+    "GrokAgentBlock",
     "CommandBlock",
     "AgentBlock",
     "SkillBlock",
@@ -141,6 +168,8 @@ __all__ = [
     "_parse_file_frontmatter",
     # json_config
     "HOOK_COMMAND_FIELDS",
+    "VSCODE_HOOK_COMMAND_FIELDS",
+    "json_token",
     "HookHandler",
     "HookEventConfig",
     "AgentPluginMcpBlock",
@@ -148,10 +177,19 @@ __all__ = [
     "CursorMcpBlock",
     "CursorPromptHookBlock",
     "JsonConfigBlock",
+    "ClaudeHooksBlock",
+    "CodexConfigHooksBlock",
+    "CodexHooksBlock",
     "CodexInlineHooksBlock",
     "CodexInlineMcpBlock",
     "CopilotAgentMcpBlock",
     "HooksBlock",
+    "MuseHooksBlock",
+    "GrokHooksBlock",
+    "GrokInlineHooksBlock",
+    "GrokInlineMcpBlock",
+    "GrokMcpBlock",
+    "GrokPluginHooksBlock",
     "McpServerConfig",
     "McpConfigRole",
     "McpBlock",
@@ -174,6 +212,11 @@ __all__ = [
     "_extract_instructions",
     # promptfoo
     "PromptfooPromptBlock",
+    # Codex project config
+    "CodexConfigBlock",
+    "TomlMcpConfigBlock",
+    # Grok project config
+    "GrokConfigBlock",
     # OpenAI metadata
     "OpenAIMetadataBlock",
     # gather

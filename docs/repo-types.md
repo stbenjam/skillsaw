@@ -2,6 +2,18 @@
 
 skillsaw automatically detects your repository structure. A repository can match multiple types simultaneously (e.g. an agentskills repo that also has `.coderabbit.yaml`).
 
+A type describes either how the repository *packages* its content — a
+marketplace, a plugin, an APM project — or which *tool* it is configured
+for. Both are the same kind of fact: if the checkout holds a tool's
+configuration, that tool's rules run and `Repo type:` says so. Every value
+below is also accepted by `--type`, which replaces packaging-type detection;
+tool types are always detected from the checkout, and plugin-contributed
+types too.
+
+The tool types sort below the packaging types, so the single "primary" type
+in the JSON report's `repo_type` field is unchanged: a marketplace that also
+ships a `.cursor/` is still a `marketplace`.
+
 ## agentskills.io Skills
 
 Standalone skill repositories following the [agentskills.io](https://agentskills.io) specification:
@@ -192,7 +204,7 @@ skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every 
 
 | Rule | On an installed plugin | Why |
 |---|---|---|
-| `hooks-dangerous`, `hooks-prohibited`, `hooks-json-valid` | **Runs (no autofix)** | These commands execute in this checkout. Whoever wrote them, they are this checkout's exposure. |
+| `hooks-dangerous`, `hooks-prohibited`, `codex-hooks-valid` | **Runs (no autofix)** | These commands execute in this checkout. Whoever wrote them, they are this checkout's exposure. |
 | `mcp-valid-json`, `mcp-prohibited` | **Runs (no autofix)** | Same — the host spawns these commands here. |
 | `agentskill-*` | **Runs (no autofix)** | These skills enter the agent's context window here. |
 | `codex-plugin-json-valid`, `codex-plugin-structure` | **Stands down** | A kebab-case name, a missing `description` or a dangling asset path is a defect in a file the developer cannot edit. |
@@ -244,6 +256,276 @@ Repositories with a `.claude/` directory containing commands, skills, hooks, age
 
 Repositories with a `.coderabbit.yaml` file. skillsaw validates the instruction fragments within the config.
 
+## Muse Code
+
+Repositories with a `.muse/hooks.json`, the committed project hooks
+[Muse Code](https://dev.meta.ai/docs/muse-code) reads. skillsaw finds one at
+the repository root and in any subpackage, because Muse reads the `.muse/`
+layer of the project it is started in; `.muse/worktrees/` holds whole
+checkouts Muse made for child agents and is skipped.
+
+Muse uses the nested hooks format Claude Code pioneered, with its own
+lifecycle events, matcher-group keys and handler fields.
+[`muse-hooks-valid`](rules/muse-hooks-valid.md) checks the file against them.
+This matters more than it sounds: Muse prints no diagnostic for anything it
+refuses, so a rejected file, a dropped matcher group and a skipped handler
+all look like a hook that had nothing to do. The commands themselves are
+scanned by [`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md), including the
+`commandWindows` variant.
+
+Muse reads `AGENTS.md` for portable instructions and `.agents/memory/` for
+committed team memory. Both are shared conventions rather than Muse
+surfaces, so neither is Muse evidence on its own — but both are linted:
+`AGENTS.md` wherever it appears, and committed memory at the repository
+root, `<repo>/.agents/memory/`, which is where Muse documents it.
+
+## Grok Build
+
+Repositories with a `.grok/` project layer — a `.grok/` directory carrying
+any of `rules/`, `skills/`, `agents/`, `commands/`, `hooks/`, `config.toml`,
+`lsp.json`, `workflows/`, `roles/`, `personas/` or `sandbox.toml` — the
+layer [Grok Build](https://github.com/xai-org/grok-build) reads. An empty
+`.grok/` is not detected. skillsaw finds a project layer at the repository
+root and in any subpackage, because Grok reads the `.grok/` layer of the
+project it is started in.
+
+Most of what is attached is linted by rules that already existed:
+`.grok/skills/*/SKILL.md` are portable Agent Skills and get the full skill
+rule set, and `.grok/rules/*.md`, `.grok/commands/*.md` and
+`.grok/agents/*.md` get the shared content and security rules. Grok reads
+each of those three directories at the top level only, so a file nested a
+directory deeper is not attached either — it is not context Grok loads.
+`.grok/skills/` is the exception and is walked in full. `config.toml` is
+parsed as TOML and attached, and the rules that read it come with it.
+`lsp.json`, `sandbox.toml`, `workflows/`, `roles/` and `personas/` are
+detection evidence only today — nothing under them is read or linted yet;
+covering them is later work (see the
+[Grok Build design record](https://github.com/stbenjam/skillsaw/blob/main/docs/designs/grok-build.md)).
+
+Three things in that layer are Grok's own structure, on top of the shared
+rules above. [`grok-hooks-valid`](rules/grok-hooks-valid.md) validates every
+`.grok/hooks/*.json` — Grok merges the whole directory, so a repository may
+have several — against Grok's events, alias table and handler fields. This
+matters more than it sounds: Grok refuses a whole file over one wrong-typed
+field and reports nothing when it does, so a rejected file, a dropped matcher
+group and a skipped handler all look like a hook that had nothing to do. The
+commands themselves are scanned by
+[`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md).
+[`grok-agent-valid`](rules/grok-agent-valid.md) covers the second: a
+`.grok/agents/*.md` whose frontmatter is missing, malformed, or without
+`name` or `description` is dropped by Grok, and the subagent never appears
+in the agent list. The third is `config.toml`, which gets its own paragraphs
+below.
+
+Two things in that layer decide whether a file loads at all, and neither
+changes what skillsaw lints. Grok gates hooks, MCP and LSP on folder trust —
+until a project is trusted they are silently skipped — while skills, rules,
+commands and agents load whether or not the folder is trusted. Trust is a
+per-machine decision recorded outside the repository, so skillsaw lints the
+files as committed. Project MCP servers are declared in `.grok/config.toml`
+under `[mcp_servers]` and in the repository-root `.mcp.json`; there is no
+`.grok/mcp.json`. skillsaw reads both, so
+[`mcp-prohibited`](rules/mcp-prohibited.md) sees a server wherever a Grok
+project declared it.
+
+A project `config.toml` contributes only `[mcp_servers]`, `[plugins]`,
+`[permission]` and `[mcp] max_output_bytes`. Every other table in it is
+dropped, and dropped silently: Grok's unknown-key warnings cover the user's
+own `~/.grok/config.toml` and not a project file, so a typo'd table there
+produces no diagnostic anywhere. `[plugins] paths` is dropped the same way,
+honored only from the user's file.
+[`grok-config-project-scope`](rules/grok-config-project-scope.md) reports
+that: an ignored top-level table or scalar, `[plugins] paths`, and the
+spellings that load nothing at all —
+`[[mcp.servers]]`, `[mcp-servers]`, `[mcpServers]`, `[permissions]`,
+`transport` inside a server, `defaultMode` inside `[permission]`.
+[`grok-config-valid`](rules/grok-config-valid.md) covers the file itself: a
+parse error costs every table in it including the ones above the error, and
+Grok exits 0 with an empty stderr when that happens, while a malformed
+server costs that server and a malformed `[permission]` key costs that key —
+or, for a non-table entry inside `rules`, every rule in the array.
+Grok reports the server defects through `mcpConfigProblems` and the
+permission ones not at all.
+
+Grok reads `AGENTS.md` and `CLAUDE.md` for portable instructions, both of
+which carry their own repository types, so a `.grok/` directory is the only
+marker that is Grok Build's alone. `.grok/plugins/` holds project-scoped
+plugins rather than project configuration, so it is not evidence for this
+type; a plugin there is found by the plugin discovery below, like any other.
+
+## Grok Build Plugin
+
+Directories with a `.grok-plugin/plugin.json` manifest, plus every local
+source a Grok catalog declares:
+
+```text
+my-plugin/
+├── .grok-plugin/
+│   └── plugin.json       # Optional to Grok, and the marker skillsaw claims
+├── skills/
+│   └── my-skill/
+│       └── SKILL.md
+├── commands/
+├── agents/
+├── hooks/
+│   └── hooks.json        # Optional
+├── .mcp.json             # Optional: bundled MCP servers
+└── .lsp.json             # Optional: not linted yet
+```
+
+Grok resolves a manifest from `plugin.json`, then `.grok-plugin/plugin.json`,
+then `.claude-plugin/plugin.json`, and reads the first it finds. Two
+different questions follow from that chain, and skillsaw answers them
+separately.
+
+*Which directory is Grok's* is decided by `.grok-plugin/plugin.json` alone,
+or by a Grok catalog listing the directory. The other two spellings are
+another ecosystem's declaration — a root `plugin.json` is the Agent Plugins
+entrypoint, and `.claude-plugin/` is Claude's — and claiming them would put
+every Claude plugin and every portable package under Grok's rules as well.
+
+*Which file Grok reads once the directory is claimed* is the whole chain. So
+`grok-plugin-json-valid` reports against a root `plugin.json` or a
+`.claude-plugin/plugin.json` when that is the one Grok resolves to — the
+finding names the file, and it is the file to open. A directory carrying
+both `.grok-plugin/plugin.json` and `.claude-plugin/plugin.json` is both a
+Grok plugin and a Claude plugin, and each ecosystem's rules apply
+independently to the manifest its own host reads.
+
+A manifest is optional to Grok: a directory holding `skills/`, `agents/`,
+`hooks/hooks.json` or `.mcp.json` loads without one. skillsaw still needs a
+declaration to attribute the directory to Grok, so a manifest-less plugin is
+claimed only when a Grok catalog lists it as a local source.
+
+`hooks` and `mcpServers` accept a path or the object inline; `skills`,
+`commands` and `agents` accept a path or an array of paths. All forms are
+followed, because a hook written inline runs exactly like one in a file:
+
+| Field | Default location | Also followed |
+|---|---|---|
+| `hooks` | `hooks/hooks.json` | a declared path, an inline object |
+| `mcpServers` | `.mcp.json` | a declared path, an inline server map |
+| `skills` | `skills/` | declared directory paths |
+| `commands`, `agents` | `commands/`, `agents/` | declared directory paths |
+
+Paths that leave the plugin root are not followed. Grok drops them too, and
+silently: a declared `skills` path pointing outside the plugin loads zero
+skills while `grok plugin validate` still calls the manifest valid.
+
+Two rules cover the packaging itself.
+[`grok-plugin-json-valid`](rules/grok-plugin-json-valid.md) validates the
+manifest, and its severities carry the blast radius: a manifest that fails
+to load makes Grok skip the whole directory — `skills/` does not rescue it,
+and `grok plugin install` still prints success — while a declared path that
+escapes or does not exist costs that component list alone.
+[`grok-plugin-structure`](rules/grok-plugin-structure.md) covers the
+directory: with no manifest and none of `skills/`, `agents/`,
+`hooks/hooks.json` or `.mcp.json`, the installer refuses it. `commands/`
+alone and `.lsp.json` alone do not count, measured against the binary.
+
+A plugin's `hooks/hooks.json` is scanned by
+[`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md), and its `.mcp.json` by
+[`mcp-valid-json`](rules/mcp-valid-json.md) and
+[`mcp-prohibited`](rules/mcp-prohibited.md) — inline declarations included.
+`grok-hooks-valid` deliberately does *not* see them: Grok loads plugin hooks
+through a different adapter from the project layer's, and that adapter
+publishes nothing observable about which entries survived, so the failure
+scopes that rule reports were measured on `.grok/hooks/*.json` and apply
+there only.
+
+## Grok Build Marketplace
+
+Repositories with a Grok catalog at `.grok-plugin/marketplace.json`:
+
+```text
+marketplace/
+├── .grok-plugin/
+│   ├── marketplace.json    # The index Grok reads
+│   └── plugin-index.json   # Optional display catalog, read from beside it
+└── plugins/
+    ├── plugin-one/
+    │   └── .grok-plugin/plugin.json
+    └── plugin-two/
+        └── .grok-plugin/plugin.json
+```
+
+Grok looks for a catalog at `.grok-plugin/marketplace.json`, then
+`.claude-plugin/marketplace.json`, then a root-level `marketplace.json`, and
+reads exactly one. The root spelling is last here and first in the
+plugin-manifest order above; the two lookups share no ordering. skillsaw
+claims the first for Grok and leaves `.claude-plugin/marketplace.json` to the
+Claude `marketplace-*` rules, because the two schemas disagree: Claude
+requires `owner`, while a Grok entry carries `category` and a `source` in one
+of three shapes. Put a Grok catalog at `.grok-plugin/marketplace.json`.
+
+An entry's `source` names either a directory in this repository or a remote
+repository to clone. The local forms are `{"type": "local", "path": "./x"}`
+and the bare string `"./x"` — and, measured against the binary, an object
+with no discriminator or a misspelled one, because the loader keys on `path`
+alone. A `url` is what makes an entry remote, and its own `path` then names a
+subdirectory of the clone rather than a directory here. Local sources are
+resolved and contained against the marketplace root, so a package that is a
+marketplace of its own resolves against the package. Sources that escape
+that root are dropped, by Grok and here.
+
+`plugin-index.json` beside the catalog is what the marketplace browser reads
+before anything is installed, and a `require_sha` deployment installs from
+the `sha` values it publishes. skillsaw attaches it under its catalog.
+
+[`grok-marketplace-json-valid`](rules/grok-marketplace-json-valid.md)
+validates the catalog. A catalog Grok cannot parse is discarded whole and
+discovery falls back to scanning `plugins/`, so the repository looks healthy
+while everything catalogued from anywhere else disappears; an entry with no
+`name`, no `source`, or a path that does not resolve is dropped one at a
+time, silently. [`grok-marketplace-index-parity`](rules/grok-marketplace-index-parity.md)
+compares `plugin-index.json` against the catalog beside it — a `sha` that
+has drifted blanks that plugin's component listing — and reports nothing
+when there is no index.
+
+A Grok catalog explains its own `plugins/` directory, so a Grok-only
+marketplace is not reported as a Claude marketplace with a missing manifest.
+Both Grok packaging types are independent of the Claude and Codex types — a
+repository commonly ships more than one catalog or manifest, and skillsaw
+detects each.
+
+## OpenAI Codex project configuration
+
+Repositories with a `.codex/hooks.json` or a `.codex/config.toml`, the
+project layer Codex reads. This is distinct from a Codex plugin
+(`.codex-plugin/plugin.json`) and from a Codex marketplace: it configures the
+checkout rather than packaging anything, so it is never treated as a plugin
+claim and never exempts the repository from another ecosystem's rules.
+
+Codex reads the layer of every directory between the repository root and the
+one a session starts in, so a package's own `.codex/` is live configuration
+and every one in the checkout is linted.
+
+Lifecycle hooks come from both files, merged: the `[hooks]` tables of a
+`config.toml` get the same checks `hooks.json` gets.
+[`codex-hooks-valid`](rules/codex-hooks-valid.md) validates both files and
+reports a layer that declares hooks in both, while
+[`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md) scan the commands in them. A
+shape defect in `config.toml` stops Codex starting at all, where the same
+defect in `hooks.json` costs only that file's hooks; the rule's page records
+that asymmetry, and the one check `config.toml` gets and `hooks.json` does
+not.
+
+`config.toml` also carries the project's MCP servers, in
+`[mcp_servers.<name>]` tables — there is no `.codex/mcp.json` — so
+[`mcp-prohibited`](rules/mcp-prohibited.md) inventories them and
+[`mcp-valid-json`](rules/mcp-valid-json.md) applies its dialect-neutral
+checks, such as a committed credential in an `env` or `http_headers` table.
+No rule validates a server table's shape: Codex names the server and the
+field and exits 1 over a malformed one itself. Everything else in the file is
+Codex settings skillsaw reads nothing from.
+
+`.codex/plugins/` is an install location rather than project configuration —
+see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
+
 ## Promptfoo
 
 Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files in `evals/` directories). Prompt strings in the config are treated as content blocks, so all `content-*` rules apply to them automatically. Dedicated `promptfoo-*` rules validate config structure, assertion coverage, and metadata.
@@ -252,10 +534,11 @@ Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files 
 
 Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output. Package content under `apm_modules/` is externally sourced: it is linted but never autofixed by default, and `lint-external-content: false` omits it from the lint tree.
 
-## Editor and CLI tool files
+## Editor and CLI tools
 
-These are not repository types — skillsaw picks them up in any repository,
-whatever its type, because they ship in the checkout. Every **prose** file
+Each tool below is a repository type of its own, detected from the
+configuration it reads. Their content is picked up in any repository,
+whatever else it is, because it ships in the checkout. Every **prose** file
 listed below gets the `content-*` rules that apply to it (weak language,
 contradictions, attention dead zones, secrets, and the rest) plus the
 security rules, because its text lands in an agent's context window. A few
@@ -275,7 +558,7 @@ visible to rules by default but are never autofixed; see
 [`lint-external-content`](configuration.md#external-content) for the opt-out.
 
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
-— Cursor, Copilot, Cline, OpenCode and Codex all read it, and one well-linted
+— Cursor, Copilot, Cline, OpenCode, Muse Code, Grok Build and Codex all read it, and one well-linted
 AGENTS.md beats five per-vendor copies that drift apart. skillsaw does not
 reimplement a per-vendor instruction format on top of it; what it adds is
 coverage of the prose each tool keeps in its own directory, plus structural
@@ -285,18 +568,35 @@ validation wherever a tool's own metadata can fail silently — see
 [`copilot-agent-valid`](rules/copilot-agent-valid.md), and
 [`opencode-config-valid`](rules/opencode-config-valid.md).
 
-| Tool | Files linted |
-| --- | --- |
-| **Portable** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
-| **Vercel skills CLI** | Every `skills-lock.json`, plus matching installed skill payloads unless `lint-external-content: false` |
-| **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
-| **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
-| **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
-| **OpenCode** | `opencode.json` or `opencode.jsonc` at the root and in `.opencode/`, `.opencode/commands/**/*.md`, `.opencode/agents/**/*.md`, `.opencode/modes/*.md`, `.opencode/skills/*/SKILL.md`, and the 1.x singular spelling of each (`command/`, `agent/`, `mode/`, `skill/`). Repository-local files matched by `instructions` paths or globs are also linted; remote URLs are not fetched. |
-| **Devin CLI / Desktop** | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/rules/`, `.windsurf/global_rules.md`, and `.windsurfrules` |
-| **Windsurf** | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
-| **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
-| **Kiro** | `.kiro/steering/*.md` |
+Each tool is its own repository type, named in the `Type` column. That is
+the value `Repo type:` prints, the JSON report lists under `repo_types`, and
+`--type` accepts.
+
+| Tool | Type | Files linted |
+| --- | --- | --- |
+| **Portable** | `agents-md`, `claude-md`, `gemini`, `qwen` | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md` |
+| **Portable skills** | `agentskills` | `.agents/skills/*/SKILL.md` and the other conventional skill directories |
+| **Vercel skills CLI** | `skills-lock` | Every `skills-lock.json`, plus matching installed skill payloads unless `lint-external-content: false` |
+| **Cursor** | `cursor` | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
+| **Copilot / VS Code** | `copilot` | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
+| **Cline** | `cline` | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
+| **OpenCode** | `opencode` | `opencode.json` or `opencode.jsonc` at the root and in `.opencode/`, `.opencode/commands/**/*.md`, `.opencode/agents/**/*.md`, `.opencode/modes/*.md`, `.opencode/skills/*/SKILL.md`, and the 1.x singular spelling of each (`command/`, `agent/`, `mode/`, `skill/`). Repository-local files matched by `instructions` paths or globs are also linted; remote URLs are not fetched. |
+| **Devin CLI / Desktop** | `devin` | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/rules/`, `.windsurf/global_rules.md`, and `.windsurfrules` |
+| **Windsurf** | `devin` | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
+| **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
+| **Kiro** | `kiro` | `.kiro/steering/*.md` |
+| **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
+| **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
+| **OpenAI Codex** | `codex-project` | `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
+| **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
+
+`.agents/memory/` is the one row with no type of its own: the convention
+predates every tool that reads it and none owns it, so committed memory is
+linted without making the repository anything in particular. It is read from
+the repository root only — `<repo>/.agents/memory/`, which is where Muse
+documents it — and everything below that directory is linted. A copy nested
+somewhere else in the tree is not attached, because it is not memory to the
+tools that read it either.
 
 Discovery and validation are separate layers for Copilot. Every Markdown file
 under `.github/agents/` and every `*.chatmode.md` file under the legacy
@@ -397,7 +697,7 @@ repository, so its commands are scanned by
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md) alongside Claude Code hooks
 and settings. Cursor's schema is flatter than Claude's — hooks hang directly
-off the event name rather than off a matcher group — so `hooks-json-valid`
+off the event name rather than off a matcher group — so `claude-hooks-valid`
 leaves the file alone and `cursor-hooks-valid` validates the shape instead.
 A `type: "prompt"` hook injects text rather than spawning a process, so the
 command scanners skip it — but Cursor puts that text into the agent's
@@ -407,6 +707,24 @@ prose. Its `prompt` string is linted as content, so
 the other injection scanners read it, and `hooks-prohibited` counts it as a
 hook. JSON carries no line numbers, so those findings name the file without
 a line.
+
+### Committed project memory
+
+`.agents/memory/` holds notes a team checks into the repository for whatever
+agent reads it — the shared counterpart of Claude Code's per-developer auto
+memory. The convention belongs to no tool: projects were committing it
+before Muse Code shipped, and Muse reads it the way it reads `AGENTS.md`,
+injecting `MEMORY.md` in full at session start (even in an untrusted
+workspace) alongside the paths of the other Markdown files in the directory,
+which it reads on demand. The index is one line per topic by convention;
+Muse lists every Markdown file there whether or not the index mentions it.
+
+skillsaw therefore attaches the directory at the repository root
+unconditionally, and it is evidence of no tool in particular. The index and
+the topic files beside it are agent context, so they get every content and
+security rule, and both are budgeted under the `memory` category — the index
+because a reader loads it whole, a topic file because a reader loads it
+whole once the topic comes up.
 
 ### OpenCode and APM
 

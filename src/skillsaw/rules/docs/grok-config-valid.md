@@ -1,0 +1,110 @@
+## Why
+
+`.grok/config.toml` configures project-level settings for Grok Build, such as
+shared MCP servers and tool permission rules.
+
+If the configuration contains a TOML syntax error or invalid server and
+permission tables, Grok Build may skip loading the file or ignore individual
+settings during sessions. For example, a syntax error prevents the entire file
+from loading, while an invalid server entry or malformed permission list can
+cause specific configurations to be skipped.
+
+This rule validates the syntax and structure of `.grok/config.toml` to help
+ensure your MCP servers and permissions work reliably for all collaborators.
+
+To verify which tables are appropriate for a project configuration file versus
+user configuration, see
+[`grok-config-project-scope`](grok-config-project-scope.md). Server commands
+are also scanned for security by [`mcp-prohibited`](mcp-prohibited.md).
+
+## Severity
+
+Findings distinguish between whole-file syntax errors and table-level issues:
+
+**Error** — issues that prevent the TOML file from parsing:
+
+- Invalid TOML syntax, duplicate keys within a table, or duplicate `[table]`
+  headers.
+
+**Warnings** — the file parses, but specific servers or permission settings
+cannot be loaded:
+
+- `mcp_servers` is not a TOML table.
+- A `[mcp_servers.<name>]` entry that is not a table, or does not specify an
+  executable `command` or `url` string. Other configured servers will still
+  load.
+- A server field with an incompatible data type: `args` that is not an array
+  of strings, or `env` / `headers` that is not a table of string values.
+- Permission lists (`allow`, `deny`, `ask`) that are not arrays.
+- Individual entries in `allow`, `deny`, or `ask` that are not strings.
+- `[permission] rules` that is not an array of tables, or contains invalid
+  entries.
+- `[permission] rules` specified alongside `allow`, `deny`, or `ask`. Grok
+  prioritizes compact permission lists (`allow`/`deny`/`ask`) over verbose
+  `rules` tables when both are present, so compact lists take precedence.
+
+## What is not reported
+
+- **Unknown fields inside a server table**: Grok logs these via
+  `mcpConfigProblems` and loads the server normally.
+- **Unknown keys inside `[permission]`**: Grok ignores unknown keys; scope
+  mismatches like `defaultMode` are covered by
+  [`grok-config-project-scope`](grok-config-project-scope.md).
+- **The URL or command target content**: whether an endpoint is live is a
+  runtime concern.
+- **Servers with `enabled = false`**: disabled servers are valid configurations.
+
+## Examples
+
+**Bad** — a syntax error in one server prevents the rest of the file from
+parsing:
+
+```toml
+[mcp_servers.gateway]
+command = "bin/gateway"
+args = ["mcp"
+
+[permission]
+allow = ["Bash(make test)"]
+```
+
+**Bad** — a server missing both `command` and `url`, and mixing `allow` with
+`rules`:
+
+```toml
+[mcp_servers.quayside]
+args = ["mcp"]
+cwd = "services/quayside"
+
+[permission]
+allow = ["Bash(make test)"]
+rules = [{ action = "deny", tool = "Bash", pattern = "psql *" }]
+```
+
+**Good** — well-formed MCP servers and concise permission lists:
+
+```toml
+[mcp_servers.berths]
+command = "bin/harbourmaster"
+args = ["mcp", "--read-only"]
+
+[mcp_servers.berths.env]
+HARBOURMASTER_PROFILE = "readonly"
+
+[mcp_servers.tideboard]
+url = "https://tideboard.internal.example/mcp"
+
+[permission]
+allow = ["Bash(make test)"]
+deny = ["Bash(psql *)"]
+```
+
+## How to fix
+
+- Ensure `.grok/config.toml` is valid TOML syntax.
+- Provide a non-empty `command` or `url` for each server under
+  `[mcp_servers.<name>]`.
+- Keep `args` as an array of strings, and `env` and `headers` as tables of
+  strings.
+- Choose either compact lists (`allow`, `deny`, `ask`) or verbose `rules`
+  tables under `[permission]`. Using compact lists is recommended for brevity.

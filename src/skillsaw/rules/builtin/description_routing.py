@@ -4,12 +4,14 @@ import re
 from pathlib import Path
 from typing import List, Set
 
-from skillsaw.context import HAS_COPILOT, HAS_OPENCODE, RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
     CommandBlock,
     CopilotAgentBlock,
+    GrokAgentBlock,
+    GrokCommandBlock,
     OpenCodeAgentBlock,
     OpenCodeCommandBlock,
     SkillBlock,
@@ -100,16 +102,24 @@ class DescriptionRoutingRule(Rule):
         RepositoryType.APM,
         RepositoryType.CODEX_PLUGIN,
         RepositoryType.CODEX_MARKETPLACE,
+        # A Grok plugin's ``commands/`` and ``agents/`` prose attaches
+        # through the same shared plugin pass a Codex plugin's does, so a
+        # repository detected only as Grok needs the same activation.
+        RepositoryType.GROK_PLUGIN,
+        RepositoryType.GROK_MARKETPLACE,
+        # A Copilot agent's description is what routes it, exactly the
+        # metadata this rule checks on a Claude agent, and the same holds for
+        # an OpenCode subagent's description. Without these the
+        # ``OpenCodeAgentBlock`` traversal below would never run for exactly
+        # the repositories it is for.
+        RepositoryType.COPILOT,
+        RepositoryType.OPENCODE,
+        # Grok routes a subagent by its description the same way, and its
+        # commands carry the blurb `grok` shows in the picker. Without this
+        # the ``GrokAgentBlock`` and ``GrokCommandBlock`` traversals below
+        # would never run on a repository configured only through `.grok/`.
+        RepositoryType.GROK_PROJECT,
     }
-    # A Copilot repository is often none of the above repo types (a bare
-    # ``.github/agents/`` tree is ``UNKNOWN``), so ``enabled: auto`` also fires
-    # on the Copilot format — a Copilot agent's description is what routes it,
-    # exactly the metadata this rule checks on a Claude agent. The same holds
-    # for OpenCode: a bare ``.opencode/agents/`` tree is ``UNKNOWN`` too, and
-    # an OpenCode subagent's description is what the primary agent delegates
-    # on. Without the flag the ``OpenCodeAgentBlock`` traversal below would
-    # never run for exactly the repositories it is for.
-    formats = frozenset({HAS_COPILOT, HAS_OPENCODE})
 
     config_schema = {
         "require-trigger-phrasing": {
@@ -179,8 +189,10 @@ class DescriptionRoutingRule(Rule):
             AgentBlock,
             CopilotAgentBlock,
             OpenCodeAgentBlock,
+            GrokAgentBlock,
             CommandBlock,
             OpenCodeCommandBlock,
+            GrokCommandBlock,
         ):
             for block in self.dependency_scoped_find(context, block_type):
                 if block.frontmatter_error:
@@ -268,7 +280,13 @@ class DescriptionRoutingRule(Rule):
                 # meaningful, non-name-restating description (checked below),
                 # but the trigger-phrasing style is not imposed on them.
                 if (
-                    block_type not in (CommandBlock, CopilotAgentBlock, OpenCodeCommandBlock)
+                    block_type
+                    not in (
+                        CommandBlock,
+                        CopilotAgentBlock,
+                        OpenCodeCommandBlock,
+                        GrokCommandBlock,
+                    )
                     and not self._is_user_selected_agent(block_type, block)
                     and self.setting("require-trigger-phrasing")
                     and not self._has_trigger_phrase(text)

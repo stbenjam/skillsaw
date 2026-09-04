@@ -376,17 +376,19 @@ def filter_baselined_violations(
     consumed_ratchet: set = set()
     whole_counts: Counter = Counter()
 
-    from .rules.builtin import rule_aliases
+    from .rules.builtin import rule_aliases, rule_baseline_aliases
 
     for v in violations:
         if v.rule_id in _UNBASELINABLE_RULE_IDS:
             kept.append(v)
             continue
-        # Baselines generated before a rule rename hash the legacy rule ID,
-        # so match the canonical fingerprint first and fall back to each
-        # alias's fingerprint — old baselines keep suppressing.
+        # A fingerprint hashes the rule ID, so a baseline written before a
+        # rule was renamed — or before this check was split out of another
+        # rule — recorded a name this violation no longer carries. Match the
+        # canonical fingerprint first, then each former name's, so an
+        # upgrade never resurfaces a finding the baseline already accepted.
         fps = [fingerprint_violation(v, fingerprint_root, _file_cache=file_cache)]
-        for alias in rule_aliases(v.rule_id):
+        for alias in (*rule_aliases(v.rule_id), *rule_baseline_aliases(v.rule_id)):
             fps.append(
                 fingerprint_violation(v, fingerprint_root, _file_cache=file_cache, _rule_id=alias)
             )

@@ -78,6 +78,21 @@ def test_explain_shows_config_schema(temp_dir):
     assert "Minimum file length" in result.stdout
 
 
+def test_explain_resolves_the_legacy_hooks_rule_name(temp_dir):
+    """0.20.0 renamed ``hooks-json-valid`` to ``claude-hooks-valid``, so the
+    old name still explains the rule it became.
+
+    Codex's checks were split out into ``codex-hooks-valid`` at the same
+    time, and that rule is named, configured and explained on its own id —
+    the legacy alias resolves to Claude's rule only.
+    """
+    result = run_explain("hooks-json-valid", str(temp_dir))
+
+    assert result.returncode == 0
+    assert "claude-hooks-valid" in result.stdout
+    assert "codex-hooks-valid" not in result.stdout.split("## Why")[0]
+
+
 def test_explain_unknown_rule_suggests_close_match(temp_dir):
     result = run_explain("content-weak-langage", str(temp_dir))
     assert result.returncode == 1
@@ -115,7 +130,7 @@ def test_explain_effective_repo_type_no_match(temp_dir):
     (temp_dir / ".skillsaw.yaml").write_text("version: '99.0.0'\n")
     result = run_explain("claude-marketplace-registration", str(temp_dir))
     assert result.returncode == 0
-    assert "no matching repo type or format detected" in result.stdout
+    assert "no matching repo type detected" in result.stdout
 
 
 def test_explain_nonexistent_path_fails(temp_dir):
@@ -159,10 +174,144 @@ def test_rule_enabled_reason_matches_is_rule_enabled(temp_dir, config_yaml):
     for rule_class in BUILTIN_RULES:
         rule = rule_class()
         enabled = config.is_rule_enabled(
-            rule.rule_id, context, rule.repo_types, rule.formats, since_version=rule.since
+            rule.rule_id, context, rule.repo_types, since_version=rule.since
         )
         reason_enabled, reason = config.rule_enabled_reason(
-            rule.rule_id, context, rule.repo_types, rule.formats, since_version=rule.since
+            rule.rule_id, context, rule.repo_types, since_version=rule.since
         )
         assert enabled == reason_enabled, rule.rule_id
         assert reason, rule.rule_id
+
+
+# --- explain pager behavior ---
+
+
+def test_explain_no_pager_flag(temp_dir):
+    result = run_explain("content-weak-language", str(temp_dir), "--no-pager")
+    assert result.returncode == 0
+    assert "content-weak-language" in result.stdout
+
+
+def test_explain_pager_flag_forced(temp_dir):
+    env = dict(os.environ)
+    env["MANPAGER"] = ""
+    env["PAGER"] = f"{sys.executable} -c \"import sys; print('PAGED:'); print(sys.stdin.read())\""
+    args = [
+        sys.executable,
+        "-m",
+        "skillsaw",
+        "explain",
+        "content-weak-language",
+        str(temp_dir),
+        "--pager",
+    ]
+    result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+    assert result.returncode == 0
+    assert "PAGED:" in result.stdout
+    assert "content-weak-language" in result.stdout
+
+
+def test_explain_pager_flag_forced_with_empty_pager_env(temp_dir):
+    env = dict(os.environ)
+    env["PAGER"] = ""
+    env["MANPAGER"] = ""
+    args = [
+        sys.executable,
+        "-m",
+        "skillsaw",
+        "explain",
+        "content-weak-language",
+        str(temp_dir),
+        "--pager",
+    ]
+    result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+    assert result.returncode == 0
+    assert "content-weak-language" in result.stdout
+
+
+def test_explain_interactive_pty_uses_pager(temp_dir):
+    try:
+        import pty
+    except ImportError:
+        pytest.skip("pty module not available on this platform")
+
+    master, slave = pty.openpty()
+    env = dict(os.environ)
+    env["MANPAGER"] = ""
+    env["PAGER"] = (
+        f"{sys.executable} -c \"import sys; print('PTY_PAGED:'); print(sys.stdin.read())\""
+    )
+    env["TERM"] = "xterm"
+
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "skillsaw", "explain", "content-weak-language", str(temp_dir)],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env=env,
+        close_fds=True,
+    )
+    os.close(slave)
+    output = b""
+    while True:
+        try:
+            chunk = os.read(master, 1024)
+            if not chunk:
+                break
+            output += chunk
+        except OSError:
+            break
+    os.close(master)
+    proc.wait()
+    text = output.decode("utf-8", errors="replace")
+    assert proc.returncode == 0
+    assert "PTY_PAGED:" in text
+    assert "content-weak-language" in text
+
+
+def test_explain_interactive_pty_no_pager_flag(temp_dir):
+    try:
+        import pty
+    except ImportError:
+        pytest.skip("pty module not available on this platform")
+
+    master, slave = pty.openpty()
+    env = dict(os.environ)
+    env["MANPAGER"] = ""
+    env["PAGER"] = (
+        f"{sys.executable} -c \"import sys; print('PTY_PAGED:'); print(sys.stdin.read())\""
+    )
+    env["TERM"] = "xterm"
+
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "skillsaw",
+            "explain",
+            "--no-pager",
+            "content-weak-language",
+            str(temp_dir),
+        ],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env=env,
+        close_fds=True,
+    )
+    os.close(slave)
+    output = b""
+    while True:
+        try:
+            chunk = os.read(master, 1024)
+            if not chunk:
+                break
+            output += chunk
+        except OSError:
+            break
+    os.close(master)
+    proc.wait()
+    text = output.decode("utf-8", errors="replace")
+    assert proc.returncode == 0
+    assert "PTY_PAGED:" not in text
+    assert "content-weak-language" in text

@@ -65,7 +65,6 @@ class SecurityDynamicContextRule(Rule):
 
     default_enabled = "auto"
 
-    formats = None
     repo_types = None
     since = "0.19.0"
 

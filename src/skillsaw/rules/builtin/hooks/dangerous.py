@@ -15,7 +15,6 @@ from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
     CopilotAgentBlock,
-    CursorHooksBlock,
     DevinSkillBlock,
     HookEventConfig,
     HooksBlock,
@@ -161,6 +160,17 @@ _NETWORK_FETCH_RE = re.compile(
     rf"{_CMD_BOUNDARY}\s*{_REDIRECTION}"
     rf"(?:{_VAR_ASSIGN}\s+)*"  # VAR=value assignment prefixes
     rf"{_CMD_WRAPPERS}{_ENV_PREFIX}(?:\S+/)?(?:curl|wget|nc|ncat)\b"
+)
+
+#: Cheap substring gate for the POSIX patterns above.
+_POSIX_TOKENS = (
+    "curl",
+    "wget",
+    "ncat",
+    "nc ",
+    "eval",
+    "base64",
+    "bun",
 )
 
 
@@ -439,16 +449,7 @@ def _downloads_and_executes(command: str) -> bool:
 def dangerous_command_descriptions(command: str) -> List[str]:
     """Return messages for dangerous patterns in a command."""
     lower_command = command.lower()
-    relevant = (
-        "curl",
-        "wget",
-        "ncat",
-        "nc ",
-        "eval",
-        "base64",
-        "bun",
-    )
-    if not any(token in lower_command for token in relevant):
+    if not any(token in lower_command for token in _POSIX_TOKENS):
         return []
 
     # Quote-aware view: separators inside quotes are argument data, so the
@@ -536,8 +537,9 @@ class HooksDangerousRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        # CursorHooksBlock renders its flatter shape as HookEventConfig too.
-        hook_blocks = context.lint_tree.find(HooksBlock) + context.lint_tree.find(CursorHooksBlock)
+        # Every host's hooks file is a HooksBlock — Claude, Codex, Muse,
+        # Cursor — and each renders its own shape as HookEventConfig.
+        hook_blocks = context.lint_tree.find(HooksBlock)
         for block in hook_blocks:
             if block.parse_error:
                 continue

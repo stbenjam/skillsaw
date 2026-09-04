@@ -12,7 +12,9 @@ from skillsaw.discovery import (
     agent_plugins as agent_plugins_discovery,
     exact_name_exists,
 )
+from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.codex import codex_declared_skill_dirs
+from skillsaw.formats.grok import grok_declared_skill_dirs
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 from skillsaw.utils import read_json
 
@@ -206,6 +208,7 @@ def discover_skills(
     agentskills: bool,
     plugins: Iterable[Path],
     codex_plugins: Iterable[Path],
+    grok_plugins: Iterable[Path],
     agent_plugins: Iterable[Path],
     recursive_agent_plugins: Iterable[Path],
     in_apm_compiled_dir: Callable[[Path], bool],
@@ -214,6 +217,7 @@ def discover_skills(
     containment_claims_possible: Callable[[], bool],
     is_containment_plugin: Callable[[Path], bool],
     additional_skill_dirs: Iterable[Path] = (),
+    is_excluded: Callable[[Path], bool] = lambda _: False,
 ) -> List[Path]:
     """Discover contained Agent Skill directories across repository roots."""
     skills: List[Path] = []
@@ -262,7 +266,7 @@ def discover_skills(
                 boundary = claim_boundary(parent)
         try:
             for item in parent.iterdir():
-                if should_skip(item):
+                if should_skip(item) or is_excluded(item):
                     continue
                 resolved = safe_resolve(item)
                 if resolved is None or resolved in discovered or resolved in visited:
@@ -272,6 +276,8 @@ def discover_skills(
                 if boundary is not None and not resolved.is_relative_to(boundary):
                     continue
                 if exact_name_exists(item, "SKILL.md"):
+                    if is_excluded(item / "SKILL.md"):
+                        continue
                     if boundary is not None:
                         entrypoint = safe_resolve(item / "SKILL.md")
                         if entrypoint is None or not entrypoint.is_relative_to(boundary):
@@ -296,6 +302,8 @@ def discover_skills(
             repo_root is not None
             and exact_name_exists(root, "SKILL.md")
             and contained_resolve(root / "SKILL.md", repo_root) is not None
+            and not is_excluded(root / "SKILL.md")
+            and not is_excluded(root)
         ):
             skills.append(root)
             discovered.add(root)
@@ -308,6 +316,7 @@ def discover_skills(
                 and contained_resolve(path, repo_root) is not None
                 and path.is_dir()
                 and not in_apm_compiled_dir(path)
+                and not is_root_or_ancestor_excluded(path, repo_root, is_excluded)
             ):
                 walk(path, repo_root)
         for path in additional_skill_dirs:
@@ -316,20 +325,33 @@ def discover_skills(
                 and contained_resolve(path, repo_root) is not None
                 and path.is_dir()
                 and not in_apm_compiled_dir(path)
+                and not is_root_or_ancestor_excluded(path, repo_root, is_excluded)
             ):
                 walk(path, repo_root)
     for plugin in plugins:
         path = plugin / "skills"
-        if path.is_dir():
+        if path.is_dir() and not is_root_or_ancestor_excluded(path, repo_root, is_excluded):
             walk(path)
-    for plugin in codex_plugins:
+
+    def contained_plugin_skills(plugin: Path, declared: Iterable[Path]) -> None:
+        """Walk one package's skill components without leaving the package.
+
+        Codex and Grok Build share this contract: the conventional
+        ``skills/`` directory plus whatever the manifest declares, every
+        resolved path forced back inside the plugin root. One body for both
+        so a containment fix cannot land on only one ecosystem.
+        """
         plugin_root = safe_resolve(plugin)
         if plugin_root is None:
-            continue
-        for path in (plugin / "skills", *codex_declared_skill_dirs(plugin)):
+            return
+        for path in (plugin / "skills", *declared):
             if not path.is_dir():
                 continue
+            if is_root_or_ancestor_excluded(path, plugin_root, is_excluded):
+                continue
             if exact_name_exists(path, "SKILL.md"):
+                if is_excluded(path / "SKILL.md"):
+                    continue
                 resolved = contained_resolve(path, plugin_root)
                 if (
                     resolved is not None
@@ -340,6 +362,11 @@ def discover_skills(
                     discovered.add(resolved)
             else:
                 walk(path, plugin_root)
+
+    for plugin in codex_plugins:
+        contained_plugin_skills(plugin, codex_declared_skill_dirs(plugin))
+    for plugin in grok_plugins:
+        contained_plugin_skills(plugin, grok_declared_skill_dirs(plugin))
     for plugin in agent_plugin_packages:
         for skill in agent_plugins_discovery.discover_agent_plugin_skills(plugin):
             resolved = safe_resolve(skill)

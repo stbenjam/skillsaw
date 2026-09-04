@@ -318,9 +318,9 @@ jobs:
           python3 -c "
           from pathlib import Path
           from skillsaw.blocks import DevinRuleBlock, DevinSkillBlock
-          from skillsaw.context import HAS_DEVIN, RepositoryContext
+          from skillsaw.context import RepositoryContext, RepositoryType
           context = RepositoryContext(Path('/tmp/build-with-wordpress'))
-          assert HAS_DEVIN in context.detected_formats, 'Devin format not detected'
+          assert RepositoryType.DEVIN in context.repo_types, 'Devin repo type not detected'
           assert len(context.lint_tree.find(DevinRuleBlock)) == 2, 'expected 2 Devin rules'
           assert len(context.lint_tree.find(DevinSkillBlock)) == 16, 'expected 16 Devin skills'
           "

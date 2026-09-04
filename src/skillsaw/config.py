@@ -9,7 +9,7 @@ import re
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from skillsaw.paths import safe_resolve
 from skillsaw.utils import commented_key_line, read_yaml_commented
@@ -429,7 +429,6 @@ class LinterConfig:
         rule_id: str,
         context: "RepositoryContext",
         repo_types=None,
-        formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
         default_enabled: Any = None,
         deprecated: Optional[str] = None,
@@ -441,7 +440,6 @@ class LinterConfig:
             rule_id: Rule identifier
             context: Repository context
             repo_types: Set of RepositoryType values the rule applies to (None = all)
-            formats: Set of detected format constants the rule requires (None = all)
             since_version: Minimum config version required for this rule
             default_enabled: Class-level default (``Rule.default_enabled``) for
                 rules outside the builtin registry — plugin rules
@@ -455,7 +453,6 @@ class LinterConfig:
             rule_id,
             context,
             repo_types,
-            formats,
             since_version,
             default_enabled=default_enabled,
             deprecated=deprecated,
@@ -467,7 +464,6 @@ class LinterConfig:
         rule_id: str,
         context: "RepositoryContext",
         repo_types=None,
-        formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
         default_enabled: Any = None,
         deprecated: Optional[str] = None,
@@ -541,23 +537,19 @@ class LinterConfig:
         enabled = rule_config.get("enabled", fallback_enabled)
 
         if enabled == "auto":
-            if repo_types is None and formats is None:
+            # A rule declares where it applies with ``repo_types``.
+            applies_to = set(repo_types) if repo_types is not None else None
+            if applies_to is None:
                 return True, "enabled: auto (applies to all repo types)"
-            if repo_types is not None:
-                # ``repo_types`` may mix RepositoryType members with string
-                # names of plugin-contributed types (see skillsaw.plugins.
-                # PluginRepoType); strings match against the plugin set.
-                plugin_types = getattr(context, "plugin_repo_types", set())
-                matched_types = {
-                    t for t in repo_types if t in context.repo_types or t in plugin_types
-                }
-                if matched_types:
-                    matched = sorted(getattr(t, "value", t) for t in matched_types)
-                    return True, f"enabled: auto — detected repo type: {', '.join(matched)}"
-            if formats is not None and formats & context.detected_formats:
-                matched = sorted(formats & context.detected_formats)
-                return True, f"enabled: auto — detected format: {', '.join(matched)}"
-            return False, "enabled: auto — no matching repo type or format detected"
+            # ``applies_to`` may mix RepositoryType members with string names
+            # of plugin-contributed types (see skillsaw.plugins.
+            # PluginRepoType); strings match against the plugin set.
+            plugin_types = getattr(context, "plugin_repo_types", set())
+            matched_types = {t for t in applies_to if t in context.repo_types or t in plugin_types}
+            if matched_types:
+                matched = sorted(getattr(t, "value", t) for t in matched_types)
+                return True, f"enabled: auto — detected repo type: {', '.join(matched)}"
+            return False, "enabled: auto — no matching repo type detected"
 
         if bool(enabled):
             return True, "enabled by default"

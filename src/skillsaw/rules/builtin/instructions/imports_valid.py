@@ -7,7 +7,7 @@ import re
 from typing import Dict, List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
+from skillsaw.context import RepositoryContext, INSTRUCTION_REPO_TYPES
 from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.rules.builtin.content_analysis import (
     AgentsMdBlock,
@@ -44,7 +44,7 @@ _OPTIONAL_LOCAL_IMPORT_NAMES = frozenset({"AGENTS.local.md", "CLAUDE.local.md"})
 class InstructionImportsValidRule(Rule):
     """Check that @import references in instruction files resolve to existing paths"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    repo_types = INSTRUCTION_REPO_TYPES
 
     @property
     def rule_id(self) -> str:

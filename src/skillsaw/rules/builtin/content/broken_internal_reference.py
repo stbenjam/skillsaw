@@ -25,7 +25,6 @@ class ContentBrokenInternalReferenceRule(Rule):
 
     autofix_confidence = AutofixConfidence.SUGGEST
 
-    formats = None
     since = "0.9.0"
     repo_types = None
 

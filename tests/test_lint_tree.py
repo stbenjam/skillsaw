@@ -16,6 +16,9 @@ from skillsaw.blocks import (
     CursorCommandBlock,
     CursorPromptHookBlock,
     CursorRuleBlock,
+    ClaudeHooksBlock,
+    CodexConfigBlock,
+    CodexConfigHooksBlock,
     HooksBlock,
     InstructionBlock,
     PromptBlock,
@@ -38,7 +41,7 @@ from skillsaw.lint_target import (
     PluginNode,
     SkillNode,
 )
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.linter import Linter
 from skillsaw.rules.builtin.cursor import CursorRulesValidRule
 
@@ -187,6 +190,8 @@ def test_tree_labels():
     assert ApmConfigNode(path=Path("/apm.yml")).tree_label() == "apm.yml"
     assert ApmNode(path=Path("/.apm")).tree_label() == ".apm/"
     assert CodeRabbitNode(path=Path("/.coderabbit.yaml")).tree_label() == ".coderabbit.yaml"
+    assert CodexConfigBlock(path=Path("/.codex/config.toml")).tree_label() == "config.toml [codex]"
+    assert CodexConfigHooksBlock(path=Path("/.codex/config.toml")).tree_label() == "[hooks]"
 
 
 # --- print_tree ---
@@ -285,7 +290,7 @@ def test_tree_preserves_apm_primitive_types_and_order(temp_dir):
         (PromptBlock, "prompts/review.md"),
         (ChatmodeBlock, "chatmodes/planning.md"),
         (ContextFileBlock, "context/project.md"),
-        (HooksBlock, "hooks/hooks.json"),
+        (ClaudeHooksBlock, "hooks/hooks.json"),
         (SettingsBlock, "settings.json"),
         (SettingsBlock, "settings.local.json"),
         (SkillNode, "skills/release"),
@@ -411,8 +416,8 @@ def test_lowercase_agents_md_is_a_documentation_page_without_devin_evidence(temp
     context = RepositoryContext(temp_dir)
     tree = context.lint_tree
 
-    assert "HAS_DEVIN" not in context.detected_formats
-    assert "HAS_AGENTS_MD" not in context.detected_formats
+    assert RepositoryType.DEVIN not in context.repo_types
+    assert RepositoryType.AGENTS_MD not in context.repo_types
     assert [block.path for block in tree.find(ClaudeMdBlock)] == [temp_dir / "CLAUDE.md"]
     assert tree.find(AgentsMdBlock) == []
 
@@ -769,7 +774,7 @@ def test_a_nested_clinerules_file_is_linted(temp_dir):
     paths = {b.path for b in context.lint_tree.find(InstructionBlock)}
 
     assert nested / ".clinerules" in paths
-    assert "HAS_CLINE" in context.detected_formats
+    assert RepositoryType.CLINE in context.repo_types
 
 
 def test_prompt_identity_is_injective_across_the_separator():
@@ -836,7 +841,7 @@ def test_a_nested_cursorrules_is_linted(temp_dir):
     assert nested / ".cursorrules" in paths
     assert temp_dir / ".cursorrules" in paths
     # Detection must agree with attachment, or the Cursor rules never run.
-    assert "HAS_CURSOR" in context.detected_formats
+    assert RepositoryType.CURSOR in context.repo_types
 
 
 def test_a_nested_cursorrules_alone_activates_cursor(temp_dir):
@@ -845,7 +850,7 @@ def test_a_nested_cursorrules_alone_activates_cursor(temp_dir):
     nested.mkdir(parents=True)
     (nested / ".cursorrules").write_text("Prefer the shared HTTP client.\n")
 
-    assert "HAS_CURSOR" in RepositoryContext(temp_dir).detected_formats
+    assert RepositoryType.CURSOR in RepositoryContext(temp_dir).repo_types
 
 
 def test_an_excluded_editor_subdirectory_is_not_walked(temp_dir):

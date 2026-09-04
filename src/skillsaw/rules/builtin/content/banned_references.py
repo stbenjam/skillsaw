@@ -56,7 +56,6 @@ _PIPE_RE = re.compile(r"\|")
 class ContentBannedReferencesRule(Rule):
     """Detect banned or deprecated references in instruction files"""
 
-    formats = None
     since = "0.7.0"
 
     _BUILTIN_PATTERNS = [

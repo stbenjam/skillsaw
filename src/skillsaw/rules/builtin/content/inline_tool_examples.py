@@ -138,7 +138,6 @@ _LEAD_LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 class ContentInlineToolExamplesRule(Rule):
     """Detect consecutive code-block examples that all invoke the same tool"""
 
-    formats = None
     repo_types = None  # instruction content appears in every repo type
     default_enabled = False
     since = "0.19.0"

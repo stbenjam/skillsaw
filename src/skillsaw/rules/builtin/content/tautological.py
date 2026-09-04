@@ -13,7 +13,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentTautologicalRule(Rule):
     """Detect tautological instructions that waste instruction budget"""
 
-    formats = None
     since = "0.7.0"
 
     @property

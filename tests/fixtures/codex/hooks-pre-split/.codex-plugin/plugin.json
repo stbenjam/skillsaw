@@ -1,0 +1,5 @@
+{
+  "name": "release-guard",
+  "version": "1.4.0",
+  "description": "Codex hooks that record every tool call during a release."
+}

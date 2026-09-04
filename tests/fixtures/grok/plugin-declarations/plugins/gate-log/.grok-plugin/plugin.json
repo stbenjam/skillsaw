@@ -1,0 +1,12 @@
+{
+  "name": "gate-log",
+  "version": "0.2.0",
+  "description": "Record lock-gate openings and reconcile them against the shift log.",
+  "license": "Apache-2.0",
+  "keywords": [
+    "gates",
+    "logbook"
+  ],
+  "hooks": "config/session.json",
+  "mcpServers": "config/servers.json"
+}

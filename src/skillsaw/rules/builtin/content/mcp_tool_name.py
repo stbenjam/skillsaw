@@ -44,7 +44,6 @@ class ContentMcpToolNameRule(Rule):
     # the fix applies only under `skillsaw fix --suggest`.
     autofix_confidence = AutofixConfidence.SUGGEST
 
-    formats = None
     since = "0.20.0"
     repo_types = None
     default_enabled = False

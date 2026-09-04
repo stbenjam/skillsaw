@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **87** built-in rules organized into the following categories:
+skillsaw includes **97** built-in rules organized into the following categories:
 
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
@@ -15,10 +15,12 @@ skillsaw includes **87** built-in rules organized into the following categories:
 - [Copilot / VS Code](copilot.md) (1 rule)
 - [Cursor](cursor.md) (2 rules)
 - [Devin](devin.md) (2 rules)
+- [Grok Build](grok.md) (8 rules)
 - [Hooks](hooks.md) (3 rules)
 - [Instruction Files](instruction-files.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (5 rules)
-- [OpenAI Codex](codex.md) (5 rules)
+- [Muse Code](muse.md) (1 rule)
+- [OpenAI Codex](codex.md) (6 rules)
 - [OpenClaw](openclaw.md) (1 rule)
 - [OpenCode](opencode.md) (1 rule)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
@@ -88,9 +90,17 @@ skillsaw includes **87** built-in rules organized into the following categories:
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
-| [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - | Hooks |
+| [`grok-agent-valid`](grok-agent-valid.md) | .grok/agents/*.md must declare a name and a description in frontmatter | error (auto) | - | Grok Build |
+| [`grok-config-project-scope`](grok-config-project-scope.md) | .grok/config.toml must only carry settings a project file contributes | warning (auto) | - | Grok Build |
+| [`grok-config-valid`](grok-config-valid.md) | .grok/config.toml must parse, and its servers and permissions must load | error (auto) | - | Grok Build |
+| [`grok-hooks-valid`](grok-hooks-valid.md) | .grok/hooks/*.json must use Grok's hook events, handler types and fields | error (auto) | - | Grok Build |
+| [`grok-marketplace-index-parity`](grok-marketplace-index-parity.md) | .grok-plugin/plugin-index.json must agree with the catalog beside it | warning (auto) | - | Grok Build |
+| [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md) | .grok-plugin/marketplace.json must be valid JSON with installable entries | error (auto) | - | Grok Build |
+| [`grok-plugin-json-valid`](grok-plugin-json-valid.md) | .grok-plugin/plugin.json must be valid JSON with a name Grok's loader accepts | error (auto) | - | Grok Build |
+| [`grok-plugin-structure`](grok-plugin-structure.md) | A Grok plugin directory needs a manifest or a component Grok installs | warning (auto) | - | Grok Build |
+| [`claude-hooks-valid`](claude-hooks-valid.md) | Claude Code hooks.json must be valid JSON with proper hook configuration structure | error | - | Hooks |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that chain a download into execution (curl\|sh), obfuscate their payload (eval/base64), or perform network requests | error (auto) | - | Hooks |
-| [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Hooks |
+| [`hooks-prohibited`](hooks-prohibited.md) | All hooks are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Hooks |
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md and tool-compatible alternatives) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files | warning (auto) | - | Instruction Files |
 | [`claude-md-agents-import`](claude-md-agents-import.md) | CLAUDE.md next to an AGENTS.md should import it so both assistants read one source of truth | info (auto) | auto | Instruction Files |
@@ -99,6 +109,8 @@ skillsaw includes **87** built-in rules organized into the following categories:
 | [`mcp-registry-server-json-valid`](mcp-registry-server-json-valid.md) | MCP Registry server.json must conform to a supported schema and its enums | error (auto) | - | MCP (Model Context Protocol) |
 | [`mcp-registry-version-semver`](mcp-registry-version-semver.md) | MCP Registry server versions should use strict Semantic Versioning 2.0.0 | warning (auto) | - | MCP (Model Context Protocol) |
 | [`mcp-registry-npm-name-match`](mcp-registry-npm-name-match.md) | Local npm package.json mcpName must match MCP Registry server.json name | error (auto) | - | MCP (Model Context Protocol) |
+| [`muse-hooks-valid`](muse-hooks-valid.md) | .muse/hooks.json must use Muse's events, matcher groups and handler fields | error (auto) | - | Muse Code |
+| [`codex-hooks-valid`](codex-hooks-valid.md) | Codex hooks files must use Codex's hook events, handler types, and fields | error (auto) | - | OpenAI Codex |
 | [`codex-openai-metadata`](codex-openai-metadata.md) | Validate skill openai.yaml and catalog-compatible plugin metadata | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-json-valid`](codex-plugin-json-valid.md) | .codex-plugin/plugin.json must be valid JSON with required fields | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-structure`](codex-plugin-structure.md) | Only plugin.json belongs in .codex-plugin/ | warning (auto) | - | OpenAI Codex |

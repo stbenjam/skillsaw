@@ -7,14 +7,13 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from pathlib import Path
 
 from skillsaw.blocks import (
-    AgentPluginMcpBlock,
     CopilotAgentMcpBlock,
+    JsonConfigBlock,
     McpConfigRole,
-    OpenCodeMcpBlock,
 )
-from skillsaw.context import HAS_OPENCODE, RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
-from skillsaw.utils import is_finite_number
+from skillsaw.utils import is_finite_number, read_json_strict
 from skillsaw.lint_target import PluginNode
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.secret_detection import (
@@ -71,7 +70,12 @@ class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
     default_enabled = True
-    surface_dependencies = ("copilot-agent-valid",)
+    # ``copilot-agent-valid`` gates the surface this rule reads at all;
+    # ``grok-config-valid`` and ``codex-hooks-valid`` own the "does not parse"
+    # finding for a ``.grok/config.toml`` and a ``.codex/config.toml`` while
+    # they can run, and this rule makes it when a ``version:`` pin or a forced
+    # ``--type`` gates one off.
+    surface_dependencies = ("codex-hooks-valid", "copilot-agent-valid", "grok-config-valid")
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a
     # project that allowlisted its own placeholder convention must not be told
@@ -135,43 +139,36 @@ class McpValidJsonRule(Rule):
                 "copilot-agent-valid"
             ):
                 continue
-            # Agent Plugins uses a closed, versioned schema with different
-            # defaults and failure boundaries. Its dedicated rule validates
-            # this block; running the permissive Claude/Codex shape check too
-            # would duplicate findings and accept fields the portable format
-            # rejects. Policy rules still see the McpBlock subclass.
+            # A host whose dialect its own format rule validates. Every
+            # *shape* check below reads the document the way the Claude
+            # family writes it, so running them over another spelling
+            # reports a correct file as invalid. Which hosts, and how far
+            # the deferral goes, is declared on the block — see
+            # :class:`McpShapeDeferral` — rather than named here, so a
+            # fourth dialect costs no visit to this loop.
             #
-            # Defer only when that dedicated rule can actually run: the tree
-            # role is deliberately --type-invariant, but agent-plugin-mcp-valid
-            # is gated on RepositoryType.AGENT_PLUGIN, so under a forced
-            # non-agent ``--type`` an unconditional skip would leave the file
-            # validated by no rule at all.
-            if (
-                isinstance(block, AgentPluginMcpBlock)
-                and RepositoryType.AGENT_PLUGIN in context.repo_types
+            # What survives it is everything that holds whatever dialect the
+            # file is written in, and it survives because no version gate
+            # can reach it here: a ``.skillsaw.yaml`` still pinning an older
+            # ``version:``, the ordinary state right after an upgrade, gates
+            # off the format rule that would otherwise make these findings.
+            # See ``_dialect_neutral_violations``. Policy rules are
+            # unaffected either way — they read ``server_names``, which the
+            # block normalizes.
+            deferral = block.shape_deferral
+            if deferral is not None and (
+                deferral.repo_type is None or deferral.repo_type in context.repo_types
             ):
-                continue
-            # OpenCode's dialect shares the idea of an MCP server and almost
-            # none of the spelling: transports are named for where the server
-            # runs (``local``/``remote``) rather than for the wire protocol,
-            # a local ``command`` is an argv array, the environment map is
-            # ``environment``, and v2 splits ``timeout`` into an object.
-            # Every *shape* check below would report a correctly written
-            # OpenCode config as invalid, so ``opencode-config-valid``
-            # validates the shape instead.
-            #
-            # The deferral is narrower than the one above. Unlike the
-            # ``--type`` gate, nothing here can see whether
-            # ``opencode-config-valid`` is *enabled*, and it carries
-            # ``since = "0.20.0"`` — so a project whose ``.skillsaw.yaml``
-            # still pins an older ``version:``, the ordinary state right
-            # after an upgrade, has it gated off while this rule defers.
-            # Everything that holds whatever dialect the file is written in
-            # therefore stays here, where no version gate can reach it; see
-            # ``_dialect_neutral_violations``. Policy rules are unaffected —
-            # they read ``server_names``, which the block normalizes.
-            if isinstance(block, OpenCodeMcpBlock) and HAS_OPENCODE in context.detected_formats:
-                violations.extend(self._dialect_neutral_violations(block))
+                if deferral.keeps_dialect_neutral_checks:
+                    owner = deferral.syntax_error_rule
+                    violations.extend(
+                        self._dialect_neutral_violations(
+                            block,
+                            report_syntax_error=(
+                                owner is None or not self.surface_rule_enabled(owner)
+                            ),
+                        )
+                    )
                 continue
             if block.parse_error:
                 violations.append(
@@ -186,12 +183,53 @@ class McpValidJsonRule(Rule):
                 )
                 continue
 
-            # Conditional strictness, not a skip: the tightened
-            # non-empty-string checks apply only inside Codex-ONLY plugins,
-            # so dual-manifest plugins keep their established Claude results.
-            require_usable = block.require_usable_connection or context.in_codex_only_plugin(
-                block.path
+            # Conditional strictness, not a skip: the tightened checks
+            # apply inside Codex-ONLY and Grok-ONLY plugins, so
+            # dual-manifest plugins keep their established Claude results.
+            #
+            # Asked of provenance as well as of the block, because the block
+            # class does not always carry the answer: a repo-root plugin's
+            # conventional ``.mcp.json`` is attached by the generic root
+            # attach — one block per file — before any plugin cluster runs,
+            # so it arrives as the shared ``McpBlock`` however the directory
+            # is claimed.
+            grok_only = context.in_grok_only_plugin(block.path)
+            require_usable = (
+                block.require_usable_connection
+                or context.in_codex_only_plugin(block.path)
+                or grok_only
             )
+            # A tightening only, never a subtraction: ``check_reserved`` stays
+            # on the block class. ``<repo>/.mcp.json`` is Claude Code's
+            # project-scope configuration, read because of where it sits and
+            # not because a manifest declared anything, and a Claude or Codex
+            # plugin nested under a Grok-claimed root is still its own host's
+            # file. Two hosts reading one file want the union of their checks.
+            # The block class already exempts what Claude never reads:
+            # ``GrokMcpBlock`` sets ``claude_builtins_reserved = False``.
+            check_reserved = block.claude_builtins_reserved
+            if (
+                grok_only
+                and isinstance(block, JsonConfigBlock)
+                and not (block.strict_json or block.jsonc)
+            ):
+                # The same document Grok's parser refuses outright. This block
+                # was parsed leniently, so it reached the shape walk carrying
+                # a duplicate key ``json.loads`` collapsed or a bare
+                # ``NaN``/``Infinity`` no JSON host produces; the strict
+                # reader names whichever it is, and the defect is the file.
+                #
+                # ``isinstance`` because the loop reaches every
+                # :class:`McpConfigRole`, and a frontmatter-embedded one
+                # (``CopilotAgentMcpBlock``) has no file to re-read and none
+                # of this machinery. ``jsonc`` is asked separately because it
+                # leaves ``strict_json`` at its default while parsing
+                # strictly, and re-reading a commented file as plain JSON
+                # would report the comments its host accepts.
+                _, strict_error = read_json_strict(block.path)
+                if strict_error is not None:
+                    violations.append(self.violation(strict_error, file_path=block.path))
+                    continue
             # Hosts spell the wrapper key differently (VS Code uses
             # ``servers``); the block knows its own.
             servers_key = block.servers_key
@@ -261,7 +299,7 @@ class McpValidJsonRule(Rule):
                     block.path,
                     require_usable=require_usable,
                     servers_key=servers_key,
-                    check_reserved=block.claude_builtins_reserved,
+                    check_reserved=check_reserved,
                     type_aliases=block.type_aliases,
                     line=getattr(block, "source_line", None),
                     line_for=getattr(block, "source_line_for", None),
@@ -276,7 +314,9 @@ class McpValidJsonRule(Rule):
 
         return violations
 
-    def _dialect_neutral_violations(self, block: McpConfigRole) -> List[RuleViolation]:
+    def _dialect_neutral_violations(
+        self, block: McpConfigRole, *, report_syntax_error: bool = True
+    ) -> List[RuleViolation]:
         """The checks this rule keeps for a block whose *shape* it defers.
 
         Not the whole rule, and not one check either: what stays is
@@ -296,10 +336,25 @@ class McpValidJsonRule(Rule):
         config's top level is an object is a claim about OpenCode's own
         schema, not about JSON or about MCP, so it stays with the rule that
         knows the dialect.
+
+        *report_syntax_error* is False where the deferring rule makes that
+        finding itself and can run; see
+        :attr:`McpShapeDeferral.syntax_error_rule`.
         """
         violations: List[RuleViolation] = []
         if block.parse_error:
-            return [self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)]
+            if not report_syntax_error:
+                return violations
+            # Bounded, and named for the syntax the block is written in: a
+            # TOML parser interpolates the offending key into its message,
+            # so an adversarial file would otherwise write its own content
+            # into the report.
+            return [
+                self.violation(
+                    f"Invalid {block.syntax_name}: {safe_display(block.parse_error)}",
+                    file_path=block.path,
+                )
+            ]
         for name, server in block.server_entries():
             if not isinstance(server, dict):
                 continue

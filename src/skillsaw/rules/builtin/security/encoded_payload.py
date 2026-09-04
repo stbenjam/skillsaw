@@ -148,7 +148,6 @@ class SecurityEncodedPayloadRule(Rule):
     """Detect long high-entropy base64/hex blobs in agent context"""
 
     repo_types = None
-    formats = None
     since = "0.17.0"
 
     config_schema = {

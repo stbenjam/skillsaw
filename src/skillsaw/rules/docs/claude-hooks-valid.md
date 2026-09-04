@@ -1,0 +1,72 @@
+## Why
+
+A Claude Code `hooks.json` configures commands that run automatically on
+agent events. Invalid JSON, unknown event types, or misconfigured handler
+objects will cause hooks to fail silently — the command never runs and no
+error is surfaced to the user. A bare `NaN` or `Infinity` anywhere in the
+file counts as invalid JSON: Claude Code's parser rejects the whole file.
+
+The event names, the handler types (`command`, `http`, `mcp_tool`,
+`prompt`, `agent`) and the per-handler fields checked here are Claude
+Code's. Codex, Muse Code and Grok Build read the same nested shape with
+vocabularies of their own, and Cursor reads a flat per-event list of
+`command` and `prompt` entries; each host's files are validated by its own
+rule — [`codex-hooks-valid`](codex-hooks-valid.md),
+[`muse-hooks-valid`](muse-hooks-valid.md),
+[`grok-hooks-valid`](grok-hooks-valid.md) and
+[`cursor-hooks-valid`](cursor-hooks-valid.md).
+
+This rule was called `hooks-json-valid` before that split. The old name
+still works everywhere a rule is named — config, `--rule`/`--skip-rule` and
+suppression comments — and resolves to this rule alone, so
+`hooks-json-valid: {enabled: false}` in a Codex project no longer covers
+Codex's hooks: configure [`codex-hooks-valid`](codex-hooks-valid.md) by its
+own id. A baseline recorded under the old name keeps applying here: this
+rule's messages are unchanged from the ones it recorded.
+
+The checks that moved to [`codex-hooks-valid`](codex-hooks-valid.md) were
+re-worded, and a hooks file's baseline fingerprint hashes the message text —
+JSON carries no line numbers to hash instead. An old baseline therefore carries
+over to that rule only for the four file-level verdicts whose wording survived;
+its page lists them.
+
+The commands themselves are scanned by
+[`hooks-dangerous`](hooks-dangerous.md) and, when you want every hook
+reviewed rather than only the risky-looking ones,
+[`hooks-prohibited`](hooks-prohibited.md).
+
+## Examples
+
+**Bad:**
+
+```json
+{
+  "hooks": {
+    "PostToolUse": {"command": "npm run lint"}
+  }
+}
+```
+
+**Good:**
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {"type": "command", "command": "npm run lint"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+## How to fix
+
+Fix the structural issue identified in the violation message. Common
+problems: event values must be arrays of config objects, each config
+must have a `hooks` array, each handler needs a `type` field, and
+type-specific fields (`command`, `url`, `prompt`) must match the
+handler type.

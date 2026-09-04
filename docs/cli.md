@@ -19,7 +19,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--fail-on` | Fail on violations at this severity or above (default: error; --strict is equivalent to --fail-on warning). Overrides the config file's strict/fail-on settings. (choices: error, warning, info) |  |
 | `--format` | Output format for stdout (default: text) (choices: text, json, sarif, html, code-climate, gitlab) | `text` |
 | `--output` | Write output to FILE. Format is inferred from extension (.htm, .html, .json, .sarif, .txt) or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). Use the prefix when an extension is ambiguous (e.g. .json could be json or gitlab/code-climate). Can be specified multiple times. |  |
-| `--type` | Override auto-detected repository type (repeatable). Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit, apm, promptfoo, codex-plugin, codex-marketplace, agent-plugin, mcp-registry. |  |
+| `--type` | Replace packaging-type detection (repeatable). Tool types are always detected from the checkout, and plugin-contributed types too. Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit, apm, promptfoo, codex-plugin, codex-marketplace, codex-project, agent-plugin, mcp-registry, cursor, copilot, cline, devin, opencode, muse, grok-project, grok-plugin, grok-marketplace, kiro, gemini, qwen, agents-md, claude-md, skills-lock. |  |
 | `--rule` | Only run these rules and their validation dependencies (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-baseline` | Ignore baseline file even if .skillsaw-baseline.json exists |  |
@@ -86,6 +86,7 @@ Show documentation and effective configuration for a rule
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
+| `--pager`, `--no-pager` | Use a pager (e.g. less) to display documentation (default: auto when tty present) |  |
 
 ## `skillsaw docs`
 

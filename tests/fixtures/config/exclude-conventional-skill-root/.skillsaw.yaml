@@ -1,0 +1,3 @@
+version: "0.20.0"
+exclude:
+  - ".claude/skills"

@@ -43,4 +43,7 @@ rules:
       skill:
         warn: 4000
         error: 8000
+      memory:            # committed .agents/memory/ notes
+        warn: 6000
+        error: 12000
 ```

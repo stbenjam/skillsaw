@@ -1,0 +1,42 @@
+{
+  "description": "Ledger policy hooks",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "policy",
+            "tool": "load_rules",
+            "input": { "scope": "ledger" },
+            "statusMessage": "Loading ledger policy"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/flush-metrics.sh",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/check-ledger.sh",
+            "commandWindows": "powershell -File .\\scripts\\check-ledger.ps1",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

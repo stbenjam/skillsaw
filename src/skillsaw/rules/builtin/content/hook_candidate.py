@@ -14,7 +14,6 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentHookCandidateRule(Rule):
     """Detect instructions that should be automated hooks"""
 
-    formats = None
     since = "0.7.0"
 
     _HOOK_PATTERNS = [

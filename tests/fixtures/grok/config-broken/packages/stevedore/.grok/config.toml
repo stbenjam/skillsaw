@@ -1,0 +1,6 @@
+[permission]
+allow = ["Bash(make test)"]
+
+# Every verbose rule is discarded whenever allow, deny or ask is present,
+# in any order.
+rules = [{ action = "deny", tool = "Bash", pattern = "psql *" }]

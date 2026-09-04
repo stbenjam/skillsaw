@@ -1,0 +1,111 @@
+## Why
+
+`.grok-plugin/plugin.json` is the manifest Grok Build reads to register a
+plugin package and discover the components it provides.
+
+While a manifest is optional — plugins containing standard `skills/`,
+`agents/`, or `hooks/hooks.json` load conventions automatically — including
+a well-formed `plugin.json` enables you to specify custom paths, component
+declarations, metadata, and versioning.
+
+Validating `plugin.json` ensures your plugin package installs smoothly and
+registers all intended components:
+
+- If a manifest contains invalid JSON or lacks a valid name, Grok may skip the
+  plugin directory during installation.
+- Declared component paths (`skills`, `commands`, `agents`, `hooks`, `mcpServers`)
+  should resolve to actual files or directories within the plugin so all features
+  are available at runtime.
+
+Grok resolves plugin manifests by checking `plugin.json`,
+`.grok-plugin/plugin.json`, and `.claude-plugin/plugin.json` in order. Skillsaw
+reports on whichever manifest file Grok discovers.
+
+## Severity
+
+Findings distinguish between structural errors that prevent installation and
+path advisories:
+
+**Errors** — issues that prevent Grok from registering the plugin:
+
+- Invalid JSON syntax, non-finite numbers (`NaN`, `Infinity`, `-Infinity`), or
+  duplicate keys.
+- Manifest is not a JSON object.
+- Missing, empty, or non-string `name`.
+- A `name` that does not match Grok's plugin naming requirements (1-64 characters,
+  lowercase alphanumeric and hyphens, no leading or trailing hyphen).
+
+**Warnings** — the plugin registers, but declared components may not load:
+
+- A declared `skills`, `commands`, `agents`, `hooks`, or `mcpServers` path that
+  is absolute, contains `..`, or resolves outside the plugin package.
+- A declared path that does not exist on disk.
+- A path pointing to the wrong resource type (e.g. specifying a file where a
+  directory is expected, or vice versa).
+- Specifying `hooks` or `mcpServers` as an array (each should be a file path string
+  or an inline object).
+- Specifying custom component path overrides that omit existing conventional
+  directories (e.g. setting `"skills": ["extra-skills"]` without also listing
+  `"skills"`).
+
+**Info** — metadata recommendations for marketplace discovery:
+
+- A `version` that is not valid semantic versioning.
+- A missing `description`.
+
+## What is not reported
+
+- **Name vs directory**: the manifest `name` takes precedence, so differences
+  between manifest name and directory name are supported.
+- **Unknown manifest keys**: custom metadata keys are permitted.
+- **Bare strings for paths**: strings and arrays are both supported for
+  `skills`, `commands`, and `agents`.
+
+## Examples
+
+**Bad** — custom skills path omits the existing `skills/` directory:
+
+```json
+{
+  "name": "tide-charts",
+  "version": "1.1.0",
+  "description": "Shoreline survey windows from NOAA tide predictions.",
+  "skills": ["./extra-skills"]
+}
+```
+
+**Good** — lists both the extra skills directory and the standard `skills/`:
+
+```json
+{
+  "name": "tide-charts",
+  "version": "1.1.0",
+  "description": "Shoreline survey windows from NOAA tide predictions.",
+  "skills": ["./extra-skills", "./skills"]
+}
+```
+
+## How to fix
+
+- Choose a valid lowercase kebab-case `name` (e.g. `tide-charts`).
+- When overriding component locations, include the standard directory alongside
+  any extra paths if you want both loaded.
+- Ensure all declared paths exist relative to the plugin root.
+- Add a helpful `description` and semantic `version` for marketplace listings.
+
+If your project generates component directories during a build step, you can
+disable path existence checks:
+
+```yaml
+rules:
+  grok-plugin-json-valid:
+    check-paths-exist: false
+```
+
+If you intentionally replace conventional directories with custom ones:
+
+```yaml
+rules:
+  grok-plugin-json-valid:
+    check-overrides: false
+```

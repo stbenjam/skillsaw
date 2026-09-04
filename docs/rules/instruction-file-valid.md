@@ -10,6 +10,7 @@ Instruction files (AGENTS.md and tool-compatible alternatives) must be valid and
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
+| **Repo Types** | agents-md, claude-md, coderabbit, copilot, cursor, devin, gemini, kiro, qwen |
 | **Category** | [Instruction Files](instruction-files.md) |
 
 ## Why

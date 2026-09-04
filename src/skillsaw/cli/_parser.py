@@ -113,7 +113,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="append",
         default=[],
         metavar="TYPE",
-        help="Override auto-detected repository type (repeatable). "
+        help="Replace packaging-type detection (repeatable). Tool types are "
+        "always detected from the checkout, and plugin-contributed types too. "
         "Values: "
         + ", ".join(t.value for t in RepositoryType if t is not RepositoryType.UNKNOWN)
         + ".",
@@ -335,6 +336,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Path to .skillsaw.yaml config file (default: auto-discover)",
     )
     _add_color_flag(explain_parser)
+    explain_parser.add_argument(
+        "--pager",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="pager",
+        help="Use a pager (e.g. less) to display documentation (default: auto when tty present)",
+    )
 
     # --- docs ---
     docs_parser = subparsers.add_parser(

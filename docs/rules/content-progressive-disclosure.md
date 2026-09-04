@@ -122,7 +122,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `limits` | Token thresholds per file category above which a file with no local file references is flagged; add a category (e.g. agent) to extend the rule to it, set one higher to relax it, or set one to null to opt the category out. context-budget's {warn: N} shape is accepted (warn is used) | `{"skill": 6000, "claude-md": 6000, "agents-md": 6000, "gemini-md": 6000, "qwen-md": 6000, "instruction": 4000}` |
+| `limits` | Token thresholds per file category above which a file with no local file references is flagged; add a category (e.g. agent) to extend the rule to it, set one higher to relax it, or set one to null to opt the category out. context-budget's {warn: N} shape is accepted (warn is used) | `{"skill": 6000, "claude-md": 6000, "agents-md": 6000, "gemini-md": 6000, "qwen-md": 6000, "instruction": 4000, "memory": 4000}` |
 
 
 *Run `skillsaw explain content-progressive-disclosure` to see this documentation and the rule's effective configuration in your terminal.*

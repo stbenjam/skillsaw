@@ -1,0 +1,57 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/print-schema-version.sh",
+            "timeout": 20,
+            "statusMessage": "Reading the migration state"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/audit-command.sh",
+            "commandWindows": "scripts\\audit-command.ps1",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/reject-generated-edits.sh",
+            "statusMessage": "Checking the edit target"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "make lint",
+            "timeout": 120,
+            "statusMessage": "Running the linters"
+          },
+          {
+            "type": "command",
+            "command": "./scripts/record-session.sh",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

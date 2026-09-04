@@ -1,0 +1,41 @@
+{
+  "description": "Project-layer hooks for the payments service",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/audit-shell.sh",
+            "timeout": 15,
+            "statusMessage": "Auditing shell command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/note-prompt.sh",
+            "additionalContextLimit": 4096
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/format.sh",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

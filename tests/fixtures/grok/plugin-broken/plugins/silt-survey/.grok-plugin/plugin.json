@@ -1,0 +1,9 @@
+{
+  "name": "silt-survey",
+  "version": "0.4.0",
+  "description": "Sediment depth surveys for the harbour approach channel.",
+  "skills": [
+    "./bundled-skills"
+  ],
+  "hooks": "config/session.json"
+}

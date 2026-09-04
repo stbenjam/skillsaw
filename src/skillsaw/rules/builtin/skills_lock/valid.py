@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Mapping
 
 from skillsaw.blocks import SkillsLockBlock
-from skillsaw.context import HAS_SKILLS_LOCK, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import skills_lock
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -22,8 +22,7 @@ class SkillsLockValidRule(Rule):
     """Check that project skills lockfiles match the shape the skills CLI reads."""
 
     since = "0.20.0"
-    repo_types = None  # lockfiles can be committed in any repository type
-    formats = frozenset({HAS_SKILLS_LOCK})
+    repo_types = frozenset({RepositoryType.SKILLS_LOCK})
 
     config_schema = {
         "extra-source-types": {

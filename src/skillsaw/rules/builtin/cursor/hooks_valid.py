@@ -4,7 +4,7 @@ Rule: cursor-hooks-valid
 
 from typing import Any, Dict, List, Set
 
-from skillsaw.context import HAS_CURSOR, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import CursorHooksBlock
@@ -65,7 +65,7 @@ class CursorHooksValidRule(Rule):
 
     since = "0.19.0"
 
-    formats = frozenset({HAS_CURSOR})
+    repo_types = frozenset({RepositoryType.CURSOR})
 
     config_schema = {
         "extra-events": {

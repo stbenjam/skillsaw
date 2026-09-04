@@ -34,6 +34,13 @@ hedge (see Sync notes).
   It is the de-facto conformance suite: skillsaw must stay silent on it.
 - Third-party schema (unofficial, one author's reading — useful for cross-checking,
   not authoritative): https://github.com/typeforged/codex-plugin-marketplace
+- Hooks: https://developers.openai.com/codex/hooks — hook sources, lifecycle events,
+  handler types, and per-handler fields. No JSON Schema is linked from the prose; the
+  generated schema lives at
+  https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated (see Sync
+  notes). Read it at the tag of the Codex release skillsaw supports, never on `main`:
+  `main` carries fields no release ships, and syncing from it makes `codex-hooks-valid`
+  enforce a field the shipped release does not have.
 
 ## What to check
 - **Manifest paths**: `.codex-plugin/plugin.json` and `$REPO_ROOT/.agents/plugins/marketplace.json`.
@@ -52,6 +59,98 @@ hedge (see Sync notes).
   skill metadata (and the observed plugin-root form). Re-check `_INTERFACE_STRINGS`,
   the `dependencies.tools` entry keys, and `_BRAND_COLOR` against `openai_yaml.md`
   and `validate_plugin.py` — see the Sync notes.
+- **Hooks**: where Codex loads them from — `~/.codex/hooks.json`, inline `[hooks]`
+  tables in `~/.codex/config.toml`, `<repo>/.codex/hooks.json`, `<repo>/.codex/config.toml`,
+  and a plugin's `hooks/hooks.json` (or a manifest `hooks` entry: a `./`-prefixed path,
+  an array of such paths, an inline hooks object, or an array of inline objects). The 12
+  events: `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`, `PreToolUse`,
+  `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `UserPromptSubmit`,
+  `Stop`, `Interrupt`. `command` and `mcp_tool` handlers run; `prompt` and `agent` are
+  parsed and skipped.
+- **Hook handler fields**: `command` handlers require `command` and take
+  `commandWindows`, `timeout` (seconds, default `600`), `statusMessage`,
+  `additionalContextLimit` and `async`; `mcp_tool` handlers require `server` and `tool`
+  and take `input`, `timeout` and `statusMessage`. `async` is command-only.
+  `SessionEnd` and `Interrupt` default to a
+  1-second timeout and cap configured timeouts at 3 seconds; `SessionEnd` rejects
+  `mcp_tool` handlers. `matcher` is honored on `PermissionRequest`, `PostToolUse`,
+  `PreToolUse`, `PreCompact`/`PostCompact` (compaction trigger), `SessionStart`,
+  `SubagentStart`/`SubagentStop`, and `SessionEnd`; `UserPromptSubmit`, `Stop`, and
+  `Interrupt` ignore any configured `matcher`.
+- **Hook failure scopes** — measured against codex-cli 0.153.0 (canary hooks in a
+  trusted project, offline). Three scopes, and they are what `codex-hooks-valid`'s
+  severities and messages encode:
+  - *File-scoped fatal in `<repo>/.codex/config.toml`* — `codex` exits 1 and starts
+    no session: TOML syntax error; an event value that is not a sequence; a handler
+    missing `type` or `command`; a `timeout` that is not an integer (it is a `u64`,
+    so `1.5` and `"30"` both fail); an unknown handler `type` variant. **The same
+    defects in `hooks.json` are entry-scoped**: one `warning: failed to parse hooks
+    config <path>` and the session runs. Any new check belongs on the same split.
+  - *Entry-scoped warning in both files* — `prompt` and `agent` handlers, `mcp_tool`
+    on `SessionEnd`, a `SessionEnd` timeout over the 3s clamp. Codex names the file
+    and carries on.
+  - *Silent, no diagnostic under any flag* — an unknown event name, an unknown
+    handler key, an unknown event-group key, a `matcher` on an event that ignores
+    one. `--strict-config` is fatal for an unknown key at the top level of
+    `config.toml` and never descends into `[hooks]` (verified with a control), so
+    skillsaw is the only thing that will ever report these.
+  `timeout` is an `Option<u64>` and `additionalContextLimit` an `Option<usize>`,
+  in both files. Measured against 0.153.2: `timeout = -1` and
+  `additionalContextLimit = -1` are each fatal in `config.toml` (`invalid value:
+  integer \`-1\`, expected u64` / `expected usize`) and each drop a `hooks.json`
+  with the same message under a `failed to parse hooks config` warning;
+  `timeout = 0` loads. No upper bound is needed — a TOML integer stops at `i64`.
+  skillsaw enforces the range on the TOML file only: the looser number is what
+  `hooks-json-valid` released for `hooks.json`, and tightening it would newly
+  fail files that pass today.
+  `command_windows` is a serde *alias* for `commandWindows`, so a handler
+  carrying both is a duplicate field. Measured against 0.153.2: a `config.toml`
+  exits 1 with `Error loading config.toml: duplicate field \`commandWindows\``
+  and a `hooks.json` is dropped with the same message. Only on a handler type
+  that owns the field — an `mcp_tool` handler carrying both spellings loads,
+  because neither is a field of that variant.
+  Also confirmed against the binary in the same pass: the 12 event names as the
+  complete enum, the four handler types, the required fields per type, the
+  `mcp_tool`-on-`SessionEnd` rejection, and the 3s `SessionEnd` clamp. Not
+  measured, carried from the docs: the 1s default timeout, and the `matcher`
+  semantics of the events that need a model turn.
+- **Project trust gate**: a project-layer hooks file — either one — runs only when
+  the user config carries `projects."<abs path>".trust_level = "trusted"`.
+  `--dangerously-bypass-hook-trust` is a *different* gate and does not substitute.
+  Not repository-resident, so it never suppresses a finding; the rule doc says so.
+- **Layer discovery**: Codex merges a `.codex/` layer from every directory from the
+  git repo root down to the cwd, inclusive, and reads nothing above the root. A
+  committed nested `.codex/config.toml` is therefore live for anyone working in
+  that subtree, which is why the lint tree attaches every one it finds.
+
+- **`[mcp_servers.<name>]`** — the project's MCP servers; there is no
+  `.codex/mcp.json`. Measured against 0.153.0 with `codex mcp list --json`, which
+  runs offline and prints the transport Codex derived, and re-confirmed at 0.153.2
+  with `codex exec --strict-config`:
+  - `command` selects stdio and `url` streamable HTTP, and they are **mutually
+    exclusive**. A table carrying both is refused with `url is not supported for
+    stdio in \`mcp_servers.<name>\``, one carrying neither with `invalid transport`
+    — each fatal for the whole file, so `codex` exits 1 and `codex mcp list` prints
+    nothing. The key alone picks the transport, whatever its value: `command = ""`
+    loads as stdio, `url = ""` as streamable HTTP, and `command = ["npx"]` refuses
+    the whole file (`invalid type: sequence, expected a string`) rather than
+    reading the table some other way.
+  - **No server field vocabulary is kept**, deliberately. An unknown server key
+    loads silently, so watching a table load proves nothing about whether its
+    keys are real; only `--strict-config` names one (`unknown configuration field
+    \`mcp_servers.<name>.enviroment\``), and it does so for every malformed
+    server table, which is why skillsaw adds no shape rule here. The tables reach
+    `mcp-prohibited` and `mcp-valid-json`'s dialect-neutral checks through the MCP
+    role on `CodexConfigBlock`, and nothing restates the refusals.
+  - `env` is the one server field that holds literal values, so it is the one in
+    `credential_maps` beside `http_headers`. `env_vars` is a *sequence* under
+    `--strict-config` (`invalid type: map, expected a sequence`) whose entries
+    name an env-var source, and `env_http_headers`/`bearer_token_env_var` hold
+    env-var names, so none of the three can carry a committed secret.
+  - Same gates as the hooks: a project layer's servers are read only once the user
+    config trusts the directory, and layers merge from the repo root down to the
+    cwd. A name declared in both the user config and a project layer resolves to
+    the project's.
 
 ## skillsaw rules that map
 - `src/skillsaw/rules/builtin/codex/`: `codex-plugin-json-valid`,
@@ -66,6 +165,31 @@ hedge (see Sync notes).
   `CodexPluginConfigNode`; `CodexMarketplaceConfigNode`), built in
   `src/skillsaw/lint_tree.py`.
 - Docs: `src/skillsaw/rules/docs/codex-*.md`.
+- Hooks — `src/skillsaw/rules/builtin/codex/hooks_valid.py`: `codex-hooks-valid`.
+  Vocabulary (events, handler types, per-handler fields) lives in
+  `src/skillsaw/formats/codex.py`, not the rule. Both project-layer files reach it
+  as a `CodexHooksBlock`; the TOML one is `CodexConfigHooksBlock`, which carries the
+  measured behavioural differences as ClassVars (`whole_number_fields`) so the
+  rule stays free of per-file branches. The severities are the same on both files:
+  the failure-scope asymmetry above is recorded here and in the rule doc, not
+  encoded in a message. Two things differ between the two files' messages: the
+  noun each syntax uses for a table or an array, which the blocks declare
+  (`mapping_noun`, `sequence_noun`), and one check `config.toml` gets and
+  `hooks.json` does not — `timeout` and `additionalContextLimit` must be
+  non-negative whole numbers there.
+- Both-files merge — measured against 0.153.0 and re-confirmed at 0.153.2: a
+  `.codex/` layer declaring hooks in both `hooks.json` and `config.toml` loads
+  both, runs every handler once, and prints `warning: loading hooks from both
+  <hooks.json> and <config.toml>; prefer a single representation for this layer`. Nothing is dropped and nothing
+  wins, which is why `codex-hooks-valid` reports it at INFO with an
+  `allow-both-files` escape hatch rather than as a defect.
+- MCP — `src/skillsaw/blocks/codex.py`: `CodexConfigBlock` and `GrokConfigBlock`
+  share a `TomlMcpConfigBlock` base (`src/skillsaw/blocks/toml_config.py`) and
+  differ only in `servers_key`, `credential_maps`, `shape_deferral` and a
+  `transport()` hook — `codex_mcp_transport()` in `formats/codex.py`. The
+  deferral is unconditional, so the JSON shape walk stands down and
+  `codex-hooks-valid` owns the one parse-error finding for the file. No Codex MCP
+  shape rule exists by design — see the measured note above.
 
 ## Sync notes
 Hand-copied value sets that drift — re-check each against upstream:
@@ -101,6 +225,43 @@ Hand-copied value sets that drift — re-check each against upstream:
   shorthand, no CSS keywords. Transcribed from `validate_plugin.py:25`
   (`HEX_COLOR_RE`), applied at `:522-527` — the validator publishes no schema, so
   this regex is the only statement of the rule and can drift silently.
+- The `CODEX_HOOK_*` constants in `formats/codex.py` (events, handler types,
+  required/optional per-handler fields, which events honor `matcher`, which reject
+  `mcp_tool`, and the `SessionEnd`/`Interrupt` short-timeout events), read by
+  `codex/hooks_valid.py`: re-check against https://developers.openai.com/codex/hooks
+  and the generated schema under `codex-rs/hooks/schema/generated`, read at the
+  supported release's tag rather than on `main`, on every sync.
+- The TOML dialect of the project layer's `[hooks]` tables, mapped by
+  `codex_config_hooks()` in `formats/codex.py` — the one place the mapping lives.
+  `[[hooks.<Event>]]` renders to a `{matcher?, hooks: [...]}` entry and
+  `[[hooks.<Event>.hooks]]` to a handler, which is the JSON shape exactly, so the
+  mapping is a pass-through apart from the `state` key below. Re-check on every
+  sync: a dialect that stops matching turns the mapping into a rename.
+- **Handler field aliases** — `CODEX_HOOK_FIELD_ALIASES` in `formats/codex.py`.
+  `command_windows` is a real alias of `commandWindows`:
+  `codex-rs/config/src/hook_config.rs` declares
+  `#[serde(default, rename = "commandWindows", alias = "command_windows")]`, and the
+  hooks documentation tells TOML authors to write the snake_case one. Both load, in
+  both files.
+  **A field list read from the shipped binary cannot see an alias.** Serde's
+  `unknown field ..., expected one of ...` message enumerates `rename` names only,
+  so `strings` over the binary — and any experiment that reads that error — is
+  systematically blind to exactly this. Re-derive every field claim from
+  `hook_config.rs` at the supported release's tag, never from a serde error.
+  `HOOK_COMMAND_FIELDS` keeps both spellings independently: it is the cross-host
+  scan union and Muse Code accepts the snake_case one, so a Windows command stays
+  in front of `hooks-dangerous` however it is written.
+- **`[hooks]` is `HooksToml`, not `HooksFile.hooks`.** The TOML table is a superset
+  of the JSON file's object: upstream flattens the event map into it
+  (`#[serde(flatten)] events: HookEventsToml`) and adds a sibling
+  `state: BTreeMap<String, HookStateToml>` — per-hook `enabled` and `trusted_hash`,
+  which only the user layer gets to write. Measured, 0.153.0: a project layer
+  carrying `[hooks.state."<key>"]` starts normally and its sibling hooks fire, with
+  no diagnostic. `codex_config_hooks()` drops the key
+  (`CODEX_CONFIG_HOOKS_STATE_KEY`) before the document reaches the rule; without
+  that it reads as an event whose value is not a sequence, which is an ERROR
+  claiming the CLI will not start. Re-check on every sync for a second non-event
+  sibling.
 
 Deliberate non-checks — do not "fix" these without a spec change. Each records what
 upstream requires and why skillsaw does not enforce it.

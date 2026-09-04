@@ -601,3 +601,136 @@ class TestEvalsBaselineStability:
             v.message = "a differently worded diagnostic"
         remaining, _ = filter_baselined_violations(found, baseline, skill)
         assert remaining == []
+
+
+class TestInterfaceAssetUris:
+    """Interface branding assets (composerIcon, logo, logoDark, screenshots)
+    accept remote HTTP/HTTPS URLs and data URIs as well as local paths."""
+
+    def test_remote_urls_are_not_resolved_as_local_paths(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "example-plugin",
+                "version": "1.0.0",
+                "description": "Example plugin",
+                "interface": {
+                    "composerIcon": "https://example.com/icon.svg",
+                    "logo": "https://example.com/logo.svg",
+                    "logoDark": "http://example.com/logo-dark.svg",
+                    "screenshots": ["https://example.com/screenshot.png"],
+                },
+            },
+        )
+        assert run_rule(CodexPluginJsonValidRule, repo) == []
+
+    def test_data_uri_asset_passes(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "data-plugin",
+                "version": "1.0.0",
+                "description": "Plugin with data URI icon",
+                "interface": {
+                    "composerIcon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjwvc3ZnPg==",
+                },
+            },
+        )
+        assert run_rule(CodexPluginJsonValidRule, repo) == []
+
+    @pytest.mark.parametrize(
+        "value,expected_fragment",
+        [
+            ("https://", "URL must include a host"),
+            ("http://", "URL must include a host"),
+            ("https://[", "is not a valid URL"),
+            ("data:", "empty data URI"),
+        ],
+    )
+    def test_malformed_asset_uri_warns(self, tmp_path, value, expected_fragment):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "bad-uri",
+                "version": "1.0.0",
+                "description": "Malformed URL",
+                "interface": {"logo": value},
+            },
+        )
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        warnings = messages(by_severity(violations, Severity.WARNING))
+        assert any("interface.logo" in m and expected_fragment in m for m in warnings)
+        assert not any("should start with './'" in m for m in messages(violations))
+
+    def test_unparseable_non_url_falls_through_to_path_validation(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "bad-path",
+                "version": "1.0.0",
+                "description": "Unparseable path",
+                "interface": {"logo": "//["},
+            },
+        )
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        msg_list = messages(violations)
+        assert any("interface.logo" in m and "absolute path" in m for m in msg_list)
+
+    def test_local_interface_asset_paths_receive_containment_and_existence_checks(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "local-assets",
+                "version": "1.0.0",
+                "description": "Local asset paths",
+                "interface": {
+                    "logo": "./missing-logo.png",
+                    "composerIcon": "assets/icon.png",
+                    "logoDark": "../escaping-logo.png",
+                },
+            },
+        )
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        msg_list = messages(violations)
+        assert any("interface.logo" in m and "does not exist in the plugin" in m for m in msg_list)
+        assert any(
+            "interface.composerIcon" in m and "should start with './'" in m for m in msg_list
+        )
+        assert any("interface.logoDark" in m and "'..'" in m for m in msg_list)
+
+    def test_mixed_screenshots_array(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "mixed-shots",
+                "version": "1.0.0",
+                "description": "Mixed screenshots",
+                "interface": {
+                    "screenshots": [
+                        "https://example.com/remote.png",
+                        "./local-exists.png",
+                        "./local-missing.png",
+                    ]
+                },
+            },
+        )
+        (repo / "local-exists.png").write_text("fake image", encoding="utf-8")
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        msg_list = messages(violations)
+        assert not any("screenshots[0]" in m for m in msg_list)
+        assert not any("screenshots[1]" in m for m in msg_list)
+        assert any("screenshots[2]" in m and "does not exist in the plugin" in m for m in msg_list)
+
+    def test_non_interface_path_fields_do_not_accept_urls(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "url-skills",
+                "version": "1.0.0",
+                "description": "URL in skills",
+                "skills": "https://example.com/skills",
+            },
+        )
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        msg_list = messages(violations)
+        assert any("'skills'" in m and "does not exist in the plugin" in m for m in msg_list)

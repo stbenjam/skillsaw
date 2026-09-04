@@ -14,12 +14,18 @@ from .diagnostics import safe_display
 
 from .blocks import (
     AgentBlock,
+    AgentMemoryBlock,
+    AgentMemoryIndexBlock,
     AgentPluginMcpBlock,
     AgentsMdBlock,
     ChatmodeBlock,
     ClaudeMdBlock,
     ClineWorkflowBlock,
     CodeRabbitContentBlock,
+    ClaudeHooksBlock,
+    CodexConfigBlock,
+    CodexConfigHooksBlock,
+    CodexHooksBlock,
     CodexInlineHooksBlock,
     CodexInlineMcpBlock,
     CommandBlock,
@@ -36,11 +42,21 @@ from .blocks import (
     DevinSkillBlock,
     ExtraBlock,
     GeminiMdBlock,
+    GrokAgentBlock,
+    GrokCommandBlock,
+    GrokConfigBlock,
+    GrokHooksBlock,
+    GrokInlineHooksBlock,
+    GrokInlineMcpBlock,
+    GrokMcpBlock,
+    GrokPluginHooksBlock,
+    GrokRuleBlock,
     HooksBlock,
     InstructionBlock,
     McpBlock,
     McpRegistryNpmPackageBlock,
     McpRegistryServerBlock,
+    MuseHooksBlock,
     OpenAIMetadataBlock,
     OpenCodeAgentBlock,
     OpenCodeCommandBlock,
@@ -58,13 +74,18 @@ from .blocks import (
     VsCodeMcpBlock,
 )
 from .formats.codex import (
+    CODEX_CONFIG_FILENAME,
+    CODEX_DIR_NAME,
+    CODEX_HOOKS_FILENAME,
+    codex_config_hooks,
     codex_declared_hook_files,
     codex_declared_mcp_files,
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
+from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.opencode import contained_instruction_globs
-from .formats import devin
+from .formats import devin, grok, muse
 from .utils import has_apm_generated_header, read_text
 from .paths import (
     contained_resolve,
@@ -91,6 +112,10 @@ from .lint_target import (
     CodexPluginConfigNode,
     CodexPluginNode,
     DevinSkillNode,
+    GrokMarketplaceConfigNode,
+    GrokMarketplaceIndexNode,
+    GrokPluginConfigNode,
+    GrokPluginNode,
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
@@ -182,6 +207,12 @@ class _TreeBuildState:
     repo_root: Path
     seen: Set[Path] = field(default_factory=set)
     seen_roles: Set[Tuple[Path, type]] = field(default_factory=set)
+    # Two indexes over ``seen_roles``, written beside it: "is this file
+    # already in the tree as hooks / as MCP" is asked once per plugin, and
+    # scanning every role on each question is O(plugins x blocks) on a
+    # marketplace with hundreds of each.
+    hooks_paths: Set[Path] = field(default_factory=set)
+    mcp_paths: Set[Path] = field(default_factory=set)
     openai_seen: Set[Tuple[Path, Path]] = field(default_factory=set)
     opencode_configs: List[OpenCodeConfigBlock] = field(default_factory=list)
 
@@ -207,7 +238,7 @@ class _TreeBuildState:
         ):
             return
         self.seen.add(resolved)
-        self.seen_roles.add((resolved, block_cls))
+        self._record_role(resolved, block_cls)
         block = block_cls(path=p)
         block.plugin_owner = owner
         block.content_suppressed = content_suppressed
@@ -228,6 +259,33 @@ class _TreeBuildState:
         role-aware deduplication still prevents duplicate findings when two
         discovery paths select the same parser.
         """
+        if self._claim_parser_role(p, block_cls) is None:
+            return None
+        block = block_cls(path=p)
+        block.plugin_owner = owner
+        block.content_suppressed = content_suppressed
+        parent.children.append(block)
+        return block
+
+    def attach_prebuilt(self, parent: LintTarget, block: LintTarget) -> Optional[LintTarget]:
+        """Attach an already-constructed block under the same contract.
+
+        The seam for a block the caller has to build itself — one carrying a
+        payload rendered from the file rather than read off it — so
+        containment, exclusion and role deduplication are still decided in
+        the one place :meth:`add_parser_block` decides them.
+        """
+        if self._claim_parser_role(block.path, type(block)) is None:
+            return None
+        parent.children.append(block)
+        return block
+
+    def _claim_parser_role(self, p: Path, block_cls: type) -> Optional[Path]:
+        """Claim one parser role over *p*, or ``None`` if it is not ours.
+
+        Containment, existence, exclusion and role deduplication, in that
+        order — the contract both attachment paths share.
+        """
         resolved = self.resolve_repo_path(p)
         if resolved is None:
             return None
@@ -242,12 +300,16 @@ class _TreeBuildState:
         # declare ``hooks``/``mcpServers`` at any in-plugin markdown file,
         # and poisoning ``seen`` would drop that file from every content
         # rule that attaches later.
-        self.seen_roles.add(role)
-        block = block_cls(path=p)
-        block.plugin_owner = owner
-        block.content_suppressed = content_suppressed
-        parent.children.append(block)
-        return block
+        self._record_role(resolved, block_cls)
+        return resolved
+
+    def _record_role(self, resolved: Path, block_cls: type) -> None:
+        """Record one attached role, and index it by the two roles asked about."""
+        self.seen_roles.add((resolved, block_cls))
+        if issubclass(block_cls, HooksBlock):
+            self.hooks_paths.add(resolved)
+        elif issubclass(block_cls, McpBlock):
+            self.mcp_paths.add(resolved)
 
     def add_openai_metadata(
         self,
@@ -285,6 +347,138 @@ class _TreeBuildState:
             containment_root=containment_root,
         )
         parent.children.append(block)
+
+
+def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
+    """Whether *path* is already in the tree under some hooks class.
+
+    Every hooks class is read by the same security rules, so which one a
+    file arrived under does not matter here — a second block for it would
+    report each of its commands twice. The generic root attach and the
+    Claude branch both run before a Codex manifest's declared files, and a
+    manifest may name any of the files they placed: the project layer's
+    ``.codex/hooks.json``, the conventional ``hooks/hooks.json``, or
+    another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``.
+    """
+    resolved = state.resolve_repo_path(path)
+    return resolved is not None and resolved in state.hooks_paths
+
+
+def _attached_as_mcp(state: _TreeBuildState, path: Path) -> bool:
+    """Whether *path* is already in the tree under some MCP class.
+
+    The counterpart of :func:`_attached_as_hooks`, and needed for the same
+    reason: every MCP class is read by the same security and policy rules,
+    so a second block for one file reports each of its servers twice. The
+    generic root attach runs before the plugin pass and places the
+    repository root's ``.mcp.json``, which for a repo-root plugin is that
+    plugin's own conventional file under a different class.
+    """
+    resolved = state.resolve_repo_path(path)
+    return resolved is not None and resolved in state.mcp_paths
+
+
+def _add_project_hooks(
+    state: _TreeBuildState,
+    root: LintTarget,
+    path: Path,
+    block_cls: type,
+) -> None:
+    """Attach a project-layer hooks file unless another host already has it.
+
+    ``.cursor/hooks.json``, ``.codex/hooks.json`` and ``.muse/hooks.json``
+    are three names for one shape, and a repository supporting several tools
+    commonly symlinks them to a single file. Each host's loop runs
+    independently, so without this the one resolved file gets a block per
+    host and the security rules report each of its commands once per block.
+    Whichever host reaches it first keeps it: the security rules read every
+    hooks class alike, and the later host's shape rule simply does not see a
+    file that host chose to share. Grok contributes a directory of candidates
+    (``.grok/hooks/*.json``) rather than one well-known name, and its loop
+    runs last, so a Grok file symlinked to another host's is that host's
+    block.
+    """
+    if _attached_as_hooks(state, path):
+        return
+    state.add_parser_block(root, path, block_cls)
+
+
+def _add_codex_config(state: _TreeBuildState, root: LintTarget, path: Path) -> None:
+    """Attach a ``.codex/config.toml``, and its ``[hooks]`` tables under it.
+
+    Two committed executable surfaces in one file. Codex reads lifecycle
+    hooks from ``[hooks]`` as well as from ``hooks.json`` and merges the two,
+    and ``[mcp_servers.<name>]`` is where a Codex project declares its MCP
+    servers — there is no ``.codex/mcp.json``. The document itself is one
+    node either way, so a config declaring neither is still in the tree.
+
+    Every one in the repository, not only the root's. Measured against
+    codex-cli 0.153.0: Codex merges a layer from every directory on the
+    chain from the git repo root down to the cwd, so a committed
+    ``services/billing/.codex/config.toml`` is live for anyone working in
+    that subtree — and dormant, not absent, for everyone else. Nothing above
+    the repository root is ever read, which is also the only place this walk
+    cannot reach.
+
+    The hooks child is attached whenever there are hooks to check, and also
+    when the file did not parse, so ``codex-hooks-valid`` has something to
+    report the failure on — a config Codex cannot read stops it starting in
+    the project at all.
+    """
+    config = state.add_parser_block(root, path, CodexConfigBlock)
+    if config is None:
+        return
+    # One hooks block per resolved file, for the reason
+    # ``_add_project_hooks`` documents: a package's config symlinked to the
+    # root's is one file, and two blocks would report each of its commands
+    # twice. ``hooks.json`` and ``config.toml`` are two paths, so a directory
+    # carrying both keeps a block for each — Codex merges them.
+    if _attached_as_hooks(state, path):
+        return
+    data, error = config.raw_data, config.parse_error
+    document = codex_config_hooks(data) if data is not None else None
+    if error is None and document is None:
+        return
+    state.attach_prebuilt(
+        config, CodexConfigHooksBlock(path=path, inline_data=document, toml_error=error)
+    )
+
+
+def _claim_attached_hooks(
+    state: _TreeBuildState,
+    root: LintTarget,
+    path: Path,
+    owner: Path,
+) -> bool:
+    """Claim an already-attached hooks file for *owner*, if there is one.
+
+    Answers "is this file already in the tree?" for the declared-files loop
+    and, when it is, records the plugin that declared it. Nothing but the
+    manifest names such a file, so the declaration is the only evidence of
+    ownership there is — and without it ``skillsaw docs`` lists the plugin
+    without its hooks. An attach that already recorded an owner (the Claude
+    branch, the Codex cluster's conventional file) keeps it.
+
+    Only the tree root is scanned, which is where every ownerless attach
+    puts a hooks block bar one: the project layer's ``.codex/hooks.json`` and
+    another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``. Scanning
+    the subtree would mean ``find()`` mid-build, whose per-node memo the
+    attaches still to come would invalidate. The exception is
+    ``CodexConfigHooksBlock``, which hangs under its ``CodexConfigBlock``
+    parent and is deliberately out of reach: no manifest can name a
+    ``config.toml``, so there is no declaration for this loop to record.
+    """
+    if not _attached_as_hooks(state, path):
+        return False
+    resolved = state.resolve_repo_path(path)
+    for child in root.children:
+        if (
+            isinstance(child, HooksBlock)
+            and child.plugin_owner is None
+            and safe_resolve(child.path) == resolved
+        ):
+            child.plugin_owner = owner
+    return True
 
 
 def _attach_apm_skills(
@@ -339,7 +533,7 @@ def _attach_apm_tree(
             state.add_block(apm_node, markdown_file, block_cls)
 
     # Hooks and settings inside .apm/ are supply-chain attack surfaces.
-    state.add_block(apm_node, apm_dir / "hooks" / "hooks.json", HooksBlock)
+    state.add_block(apm_node, apm_dir / "hooks" / "hooks.json", ClaudeHooksBlock)
     state.add_block(apm_node, apm_dir / "settings.json", SettingsBlock)
     state.add_block(apm_node, apm_dir / "settings.local.json", SettingsBlock)
 
@@ -349,6 +543,11 @@ def _attach_apm_tree(
 
 def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     """Build a tree of all lintable objects in the repository."""
+    # Imported here rather than at module scope: ``context`` reaches this
+    # module through ``RepositoryContext.lint_tree``, so a top-level import
+    # would close the cycle.
+    from .context import RepositoryType
+
     _INSTRUCTION_FILE_BLOCK_TYPES = {
         "AGENTS.md": AgentsMdBlock,
         "CLAUDE.md": ClaudeMdBlock,
@@ -501,7 +700,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         return agent_plugin_mcp is not None and safe_resolve(path) == agent_plugin_mcp
 
     def _add_contained_plugin_block(
-        parent: CodexPluginConfigNode | AgentPluginConfigNode,
+        parent: CodexPluginConfigNode | GrokPluginConfigNode | AgentPluginConfigNode,
         p: Path,
         block_cls: type,
         owner: Path | None = None,
@@ -518,6 +717,27 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return
         state.add_parser_block(parent, p, block_cls, owner=owner)
 
+    def _inside_plugin(candidate: Path, plugin_resolved: Path) -> bool:
+        """Inside *plugin_resolved*, and not inside a nested claimed plugin.
+
+        Any claimed plugin directory strictly between the file and this
+        plugin's root means the file is the nested plugin's to attach —
+        otherwise a repo-root plugin's recursive ``rules/`` scan, or a
+        manifest pointing ``commands`` at a directory holding another
+        plugin, would tag nested files with the outer owner.
+        ``seen_plugin_dirs`` is fully populated before the plugin loop makes
+        the first call here.
+        """
+        resolved = safe_resolve(candidate)
+        if resolved is None:
+            return False
+        for ancestor in resolved.parents:
+            if ancestor == plugin_resolved:
+                return True
+            if ancestor in seen_plugin_dirs:
+                return False
+        return False
+
     def _add_plugin_prose(parent: LintTarget, plugin_dir: Path, owner: Path) -> None:
         """The one prose attach for every plugin container.
 
@@ -532,24 +752,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return
 
         def _contained(p: Path) -> bool:
-            """Inside this plugin, and not inside a nested claimed plugin.
-
-            Any claimed plugin directory strictly between the file and this
-            plugin's root means the file is the nested plugin's to attach —
-            otherwise a repo-root plugin's recursive ``rules/`` scan would
-            tag nested files with the outer owner and poison ``seen`` first.
-            ``seen_plugin_dirs`` is fully populated before the plugin loop
-            makes the first call here.
-            """
-            resolved = safe_resolve(p)
-            if resolved is None:
-                return False
-            for ancestor in resolved.parents:
-                if ancestor == plugin_resolved:
-                    return True
-                if ancestor in seen_plugin_dirs:
-                    return False
-            return False
+            return _inside_plugin(p, plugin_resolved)
 
         for dirname, block_cls, pattern in (
             ("commands", CommandBlock, "*.md"),
@@ -574,7 +777,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # Only Devin Desktop reads ``agents.md`` case-insensitively, so that
     # spelling is an instruction file only where the repository carries other
     # Devin evidence; elsewhere ``docs/agents.md`` is a documentation page.
-    devin_desktop = "HAS_DEVIN" in context.detected_formats
+    devin_desktop = RepositoryType.DEVIN in context.repo_types
     for f in context.instruction_files:
         if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
             continue
@@ -626,6 +829,41 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # directory as well as the repository root, so a monorepo package can
     # carry its own — hence the walk-backed ``agent_tool_dirs`` rather than a
     # root-anchored lookup.
+    def _readable_matches(directory: Path, pattern: str) -> List[Path]:
+        """Every *pattern* match under *directory*, or nothing if it is unread.
+
+        The four guards in this helper are what any glob of a repository directory
+        needs, and a caller that skips the last one fails *silently*: a
+        directory that cannot be read looks exactly like a directory with
+        nothing in it, so the run stays green over content nobody scanned.
+        Hence one helper rather than a guard per call site.
+        """
+        if not safe_is_dir(directory):
+            return []
+        # An excluded directory is not walked. Testing only each match would
+        # let `exclude: [".cursor/rules"]` through — the pattern names the
+        # directory and the matches are its children — leaving the files in
+        # every content and security rule while format detection, which does
+        # honour the directory, disagrees.
+        if _is_excluded(directory):
+            return []
+        # Contain the glob *base*, not just each match: pathlib follows a
+        # symlink at the base even though it will not follow one during
+        # ``**`` descent, so a ``.clinerules -> /`` symlink would walk the
+        # filesystem before a single match was rejected.
+        if state.resolve_repo_path(directory) is None:
+            return []
+        try:
+            return sorted(directory.glob(pattern))
+        except OSError as exc:
+            # A directory that cannot be read drops silently otherwise, and
+            # "no findings" is indistinguishable from "nothing to find".
+            message = f"Could not read {directory}: {exc}"
+            if message not in context.lint_tree_errors:
+                context.lint_tree_errors.append(message)
+            logger.warning(message)
+            return []
+
     def _add_glob(
         parent: LintTarget,
         directory: Path,
@@ -639,32 +877,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *skip_dirs* names immediate subdirectories the owning tool does not
         read, so their contents are not swept in under this block type.
         """
-        if not safe_is_dir(directory):
-            return
-        # An excluded directory is not walked. Testing only each match would
-        # let `exclude: [".cursor/rules"]` through — the pattern names the
-        # directory and the matches are its children — leaving the files in
-        # every content and security rule while format detection, which does
-        # honour the directory, disagrees.
-        if _is_excluded(directory):
-            return
-        # Contain the glob *base*, not just each match: pathlib follows a
-        # symlink at the base even though it will not follow one during
-        # ``**`` descent, so a ``.clinerules -> /`` symlink would walk the
-        # filesystem before a single match was rejected.
-        if state.resolve_repo_path(directory) is None:
-            return
-        try:
-            matches = sorted(directory.glob(pattern))
-        except OSError as exc:
-            # A directory that cannot be read drops silently otherwise, and
-            # "no findings" is indistinguishable from "nothing to find".
-            message = f"Could not read {directory}: {exc}"
-            if message not in context.lint_tree_errors:
-                context.lint_tree_errors.append(message)
-            logger.warning(message)
-            return
-        for match in matches:
+        for match in _readable_matches(directory, pattern):
             # First component only: Cline reserves ``workflows``, ``hooks``
             # and ``skills`` at the top of .clinerules, not everywhere. A
             # rule filed under ``backend/hooks/`` is ordinary prose that
@@ -703,7 +916,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         )
         _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
         state.add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
-        state.add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
+        _add_project_hooks(state, root, cursor_dir / "hooks.json", CursorHooksBlock)
 
     for github_dir in context.agent_tool_dirs(".github"):
         # A compiled Copilot copy duplicates its ``.apm/`` source for the
@@ -740,6 +953,55 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     for vscode_dir in context.agent_tool_dirs(".vscode"):
         state.add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
+
+    # Codex loads project hooks from the ``.codex/`` layer of the project it
+    # is started in, plugin or not — and in a monorepo that is as often a
+    # package as the repository root, so a package's own layer is live
+    # configuration. The walk-backed lookup finds both, which is also what
+    # ``RepositoryType.CODEX_PROJECT`` detection reads: detection agrees with
+    # attachment.
+    for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
+        _add_project_hooks(state, root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
+        _add_codex_config(state, root, codex_dir / CODEX_CONFIG_FILENAME)
+
+    for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
+        _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
+
+    # Grok Build reads the ``.grok/`` layer of the project it is started in,
+    # as Codex does, so a monorepo package's own layer is live configuration
+    # and the walk-backed lookup finds both. Every directory here is read
+    # *flat* — a nested ``rules/theme/style.md`` or ``commands/git/sync.md``
+    # is not loaded, and a recursive glob would budget context Grok never
+    # sees. ``skills/`` is the exception and is walked recursively through
+    # ``CONVENTIONAL_SKILL_DIRS``, which earns the whole skill rule set.
+    # ``plugins/`` is Grok's install location and belongs to its own plugin
+    # discovery, so nothing here descends into it.
+    for grok_dir in context.agent_tool_dirs(grok.TOOL_DIR_NAME):
+        _add_glob(root, grok_dir / grok.RULES_DIR_NAME, "*.md", GrokRuleBlock)
+        _add_glob(root, grok_dir / grok.COMMANDS_DIR_NAME, "*.md", GrokCommandBlock)
+        _add_glob(root, grok_dir / grok.AGENTS_DIR_NAME, "*.md", GrokAgentBlock)
+        # One block per file: Grok merges every ``.json`` in the directory,
+        # so a repository has as many hooks blocks as it has files. Through
+        # ``_readable_matches`` rather than ``_add_glob`` because each match
+        # needs the hooks parser, but with the same containment, exclusion
+        # and unreadable-directory guards ``_add_glob`` gets.
+        for hooks_file in _readable_matches(grok_dir / grok.HOOKS_DIR_NAME, grok.HOOKS_GLOB):
+            _add_project_hooks(state, root, hooks_file, GrokHooksBlock)
+        # ``config.toml`` is where a Grok project declares its MCP servers —
+        # there is no ``.grok/mcp.json`` — so it is attached under its own
+        # parser role rather than as prose, and one block per resolved file.
+        state.add_parser_block(root, grok_dir / grok.CONFIG_FILENAME, GrokConfigBlock)
+
+    # Committed project memory: notes a team checks in for whatever agent
+    # reads the checkout. The index is loaded whole and every other Markdown
+    # file in the directory on demand — which is why the glob below takes
+    # them all, index entry or not — so all of it is agent context and gets
+    # every content and security rule — unconditionally, because content is
+    # content whether or not a reader for it is configured here. One
+    # directory, at the root, where the convention puts it.
+    memory_dir = context.root_path.joinpath(*AGENT_MEMORY_DIR)
+    state.add_block(root, memory_dir / AGENT_MEMORY_INDEX, AgentMemoryIndexBlock)
+    _add_glob(root, memory_dir, "**/*.md", AgentMemoryBlock)
 
     # The skills CLI writes one project lockfile at each project root. A
     # monorepo may therefore have several, all found by the shared walk.
@@ -938,9 +1200,53 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if not _is_excluded(codex_marketplace_json):
             root.children.append(CodexMarketplaceConfigNode(path=codex_marketplace_json))
 
+    # --- Grok marketplace configs ---
+    # The optional plugin-index.json hangs off its catalog rather than off
+    # the tree root: a parity check needs the pair, and the child edge is
+    # what supplies it without a second filesystem probe. An index with no
+    # catalog beside it attaches nowhere, which is right — it is a display
+    # catalog for a marketplace, and on its own there is nothing to drift
+    # from.
+    for grok_marketplace_json in context.grok_marketplace_paths():
+        if _is_excluded(grok_marketplace_json):
+            continue
+        catalog_node = GrokMarketplaceConfigNode(path=grok_marketplace_json)
+        marketplace_root = safe_resolve(grok_marketplace_json.parent.parent)
+        if marketplace_root is not None:
+            index_locations = [(grok_marketplace_json.parent / grok.PLUGIN_INDEX_FILENAME, False)]
+            # An index at a fallback catalog location is a file Grok never
+            # reads, and the parity rule reports it — so it is a node here
+            # like every other file the rules report on, rather than a probe
+            # of its own from inside the rule.
+            index_locations.extend(
+                (marketplace_root.joinpath(*parts, grok.PLUGIN_INDEX_FILENAME), True)
+                for parts in grok.UNREAD_INDEX_DIRS
+            )
+            # These attach straight onto the catalog node rather than
+            # through ``add_parser_block``, so nothing else deduplicates
+            # them: a stray location symlinked at the conventional one is
+            # one file, and a second node would report it twice.
+            index_seen: set[Path] = set()
+            for index_json, stray in index_locations:
+                # Contained against the marketplace root, the boundary the
+                # catalog's own sources are held to: an index symlinked out
+                # of the marketplace is not this marketplace's display
+                # catalog, and the parity rule would report a file it does
+                # not own.
+                resolved_index = contained_resolve(index_json, marketplace_root)
+                if resolved_index is None or resolved_index in index_seen:
+                    continue
+                if safe_is_file(index_json) and not _is_excluded(index_json):
+                    index_seen.add(resolved_index)
+                    catalog_node.children.append(
+                        GrokMarketplaceIndexNode(path=index_json, stray=stray)
+                    )
+        root.children.append(catalog_node)
+
     # --- Plugins (build first so skills can nest inside them) ---
     plugin_nodes: dict[Path, PluginNode] = {}
     codex_plugin_nodes: dict[Path, CodexPluginNode] = {}
+    grok_plugin_nodes: dict[Path, GrokPluginNode] = {}
     agent_plugin_nodes: dict[Path, AgentPluginNode] = {}
     marketplace_dir = context.root_path / "plugins"
     marketplace_node: MarketplaceNode | None = None
@@ -962,8 +1268,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for candidate in (
         *context.plugins,
         *context.codex_plugins,
+        *context.grok_plugins,
         *context.agent_plugins,
         *sorted(p for p in context._codex_claim_set() if not context.is_path_excluded(p)),
+        *sorted(p for p in context._grok_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._agent_plugin_claim_set() if not context.is_path_excluded(p)),
     ):
         resolved_candidate = safe_resolve(candidate)
@@ -1004,11 +1312,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if prov.claude:
             container = PluginNode(path=plugin_path)
             plugin_nodes[resolved_plugin] = container
-        elif resolved_plugin == root.resolved_path and (prov.codex or is_agent_plugin):
+        elif resolved_plugin == root.resolved_path and (prov.codex or prov.grok or is_agent_plugin):
             container = root
         elif prov.codex:
             container = CodexPluginNode(path=plugin_path)
             codex_plugin_nodes[resolved_plugin] = container
+        elif prov.grok:
+            container = GrokPluginNode(path=plugin_path)
+            grok_plugin_nodes[resolved_plugin] = container
         elif is_agent_plugin:
             container = AgentPluginNode(path=plugin_path)
             agent_plugin_nodes[resolved_plugin] = container
@@ -1024,12 +1335,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # A repo-root package shares conventional config paths with the
             # repository, so ownership is decided here once.
             root_plugin_owner = resolved_plugin
-            # Only ``.mcp.json`` needs re-tagging: the generic root attach
-            # never adds a HooksBlock (hooks/hooks.json attaches under the
-            # Codex cluster with containment).
-            claimed = {safe_resolve(plugin_path / ".mcp.json")} - {None}
+            # ``.mcp.json`` and the project layer's ``.codex/hooks.json``
+            # need re-tagging. The generic root attach runs first and adds
+            # them untagged, and for a repo-root plugin that project layer
+            # is the plugin's own — but no manifest names either file, so
+            # nothing downstream claims them and this is the only place the
+            # owner can be recorded. A hooks file the manifest *does*
+            # declare needs nothing here: ``_claim_attached_hooks`` tags it
+            # in the declared-files loop below, wherever the plugin sits in
+            # the tree. (``hooks/hooks.json`` needs nothing either: it
+            # attaches under the Codex cluster with containment.)
+            claimed_mcp = {safe_resolve(plugin_path / ".mcp.json")} - {None}
+            claimed_hooks: Set[Optional[Path]] = set()
+            if prov.codex:
+                claimed_hooks = {
+                    safe_resolve(plugin_path / CODEX_DIR_NAME / CODEX_HOOKS_FILENAME)
+                } - {None}
             for child in root.children:
-                if isinstance(child, McpBlock) and safe_resolve(child.path) in claimed:
+                if isinstance(child, McpBlock) and safe_resolve(child.path) in claimed_mcp:
+                    child.plugin_owner = resolved_plugin
+                elif isinstance(child, HooksBlock) and safe_resolve(child.path) in claimed_hooks:
                     child.plugin_owner = resolved_plugin
 
         _add_plugin_prose(container, plugin_path, resolved_plugin)
@@ -1039,7 +1364,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # inherit Claude's hooks, .mcp.json, or settings semantics.
         if prov.claude or (not prov.ecosystems and not is_agent_plugin):
             state.add_block(
-                container, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
+                container,
+                plugin_path / "hooks" / "hooks.json",
+                ClaudeHooksBlock,
+                owner=resolved_plugin,
             )
             native_mcp = plugin_path / ".mcp.json"
             if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
@@ -1077,15 +1405,39 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # Codex "checks that default file automatically", so a plugin
             # can ship executable hooks without declaring them — the same
             # supply-chain surface as a Claude plugin's hooks.
+            #
+            # Typed by provenance, because the block class picks the shape
+            # rule. Only Codex reads a Codex-only plugin's hooks, so they
+            # are ``codex-hooks-valid``'s. A dual-manifest plugin's
+            # conventional file is read by both hosts and keeps the Claude
+            # block the Claude branch attached above: one block per file, so
+            # the security rules report each command once, and Claude's
+            # results for it stand (``TestDualManifestBackwardCompat``).
+            hooks_cls = CodexHooksBlock if prov.codex_only else ClaudeHooksBlock
             _add_contained_plugin_block(
-                node, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
+                node, plugin_path / "hooks" / "hooks.json", hooks_cls, owner=resolved_plugin
             )
             # A manifest may point ``hooks`` at other files, or write them
             # inline; both carry the same executable commands. Inline
             # payloads have no file of their own, so they borrow the
-            # manifest path.
+            # manifest path — and only Codex reads that manifest, so they
+            # are Codex's whatever else claims the directory.
+            #
+            # A declared file is Codex's for the same reason: nothing but the
+            # Codex manifest names it, so no other host loads it, even in a
+            # dual-manifest plugin whose conventional ``hooks/hooks.json``
+            # stayed Claude's above. The exception is a file some earlier
+            # attach already put in the tree as hooks — that same
+            # conventional file when the manifest also declares it, the
+            # project layer's ``.codex/hooks.json``, or another tool's file
+            # a manifest points at. That block is claimed rather than
+            # re-attached: one block per file, or the security rules report
+            # every command in it twice, but the declaration is still what
+            # tells ``skillsaw docs`` whose hooks those are.
             for declared_hooks in codex_declared_hook_files(plugin_path):
-                state.add_parser_block(node, declared_hooks, HooksBlock, owner=resolved_plugin)
+                if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
+                    continue
+                state.add_parser_block(node, declared_hooks, CodexHooksBlock, owner=resolved_plugin)
             for inline_hooks in codex_inline_hooks(plugin_path):
                 inline_block = CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks)
                 inline_block.plugin_owner = resolved_plugin
@@ -1103,6 +1455,116 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 inline_block = CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp)
                 inline_block.plugin_owner = resolved_plugin
                 node.children.append(inline_block)
+            container.children.append(node)
+
+        # Grok manifest cluster, for any directory Grok claims (dual
+        # directories hang it off their PluginNode). Not gated on the
+        # manifest existing: Grok treats one as optional, so a claimed
+        # directory without one is a plugin whose components come from the
+        # conventional paths, and the node is what a manifest rule reads.
+        if prov.grok:
+            manifest = grok.grok_manifest_path(plugin_path) or plugin_path.joinpath(
+                grok.PLUGIN_DIR_NAME, grok.PLUGIN_MANIFEST
+            )
+            node = GrokPluginConfigNode(path=manifest)
+            node.plugin_owner = resolved_plugin
+            # A manifest may point ``commands`` or ``agents`` at directories
+            # of its own naming, and Grok then loads those *instead of* the
+            # conventional pair — measured, the same replacement it applies
+            # to ``skills``. ``_add_plugin_prose`` attached the conventional
+            # pair above; these are the files that actually load, and they
+            # need the same content, frontmatter, security and routing
+            # checks. Read flat, as the conventional attach reads them, and
+            # deduplicated by ``add_block``, so a manifest naming the
+            # conventional directory attaches nothing twice.
+            for field_name, prose_cls in (("commands", CommandBlock), ("agents", AgentBlock)):
+                for declared_dir in grok.grok_declared_paths(
+                    plugin_path, field_name, want_dir=True
+                ):
+                    try:
+                        declared_prose = sorted(declared_dir.glob("*.md"))
+                    except OSError:
+                        continue
+                    for md in declared_prose:
+                        # The same predicate the conventional attach uses:
+                        # inside the plugin, and not inside a nested claimed
+                        # one — a manifest may point the field at a
+                        # directory that holds another plugin.
+                        if _inside_plugin(md, resolved_plugin):
+                            state.add_block(container, md, prose_cls, owner=resolved_plugin)
+            # Whichever host already reads the *conventional* files keeps
+            # its block class: one block per file, or the security rules
+            # report every command in it twice, and a dual-manifest plugin's
+            # established Claude results have to stand.
+            if prov.claude:
+                hooks_cls, mcp_cls = ClaudeHooksBlock, McpBlock
+            elif prov.codex:
+                hooks_cls, mcp_cls = CodexHooksBlock, McpBlock
+            else:
+                hooks_cls, mcp_cls = GrokPluginHooksBlock, GrokMcpBlock
+            # Grok discovers ``hooks/hooks.json`` and ``.mcp.json`` with no
+            # manifest at all, so a plugin ships executable hooks and
+            # spawnable servers without declaring either. Plugin hooks get
+            # ``GrokPluginHooksBlock`` rather than the project layer's
+            # class: Grok loads them through a different adapter whose
+            # per-entry failure scope 1.0.13 publishes no observable for, so
+            # ``grok-hooks-valid``'s measured verdicts do not cover them.
+            conventional_hooks = plugin_path / "hooks" / "hooks.json"
+            if not _attached_as_hooks(state, conventional_hooks):
+                # Guarded where the Codex cluster is not: Codex's project and
+                # plugin files share one class, so ``add_parser_block``'s
+                # ``(path, block_cls)`` role key dedupes them. Grok's plugin
+                # class is a sibling of the project layer's, so a plugin file
+                # symlinked to a ``.grok/hooks/*.json`` would arrive twice and
+                # the security rules would report every command in it twice.
+                _add_contained_plugin_block(
+                    node, conventional_hooks, hooks_cls, owner=resolved_plugin
+                )
+            # A declared file is Grok's whatever else claims the directory:
+            # only the Grok manifest names it, so no other host loads it,
+            # and it must not arrive under a class whose shape rule was
+            # measured on another host's files. The conventional file both
+            # hosts read is the exception, and it is already attached above
+            # — ``_claim_attached_hooks`` finds it and records the
+            # declaration rather than adding a second block.
+            for declared_hooks in grok.grok_declared_hook_files(plugin_path):
+                # The same predicate the declared prose above uses: a
+                # manifest may name a file inside a nested claimed plugin,
+                # and claiming it here would take it from the plugin that
+                # ships it — ``_attached_as_hooks`` then suppresses the
+                # nested attach and the file arrives under the wrong owner.
+                if not _inside_plugin(declared_hooks, resolved_plugin):
+                    continue
+                if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
+                    continue
+                state.add_parser_block(
+                    node, declared_hooks, GrokPluginHooksBlock, owner=resolved_plugin
+                )
+            for inline_hooks in grok.grok_inline_hooks(plugin_path):
+                inline_hooks_block = GrokInlineHooksBlock(path=manifest, inline_data=inline_hooks)
+                inline_hooks_block.plugin_owner = resolved_plugin
+                node.children.append(inline_hooks_block)
+            native_mcp = plugin_path / ".mcp.json"
+            if not (
+                _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp)
+                or _attached_as_mcp(state, native_mcp)
+            ):
+                _add_contained_plugin_block(node, native_mcp, mcp_cls, owner=resolved_plugin)
+            for declared_mcp in grok.grok_declared_mcp_files(plugin_path):
+                if not _inside_plugin(declared_mcp, resolved_plugin):
+                    continue
+                if _shadowed_by_agent_plugin_mcp(
+                    declared_mcp, agent_plugin_mcp
+                ) or _attached_as_mcp(state, declared_mcp):
+                    continue
+                # Grok's own class, whatever else claims the directory —
+                # the same reasoning as the declared hooks above: only the
+                # Grok manifest names this file, so no other host loads it.
+                state.add_parser_block(node, declared_mcp, GrokMcpBlock, owner=resolved_plugin)
+            for inline_mcp in grok.grok_inline_mcp(plugin_path):
+                inline_mcp_block = GrokInlineMcpBlock(path=manifest, inline_data=inline_mcp)
+                inline_mcp_block.plugin_owner = resolved_plugin
+                node.children.append(inline_mcp_block)
             container.children.append(node)
 
         # Agent Plugins manifest cluster. A forced ``--type agent-plugin``
@@ -1170,6 +1632,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             node = (
                 plugin_nodes.get(candidate)
                 or codex_plugin_nodes.get(candidate)
+                or grok_plugin_nodes.get(candidate)
                 or agent_plugin_nodes.get(candidate)
             )
             if node is not None:

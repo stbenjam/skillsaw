@@ -10,7 +10,7 @@ import pytest
 
 from skillsaw.blocks import SkillsLockBlock
 from skillsaw.config import LinterConfig
-from skillsaw.context import HAS_SKILLS_LOCK, RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats import skills_lock
 from skillsaw.lint_target import SkillNode
 from skillsaw.linter import Linter
@@ -58,7 +58,7 @@ def test_valid_root_and_nested_lockfiles_pass(tmp_path: Path) -> None:
     repo = _copy_fixture("skills-lock/valid", tmp_path)
     context = RepositoryContext(repo)
 
-    assert HAS_SKILLS_LOCK in context.detected_formats
+    assert RepositoryType.SKILLS_LOCK in context.repo_types
     blocks = context.lint_tree.find(SkillsLockBlock)
     assert [block.path.relative_to(repo) for block in blocks] == [
         Path("packages/web/skills-lock.json"),

@@ -16,10 +16,41 @@ from skillsaw.rules.builtin.content_analysis import (
     CursorHooksBlock,
     DevinSkillBlock,
     HookEventConfig,
+    HookHandler,
     HooksBlock,
     SettingsBlock,
     SkillBlock,
 )
+
+
+def _handler_identity(handler: HookHandler) -> str:
+    """The allowlist spelling for a handler that runs no shell command.
+
+    A command handler is named by the command it spawns. The other handler
+    types run something too — Claude Code dispatches ``http``, ``mcp_tool``,
+    ``prompt`` and ``agent`` handlers, and Codex ``mcp_tool`` ones — so a
+    policy gate over what fires on a lifecycle event has to name them as
+    well, and an allowlist needs a spelling stable enough to enumerate:
+    ``mcp_tool:<server>/<tool>``, ``http:<url>``, ``prompt:<prompt>``,
+    ``agent:<prompt>``.
+
+    A handler missing its payload falls back to the bare type. That is the
+    coarsest possible entry — allowlisting ``http`` permits every payloadless
+    ``http`` handler in the repository — but such a handler is malformed and
+    the host's own shape rule reports it; inventing a placeholder payload
+    would put a spelling in the allowlist that no valid handler ever matches.
+    """
+    kind = handler.type
+    if kind == "mcp_tool":
+        if handler.server and handler.tool:
+            return f"mcp_tool:{handler.server}/{handler.tool}"
+    elif kind == "http":
+        if handler.url:
+            return f"http:{handler.url}"
+    elif kind in ("prompt", "agent"):
+        if handler.prompt:
+            return f"{kind}:{handler.prompt}"
+    return kind
 
 
 class HooksProhibitedRule(Rule):
@@ -34,7 +65,11 @@ class HooksProhibitedRule(Rule):
         "allowlist": {
             "type": "list",
             "default": [],
-            "description": "Hook command spellings to permit (exact diagnostic match)",
+            "description": (
+                "Hook spellings to permit (exact diagnostic match): a command, or "
+                "an identity such as 'mcp_tool:server/tool' for a handler that "
+                "runs no command"
+            ),
         },
     }
 
@@ -45,7 +80,7 @@ class HooksProhibitedRule(Rule):
     @property
     def description(self) -> str:
         return (
-            "All hook commands are prohibited unless explicitly allowlisted; "
+            "All hooks are prohibited unless explicitly allowlisted; "
             "catches new or unexpected hooks added to a project"
         )
 
@@ -53,8 +88,19 @@ class HooksProhibitedRule(Rule):
         return Severity.ERROR
 
     def _is_allowed(self, command: str) -> bool:
+        """Whether *command* — raw, or as the finding printed it — is allowed.
+
+        The message renders ``safe_display(command)``, which redacts URL
+        userinfo and truncates long values. Matching the raw spelling alone
+        meant a credentialed ``http:`` URL or an overlong ``prompt:``
+        identity could not be allowlisted by the only spelling the operator
+        was ever shown. Both forms are accepted, and the redaction stays.
+        """
         allowlist = self.setting("allowlist")
-        return any(command == entry for entry in allowlist)
+        if any(command == entry for entry in allowlist):
+            return True
+        displayed = safe_display(command)
+        return displayed != command and any(displayed == entry for entry in allowlist)
 
     def _check_events(
         self,
@@ -68,58 +114,117 @@ class HooksProhibitedRule(Rule):
         for event_type, configs in events.items():
             for cfg in configs:
                 for handler in cfg.handlers:
-                    if handler.type != "command":
-                        continue
-                    for command, source_line in handler.iter_effective_commands():
-                        if not command or self._is_allowed(command):
-                            continue
+                    if handler.type == "command":
+                        for command, source_line in handler.iter_effective_commands():
+                            if not command or self._is_allowed(command):
+                                continue
 
-                        if allowlist:
-                            violations.append(
-                                self.violation(
-                                    f"Hook {safe_display(event_type)}: "
-                                    f"non-allowlisted command — {safe_display(command)!r}",
-                                    file_path=file_path,
-                                    line=source_line or line,
+                            if allowlist:
+                                violations.append(
+                                    self.violation(
+                                        f"Hook {safe_display(event_type)}: "
+                                        f"non-allowlisted command — {safe_display(command)!r}",
+                                        file_path=file_path,
+                                        line=source_line or line,
+                                    )
                                 )
-                            )
-                        else:
-                            violations.append(
-                                self.violation(
-                                    f"Hook {safe_display(event_type)}: hooks are prohibited — "
-                                    f"{safe_display(command)!r}",
-                                    file_path=file_path,
-                                    line=source_line or line,
+                            else:
+                                violations.append(
+                                    self.violation(
+                                        f"Hook {safe_display(event_type)}: hooks are prohibited — "
+                                        f"{safe_display(command)!r}",
+                                        file_path=file_path,
+                                        line=source_line or line,
+                                    )
                                 )
-                            )
+                        continue
+
+                    # A handler that spawns no process still fires on the
+                    # event: Claude Code calls an ``http`` endpoint, invokes
+                    # an ``mcp_tool``, injects a ``prompt``, runs an
+                    # ``agent``; Codex invokes an ``mcp_tool``. Skipping them
+                    # let a whole class of hook past a policy that says every
+                    # hook needs review.
+                    #
+                    # Reported whatever host owns the file, without asking
+                    # whether that host dispatches the type. This is an
+                    # inventory of what the repository declares, and the
+                    # events here arrive from four hosts plus settings,
+                    # frontmatter and Copilot agents — a per-host handler
+                    # table threaded through all of them would buy a
+                    # narrower report at the cost of a hook going unlisted
+                    # every time a host learns a new type. "Muse drops this
+                    # handler" is muse-hooks-valid's sentence to say.
+                    if not handler.type:
+                        # No type at all: no host dispatches it, and the
+                        # host's shape rule reports the handler.
+                        continue
+
+                    identity = _handler_identity(handler)
+                    if self._is_allowed(identity):
+                        continue
+
+                    kind = safe_display(handler.type)
+                    if allowlist:
+                        message = (
+                            f"Hook {safe_display(event_type)}: non-allowlisted "
+                            f"{kind} hook — {safe_display(identity)!r}"
+                        )
+                    else:
+                        message = (
+                            f"Hook {safe_display(event_type)}: {kind} hooks are "
+                            f"prohibited — {safe_display(identity)!r}"
+                        )
+                    violations.append(
+                        self.violation(
+                            message,
+                            file_path=file_path,
+                            # A handler that runs no command has no
+                            # ``command:`` line to point at; its ``type:`` is
+                            # the line the reader needs. JSON gives neither
+                            # and falls back to the block's own line.
+                            line=handler.type_line or line,
+                        )
+                    )
         return violations
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        # CursorHooksBlock renders its flatter shape as HookEventConfig too.
-        hook_blocks = context.lint_tree.find(HooksBlock) + context.lint_tree.find(CursorHooksBlock)
+        # Every host's hooks file is a HooksBlock — Claude, Codex, Muse,
+        # Cursor — and each renders its own shape as HookEventConfig.
+        hook_blocks = context.lint_tree.find(HooksBlock)
         for block in hook_blocks:
             if block.parse_error:
                 continue
             violations.extend(self._check_events(block.events, block.path))
 
-        # A Cursor prompt hook runs no command, so it carries nothing an
-        # allowlist of commands could match — but this rule is a policy gate
-        # over what fires on a lifecycle event, not a command scanner, and a
-        # hook that injects text is still a hook the project did not have
-        # before.
+        # Cursor's prompt hooks are the one handler kind ``events`` does not
+        # render — its override drops them, so the loop above never sees one
+        # and cannot double-report what this loop finds. They are reported
+        # here instead because a hook that injects text is still a hook the
+        # project did not have before, and by the same ``prompt:<text>``
+        # identity a nested-shape prompt handler carries, so one allowlist
+        # entry reads the same whichever host's file the prompt sits in.
+        allowlist = self.setting("allowlist")
         for block in context.lint_tree.find(CursorHooksBlock):
             if block.parse_error:
                 continue
             for event_type, _index, prompt in block.prompt_hooks():
-                violations.append(
-                    self.violation(
-                        f"Hook {safe_display(event_type)}: prompt hooks are prohibited — "
-                        f"{safe_display(prompt)!r}",
-                        file_path=block.path,
+                identity = f"prompt:{prompt}"
+                if self._is_allowed(identity):
+                    continue
+                if allowlist:
+                    message = (
+                        f"Hook {safe_display(event_type)}: non-allowlisted prompt hook — "
+                        f"{safe_display(identity)!r}"
                     )
-                )
+                else:
+                    message = (
+                        f"Hook {safe_display(event_type)}: prompt hooks are prohibited — "
+                        f"{safe_display(identity)!r}"
+                    )
+                violations.append(self.violation(message, file_path=block.path))
 
         for block in context.lint_tree.find(SettingsBlock):
             if block.parse_error:

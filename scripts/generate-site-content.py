@@ -81,8 +81,8 @@ RULE_GROUPS = [
         "These rules validate skills against the [agentskills.io specification]"
         "(https://agentskills.io/specification). They auto-enable wherever skills "
         "are detected — agentskills repos, single plugins, marketplaces, "
-        "`.claude/` directories, Codex plugins and marketplaces, and Agent "
-        "Plugin packages.",
+        "`.claude/` directories, Codex plugins and marketplaces, Grok Build "
+        "plugins and marketplaces, and Agent Plugin packages.",
     ),
     (
         "APM (Agent Package Manager)",
@@ -209,16 +209,49 @@ RULE_GROUPS = [
         "automatically when Devin repository context is present.",
     ),
     (
+        "Grok Build",
+        "grok",
+        [
+            "grok-agent-valid",
+            "grok-config-project-scope",
+            "grok-config-valid",
+            "grok-hooks-valid",
+            "grok-marketplace-index-parity",
+            "grok-marketplace-json-valid",
+            "grok-plugin-json-valid",
+            "grok-plugin-structure",
+        ],
+        "Validates Grok Build project configuration, hooks, subagents, and "
+        "plugin packages. These rules ensure that project settings in "
+        "`.grok/config.toml` parse cleanly and contain only project-scoped "
+        "tables, lifecycle hooks in `.grok/hooks/*.json` use supported events "
+        "and valid handler options, and subagents in `.grok/agents/*.md` define "
+        "required frontmatter for task delegation. For plugin authors and "
+        "marketplace maintainers, they verify `.grok-plugin/plugin.json` "
+        "manifests, directory structures, and marketplace catalogs "
+        "(`marketplace.json` and `plugin-index.json`).\n\n"
+        "Grok reads AGENTS.md for portable project instructions and standard "
+        "Agent Skills from `.grok/skills/`, which automatically receive skillsaw's "
+        "shared content and security checks.\n\n"
+        "Project rules enable automatically when a `.grok/` directory is "
+        "present; plugin and marketplace rules enable when `.grok-plugin/` "
+        "manifests or catalogs are detected.",
+    ),
+    (
         "Hooks",
         "hooks",
         [
-            "hooks-json-valid",
+            "claude-hooks-valid",
             "hooks-dangerous",
             "hooks-prohibited",
         ],
-        "Validates hook configuration. The security rules scan hooks in "
-        "`hooks.json`, `.cursor/hooks.json`, `.claude/settings*.json`, and "
-        "skill, Claude-agent, and Copilot-agent frontmatter (`hooks:` key) for supply-chain "
+        "Validates hook configuration. The security rules scan every hook a repository "
+        "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
+        "Codex's `.codex/hooks.json`, the `[hooks]` tables of its `.codex/config.toml`, "
+        "and plugin hooks, Muse Code's `.muse/hooks.json`, "
+        "Grok Build's `.grok/hooks/*.json` and its plugin hooks, Cursor's "
+        "`.cursor/hooks.json`, and skill, "
+        "Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain "
         "attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
@@ -250,9 +283,23 @@ RULE_GROUPS = [
         "package metadata; they never query a package registry.",
     ),
     (
+        "Muse Code",
+        "muse",
+        ["muse-hooks-valid"],
+        "Validates `.muse/hooks.json` to ensure project hooks for Muse Code "
+        "run reliably across lifecycle events. Checks that hook definitions "
+        "use Muse's supported events, matcher groups, and handler fields so "
+        "automation runs smoothly during interactive and headless sessions. "
+        "Muse reads AGENTS.md for portable project instructions and uses the "
+        "shared `.agents/memory/` convention for committed memory, both of "
+        "which are covered by skillsaw's universal content and security checks. "
+        "Enabled automatically when `.muse/hooks.json` is present.",
+    ),
+    (
         "OpenAI Codex",
         "codex",
         [
+            "codex-hooks-valid",
             "codex-openai-metadata",
             "codex-plugin-json-valid",
             "codex-plugin-structure",
@@ -812,10 +859,39 @@ def generate_research_page(research):
     return "\n".join(lines) + "\n"
 
 
+# The hero sentence's rule count, anchored on the words that lead into it:
+# "…structural flaws, and content dead zones with N rules, then applies
+# deterministic autofixes." The whitespace before "zones" is captured rather
+# than matched literally because the sentence wraps across two source lines,
+# and rewriting the count must not reflow the paragraph.
+HERO_RULE_COUNT_RE = re.compile(r"(dead\s+zones with )\d+( rules\b)")
+
+
 def inject_stats(index_path, rules_data):
-    """Replace stat markers in docs/index.md."""
+    """Refresh the rule count in docs/index.md.
+
+    The ``<!-- RULE_COUNT -->`` marker is consumed the first time this runs,
+    which left the literal it became frozen at whatever the count was that
+    day. So the count is also rewritten in place on every run: the pattern
+    matches the rendered form as well as the marker, which makes the
+    substitution idempotent and keeps the page honest after a rule lands.
+
+    The pattern names the hero sentence, not just "with N rules", so it
+    rewrites that sentence and nothing else — a page that mentions "with 5
+    rules" in an unrelated line keeps that count untouched.
+    """
     text = index_path.read_text()
-    text = text.replace("<!-- RULE_COUNT -->", str(len(rules_data)))
+    count = str(len(rules_data))
+    text = text.replace("<!-- RULE_COUNT -->", count)
+    text, injected = HERO_RULE_COUNT_RE.subn(rf"\g<1>{count}\g<2>", text)
+    if not injected:
+        # The hero was reworded out from under the pattern. Saying so beats
+        # shipping a page frozen at whatever the count was that day.
+        print(
+            f"WARNING: no hero rule count found in {index_path.name}; "
+            "update HERO_RULE_COUNT_RE to match the hero sentence.",
+            file=sys.stderr,
+        )
     index_path.write_text(text)
 
 
