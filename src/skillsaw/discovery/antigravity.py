@@ -33,10 +33,8 @@ from skillsaw.formats.antigravity import (
 )
 from skillsaw.paths import (
     contained_resolve,
-    safe_exists,
     safe_is_dir,
     safe_is_file,
-    safe_is_symlink,
     safe_resolve,
 )
 from skillsaw.utils import read_json_strict
@@ -99,7 +97,11 @@ def customization_root_declares_a_file(base: Path, *, is_excluded: Callable[[Pat
         return False
     for child in children:
         manifest = child / PLUGIN_MANIFEST
-        if not is_excluded(manifest) and safe_is_file(manifest):
+        if (
+            contained_resolve(manifest, resolved_base) is not None
+            and not is_excluded(manifest)
+            and safe_is_file(manifest)
+        ):
             return True
     return False
 
@@ -121,9 +123,16 @@ def customization_root_is_marked(base: Path, *, is_excluded: Callable[[Path], bo
     """
     if customization_root_declares_a_file(base, is_excluded=is_excluded):
         return True
+    resolved_base = safe_resolve(base)
+    if resolved_base is None:
+        return False
     for name in (RULES_DIR_NAME, AGENTS_DIR_NAME):
         directory = base / name
-        if is_excluded(directory) or not safe_is_dir(directory):
+        if (
+            contained_resolve(directory, resolved_base) is None
+            or is_excluded(directory)
+            or not safe_is_dir(directory)
+        ):
             continue
         try:
             if any(True for _ in directory.iterdir()):
@@ -175,8 +184,6 @@ def antigravity_marker_escapes(plugin_dir: Path) -> bool:
         # Containment cannot be proven, so fail closed.
         return True
     manifest = plugin_dir / PLUGIN_MANIFEST
-    if not (safe_exists(manifest) or safe_is_symlink(manifest)):
-        return False
     return contained_resolve(manifest, root) is None
 
 
@@ -220,12 +227,10 @@ def discover_antigravity_plugins(
         except OSError:
             continue
         for child in children:
-            if not safe_is_dir(child):
-                continue
             # Repository containment first, before the manifest is read:
             # a plugin directory symlinked out of the checkout must not
             # have a file opened inside it at all.
-            if contained_resolve(child, resolved_root) is None:
+            if contained_resolve(child, resolved_root) is None or not safe_is_dir(child):
                 continue
             if not (forced or antigravity_manifest_is_contained(child)):
                 continue
@@ -236,12 +241,6 @@ def discover_antigravity_plugins(
             plugins.append(child)
 
     return sorted(plugins)
-
-
-#: How deep an ``inherits`` chain is followed. A registry may name another
-#: registry file, which may name a third; the cap bounds a chain that a
-#: cycle guard alone would not (a long linear chain of distinct files).
-_MAX_INHERITS_DEPTH = 8
 
 
 def _registry_entry_path(root: Path, value: object) -> Optional[Path]:
@@ -280,7 +279,7 @@ def resolve_registry_entries(
 
     ``inherits`` names another *registry file* whose entries are read as
     well; a directory there loads nothing, and is skipped. Followed
-    recursively with a cycle guard and a depth cap.
+    iteratively, reading each contained registry at most once.
 
     ``include_only`` and ``exclude`` are read by ``agy`` and deliberately
     ignored here, on the same policy as a hook-level ``"enabled": false``:
@@ -299,18 +298,20 @@ def resolve_registry_entries(
     seen: Set[Path] = set()
     visited_registries: Set[Path] = set()
 
-    def read_registry(path: Path, depth: int) -> None:
+    pending = [directory / filename for directory in customization_dirs]
+    while pending:
+        path = pending.pop()
         resolved = contained_resolve(path, resolved_root)
         if resolved is None or resolved in visited_registries or is_excluded(path):
-            return
+            continue
         visited_registries.add(resolved)
         if not safe_is_file(resolved):
-            return
+            continue
         # The reader the block uses: strict about the tokens ``agy``
         # refuses, lenient about a repeated key it collapses.
         data, error = read_json_strict(resolved, allow_duplicate_keys=True)
         if error or not isinstance(data, dict):
-            return
+            continue
         entries = data.get("entries")
         if isinstance(entries, list):
             for entry in entries:
@@ -322,11 +323,9 @@ def resolve_registry_entries(
                 if directory not in seen:
                     seen.add(directory)
                     found.append(directory)
-        if depth >= _MAX_INHERITS_DEPTH:
-            return
         inherits = data.get("inherits")
         if not isinstance(inherits, list):
-            return
+            continue
         for entry in inherits:
             if not isinstance(entry, dict):
                 continue
@@ -334,10 +333,7 @@ def resolve_registry_entries(
             # Measured: a directory in ``inherits`` loads nothing. Only a
             # registry *file* is followed.
             if target is not None:
-                read_registry(target, depth + 1)
-
-    for customization_dir in customization_dirs:
-        read_registry(customization_dir / filename, 0)
+                pending.append(target)
     return sorted(found)
 
 
@@ -363,19 +359,23 @@ def registry_plugin_roots(root: Path, directories: Iterable[Path]) -> List[Path]
     roots: List[Path] = []
     seen: Set[Path] = set()
     for directory in directories:
+        if contained_resolve(directory, resolved_root) is None:
+            continue
         candidates = [directory]
         if not safe_is_file(directory / PLUGIN_MANIFEST):
             try:
-                candidates = sorted(child for child in directory.iterdir() if safe_is_dir(child))
+                candidates = sorted(directory.iterdir())
             except OSError:
                 continue
         for candidate in candidates:
             resolved = contained_resolve(candidate, resolved_root)
             if resolved is None or resolved in seen:
                 continue
-            if not safe_is_file(candidate / PLUGIN_MANIFEST):
+            if not safe_is_dir(resolved):
                 continue
             if antigravity_marker_escapes(candidate):
+                continue
+            if not safe_is_file(candidate / PLUGIN_MANIFEST):
                 continue
             seen.add(resolved)
             roots.append(resolved)

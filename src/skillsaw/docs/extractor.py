@@ -604,7 +604,7 @@ def _extract_antigravity_plugins(
     context: RepositoryContext,
     documented: Set[Path],
 ) -> List[PluginDoc]:
-    """Plugin docs for Antigravity plugins no stronger declaration documents.
+    """Document Antigravity plugins not already covered by another ecosystem.
 
     A directory another ecosystem also claims is already in *documented*
     through that doc; what is left is the Antigravity-only plugin, whose
@@ -631,9 +631,8 @@ def _extract_antigravity_plugin(
     The manifest is a four-field protojson message, so only ``name`` and
     ``description`` have anything to publish — ``version``, ``author`` and
     the rest are discarded by Antigravity itself and are left empty rather
-    than invented from keys it ignores. ``name`` is optional there and
-    falls back to the directory name, which is what Antigravity installs
-    such a plugin under.
+    than invented from keys it ignores. An absent or empty name falls back
+    to the directory name, matching Antigravity's in-place discovery.
     """
     plugin_dir = node.plugin_dir
     meta = _read_json_dict(node)
@@ -949,12 +948,8 @@ def _agent_docs(blocks) -> List[AgentDoc]:
 def _extract_hooks(blocks: List[HooksBlock]) -> List[HookDoc]:
     docs = []
     for block in blocks:
-        # A published document says what the host does, so a block whose
-        # ``events`` deliberately over-reports for the security scanners —
-        # Antigravity shows both readings of every entry — offers the
-        # dispatched one here instead. Every other host renders one reading
-        # and has no such property.
-        events = getattr(block, "effective_events", block.events)
+        # Use the host's documentation view rather than its broader security view.
+        events = block.effective_events
         for event_type in sorted(events):
             configs = events[event_type]
             entries = [

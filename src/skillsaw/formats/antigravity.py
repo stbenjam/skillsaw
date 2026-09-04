@@ -1,77 +1,12 @@
-r"""Google Antigravity repository-context vocabulary, in one place.
+"""Antigravity filenames and loader vocabulary.
 
-Google Antigravity is Google's agentic coding platform. A checkout
-configures its CLI (``agy``) through a *customization root* — ``.agents/``,
-``.agent/``, ``_agents/`` or ``_agent/`` — holding lifecycle hooks in
-``hooks.json``, MCP servers in ``mcp_config.json``, always-on prose in
-``rules/**/*.md``, portable Agent Skills in ``skills/``, subagents in
-``agents/``, plugins in ``plugins/<name>/``, and the registries listed in
-:data:`REGISTRY_FILENAMES`.
+Verified against agy 1.1.25, with follow-up checks on 1.1.26. The measured
+inputs, observables and limitations live in the maintenance reference at
+``.apm/skills/skillsaw-maintenance/references/antigravity.md``.
 
-Sources:
-
-* Measured against ``agy`` 1.1.25 (``agy changelog`` head; the language
-  server logs the same version). Method: an isolated ``HOME`` — the real
-  ``~/.gemini`` never read or written — outbound proxies pointed at a dead
-  port, one fixture per case, read back from ``agy agents``, ``agy mcp
-  list``, ``agy plugin validate`` and the ``--log-file`` diagnostics
-  (``hooks_manager.go``, ``discovery.go``, ``plugins.go``). A workspace is
-  reported only when passed with ``--add-dir``; the CWD alone is not
-  enough, which is a property of these subcommands rather than of the
-  layout. No model turn ever ran (``agy --print`` blocks on OAuth), so
-  every hooks fact below is about *loading*, never about dispatch.
-* The vendor documentation the binary embeds verbatim as string blobs
-  (``# Lifecycle Hooks (hooks.json)``, ``# MCP Servers
-  (mcp_config.json)``, ``# Plugins``, ``# JSON Configuration Files``,
-  ``# Antigravity Customization System Guide``), quoted where it settles a
-  point runtime could not. Marked "documented" wherever that is the only
-  evidence.
-* https://antigravity.google/docs/mcp/ (read 2026-09-03), which names the
-  workspace ``mcp_config.json`` location the embedded copy omits.
-* https://antigravity.google/docs/cli/plugins/ (read 2026-09-04), which
-  publishes the ``plugin.json`` schema inline under "Full JSON Schema":
-  ``name`` required with pattern ``^[a-zA-Z0-9-_]+$``, ``description``
-  optional, ``additionalProperties: false``. Narrower than the loader —
-  ``disabled`` and ``logo`` load and are not in it — so
-  :data:`PLUGIN_MESSAGE_FIELDS` follows the measured protojson message. The
-  ``$schema`` URL the page tells authors to write is itself a 404.
-
-**Failure scopes.** They differ per file and are what makes a defect worth
-reporting:
-
-* ``hooks.json`` — every load-time rejection is **file-scoped and
-  non-fatal**. The file contributes zero hooks, one ``failed to parse
-  hooks.json at <path>: <err>`` is logged, and ``agy`` still exits 0. There
-  is no entry-scoped rejection and no startup abort.
-* ``mcp_config.json`` — a JSON syntax error or a non-object root is
-  **startup-fatal** (exit 1, one message naming the file). Any per-server
-  shape problem drops **that server only, silently**. There is no middle
-  ground and no per-server diagnostic.
-* ``plugin.json`` — a manifest that does not parse means the directory is
-  not a plugin at all: it is skipped with one ``plugins.go`` line.
-* A registry — a non-object root logs one ``Failed to load JSON config
-  file`` line and that file is skipped.
-
-**Duplicate object keys are not a defect here.** ``hooks.json``,
-``mcp_config.json`` and the registries are read with Go's
-``encoding/json``, which takes the last value: measured at every nesting
-depth — a repeated hook name, event key and handler key; a repeated
-``mcpServers`` wrapper, server name and server key; a repeated ``entries``
-key and ``path`` — the file loads with the last value in force and logs
-nothing. So the blocks reading them turn :attr:`duplicate_keys_fatal` off
-while keeping the rest of ``strict_json``: a bare ``NaN`` or ``Infinity``
-token, a comment and a trailing comma each still drop the whole file.
-``plugin.json`` is the exception and keeps both halves — protojson refuses
-a repeated field outright (``proto: duplicate field "name"``), which means
-the directory is not a plugin.
-
-**What was not observable offline.** Whether a workspace or plugin
-``mcp_config.json`` is read at all (``agy mcp list`` and ``agy mcp add``
-are home-only; the shape matrix below was obtained at the global path,
-which exercises the same parser); skill discovery (no listing command);
-``skills.json`` and ``workflows.json`` as loaders (``agy agents`` queries
-only the agents and plugins kinds); and every runtime hook behaviour,
-including what a ``matcher`` is compiled with.
+Official docs: https://antigravity.google/docs/hooks/ and
+https://antigravity.google/docs/cli/plugins/. The published plugin schema
+is narrower than the loader; the field set below follows the loader.
 """
 
 from __future__ import annotations
@@ -90,17 +25,13 @@ ANTIGRAVITY_CONFIG_DIR_NAMES = (".agents", ".agent", "_agents", "_agent")
 #: The roots whose *name* belongs to this host alone. ``.agent/`` is the
 #: documented Windsurf-lineage back-compat path and no other tool reads it,
 #: so a populated ``rules/`` or ``agents/`` under it is evidence of
-#: Antigravity. The other three are shared or ordinary names — ``.agents/``
-#: is the tool-neutral layout (27 of 30 sampled repositories with
-#: ``.agents/rules`` carry no Antigravity file — corpus survey, maintenance
-#: reference), ``_agents/`` and
-#: ``_agent/`` are names any source package may take — so detection there
-#: asks for a file only this host reads.
+#: Antigravity. The other three are shared or ordinary names: ``.agents/``
+#: is tool-neutral, while ``_agents/`` and ``_agent/`` may name source packages.
+#: Detection there requires an Antigravity-specific file.
 EXCLUSIVE_ROOT_NAMES = frozenset({".agent"})
 
-#: The plugin marker, a direct child of ``<root>/plugins/`` only: a nested
-#: ``plugins/outer/inner/plugin.json`` is not discovered, and a directory
-#: named by a sibling catalog but carrying no manifest is not a plugin.
+#: The plugin marker. Automatic discovery checks ``<root>/plugins/*``;
+#: a registry can also name a manifest-bearing directory elsewhere.
 PLUGIN_MANIFEST = "plugin.json"
 
 #: Lifecycle hooks, one file per customization root and one per plugin.

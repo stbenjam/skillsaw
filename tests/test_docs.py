@@ -659,15 +659,34 @@ class TestAntigravityExtractor:
         The ``documented`` bookkeeping in the Antigravity leg is the only
         thing preventing ``_extract_agent_plugins`` from listing it again.
         """
-        import shutil
+        from tests.antigravity._helpers import copy_fixture
 
-        fixture = Path(__file__).parent / "fixtures" / "antigravity" / "portable-manifest"
-        repo = temp_dir / "dual"
-        shutil.copytree(fixture, repo)
+        from skillsaw.lint_target import AgentPluginConfigNode, AntigravityPluginConfigNode
 
-        docs = extract_docs(RepositoryContext(repo))
+        repo = copy_fixture("antigravity/dual-manifest", temp_dir)
+        context = RepositoryContext(repo)
+        assert len(context.lint_tree.find(AgentPluginConfigNode)) == 1
+        assert len(context.lint_tree.find(AntigravityPluginConfigNode)) == 1
+        assert context.provenance(repo / "plugins/route-kit").ecosystems == {
+            "agent-plugin",
+            "antigravity",
+        }
+        docs = extract_docs(context)
 
         assert [p.name for p in docs.plugins] == ["route-kit"]
+
+    @pytest.mark.parametrize("empty", ("", None))
+    def test_empty_server_url_preserves_the_command(self, temp_dir, empty):
+        self._plugin(
+            temp_dir,
+            {"mcpServers": {"local": {"command": "echo", "args": ["ok"], "serverUrl": empty}}},
+        )
+        docs = extract_docs(RepositoryContext(temp_dir))
+        server = docs.plugins[0].mcp_servers[0]
+        assert server.server_type == "stdio"
+        assert server.config["command"] == "echo"
+        assert server.config["args"] == ["ok"]
+        assert "| local | `stdio` | `echo` |" in render_markdown(docs)["README.md"]
 
     def test_published_hooks_list_only_what_dispatches(self, temp_dir):
         """``events`` over-reports for the scanners; a document must not."""
@@ -720,6 +739,46 @@ class TestAntigravityExtractor:
         assert by_name["local"].server_type == "stdio"
         assert by_name["local"].config["command"] == "./bin/db"
 
+    def test_disabled_hooks_are_scanned_but_not_published(self, temp_dir):
+        from skillsaw.blocks.json_config import AntigravityHooksBlock
+
+        plugin = self._plugin(temp_dir, {"mcpServers": {}})
+        (plugin / "hooks.json").write_text(
+            json.dumps({"audit": {"enabled": False, "Stop": [{"command": "make lint"}]}}),
+            encoding="utf-8",
+        )
+        context = RepositoryContext(temp_dir)
+        assert context.lint_tree.find(AntigravityHooksBlock)[0].events
+        assert extract_docs(context).plugins[0].hooks == []
+
+    def test_server_url_takes_precedence_over_url(self, temp_dir):
+        self._plugin(
+            temp_dir,
+            {
+                "mcpServers": {
+                    "remote": {
+                        "serverUrl": "https://primary.example/mcp",
+                        "url": "https://fallback.example/mcp",
+                    }
+                }
+            },
+        )
+        server = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers[0]
+        assert server.server_type == "http"
+        assert server.config["url"] == "https://primary.example/mcp"
+
+    def test_registry_root_plugin_owns_pre_attached_hooks(self, temp_dir):
+        root = temp_dir / ".agents"
+        root.mkdir()
+        (root / "plugins.json").write_text('{"entries": [{"path": ".agents"}]}', encoding="utf-8")
+        (root / "plugin.json").write_text('{"name": "berth-tools"}', encoding="utf-8")
+        (root / "hooks.json").write_text(
+            '{"audit": {"Stop": [{"command": "make lint"}]}}', encoding="utf-8"
+        )
+        docs = extract_docs(RepositoryContext(temp_dir))
+        assert len(docs.plugins) == 1
+        assert [hook.event_type for hook in docs.plugins[0].hooks] == ["Stop"]
+
     def test_an_explicit_type_is_not_overridden(self, temp_dir):
         self._plugin(
             temp_dir,
@@ -758,14 +817,13 @@ class TestAntigravityExtractor:
         assert "args" not in servers[0].config
 
     def test_the_portable_key_still_supplies_the_endpoint(self, temp_dir):
-        """``url`` wins the endpoint; the transport is remote either way."""
+        """``url`` alone supplies a remote endpoint."""
         self._plugin(
             temp_dir,
             {
                 "mcpServers": {
                     "remote": {
                         "url": "https://portable.example/mcp",
-                        "serverUrl": "https://other.example/mcp",
                     }
                 }
             },

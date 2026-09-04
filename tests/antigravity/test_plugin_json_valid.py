@@ -61,6 +61,7 @@ class TestNotAPlugin:
         "name,body,needle",
         [
             ("unparseable", '{"name": "berth-tools"', "does not parse"),
+            ("bom", '\ufeff{"name": "berth-tools"}', "UTF-8 BOM"),
             ("array-root", '[{"name": "berth-tools"}]', "must be a JSON object"),
             ("string-root", '"berth-tools"', "must be a JSON object"),
             (

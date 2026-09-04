@@ -163,26 +163,17 @@ class RepositoryAntigravityMixin:
     def _antigravity_claim_set(self) -> Set[Path]:
         """Every resolved directory Antigravity claims, computed once.
 
-        The union of the discovered plugin roots and the plugin roots a
-        ``plugins.json`` registry names: a registry points ``agy`` at
-        plugins living outside ``<root>/plugins/``, and a plugin it loads
-        brings its hooks, MCP servers, skills and agents with it. The
-        marker half of the evidence does not come from here —
-        ``provenance()`` asks ``antigravity_manifest_is_contained``
-        directly, which is what keeps a declared plugin declared under a
-        ``--type`` override that switched this discovery off. What the
-        union adds is the registry claims and the seed a forced ``--type
-        antigravity-plugin`` needs, so the check the operator asked for has
-        a node to run against.
-
-        Registry claims join here rather than ``antigravity_plugins``,
-        mirroring Grok: the claim half is ``--type``-invariant while the
-        list the format rules discover from stays gated.
+        Manifest-backed install roots and registry claims survive every
+        ``--type`` override. A forced ``antigravity-plugin`` additionally
+        seeds manifest-less install directories for the requested check.
         """
         if self._antigravity_claims is None:
-            claims = {
-                r for r in (safe_resolve(p) for p in self.antigravity_plugins) if r is not None
-            }
+            declared = (
+                self.antigravity_plugins
+                if self._antigravity_discovery_enabled
+                else self._discover_antigravity_plugins()
+            )
+            claims = {r for r in (safe_resolve(p) for p in declared) if r is not None}
             claims.update(self._antigravity_registry_plugin_roots())
             self._antigravity_claims = claims
         return self._antigravity_claims
@@ -215,6 +206,9 @@ class RepositoryAntigravityMixin:
             if self._antigravity_discovery_enabled:
                 self.antigravity_plugins = self._discover_antigravity_plugins()
             self._prune_skills_of_dropped_antigravity_plugins(before)
+        # Preserve the current claim set before a caller changes exclusions.
+        # Skill discovery used these roots, so later pruning needs this snapshot.
+        self.antigravity_plugin_roots()
 
     def _prune_skills_of_dropped_antigravity_plugins(self, before: Set[Path]) -> None:
         """Drop skills whose only owner left the set, as the Codex arm does.

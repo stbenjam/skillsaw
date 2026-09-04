@@ -554,10 +554,11 @@ subagents; `<root>/skills/*/SKILL.md` get the Agent Skills rules.
 
 ## Google Antigravity Plugin
 
-A direct child of `plugins/` under a customization root — for example
-`.agents/plugins/<plugin-name>/` — declaring itself with a `plugin.json`. A
-nested `plugins/outer/inner/` is not a plugin, and neither is a directory
-named by a sibling catalog but carrying no manifest.
+Automatic discovery checks direct children of `plugins/` under a customization
+root, such as `.agents/plugins/<plugin-name>/`. A `plugins.json` entry or an
+inherited registry can also name a plugin directory elsewhere in the repository.
+Both require `plugin.json`. Nested `plugins/outer/inner/` directories are not
+automatically discovered unless a registry names them.
 
 ```text
 berth-tools/

@@ -66,6 +66,14 @@ class AntigravityConfigJsonValidRule(Rule):
 
     def _check_file(self, block: AntigravityConfigBlock) -> List[RuleViolation]:
         name = block.path.name
+        if block.has_utf8_bom():
+            return [
+                self.violation(
+                    f"{name}: remove the UTF-8 BOM so Antigravity can parse the file; {_SKIPPED}",
+                    file_path=block.path,
+                    fingerprint_discriminator="utf8-bom",
+                )
+            ]
         if block.parse_error:
             return [
                 self.violation(

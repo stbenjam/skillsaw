@@ -317,7 +317,9 @@ class _TreeBuildState:
     def _record_role(self, resolved: Path, block_cls: type) -> None:
         """Record one attached role, and index it by the two roles asked about."""
         self.seen_roles.add((resolved, block_cls))
-        if issubclass(block_cls, HooksBlock):
+        # Antigravity's named-hook dialect must not suppress another host's
+        # parser. Shared commands are deduplicated by the hook scanners.
+        if issubclass(block_cls, HooksBlock) and block_cls is not AntigravityHooksBlock:
             self.hooks_paths.add(resolved)
         elif issubclass(block_cls, McpBlock):
             self.mcp_paths.add(resolved)
@@ -395,29 +397,12 @@ def _add_project_hooks(
     path: Path,
     block_cls: type,
 ) -> None:
-    """Attach a project-layer hooks file unless another host already has it.
+    """Keep the first conventional parser and Antigravity's distinct reading.
 
-    ``.cursor/hooks.json``, ``.codex/hooks.json`` and ``.muse/hooks.json``
-    are three names for one shape, and a repository supporting several tools
-    commonly symlinks them to a single file. Each host's loop runs
-    independently, so without this the one resolved file gets a block per
-    host and the security rules report each of its commands once per block.
-    Whichever host reaches it first keeps it: the security rules read every
-    hooks class alike, and the later host's shape rule simply does not see a
-    file that host chose to share. Grok contributes a directory of candidates
-    (``.grok/hooks/*.json``) rather than one well-known name, and its loop
-    runs last, so a Grok file symlinked to another host's is that host's
-    block.
-
-    Antigravity is the exception, in both directions. Its document is a map
-    of *named* hooks, not the ``{hooks: {event: [...]}}`` shape the other
-    four share, so the two readings genuinely differ: the same file read as
-    Cursor's renders no events at all, and every command in it would fall
-    out of ``hooks-dangerous`` and ``hooks-prohibited``. Sharing that file
-    is what a repository does when it means the content for both hosts, so
-    both blocks are built and each host's reading is scanned. The duplicate
-    findings the dedup exists to prevent do not arise: one of the two
-    readings renders nothing for any given document.
+    Symlinked files can serve several hosts. Conventional readers retain
+    their first-host ownership; Antigravity also attaches because its named
+    hooks can expose additional handlers. The security rules scan the union
+    of those readings and report shared handlers once.
     """
     if block_cls is not AntigravityHooksBlock and _attached_as_hooks(state, path):
         return
@@ -470,6 +455,7 @@ def _claim_attached_hooks(
     root: LintTarget,
     path: Path,
     owner: Path,
+    block_cls: Optional[type] = None,
 ) -> bool:
     """Claim an already-attached hooks file for *owner*, if there is one.
 
@@ -489,12 +475,16 @@ def _claim_attached_hooks(
     parent and is deliberately out of reach: no manifest can name a
     ``config.toml``, so there is no declaration for this loop to record.
     """
-    if not _attached_as_hooks(state, path):
-        return False
     resolved = state.resolve_repo_path(path)
+    if block_cls is not None:
+        if (resolved, block_cls) not in state.seen_roles:
+            return False
+    elif not _attached_as_hooks(state, path):
+        return False
     for child in root.children:
         if (
             isinstance(child, HooksBlock)
+            and (block_cls is None or type(child) is block_cls)
             and child.plugin_owner is None
             and safe_resolve(child.path) == resolved
         ):
@@ -1702,8 +1692,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             node = AntigravityPluginConfigNode(path=plugin_path / antigravity.PLUGIN_MANIFEST)
             node.plugin_owner = resolved_plugin
             conventional_hooks = plugin_path / antigravity.HOOKS_FILENAME
-            if not _attached_as_hooks(state, conventional_hooks):
-                _add_contained_plugin_block(
+            if _inside_plugin(conventional_hooks, resolved_plugin) and not _claim_attached_hooks(
+                state, root, conventional_hooks, resolved_plugin, AntigravityHooksBlock
+            ):
+                state.add_parser_block(
                     node, conventional_hooks, AntigravityHooksBlock, owner=resolved_plugin
                 )
             native_mcp = plugin_path / antigravity.MCP_CONFIG_FILENAME

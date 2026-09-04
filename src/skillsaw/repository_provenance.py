@@ -30,9 +30,8 @@ class PluginProvenance:
     The single source of truth for every ecosystem-provenance question:
     which ecosystems declared the directory (``claude``, ``codex``,
     ``agent-plugin``, ``grok``, or ``antigravity``), and whether it is
-    vendor-installed
-    content. Rules and
-    the lint tree consult this record so two call sites cannot disagree about
+    vendor-installed content. Rules and the lint tree consult this record
+    so two call sites cannot disagree about
     ownership and a directory cannot fall between per-ecosystem attach paths.
 
     Evidence is filesystem-first (markers, contained manifests, catalog

@@ -11,7 +11,7 @@ from skillsaw.lint_target import AntigravityPluginConfigNode
 from skillsaw.paths import safe_exists, safe_is_file, safe_is_symlink
 from skillsaw.repository_types import RepositoryType
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.utils import read_json_strict
+from skillsaw.utils import has_utf8_bom, read_json_strict
 
 
 class AntigravityPluginJsonValidRule(Rule):
@@ -91,7 +91,11 @@ class AntigravityPluginJsonValidRule(Rule):
         # Strict: a repeated key is a ``proto: duplicate field`` error for
         # Antigravity, where a lenient reader would keep the last one and
         # report the file clean.
-        data, error = read_json_strict(manifest)
+        data, error = (
+            (None, "remove the UTF-8 BOM so Antigravity can parse the file")
+            if has_utf8_bom(manifest)
+            else read_json_strict(manifest)
+        )
         if error:
             return [
                 self.violation(

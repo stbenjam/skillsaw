@@ -69,11 +69,9 @@ class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
     default_enabled = True
-    # ``copilot-agent-valid`` gates the surface this rule reads at all;
-    # ``grok-config-valid``, ``codex-hooks-valid`` and ``antigravity-mcp-valid``
-    # own the "does not parse" finding for their own files while they can
-    # run, and this rule makes it when a ``version:`` pin or a forced
-    # ``--type`` gates one off.
+    # These rules own surface or syntax checks consulted below. Each block's
+    # surface and deferral declarations determine whether disabling its rule
+    # permits a fallback.
     surface_dependencies = (
         "antigravity-mcp-valid",
         "codex-hooks-valid",

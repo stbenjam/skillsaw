@@ -5,7 +5,7 @@ contributes zero hooks and still exits 0, a dropped MCP server produces no
 diagnostic at all, and a directory whose manifest does not parse is simply
 not a plugin. So these tests pin each verdict and its *scope* individually
 rather than counting findings in bulk. The scopes come from a matrix run
-against ``agy`` 1.1.25; ``skillsaw.formats.antigravity`` records the method.
+against ``agy`` 1.1.25 and 1.1.26; the maintenance reference records the method.
 """
 
 from __future__ import annotations

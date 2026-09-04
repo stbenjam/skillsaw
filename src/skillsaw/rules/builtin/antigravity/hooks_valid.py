@@ -23,12 +23,7 @@ _ACCEPTED_TYPES = " or ".join(f"'{name}'" for name in sorted(antigravity.HOOK_HA
 #: document stop running too, and ``agy`` still exits 0 while they do.
 _FILE_SCOPED = "Antigravity loads no hook from this file"
 
-#: Said by the foreign-shape finding when a metadata sibling decides it.
-#: Measured both ways: a ``version`` number fails the whole document
-#: (``cannot unmarshal number into Go struct field .version``), while a
-#: string sibling such as ``description`` or ``$schema`` parses and leaves
-#: one inert hook named ``hooks``. Which of the two a given file gets turns
-#: on the sibling's type, so the finding says the pair.
+#: Non-object metadata values fail the named-hook parser, including strings.
 _FILE_SCOPED_OR_INERT = (
     "Antigravity reads every top-level key as a hook name, so it loads no runnable hook "
     "from this file"
@@ -137,7 +132,7 @@ class _FileCheck:
             self.rule.violation(
                 f"{where}: {problem}; {_FILE_SCOPED}",
                 file_path=self.block.path,
-                fingerprint_discriminator=where,
+                fingerprint_discriminator=f"{where}:{problem}",
             )
         )
 
@@ -152,6 +147,9 @@ class _FileCheck:
         )
 
     def run(self) -> List[RuleViolation]:
+        if self.block.has_utf8_bom():
+            self._fatal("hooks.json", "remove the UTF-8 BOM so Antigravity can parse the file")
+            return self.fatal
         if self.block.parse_error:
             return [
                 self.rule.violation(
@@ -199,51 +197,22 @@ class _FileCheck:
         return self.fatal or self.advisory
 
     def _foreign_shape(self, data: Dict[str, Any]) -> Optional[RuleViolation]:
-        """One finding for a file written in another host's nested shape.
+        """Consolidate recognizable foreign nesting into one advisory.
 
-        Claude, Codex, Cursor and their kin nest their events under a
-        top-level ``hooks`` object, often beside metadata — ``version``,
-        ``description``, ``generated_from``, ``$schema``. The same shared
-        filename problem :class:`CursorHooksBlock` notes, from the other
-        side: there one document has several readers, here one directory
-        name has several writers. ``.agents/`` is a
-        tool-neutral directory name, so such a file lands here often — 10 of
-        74 real ``.agents/hooks.json`` files (see the corpus survey in the
-        maintenance reference), at least four written for another tool
-        entirely — and walking one as a map of named hooks produces a
-        finding for every event inside. One finding naming the real problem
-        is worth more than a dozen naming its symptoms.
-
-        Two branches, and nothing else qualifies.
-
-        **A lone ``hooks`` object** whose keys all name Antigravity events.
-        Measured: it loads as a single hook *called* ``hooks``, and under a
-        flat event its entries carry no ``command``, so nothing runs. The
-        event-name requirement is what keeps a hook genuinely called
-        ``hooks`` out — one whose entries carry their own ``command``, and
-        one whose events are its own.
-
-        **A ``hooks`` object with siblings, none of whose values is an
-        object.** That is metadata, and a document of named hooks cannot
-        look like it: a hook beside ``hooks`` has an object value, and a
-        file with only ``hooks`` has no sibling at all. So no event-name
-        requirement applies here — a foreign file names foreign events, and
-        demanding Antigravity's would let every one of them through.
-
-        Excluded either way: the same nesting under ``PreToolUse`` with no
-        metadata sibling. There the two hosts' group shapes coincide and the
-        file really does dispatch, so reporting it would be a false
-        positive.
+        Non-object metadata siblings identify a foreign document. Without
+        metadata, require known events and a group under a flat event;
+        tool-event groups and direct handlers can be valid named hooks.
+        Null siblings are accepted by the loader. A top-level ``enabled``
+        remains an ordinary hook name, with its own type diagnostic.
         """
         nested = data.get("hooks")
         if not isinstance(nested, dict) or not nested:
             return None
-        siblings = {key: value for key, value in data.items() if key != "hooks"}
+        siblings = {
+            key: value for key, value in data.items() if key != "hooks" and value is not None
+        }
         if siblings:
-            # Branch (b): ``hooks`` beside metadata. Every sibling must be a
-            # non-object, or this is a map of named hooks that happens to
-            # contain one called ``hooks``.
-            if any(isinstance(value, dict) for value in siblings.values()):
+            if "enabled" in siblings or any(isinstance(value, dict) for value in siblings.values()):
                 return None
             return self._foreign_violation(_FILE_SCOPED_OR_INERT)
 
@@ -352,7 +321,7 @@ class _FileCheck:
                     ),
                 )
                 continue
-            if grouped:
+            if grouped or (canonical not in antigravity.FLAT_HOOK_EVENTS and "hooks" in entry):
                 self._check_group(entry_where, entry)
             else:
                 self._check_handler(entry_where, entry)

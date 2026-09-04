@@ -10,10 +10,10 @@ from typing import Dict, List
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from ._events import unique_hook_events
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
     CopilotAgentBlock,
-    CursorHooksBlock,
     DevinSkillBlock,
     HookEventConfig,
     HookHandler,
@@ -191,40 +191,8 @@ class HooksProhibitedRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        # Every host's hooks file is a HooksBlock — Claude, Codex, Muse,
-        # Cursor — and each renders its own shape as HookEventConfig.
-        hook_blocks = context.lint_tree.find(HooksBlock)
-        for block in hook_blocks:
-            if block.parse_error:
-                continue
-            violations.extend(self._check_events(block.events, block.path))
-
-        # Cursor's prompt hooks are the one handler kind ``events`` does not
-        # render — its override drops them, so the loop above never sees one
-        # and cannot double-report what this loop finds. They are reported
-        # here instead because a hook that injects text is still a hook the
-        # project did not have before, and by the same ``prompt:<text>``
-        # identity a nested-shape prompt handler carries, so one allowlist
-        # entry reads the same whichever host's file the prompt sits in.
-        allowlist = self.setting("allowlist")
-        for block in context.lint_tree.find(CursorHooksBlock):
-            if block.parse_error:
-                continue
-            for event_type, _index, prompt in block.prompt_hooks():
-                identity = f"prompt:{prompt}"
-                if self._is_allowed(identity):
-                    continue
-                if allowlist:
-                    message = (
-                        f"Hook {safe_display(event_type)}: non-allowlisted prompt hook — "
-                        f"{safe_display(identity)!r}"
-                    )
-                else:
-                    message = (
-                        f"Hook {safe_display(event_type)}: prompt hooks are prohibited — "
-                        f"{safe_display(identity)!r}"
-                    )
-                violations.append(self.violation(message, file_path=block.path))
+        for path, events in unique_hook_events(context.lint_tree.find(HooksBlock)):
+            violations.extend(self._check_events(events, path))
 
         for block in context.lint_tree.find(SettingsBlock):
             if block.parse_error:

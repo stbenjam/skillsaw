@@ -33,8 +33,9 @@ rules:
 **Errors** — the registry is skipped and loads nothing:
 
 - Invalid JSON, or a non-finite number (`NaN`, `Infinity`, `-Infinity`).
+- A UTF-8 byte-order mark (BOM). Remove it; the loader does not strip it.
 - A root that is not a JSON object.
-- `entries` present but not an array.
+- Non-null `entries` that is not an array.
 - An `entries` element that is not an object, or that has no string `path`.
   One finding names the first few positions rather than one per entry: a
   registry written to the wrong shape is wrong in every entry.
@@ -56,10 +57,10 @@ rules:
   decoder that discards them.
 - **A repeated key.** The same decoder takes the last value: an `entries`
   key or a `path` written twice loads the second one's directory.
-- **A `null` value, and an empty string in a string field.** Go decodes
-  both as the field's zero value, so each reads as the key being absent:
-  `entries: null` declares no entry, and a null or empty `path` names no
-  directory. Neither is a parse failure.
+- **`entries: null`.** It declares no entries and is accepted.
+- **An empty string `path`.** This rule checks its type, not whether it
+  names a directory. A missing or null `path` is reported because it is
+  not a string.
 
 ## Examples
 
@@ -69,17 +70,17 @@ rules:
 [{ "path": "internal/schedule/agents" }]
 ```
 
-**Good**:
+**Good** — an `agents.json` registry:
 
 ```json
 {
   "entries": [
     {
-      "path": "internal/schedule/skills",
+      "path": "internal/schedule/agents",
       "include_only": ["gtfs-*"]
     }
   ],
-  "inherits": [{ "path": "tools/shared/skills.json" }]
+  "inherits": [{ "path": "tools/shared/agents.json" }]
 }
 ```
 
@@ -90,7 +91,9 @@ there loads nothing.
 
 - Wrap the list in an object under `entries`.
 - Give every entry a string `path`. What it may name depends on the
-  registry: for `agents.json` and `skills.json` it must be the directory
+  registry: for `agents.json` it must be the directory
   the items sit directly inside, and a parent of that loads nothing. For
   `plugins.json` either spelling works — one plugin directory, or a
   container whose direct children are plugins.
+- `skills.json` and `workflows.json` have shape-only coverage. Their loading
+  semantics remain unverified, and skillsaw does not resolve their entries.

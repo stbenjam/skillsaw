@@ -49,18 +49,21 @@ goes unreported while this rule is off, because a user who pinned a
 
 - Invalid JSON: a syntax error, a comment, a trailing comma, or a non-finite
   number (`NaN`, `Infinity`, `-Infinity`). The parser is strict JSON.
+- A UTF-8 byte-order mark (BOM) before the JSON document.
 - A root that is not an object.
 
-**Warnings** — the file loads and something in it does not:
+**Warnings** — a missing server, a dropped server, or an empty command:
 
 - No `mcpServers` object. A bare map of servers is the shape several other
   hosts accept; here it is read as an ordinary document with no servers in
   it, so the file is inert rather than broken.
 - A server that is not an object.
-- `env` that is not an object, or an `env` value that is not a string.
-- `args` that is not an array, or an element that is not a string.
-- `command`, `url`, `serverUrl` or `cwd` that is not a string.
-- `disabledTools` that is not an array of strings.
+- Non-null `env` that is not an object, or a value that is neither a string nor null.
+- Non-null `args` that is not an array, or an element that is neither a string nor null.
+- Non-null `command`, `url`, `serverUrl` or `cwd` that is not a string.
+- Non-null `disabledTools` that is not an array of strings or null elements.
+- An empty `command` with no `serverUrl` or `url`. The server loads, but has
+  no command to start.
 - `authProviderType` with any value but the string `google_credentials` —
   another string, a number, an array or an object alike. The proto enum's
   `MCP_AUTH_PROVIDER_TYPE_GOOGLE_CREDENTIALS` spelling drops the server;
@@ -80,16 +83,19 @@ goes unreported while this rule is off, because a user who pinned a
   this host.
 - **A `type` that is not a string.** Measured: unlike every other scalar
   field on a server, a mistyped `type` is tolerated and the server loads.
-- **A repeated key.** Antigravity reads this file with Go's `encoding/json`,
-  which takes the last value. A server named twice, or a key written twice
-  inside one, loads with the second one in force.
-- **A `null` value, and an empty string in a string field.** Go decodes
-  both as the field's zero value, so each reads as the key being absent:
-  a null or empty `serverUrl`, a null `env` value and a null `args` element
-  all load. Two exceptions, both measured: `authProviderType: ""` **drops**
-  the server, exactly as an unknown string does, and `mcpServers: null`
-  loads no server at all — the same as writing no wrapper, and reported the
-  same way.
+- **A repeated key.** A repeated `mcpServers` wrapper, server name or scalar
+  field takes the last value. Repeated `env`, `headers` and `oauth` objects
+  merge their members; null clears the map. The credential checks read
+  those merged maps too.
+- **Null optional fields and null string-collection members.** A null
+  `env` value or an `args` or `disabledTools` element is accepted as an
+  empty string. A null or empty `serverUrl` is treated as absent, preserving
+  a local `command`. A nonempty `serverUrl` takes precedence over `url`.
+
+The warnings above still apply to `authProviderType: ""` (the server is
+dropped), `mcpServers: null` (no server map), and `command: ""` without a
+URL (no command to start). Accepting a value's type does not make these
+configurations useful.
 
 ## Examples
 

@@ -26,6 +26,7 @@ inventoried against an allowlist with
 
 - Invalid JSON, a non-finite number (`NaN`, `Infinity`, `-Infinity`), a
   trailing comma or a comment. The parser is strict JSON.
+- A UTF-8 byte-order mark (BOM). Remove it; the loader does not strip it.
 - A root that is not an object of named hooks.
 - A named hook that is not an object. An `enabled` key at the **top level**
   is reported this way too, with its own wording: every top-level key is a
@@ -42,16 +43,21 @@ inventoried against an allowlist with
   `2147483647`. It is a 32-bit integer: `0` and negative values load; a
   float, a string, or a number past either end does not.
 
-**Warnings** — the file loads and something in it never runs:
+**Warnings** — ignored settings, empty commands, or a file intended for another host:
 
 - A file written in **another host's nested shape**: events under a
-  top-level `hooks` object, either alone or beside metadata such as
-  `version`, `description` or `$schema`. `.agents/` is a directory name
+  top-level `hooks` object beside non-object metadata such as
+  `version`, `description` or `$schema`. Without metadata, this finding
+  requires all nested keys to name known events and at least one flat
+  event to contain a group with no handler of its own. Other shapes receive
+  the ordinary event and handler diagnostics. `.agents/` is a directory name
   four ecosystems share, so a Claude, Codex or Cursor hooks file lands here
   often. One finding replaces the pile the ordinary walk would produce.
   Its severity is **fixed at warning** — a configured `severity:` does not
   reach it — because the shape says the file targets another tool, and an
   ERROR would fail CI for a repository that never configured Antigravity.
+  Null siblings do not count as metadata. An object-valued sibling or a
+  top-level `enabled` also keeps the ordinary named-hook validation.
   A `hooks` object holding only `PreToolUse` with no metadata sibling is
   excluded: the two hosts' group shapes coincide there and the file really
   does dispatch.
@@ -86,12 +92,11 @@ loaded, so nothing has been ignored yet.
   which takes the last value. A hook name, an event key or a handler key
   written twice loads with the second one in force, so the file is
   confusing rather than broken.
-- **A `null` value, and an empty string in a string field.** Go decodes
-  both as the field's zero value, so each reads as the key being absent and
-  the file loads: a null event or entry, a hook named `""`, and an empty
-  `type`, `command`, `prompt`, `model` or `matcher` are all measured to
-  load. `timeout` is the exception — it is an int32, and `""` there fails
-  the whole document.
+- **Null fields and empty strings are not type errors for string fields.**
+  Null events and entries, an empty hook name, and empty `type`, `prompt`,
+  `model` or `matcher` values are accepted. A missing, null or empty
+  `command` still earns the no-command warning above. An empty string in
+  `timeout` or `enabled` is a type error and rejects the file.
 
 ## Event names
 
@@ -174,7 +179,7 @@ that carries no `command`:
   itself.
 
 If Antigravity adds an event newer than this skillsaw release, allow it in
-`.skillsaw.yaml`:
+`.skillsaw.yaml`. Extra events accept both grouped and flat handlers:
 
 ```yaml
 rules:

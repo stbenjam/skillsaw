@@ -8,7 +8,6 @@ content-quality rules never see them.  Dedicated rules locate them with
 
 from __future__ import annotations
 
-import codecs
 import math
 from itertools import islice
 from dataclasses import dataclass, field
@@ -32,7 +31,14 @@ from skillsaw.formats import antigravity
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
 from skillsaw.repository_types import RepositoryType
-from skillsaw.utils import commented_key_line, read_text, read_json, read_json_strict, read_jsonc
+from skillsaw.utils import (
+    commented_key_line,
+    has_utf8_bom,
+    read_text,
+    read_json,
+    read_json_strict,
+    read_jsonc,
+)
 
 
 def _as_str(value: Any) -> Optional[str]:
@@ -269,7 +275,12 @@ def json_token(value: float) -> str:
 
 
 def _parse_json_file(
-    path: Path, *, strict: bool = False, jsonc: bool = False, duplicate_keys_fatal: bool = True
+    path: Path,
+    *,
+    strict: bool = False,
+    jsonc: bool = False,
+    duplicate_keys_fatal: bool = True,
+    merge_duplicate_fields: Tuple[Tuple[str, ...], ...] = (),
 ) -> Tuple[Optional[Any], Optional[str]]:
     if jsonc:
         # JSONC is always strict about the non-finite tokens; the locations
@@ -277,7 +288,11 @@ def _parse_json_file(
         return read_jsonc(path)
     if not strict:
         return read_json(path)
-    return read_json_strict(path, allow_duplicate_keys=not duplicate_keys_fatal)
+    return read_json_strict(
+        path,
+        allow_duplicate_keys=not duplicate_keys_fatal,
+        merge_duplicate_fields=merge_duplicate_fields,
+    )
 
 
 @dataclass(eq=False)
@@ -315,6 +330,7 @@ class JsonConfigBlock(LintTarget):
     #: turn this off and keep the non-finite half. Not consulted on the
     #: JSONC path, where no host accepts a duplicate.
     duplicate_keys_fatal: ClassVar[bool] = True
+    merge_duplicate_fields: ClassVar[Tuple[Tuple[str, ...], ...]] = ()
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
         default=None, init=False, repr=False
     )
@@ -326,6 +342,7 @@ class JsonConfigBlock(LintTarget):
                 strict=self.strict_json,
                 jsonc=self.jsonc,
                 duplicate_keys_fatal=self.duplicate_keys_fatal,
+                merge_duplicate_fields=self.merge_duplicate_fields,
             )
 
     @property
@@ -357,11 +374,7 @@ class JsonConfigBlock(LintTarget):
         Three bytes off the front rather than the cached text, because the
         cache is exactly what already dropped the mark.
         """
-        try:
-            with open(self.path, "rb") as handle:
-                return handle.read(3) == codecs.BOM_UTF8
-        except OSError:
-            return False
+        return has_utf8_bom(self.path)
 
     def first_non_finite(self) -> Optional[Tuple[str, float]]:
         """The first ``NaN``/``Infinity`` in this document, as ``(path, value)``.
@@ -458,6 +471,16 @@ class HooksBlock(JsonConfigBlock):
     #: article is chosen where the message is built.
     mapping_noun: ClassVar[str] = "object"
     sequence_noun: ClassVar[str] = "array"
+
+    @property
+    def security_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Handlers exposed to the hook security and policy rules."""
+        return self.events
+
+    @property
+    def effective_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Events to publish in documentation; hosts may narrow the scan view."""
+        return self.events
 
     @property
     def events(self) -> Dict[str, List[HookEventConfig]]:
@@ -862,6 +885,16 @@ class CursorHooksBlock(HooksBlock):
                     found.append((event_type, index, prompt))
         return found
 
+    @property
+    def security_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Include prompt hooks in policy checks as well as command hooks."""
+        events = self.events
+        for event, _index, prompt in self.prompt_hooks():
+            events.setdefault(event, []).append(
+                HookEventConfig(handlers=[HookHandler(type="prompt", prompt=prompt)])
+            )
+        return events
+
 
 @dataclass(eq=False)
 class AntigravityHooksBlock(HooksBlock):
@@ -878,7 +911,7 @@ class AntigravityHooksBlock(HooksBlock):
     branch. ``antigravity-hooks-valid`` reads ``raw_data`` for the shape
     itself.
 
-    Three deliberate readings, all measured against ``agy`` 1.1.25:
+    The security view applies three policies:
 
     * A top-level ``enabled`` is **not** a kill switch. Every top-level key
       is a hook *name*, so ``{"enabled": {"Stop": [...]}}`` is an ordinary
@@ -896,8 +929,7 @@ class AntigravityHooksBlock(HooksBlock):
       way, and a scanner shown only the half this release believes runs
       misses the other on the next one-word edit. Picking by payload hides
       the ``command`` in ``{"Stop": [{"command": "…", "hooks": []}]}``;
-      picking by event hides the nested commands 7 of 74 real files write
-      under a flat event (corpus survey, maintenance reference).
+      picking by event hides committed nested commands under a flat event.
     """
 
     category: str = "hooks"
@@ -949,6 +981,8 @@ class AntigravityHooksBlock(HooksBlock):
         for hook_spec in data.values():
             if not isinstance(hook_spec, dict):
                 continue
+            if effective_only and hook_spec.get("enabled") is False:
+                continue
             for event_type, entries in hook_spec.items():
                 if event_type in antigravity.HOOK_SPEC_NON_EVENT_KEYS:
                     continue
@@ -965,19 +999,7 @@ class AntigravityHooksBlock(HooksBlock):
                 for entry in entries:
                     if not isinstance(entry, dict):
                         continue
-                    # For the scanners, both readings, always — never one
-                    # chosen from the event or the payload. ``agy`` runs one
-                    # of them, and which one turns on a single key; both
-                    # commands are committed either way, and a scanner shown
-                    # only the half this release believes runs misses the
-                    # other on the next one-word edit. 7 of 74 real files
-                    # write a flat event in the grouped shape, hiding 17
-                    # commands from a reading that picks by event — see the
-                    # corpus survey in the maintenance reference.
-                    #
-                    # For a published document, only what dispatches: an
-                    # unknown event has no binding to consult, so it keeps
-                    # both.
+                    # Scan both payloads; documentation follows the event's shape.
                     grouped = canonical in antigravity.TOOL_HOOK_EVENTS
                     flat = canonical in antigravity.FLAT_HOOK_EVENTS
                     show_nested = not (effective_only and flat)
@@ -1248,10 +1270,12 @@ class McpConfigRole:
         guess there would rewrite established output.
         """
         server = McpServerConfig.from_dict(name, cfg)
-        present = next((key for key in self.connection_url_keys if cfg.get(key) is not None), None)
+        present = next(
+            (key for key in self.connection_url_keys if cfg.get(key) not in (None, "")), None
+        )
         if present is None:
             return server
-        if server.url is None:
+        if present != "url" or server.url is None:
             server.url = cfg[present]
         remote = present != "url" and present in self.connection_url_types
         if cfg.get("type") is None:
@@ -1645,6 +1669,13 @@ class AntigravityMcpBlock(McpBlock):
     #: repeated server name and a repeated key inside one server all load,
     #: the last value winning, with no diagnostic.
     duplicate_keys_fatal: ClassVar[bool] = False
+    # agy merges these typed maps, but replaces repeated server names and
+    # mcpServers wrappers. Null clears a map. Verified with agy 1.1.26.
+    merge_duplicate_fields: ClassVar[Tuple[Tuple[str, ...], ...]] = (
+        ("mcpServers", "*", "env"),
+        ("mcpServers", "*", "headers"),
+        ("mcpServers", "*", "oauth"),
+    )
     surface_rule: ClassVar[Optional[str]] = "antigravity-mcp-valid"
     credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = antigravity.MCP_CREDENTIAL_MAPS
     #: ``clientId`` and ``clientSecret`` load at a server's own top level as

@@ -2,8 +2,8 @@
 
 ``plugins.json`` and ``agents.json`` point ``agy`` at customization living
 outside the customization root, and both were measured to load what they
-name (``agy`` 1.1.25, Experiment 9). So a plugin reached only through a
-registry has to bring its hooks, MCP servers and prose into the lint tree —
+name (``agy`` 1.1.25, measurement 2 in the maintenance reference). A plugin
+reached only through a registry brings its hooks, MCP servers and prose into the lint tree —
 otherwise the security rules never see a ``curl | sh`` a repository really
 ships.
 """
@@ -70,7 +70,7 @@ class TestPluginsRegistry:
             "tools/shared/plugins/berth-tools/mcp_config.json"
         ]
 
-    def test_a_path_naming_one_plugin_directly(self, tmp_path: Path, repo: Path) -> None:
+    def test_a_path_naming_one_plugin_directly(self, repo: Path) -> None:
         """Both spellings load; ``agy`` accepts a plugin dir or its container."""
         (repo / ".agents" / "plugins.json").write_text(
             json.dumps({"entries": [{"path": "tools/shared/plugins/berth-tools"}]}, indent=2),
@@ -123,11 +123,8 @@ class TestInherits:
         )
         assert RepositoryContext(repo)._antigravity_claim_set() == set()
 
-    def test_a_long_chain_stops_at_the_depth_cap(self, repo: Path) -> None:
-        """A cycle guard alone does not bound a chain of distinct files."""
-        from skillsaw.discovery.antigravity import _MAX_INHERITS_DEPTH
-
-        links = _MAX_INHERITS_DEPTH + 2
+    def test_a_long_chain_resolves_without_a_recursion_limit(self, repo: Path) -> None:
+        links = 20
         for index in range(links):
             target = (
                 "tools/shared/plugins" if index == links - 1 else f"tools/chain-{index + 1}.json"
@@ -141,9 +138,9 @@ class TestInherits:
         (repo / ".agents" / "plugins.json").write_text(
             json.dumps({"inherits": [{"path": "tools/chain-0.json"}]}), encoding="utf-8"
         )
-        assert RepositoryContext(repo)._antigravity_claim_set() == set()
+        assert len(RepositoryContext(repo)._antigravity_claim_set()) == 2
 
-    def test_a_chain_within_the_cap_resolves(self, repo: Path) -> None:
+    def test_a_single_inherited_registry_resolves(self, repo: Path) -> None:
         (repo / "tools" / "chain-0.json").write_text(
             json.dumps({"entries": [{"path": "tools/shared/plugins"}]}), encoding="utf-8"
         )
@@ -309,6 +306,25 @@ class TestClaimedPluginSkills:
         """The prune reads the same union, so the two cannot disagree."""
         context = RepositoryContext(repo, exclude_patterns=["tools/shared/plugins/**"])
         assert context.skills == []
+
+    def test_excluding_the_registry_prunes_its_skills(self, repo: Path) -> None:
+        context = RepositoryContext(repo)
+        assert context.skills
+        context.exclude_patterns = [".agents/plugins.json"]
+        context.apply_excludes()
+        assert context.skills == []
+
+    def test_hidden_registry_plugins_activate_skill_rules(self, repo: Path) -> None:
+        from skillsaw.linter import Linter
+
+        hidden = repo / ".shared"
+        (repo / "tools" / "shared").rename(hidden)
+        (repo / ".agents" / "plugins.json").write_text(
+            json.dumps({"entries": [{"path": ".shared/plugins"}]}), encoding="utf-8"
+        )
+        context = RepositoryContext(repo)
+        assert RepositoryType.ANTIGRAVITY_PLUGIN in context.repo_types
+        assert any(v.rule_id == "agentskill-unreferenced-files" for v in Linter(context).run())
 
 
 class TestStatistics:

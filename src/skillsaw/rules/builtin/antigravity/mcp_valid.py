@@ -97,6 +97,15 @@ class AntigravityMcpValidRule(Rule):
     def _check_file(
         self, block: AntigravityMcpBlock, accepted: FrozenSet[str]
     ) -> List[RuleViolation]:
+        if block.has_utf8_bom():
+            return [
+                self.violation(
+                    "mcp_config.json starts with a UTF-8 BOM; remove it so Antigravity can "
+                    "parse the file (otherwise it exits 1 and no session starts)",
+                    file_path=block.path,
+                    fingerprint_discriminator="utf8-bom",
+                )
+            ]
         if block.parse_error:
             return [
                 self.violation(
@@ -198,12 +207,6 @@ class AntigravityMcpValidRule(Rule):
                     self._dropped(block, shown, "every 'args' element must be a string")
                 )
 
-        # Measured: a server whose ``command`` is the empty string is listed
-        # by ``agy mcp list`` with an empty command column. It loads — this
-        # is not the "dropped" scope — and can never start.
-        if server.get("command") == "" and not server.get("serverUrl") and not server.get("url"):
-            violations.append(self._inert(block, shown, "'command' is empty"))
-
         # ``is not None`` rather than ``in``: Go decodes ``null`` as the
         # zero value, so a null field reads as absent and the server loads.
         # Measured with ``agy mcp list``, one clean sibling per run: a
@@ -218,7 +221,7 @@ class AntigravityMcpValidRule(Rule):
         disabled_tools = server.get("disabledTools")
         if disabled_tools is not None and not (
             isinstance(disabled_tools, list)
-            and all(isinstance(tool, str) for tool in disabled_tools)
+            and all(tool is None or isinstance(tool, str) for tool in disabled_tools)
         ):
             violations.append(
                 self._dropped(block, shown, "'disabledTools' must be an array of strings")
@@ -237,4 +240,11 @@ class AntigravityMcpValidRule(Rule):
                     f"'authProviderType' must be {rendered}",
                 )
             )
+        if (
+            not violations
+            and server.get("command") == ""
+            and not server.get("serverUrl")
+            and not server.get("url")
+        ):
+            violations.append(self._inert(block, shown, "'command' is empty"))
         return violations

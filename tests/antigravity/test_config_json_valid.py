@@ -60,6 +60,7 @@ class TestSkippedRegistries:
         "name,body,needle",
         [
             ("unparseable", '{"entries": }', "does not parse"),
+            ("bom", '\ufeff{"entries": []}', "UTF-8 BOM"),
             ("array-root", "[1, 2]", "must be a JSON object"),
             ("non-finite", '{"entries": [], "weight": 1e400}', "not valid JSON"),
         ],

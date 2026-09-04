@@ -15,9 +15,10 @@ plugin.json must parse as an Antigravity manifest with correctly typed fields
 
 ## Why
 
-An Antigravity plugin is a direct child of `plugins/` under a customization
-root — `.agents/plugins/<name>/`, or the `.agent/`, `_agents/`, `_agent/`
-equivalents — and `plugin.json` is what makes it one. Measured against `agy`
+An Antigravity plugin conventionally lives under a customization root at
+`.agents/plugins/<name>/`, or the `.agent/`, `_agents/`, `_agent/` equivalents.
+A `plugins.json` entry or inherited registry can also name a plugin elsewhere
+in the repository. Both require `plugin.json`. Measured against `agy`
 1.1.25: a directory whose manifest does not parse is not loaded as a plugin
 at all. Its skills, agents, commands, rules, hooks and MCP servers all go
 unread, and the only trace is one line in the debug log.
@@ -37,6 +38,7 @@ the plugin still loads, so none of them is reported.
 - `plugin.json` is missing, or is not a regular file.
 - Invalid JSON, or a duplicate key. Antigravity's parser rejects a repeated
   field rather than keeping the last one.
+- A UTF-8 byte-order mark (BOM). Remove it; the loader does not strip it.
 - A root that is not a JSON object.
 - A type error on one of the four fields: `name`, `description` and `logo`
   must be strings, `disabled` a boolean.

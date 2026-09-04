@@ -64,9 +64,7 @@ class TestAcceptedFiles:
                 '{"enabled": {"Stop": [{"command": "make lint"}]},'
                 ' "audit": {"Stop": [{"command": "make test"}]}}',
             ),
-            # A JSON ``null`` is the key's absence everywhere: Go decodes
-            # it as the zero value, and every placement below was measured
-            # to load. Two real repositories write ``"SessionStart": null``.
+            # Null is accepted at each measured placement below.
             ("null-event", '{"H": {"Stop": null, "SessionStart": [{"command": "x"}]}}'),
             (
                 "null-every-event",
@@ -90,7 +88,6 @@ class TestAcceptedFiles:
                 '{"H": {"Stop": [{"type": "prompt", "prompt": "Check UTC.", "command": ""}]}}',
             ),
             ("empty-model", '{"H": {"Stop": [{"command": "x", "model": ""}]}}'),
-            ("empty-type", '{"H": {"Stop": [{"type": "", "command": "x"}]}}'),
             (
                 "empty-matcher",
                 '{"H": {"PreToolUse": [{"matcher": "", "hooks": [{"command": "x"}]}]}}',
@@ -149,12 +146,7 @@ class TestAcceptedFiles:
 
 
 class TestForeignShape:
-    """``.agents/`` is a shared directory name, so foreign files land here.
-
-    Real: 10 of 74 ``.agents/hooks.json`` files sampled on GitHub carry one
-    of these shapes, at least four written for another tool entirely (see
-    the corpus survey in the maintenance reference).
-    """
+    """A shared ``.agents/`` directory may contain another host's hooks format."""
 
     # A lone ``hooks`` object naming this host's events — the Claude shape.
     CLAUDE = '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "make lint"}]}]}}'
@@ -174,8 +166,12 @@ class TestForeignShape:
         ' "hooks": {"PreToolUse": [{"matcher": "Bash",'
         ' "hooks": [{"type": "command", "command": "make lint"}]}]}}'
     )
+    MIVIA = (
+        '{"version": 1, "generated_from": ["rules.md"],'
+        ' "hooks": {"onFileWrite": [{"run": "make lint"}]}}'
+    )
 
-    @pytest.mark.parametrize("name", ("CLAUDE", "CURSOR", "GAMESTUDIO", "AGY_OS"))
+    @pytest.mark.parametrize("name", ("CLAUDE", "CURSOR", "GAMESTUDIO", "AGY_OS", "MIVIA"))
     def test_one_finding_names_the_shape(self, tmp_path: Path, name: str) -> None:
         violations = check(tmp_path, f"foreign-{name.lower()}", getattr(self, name))
         assert len(violations) == 1
@@ -196,34 +192,51 @@ class TestForeignShape:
         assert found.severity == Severity.WARNING
 
     @pytest.mark.parametrize(
-        "name,body",
+        "name,body,expected",
         [
             # A hook genuinely called ``hooks``, alone: its entries carry
             # their own command, so nothing here is inert.
-            ("real-hook-named-hooks", '{"hooks": {"Stop": [{"command": "make lint"}]}}'),
+            ("real-hook-named-hooks", '{"hooks": {"Stop": [{"command": "make lint"}]}}', []),
             # A sibling with an object value means this is a map of named
             # hooks that happens to contain one called ``hooks``.
             (
                 "sibling-hook",
                 '{"hooks": {"Stop": [{"hooks": []}]}, "audit": {"Stop": [{"command": "x"}]}}',
+                ["unknown handler key", "no command runs nothing"],
             ),
             # ``hooks`` alone holding names this host does not dispatch is
             # an ordinary hook whose events are simply unknown.
-            ("not-events", '{"hooks": {"berth": [{"command": "x"}]}}'),
+            ("not-events", '{"hooks": {"berth": [{"command": "x"}]}}', ["event 'berth'"]),
             # Under ``PreToolUse`` with no metadata sibling the two hosts'
             # group shapes coincide, so this file really does dispatch.
             (
                 "claude-matcher",
                 '{"hooks": {"PreToolUse": [{"matcher": "Bash",'
                 ' "hooks": [{"type": "command", "command": "make lint"}]}]}}',
+                [],
             ),
         ],
     )
     def test_an_ordinary_file_is_not_mistaken_for_one(
-        self, tmp_path: Path, name: str, body: str
+        self, tmp_path: Path, name: str, body: str, expected: list
     ) -> None:
         violations = check(tmp_path, name, body)
         assert not [v for v in violations if "nested shape" in v.message]
+        assert len(violations) == len(expected)
+        for needle in expected:
+            only(violations, needle)
+
+    def test_null_sibling_keeps_named_hook_validation(self, tmp_path: Path) -> None:
+        body = '{"hooks": {"Stop": [{"command": "x", "timeout": 1.5}]}, "legacy": null}'
+        violations = check(tmp_path, "null-sibling", body)
+        assert len(violations) == 1
+        assert only(violations, "timeout").severity == Severity.ERROR
+
+    def test_top_level_enabled_remains_a_type_error(self, tmp_path: Path) -> None:
+        body = '{"hooks": {"Stop": [{"command": "x"}]}, "enabled": true}'
+        violations = check(tmp_path, "enabled-sibling", body)
+        assert len(violations) == 1
+        assert only(violations, "not a setting").severity == Severity.ERROR
 
     def test_the_schema_sibling_near_miss(self, tmp_path: Path) -> None:
         """A genuine Antigravity file that also carries a ``$schema``.
@@ -235,19 +248,30 @@ class TestForeignShape:
         body = (
             '{"$schema": "https://example.invalid/x.json",'
             ' "hooks": {"Stop": [{"command": "make lint"}]},'
-            ' "audit": {"Stop": [{"command": "make test"}]}}'
+            ' "audit": {"Stop": [{"command": "make test", "timeout": 1.5}]}}'
         )
         violations = check(tmp_path, "schema-near-miss", body)
         assert not [v for v in violations if "nested shape" in v.message]
+        assert len(violations) == 2
+        assert only(violations, "timeout").severity == Severity.ERROR
+        assert only(violations, "'$schema'").severity == Severity.ERROR
 
 
 class TestFileScopedDefects:
     """One defect, and a message that says the whole file stops loading."""
 
+    def test_fatal_defects_have_distinct_fingerprints(self, tmp_path: Path) -> None:
+        violations = check(
+            tmp_path, "two-defects", '{"audit": {"Stop": [{"command": 42, "timeout": 1.5}]}}'
+        )
+        assert len(violations) == 2
+        assert len({v.fingerprint_discriminator for v in violations}) == 2
+
     @pytest.mark.parametrize(
         "name,body,needle",
         [
             ("bad-json", '{"audit": }', "does not parse"),
+            ("bom", '\ufeff{"audit": {"Stop": [{"command": "make lint"}]}}', "UTF-8 BOM"),
             ("array-root", "[]", "must be a JSON object of named hooks"),
             ("string-root", '"make lint"', "must be a JSON object of named hooks"),
             (
@@ -457,6 +481,10 @@ class TestIgnoredKeys:
 
 
 class TestExtraEvents:
+    def test_extra_events_accept_grouped_handlers(self, tmp_path: Path) -> None:
+        body = '{"audit": {"FutureTool": [{"matcher": "*", "hooks": [{"command": "x"}]}]}}'
+        assert check(tmp_path, "future-group", body, {"extra-events": ["FutureTool"]}) == []
+
     """The escape hatch for an event newer than this release."""
 
     def test_declared_event_is_accepted(self, tmp_path: Path) -> None:

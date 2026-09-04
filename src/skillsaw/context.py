@@ -533,7 +533,7 @@ class RepositoryContext(
             types.add(RepositoryType.GROK_MARKETPLACE)
         if self.grok_plugins:
             types.add(RepositoryType.GROK_PLUGIN)
-        if self.antigravity_plugins:
+        if self.antigravity_plugin_roots():
             types.add(RepositoryType.ANTIGRAVITY_PLUGIN)
         if self.mcp_registry_server_paths():
             types.add(RepositoryType.MCP_REGISTRY)

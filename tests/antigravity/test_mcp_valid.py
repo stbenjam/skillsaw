@@ -47,6 +47,10 @@ class TestAcceptedFiles:
             ("unknown-key", '{"mcpServers": {"t": {"command": "x", "flavour": "vanilla"}}}'),
             ("disabled-tools", '{"mcpServers": {"t": {"command": "x", "disabledTools": ["a"]}}}'),
             (
+                "disabled-tools-null-element",
+                '{"mcpServers": {"t": {"command": "x", "disabledTools": ["a", null]}}}',
+            ),
+            (
                 "auth-provider",
                 '{"mcpServers": {"t": {"url": "https://e.example",'
                 ' "authProviderType": "google_credentials"}}}',
@@ -93,6 +97,48 @@ class TestAcceptedFiles:
         """``agy mcp list`` shows the last value at all three depths, no diagnostic."""
         assert messages(check(tmp_path, f"dup-{name}", body)) == []
 
+    @pytest.mark.parametrize("field", ("env", "headers", "oauth"))
+    def test_duplicate_maps_preserve_members(self, tmp_path: Path, field: str) -> None:
+        from skillsaw.blocks.json_config import AntigravityMcpBlock
+
+        body = (
+            '{"mcpServers": {"t": {"command": "echo", '
+            f'"{field}": {{"COLOR": "blue"}}, "{field}": {{"MODE": "read"}}'
+            "}}}"
+        )
+        repo = repo_with_mcp(tmp_path, f"merged-{field}", body)
+        block = AntigravityMcpBlock(path=repo / ".agents/mcp_config.json")
+        assert block.raw_data["mcpServers"]["t"][field] == {"COLOR": "blue", "MODE": "read"}
+
+    def test_null_clears_a_duplicate_map(self, tmp_path: Path) -> None:
+        from skillsaw.blocks.json_config import AntigravityMcpBlock
+
+        body = '{"mcpServers": {"t": {"command": "echo", "env": {"COLOR": "blue"}, "env": null}}}'
+        repo = repo_with_mcp(tmp_path, "cleared-map", body)
+        block = AntigravityMcpBlock(path=repo / ".agents/mcp_config.json")
+        assert block.raw_data["mcpServers"]["t"]["env"] is None
+
+    @pytest.mark.parametrize("name", ("t", "env", "headers", "oauth"))
+    def test_repeated_servers_replace_their_maps(self, tmp_path: Path, name: str) -> None:
+        from skillsaw.blocks.json_config import AntigravityMcpBlock
+
+        body = (
+            '{"mcpServers": {'
+            f'"{name}": {{"args": 7, "env": {{"COLOR": "blue"}}}}, '
+            f'"{name}": {{"command": "echo", "args": ["ok"]}}'
+            "}}"
+        )
+        repo = repo_with_mcp(tmp_path, "replaced-server", body)
+        block = AntigravityMcpBlock(path=repo / ".agents/mcp_config.json")
+        assert block.raw_data["mcpServers"][name] == {"command": "echo", "args": ["ok"]}
+        assert run_rule(AntigravityMcpValidRule, repo) == []
+
+    def test_a_dropped_server_is_not_also_reported_as_inert(self, tmp_path: Path) -> None:
+        body = '{"mcpServers": {"t": {"command": "", "serverUrl": 0}}}'
+        violations = check(tmp_path, "dropped-not-inert", body)
+        assert len(violations) == 1
+        assert "drops the server" in violations[0].message
+
 
 class TestStartupFatal:
     """Exit 1, and no session starts."""
@@ -101,6 +147,7 @@ class TestStartupFatal:
         "name,body,needle",
         [
             ("bad-json", '{"mcpServers": }', "Invalid JSON"),
+            ("bom", '\ufeff{"mcpServers": {}}', "UTF-8 BOM"),
             ("trailing-comma", '{"mcpServers": {"t": {"command": "x",}}}', "Invalid JSON"),
             ("comment", '{"mcpServers": {} /* none yet */}', "Invalid JSON"),
             ("array-root", "[]", "must be a JSON object"),

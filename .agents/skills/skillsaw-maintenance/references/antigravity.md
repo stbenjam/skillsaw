@@ -21,8 +21,8 @@ configuration, its plugin manifests, and its customization registries.
   `plugins/<name>/mcp_config.json`.
 - https://antigravity.google/docs/hooks/ — the events and the `matcher` spellings.
 
-Everything skillsaw asserts was verified against `agy` 1.1.25 rather than taken from
-the docs. Method: an isolated `HOME` (the real `~/.gemini` never read or written),
+The initial loader checks used `agy` 1.1.25; additional checks with 1.1.26 are
+recorded below. Method: an isolated `HOME` (the real `~/.gemini` never read or written),
 outbound proxies pointed at a dead port, one fixture per case, read back from
 `agy agents`, `agy mcp list`, `agy plugin validate`, `agy plugin install` and the
 `--log-file` diagnostics (`hooks_manager.go:33`, `discovery.go:551`, `plugins.go:117`).
@@ -78,12 +78,14 @@ changing a rule here.
   - Missing `command` and empty `command` both load.
 - **MCP shape**: root must be `{"mcpServers": {…}}`; a bare server map is silently
   ignored. A syntax error or non-object root is **exit 1**. Any per-server shape
-  problem drops that server *silently*: non-object server, non-string `env` values,
-  non-string `args` elements, non-string `serverUrl`, bad `disabledTools` type, an
+  problem drops that server *silently*: non-object server, non-string/non-null `env` values
+  or `args` elements, non-string/non-null `command`, `url`, `serverUrl` or `cwd`,
+  bad `disabledTools` type, an
   `authProviderType` other than `"google_credentials"`. `serverUrl` wins over
   `command`; `url` + `type` is a third shape; a server with neither loads without
   complaint. `disabled` is the toggle — `enabled` is not a key. Credential-bearing
   fields: `env`, `headers`, `clientId`/`clientSecret`, `oauth.clientId`/`clientSecret`.
+  Null `disabledTools` elements are accepted. A mistyped `type` is also tolerated.
 - **Plugin manifest**: `plugins/<n>/plugin.json`, direct children only, parsed by
   **protojson** with four meaningful fields — `name`, `description`, `disabled`,
   `logo`. Every other key including `$schema`, `version` and `author` is discarded and
@@ -134,7 +136,7 @@ changing a rule here.
   `AntigravityPluginConfigNode`), attached in `src/skillsaw/lint_tree.py`.
 
 ## Measurements
-Every claim in the rules and their docs comes from a run against `agy` 1.1.25, in an
+The original loader measurements used `agy` 1.1.25, in an
 isolated `HOME` with outbound proxies pointed at a dead port. The observables are the
 `--log-file` counter `loaded N named hooks from M hooks.json file(s)`, its
 `Failed to load JSON config file` / `failed to parse` lines, `agy mcp list`,
@@ -143,10 +145,32 @@ before trusting the rule that rests on it.
 
 | # | Date | Question | Observable | Result |
 | --- | --- | --- | --- | --- |
-| 8 | 2026-09-03 | Are duplicate object keys a defect? | hook counter, `agy mcp list`, `agy agents` | No — last value wins and the file loads, at every nesting depth in `hooks.json`, `mcp_config.json` and a registry. `plugin.json` is the exception (protojson: `proto: duplicate field`). |
-| 9 | 2026-09-04 | Do registry `entries` name customization that really loads? | `agy agents` | Yes. A `plugins.json` path may be one plugin directory or a container of them; `inherits` follows a registry *file* only; `include_only`/`exclude` filter by directory name; a path outside the workspace loads nothing. |
-| 10 | 2026-09-04 | Is a top-level `enabled` a switch? Is `null` a defect? Do foreign shapes load? | hook counter, `agy mcp list`, `agy plugin validate` | `enabled` is an ordinary hook name — only a non-object value there kills the file. `null` is the key's absence everywhere. A `hooks` object beside a numeric `version` fails the document; beside nothing it loads one inert hook named `hooks`. |
-| 11 | 2026-09-04 | Is `""` the key's absence too? | hook counter, `agy mcp list`, `agy agents` | For **string** fields yes — `prompt`, `model`, `command`, `type`, `matcher`, a hook name, and `plugin.json`'s `name` all read as absent. Not for typed fields: `timeout: ""` and `disabled: ""` fail the document, and `authProviderType: ""` drops the server. A null `env` value or `args` element loads; `command: ""` loads a server that starts nothing. |
+| 1 | 2026-09-03 | Are duplicate object keys a defect? | hook counter, `agy mcp list`, `agy agents` | Repeated keys load in hooks, MCP and registries. Wrappers, names and scalar fields take the last value; repeated MCP maps are the exception measured below. `plugin.json` is the exception (protojson: `proto: duplicate field`). |
+| 2 | 2026-09-04 | Do registry `entries` name customization that really loads? | `agy agents` | Yes. A `plugins.json` path may be one plugin directory or a container of them; `inherits` follows a registry *file* only; `include_only`/`exclude` filter by directory name; a path outside the workspace loads nothing. |
+| 3 | 2026-09-04 | Is a top-level `enabled` a switch? Is `null` a defect? Do foreign shapes load? | hook counter, `agy mcp list`, `agy plugin validate` | `enabled` is an ordinary hook name — a non-null, non-object value there kills the file. Null is accepted at the measured placements; typed-field defaults and named map entries differ. A `hooks` object beside a numeric `version` fails the document; beside nothing it loads one inert hook named `hooks`. |
+| 4 | 2026-09-04 | Is `""` the key's absence too? | hook counter, `agy mcp list`, `agy agents` | For **string** fields yes — `prompt`, `model`, `command`, `type`, `matcher`, a hook name, and `plugin.json`'s `name` all read as absent. Not for typed fields: `timeout: ""` and `disabled: ""` fail the document, and `authProviderType: ""` drops the server. A null `env` value or `args` element loads; `command: ""` loads a server that starts nothing. |
+
+### Rechecked with agy 1.1.26 (2026-09-04)
+
+The following cases were run again with an isolated home and no model turn:
+
+| Input | Observable | Result |
+| --- | --- | --- |
+| A string `$schema` or `description` beside a valid named hook | `hooks_manager.go` parse error and count | `cannot unmarshal string into ... JSONHookSpec`; zero hooks loaded. |
+| A top-level `enabled: true` beside a hook called `hooks` | Same log and count | Boolean unmarshal error; zero hooks loaded. |
+| A null sibling beside a valid hook called `hooks` | Named-hook count | Two named hooks loaded, with no parse error; null is accepted. |
+| `disabledTools: ["write_query", null]` | `agy mcp list` | The server is listed as enabled. |
+| A numeric `command`, `url`, `serverUrl` or `cwd`, each on its own server | `agy mcp list`, with a valid control server | Each mistyped server is absent; the control remains listed. |
+| `type: 42` beside a valid `command` | `agy mcp list` | The server remains listed. |
+| A UTF-8 BOM before `mcp_config.json` | `agy mcp list` | Exit 1: invalid character `\\ufeff` looking for beginning of value. |
+| A UTF-8 BOM before `hooks.json`, `plugins.json` or `plugin.json` | `agy agents` and debug logs | Each file is rejected: hooks load zero, the registry logs a JSON load error, and the manifest logs a protojson syntax error. |
+| Both nonempty `serverUrl` and `url` | `agy mcp list` | The listed endpoint is `serverUrl`. Empty/null `serverUrl` leaves a command server unchanged. |
+| Repeated `env`, `headers` or `oauth` objects | `agy mcp disable probe`, then read the isolated config it rewrites | Object members merge. An empty second object preserves earlier members; null clears the map. The probe used ordinary `COLOR` and `X-Color` strings, not credentials. |
+| Repeated `mcpServers` wrapper or server name | Same isolated rewrite; `agy mcp list` | The second object replaces the first, including servers named `env`, `headers` or `oauth`. These are not merged maps. |
+
+These are loader observations. They do not demonstrate hook dispatch or MCP
+connections. Shared-file scanner tests separately verify that commands and
+prompts remain visible once when several hosts read the same file.
 
 ## Loader versus validate
 `agy plugin validate` and the loader read `plugin.json` with different parsers, and they
@@ -160,10 +184,9 @@ follow. Check a manifest claim against `agy agents` and the `plugins.go` log lin
 against `agy plugin validate` alone.
 
 ## Corpus survey
-Some rule comments cite counts from public repositories — `27 of 30` for `.agents/rules`
+Earlier review sampling reported `27 of 30` repositories with `.agents/rules`
 without an Antigravity file, `10 of 74` `.agents/hooks.json` files in another host's
-shape, `7 of 74` (17 commands) writing a flat event in the grouped shape, `58 of 60`,
-`12 of 50`. Those come from the review panel's GitHub sampling on **2026-09-04** and are
+shape, and `7 of 74` (17 commands) writing a flat event in the grouped shape. Those come from the review panel's GitHub sampling on **2026-09-04** and are
 not reproduced in this repository: they were the evidence for a design decision, not a
 fixture. Re-sample before relying on any of them again; the decisions they justified
 stand on the `agy` measurements above.
@@ -179,6 +202,8 @@ the docs:
   the Go unmarshal error back — it names the struct field and its type.
 - `PLUGIN_MESSAGE_FIELDS`. Probe the same way; a protojson error reads
   `proto: (line 1:9): invalid value for string field name: 42`.
+- `MCP_STRING_FIELDS` (`command`, `url`, `serverUrl`, `cwd`); unlike these,
+  a mistyped `type` is tolerated.
 - `MCP_CREDENTIAL_MAPS` and `MCP_CREDENTIAL_KEY_ALIASES`. The alias table exists only
   so the shared credential-*name* detector sees `clientSecret` as `client_secret`.
 - The one accepted `authProviderType` value, in

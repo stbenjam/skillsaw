@@ -129,9 +129,7 @@ class TestDetectionMarkers:
     def test_a_populated_directory_does_not_mark_the_shared_root(
         self, tmp_path: Path, dirname: str
     ) -> None:
-        """``.agents/`` is the tool-neutral layout: 27 of 30 sampled
-        repositories carrying ``.agents/rules`` hold no Antigravity file at
-        all, so ``rules/`` there says no more than ``skills/`` does."""
+        """Shared rules and agents directories do not establish ownership."""
         repo = write_repo(tmp_path / f"shared-{dirname}")
         directory = repo / ".agents" / dirname
         directory.mkdir(parents=True)
@@ -139,7 +137,7 @@ class TestDetectionMarkers:
         assert RepositoryType.ANTIGRAVITY not in RepositoryContext(repo).repo_types
 
     def test_a_tool_neutral_agents_layout_is_not_this_host(self, tmp_path: Path) -> None:
-        """The shape 27 of 30 sampled real repositories actually have."""
+        """Shared rules and skills directories do not establish ownership."""
         repo = write_repo(tmp_path / "tool-neutral")
         rules = repo / ".agents" / "rules"
         rules.mkdir(parents=True)
@@ -284,6 +282,20 @@ class TestAgentPluginsManifestIsClaimed:
 class TestContainment:
     """skillsaw never reads outside the checkout, where ``agy`` would."""
 
+    def test_uncontained_prose_is_not_probed(self, tmp_path, monkeypatch):
+        from skillsaw.discovery import antigravity
+
+        monkeypatch.setattr(
+            antigravity, "customization_root_declares_a_file", lambda *a, **k: False
+        )
+        monkeypatch.setattr(antigravity, "contained_resolve", lambda *a: None)
+
+        def unexpected_probe(path):
+            pytest.fail(f"Probed an uncontained prose directory: {path}")
+
+        monkeypatch.setattr(antigravity, "safe_is_dir", unexpected_probe)
+        assert not antigravity.customization_root_is_marked(tmp_path, is_excluded=lambda p: False)
+
     def test_escaping_plugin_directory_is_dropped(self, tmp_path: Path) -> None:
         """Nothing behind the symlink reaches the tree, hooks file included."""
         from skillsaw.blocks import HooksBlock
@@ -332,6 +344,25 @@ class TestProvenance:
         ctx = RepositoryContext(repo, repo_types=[RepositoryType.MARKETPLACE])
         assert ctx.antigravity_plugins == []
         assert ctx.provenance(plugin).antigravity is True
+
+    @pytest.mark.parametrize(
+        "override", (None, RepositoryType.ANTIGRAVITY, RepositoryType.MARKETPLACE)
+    )
+    def test_declared_plugin_content_survives_type_overrides(self, tmp_path, override):
+        from skillsaw.blocks import SkillBlock
+        from skillsaw.lint_target import AntigravityPluginConfigNode
+        from skillsaw.rules.builtin.agentskills.valid import AgentSkillValidRule
+
+        repo = copy_fixture("antigravity/portable-manifest", tmp_path)
+        plugin = repo / ".agents/plugins/route-kit"
+        ctx = RepositoryContext(repo, repo_types=None if override is None else [override])
+        assert ctx.antigravity_plugin_roots() == [plugin]
+        assert ctx.distinct_plugin_dirs() == [plugin]
+        assert [n.path for n in ctx.lint_tree.find(AntigravityPluginConfigNode)] == [
+            plugin / "plugin.json"
+        ]
+        assert len(ctx.lint_tree.find(SkillBlock)) == 1
+        assert AgentSkillValidRule().check(ctx) == []
 
     def test_forced_type_seeds_a_manifest_less_directory(self, tmp_path: Path) -> None:
         repo = write_repo(tmp_path / "forced-plugin")
