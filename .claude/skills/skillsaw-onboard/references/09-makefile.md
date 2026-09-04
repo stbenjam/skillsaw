@@ -3,7 +3,7 @@
 Resolve the latest version to pin:
 
 ```console
-python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://pypi.org/pypi/skillsaw/json'))['info']['version'])"
+python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://pypi.org/pypi/skillsaw/json', timeout=10))['info']['version'])"
 ```
 
 If `python3` is unavailable:

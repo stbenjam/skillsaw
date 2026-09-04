@@ -61,3 +61,20 @@ def test_documented_skillsaw_floor_is_installable():
         f"version {'.'.join(map(str, project))} — no release can satisfy it "
         "until the version catches up"
     )
+
+
+def test_glob_pathspecs_in_skill_recipes_also_match_the_repo_root():
+    """A `git grep … -- '**/NAME'` pathspec matches NAME only below a
+    directory (git's fnmatch still needs the slash), so a recipe meant to
+    find a root-level file has to list the bare name beside it. The
+    pre-commit recipe in skillsaw-update shipped without one and found only
+    nested configs."""
+    for path in sorted((REPO_ROOT / "skills").rglob("*.md")):
+        for command in re.findall(r"^git grep .*$", path.read_text(), re.MULTILINE):
+            if " -- " not in command:
+                continue
+            pathspecs = command.split(" -- ", 1)[1]
+            for nested in re.findall(r"'\*\*/([^']+)'", pathspecs):
+                assert f"'{nested}'" in pathspecs or f" {nested} " in f" {pathspecs} ", (
+                    f"{path.relative_to(REPO_ROOT)}: '**/{nested}' needs a bare '{nested}' too"
+                )

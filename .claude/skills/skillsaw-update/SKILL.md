@@ -38,12 +38,17 @@ never show placeholders to the user, and render singular or plural wording
 naturally. Angle-delimited names (`<installed-prefix>`, `<new-prefix>`) are
 command prefixes the references bind; run them, never show them.
 
+When a reference says to stop, end the workflow there and tell the user what
+happened and what was not done; the summary in step 5 belongs to a run that
+reaches it.
+
 ### 1. Upgrade to the newest version
 
 Read [versions](references/01-versions.md). It records the installed and
 latest versions, captures the old rule list, upgrades the install (or selects
 the new command prefix), and verifies the result. Report both versions before
-offering changes.
+offering changes. If it reports that the update is paused because the new
+version cannot run here, skip to step 5.
 
 ### 2. Report new rules
 
@@ -53,9 +58,16 @@ version so every new rule is presented with its actual findings here.
 
 ### 3. Update version pins
 
-If the repository pins skillsaw anywhere (GitHub Actions workflows or action
+Find the files that pin skillsaw (GitHub Actions workflows or action
 definitions, Makefile targets, pre-commit hooks, container image tags in
-Dockerfiles, Containerfiles or GitLab CI, PyPI requirement pins), ask:
+Dockerfiles, Containerfiles or GitLab CI, PyPI requirement pins):
+
+```console
+git grep -lE '(^|[^/[:alnum:]._-])(stbenjam/skillsaw|SKILLSAW_VERSION|skillsaw *(\[[^]]*\])? *(={1,3}|~=|>=?|<=?) *["{$0-9])'
+```
+
+Outside a git work tree, use `grep -rlE --exclude-dir=.git` with the same
+pattern. If it lists any file, name them as {locations} and ask:
 
 > I found skillsaw pinned in {locations}. Bumping them to {latest} keeps CI
 > and local runs on the version just installed. Should I update those pins?

@@ -2,9 +2,13 @@
 
 Run `<new-prefix>` from the repository root and confirm that it exits
 successfully; bare `skillsaw` may be absent or still the old release when the
-retained prefix is `uvx` or a container. If it exits non-zero only on findings
-the user declined to fix, baseline or configure, report them and stop; retry
-only after an accepted remediation. Summarize:
+retained prefix is `uvx` or a container. A non-zero exit caused only by
+findings the user declined to fix, baseline or configure is reported as such.
+Any other failure (a finding from an existing rule that the new-rules scan did
+not show, an `invalid-config` finding, a crash) is a defect this run
+introduced: fix it before summarizing, and never file it under declined
+findings. When the versions step paused the update, say so and that no pin or
+rule change was made. Summarize:
 
 - verification: the linter run with `<new-prefix>` from the repository root
   passed, or the findings the user declined that remain;

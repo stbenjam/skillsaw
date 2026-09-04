@@ -22,14 +22,15 @@ podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" -v "$PWD:/workspace:
 or, with Docker:
 
 ```console
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:{latest}
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:{latest}
 ```
 
 Image tags carry no `v`: release `0.19.0` is the image tag `0.19.0`. The image
 runs as a non-root user, so both commands map the invoking user in to keep the
 later `fix` and `baseline` steps able to write; rootless Podman additionally
 needs `--userns=keep-id` for that mapping to reach the host user, and `:Z`
-relabels the mount on SELinux hosts. Verify with `<installed-prefix> --version`
+relabels the mount on SELinux hosts (elsewhere the label is ignored). Verify
+with `<installed-prefix> --version`
 and treat that version as both `{installed}` and the starting prefix. If
 `python3` is unavailable for the PyPI lookup below, use its git fallback.
 
@@ -53,7 +54,8 @@ git ls-remote --refs --tags --sort='v:refname' https://github.com/stbenjam/skill
 `{latest}` must look like `N.N.N`. If it does not, stop and report the value
 rather than passing it to `pip`, `uvx`, an image tag or a pin.
 
-If `{installed}` equals `{latest}`, report that the install is current, retain
+If `{installed}` equals `{latest}`, report that the install is current (after
+a bootstrap above: that the bootstrap already runs the newest release), retain
 `<installed-prefix>` as `<new-prefix>`, skip the upgrade question below, and
 continue from "Capture the old rule list": there are no new rules, but pins
 may still lag behind.
@@ -79,10 +81,15 @@ If yes, follow the method behind the retained prefix:
 
 - **uvx**: nothing to install. The new prefix is `uvx skillsaw=={latest}`;
   the old one stays usable for comparison.
-- **pip or a local `skillsaw` binary**: run
-  `pip install --upgrade "skillsaw=={latest}"`, or the manager that installed
-  it (`pipx upgrade skillsaw`, `uv tool upgrade skillsaw`), and retain
-  `skillsaw` as `<new-prefix>`.
+- **pip, pipx or uv tool**: identify the manager first; the first line of
+  the `skillsaw` script (`head -1 "$(command -v skillsaw)"`) names its
+  interpreter (`…/pipx/venvs/skillsaw/…`, `…/uv/tools/skillsaw/…`, or a
+  plain virtualenv). Then pin explicitly with that manager:
+  `pipx install --force "skillsaw=={latest}"`,
+  `uv tool install "skillsaw=={latest}"`, or
+  `pip install "skillsaw=={latest}"`. `uv tool upgrade` keeps the constraint
+  of a pinned install and exits 0 without upgrading, so it is not used.
+  Retain `skillsaw` as `<new-prefix>`.
 - **Container**: pull the pinned image
   (`podman pull ghcr.io/stbenjam/skillsaw:{latest}` or `docker pull ...`) and
   define `<new-prefix>` as the run command from "Installed version" with
@@ -92,19 +99,22 @@ If no, do not modify the local installation. Offer an isolated, zero-install
 command as `<new-prefix>` instead, such as `uvx skillsaw=={latest}` or the
 container run command above, to evaluate the new rules and bump pins. If the
 user agrees, continue below with that prefix. If the user also declines
-running the new version, skip the rule report and triage, still offer the pin
-update, and run verification with the retained prefix.
+running the new version, retain `<installed-prefix>` as `<new-prefix>`, leave
+every pin unchanged (a pin moved to `{latest}` would put CI on rules never
+run here), tell the user the update is paused until the new version can run,
+and continue below; the router then skips to verification.
 
-Whenever no upgrade happens, `<new-prefix>` is the prefix in hand: the
-isolated zero-install command if the user accepted one, otherwise the
-retained prefix. An isolated command sees only skillsaw itself, so if the
-installed one carries rule plugins, add them (`uvx --with <plugin>
-skillsaw=={latest}`) or the comparison below reports their rules as removed.
+## Confirm the new prefix
+
+An isolated command sees only skillsaw itself, so if the installed one
+carries rule plugins, add them (`uvx --with <plugin> skillsaw=={latest}`) or
+the comparison below reports their rules as removed.
 
 If an upgrade or an isolated prefix was accepted, `<new-prefix> --version`
 must report `{latest}` (the output is `skillsaw {latest}`). If it does not,
-the upgrade did not take (a `pipx` or `uv tool` install ignores `pip`);
-report that and stop. Then save its rules:
+the upgrade did not take; report which manager ran and stop. Then, on every
+path, save the new prefix's rules (on the already-current and paused paths
+this repeats the old list, and the comparison comes out empty):
 
 ```console
 <new-prefix> list-rules > /tmp/skillsaw-rules-new.txt

@@ -28,16 +28,20 @@ info findings. It records every current non-info finding, so before any
 refresh confirm the only unbaselined findings are the ones the user agreed to
 baseline, and report `git diff --stat .skillsaw-baseline.json` in the summary.
 
-A removed rule may leave stale baseline entries behind. Before refreshing,
-run `<new-prefix>` and confirm the only unbaselined findings are the added
-rules' or ones the user has just agreed to baseline: `<new-prefix> baseline`
-records every current non-info finding, so refreshing over an unrelated
-regression from an existing rule would accept it silently. If other findings
-are present, delete the removed rule's entries from `.skillsaw-baseline.json`
-instead of regenerating, or resolve those findings first. An ID the new
-version still resolves (`<new-prefix> explain <id>` succeeds) is an alias of a
-live rule, not a removed rule; leave its entries. Delete a removed rule's key
-from `.skillsaw.yaml` too; the new version reports it as `invalid-config`.
+A removed rule may leave stale baseline entries behind. Run
+`<new-prefix> lint -v` first: it prints `Baseline: N stale entries` and lists
+the entries no current finding matches, and those are the ones to delete
+from `.skillsaw-baseline.json`. Never judge an entry by its rule ID: an old
+ID can live on as a live rule's baseline alias, so its entries still suppress
+findings while `<new-prefix> explain <id>` fails for it. In the same run,
+confirm the only unbaselined findings are the added rules' or ones the user
+has just agreed to baseline: `<new-prefix> baseline` records every current
+non-info finding, so refreshing over an unrelated regression from an existing
+rule would accept it silently. If other findings are present, delete the
+stale entries by hand instead of regenerating, or resolve those findings
+first. A `.skillsaw.yaml` key the new version reports as `invalid-config`
+belongs to a removed rule: delete it. A key it still accepts is an alias of a
+live rule and stays.
 
 ## 3. Configure
 
