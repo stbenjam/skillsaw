@@ -133,6 +133,41 @@ changing a rule here.
   `src/skillsaw/lint_target.py` (`AntigravityPluginNode`,
   `AntigravityPluginConfigNode`), attached in `src/skillsaw/lint_tree.py`.
 
+## Measurements
+Every claim in the rules and their docs comes from a run against `agy` 1.1.25, in an
+isolated `HOME` with outbound proxies pointed at a dead port. The observables are the
+`--log-file` counter `loaded N named hooks from M hooks.json file(s)`, its
+`Failed to load JSON config file` / `failed to parse` lines, `agy mcp list`,
+`agy agents` and `agy plugin validate`. Re-run any of these against a newer `agy`
+before trusting the rule that rests on it.
+
+| # | Date | Question | Observable | Result |
+| --- | --- | --- | --- | --- |
+| 8 | 2026-09-03 | Are duplicate object keys a defect? | hook counter, `agy mcp list`, `agy agents` | No — last value wins and the file loads, at every nesting depth in `hooks.json`, `mcp_config.json` and a registry. `plugin.json` is the exception (protojson: `proto: duplicate field`). |
+| 9 | 2026-09-04 | Do registry `entries` name customization that really loads? | `agy agents` | Yes. A `plugins.json` path may be one plugin directory or a container of them; `inherits` follows a registry *file* only; `include_only`/`exclude` filter by directory name; a path outside the workspace loads nothing. |
+| 10 | 2026-09-04 | Is a top-level `enabled` a switch? Is `null` a defect? Do foreign shapes load? | hook counter, `agy mcp list`, `agy plugin validate` | `enabled` is an ordinary hook name — only a non-object value there kills the file. `null` is the key's absence everywhere. A `hooks` object beside a numeric `version` fails the document; beside nothing it loads one inert hook named `hooks`. |
+| 11 | 2026-09-04 | Is `""` the key's absence too? | hook counter, `agy mcp list`, `agy agents` | For **string** fields yes — `prompt`, `model`, `command`, `type`, `matcher`, a hook name, and `plugin.json`'s `name` all read as absent. Not for typed fields: `timeout: ""` and `disabled: ""` fail the document, and `authProviderType: ""` drops the server. A null `env` value or `args` element loads; `command: ""` loads a server that starts nothing. |
+
+## Loader versus validate
+`agy plugin validate` and the loader read `plugin.json` with different parsers, and they
+disagree. Validate uses `encoding/json` — it prints `[ok]` for `{"disabled": ""}` and
+reports `cannot unmarshal number into Go struct field .name of type string` for a
+mistyped name. The loader uses protojson, refuses `{"disabled": ""}` with
+`invalid value for bool field disabled`, and does not load the plugin's agents.
+
+The loader decides whether the directory is a plugin at all, so it is what the rules
+follow. Check a manifest claim against `agy agents` and the `plugins.go` log lines, not
+against `agy plugin validate` alone.
+
+## Corpus survey
+Some rule comments cite counts from public repositories — `27 of 30` for `.agents/rules`
+without an Antigravity file, `10 of 74` `.agents/hooks.json` files in another host's
+shape, `7 of 74` (17 commands) writing a flat event in the grouped shape, `58 of 60`,
+`12 of 50`. Those come from the review panel's GitHub sampling on **2026-09-04** and are
+not reproduced in this repository: they were the evidence for a design decision, not a
+fixture. Re-sample before relying on any of them again; the decisions they justified
+stand on the `agy` measurements above.
+
 ## Sync notes
 Hand-copied value sets that drift — re-check each against a fresh `agy`, not against
 the docs:
@@ -148,6 +183,11 @@ the docs:
   so the shared credential-*name* detector sees `clientSecret` as `client_secret`.
 - The one accepted `authProviderType` value, in
   `rules/builtin/antigravity/mcp_valid.py`.
+- `EXCLUSIVE_ROOT_NAMES`. `.agent/` alone takes the wide detection predicate, so a
+  populated `.agent/rules/` types a repository `antigravity` even when it configures
+  several tools. Harmless — the type only switches on rules that need a target, and
+  every Antigravity block attaches under a dot root regardless of detection — but it is
+  the one place a shared checkout can pick the type up from prose alone.
 
 ## Not covered yet
 - Workspace and plugin `mcp_config.json` **loading** is unobserved. `agy mcp list` and

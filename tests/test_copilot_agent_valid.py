@@ -584,8 +584,14 @@ def test_disabling_copilot_agent_valid_stands_the_shared_mcp_rule_down_entirely(
     )
 
     found = (run_lint(tmp_path)["out"] or {}).get("violations", [])
-
     assert [v for v in found if v["rule_id"] == "mcp-valid-json"] == []
+
+    # Positive control: the same file without the gate really does draw the
+    # findings, so the assertion above is about the gate and not about a
+    # fixture nothing reports on.
+    (tmp_path / ".skillsaw.yaml").unlink()
+    ungated = (run_lint(tmp_path)["out"] or {}).get("violations", [])
+    assert [v for v in ungated if v["rule_id"] == "mcp-valid-json"]
 
 
 def test_mcp_role_parsing_is_prefiltered_by_the_top_level_key(tmp_path, monkeypatch):

@@ -115,6 +115,17 @@ class HookHandler:
     source_line: Optional[int] = None
     # Keep new fields at the end to preserve positional construction.
     command_variants: List[Tuple[str, Optional[int]]] = field(default_factory=list)
+    #: Fields that are this linter's own bookkeeping rather than anything
+    #: a host reads, so a published document must not carry them.
+    #: ``command_variants`` in particular defaults to ``[]`` rather than
+    #: ``None``, so a "drop the empty ones" filter alone lets it through.
+    #: Declared here so a new internal field is named beside the field
+    #: itself rather than in ``docs/extractor.py``.
+    INTERNAL_FIELDS: ClassVar[Tuple[str, ...]] = (
+        "command_variants",
+        "source_line",
+        "type_line",
+    )
     #: Line of the handler's ``type:`` key. ``source_line`` follows the
     #: ``command``, which an ``http``/``mcp_tool``/``prompt``/``agent``
     #: handler does not have — every finding about one was line-less until
@@ -886,7 +897,7 @@ class AntigravityHooksBlock(HooksBlock):
       misses the other on the next one-word edit. Picking by payload hides
       the ``command`` in ``{"Stop": [{"command": "…", "hooks": []}]}``;
       picking by event hides the nested commands 7 of 74 real files write
-      under a flat event.
+      under a flat event (corpus survey, maintenance reference).
     """
 
     category: str = "hooks"
@@ -959,9 +970,10 @@ class AntigravityHooksBlock(HooksBlock):
                     # of them, and which one turns on a single key; both
                     # commands are committed either way, and a scanner shown
                     # only the half this release believes runs misses the
-                    # other on the next one-word edit. Measured across 74
-                    # real files: 7 write a flat event in the grouped shape,
-                    # hiding 17 commands from a reading that picks by event.
+                    # other on the next one-word edit. 7 of 74 real files
+                    # write a flat event in the grouped shape, hiding 17
+                    # commands from a reading that picks by event — see the
+                    # corpus survey in the maintenance reference.
                     #
                     # For a published document, only what dispatches: an
                     # unknown event has no binding to consult, so it keeps

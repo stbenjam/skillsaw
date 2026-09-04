@@ -112,7 +112,6 @@ class TestInstallability:
             ("slash", "berth/tools"),
             ("traversal", "../escape"),
             ("hidden", ".hidden"),
-            ("empty", ""),
             # A JSON string can hold a newline, and ``$`` matches before a
             # final one. ``agy plugin install`` refuses this name.
             ("trailing-newline", "berth-tools\n"),
@@ -149,12 +148,71 @@ class TestInstallability:
         found = only(check(tmp_path, "single-claim", {"name": "acme.tools"}), "is not installable")
         assert found.severity == Severity.WARNING
 
-    def test_absent_name_is_advisory(self, tmp_path: Path) -> None:
-        found = only(check(tmp_path, "unnamed", {}), "'name' is absent")
-        assert found.severity == Severity.INFO
+    @pytest.mark.parametrize(
+        "case,manifest",
+        (
+            ("absent", {}),
+            # Measured: ``""`` and ``null`` are protojson's default for a
+            # string field, and ``agy plugin validate`` reports ``missing
+            # name`` for all three.
+            ("empty", {"name": ""}),
+            ("null", {"name": None}),
+        ),
+    )
+    def test_an_unnamed_plugin_is_advisory(self, tmp_path: Path, case: str, manifest) -> None:
+        violations = check(tmp_path, f"unnamed-{case}", manifest)
+        assert len(violations) == 1
+        assert "'name' is absent" in violations[0].message
+        assert violations[0].severity == Severity.INFO
 
-    def test_absent_name_is_not_also_a_charset_finding(self, tmp_path: Path) -> None:
-        assert len(check(tmp_path, "unnamed-once", {})) == 1
+    def test_a_dangling_symlink_manifest_is_not_a_regular_file(self, tmp_path: Path) -> None:
+        """``safe_is_symlink`` is exactly the ``safe_exists``-false case.
+
+        A forced ``--type`` builds the node for a manifest-less directory,
+        so the branch that tells "not a regular file" from "missing" needs a
+        link pointing at nothing.
+        """
+        repo = write_repo(tmp_path / "dangling")
+        plugin = write_plugin(repo, "berth-tools", None)
+        (plugin / "plugin.json").symlink_to("nowhere.json")
+        found = only(
+            run_rule(
+                AntigravityPluginJsonValidRule,
+                repo,
+                repo_types=[RepositoryType.ANTIGRAVITY_PLUGIN],
+            ),
+            "not a regular file",
+        )
+        assert found.severity == Severity.ERROR
+
+    def test_a_directory_named_plugin_json_is_not_a_regular_file(self, tmp_path: Path) -> None:
+        repo = write_repo(tmp_path / "manifest-dir")
+        plugin = write_plugin(repo, "berth-tools", None)
+        (plugin / "plugin.json").mkdir()
+        found = only(
+            run_rule(
+                AntigravityPluginJsonValidRule,
+                repo,
+                repo_types=[RepositoryType.ANTIGRAVITY_PLUGIN],
+            ),
+            "not a regular file",
+        )
+        assert found.severity == Severity.ERROR
+
+    def test_an_empty_boolean_is_still_a_type_error(self, tmp_path: Path) -> None:
+        """``""`` is not a bool's zero value.
+
+        Measured through the *loader*: ``invalid value for bool field
+        disabled`` and the plugin's agents do not load. (``agy plugin
+        validate`` disagrees and prints ``[ok]`` — it reads the manifest
+        with ``encoding/json`` rather than protojson — and the loader is
+        what decides whether the directory is a plugin.)
+        """
+        found = only(
+            check(tmp_path, "empty-disabled", {"name": "berth-tools", "disabled": ""}),
+            "'disabled' must be a boolean",
+        )
+        assert found.severity == Severity.ERROR
 
     def test_mistyped_name_is_not_also_a_charset_finding(self, tmp_path: Path) -> None:
         violations = check(tmp_path, "mistyped-once", {"name": 42})

@@ -92,7 +92,8 @@ ANTIGRAVITY_CONFIG_DIR_NAMES = (".agents", ".agent", "_agents", "_agent")
 #: so a populated ``rules/`` or ``agents/`` under it is evidence of
 #: Antigravity. The other three are shared or ordinary names — ``.agents/``
 #: is the tool-neutral layout (27 of 30 sampled repositories with
-#: ``.agents/rules`` carry no Antigravity file), ``_agents/`` and
+#: ``.agents/rules`` carry no Antigravity file — corpus survey, maintenance
+#: reference), ``_agents/`` and
 #: ``_agent/`` are names any source package may take — so detection there
 #: asks for a file only this host reads.
 EXCLUSIVE_ROOT_NAMES = frozenset({".agent"})
@@ -229,12 +230,29 @@ HOOK_GROUP_KEYS = frozenset({"matcher", "hooks"})
 #: .enabled of type jsonhook.JSONHookSpec``) that kills the file.
 HOOK_SPEC_NON_EVENT_KEYS = frozenset({"enabled"})
 
+#: Top-level keys an author writes meaning file-level metadata, which this
+#: host reads as hook *names*. Each gets its own message saying so, because
+#: "a named hook must be a JSON object" tells the author nothing about why
+#: their schema reference or version stamp broke the file.
+HOOK_METADATA_KEY_HINTS = MappingProxyType(
+    {
+        "enabled": "'enabled' belongs inside a named hook",
+        "$schema": "Antigravity publishes no hooks schema, so drop the key",
+        "version": "this document carries no version field",
+    }
+)
+
 #: The one value ``authProviderType`` parses. The proto enum also spells it
 #: ``MCP_AUTH_PROVIDER_TYPE_GOOGLE_CREDENTIALS``, and that spelling drops
 #: the server — only the lowercase JSON alias is accepted. Measured:
 #: ``"oauth"``, either enum spelling, and a bare ``1`` are each dropped
 #: silently.
 MCP_AUTH_PROVIDER_TYPES = frozenset({"google_credentials"})
+
+#: Per-server string fields whose wrong type drops the server, measured
+#: with ``agy mcp list`` against a clean sibling. ``type`` is deliberately
+#: absent: a non-string there is tolerated and the server still loads.
+MCP_STRING_FIELDS = ("command", "url", "serverUrl", "cwd")
 
 #: Per-server maps in ``mcp_config.json`` whose values may hold a committed
 #: credential, as ``(key, is_http_header)``. All three are measured to

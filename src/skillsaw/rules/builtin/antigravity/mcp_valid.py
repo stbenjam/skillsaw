@@ -148,6 +148,20 @@ class AntigravityMcpValidRule(Rule):
             violations.extend(self._check_server(block, str(name), server, accepted))
         return violations
 
+    def _inert(self, block: AntigravityMcpBlock, name: str, problem: str) -> RuleViolation:
+        """A server that loads and can do nothing, which is not the same defect.
+
+        ``agy mcp list`` shows it enabled with an empty command column: the
+        session carries a server that will never start, so "dropped" would
+        send the author looking for the wrong thing.
+        """
+        return self.violation(
+            f"MCP server '{name}': {problem}; Antigravity loads the server and it starts nothing",
+            file_path=block.path,
+            severity=Severity.WARNING,
+            fingerprint_discriminator=f"{name}:{problem}",
+        )
+
     def _dropped(self, block: AntigravityMcpBlock, name: str, problem: str) -> RuleViolation:
         return self.violation(
             f"MCP server '{name}': {problem}; {_SERVER_DROPPED}",
@@ -164,26 +178,42 @@ class AntigravityMcpValidRule(Rule):
             return [self._dropped(block, shown, "a server must be a JSON object")]
 
         violations: List[RuleViolation] = []
+        # ``None`` members are not defects: Go decodes a JSON ``null`` as the
+        # zero value, so a null ``env`` value and a null ``args`` element are
+        # the empty string to the host and the server loads with them
+        # (measured). Any other non-string member still drops it.
         env = server.get("env")
         if env is not None:
             if not isinstance(env, dict):
                 violations.append(self._dropped(block, shown, "'env' must be an object"))
-            elif not all(isinstance(value, str) for value in env.values()):
+            elif not all(value is None or isinstance(value, str) for value in env.values()):
                 violations.append(self._dropped(block, shown, "every 'env' value must be a string"))
 
         args = server.get("args")
         if args is not None:
             if not isinstance(args, list):
                 violations.append(self._dropped(block, shown, "'args' must be an array"))
-            elif not all(isinstance(arg, str) for arg in args):
+            elif not all(arg is None or isinstance(arg, str) for arg in args):
                 violations.append(
                     self._dropped(block, shown, "every 'args' element must be a string")
                 )
 
+        # Measured: a server whose ``command`` is the empty string is listed
+        # by ``agy mcp list`` with an empty command column. It loads — this
+        # is not the "dropped" scope — and can never start.
+        if server.get("command") == "" and not server.get("serverUrl") and not server.get("url"):
+            violations.append(self._inert(block, shown, "'command' is empty"))
+
         # ``is not None`` rather than ``in``: Go decodes ``null`` as the
         # zero value, so a null field reads as absent and the server loads.
-        if server.get("serverUrl") is not None and not isinstance(server["serverUrl"], str):
-            violations.append(self._dropped(block, shown, "'serverUrl' must be a string"))
+        # Measured with ``agy mcp list``, one clean sibling per run: a
+        # non-string ``command``, ``url``, ``serverUrl`` or ``cwd`` drops
+        # that server while the sibling stays. ``type`` is the exception —
+        # a non-string there is tolerated and the server loads — so it is
+        # not checked; see the rule doc.
+        for field in antigravity.MCP_STRING_FIELDS:
+            if server.get(field) is not None and not isinstance(server[field], str):
+                violations.append(self._dropped(block, shown, f"'{field}' must be a string"))
 
         disabled_tools = server.get("disabledTools")
         if disabled_tools is not None and not (

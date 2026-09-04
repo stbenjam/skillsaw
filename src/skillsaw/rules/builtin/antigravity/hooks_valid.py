@@ -23,6 +23,17 @@ _ACCEPTED_TYPES = " or ".join(f"'{name}'" for name in sorted(antigravity.HOOK_HA
 #: document stop running too, and ``agy`` still exits 0 while they do.
 _FILE_SCOPED = "Antigravity loads no hook from this file"
 
+#: Said by the foreign-shape finding when a metadata sibling decides it.
+#: Measured both ways: a ``version`` number fails the whole document
+#: (``cannot unmarshal number into Go struct field .version``), while a
+#: string sibling such as ``description`` or ``$schema`` parses and leaves
+#: one inert hook named ``hooks``. Which of the two a given file gets turns
+#: on the sibling's type, so the finding says the pair.
+_FILE_SCOPED_OR_INERT = (
+    "Antigravity reads every top-level key as a hook name, so it loads no runnable hook "
+    "from this file"
+)
+
 
 class AntigravityHooksValidRule(Rule):
     """Validate an Antigravity ``hooks.json``.
@@ -79,7 +90,7 @@ class AntigravityHooksValidRule(Rule):
 
         ``setdefault``, so a declared spelling never displaces a canonical
         name: ``extra-events: [pretooluse]`` would otherwise rebind that
-        casefold to itself, and ``_check_event`` decides group-versus-flat
+        casefold to the declared spelling, and ``_check_event`` decides group-versus-flat
         by asking whether the canonical name is in
         :data:`~skillsaw.formats.antigravity.TOOL_HOOK_EVENTS` — so a valid
         ``PreToolUse`` group would be read as a flat handler and every key
@@ -188,47 +199,64 @@ class _FileCheck:
         return self.fatal or self.advisory
 
     def _foreign_shape(self, data: Dict[str, Any]) -> Optional[RuleViolation]:
-        """One finding for a file written in the Claude/Codex/Cursor shape.
+        """One finding for a file written in another host's nested shape.
 
-        Those hosts nest their events under a top-level ``hooks`` object,
-        optionally beside a ``version``. ``.agents/`` is a tool-neutral
-        directory name, so such a file lands here often — 10 of 74 real
-        ``.agents/hooks.json`` files, at least four written for another tool
+        Claude, Codex, Cursor and their kin nest their events under a
+        top-level ``hooks`` object, often beside metadata — ``version``,
+        ``description``, ``generated_from``, ``$schema``. The same shared
+        filename problem :class:`CursorHooksBlock` notes, from the other
+        side: there one document has several readers, here one directory
+        name has several writers. ``.agents/`` is a
+        tool-neutral directory name, so such a file lands here often — 10 of
+        74 real ``.agents/hooks.json`` files (see the corpus survey in the
+        maintenance reference), at least four written for another tool
         entirely — and walking one as a map of named hooks produces a
         finding for every event inside. One finding naming the real problem
         is worth more than a dozen naming its symptoms.
 
-        Two shapes qualify, both measured, and nothing else does:
+        Two branches, and nothing else qualifies.
 
-        * ``version`` beside the ``hooks`` object. ``version`` is not a hook
-          name, and its value fails the whole document (``cannot unmarshal
-          number into Go struct field .version``) — zero hooks load.
-        * An entry under a **flat** event written as ``{hooks: [...]}``.
-          ``agy`` reads that entry as a handler, finds no ``command`` on it,
-          and runs nothing.
+        **A lone ``hooks`` object** whose keys all name Antigravity events.
+        Measured: it loads as a single hook *called* ``hooks``, and under a
+        flat event its entries carry no ``command``, so nothing runs. The
+        event-name requirement is what keeps a hook genuinely called
+        ``hooks`` out — one whose entries carry their own ``command``, and
+        one whose events are its own.
 
-        A hook genuinely *called* ``hooks`` is not this: its entries carry
-        their own ``command``. Neither is the same nesting under
-        ``PreToolUse``, where the two hosts' group shapes coincide and the
-        file really does run — reporting it would be a false positive.
+        **A ``hooks`` object with siblings, none of whose values is an
+        object.** That is metadata, and a document of named hooks cannot
+        look like it: a hook beside ``hooks`` has an object value, and a
+        file with only ``hooks`` has no sibling at all. So no event-name
+        requirement applies here — a foreign file names foreign events, and
+        demanding Antigravity's would let every one of them through.
 
-        Precedent: :class:`CursorHooksBlock` carries the same note about a
-        shared filename.
+        Excluded either way: the same nesting under ``PreToolUse`` with no
+        metadata sibling. There the two hosts' group shapes coincide and the
+        file really does dispatch, so reporting it would be a false
+        positive.
         """
         nested = data.get("hooks")
-        if not isinstance(nested, dict) or not nested or not set(data) <= {"hooks", "version"}:
+        if not isinstance(nested, dict) or not nested:
             return None
+        siblings = {key: value for key, value in data.items() if key != "hooks"}
+        if siblings:
+            # Branch (b): ``hooks`` beside metadata. Every sibling must be a
+            # non-object, or this is a map of named hooks that happens to
+            # contain one called ``hooks``.
+            if any(isinstance(value, dict) for value in siblings.values()):
+                return None
+            return self._foreign_violation(_FILE_SCOPED_OR_INERT)
+
+        # Branch (a): ``hooks`` alone, and its keys must be this host's
+        # events — otherwise it is an ordinary hook named ``hooks``.
         events = {}
         for key, value in nested.items():
-            if not isinstance(key, str):
-                return None
+            # JSON object keys are always strings, so no type guard here.
             canonical = self.known_events.get(key.casefold())
             if canonical is None:
                 return None
             events[canonical] = value
-        if "version" in data:
-            consequence = _FILE_SCOPED
-        elif any(
+        if any(
             canonical in antigravity.FLAT_HOOK_EVENTS
             and isinstance(entries, list)
             and any(
@@ -239,14 +267,15 @@ class _FileCheck:
             )
             for canonical, entries in events.items()
         ):
-            consequence = (
+            return self._foreign_violation(
                 "Antigravity reads every top-level key as a hook name, so this declares one "
                 "hook called 'hooks' whose entries carry no command"
             )
-        else:
-            return None
+        return None
+
+    def _foreign_violation(self, consequence: str) -> RuleViolation:
         return self.rule.violation(
-            f"this hooks.json is written in the Claude/Codex/Cursor nested shape; {consequence}",
+            f"this hooks.json is written in another host's nested shape; {consequence}",
             file_path=self.block.path,
             # Hardcoded, against the house rule that severity stays
             # configurable: the shape says the file targets another tool,
@@ -265,14 +294,15 @@ class _FileCheck:
             # absent". Measured at every placement: the file still loads.
             return
         if not isinstance(hook_spec, dict):
-            if hook_name in antigravity.HOOK_SPEC_NON_EVENT_KEYS:
+            hint = antigravity.HOOK_METADATA_KEY_HINTS.get(hook_name)
+            if hint is not None:
                 # Every top-level key is a hook *name*, so there is no
-                # file-level switch to write here. The author who wrote one
-                # meant to turn hooks off and instead turned the file off.
+                # file-level metadata to write here. The author who wrote
+                # some meant to configure the file and instead broke it.
                 self._fatal(
                     "hooks.json",
                     f"'{safe_display(str(hook_name))}' at the top level is read as a hook name, "
-                    "not a switch; 'enabled' belongs inside a named hook",
+                    f"not a setting; {hint}",
                 )
                 return
             self._fatal(where, "a named hook must be a JSON object")
@@ -373,13 +403,17 @@ class _FileCheck:
         if not typed or handler_type is None:
             return
         if handler_type == "command":
+            # Truthiness, not presence: ``""`` is Go's zero value for a
+            # string field and reads as the key being absent, so
+            # ``{"command": "echo ok", "prompt": ""}`` loads (measured).
+            # A non-string value already failed the type loop above.
             for forbidden in ("prompt", "model"):
-                if handler.get(forbidden) is not None:
+                if handler.get(forbidden):
                     self._fatal(where, f"a command hook may not carry '{forbidden}'")
             command = handler.get("command")
             if not (isinstance(command, str) and command.strip()):
                 self._advisory(where, "a command hook with no command runs nothing")
-        elif handler_type == "prompt" and handler.get("command") is not None:
+        elif handler_type == "prompt" and handler.get("command"):
             self._fatal(where, "a prompt hook may not carry 'command'")
 
     def _handler_type(self, where: str, handler: Dict[str, Any]) -> Tuple[Optional[str], bool]:

@@ -133,9 +133,12 @@ class AntigravityPluginJsonValidRule(Rule):
                 )
 
         name = data.get("name")
-        # ``null`` is the default, and the default is the empty name:
-        # measured, ``{"name": null}`` reports ``missing name``.
-        if name is None:
+        # ``null``, ``""`` and an absent key are one case: all three are
+        # protojson's default for a string field, all three report
+        # ``missing name``, and all three fall back to the directory name
+        # (measured). One finding, and never the charset one — an empty
+        # name is not a name the author chose badly.
+        if name is None or name == "":
             violations.append(
                 self.violation(
                     "'name' is absent; the published manifest schema requires it, "

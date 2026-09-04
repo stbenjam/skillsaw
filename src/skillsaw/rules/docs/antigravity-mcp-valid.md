@@ -44,7 +44,7 @@ goes unreported while this rule is off, because a user who pinned a
 - A server that is not an object.
 - `env` that is not an object, or an `env` value that is not a string.
 - `args` that is not an array, or an element that is not a string.
-- `serverUrl` that is not a string.
+- `command`, `url`, `serverUrl` or `cwd` that is not a string.
 - `disabledTools` that is not an array of strings.
 - `authProviderType` with any value but the string `google_credentials` —
   another string, a number, an array or an object alike. The proto enum's
@@ -63,9 +63,18 @@ goes unreported while this rule is off, because a user who pinned a
   knowing but is not a defect in the file's shape.
 - **`timeout`.** It appears in no measured or documented property list for
   this host.
+- **A `type` that is not a string.** Measured: unlike every other scalar
+  field on a server, a mistyped `type` is tolerated and the server loads.
 - **A repeated key.** Antigravity reads this file with Go's `encoding/json`,
   which takes the last value. A server named twice, or a key written twice
   inside one, loads with the second one in force.
+- **A `null` value, and an empty string in a string field.** Go decodes
+  both as the field's zero value, so each reads as the key being absent:
+  a null or empty `serverUrl`, a null `env` value and a null `args` element
+  all load. Two exceptions, both measured: `authProviderType: ""` **drops**
+  the server, exactly as an unknown string does, and `mcpServers: null`
+  loads no server at all — the same as writing no wrapper, and reported the
+  same way.
 
 ## Examples
 

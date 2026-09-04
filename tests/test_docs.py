@@ -643,6 +643,32 @@ class TestAntigravityExtractor:
         (plugin / "mcp_config.json").write_text(json.dumps(mcp, indent=2))
         return plugin
 
+    def test_a_manifest_without_a_name_falls_back_to_the_directory_name(self, temp_dir):
+        """``name`` is optional, and the directory is what ``agy`` installs under."""
+        self._plugin(temp_dir, {"mcpServers": {}})
+        (temp_dir / ".agents" / "plugins" / "berth-tools" / "plugin.json").write_text("{}")
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert [p.name for p in docs.plugins] == ["berth-tools"]
+        assert docs.plugins[0].description == ""
+
+    def test_a_dual_claimed_plugin_is_documented_once(self, temp_dir):
+        """A directory both ecosystems claim gets one entry, not two.
+
+        The ``documented`` bookkeeping in the Antigravity leg is the only
+        thing preventing ``_extract_agent_plugins`` from listing it again.
+        """
+        import shutil
+
+        fixture = Path(__file__).parent / "fixtures" / "antigravity" / "portable-manifest"
+        repo = temp_dir / "dual"
+        shutil.copytree(fixture, repo)
+
+        docs = extract_docs(RepositoryContext(repo))
+
+        assert [p.name for p in docs.plugins] == ["route-kit"]
+
     def test_published_hooks_list_only_what_dispatches(self, temp_dir):
         """``events`` over-reports for the scanners; a document must not."""
         plugin = self._plugin(temp_dir, {"mcpServers": {}})

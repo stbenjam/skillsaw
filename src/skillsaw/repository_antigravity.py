@@ -91,9 +91,11 @@ class RepositoryAntigravityMixin:
     def antigravity_workspace_roots(self) -> List[Path]:
         """The customization roots whose prose and config the tree attaches.
 
-        Every dot root, unconditionally: ``.agents/`` and ``.agent/`` are
-        names no other tool claims, and a repository that creates one has
-        said which tool it means.
+        Every dot root, unconditionally — including ``.agents/``, which
+        other ecosystems also use. Attachment is deliberately wider than
+        detection here: prose under a dot root is linted whether or not the
+        repository is typed ``antigravity``, because a rules file is agent
+        context whichever tool ends up reading it.
 
         ``_agents/`` and ``_agent/`` are the only non-dot names any tool
         directory list carries, and an ordinary source package is free to

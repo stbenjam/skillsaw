@@ -52,9 +52,21 @@ class TestAcceptedFiles:
                 ' "authProviderType": "google_credentials"}}}',
             ),
             ("oauth-empty", '{"mcpServers": {"t": {"url": "https://e.example", "oauth": {}}}}'),
+            # Measured: a non-string ``type`` is tolerated and the server
+            # loads, unlike every other scalar field.
+            ("type-not-a-string", '{"mcpServers": {"t": {"command": "x", "type": 42}}}'),
             # Measured with ``agy mcp list``: a null field is the key's
             # absence and the server still loads.
             ("null-server-url", '{"mcpServers": {"t": {"command": "x", "serverUrl": null}}}'),
+            # A null member is the empty string to the host, and the server
+            # loads with it (measured with ``agy mcp list``).
+            (
+                "null-args-element",
+                '{"mcpServers": {"t": {"command": "x", "args": ["--ro", null]}}}',
+            ),
+            ("null-env-value", '{"mcpServers": {"t": {"command": "x", "env": {"PORT": null}}}}'),
+            # ``serverUrl: ""`` is absence: the server loads as the command one.
+            ("empty-server-url", '{"mcpServers": {"t": {"command": "x", "serverUrl": ""}}}'),
         ],
     )
     def test_no_findings(self, tmp_path: Path, name: str, body: str) -> None:
@@ -101,6 +113,38 @@ class TestStartupFatal:
         assert "exits 1" in found.message
 
 
+class TestInertServer:
+    """A server that loads and can do nothing — not the "dropped" scope."""
+
+    def test_an_empty_command_is_reported_as_loading_and_starting_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """Measured: ``agy mcp list`` shows it enabled with an empty command."""
+        found = only(
+            check(tmp_path, "empty-command", '{"mcpServers": {"t": {"command": ""}}}'),
+            "'command' is empty",
+        )
+        assert found.severity == Severity.WARNING
+        assert "starts nothing" in found.message
+        assert "drops the server" not in found.message
+
+    @pytest.mark.parametrize(
+        "name,body",
+        (
+            # A remote server needs no command at all.
+            ("with-server-url", '{"mcpServers": {"t": {"command": "", "serverUrl": "https://e"}}}'),
+            ("with-url", '{"mcpServers": {"t": {"command": "", "url": "https://e"}}}'),
+            # An absent command is the documented remote form, already
+            # covered by "no connection field is not a defect".
+            ("absent", '{"mcpServers": {"t": {}}}'),
+        ),
+    )
+    def test_nothing_is_reported_where_a_command_is_not_what_starts_it(
+        self, tmp_path: Path, name: str, body: str
+    ) -> None:
+        assert messages(check(tmp_path, f"inert-{name}", body)) == []
+
+
 class TestInertFile:
     """A document with no wrapper loads nothing, and is not an error."""
 
@@ -113,6 +157,14 @@ class TestInertFile:
     def test_empty_document(self, tmp_path: Path) -> None:
         found = only(check(tmp_path, "empty-doc", "{}"), "no 'mcpServers' object")
         assert found.severity == Severity.WARNING
+
+    def test_a_null_wrapper_reads_exactly_as_a_missing_one(self, tmp_path: Path) -> None:
+        """Measured: ``{"mcpServers": null}`` lists 0 servers with no error —
+        the same outcome as a document with no wrapper at all, so it earns
+        the same finding rather than silence."""
+        null_wrapper = messages(check(tmp_path, "null-wrapper", '{"mcpServers": null}'))
+        assert null_wrapper == messages(check(tmp_path, "no-wrapper", "{}"))
+        assert len(null_wrapper) == 1
 
 
 class TestDroppedServers:
@@ -151,10 +203,30 @@ class TestDroppedServers:
                 '{"mcpServers": {"t": {"serverUrl": ["https://e.example"]}}}',
                 "'serverUrl' must be a string",
             ),
+            # Measured with ``agy mcp list``: each drops that server while a
+            # clean sibling still loads.
+            (
+                "command-type",
+                '{"mcpServers": {"t": {"command": 42}}}',
+                "'command' must be a string",
+            ),
+            ("url-type-wrong", '{"mcpServers": {"t": {"url": 42}}}', "'url' must be a string"),
+            (
+                "cwd-type",
+                '{"mcpServers": {"t": {"command": "x", "cwd": 42}}}',
+                "'cwd' must be a string",
+            ),
             (
                 "disabled-tools-type",
                 '{"mcpServers": {"t": {"command": "x", "disabledTools": "a"}}}',
                 "'disabledTools' must be an array of strings",
+            ),
+            # Measured: ``""`` is *not* absence for this enum — it drops
+            # the server, exactly as an unknown string does.
+            (
+                "auth-provider-empty",
+                '{"mcpServers": {"t": {"url": "https://e.example", "authProviderType": ""}}}',
+                "'authProviderType' must be 'google_credentials'",
             ),
             (
                 "auth-provider-alias",

@@ -414,10 +414,9 @@ def tool_types(
         ``_agents/`` and ``_agent/`` are ordinary source-package names, and
         ``.agents/`` is the tool-neutral layout: of 30 sampled real
         repositories carrying ``.agents/rules``, 27 hold no Antigravity file
-        at all — ``rules/`` there says no more about which tool is
-        configured than ``skills/`` does. That is the same test this
-        function's older text wrote to exclude ``skills/``, applied
-        consistently.
+        at all (see the corpus survey in the maintenance reference) —
+        ``rules/`` there says no more about which tool is configured than
+        ``skills/`` does.
 
         Nothing moves in the lint tree: blocks attach under every dot root
         regardless of detection, and the two non-dot roots read the same
@@ -437,10 +436,8 @@ def tool_types(
             if not candidates:
                 candidates = [root / dirname]
             for base in candidates:
-                # ``contained_resolve``, the one containment idiom: it
-                # resolves symlinks before proving containment, where a
-                # hand-rolled ``is_relative_to`` on a resolved path repeats
-                # the check a reader has to verify.
+                # ``contained_resolve`` resolves symlinks before proving
+                # containment; it is the one containment idiom.
                 if is_excluded(base) or contained_resolve(base, resolved_root) is None:
                     continue
                 if marked(base, is_excluded=is_excluded):

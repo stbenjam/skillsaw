@@ -185,6 +185,10 @@ class RepositoryProvenanceMixin:
           schema identifier in root ``plugin.json``.
         * ``grok`` — a contained ``.grok-plugin/plugin.json``, or a local
           source listing in any Grok catalog.
+        * ``antigravity`` — a contained ``plugin.json`` at
+          ``<customization root>/plugins/<name>``, or membership of the
+          claim set, which folds in the plugin roots a ``plugins.json``
+          registry names.
 
         Filesystem-first and independent of ``--type``: an override changes
         what discovery walks, not what the author declared.

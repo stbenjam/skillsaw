@@ -82,6 +82,20 @@ class TestAcceptedFiles:
                 '{"H": {"PreToolUse": [{"matcher": null, "hooks": [{"command": "x"}]}]}}',
             ),
             ("null-nested-handler", '{"H": {"PreToolUse": [{"hooks": [null]}]}}'),
+            # ``""`` is Go's zero value for a string field, so it reads as
+            # the key being absent. Measured: every row below loads.
+            ("empty-prompt-on-command-hook", '{"H": {"Stop": [{"command": "x", "prompt": ""}]}}'),
+            (
+                "empty-command-on-prompt-hook",
+                '{"H": {"Stop": [{"type": "prompt", "prompt": "Check UTC.", "command": ""}]}}',
+            ),
+            ("empty-model", '{"H": {"Stop": [{"command": "x", "model": ""}]}}'),
+            ("empty-type", '{"H": {"Stop": [{"type": "", "command": "x"}]}}'),
+            (
+                "empty-matcher",
+                '{"H": {"PreToolUse": [{"matcher": "", "hooks": [{"command": "x"}]}]}}',
+            ),
+            ("empty-hook-name", '{"": {"Stop": [{"command": "x"}]}}'),
             # ``matcher`` is never compiled at load time.
             ("wildcard-star", '{"a": {"PreToolUse": [{"matcher": "*", "hooks": []}]}}'),
             ("wildcard-empty", '{"a": {"PreToolUse": [{"matcher": "", "hooks": []}]}}'),
@@ -134,27 +148,38 @@ class TestAcceptedFiles:
         ]
 
 
-CLAUDE_MATCHER = (
-    '{"hooks": {"PreToolUse": [{"matcher": "Bash",'
-    ' "hooks": [{"type": "command", "command": "make lint"}]}]}}'
-)
-
-
 class TestForeignShape:
     """``.agents/`` is a shared directory name, so foreign files land here.
 
-    Both shapes are real: 10 of 74 ``.agents/hooks.json`` files sampled on
-    GitHub carry them, at least four written for another tool entirely.
+    Real: 10 of 74 ``.agents/hooks.json`` files sampled on GitHub carry one
+    of these shapes, at least four written for another tool entirely (see
+    the corpus survey in the maintenance reference).
     """
 
-    CURSOR = '{"version": 1, "hooks": {"Stop": [{"command": "./scripts/audit.sh"}]}}'
+    # A lone ``hooks`` object naming this host's events — the Claude shape.
     CLAUDE = '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "make lint"}]}]}}'
+    # ``hooks`` beside a numeric ``version`` — the Cursor shape. Measured:
+    # ``version`` fails the whole document.
+    CURSOR = '{"version": 1, "hooks": {"Stop": [{"command": "./scripts/audit.sh"}]}}'
+    # ``hooks`` beside prose metadata, naming another host's events. This is
+    # why branch (b) asks nothing about event names.
+    GAMESTUDIO = (
+        '{"description": "Repo automation hooks",'
+        ' "hooks": {"onFileWrite": [{"run": "npm run lint"}],'
+        ' "onSessionEnd": [{"run": "npm test"}]}}'
+    )
+    # A ``$schema`` sibling — the agy-os shape.
+    AGY_OS = (
+        '{"$schema": "https://example.invalid/hooks.schema.json",'
+        ' "hooks": {"PreToolUse": [{"matcher": "Bash",'
+        ' "hooks": [{"type": "command", "command": "make lint"}]}]}}'
+    )
 
-    @pytest.mark.parametrize("name", ("CURSOR", "CLAUDE"))
+    @pytest.mark.parametrize("name", ("CLAUDE", "CURSOR", "GAMESTUDIO", "AGY_OS"))
     def test_one_finding_names_the_shape(self, tmp_path: Path, name: str) -> None:
         violations = check(tmp_path, f"foreign-{name.lower()}", getattr(self, name))
         assert len(violations) == 1
-        assert "Claude/Codex/Cursor nested shape" in violations[0].message
+        assert "another host's nested shape" in violations[0].message
 
     def test_it_is_a_warning_not_an_error(self, tmp_path: Path) -> None:
         """An ERROR would fail CI for a repository that never configured
@@ -162,38 +187,57 @@ class TestForeignShape:
         found = only(check(tmp_path, "foreign-severity", self.CLAUDE), "nested shape")
         assert found.severity == Severity.WARNING
 
-    def test_a_version_key_says_the_file_loads_nothing(self, tmp_path: Path) -> None:
-        """Measured: ``version`` is not a hook name either, and its value
-        fails the whole document."""
-        found = only(check(tmp_path, "foreign-version", self.CURSOR), "nested shape")
-        assert "loads no hook from this file" in found.message
-
-    def test_without_version_it_says_what_the_file_declares(self, tmp_path: Path) -> None:
-        """Measured: it loads, as one hook *named* ``hooks``."""
-        found = only(check(tmp_path, "foreign-noversion", self.CLAUDE), "nested shape")
-        assert "one hook called 'hooks'" in found.message
+    def test_the_severity_is_fixed(self, tmp_path: Path) -> None:
+        """A configured ``severity:`` does not reach this one finding."""
+        found = only(
+            check(tmp_path, "foreign-configured", self.CLAUDE, {"severity": "error"}),
+            "nested shape",
+        )
+        assert found.severity == Severity.WARNING
 
     @pytest.mark.parametrize(
         "name,body",
         [
-            # A hook genuinely called ``hooks`` whose value is a hook spec.
+            # A hook genuinely called ``hooks``, alone: its entries carry
+            # their own command, so nothing here is inert.
             ("real-hook-named-hooks", '{"hooks": {"Stop": [{"command": "make lint"}]}}'),
-            # A third top-level key means this is a map of named hooks.
+            # A sibling with an object value means this is a map of named
+            # hooks that happens to contain one called ``hooks``.
             (
                 "sibling-hook",
                 '{"hooks": {"Stop": [{"hooks": []}]}, "audit": {"Stop": [{"command": "x"}]}}',
             ),
-            # ``hooks`` holding something other than event names.
+            # ``hooks`` alone holding names this host does not dispatch is
+            # an ordinary hook whose events are simply unknown.
             ("not-events", '{"hooks": {"berth": [{"command": "x"}]}}'),
-            # Under ``PreToolUse`` the two hosts' group shapes coincide, so
-            # this file really does run and reporting it would be wrong.
-            ("claude-matcher", CLAUDE_MATCHER),
+            # Under ``PreToolUse`` with no metadata sibling the two hosts'
+            # group shapes coincide, so this file really does dispatch.
+            (
+                "claude-matcher",
+                '{"hooks": {"PreToolUse": [{"matcher": "Bash",'
+                ' "hooks": [{"type": "command", "command": "make lint"}]}]}}',
+            ),
         ],
     )
     def test_an_ordinary_file_is_not_mistaken_for_one(
         self, tmp_path: Path, name: str, body: str
     ) -> None:
         violations = check(tmp_path, name, body)
+        assert not [v for v in violations if "nested shape" in v.message]
+
+    def test_the_schema_sibling_near_miss(self, tmp_path: Path) -> None:
+        """A genuine Antigravity file that also carries a ``$schema``.
+
+        Branch (b) fires only when *every* sibling of ``hooks`` is a
+        non-object. Here ``audit`` is an object, so this is a map of named
+        hooks — one of them called ``hooks`` — and the ordinary walk runs.
+        """
+        body = (
+            '{"$schema": "https://example.invalid/x.json",'
+            ' "hooks": {"Stop": [{"command": "make lint"}]},'
+            ' "audit": {"Stop": [{"command": "make test"}]}}'
+        )
+        violations = check(tmp_path, "schema-near-miss", body)
         assert not [v for v in violations if "nested shape" in v.message]
 
 
@@ -211,12 +255,27 @@ class TestFileScopedDefects:
                 '{"a": {"Stop": [{"command": "x", "timeout": 1e400}]}}',
                 "not valid JSON",
             ),
-            ("file-enabled", '{"enabled": false}', "is read as a hook name, not a switch"),
+            # ``timeout`` is an int32, and ``""`` is not its zero value:
+            # measured, ``cannot unmarshal string into … .timeout``.
+            (
+                "empty-timeout",
+                '{"a": {"Stop": [{"command": "x", "timeout": ""}]}}',
+                "'timeout' must be a whole number of seconds",
+            ),
+            # A top-level key an author writes meaning file-level metadata
+            # gets its own message; every top-level key is a hook *name*.
+            ("file-enabled", '{"enabled": false}', "'enabled' belongs inside a named hook"),
             (
                 "file-enabled-string",
                 '{"enabled": "off"}',
-                "is read as a hook name, not a switch",
+                "'enabled' belongs inside a named hook",
             ),
+            (
+                "file-schema",
+                '{"$schema": "https://example.invalid/x.json"}',
+                "Antigravity publishes no hooks schema",
+            ),
+            ("file-version", '{"version": 1}', "this document carries no version field"),
             ("hook-not-object", '{"audit": "make lint"}', "a named hook must be a JSON object"),
             (
                 "enabled-not-bool",

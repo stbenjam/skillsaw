@@ -1,6 +1,6 @@
 ---
 name: berth-audit
-description: Berth audit
+description: Use when a berth allocation change needs auditing before the timetable is published
 ---
 
 # Berth audit

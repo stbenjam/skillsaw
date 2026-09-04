@@ -408,8 +408,18 @@ def _add_project_hooks(
     (``.grok/hooks/*.json``) rather than one well-known name, and its loop
     runs last, so a Grok file symlinked to another host's is that host's
     block.
+
+    Antigravity is the exception, in both directions. Its document is a map
+    of *named* hooks, not the ``{hooks: {event: [...]}}`` shape the other
+    four share, so the two readings genuinely differ: the same file read as
+    Cursor's renders no events at all, and every command in it would fall
+    out of ``hooks-dangerous`` and ``hooks-prohibited``. Sharing that file
+    is what a repository does when it means the content for both hosts, so
+    both blocks are built and each host's reading is scanned. The duplicate
+    findings the dedup exists to prevent do not arise: one of the two
+    readings renders nothing for any given document.
     """
-    if _attached_as_hooks(state, path):
+    if block_cls is not AntigravityHooksBlock and _attached_as_hooks(state, path):
         return
     state.add_parser_block(root, path, block_cls)
 
@@ -650,8 +660,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
           matching on the directory *name* alone would silently discard
           vendored content the linter reports.
 
-        All of it reads from ``_EDITOR_GLOBS`` and ``agent_tool_dirs``, so
-        the two halves cannot drift apart.
+        All of it reads from ``_EDITOR_GLOBS`` and from the same eligible
+        set the attach loops use — ``agent_tool_dirs`` for most editors,
+        and ``antigravity_workspace_roots()`` for the four customization
+        roots, whose two non-dot names attach only where the root declares
+        one of Antigravity's own files. One source per editor, so the two
+        halves cannot drift apart.
         """
 
         def _lexically_claimed(candidate: Path) -> bool:
@@ -1033,7 +1047,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # belongs to plugin discovery, so nothing here descends into it. Which
     # roots qualify is ``antigravity_workspace_roots``: the two non-dot
     # names are also ordinary source-package names, so they are attached
-    # only where the root carries a marker of its own.
+    # only where the root declares one of Antigravity's own files.
     for agents_dir in context.antigravity_workspace_roots():
         _add_project_hooks(
             state, root, agents_dir / antigravity.HOOKS_FILENAME, AntigravityHooksBlock

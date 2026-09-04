@@ -71,6 +71,10 @@ rules:
   decoder that discards them.
 - **A repeated key.** The same decoder takes the last value: an `entries`
   key or a `path` written twice loads the second one's directory.
+- **A `null` value, and an empty string in a string field.** Go decodes
+  both as the field's zero value, so each reads as the key being absent:
+  `entries: null` declares no entry, and a null or empty `path` names no
+  directory. Neither is a parse failure.
 
 ## Examples
 

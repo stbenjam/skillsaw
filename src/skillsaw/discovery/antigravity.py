@@ -65,9 +65,13 @@ def customization_root_declares_a_file(base: Path, *, is_excluded: Callable[[Pat
 
     Deliberately not ``rules/`` or ``agents/``: those are the prose the
     tree attaches from a root, so a gate that admitted them would answer
-    its own question. That is why the tree builder reads this predicate
-    for ``_agents/`` and ``_agent/`` while :func:`customization_root_is_marked`,
-    which detection reads, admits both.
+    its own question.
+
+    This is the predicate three of the four roots use. The tree builder
+    reads it for ``_agents/`` and ``_agent/`` before attaching their prose,
+    and detection reads it for those two *and* for the shared ``.agents/``.
+    Only ``.agent/`` — a name no other tool reads — takes the wider
+    :func:`customization_root_is_marked`.
     """
     for name in (HOOKS_FILENAME, MCP_CONFIG_FILENAME, *REGISTRY_FILENAMES):
         path = base / name
@@ -110,8 +114,10 @@ def customization_root_is_marked(base: Path, *, is_excluded: Callable[[Path], bo
     What remains is :func:`customization_root_declares_a_file`, plus a
     populated ``rules/`` or ``agents/``.
 
-    Read by ``tool_types``, which unions the answer over every root to
-    decide the repository type.
+    Read by ``tool_types`` for ``.agent/`` alone. That root is the
+    documented Windsurf-lineage back-compat path and nothing else reads it,
+    so its prose is evidence; under the other three a populated ``rules/``
+    is not, and they take the narrower predicate.
     """
     if customization_root_declares_a_file(base, is_excluded=is_excluded):
         return True
@@ -137,8 +143,13 @@ def antigravity_manifest_is_contained(plugin_dir: Path) -> bool:
     Existence, not parseability: a manifest that does not parse means
     ``agy`` skips the directory, and reporting that is
     ``antigravity-plugin-json-valid``'s job, which needs the node to exist.
-    Containment is checked the way discovery checks it, so a ``plugin.json``
-    symlinked out of the plugin is not this plugin's manifest.
+
+    Containment here is against *plugin_dir*, so a ``plugin.json``
+    symlinked out of the plugin is not this plugin's manifest. That is
+    narrower than repository containment and does not replace it:
+    **every caller must have contained plugin_dir in the repository
+    first**, which ``discover_antigravity_plugins`` and
+    ``registry_plugin_roots`` both do before calling in.
     """
     if not is_antigravity_plugin_location(plugin_dir):
         return False

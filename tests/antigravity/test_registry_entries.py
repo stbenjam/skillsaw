@@ -187,6 +187,21 @@ class TestSkippedEntries:
         (repo / ".agents" / "plugins.json").write_text(body, encoding="utf-8")
         assert RepositoryContext(repo)._antigravity_claim_set() == set()
 
+    @pytest.mark.parametrize(
+        "name,body",
+        [
+            ("entries-element-not-an-object", '{"entries": ["tools/shared/plugins"]}'),
+            ("inherits-element-not-an-object", '{"inherits": ["tools/shared/plugins.json"]}'),
+            ("empty-path", '{"entries": [{"path": ""}]}'),
+            ("empty-inherits-path", '{"inherits": [{"path": ""}]}'),
+        ],
+    )
+    def test_a_malformed_element_names_nothing(self, repo: Path, name: str, body: str) -> None:
+        """The resolver reads what it can and claims nothing from the rest;
+        the registry rule owns whether the entry is well formed."""
+        (repo / ".agents" / "plugins.json").write_text(body, encoding="utf-8")
+        assert RepositoryContext(repo)._antigravity_claim_set() == set()
+
     def test_an_excluded_path_is_skipped(self, repo: Path) -> None:
         (repo / ".agents" / "plugins.json").write_text(
             json.dumps({"entries": [{"path": "vendor/ignored/plugins"}]}), encoding="utf-8"

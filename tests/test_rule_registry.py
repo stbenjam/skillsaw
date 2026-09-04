@@ -435,6 +435,45 @@ def test_config_reads_are_declared_in_config_schema():
     assert problems == [], "\n".join(problems)
 
 
+def _mcp_config_role_subclasses():
+    """Every ``McpConfigRole`` subclass, with the block modules imported."""
+    import skillsaw.lint_tree  # noqa: F401  (imports every block module)
+    from skillsaw.blocks import McpConfigRole
+
+    def walk(cls):
+        for sub in cls.__subclasses__():
+            yield sub
+            yield from walk(sub)
+
+    return list(walk(McpConfigRole))
+
+
+def test_every_surface_rule_is_a_declared_dependency_of_mcp_valid_json():
+    """``mcp-valid-json`` gates on *every* ``surface_rule``, deferral or not.
+
+    A block whose rule is not in ``surface_dependencies`` reads as gated
+    off, and the shape walk — plus, for a block with no deferral, the whole
+    block — is skipped silently. Same for a ``syntax_error_rule``: the
+    parse finding is handed back only when that rule is known to be off,
+    and an undeclared one always looks off.
+    """
+    from skillsaw.rules.builtin.mcp.valid_json import McpValidJsonRule
+
+    subs = _mcp_config_role_subclasses()
+    declared = set(McpValidJsonRule.surface_dependencies)
+    surfaces = {sub.surface_rule for sub in subs if sub.surface_rule is not None}
+    owners = {
+        sub.shape_deferral.syntax_error_rule
+        for sub in subs
+        if sub.shape_deferral is not None and sub.shape_deferral.syntax_error_rule is not None
+    }
+
+    assert surfaces, "no block declares a surface_rule — the walk found nothing"
+    assert owners, "no block declares a syntax_error_rule — the walk found nothing"
+    assert sorted(surfaces - declared) == []
+    assert sorted(owners - declared) == []
+
+
 def test_every_surface_rule_is_a_declared_dependency_of_mcp_prohibited():
     """``mcp-prohibited`` reads ``block.surface_rule`` declaratively.
 
@@ -445,23 +484,15 @@ def test_every_surface_rule_is_a_declared_dependency_of_mcp_prohibited():
     its dialect-neutral half survives being gated off — so only the others
     have to be listed.
     """
-    from skillsaw.blocks import McpConfigRole
     from skillsaw.rules.builtin.mcp.prohibited import McpProhibitedRule
 
-    def subclasses(cls):
-        for sub in cls.__subclasses__():
-            yield sub
-            yield from subclasses(sub)
-
-    declared = set(McpProhibitedRule.surface_dependencies)
-    missing = sorted(
-        {
-            sub.surface_rule
-            for sub in subclasses(McpConfigRole)
-            if sub.surface_rule is not None and sub.shape_deferral is None
-        }
-        - declared
-    )
+    gated = {
+        sub.surface_rule
+        for sub in _mcp_config_role_subclasses()
+        if sub.surface_rule is not None and sub.shape_deferral is None
+    }
+    assert gated, "no block reaches this gate — the walk found nothing"
+    missing = sorted(gated - set(McpProhibitedRule.surface_dependencies))
     assert missing == [], (
         "these blocks name a surface_rule with no shape_deferral, so mcp-prohibited "
         f"gates on it, but it is not in surface_dependencies: {missing}"

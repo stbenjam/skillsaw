@@ -31,6 +31,10 @@ class TestAcceptedRegistries:
             # Unknown keys are ignored by ``encoding/json``, and unverified
             # keys are not this rule's business.
             ("unknown-key", '{"entries": [], "flavour": "vanilla"}'),
+            # Go decodes ``null`` as the zero value, so each of these reads
+            # as the key being absent rather than as a malformed registry.
+            ("null-entries", '{"entries": null}'),
+            ("null-inherits", '{"entries": [], "inherits": null}'),
         ],
     )
     def test_no_findings(self, tmp_path: Path, name: str, body: str) -> None:
@@ -76,6 +80,10 @@ class TestEntryShape:
             ("bare-string", '{"entries": ["internal/schedule/agents"]}'),
             ("plural-key", '{"entries": [{"paths": ["a"]}]}'),
             ("number-path", '{"entries": [{"path": 5}]}'),
+            # ``null`` is the zero value, so a null ``path`` reads exactly
+            # as an absent one — and an entry naming no directory loads
+            # nothing, which is the defect this reports.
+            ("null-path", '{"entries": [{"path": null}]}'),
         ),
     )
     def test_entry_must_carry_a_string_path(self, tmp_path: Path, name: str, body: str) -> None:

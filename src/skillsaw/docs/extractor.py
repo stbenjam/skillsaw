@@ -39,6 +39,7 @@ from skillsaw.blocks import (
     AgentBlock,
     CommandBlock,
     DevinSkillBlock,
+    HookHandler,
     HooksBlock,
     McpBlock,
     PluginRuleBlock,
@@ -965,7 +966,7 @@ def _extract_hooks(blocks: List[HooksBlock]) -> List[HookDoc]:
                             for k, v in h.__dict__.items()
                             if v is not None
                             and k != "type"
-                            and k not in ("command_variants", "source_line", "type_line")
+                            and k not in HookHandler.INTERNAL_FIELDS
                         }
                         | {"type": h.type}
                         for h in cfg.handlers

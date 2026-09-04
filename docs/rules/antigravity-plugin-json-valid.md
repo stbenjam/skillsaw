@@ -69,6 +69,12 @@ the plugin still loads, so none of them is reported.
   follows the loader rather than the schema.
 - **`disabled: true`.** It is the documented way to keep a plugin in the
   tree without loading it.
+- **A `null` value, and an empty string in a string field.** protojson
+  decodes both as the field's default, so each reads as the key being
+  absent: `{"name": null}`, `{"name": ""}` and no `name` at all give the
+  same finding and the same directory-name fallback. `disabled` is the
+  exception — it is a boolean, and `""` there is `invalid value for bool
+  field disabled`, so the directory is not a plugin.
 
 ## Examples
 

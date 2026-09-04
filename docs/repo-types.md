@@ -520,8 +520,9 @@ documented Windsurf-lineage path no other tool reads, a populated `rules/`
 or `agents/` is evidence too.
 
 Attachment is wider than detection here, deliberately: prose under any dot
-root is linted whether or not the repository is typed `antigravity`, because
-content is content. The two non-dot roots are the exception in the other
+root is linted whether or not the repository is typed `antigravity`, since a
+rules file is agent context whichever tool ends up reading it. The two
+non-dot roots are the exception in the other
 direction — they read the same "declares one of its files" test detection
 uses, so nothing attaches from a source package that merely shares the
 name.
@@ -678,7 +679,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Windsurf** | `devin` | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
 | **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `kiro` | `.kiro/steering/*.md` |
-| **Google Antigravity** | `antigravity` | `hooks.json`, `mcp_config.json`, `{agents,plugins,skills,workflows}.json` or a `plugins/<name>/plugin.json`, inside `.agents/`, `.agent/`, `_agents/` or `_agent/`; under `.agent/` a populated `rules/` or `agents/` counts too — see [Google Antigravity](#google-antigravity) |
+| **Google Antigravity** | `antigravity` | Inside `.agents/`, `.agent/`, `_agents/` or `_agent/`: `hooks.json`, `mcp_config.json`, the registries `{agents,plugins,skills,workflows}.json`, prose in `rules/**/*.md` and `agents/*.md`, and skills under `skills/`. A `plugins.json` or `agents.json` registry's `entries` are followed, so a plugin or agent directory it names elsewhere in the repository is linted too. Detection is narrower — see [Google Antigravity](#google-antigravity) |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
 | **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
 | **OpenAI Codex** | `codex-project` | `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |

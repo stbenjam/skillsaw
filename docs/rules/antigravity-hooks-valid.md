@@ -59,6 +59,18 @@ inventoried against an allowlist with
 
 **Warnings** — the file loads and something in it never runs:
 
+- A file written in **another host's nested shape**: events under a
+  top-level `hooks` object, either alone or beside metadata such as
+  `version`, `description` or `$schema`. `.agents/` is a directory name
+  four ecosystems share, so a Claude, Codex or Cursor hooks file lands here
+  often. One finding replaces the pile the ordinary walk would produce.
+  Its severity is **fixed at warning** — a configured `severity:` does not
+  reach it — because the shape says the file targets another tool, and an
+  ERROR would fail CI for a repository that never configured Antigravity.
+  A `hooks` object holding only `PreToolUse` with no metadata sibling is
+  excluded: the two hosts' group shapes coincide there and the file really
+  does dispatch.
+
 - An event name Antigravity does not dispatch. Known names match
   case-insensitively, so `pretooluse` is fine; `SessionEnd` is not an event
   and its hooks never fire.
@@ -89,6 +101,12 @@ loaded, so nothing has been ignored yet.
   which takes the last value. A hook name, an event key or a handler key
   written twice loads with the second one in force, so the file is
   confusing rather than broken.
+- **A `null` value, and an empty string in a string field.** Go decodes
+  both as the field's zero value, so each reads as the key being absent and
+  the file loads: a null event or entry, a hook named `""`, and an empty
+  `type`, `command`, `prompt`, `model` or `matcher` are all measured to
+  load. `timeout` is the exception — it is an int32, and `""` there fails
+  the whole document.
 
 ## Event names
 
@@ -163,6 +181,9 @@ that carries no `command`:
 - Match against Antigravity's own tool names — `run_command`, `view_file`,
   `write_to_file`, `replace_file_content`, `browser_*` — and use `""` or
   `"*"` for every tool.
+- If the file was written for Claude, Codex or Cursor, move it to that
+  host's directory. Antigravity reads a map of *named* hooks —
+  `{"audit": {"Stop": [...]}}` — not events nested under `hooks`.
 - Move an `enabled` key inside the named hook it is meant to switch off.
 - Drop a key the parser discards, or move its value into the `command`
   itself.
