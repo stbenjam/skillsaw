@@ -493,16 +493,27 @@ detects each.
 
 ## OpenAI Codex project configuration
 
-Repositories with a `.codex/hooks.json`, the project layer Codex reads from
+Repositories with a `.codex/hooks.json` or a `.codex/config.toml`, the
+project layer Codex reads from
 the directory a session starts in — the repository root, or a package inside
 it. This is distinct from a Codex plugin (`.codex-plugin/plugin.json`) and
 from a Codex marketplace: it configures the checkout rather than packaging
 anything, so it is never treated as a plugin claim and never exempts the
 repository from another ecosystem's rules.
 
-[`codex-hooks-valid`](rules/codex-hooks-valid.md) validates the file, and
+Codex loads lifecycle hooks from both files and merges them, so the
+`[hooks]` tables of a `config.toml` get the same checks `hooks.json` gets —
+the rest of that file is Codex settings skillsaw reads nothing from, and a
+config declaring no hooks is attached to nothing. Codex reads the layer of
+every directory between the repository root and the one a session starts in,
+so a package's own `.codex/` is live configuration and every one in the
+checkout is linted.
+[`codex-hooks-valid`](rules/codex-hooks-valid.md) validates both files —
+a shape defect in `config.toml` stops Codex starting at all, where the same
+defect in `hooks.json` costs only that file's hooks, and its message says so
+— and reports a layer that carries hooks in each, while
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
-[`hooks-prohibited`](rules/hooks-prohibited.md) scan the commands in it.
+[`hooks-prohibited`](rules/hooks-prohibited.md) scan the commands in them.
 `.codex/plugins/` is an install location rather than project configuration —
 see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
 
@@ -567,7 +578,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Kiro** | `kiro` | `.kiro/steering/*.md` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
 | **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
-| **OpenAI Codex** | `codex-project` | `.codex/hooks.json` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
+| **OpenAI Codex** | `codex-project` | `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
 | **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
 
 `.agents/memory/` is the one row with no type of its own: the convention

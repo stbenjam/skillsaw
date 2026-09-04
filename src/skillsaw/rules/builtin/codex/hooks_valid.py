@@ -9,12 +9,13 @@ Severity carries the blast radius — what each defect costs, and how to fix
 it, is on the rule's documentation page.
 
 Only :class:`CodexHooksBlock` is iterated: a repository's
-``.codex/hooks.json``, a Codex-only plugin's ``hooks/hooks.json``, files that
+``.codex/hooks.json``, the ``[hooks]`` tables of its ``.codex/config.toml``,
+a Codex-only plugin's ``hooks/hooks.json``, files that
 plugin's manifest names in ``hooks``, and hooks written inline in a
 ``.codex-plugin/plugin.json``. Those blocks exist only where Codex content
 does, and the rule is gated to match: ``enabled: auto`` fires on a Codex
 plugin or marketplace repository, or on ``RepositoryType.CODEX_PROJECT`` —
-the type a committed ``.codex/hooks.json`` raises. It declares no
+the type either committed project-layer file raises. It declares no
 ``provenance_scope``: the node type already scopes it, and declaring one
 would make a forced ``--type codex-plugin`` with no filesystem claim skip
 the very files the rule exists to report.
@@ -27,6 +28,7 @@ from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.codex import (
     CODEX_HOOK_EVENTS,
+    CODEX_HOOKS_FILENAME,
     CODEX_HOOK_HANDLER_TYPES,
     CODEX_HOOK_MATCHER_EVENTS,
     CODEX_HOOK_NO_MCP_TOOL_EVENTS,
@@ -36,8 +38,9 @@ from skillsaw.formats.codex import (
     CODEX_HOOK_SHORT_TIMEOUT_MAX_SECONDS,
     CODEX_HOOK_SKIPPED_HANDLER_TYPES,
 )
+from skillsaw.paths import safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.content_analysis import CodexHooksBlock
+from skillsaw.rules.builtin.content_analysis import CodexConfigHooksBlock, CodexHooksBlock
 from skillsaw.utils import is_finite_number
 
 #: Every handler type this rule can say something useful about: the two
@@ -48,6 +51,14 @@ _KNOWN_HANDLER_TYPES = CODEX_HOOK_HANDLER_TYPES | CODEX_HOOK_SKIPPED_HANDLER_TYP
 #: ``timeout`` needs a finiteness check rather than an ``isinstance``, so it
 #: is handled on its own path instead of through the generic type table.
 _TIMEOUT = "timeout"
+
+#: The handler discriminator. In neither field table — it selects which table
+#: applies — so the unknown-field scan has to skip it by name.
+_TYPE = "type"
+
+#: What each syntax calls a key/value mapping. A ``config.toml`` author never
+#: wrote a JSON object and has no way to write one.
+_MAPPING_NOUN = {"TOML": "table"}
 
 
 def _fields_by_handler_type() -> Dict[str, frozenset]:
@@ -84,8 +95,8 @@ class CodexHooksValidRule(Rule):
 
     # ``enabled: auto`` on the base default, gated on the two places Codex
     # hooks live: a Codex plugin or marketplace repository, and any checkout
-    # that commits a ``.codex/hooks.json``. Project policy forbids a new rule
-    # defaulting to ``True``.
+    # that commits a ``.codex/`` project layer. Project policy forbids a new
+    # rule defaulting to ``True``.
     repo_types = frozenset(
         {
             RepositoryType.CODEX_PLUGIN,
@@ -107,6 +118,14 @@ class CodexHooksValidRule(Rule):
             "description": (
                 "Additional hook event names to accept, for events newer than "
                 "this skillsaw release"
+            ),
+        },
+        "allow-both-files": {
+            "type": "bool",
+            "default": False,
+            "description": (
+                "Accept a .codex/ directory that declares hooks in both "
+                "hooks.json and config.toml"
             ),
         },
     }
@@ -138,11 +157,24 @@ class CodexHooksValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         known_events = self._known_events()
+        allow_both = bool(self.setting("allow-both-files"))
 
-        for block in context.lint_tree.find(CodexHooksBlock):
+        blocks = context.lint_tree.find(CodexHooksBlock)
+        # The hooks files already in the tree, which is what the both-files
+        # finding asks about. ``hooks.json`` is attached before any
+        # ``config.toml``, so by now every one of them is here.
+        hooks_files = {safe_resolve(b.path) for b in blocks if b.path.name == CODEX_HOOKS_FILENAME}
+
+        for block in blocks:
+            if isinstance(block, CodexConfigHooksBlock) and not allow_both:
+                violations.extend(self._check_both_files(block, hooks_files))
+
             if block.parse_error:
                 violations.append(
-                    self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)
+                    self.violation(
+                        f"Invalid {block.syntax_name}: {safe_display(block.parse_error)}",
+                        file_path=block.path,
+                    )
                 )
                 continue
 
@@ -179,15 +211,43 @@ class CodexHooksValidRule(Rule):
 
             raw_hooks = data["hooks"]
             if not isinstance(raw_hooks, dict):
-                violations.append(
-                    self.violation("'hooks' must be a JSON object", file_path=block.path)
-                )
+                noun = _MAPPING_NOUN.get(block.syntax_name, "JSON object")
+                violations.append(self.violation(f"'hooks' must be a {noun}", file_path=block.path))
                 continue
 
             for event, entries in raw_hooks.items():
                 violations.extend(self._check_event(event, entries, known_events, block))
 
         return violations
+
+    def _check_both_files(
+        self, block: CodexConfigHooksBlock, hooks_files: Set[Any]
+    ) -> List[RuleViolation]:
+        """One ``.codex/`` layer declaring hooks in both of its files.
+
+        Benign, and INFO for that reason: measured against codex-cli 0.153.0,
+        both files load, every handler runs once, and Codex prints one
+        startup warning naming both paths. What it costs is surprise — a
+        reader editing ``hooks.json`` does not see the ``config.toml`` copy
+        firing too. ``allow-both-files`` silences it for a layer that splits
+        them deliberately; the rule's page carries the advice about which
+        file to keep.
+
+        Per layer, not per repository: a monorepo may keep one directory this
+        way and others not.
+
+        Asked of the tree rather than the filesystem: a ``hooks.json`` the
+        project excluded is one it chose not to lint.
+        """
+        if safe_resolve(block.path.parent / CODEX_HOOKS_FILENAME) not in hooks_files:
+            return []
+        return [
+            self.violation(
+                f"Hooks are also declared in {CODEX_HOOKS_FILENAME}; Codex merges both",
+                file_path=block.path,
+                severity=Severity.INFO,
+            )
+        ]
 
     def _check_event(
         self, event: Any, entries: Any, known_events: Set[str], block: CodexHooksBlock
@@ -358,12 +418,39 @@ class CodexHooksValidRule(Rule):
                 )
             elif not _matches_type(handler[field], str):
                 violations.append(
-                    self.violation(f"Hook {where} '{field}' must be a str", file_path=block.path)
+                    self.violation(
+                        f"Hook {where} '{field}' must be a str",
+                        file_path=block.path,
+                    )
                 )
 
+        # Whether anything at all is known about this type's fields. Empty
+        # for a handler type added to the set without a table beside it, and
+        # then every key on it would read as unknown — see the required-field
+        # note above.
+        declared = set(CODEX_HOOK_REQUIRED_FIELDS.get(handler_type, ())) | set(
+            CODEX_HOOK_OPTIONAL_FIELDS.get(handler_type, {})
+        )
+
         for field in handler:
+            if field == _TYPE:
+                continue
             owners = _FIELD_OWNERS.get(field)
-            if owners is not None and handler_type not in owners:
+            if owners is None:
+                if not declared:
+                    continue
+                # A key no handler type takes. Codex drops it without a word
+                # — measured under ``--strict-config`` too, which never
+                # descends into ``[hooks]`` — so nothing but a linter will
+                # ever say that a misspelled ``commandWindows`` does nothing.
+                violations.append(
+                    self.violation(
+                        f"Hook {where} has unknown field '{safe_display(field)}'",
+                        file_path=block.path,
+                        severity=Severity.WARNING,
+                    )
+                )
+            elif handler_type not in owners:
                 violations.append(
                     self.violation(
                         f"Hook {where} '{field}' is not a '{handler_type}' field",
@@ -393,14 +480,21 @@ class CodexHooksValidRule(Rule):
         ``bool`` is an ``int`` subclass and ``timeout: true`` is not a
         duration; a huge integer literal is finite and stays accepted,
         without the float conversion that would kill the rule.
+
+        A ``config.toml`` is stricter, and the block says so: Codex
+        deserializes the field as a ``u64`` there, measured, so a float is
+        not a duration it can read. The JSON path is unmeasured and keeps
+        the number it has always accepted.
         """
         if _TIMEOUT not in handler:
             return []
         timeout = handler[_TIMEOUT]
-        if not is_finite_number(timeout):
+        whole_only = block.timeout_must_be_integer
+        if not is_finite_number(timeout) or (whole_only and isinstance(timeout, float)):
+            wanted = "a whole number of seconds" if whole_only else "a number"
             return [
                 self.violation(
-                    f"Hook {where} 'timeout' must be a number, got {type(timeout).__name__}",
+                    f"Hook {where} 'timeout' must be {wanted}, " f"got {type(timeout).__name__}",
                     file_path=block.path,
                 )
             ]

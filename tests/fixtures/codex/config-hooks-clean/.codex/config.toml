@@ -1,0 +1,19 @@
+model = "gpt-5-codex"
+approval_policy = "on-request"
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "./scripts/warm-fixtures.sh"
+timeout = 20
+statusMessage = "Warming reconciliation fixtures"
+
+[[hooks.PreToolUse]]
+matcher = "shell"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "./scripts/audit-shell.sh"
+commandWindows = "powershell -File .\\scripts\\audit-shell.ps1"
+timeout = 15

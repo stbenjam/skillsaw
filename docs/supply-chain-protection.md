@@ -159,6 +159,7 @@ be defined:
 | Plugin `hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | Plugin `.mcp.json` | mcp-prohibited, mcp-valid-json |
 | `.codex/hooks.json` (repo root or any package) | hooks-dangerous, hooks-prohibited |
+| `.codex/config.toml` `[hooks]` (repo root or any package) | hooks-dangerous, hooks-prohibited, codex-hooks-valid |
 | Codex manifest-declared or inline `hooks` | hooks-dangerous, hooks-prohibited |
 | Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
 | `.muse/hooks.json` | hooks-dangerous, hooks-prohibited |

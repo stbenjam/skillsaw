@@ -1,0 +1,10 @@
+model = "gpt-5-codex"
+
+# PostToolUseFailure is not one of the twelve events Codex dispatches, so
+# this entry loads and never fires.
+[[hooks.PostToolUseFailure]]
+matcher = "shell"
+
+[[hooks.PostToolUseFailure.hooks]]
+type = "command"
+command = "./scripts/report-failure.sh"

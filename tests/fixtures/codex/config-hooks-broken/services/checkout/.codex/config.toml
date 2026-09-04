@@ -1,0 +1,6 @@
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "./scripts/warm-cache.sh"
+timeout = 10

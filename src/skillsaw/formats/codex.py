@@ -93,11 +93,15 @@ def inline_documents(declared: Any, key: str) -> List[Dict[str, Any]]:
 # the readers below need no repository state at all.
 CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
 
-#: The project directory Codex reads, and the one committed file skillsaw
+#: The project directory Codex reads, and the two committed files skillsaw
 #: lints inside it. Named here so discovery and the lint tree spell the
 #: location once, the way the Muse leg reads ``muse.TOOL_DIR_NAME``.
 CODEX_DIR_NAME = ".codex"
 CODEX_HOOKS_FILENAME = "hooks.json"
+CODEX_CONFIG_FILENAME = "config.toml"
+
+#: The table a ``config.toml`` writes its hooks under.
+CODEX_CONFIG_HOOKS_TABLE = "hooks"
 
 # -- Lifecycle hooks ----------------------------------------------------------
 #
@@ -146,6 +150,12 @@ CODEX_HOOK_REQUIRED_FIELDS: Mapping[str, Tuple[str, ...]] = {
 #: command hook may return before Codex spills it to disk.
 CODEX_HOOK_OPTIONAL_FIELDS: Mapping[str, Mapping[str, Any]] = {
     "command": {
+        # The binary's serde field list for the handler enum reads
+        # ``command commandWindows timeout async statusMessage
+        # additionalContextLimit server input prompt agent`` and carries no
+        # ``command_windows`` alias — measured against codex-cli 0.153.0. The
+        # docs prose spells it ``command_windows``; skillsaw follows the
+        # binary, in the TOML file as in the JSON one.
         "commandWindows": str,
         "timeout": (int, float),
         "statusMessage": str,
@@ -181,6 +191,32 @@ CODEX_HOOK_NO_MCP_TOOL_EVENTS = frozenset({"SessionEnd"})
 #: Events whose hooks default to a one-second timeout and cap at three.
 CODEX_HOOK_SHORT_TIMEOUT_EVENTS = frozenset({"SessionEnd", "Interrupt"})
 CODEX_HOOK_SHORT_TIMEOUT_MAX_SECONDS = 3
+
+
+def codex_config_hooks(data: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """A parsed ``.codex/config.toml``'s ``[hooks]`` tables, in hooks.json shape.
+
+    ``None`` when the config declares no hooks — the overwhelming majority
+    of them — so the caller attaches nothing.
+
+    The whole TOML-to-hooks mapping, in one function: a correction to the
+    dialect is an edit here and nowhere else. It is a pass-through, measured
+    against codex-cli 0.153.0: the TOML table ``hooks`` *is* the JSON
+    ``"hooks"`` object one level up. ``[[hooks.<Event>]]`` parses to the list
+    of ``{matcher?, hooks: [...]}`` groups, ``[[hooks.<Event>.hooks]]`` to
+    the handler list inside each, and every key keeps the spelling the JSON
+    file uses — including ``commandWindows``, which is what the binary
+    deserializes whatever the docs prose says. So the vocabulary in this
+    module reads both files.
+
+    Nothing is dropped or coerced: a ``hooks`` value that is not a table,
+    and an event whose value is not a sequence, arrive at
+    ``codex-hooks-valid`` as written, which is the only way it can report
+    them.
+    """
+    if CODEX_CONFIG_HOOKS_TABLE not in data:
+        return None
+    return {"hooks": data[CODEX_CONFIG_HOOKS_TABLE]}
 
 
 def codex_manifest(plugin_dir: Path) -> Dict[str, Any]:

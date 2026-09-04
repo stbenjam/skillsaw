@@ -23,6 +23,7 @@ from .blocks import (
     ClineWorkflowBlock,
     CodeRabbitContentBlock,
     ClaudeHooksBlock,
+    CodexConfigHooksBlock,
     CodexHooksBlock,
     CodexInlineHooksBlock,
     CodexInlineMcpBlock,
@@ -72,8 +73,10 @@ from .blocks import (
     VsCodeMcpBlock,
 )
 from .formats.codex import (
+    CODEX_CONFIG_FILENAME,
     CODEX_DIR_NAME,
     CODEX_HOOKS_FILENAME,
+    codex_config_hooks,
     codex_declared_hook_files,
     codex_declared_mcp_files,
     codex_inline_hooks,
@@ -82,7 +85,7 @@ from .formats.codex import (
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.opencode import contained_instruction_globs
 from .formats import devin, grok, muse
-from .utils import has_apm_generated_header, read_text
+from .utils import has_apm_generated_header, read_text, read_toml
 from .paths import (
     contained_resolve,
     has_parent_traversal,
@@ -374,6 +377,43 @@ def _add_project_hooks(
     if _attached_as_hooks(state, path):
         return
     state.add_parser_block(root, path, block_cls)
+
+
+def _add_codex_config_hooks(state: _TreeBuildState, root: LintTarget, path: Path) -> None:
+    """Attach a ``.codex/config.toml`` that declares hooks, and only then.
+
+    Codex reads lifecycle hooks from this file as well as from
+    ``hooks.json`` and merges the two, so a project that writes only the
+    TOML tables still ships executable configuration. A config declaring no
+    hooks gets no block: everything else in it is Codex settings no rule
+    here reads.
+
+    Every one in the repository, not only the root's. Measured against
+    codex-cli 0.153.0: Codex merges a layer from every directory on the
+    chain from the git repo root down to the cwd, so a committed
+    ``services/billing/.codex/config.toml`` is live for anyone working in
+    that subtree — and dormant, not absent, for everyone else. Nothing above
+    the repository root is ever read, which is also the only place this walk
+    cannot reach.
+
+    A file the parser refuses is attached anyway, carrying its error, so
+    ``codex-hooks-valid`` has something to report — a config Codex cannot
+    read stops it starting in the project at all.
+    """
+    resolved = state.resolve_repo_path(path)
+    if resolved is None or not safe_is_file(resolved) or state.context.is_path_excluded(path):
+        return
+    # One block per resolved file, for the reason ``_add_project_hooks``
+    # documents: a package's config symlinked to the root's is one file, and
+    # two blocks would report each of its commands twice.
+    if _attached_as_hooks(state, path):
+        return
+    data, error = read_toml(path)
+    document = codex_config_hooks(data) if isinstance(data, dict) else None
+    if error is None and document is None:
+        return
+    state._record_role(resolved, CodexConfigHooksBlock)
+    root.children.append(CodexConfigHooksBlock(path=path, inline_data=document, toml_error=error))
 
 
 def _claim_attached_hooks(
@@ -891,6 +931,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # attachment.
     for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
         _add_project_hooks(state, root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
+        # After ``hooks.json``, so the JSON file keeps the block it has
+        # always had when a directory carries both. Codex merges them.
+        _add_codex_config_hooks(state, root, codex_dir / CODEX_CONFIG_FILENAME)
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)

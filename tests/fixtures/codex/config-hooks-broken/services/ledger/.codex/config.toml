@@ -1,0 +1,6 @@
+[[hooks.SessionEnd]]
+
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = "./scripts/flush-metrics.sh"
+timeout = 1.5

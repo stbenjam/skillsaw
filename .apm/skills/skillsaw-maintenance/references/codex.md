@@ -77,6 +77,36 @@ hedge (see Sync notes).
   `PreToolUse`, `PreCompact`/`PostCompact` (compaction trigger), `SessionStart`,
   `SubagentStart`/`SubagentStop`, and `SessionEnd`; `UserPromptSubmit`, `Stop`, and
   `Interrupt` ignore any configured `matcher`.
+- **Hook failure scopes** — measured against codex-cli 0.153.0 (canary hooks in a
+  trusted project, offline). Three scopes, and they are what `codex-hooks-valid`'s
+  severities and messages encode:
+  - *File-scoped fatal in `<repo>/.codex/config.toml`* — `codex` exits 1 and starts
+    no session: TOML syntax error; an event value that is not a sequence; a handler
+    missing `type` or `command`; a `timeout` that is not an integer (it is a `u64`,
+    so `1.5` and `"30"` both fail); an unknown handler `type` variant. **The same
+    defects in `hooks.json` are entry-scoped**: one `warning: failed to parse hooks
+    config <path>` and the session runs. Any new check belongs on the same split.
+  - *Entry-scoped warning in both files* — `prompt` and `agent` handlers, `mcp_tool`
+    on `SessionEnd`, a `SessionEnd` timeout over the 3s clamp. Codex names the file
+    and carries on.
+  - *Silent, no diagnostic under any flag* — an unknown event name, an unknown
+    handler key, an unknown event-group key, a `matcher` on an event that ignores
+    one. `--strict-config` is fatal for an unknown key at the top level of
+    `config.toml` and never descends into `[hooks]` (verified with a control), so
+    skillsaw is the only thing that will ever report these.
+  Also confirmed against the binary in the same pass: the 12 event names as the
+  complete enum, the four handler types, the required fields per type, the
+  `mcp_tool`-on-`SessionEnd` rejection, and the 3s `SessionEnd` clamp. Not
+  measured, carried from the docs: the 1s default timeout, and the `matcher`
+  semantics of the events that need a model turn.
+- **Project trust gate**: a project-layer hooks file — either one — runs only when
+  the user config carries `projects."<abs path>".trust_level = "trusted"`.
+  `--dangerously-bypass-hook-trust` is a *different* gate and does not substitute.
+  Not repository-resident, so it never suppresses a finding; the rule doc says so.
+- **Layer discovery**: Codex merges a `.codex/` layer from every directory from the
+  git repo root down to the cwd, inclusive, and reads nothing above the root. A
+  committed nested `.codex/config.toml` is therefore live for anyone working in
+  that subtree, which is why the lint tree attaches every one it finds.
 
 ## skillsaw rules that map
 - `src/skillsaw/rules/builtin/codex/`: `codex-plugin-json-valid`,
@@ -93,7 +123,12 @@ hedge (see Sync notes).
 - Docs: `src/skillsaw/rules/docs/codex-*.md`.
 - Hooks — `src/skillsaw/rules/builtin/codex/hooks_valid.py`: `codex-hooks-valid`.
   Vocabulary (events, handler types, per-handler fields) lives in
-  `src/skillsaw/formats/codex.py`, not the rule.
+  `src/skillsaw/formats/codex.py`, not the rule. Both project-layer files reach it
+  as a `CodexHooksBlock`; the TOML one is `CodexConfigHooksBlock`, which carries the
+  measured behavioural difference as a ClassVar (`timeout_must_be_integer`) so the
+  rule stays free of per-file branches. The severities are the same on both files:
+  the failure-scope asymmetry below is recorded here and in the rule doc, not
+  encoded in a message.
 
 ## Sync notes
 Hand-copied value sets that drift — re-check each against upstream:
@@ -134,8 +169,23 @@ Hand-copied value sets that drift — re-check each against upstream:
   `mcp_tool`, and the `SessionEnd`/`Interrupt` short-timeout events), read by
   `codex/hooks_valid.py`: re-check against https://developers.openai.com/codex/hooks
   and the generated schema under `codex-rs/hooks/schema/generated`, read at the
-  supported release's tag rather than on `main`, on every sync. `config.toml` inline `[hooks]` tables are not yet linted — only `hooks.json`
-  files and plugin-manifest-declared or inline manifest hooks are.
+  supported release's tag rather than on `main`, on every sync.
+- The TOML dialect of the project layer's `[hooks]` tables, mapped by
+  `codex_config_hooks()` in `formats/codex.py` — the one place the mapping lives.
+  `[[hooks.<Event>]]` renders to a `{matcher?, hooks: [...]}` entry and
+  `[[hooks.<Event>.hooks]]` to a handler, which is the JSON shape exactly, so the
+  mapping is a pass-through. Re-check on every sync: a dialect that stops matching
+  turns the mapping into a rename.
+- **`commandWindows`, not `command_windows`** (measured, 0.153.0). The docs page
+  prose spells the field `command_windows`; the shipped binary's serde field list
+  for the handler enum reads `command commandWindows timeout async statusMessage
+  additionalContextLimit server input prompt agent` and carries no snake_case
+  alias. skillsaw follows the binary, in both files. Re-check the docs page on
+  every sync — if upstream corrects the prose, this note goes; if it adds a real
+  alias, `CODEX_HOOK_OPTIONAL_FIELDS` gains one. `HOOK_COMMAND_FIELDS` keeps both
+  spellings regardless: it is the cross-host scan union and Muse Code accepts the
+  snake_case one, so a Windows command stays in front of `hooks-dangerous` however
+  it is written.
 
 Deliberate non-checks — do not "fix" these without a spec change. Each records what
 upstream requires and why skillsaw does not enforce it.

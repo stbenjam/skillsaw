@@ -25,7 +25,8 @@ Grok Build plugins, including Codex's and Grok's manifest-declared and
 inline hooks), APM's
 compiled copy, `.claude/settings*.json`, **skill and agent frontmatter**
 (the `hooks:` YAML key, same schema as settings hooks),
-`<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`,
+`<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`, inline
+`[hooks]` tables in `.codex/config.toml`,
 `.muse/hooks.json`, Grok Build's `.grok/hooks/*.json`, and Cursor's
 `.cursor/hooks.json`. This rule scans every one of them — a `curl | sh`
 hook hidden in SKILL.md frontmatter or in a Cursor lifecycle hook is just

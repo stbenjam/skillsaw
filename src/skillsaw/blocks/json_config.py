@@ -381,6 +381,10 @@ class HooksBlock(JsonConfigBlock):
     """
 
     category: str = "hooks"
+    #: The syntax this document is written in, named in a parse-error
+    #: finding, the way :class:`McpConfigRole` names one. Announcing a TOML
+    #: failure as invalid JSON would send the author to the wrong parser.
+    syntax_name: ClassVar[str] = "JSON"
 
     @property
     def events(self) -> Dict[str, List[HookEventConfig]]:
@@ -420,6 +424,11 @@ class CodexHooksBlock(HooksBlock):
     or a file that plugin's manifest names in ``hooks``. Same nested shape as
     Claude's, with Codex's own events, handler types, and fields.
     """
+
+    #: Whether ``timeout`` must be a whole number of seconds. The TOML
+    #: deserializer takes a ``u64`` and refuses a float; the JSON path is
+    #: unmeasured, so it keeps the number it has always accepted.
+    timeout_must_be_integer: ClassVar[bool] = False
 
     def tree_label(self) -> str:
         return f"{self.path.name} (codex hooks)"
@@ -572,6 +581,66 @@ class CodexInlineHooksBlock(_InlineJsonPayload, CodexHooksBlock):
 
     def tree_label(self) -> str:
         return f"{self.path.name} (inline hooks)"
+
+
+@dataclass(eq=False)
+class CodexConfigHooksBlock(_InlineJsonPayload, CodexHooksBlock):
+    """The ``[hooks]`` tables of a ``.codex/config.toml``.
+
+    Codex loads project hooks from two files and merges them, so a
+    TOML-only project's hooks are live configuration that no rule saw
+    before this block. The payload is the document
+    :func:`~skillsaw.formats.codex.codex_config_hooks` renders, which is why
+    the block takes it by value rather than parsing: the tree builder has to
+    parse the file anyway to know whether there are hooks to attach.
+
+    ``path`` is the config file itself, unlike the manifest payloads the
+    mixin was written for, so the two answers that assumed "no file of my
+    own" are restored below.
+
+    The dangerous file of the two. Measured against codex-cli 0.153.0: a
+    shape defect here — a syntax error, an event value that is not a
+    sequence, a missing ``type`` or ``command``, a non-integer ``timeout``,
+    an unknown handler ``type`` — makes ``codex`` exit 1 and refuse to start
+    in the project at all, where the same defect in ``hooks.json`` is a
+    warning that skips that one file.
+    """
+
+    inline_data: Optional[Dict[str, Any]] = None
+    #: What ``read_toml`` said when the file did not parse. Carried rather
+    #: than re-derived so the whole file is read once, in the builder.
+    toml_error: Optional[str] = None
+    syntax_name: ClassVar[str] = "TOML"
+    timeout_must_be_integer: ClassVar[bool] = True
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = (self.inline_data, self.toml_error)
+
+    def has_utf8_bom(self) -> bool:
+        """The file's own answer: this block has a file, and it is TOML.
+
+        ``read_toml`` strips a mark before the parser sees one, so nothing
+        here reports a BOM today — but the mixin's "never, there is no file"
+        is the wrong reason, and a host measured to refuse one would inherit
+        it.
+        """
+        return JsonConfigBlock.has_utf8_bom(self)
+
+    def first_non_finite(self) -> Optional[Tuple[str, float]]:
+        """Never: the scan is about tokens JSON has no spelling for.
+
+        ``json.loads`` accepts bare ``NaN``/``Infinity`` and no JSON host
+        does, which is the defect the base implementation finds. TOML spells
+        both natively (``nan``, ``inf``), so the parser reaches them and the
+        document is not refused over the token. A ``timeout`` of ``nan`` is
+        still a float where Codex wants a ``u64``, and the rule's field check
+        reports it as the fatal defect it is.
+        """
+        return None
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (codex hooks)"
 
 
 @dataclass(eq=False)
