@@ -35,10 +35,10 @@ CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || echo docker)
 
 .PHONY: lint lint-fix
 lint:
-	$(CONTAINER_ENGINE) run --rm -v $$(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw:v$(SKILLSAW_VERSION) --strict
+	$(CONTAINER_ENGINE) run --rm -v $$(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw:$(SKILLSAW_VERSION) --strict
 
 lint-fix:
-	$(CONTAINER_ENGINE) run --rm -v $$(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw:v$(SKILLSAW_VERSION) fix
+	$(CONTAINER_ENGINE) run --rm -v $$(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw:$(SKILLSAW_VERSION) fix
 ```
 
 Append to an existing `Makefile` or create one. Never overwrite existing

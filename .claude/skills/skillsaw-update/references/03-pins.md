@@ -1,33 +1,33 @@
 # Update version pins
 
 Change only pins that reference skillsaw; leave third-party actions and
-unrelated tooling untouched. Track each edited file for the final summary.
+unrelated tooling untouched. `{old}` below is the version a pin currently
+carries, which may differ from `{installed}`. Search tracked files with
+`git grep` so vendored trees, build output and the skill's own mirrored
+copies stay out of the answer. Track each edited file for the final summary.
 
 ## GitHub Actions and action definitions
 
-Search repository-wide for workflows and action definitions referencing
-skillsaw:
+Find every workflow and action definition referencing skillsaw:
 
 ```console
-grep -rnE "stbenjam/skillsaw(@|/review@)" .
+git grep -nE "stbenjam/skillsaw(@|/review@)"
 ```
 
 This covers both the lint action (`stbenjam/skillsaw@<SHA>`) and the review
-action (`stbenjam/skillsaw/review@<SHA>`).
+action (`stbenjam/skillsaw/review@<SHA>`), in `.yml` and `.yaml` workflows
+and in action metadata alike.
 
-For every `uses:` line the search found, in workflows (`.yml` or `.yaml`) and
-in action metadata alike, resolve the commit SHA of the newest release tag
-before editing:
+Resolve the commit SHA of the newest release tag before editing:
 
 ```console
 git ls-remote https://github.com/stbenjam/skillsaw.git 'refs/tags/v{latest}' 'refs/tags/v{latest}^{}'
 ```
 
-The exact refs keep `v{latest}-rc1` and `v{latest}0` out of the answer. An
-annotated tag yields two lines; use the SHA on the `^{}` line, which is the
-commit the tag points to. A lightweight tag yields one line; its SHA is the
-commit. Replace the old SHA with it in every matching `uses:` line and refresh
-the trailing version comment to `# v{latest}`:
+An annotated tag yields two lines; use the SHA on the `^{}` line, which is
+the commit the tag points to. A lightweight tag yields one line, and its SHA
+is the commit. Replace the old SHA in every `uses:` line the search found and
+refresh the trailing version comment to `# v{latest}`:
 
 ```yaml
 - uses: stbenjam/skillsaw@<NEW_SHA> # v{latest}
@@ -39,35 +39,41 @@ Or for the review action:
 - uses: stbenjam/skillsaw/review@<NEW_SHA> # v{latest}
 ```
 
-If the repository defines its own actions, check every action metadata file
-for a skillsaw version input with a pinned default:
+A step that also passes `with: version: {old}` to the action gets `{latest}`
+there too; a bumped SHA beside a stale version input is worse than neither.
+
+If the repository defines its own actions, find the skillsaw version input in
+each action metadata file and its default, whatever the quoting:
 
 ```console
-grep -rn -iA4 skillsaw --include=action.yml --include=action.yaml . | grep -E 'default: *["'"'"']?v?[0-9]'
+git grep -n -iA4 skillsaw -- 'action.yml' 'action.yaml' '**/action.yml' '**/action.yaml' | grep -E 'default: *["'"'"']?v?[0-9]'
 ```
 
-Update that input's default from `{old}` to `{latest}`, keeping whatever
-quoting and `v` prefix the file already uses; leave other inputs' defaults
-alone.
+Update that input's default from `{old}` to `{latest}`, keeping the quoting
+and `v` prefix the file already uses; leave other inputs' defaults alone.
 
 ## Makefile targets
 
 Find the pinned version:
 
 ```console
-grep -n "SKILLSAW_VERSION" Makefile
+git grep -n "SKILLSAW_VERSION" -- Makefile '**/Makefile'
 ```
 
 Update the version value while preserving the existing assignment operator
-(e.g. `SKILLSAW_VERSION := {latest}` or `SKILLSAW_VERSION ?= {latest}`).
-When the targets run through a container, the image tag below it references
-the same variable (`ghcr.io/stbenjam/skillsaw:v$(SKILLSAW_VERSION)`), so one edit
-covers both. Never overwrite existing `lint` or `lint-fix` target bodies; only
-the version assignment changes.
+(`SKILLSAW_VERSION := {latest}` or `SKILLSAW_VERSION ?= {latest}`). When the
+targets run through a container, the image tag below it references the same
+variable (`ghcr.io/stbenjam/skillsaw:$(SKILLSAW_VERSION)`), so one edit covers
+both. Never overwrite existing `lint` or `lint-fix` target bodies; only the
+version assignment changes.
 
 ## Pre-commit hooks
 
-Find the skillsaw entry in `.pre-commit-config.yaml`:
+Find the skillsaw entry:
+
+```console
+git grep -n -A3 "stbenjam/skillsaw" -- .pre-commit-config.yaml
+```
 
 ```yaml
 repos:
@@ -77,23 +83,36 @@ repos:
       - id: skillsaw
 ```
 
-Set `rev:` to the `v{latest}` tag. Tags are the pre-commit convention here;
-a full commit SHA also works when the project prefers immutable pins.
+Set `rev:` to the `v{latest}` tag; git tags do carry the `v`. When the project
+pins `rev:` to a commit SHA instead, resolve `v{latest}` the way the Actions
+section does and use that SHA.
 
 ## Container image tags and Dockerfiles
 
-Search repository-wide for container image pins, including nested Dockerfiles,
-Containerfiles, and GitLab CI configurations:
+Find every image reference, including nested Dockerfiles, Containerfiles and
+GitLab CI configurations:
 
 ```console
-grep -rn "ghcr.io/stbenjam/skillsaw" . 2>/dev/null
+git grep -n "ghcr.io/stbenjam/skillsaw"
 ```
 
-Retag `:v{old}` to `:v{latest}` in every file the search found: Dockerfiles,
-Containerfiles, `.gitlab-ci.yml`, and any GitLab CI file it includes. When
-the tag is indirect (`:v${SKILLSAW_VERSION}`, or a `FROM` built from an
-`ARG`), update the variable or build argument it reads instead. A `:latest`
-tag floats onto the new release by itself; recommend pinning it to `:v{latest}` for repeatable pipelines,
-but only change it after the user agrees.
+Retag `:{old}` to `:{latest}` in every file the search found: Dockerfiles,
+Containerfiles, `.gitlab-ci.yml` and any GitLab CI file it includes. Image
+tags carry no `v`. When the tag is indirect (`:$(SKILLSAW_VERSION)`,
+`:${SKILLSAW_VERSION}`, or a `FROM` built from an `ARG`), update the variable
+or build argument it reads instead. A `:latest` tag floats onto the new
+release by itself; recommend pinning it to `:{latest}` for repeatable
+pipelines, but only change it after the user agrees.
+
+## PyPI pins
+
+Find pip-style pins in requirements files, `pyproject.toml`, `tox.ini`,
+Dockerfiles and CI configurations:
+
+```console
+git grep -nE "skillsaw(==|@)[0-9]"
+```
+
+Bump each to `{latest}`, keeping the operator the file uses.
 
 Return to the router with the list of edited files.

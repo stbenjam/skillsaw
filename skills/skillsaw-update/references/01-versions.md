@@ -6,43 +6,50 @@ rule list is captured in the next section.
 ## Installed version
 
 Run `skillsaw --version`. If it works, retain that command prefix (`skillsaw`)
-and note the version as `{installed}`.
+as `<installed-prefix>` and note the version as `{installed}`.
 
 If `skillsaw --version` is not found or fails, the repository is not on a
 working install yet. Resolve `{latest}` first (see below), then bootstrap
 pinned to that version: prefer zero-install execution with
 `uvx skillsaw=={latest}`, then `pip install "skillsaw=={latest}"`, then the
-installed container runtime. For containers, define `{installed-prefix}` as a
+installed container runtime. For containers, `<installed-prefix>` is a
 complete run command mounting the repository at `/workspace`:
 
 ```console
-podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:v{latest}
+podman run --rm --userns=keep-id -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:{latest}
 ```
 
-(or `docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`).
-The user mapping lets the later `fix` and `baseline` steps write to the
-checkout, which the image's non-root user otherwise cannot, and `:Z` relabels
-the mount for SELinux hosts, as the Podman commands in the other skills do;
-Docker forms take neither.
-Verify with `<installed-prefix> --version` and treat that version as both
-`{installed}` and the starting prefix.
+or, with Docker:
+
+```console
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:{latest}
+```
+
+Image tags carry no `v`: release `0.19.0` is the image tag `0.19.0`.
+Rootless Podman maps the host user to the container's root, so
+`--userns=keep-id` is what lets the later `fix` and `baseline` steps write to
+the checkout, and `:Z` relabels the mount on SELinux hosts; Docker takes the
+explicit user mapping and no relabel. Verify with `<installed-prefix> --version`
+and treat that version as both `{installed}` and the starting prefix.
 
 ## Latest version
 
 Resolve the newest release to `{latest}`:
 
 ```console
-python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://pypi.org/pypi/skillsaw/json'))['info']['version'])"
+python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://pypi.org/pypi/skillsaw/json', timeout=10))['info']['version'])"
 ```
 
-If PyPI is unreachable:
+If PyPI is unreachable, read the newest release tag instead. Release tags
+carry a `v`, and floating tags such as `v0` exist beside them, so the pattern
+asks for three numeric parts and `--refs` leaves the peeled `^{}` lines out:
 
 ```console
-git -c 'versionsort.suffix=-' ls-remote --tags --sort='v:refname' https://github.com/stbenjam/skillsaw.git 'v*' | tail -1 | sed 's|.*refs/tags/v||; s|\^{}$||'
+git ls-remote --refs --tags --sort='v:refname' https://github.com/stbenjam/skillsaw.git 'v[0-9]*.[0-9]*.[0-9]*' | tail -1 | sed 's|.*refs/tags/v||'
 ```
 
-The `sed` drops the object id, the `refs/tags/v` prefix and a trailing `^{}`,
-leaving the `{latest}` version number alone.
+`{latest}` must look like `N.N.N`. If it does not, stop and report the value
+rather than passing it to `pip`, `uvx`, an image tag or a pin.
 
 If `{installed}` equals `{latest}`, report that the install is current, retain
 `<installed-prefix>` as `<new-prefix>`, skip the upgrade question below, and
@@ -68,28 +75,29 @@ Ask before changing the local environment:
 
 If yes, follow the method behind the retained prefix:
 
-- **uvx**: nothing to install. The new prefix is
-  `uvx skillsaw=={latest}`; the old one stays usable for comparison.
-- **pip**: run `pip install "skillsaw=={latest}"` and retain `skillsaw` as
-  `<new-prefix>`.
+- **uvx**: nothing to install. The new prefix is `uvx skillsaw=={latest}`;
+  the old one stays usable for comparison.
+- **pip or a local `skillsaw` binary**: run
+  `pip install --upgrade "skillsaw=={latest}"`, or the manager that installed
+  it (`pipx upgrade skillsaw`, `uv tool upgrade skillsaw`), and retain
+  `skillsaw` as `<new-prefix>`.
 - **Container**: pull the pinned image
-  (`podman pull ghcr.io/stbenjam/skillsaw:v{latest}` or `docker pull ...`)
-  and define `<new-prefix>` as
-  `podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:v{latest}`
-  (or `docker run ...`).
-- **Local binary (`skillsaw`)**: upgrade via `pip install --upgrade "skillsaw=={latest}"`
-  or the project's package manager, retaining `skillsaw` as `<new-prefix>`.
+  (`podman pull ghcr.io/stbenjam/skillsaw:{latest}` or `docker pull ...`) and
+  define `<new-prefix>` as the run command from "Installed version" with
+  `{latest}` in the tag.
 
-If no:
-Do not modify the local installation. Offer to select an isolated, zero-install
-command as `<new-prefix>` (such as `uvx skillsaw=={latest}` or
-`podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:v{latest}`) to
-evaluate new rules and bump version pins without modifying local packages.
-If the user agrees, use that prefix for `<new-prefix>` and continue below;
-if the user also declines running the new version, stop the update workflow
-immediately.
+If no, do not modify the local installation. Offer an isolated, zero-install
+command as `<new-prefix>` instead, such as `uvx skillsaw=={latest}` or the
+container run command above, to evaluate the new rules and bump pins. If the
+user agrees, continue below with that prefix. If the user also declines
+running the new version, skip the rule report and triage, still offer the pin
+update, and run verification with the retained prefix.
 
-Verify the new prefix with `<new-prefix> --version` and save its rules:
+Whenever no upgrade happens, `<new-prefix>` is the retained prefix.
+
+Verify the new prefix: `<new-prefix> --version` must print `{latest}`. If it
+does not, the upgrade did not take (a `pipx` or `uv tool` install ignores
+`pip`); report that and stop. Then save its rules:
 
 ```console
 <new-prefix> list-rules > /tmp/skillsaw-rules-new.txt
