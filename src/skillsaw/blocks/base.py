@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from skillsaw.markdown_doc import MarkdownDoc
 
 from skillsaw.lint_target import LintTarget
-from skillsaw.utils import read_text
+from skillsaw.utils import invalidate_read_caches, read_text
 
 
 @dataclass(eq=False)
@@ -114,6 +114,10 @@ class FileContentBlock(ContentBlock):
 
     def write_body(self, new_body: str) -> None:
         self.path.write_text(new_body, encoding="utf-8")
+        invalidate_read_caches(self.path)
+        if self.body is not None:
+            self.body = new_body
+        self.invalidate_find_cache()
 
 
 # Backward-compat alias

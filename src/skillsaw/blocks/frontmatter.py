@@ -19,6 +19,7 @@ from skillsaw.lint_target import LintTarget
 from skillsaw.utils import (
     _FRONTMATTER_RE,
     commented_key_line,
+    invalidate_read_caches,
     read_text,
     parse_frontmatter,
     read_frontmatter_commented,
@@ -138,6 +139,10 @@ class BodyContent(ContentBlock):
             fm_section = content[: len(content) - len(file_body)]
             self.path.write_text(fm_section + new_body, encoding="utf-8")
         self.body = new_body
+        invalidate_read_caches(self.path)
+        self.invalidate_find_cache()
+        if isinstance(self.parent, FrontmatteredBlock):
+            self.parent._invalidate_parsed()
 
     def tree_label(self) -> str:
         return "body"
@@ -188,6 +193,11 @@ class FrontmatteredBlock(LintTarget):
         if self._fm_parsed is None:
             self._fm_parsed = self._parse_frontmatter_file()
             self._build_children()
+
+    def _invalidate_parsed(self) -> None:
+        self._fm_parsed = None
+        # Rebuild children lazily; ancestors must not return the old fields/body.
+        self.invalidate_find_cache()
 
     def _build_children(self) -> None:
         # Children change: stale find() memos on this node and its ancestors
@@ -306,10 +316,8 @@ class FrontmatteredBlock(LintTarget):
         content = read_text(self.path)
         updated = _compose_frontmatter_document(content, fm)
         self.path.write_text(updated, encoding="utf-8")
-        self._fm_parsed = None
-        # Children will be rebuilt on the next walk — cached find() results
-        # on this node and its ancestors must not serve the old fields.
-        self.invalidate_find_cache()
+        invalidate_read_caches(self.path)
+        self._invalidate_parsed()
 
 
 ParsedFrontmatterBlock = FrontmatteredBlock
