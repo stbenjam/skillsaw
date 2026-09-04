@@ -10,12 +10,10 @@ import logging
 # from skillsaw.context, so no import cycle while ``context`` is mid-import.
 # ``merge_plugin_dirs`` and ``codex_local_source_path`` are re-exported here
 # for callers that import them from ``skillsaw.context``.
-from .discovery import (
-    agent_plugins as agent_plugins_discovery,
-    claude as claude_discovery,
-    codex as codex_discovery,
-    merge_plugin_dirs,
-)
+from .discovery import merge_plugin_dirs
+from .discovery import codex as codex_discovery
+from .discovery import claude as claude_discovery
+from .discovery import agent_plugins as agent_plugins_discovery
 from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_local_source_path,  # noqa: F401 - compatibility re-export
@@ -184,22 +182,29 @@ class RepositoryContext(
         # directory still gets its container and prose in the lint tree —
         # content and security rules read it, while Codex-format rules
         # remain repo-type-gated and quiet.
-        rt_set = set(repo_types) if repo_types is not None else None
-        self._codex_discovery_enabled = bool(_CODEX_TYPES & rt_set) if rt_set is not None else True
+        self._codex_discovery_enabled = (
+            bool(_CODEX_TYPES & set(repo_types)) if repo_types is not None else True
+        )
         # A forced Codex type seeds the entrypoint even when the marker file
         # is missing — otherwise ``--type codex-plugin`` on a repository
         # without ``.codex-plugin/`` would discover no plugin, create no
         # node, and never run the requested check.
-        self._codex_plugin_forced = rt_set is not None and RepositoryType.CODEX_PLUGIN in rt_set
-        self._codex_marketplace_forced = (
-            rt_set is not None and RepositoryType.CODEX_MARKETPLACE in rt_set
+        self._codex_plugin_forced = repo_types is not None and (
+            RepositoryType.CODEX_PLUGIN in repo_types
+        )
+        self._codex_marketplace_forced = repo_types is not None and (
+            RepositoryType.CODEX_MARKETPLACE in repo_types
         )
         self._agent_plugin_discovery_enabled = (
-            rt_set is None or RepositoryType.AGENT_PLUGIN in rt_set
+            RepositoryType.AGENT_PLUGIN in set(repo_types) if repo_types is not None else True
         )
-        self._agent_plugin_forced = rt_set is not None and RepositoryType.AGENT_PLUGIN in rt_set
-        self.codex_plugins = self._discover_codex_plugins() if self._codex_discovery_enabled else []
-        self.agent_plugins = (
+        self._agent_plugin_forced = repo_types is not None and (
+            RepositoryType.AGENT_PLUGIN in repo_types
+        )
+        self.codex_plugins: List[Path] = (
+            self._discover_codex_plugins() if self._codex_discovery_enabled else []
+        )
+        self.agent_plugins: List[Path] = (
             self._discover_agent_plugins() if self._agent_plugin_discovery_enabled else []
         )
         self._init_grok(repo_types)
@@ -207,12 +212,14 @@ class RepositoryContext(
         # An explicit ``--type`` answers "how is this content packaged", and
         # ``_refresh_tool_types()`` keeps it authoritative for that half while
         # still folding in the tools the checkout configures.
-        self._overridden_types: Optional[Set[RepositoryType]] = rt_set
+        self._overridden_types: Optional[Set[RepositoryType]] = (
+            set(repo_types) if repo_types is not None else None
+        )
         # Types describing how content is packaged. The tool types are folded
         # in by ``_refresh_tool_types()`` once instruction-file discovery has
         # run — an AGENTS.md is evidence of a tool, and it is not found yet.
         self.repo_types: Set[RepositoryType] = (
-            set(rt_set) if rt_set is not None else self._detect_types()
+            set(repo_types) if repo_types is not None else self._detect_types()
         )
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = {}
@@ -441,8 +448,10 @@ class RepositoryContext(
         # type detection consults provenance before marketplace_entries
         # exists, and this end-of-init clear is what discards those early
         # records. Never scope it under ``if self.exclude_patterns:``.
-        self._codex_claims = self._codex_evidence = None
-        self._agent_plugin_claims = self._agent_plugin_roots = None
+        self._codex_claims = None
+        self._codex_evidence = None
+        self._agent_plugin_claims = None
+        self._agent_plugin_roots = None
         self._reset_grok_caches(filtering=bool(self.exclude_patterns))
         self._reset_antigravity_caches(filtering=bool(self.exclude_patterns))
         self._contained_plugin_roots = self._mcp_registry_paths = None
@@ -712,7 +721,9 @@ class RepositoryContext(
         layouts (see :func:`skillsaw.discovery.codex.discover_codex_plugins`).
         """
         return codex_discovery.discover_codex_plugins(
-            self.root_path, self._codex_local_sources(), forced=self._codex_plugin_forced
+            self.root_path,
+            self._codex_local_sources(),
+            forced=self._codex_plugin_forced,
         )
 
     def _discover_agent_plugins(self) -> List[Path]:
@@ -720,7 +731,8 @@ class RepositoryContext(
         return [
             path
             for path in agent_plugins_discovery.discover_agent_plugins(
-                self.root_path, forced=self._agent_plugin_forced
+                self.root_path,
+                forced=self._agent_plugin_forced,
             )
             if not self.is_path_excluded(path)
         ]
@@ -844,49 +856,6 @@ class RepositoryContext(
         """Return merged manifest and marketplace plugin metadata."""
         return claude_discovery.plugin_metadata(
             plugin_path, self.plugin_metadata, self.marketplace_entries
-        )
-
-    def _discover_skills(self) -> List[Path]:
-        """Discover Agent Skills through the state-free Claude discovery seam."""
-        recursive_agent_plugins = [
-            p for p in self.agent_plugin_roots() if (pr := self.provenance(p)).claude or pr.codex
-        ]
-        return claude_discovery.discover_skills(
-            self.root_path,
-            agentskills=RepositoryType.AGENTSKILLS in self.repo_types,
-            # A plugins/* layout can cause legacy Claude discovery to list an
-            # Agent-only sibling. Only an actual Claude declaration permits
-            # recursive Claude skill discovery for a portable package.
-            plugins=[
-                p
-                for p in self.plugins
-                if not self.provenance(p).agent_plugin or self.provenance(p).claude
-            ],
-            codex_plugins=self.codex_plugins,
-            grok_plugins=self.grok_plugins,
-            antigravity_plugins=self.antigravity_plugins,
-            # Declaration-invariant roots keep portable skills visible under
-            # an unrelated ``--type`` override while still enforcing their
-            # fixed immediate-child discovery semantics.
-            agent_plugins=self.agent_plugin_roots(),
-            recursive_agent_plugins=recursive_agent_plugins,
-            in_apm_compiled_dir=self.in_apm_compiled_dir,
-            should_skip=self._should_skip_dir,
-            claim_boundary=self._contained_plugin_claim_boundary,
-            containment_claims_possible=self._contained_plugin_claims_possible,
-            is_containment_plugin=self._is_containment_plugin,
-            # Devin/Windsurf and Grok Build each read the nearest enclosing
-            # tool directory, so a monorepo package carries its own
-            # ``skills/``. ``CONVENTIONAL_SKILL_DIRS`` covers only the
-            # root-relative spelling and the generic walk skips hidden
-            # directories, so the nested roots are handed over from the walk
-            # that already found them — the same tuple detection reads.
-            additional_skill_dirs=(
-                directory / "skills"
-                for name in detect_discovery.NESTED_TOOL_SKILL_DIRS
-                for directory in self.agent_tool_dirs(name)
-            ),
-            is_excluded=self.is_path_excluded,
         )
 
     def __str__(self):

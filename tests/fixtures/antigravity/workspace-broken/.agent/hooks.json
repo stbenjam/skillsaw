@@ -1,0 +1,31 @@
+{
+  "legacy-guard": {
+    "UserPromptSubmit": [
+      {
+        "command": "./scripts/note-prompt.sh"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "description": "audit shell calls",
+        "hooks": [
+          {
+            "command": "./scripts/audit-command.sh",
+            "background": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": ""
+      },
+      {
+        "type": "command",
+        "timeout": 30
+      }
+    ]
+  }
+}

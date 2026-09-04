@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agentplugins.org/schemas/v1/plugin.json",
+  "name": "route-kit",
+  "version": "1.4.0",
+  "description": "Route-planning helpers: a lint skill for route definitions and the planner MCP server.",
+  "author": {
+    "name": "Routeboard"
+  }
+}

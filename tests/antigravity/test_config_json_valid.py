@@ -1,0 +1,109 @@
+"""``antigravity-config-json-valid``: the registry files, opt-in."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from skillsaw.formats.antigravity import REGISTRY_FILENAMES
+from skillsaw.repository_types import RepositoryType
+from skillsaw.rules.builtin.antigravity.config_json_valid import AntigravityConfigJsonValidRule
+
+from ._helpers import messages, only, run_rule, write_customization, write_repo
+
+
+def check(tmp_path: Path, name: str, body: str, filename: str = "agents.json"):
+    repo = write_repo(tmp_path / name)
+    write_customization(repo, filename, body)
+    return run_rule(AntigravityConfigJsonValidRule, repo)
+
+
+class TestAcceptedRegistries:
+    @pytest.mark.parametrize(
+        "name,body",
+        [
+            ("empty", "{}"),
+            ("entries", '{"entries": [{"path": "internal/schedule/agents"}]}'),
+            ("filters", '{"entries": [{"path": "a", "include_only": ["x-*"], "exclude": ["y"]}]}'),
+            ("inherits", '{"entries": [], "inherits": [{"path": "~/.gemini/config"}]}'),
+            # Unknown keys are ignored by ``encoding/json``, and unverified
+            # keys are not this rule's business.
+            ("unknown-key", '{"entries": [], "flavour": "vanilla"}'),
+        ],
+    )
+    def test_no_findings(self, tmp_path: Path, name: str, body: str) -> None:
+        assert messages(check(tmp_path, name, body)) == []
+
+
+class TestSkippedRegistries:
+    @pytest.mark.parametrize(
+        "name,body,needle",
+        [
+            ("unparseable", '{"entries": }', "does not parse"),
+            ("array-root", "[1, 2]", "must be a JSON object"),
+            ("non-finite", '{"entries": [], "weight": 1e400}', "not valid JSON"),
+        ],
+    )
+    def test_file_is_skipped(self, tmp_path: Path, name: str, body: str, needle: str) -> None:
+        found = only(check(tmp_path, name, body), needle)
+        assert "loads nothing from this registry" in found.message
+
+
+class TestEntryShape:
+    def test_entries_must_be_an_array(self, tmp_path: Path) -> None:
+        only(check(tmp_path, "entries-object", '{"entries": {"path": "a"}}'), "must be an array")
+
+    @pytest.mark.parametrize(
+        "body",
+        (
+            '{"entries": ["internal/schedule/agents"]}',
+            '{"entries": [{"paths": ["a"]}]}',
+            '{"entries": [{"path": 5}]}',
+        ),
+    )
+    def test_entry_must_carry_a_string_path(self, tmp_path: Path, body: str) -> None:
+        found = only(check(tmp_path, f"entry-{abs(hash(body))}", body), "entries[0]")
+        assert "string 'path'" in found.message
+
+    def test_one_finding_names_several_positions(self, tmp_path: Path) -> None:
+        body = '{"entries": [1, 2, 3, 4, 5]}'
+        violations = check(tmp_path, "many-bad", body)
+        assert len(violations) == 1
+        assert "entries[0], entries[1], entries[2] and 2 more" in violations[0].message
+
+
+class TestEveryRegistryFilename:
+    @pytest.mark.parametrize("filename", REGISTRY_FILENAMES)
+    def test_each_registry_is_read(self, tmp_path: Path, filename: str) -> None:
+        violations = check(tmp_path, filename.replace(".", "-"), "[]", filename)
+        assert len(violations) == 1
+        assert violations[0].file_path.name == filename
+
+    def test_rules_json_is_not_a_registry(self, tmp_path: Path) -> None:
+        """A literal in the binary with no loader reached for it."""
+        assert "rules.json" not in REGISTRY_FILENAMES
+        assert check(tmp_path, "rules-json", "[]", "rules.json") == []
+
+
+class TestGating:
+    def test_rule_is_opt_in(self) -> None:
+        assert AntigravityConfigJsonValidRule.default_enabled is False
+        assert AntigravityConfigJsonValidRule.since == "0.20.0"
+
+    def test_repo_types(self) -> None:
+        assert AntigravityConfigJsonValidRule.repo_types == frozenset(
+            {RepositoryType.ANTIGRAVITY, RepositoryType.ANTIGRAVITY_PLUGIN}
+        )
+
+    def test_default_run_reports_nothing(self, tmp_path: Path) -> None:
+        from tests.test_integration import run_lint
+
+        repo = write_repo(tmp_path / "default-off")
+        write_customization(repo, "agents.json", "[]")
+        report = run_lint(repo)["out"] or {}
+        assert [
+            v
+            for v in report.get("violations", [])
+            if v["rule_id"] == "antigravity-config-json-valid"
+        ] == []

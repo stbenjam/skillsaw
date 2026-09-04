@@ -4974,7 +4974,7 @@ BROKEN_FIXTURES = [
     "grok/plugin-broken",
     "grok/marketplace-broken",
     "skills-lock/invalid",
-    "antigravity/invalid-plugin",
+    "antigravity/workspace-broken",
 ]
 
 CLEAN_FIXTURES = [
@@ -5012,8 +5012,9 @@ CLEAN_FIXTURES = [
     "grok/marketplace-clean",
     "grok/dual-manifest",
     "agent-memory/notes",
-    "antigravity/valid-plugin",
-    "antigravity/project-repo",
+    "antigravity/workspace-clean",
+    "antigravity/portable-manifest",
+    "antigravity/codex-marketplace",
 ]
 
 OPT_IN_RULES = {

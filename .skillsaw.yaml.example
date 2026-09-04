@@ -73,26 +73,26 @@ rules:
     # required-fields: []
     # required-metadata: []
 
-  # Antigravity registry JSON files (skills.json, agents.json, rules.json) under .agents/ or .agent/ must be valid JSON objects
+  # Antigravity registry files must parse as an object whose 'entries' are objects with a string 'path'
   antigravity-config-json-valid:
     enabled: false
     severity: error
 
-  # hooks.json must declare valid Antigravity lifecycle hooks
+  # hooks.json must use Antigravity's hook events, handler types and fields
   antigravity-hooks-valid:
     enabled: auto
     severity: error
     # extra-events: []
 
-  # Antigravity mcp_config.json must declare valid MCP server configurations with supported transports ('serverUrl' or 'command')
+  # mcp_config.json must parse and declare servers Antigravity can load
   antigravity-mcp-valid:
-    enabled: true
+    enabled: auto
     severity: error
 
-  # plugin.json must declare a valid Antigravity plugin manifest
+  # plugin.json must parse as an Antigravity manifest with correctly typed fields
   antigravity-plugin-json-valid:
     enabled: auto
-    severity: warning
+    severity: error
 
   # .apm/ directory must contain a recognized primitive subdirectory with valid structure
   apm-structure-valid:

@@ -1,0 +1,8 @@
+{
+  "name": 42,
+  "description": ["Berth allocation helpers"],
+  "disabled": "no",
+  "logo": {
+    "path": "assets/logo.png"
+  }
+}

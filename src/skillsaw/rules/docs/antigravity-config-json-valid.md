@@ -1,36 +1,79 @@
 ## Why
 
-Google Antigravity uses dedicated JSON configuration files under `.agents/` or `.agent/`
-to register workspace components and customizations:
-- `skills.json`: Registers skills and skill directories.
-- `agents.json`: Registers custom subagents.
-- `rules.json`: Registers workspace rules.
+A customization root can carry registry files — `agents.json`,
+`plugins.json`, `skills.json`, `workflows.json` — that name *where else* to
+load that kind of customization from. They hold no customizations
+themselves:
 
-This rule validates that Antigravity registry JSON files (`skills.json`, `agents.json`, `rules.json`)
-under `.agents/` or `.agent/` are valid JSON objects. Syntax errors, non-object root structures,
-or non-finite numbers prevent Antigravity from parsing the registries and loading the declared
-workspace components.
+```json
+{ "entries": [{ "path": "internal/schedule/agents" }] }
+```
+
+Measured against `agy` 1.1.25: a registry whose root is not an object logs
+one `Failed to load JSON config file` line and is skipped, and `agy` exits
+0. Nothing else reports it, so a mistyped registry looks exactly like a
+project that has none — the agents or skills it was meant to add are simply
+absent.
+
+## Opt-in
+
+Off by default. Only `agents.json` and `plugins.json` could be exercised
+against a running `agy`: no offline subcommand loads the other two, so the
+checks stop at what a measurement covers rather than guessing at a schema.
+Turn it on when a repository actually uses these files.
+
+```yaml
+rules:
+  antigravity-config-json-valid:
+    enabled: true
+```
+
+## Severity
+
+**Errors** — the registry is skipped and loads nothing:
+
+- Invalid JSON, or a non-finite number (`NaN`, `Infinity`, `-Infinity`).
+- A root that is not a JSON object.
+- `entries` present but not an array.
+- An `entries` element that is not an object, or that has no string `path`.
+  One finding names the first few positions rather than one per entry: a
+  registry written to the wrong shape is wrong in every entry.
+
+## What is not reported
+
+- **Whether a `path` resolves.** A path is absolute, `~/`-relative, or
+  relative to the repository root, and a registry may legitimately name a
+  directory that only exists on a developer's machine.
+- **`include_only`, `exclude` and `inherits`.** Their shapes were not
+  reachable offline.
+- **Unknown keys.** Antigravity reads these files with a tolerant JSON
+  decoder that discards them.
 
 ## Examples
 
-**Bad:**
+**Bad** — an array root, which Antigravity skips whole:
 
 ```json
-[
-  "invalid-root-array"
-]
+[{ "path": "internal/schedule/agents" }]
 ```
 
-**Good:**
+**Good**:
 
 ```json
 {
-  "skills": []
+  "entries": [
+    {
+      "path": "internal/schedule/skills",
+      "include_only": ["gtfs-*"]
+    }
+  ],
+  "inherits": [{ "path": "~/.gemini/config" }]
 }
 ```
 
 ## How to fix
 
-- Format the configuration file (`skills.json`, `agents.json`, `rules.json`) as valid JSON.
-- Define a JSON object at the root of the file rather than an array or primitive value.
-- Fix any syntax errors, unterminated strings, and non-finite numbers (`NaN`, `Infinity`).
+- Wrap the list in an object under `entries`.
+- Give every entry a string `path` pointing at the directory of items
+  itself. A parent directory loads nothing — the path must name the
+  directory the agents, skills or plugins sit directly inside.

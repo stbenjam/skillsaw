@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "berth-simulator": {
+      "command": "./bin/berth-sim-mcp",
+      "args": ["--seed", "harbour"]
+    }
+  }
+}

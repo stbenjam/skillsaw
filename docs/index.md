@@ -15,8 +15,9 @@ hide:
 <p class="hero-subtitle" markdown>
 skillsaw lints the files that steer your AI coding agents: skills, plugins,
 instructions, and tool configs across Claude Code, Codex, Copilot, Agent Skills,
-Google Antigravity, OpenCode, and more. It catches security risks, structural flaws, and content dead
-zones with 101 rules, then applies deterministic autofixes.
+Google Antigravity, OpenCode, and more. It catches security risks, structural
+flaws, and content dead zones with 101 rules, then applies deterministic
+autofixes.
 </p>
 
 <p class="hero-badges" markdown>

@@ -1,0 +1,50 @@
+{
+  "shell-audit": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/audit-command.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "command": "./scripts/record-tool-call.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "timetable-reminder": {
+    "PreInvocation": [
+      {
+        "type": "prompt",
+        "prompt": "Departure times in this repository are UTC. Convert to Europe/Dublin only at the API boundary.",
+        "model": "gemini-3-pro"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "make schedule-status",
+        "timeout": 30
+      }
+    ]
+  },
+  "slow-migration-check": {
+    "enabled": false,
+    "Stop": [
+      {
+        "command": "./scripts/explain-migrations.sh",
+        "timeout": 600
+      }
+    ]
+  }
+}

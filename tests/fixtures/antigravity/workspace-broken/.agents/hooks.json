@@ -1,0 +1,70 @@
+{
+  "enabled": false,
+  "not-an-object": "make lint",
+  "wrong-enabled": {
+    "enabled": "no",
+    "Stop": [
+      {
+        "command": "make lint"
+      }
+    ]
+  },
+  "wrong-container": {
+    "PreToolUse": {
+      "matcher": "run_command",
+      "hooks": []
+    }
+  },
+  "group-not-object": {
+    "PreToolUse": ["./scripts/audit-command.sh"]
+  },
+  "handler-not-object": {
+    "Stop": ["make lint"]
+  },
+  "matcher-not-string": {
+    "PostToolUse": [
+      {
+        "matcher": 5,
+        "hooks": [
+          {
+            "command": "./scripts/record-tool-call.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "shouting-type": {
+    "PreInvocation": [
+      {
+        "type": "COMMAND",
+        "command": "./scripts/greet.sh"
+      }
+    ]
+  },
+  "command-with-prompt": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "./scripts/greet.sh",
+        "prompt": "Departure times are UTC."
+      }
+    ]
+  },
+  "prompt-with-command": {
+    "PostInvocation": [
+      {
+        "type": "prompt",
+        "prompt": "Summarise what changed under internal/schedule/.",
+        "command": "./scripts/summarise.sh"
+      }
+    ]
+  },
+  "fractional-timeout": {
+    "SessionStart": [
+      {
+        "command": "make schedule-status",
+        "timeout": 1.5
+      }
+    ]
+  }
+}

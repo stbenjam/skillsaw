@@ -1,58 +1,98 @@
 ## Why
 
-Google Antigravity configures Model Context Protocol (MCP) servers via `mcp_config.json`
-files located in `.agents/`, `.agent/`, or within Antigravity plugins. This rule validates
-the structure and transport definitions in `mcp_config.json` to ensure Antigravity can
-successfully establish connections to declared MCP servers.
+`mcp_config.json` in a customization root — `.agents/`, `.agent/`,
+`_agents/` or `_agent/` — or in an Antigravity plugin declares the MCP
+servers the agent can call. Each one is a process Antigravity spawns or an
+endpoint it connects to, so what the file says is what the agent can reach.
 
-The configuration requires an `mcpServers` JSON object mapping unique server names to their
-server definitions. Each server definition uses one of two transport configurations:
+Its two failure modes are far apart, and neither is visible from the file.
+Measured against `agy` 1.1.25:
 
-- **stdio transport**: Local process servers require a `command` string, and optionally accept
-  `args` (a list of string arguments) and `env` (a key-value object of environment variable strings).
-- **remote transport**: Remote HTTP/SSE servers specify `serverUrl` (an endpoint URL string)
-  and optionally accept `headers` (a key-value object of HTTP headers).
+- A **JSON syntax error or a root that is not an object** is startup-fatal.
+  `agy` prints one message naming the file and exits 1; no session starts.
+- A **per-server shape problem drops that server, silently**. There is no
+  diagnostic and no exit code. The tools that server was meant to provide
+  are simply absent, and the most likely way to notice is an agent
+  improvising around a tool it cannot see.
 
-A missing `mcpServers` object, invalid server transports (e.g. missing both `command` and
-`serverUrl`), invalid field types, or JSON syntax errors prevent Antigravity from initializing
-the specified MCP servers.
+This rule reports both and says which one a finding is.
+
+`mcp-valid-json` stands its own shape walk down for this file, because
+Antigravity's dialect is its own — `serverUrl` rather than `url`, and a
+server with no connection field at all is legal. What it keeps are the
+checks no dialect changes: a file that is not JSON, a connection URL
+carrying user information, and a credential written into `env`, `headers`
+or `oauth`.
+
+## Severity
+
+**Errors** — Antigravity exits 1 and no session starts:
+
+- Invalid JSON: a syntax error, a comment, a trailing comma, or a non-finite
+  number (`NaN`, `Infinity`, `-Infinity`). The parser is strict JSON.
+- A root that is not an object.
+
+**Warnings** — the file loads and something in it does not:
+
+- No `mcpServers` object. A bare map of servers is the shape several other
+  hosts accept; here it is read as an ordinary document with no servers in
+  it, so the file is inert rather than broken.
+- A server that is not an object.
+- `env` that is not an object, or an `env` value that is not a string.
+- `args` that is not an array, or an element that is not a string.
+- `serverUrl` that is not a string.
+- `disabledTools` that is not an array of strings.
+- `authProviderType` with any value but `google_credentials`. The proto
+  enum's `MCP_AUTH_PROVIDER_TYPE_GOOGLE_CREDENTIALS` spelling drops the
+  server; only the lowercase JSON alias parses.
+
+## What is not reported
+
+- **A server with no connection field.** `serverUrl` wins over `command`
+  when both are present, `url` with an optional `type` is a third accepted
+  shape, and a server carrying none of them loads without any complaint from
+  `agy`.
+- **Unknown keys on a server.** They are tolerated.
+- **`enabled`.** It is not a key Antigravity reads; `disabled` is the
+  toggle. A server written with `"enabled": false` loads, which is worth
+  knowing but is not a defect in the file's shape.
+- **`timeout`.** It appears in no measured or documented property list for
+  this host.
 
 ## Examples
 
-**Bad:**
-
-A stdio server missing a `command`, and a server defined as a non-object:
+**Bad** — an `env` value written as a number, which drops the server and
+says nothing:
 
 ```json
 {
   "mcpServers": {
-    "incomplete-stdio": {
-      "args": ["run"]
-    },
-    "invalid-server": "not-an-object"
+    "harbour-db": {
+      "command": "./bin/harbour-mcp",
+      "env": { "PGPORT": 5432 }
+    }
   }
 }
 ```
 
-**Good:**
-
-Valid stdio and remote MCP server definitions:
+**Good** — a remote server, a local one, and a disabled one:
 
 ```json
 {
   "mcpServers": {
-    "local-tools": {
-      "command": "node",
-      "args": ["./scripts/mcp-server.js"],
-      "env": {
-        "DEBUG": "false"
-      }
+    "gtfs-feed": {
+      "serverUrl": "https://feeds.example/mcp/sse",
+      "headers": { "Authorization": "Bearer ${GTFS_FEED_TOKEN}" },
+      "disabledTools": ["publish_feed"]
     },
-    "remote-tools": {
-      "serverUrl": "https://mcp.example.com/sse",
-      "headers": {
-        "User-Agent": "Antigravity/1.0"
-      }
+    "harbour-db": {
+      "command": "./bin/harbour-mcp",
+      "args": ["--read-only"],
+      "env": { "PGPORT": "5432" }
+    },
+    "legacy-planner": {
+      "command": "./bin/planner-mcp",
+      "disabled": true
     }
   }
 }
@@ -60,8 +100,14 @@ Valid stdio and remote MCP server definitions:
 
 ## How to fix
 
-- Define an `mcpServers` JSON object at the root of `mcp_config.json`.
-- Key each server entry by a descriptive server name.
-- For local process (stdio) servers, specify a non-empty `command` string, and optional `args` list of strings and `env` object.
-- For remote servers, specify a valid `serverUrl` string, and optional `headers` key-value mapping.
-- Avoid embedding sensitive credentials or authorization tokens in `env` or `headers`.
+- Wrap the servers in `mcpServers`. Without it Antigravity loads none of
+  them.
+- Quote every `env` value and every `args` element — both maps are
+  string-to-string as far as the loader is concerned.
+- Use `serverUrl` for a remote server, `command` plus `args` for a local
+  one. Naming both is allowed; `serverUrl` is what runs.
+- Switch a server off with `"disabled": true`.
+- Write `authProviderType` as `"google_credentials"`, or leave it out.
+- Keep credentials out of the file: reference an environment variable
+  (`"${GTFS_FEED_TOKEN}"`) rather than pasting a token into `env`, `headers`
+  or `oauth`.

@@ -18,6 +18,7 @@ from .blocks import (
     AgentMemoryIndexBlock,
     AgentPluginMcpBlock,
     AgentsMdBlock,
+    AntigravityAgentBlock,
     AntigravityConfigBlock,
     AntigravityHooksBlock,
     AntigravityMcpBlock,
@@ -89,7 +90,7 @@ from .formats.codex import (
 )
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.opencode import contained_instruction_globs
-from .formats import devin, grok, muse
+from .formats import antigravity, devin, grok, muse
 from .utils import has_apm_generated_header, read_text
 from .paths import (
     contained_resolve,
@@ -158,8 +159,10 @@ _EDITOR_GLOBS = (
     (".opencode", "command", "**/*.md", "OpenCodeCommandBlock"),
     (".opencode", "agents", "**/*.md", "OpenCodeAgentBlock"),
     (".opencode", "agent", "**/*.md", "OpenCodeAgentBlock"),
-    (".agents", "rules", "**/*.md", "AntigravityRuleBlock"),
-    (".agent", "rules", "**/*.md", "AntigravityRuleBlock"),
+    *(
+        (root, antigravity.RULES_DIR_NAME, "**/*.md", "AntigravityRuleBlock")
+        for root in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES
+    ),
 )
 
 # The OpenCode directories the loader reads *flat*: ``{mode,modes}/*.md``,
@@ -223,11 +226,6 @@ class _TreeBuildState:
     mcp_paths: Set[Path] = field(default_factory=set)
     openai_seen: Set[Tuple[Path, Path]] = field(default_factory=set)
     opencode_configs: List[OpenCodeConfigBlock] = field(default_factory=list)
-
-    @property
-    def resolved_root(self) -> Path:
-        """Resolved repository root directory."""
-        return self.repo_root
 
     def resolve_repo_path(self, path: Path) -> Path | None:
         """Resolve *path* only when repository containment is safe."""
@@ -1010,21 +1008,32 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # parser role rather than as prose, and one block per resolved file.
         state.add_parser_block(root, grok_dir / grok.CONFIG_FILENAME, GrokConfigBlock)
 
-    # Antigravity project configuration and rules from .agents/ and .agent/
-    for agents_dir_name in (".agents", ".agent"):
+    # Antigravity reads a customization root — ``.agents/``, ``.agent/``,
+    # ``_agents/`` or ``_agent/`` — walking *up* from the directory it was
+    # started in to the repository root and unioning every root it finds, so
+    # a monorepo package's own root is live configuration and the
+    # walk-backed lookup finds both. ``rules/`` is read recursively;
+    # ``skills/`` is walked through ``CONVENTIONAL_SKILL_DIRS``, which earns
+    # the whole skill rule set; ``plugins/`` is the install location and
+    # belongs to plugin discovery, so nothing here descends into it.
+    for agents_dir_name in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES:
         for agents_dir in context.agent_tool_dirs(agents_dir_name):
-            _add_project_hooks(state, root, agents_dir / "hooks.json", AntigravityHooksBlock)
-            state.add_parser_block(root, agents_dir / "mcp_config.json", AntigravityMcpBlock)
-            state.add_parser_block(root, agents_dir / "skills.json", AntigravityConfigBlock)
-            state.add_parser_block(root, agents_dir / "agents.json", AntigravityConfigBlock)
-            state.add_parser_block(root, agents_dir / "rules.json", AntigravityConfigBlock)
+            _add_project_hooks(
+                state, root, agents_dir / antigravity.HOOKS_FILENAME, AntigravityHooksBlock
+            )
+            state.add_parser_block(
+                root, agents_dir / antigravity.MCP_CONFIG_FILENAME, AntigravityMcpBlock
+            )
+            for registry in antigravity.REGISTRY_FILENAMES:
+                state.add_parser_block(root, agents_dir / registry, AntigravityConfigBlock)
             _add_glob(
                 root,
-                agents_dir / "rules",
+                agents_dir / antigravity.RULES_DIR_NAME,
                 "**/*.md",
                 AntigravityRuleBlock,
                 content_suppressed=_is_in_compiled_dir(agents_dir),
             )
+            _add_glob(root, agents_dir / antigravity.AGENTS_DIR_NAME, "*.md", AntigravityAgentBlock)
 
     # Committed project memory: notes a team checks in for whatever agent
     # reads the checkout. The index is loaded whole and every other Markdown
@@ -1329,9 +1338,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     root_plugin_owner: Path | None = None
     for plugin_path in plugin_dirs:
         prov = context.provenance(plugin_path)
-        # Compiled-output filtering is a Claude/APM concept; a Codex claim
-        # is its own provenance and keeps the directory.
-        if _is_in_compiled_dir(plugin_path) and not prov.codex:
+        # Compiled-output filtering is a Claude/APM concept; a Codex or
+        # Antigravity claim is its own provenance and keeps the directory.
+        # ``.agents/`` is both an APM compile target and Antigravity's
+        # customization root, so without the second half an authored
+        # ``.agents/plugins/<name>/`` would be discarded as generated output
+        # in every APM repository with a Codex target.
+        if _is_in_compiled_dir(plugin_path) and not (prov.codex or prov.antigravity):
             continue
         resolved_plugin = safe_resolve(plugin_path)
         if resolved_plugin is None:
@@ -1625,55 +1638,30 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             )
             container.children.append(node)
 
-        # Antigravity manifest cluster. A directory claimed by Antigravity
-        # attaches its plugin.json manifest, hooks.json, and mcp_config.json.
+        # Antigravity manifest cluster, for any directory Antigravity
+        # claims. Not gated on the manifest existing: a forced ``--type
+        # antigravity-plugin`` seeds a directory without one, and the node
+        # is what ``antigravity-plugin-json-valid`` reads to report it.
+        # Antigravity's plugin content is ``plugin.json``, ``hooks.json``
+        # and ``mcp_config.json``; ``skills/``, ``commands/``, ``agents/``
+        # and ``rules/`` are already attached — by the skill walk and by
+        # ``_add_plugin_prose`` — and the Claude-conventional
+        # ``hooks/hooks.json`` and ``.mcp.json`` are deliberately absent,
+        # because ``agy`` reads neither.
         if prov.antigravity:
-            manifest = plugin_path / "plugin.json"
-            if contained_resolve(manifest, state.resolved_root) is not None:
-                node = AntigravityPluginConfigNode(path=manifest)
-                node.plugin_owner = resolved_plugin
-                conventional_hooks = plugin_path / "hooks.json"
-                if not _attached_as_hooks(state, conventional_hooks):
-                    _add_contained_plugin_block(
-                        node,
-                        conventional_hooks,
-                        AntigravityHooksBlock,
-                        owner=resolved_plugin,
-                    )
-                native_mcp = plugin_path / "mcp_config.json"
-                if not _attached_as_mcp(state, native_mcp):
-                    _add_contained_plugin_block(
-                        node,
-                        native_mcp,
-                        AntigravityMcpBlock,
-                        owner=resolved_plugin,
-                    )
-                if prov.claude:
-                    hooks_cls, mcp_cls = ClaudeHooksBlock, McpBlock
-                elif prov.codex:
-                    hooks_cls, mcp_cls = CodexHooksBlock, McpBlock
-                else:
-                    hooks_cls, mcp_cls = HooksBlock, McpBlock
-
-                claude_hooks = plugin_path / "hooks" / "hooks.json"
-                if not _attached_as_hooks(state, claude_hooks):
-                    _add_contained_plugin_block(
-                        node,
-                        claude_hooks,
-                        hooks_cls,
-                        owner=resolved_plugin,
-                    )
-                claude_mcp = plugin_path / ".mcp.json"
-                if not _attached_as_mcp(state, claude_mcp) and not _shadowed_by_agent_plugin_mcp(
-                    claude_mcp, agent_plugin_mcp
-                ):
-                    _add_contained_plugin_block(
-                        node,
-                        claude_mcp,
-                        mcp_cls,
-                        owner=resolved_plugin,
-                    )
-                container.children.append(node)
+            node = AntigravityPluginConfigNode(path=plugin_path / antigravity.PLUGIN_MANIFEST)
+            node.plugin_owner = resolved_plugin
+            conventional_hooks = plugin_path / antigravity.HOOKS_FILENAME
+            if not _attached_as_hooks(state, conventional_hooks):
+                _add_contained_plugin_block(
+                    node, conventional_hooks, AntigravityHooksBlock, owner=resolved_plugin
+                )
+            native_mcp = plugin_path / antigravity.MCP_CONFIG_FILENAME
+            if not _attached_as_mcp(state, native_mcp):
+                _add_contained_plugin_block(
+                    node, native_mcp, AntigravityMcpBlock, owner=resolved_plugin
+                )
+            container.children.append(node)
 
         if container is not root:
             if marketplace_node is not None and resolved_plugin.is_relative_to(

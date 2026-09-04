@@ -1,0 +1,16 @@
+{
+  "name": "harbourworks",
+  "description": "Harbour team plugins for OpenAI Codex.",
+  "plugins": [
+    {
+      "name": "tide-tools",
+      "description": "Tide-window helpers for sailing schedules.",
+      "category": "productivity",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "source": "./.agents/plugins/tide-tools"
+    }
+  ]
+}

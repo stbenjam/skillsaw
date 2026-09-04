@@ -27,6 +27,7 @@ from typing import (
     Tuple,
 )
 
+from skillsaw.formats import antigravity
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
 from skillsaw.repository_types import RepositoryType
@@ -36,6 +37,18 @@ from skillsaw.utils import commented_key_line, read_text, read_json, read_json_s
 def _as_str(value: Any) -> Optional[str]:
     """*value* when it is a string, else ``None``."""
     return value if isinstance(value, str) else None
+
+
+def _normalize_antigravity_handler_type(handler: "HookHandler") -> None:
+    """Give an Antigravity handler with no ``type`` its default.
+
+    ``agy`` treats an absent or empty ``type`` as ``command``. The shared
+    security rules skip any handler whose type is not ``command``, so
+    leaving it empty would silently exempt every hook written the short way
+    — which is the way the vendor's own examples write them.
+    """
+    if not handler.type:
+        handler.type = "command"
 
 
 def _as_str_list(value: Any) -> Optional[List[str]]:
@@ -810,11 +823,29 @@ class CursorHooksBlock(HooksBlock):
 
 @dataclass(eq=False)
 class AntigravityHooksBlock(HooksBlock):
-    """Antigravity lifecycle hooks file (``hooks.json``).
+    """``<customization root>/hooks.json`` — Antigravity's lifecycle hooks.
 
-    Structure is ``{hook_name: {event_name: [...]}}``, where tool events use
-    grouped ``{matcher, hooks: [...]}`` entries and non-tool events use flat
-    handler lists.
+    A map of *named* hooks rather than one ``hooks`` object:
+    ``{name: {enabled?, Event: [...]}}``. ``PreToolUse`` and ``PostToolUse``
+    hold ``{matcher, hooks: [handler, ...]}`` groups; ``PreInvocation``,
+    ``PostInvocation``, ``Stop`` and ``SessionStart`` hold flat handler
+    lists. A :class:`HooksBlock` so the security rules find it with every
+    other host's file; the :attr:`events` override renders both shapes as
+    the shared :class:`HookEventConfig` structure, so ``hooks-dangerous``
+    and ``hooks-prohibited`` scan Antigravity hooks with no per-ecosystem
+    branch. ``antigravity-hooks-valid`` reads ``raw_data`` for the shape
+    itself.
+
+    Two deliberate readings, both measured against ``agy`` 1.1.25:
+
+    * A top-level ``enabled`` is **not** a kill switch. Every top-level key
+      is a hook *name*, so a boolean there is a hard parse error that drops
+      the whole file — reading it as "hooks off" would hand any repository
+      a one-word way to silence the command scanners.
+    * A hook-level ``"enabled": false`` still exposes its handlers. The
+      command is committed either way, and the one-word commit that arms it
+      is not the diff a reviewer should first learn of it from. skillsaw
+      reports what a repository ships, not what it currently runs.
     """
 
     category: str = "hooks"
@@ -828,36 +859,38 @@ class AntigravityHooksBlock(HooksBlock):
         data = self.raw_data
         if not isinstance(data, dict):
             return {}
-        if data.get("enabled") is False:
-            return {}
         result: Dict[str, List[HookEventConfig]] = {}
-        for hook_name, hook_spec in data.items():
+        for hook_spec in data.values():
             if not isinstance(hook_spec, dict):
                 continue
-            if hook_spec.get("enabled") is False:
-                continue
             for event_type, entries in hook_spec.items():
-                if event_type == "enabled" or not isinstance(entries, list):
+                if event_type in antigravity.HOOK_SPEC_NON_EVENT_KEYS:
                     continue
+                if not isinstance(entries, list):
+                    continue
+                # ``agy`` binds event keys case-insensitively, so the file's
+                # own spelling is normalized to the canonical name and two
+                # spellings of one event land in the same bucket.
+                canonical = antigravity.HOOK_EVENTS_BY_CASEFOLD.get(
+                    event_type.casefold() if isinstance(event_type, str) else "",
+                    event_type,
+                )
                 configs: List[HookEventConfig] = []
                 for entry in entries:
                     if not isinstance(entry, dict):
                         continue
                     if isinstance(entry.get("hooks"), list):
                         nested = HookEventConfig.from_dict(entry)
-                        for h in nested.handlers:
-                            if not h.type:
-                                h.type = "command"
+                        for handler in nested.handlers:
+                            _normalize_antigravity_handler_type(handler)
                         if nested.handlers:
                             configs.append(nested)
-                    else:
-                        handler = HookHandler.from_dict(entry)
-                        if handler:
-                            if not handler.type:
-                                handler.type = "command"
-                            configs.append(HookEventConfig(matcher="", handlers=[handler]))
+                        continue
+                    handler = HookHandler.from_dict(entry)
+                    _normalize_antigravity_handler_type(handler)
+                    configs.append(HookEventConfig(handlers=[handler]))
                 if configs:
-                    result.setdefault(event_type, []).extend(configs)
+                    result.setdefault(canonical, []).extend(configs)
         return result
 
 
@@ -907,11 +940,13 @@ class McpShapeDeferral:
     running both would report a correct file as invalid — so the block
     declares the deferral rather than the rule naming block classes.
 
-    *repo_type* is the type gating that format rule. The tree role is
-    deliberately ``--type``-invariant while every format rule is
-    ``repo_types``-gated, so a deferral conditioned on it falls back to the
-    shared walk under a forced ``--type`` rather than leaving the file
-    validated by nothing. ``None`` defers whatever ``--type`` says, for a
+    *repo_types* are the types gating that format rule — a set, because a
+    host whose rule is gated on more than one (Antigravity's file appears
+    both in a workspace and in a plugin) needs every one of them. The tree
+    role is deliberately ``--type``-invariant while every format rule is
+    ``repo_types``-gated, so a deferral conditioned on them falls back to
+    the shared walk under a forced ``--type`` rather than leaving the file
+    validated by nothing. Empty defers whatever ``--type`` says, for a
     document the shared walk cannot read at all — a fallback that reported
     a correct file would be worse than no fallback.
 
@@ -925,9 +960,19 @@ class McpShapeDeferral:
     ``--type`` gates that rule off.
     """
 
-    repo_type: Optional[RepositoryType] = None
+    repo_types: FrozenSet[RepositoryType] = frozenset()
     keeps_dialect_neutral_checks: bool = True
     syntax_error_rule: Optional[str] = None
+
+    def applies(self, active_types: Any) -> bool:
+        """Whether the owning rule can run under *active_types*.
+
+        Empty :attr:`repo_types` always defers; otherwise the deferral
+        holds only while at least one gating type is active, so a forced
+        ``--type`` that switches the owning rule off returns the file to
+        the shared walk.
+        """
+        return not self.repo_types or bool(self.repo_types & set(active_types))
 
 
 class McpConfigRole:
@@ -975,6 +1020,13 @@ class McpConfigRole:
         ("env", False),
         ("headers", True),
     )
+    #: Per-server keys holding the URL a remote server is reached at, read
+    #: by the dialect-neutral user-information check ``mcp-valid-json``
+    #: keeps for a block whose *shape* it defers. Declared on the block
+    #: because the spelling is the host's: the Claude family writes ``url``
+    #: and Antigravity writes ``serverUrl``. A host that spells it both
+    #: ways lists both.
+    connection_url_keys: ClassVar[Tuple[str, ...]] = ("url",)
     #: Key renames to apply before the credential-*name* test only, for a
     #: host whose older spelling the shared detector cannot split (OpenCode's
     #: 1.x ``clientSecret`` against its 2.0 ``client_secret``). Findings
@@ -990,6 +1042,13 @@ class McpConfigRole:
     #: :class:`McpShapeDeferral`. ``None`` — every Claude-family location —
     #: keeps the shared shape walk.
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = None
+    #: The rule whose release first put this location in the lint tree.
+    #: When a ``version:`` pin gates that rule off, the location is not yet
+    #: part of the pinned user's results, so ``mcp-valid-json`` skips the
+    #: block entirely rather than leaking a new diagnostic on an upgrade.
+    #: ``None`` — every location that predates the mechanism — is read
+    #: unconditionally.
+    surface_rule: ClassVar[Optional[str]] = None
     #: The syntax this document is written in, named in a parse-error
     #: finding. Announcing a TOML failure as invalid JSON would send the
     #: author to the wrong parser.
@@ -1060,7 +1119,7 @@ class AgentPluginMcpBlock(McpBlock):
     """
 
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
-        repo_type=RepositoryType.AGENT_PLUGIN,
+        repo_types=frozenset({RepositoryType.AGENT_PLUGIN}),
         keeps_dialect_neutral_checks=False,
     )
 
@@ -1226,7 +1285,7 @@ class OpenCodeMcpBlock(McpBlock):
 
     servers_key: ClassVar[str] = "mcp"
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
-        repo_type=RepositoryType.OPENCODE
+        repo_types=frozenset({RepositoryType.OPENCODE})
     )
     # OpenCode's config has a documented top-level key for everything from
     # ``model`` to ``keybinds``. A document with no ``mcp`` key declares no
@@ -1336,6 +1395,7 @@ class CopilotAgentMcpBlock(McpConfigRole, LintTarget):
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
     require_usable_connection: ClassVar[bool] = True
+    surface_rule: ClassVar[Optional[str]] = "copilot-agent-valid"
     type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({"local": "stdio"})
 
     @property
@@ -1379,13 +1439,42 @@ class SettingsBlock(JsonConfigBlock):
 
 @dataclass(eq=False)
 class AntigravityMcpBlock(McpBlock):
-    """Antigravity ``mcp_config.json`` configuration."""
+    """``mcp_config.json`` — Antigravity's MCP servers.
 
+    One per customization root and one per plugin. The *shape* is its own:
+    a remote server is spelled ``serverUrl`` (which wins over ``command``
+    when both are present), ``url`` plus ``type`` is a third accepted
+    form, and a server with no connection field at all loads without
+    complaint. ``mcp-valid-json`` therefore stands aside from the shape
+    checks here and ``antigravity-mcp-valid`` performs them instead; the
+    policy rules and the dialect-neutral checks — a file that is not JSON,
+    a ``url`` carrying user information, and the credentials in the maps
+    :attr:`credential_maps` declares — still read this block where they
+    read every other host's.
+    """
+
+    #: A document with no ``mcpServers`` wrapper is silently ignored:
+    #: ``agy`` loads no server from it and says nothing. Reading it as a
+    #: bare server map would validate a file that does nothing.
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
-    require_usable_connection: ClassVar[bool] = True
+    #: Measured: a server with neither ``command`` nor ``serverUrl`` loads
+    #: without any ``agy`` complaint, so "unusable connection" is not a
+    #: defect this host has.
+    require_usable_connection: ClassVar[bool] = False
+    #: Measured: a comment or a trailing comma is exit 1, not a warning.
     strict_json: ClassVar[bool] = True
+    surface_rule: ClassVar[Optional[str]] = "antigravity-mcp-valid"
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = antigravity.MCP_CREDENTIAL_MAPS
+    credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType(
+        dict(antigravity.MCP_CREDENTIAL_KEY_ALIASES)
+    )
+    #: ``serverUrl`` is Antigravity's spelling and wins over ``command``;
+    #: ``url`` is a third accepted form. Both carry a credential when
+    #: someone writes one into the authority, so both are scanned.
+    connection_url_keys: ClassVar[Tuple[str, ...]] = ("serverUrl", "url")
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
+        repo_types=frozenset({RepositoryType.ANTIGRAVITY, RepositoryType.ANTIGRAVITY_PLUGIN}),
         syntax_error_rule="antigravity-mcp-valid",
         keeps_dialect_neutral_checks=True,
     )
@@ -1396,7 +1485,13 @@ class AntigravityMcpBlock(McpBlock):
 
 @dataclass(eq=False)
 class AntigravityConfigBlock(JsonConfigBlock):
-    """Antigravity ``skills.json``, ``agents.json``, or ``rules.json`` registry."""
+    """An Antigravity registry file in a customization root.
+
+    ``agents.json``, ``plugins.json``, ``skills.json`` or
+    ``workflows.json`` — a ``customizations.JSONConfig`` document naming
+    where else to load that kind of customization from, not the
+    customizations themselves.
+    """
 
     category: str = "antigravity config"
     strict_json: ClassVar[bool] = True

@@ -5,20 +5,33 @@ from __future__ import annotations
 from typing import List
 
 from skillsaw.context import RepositoryContext
-from skillsaw.formats.antigravity import validate_antigravity_manifest
+from skillsaw.diagnostics import safe_display
+from skillsaw.formats.antigravity import PLUGIN_MESSAGE_FIELDS, PLUGIN_NAME_RE
 from skillsaw.lint_target import AntigravityPluginConfigNode
-from skillsaw.paths import safe_is_file
+from skillsaw.paths import safe_exists, safe_is_file, safe_is_symlink
 from skillsaw.repository_types import RepositoryType
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.utils import read_json_strict
 
 
 class AntigravityPluginJsonValidRule(Rule):
-    """Validate Antigravity plugin manifest (plugin.json)."""
+    """Validate an Antigravity plugin manifest.
+
+    ``plugin.json`` is the marker: ``agy`` loads a directory under
+    ``plugins/`` as a plugin only when the manifest parses. So a defect
+    here is not a quality problem, it is "this directory is not a plugin",
+    and the whole tree below it — skills, agents, hooks, MCP servers — goes
+    unloaded. That is what puts the parse and type failures at ERROR.
+
+    The manifest is a protojson message with four fields. Every other key,
+    ``$schema`` and ``version`` and ``author`` included, is discarded as
+    unknown and the plugin still loads, so none of them is reported.
+    """
 
     since = "0.20.0"
-    default_enabled = "auto"
-    repo_types = frozenset({RepositoryType.ANTIGRAVITY_PLUGIN, RepositoryType.ANTIGRAVITY})
+    # ``enabled: auto`` on the base default, gated on the two places these
+    # manifests live: an Antigravity workspace and an Antigravity plugin.
+    repo_types = frozenset({RepositoryType.ANTIGRAVITY, RepositoryType.ANTIGRAVITY_PLUGIN})
 
     @property
     def rule_id(self) -> str:
@@ -26,52 +39,96 @@ class AntigravityPluginJsonValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "plugin.json must declare a valid Antigravity plugin manifest"
+        return "plugin.json must parse as an Antigravity manifest with correctly typed fields"
 
     def default_severity(self) -> Severity:
-        return Severity.WARNING
+        return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
-        for target in context.lint_tree.find(AntigravityPluginConfigNode):
-            if not safe_is_file(target.path):
-                violations.append(
-                    self.violation(
-                        "plugin.json: missing manifest file",
-                        file_path=target.path,
-                        fingerprint_discriminator="missing manifest file",
-                    )
+        # The node itself is the format gate — no ``provenance_scope``, so a
+        # forced ``--type antigravity-plugin`` still reports a directory
+        # that carries no manifest at all.
+        for node in context.lint_tree.find(AntigravityPluginConfigNode):
+            violations.extend(self._check_manifest(node))
+        return violations
+
+    def _check_manifest(self, node: AntigravityPluginConfigNode) -> List[RuleViolation]:
+        manifest = node.path
+        if not safe_is_file(manifest):
+            problem = (
+                "plugin.json is not a regular file"
+                if (safe_exists(manifest) or safe_is_symlink(manifest))
+                else "plugin.json is missing"
+            )
+            return [
+                self.violation(
+                    f"{problem}; Antigravity loads a directory as a plugin only when it "
+                    "carries a parseable manifest",
+                    file_path=manifest,
+                    fingerprint_discriminator="manifest-unreadable",
                 )
+            ]
+
+        # Strict: a repeated key is a ``proto: duplicate field`` error for
+        # Antigravity, where a lenient reader would keep the last one and
+        # report the file clean.
+        data, error = read_json_strict(manifest)
+        if error:
+            return [
+                self.violation(
+                    f"plugin.json does not parse, so the directory is not a plugin: "
+                    f"{safe_display(error)}",
+                    file_path=manifest,
+                    fingerprint_discriminator="parse-error",
+                )
+            ]
+        if not isinstance(data, dict):
+            return [
+                self.violation(
+                    "plugin.json must be a JSON object, so the directory is not a plugin",
+                    file_path=manifest,
+                    fingerprint_discriminator="root-not-object",
+                )
+            ]
+
+        violations: List[RuleViolation] = []
+        for field, python_type, label in PLUGIN_MESSAGE_FIELDS:
+            if field not in data:
                 continue
-
-            data, error = read_json_strict(target.path)
-            if error:
+            value = data[field]
+            if python_type is bool:
+                well_typed = isinstance(value, bool)
+            else:
+                well_typed = isinstance(value, python_type) and not isinstance(value, bool)
+            if not well_typed:
                 violations.append(
                     self.violation(
-                        f"plugin.json: {error}",
-                        file_path=target.path,
-                        fingerprint_discriminator=error,
-                    )
-                )
-                continue
-
-            if not isinstance(data, dict):
-                violations.append(
-                    self.violation(
-                        "plugin.json: manifest root must be a JSON object",
-                        file_path=target.path,
-                        fingerprint_discriminator="manifest root must be a JSON object",
-                    )
-                )
-                continue
-
-            for err in validate_antigravity_manifest(data):
-                violations.append(
-                    self.violation(
-                        f"plugin.json: {err}",
-                        file_path=target.path,
-                        fingerprint_discriminator=err,
+                        f"'{field}' must be a {label}",
+                        file_path=manifest,
+                        fingerprint_discriminator=f"field:{field}",
                     )
                 )
 
+        name = data.get("name")
+        if "name" not in data:
+            violations.append(
+                self.violation(
+                    "'name' is absent; discovery falls back to the directory name and "
+                    "'agy plugin install' refuses the plugin",
+                    file_path=manifest,
+                    severity=Severity.INFO,
+                    fingerprint_discriminator="name-absent",
+                )
+            )
+        elif isinstance(name, str) and not PLUGIN_NAME_RE.match(name):
+            violations.append(
+                self.violation(
+                    f"plugin name '{safe_display(name)}' is not installable; "
+                    "'agy plugin install' accepts letters, digits, '-' and '_' only",
+                    file_path=manifest,
+                    severity=Severity.WARNING,
+                    fingerprint_discriminator="name-charset",
+                )
+            )
         return violations

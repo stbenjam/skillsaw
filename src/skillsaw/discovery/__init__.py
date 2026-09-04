@@ -33,6 +33,13 @@ CONVENTIONAL_SKILL_DIRS = (
     ".opencode/skill",  # OpenCode 1.x — still loaded by 2.0
     ".devin/skills",  # Devin CLI / Desktop, preferred spelling
     ".windsurf/skills",  # Windsurf Cascade (portable Agent Skills dialect)
+    # Google Antigravity's four customization roots. ``.agents/skills`` is
+    # already listed above as the portable spelling; the other three are
+    # Antigravity's own, and the vendor documents ``.agent/skills`` as the
+    # back-compat name it still reads.
+    ".agent/skills",
+    "_agents/skills",
+    "_agent/skills",
 )
 
 # Committed project memory: notes a team checks in for whatever agent reads

@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "gtfs-feed": {
+      "serverUrl": ["https://feeds.ferrymark.example/mcp/sse"]
+    },
+    "harbour-db": {
+      "command": "./bin/harbour-mcp",
+      "args": ["--read-only", 5],
+      "env": {
+        "PGPORT": 5432
+      }
+    },
+    "tide-tables": "https://tides.ferrymark.example/mcp",
+    "berth-simulator": {
+      "command": "./bin/berth-sim-mcp",
+      "disabledTools": "publish_feed",
+      "authProviderType": "oauth"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "berth-allocator": {
+      "command": "./bin/berth-mcp",
+      "args": ["--policy", "conf/berth-policy.yaml"],
+      "env": {
+        "BERTH_POLICY_STRICT": "1"
+      }
+    }
+  }
+}

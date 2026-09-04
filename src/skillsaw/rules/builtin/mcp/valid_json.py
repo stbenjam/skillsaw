@@ -7,7 +7,6 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from pathlib import Path
 
 from skillsaw.blocks import (
-    CopilotAgentMcpBlock,
     JsonConfigBlock,
     McpConfigRole,
 )
@@ -139,10 +138,11 @@ class McpValidJsonRule(Rule):
             # This tree role exists so the format rule and shared MCP rules
             # can read one parsed payload. When a version pin disables the
             # format rule that introduced the surface, keep the established
-            # rule set unchanged rather than leaking a new MCP diagnostic.
-            if isinstance(block, CopilotAgentMcpBlock) and not self.surface_rule_enabled(
-                "copilot-agent-valid"
-            ):
+            # rule set unchanged rather than leaking a new MCP diagnostic —
+            # including the dialect-neutral ones, which are about a document
+            # the pinned user's results never contained.
+            surface = block.surface_rule
+            if surface is not None and not self.surface_rule_enabled(surface):
                 continue
             # A host whose dialect its own format rule validates. Every
             # *shape* check below reads the document the way the Claude
@@ -161,9 +161,7 @@ class McpValidJsonRule(Rule):
             # unaffected either way — they read ``server_names``, which the
             # block normalizes.
             deferral = block.shape_deferral
-            if deferral is not None and (
-                deferral.repo_type is None or deferral.repo_type in context.repo_types
-            ):
+            if deferral is not None and deferral.applies(context.repo_types):
                 if deferral.keeps_dialect_neutral_checks:
                     owner = deferral.syntax_error_rule
                     violations.extend(
@@ -330,7 +328,9 @@ class McpValidJsonRule(Rule):
         user information is the same defect in every dialect. So is a
         credential sitting in a per-server map — the map's *name* differs
         between hosts, which is why the block declares it in
-        :attr:`McpBlock.credential_maps` rather than this rule naming it.
+        :attr:`McpBlock.credential_maps` rather than this rule naming it,
+        and why the URL field itself comes from
+        :attr:`McpBlock.connection_url_keys`.
 
         Keeping them here rather than in the deferring rule is what makes
         them survive a ``.skillsaw.yaml`` pinning a ``version:`` older than
@@ -364,14 +364,16 @@ class McpValidJsonRule(Rule):
             if not isinstance(server, dict):
                 continue
             shown = safe_display(str(name))
-            url = server.get("url")
-            if isinstance(url, str) and url_has_userinfo(url):
-                violations.append(
-                    self.violation(
-                        f"MCP server '{shown}' 'url' must not contain user information",
-                        file_path=block.path,
+            for url_key in block.connection_url_keys:
+                url = server.get(url_key)
+                if isinstance(url, str) and url_has_userinfo(url):
+                    violations.append(
+                        self.violation(
+                            f"MCP server '{shown}' '{url_key}' must not contain "
+                            "user information",
+                            file_path=block.path,
+                        )
                     )
-                )
             for key, header in block.credential_maps:
                 values = server.get(key)
                 if not isinstance(values, dict):

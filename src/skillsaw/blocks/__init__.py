@@ -48,6 +48,7 @@ from .content import (
 )
 from .frontmatter import (
     AgentBlock,
+    AntigravityAgentBlock,
     BodyContent,
     CommandBlock,
     CopilotAgentBlock,
@@ -142,6 +143,7 @@ __all__ = [
     "GrokRuleBlock",
     "AgentMemoryBlock",
     "AgentMemoryIndexBlock",
+    "AntigravityAgentBlock",
     "AntigravityRuleBlock",
     "QwenMdBlock",
     "ClineWorkflowBlock",

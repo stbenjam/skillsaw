@@ -26,9 +26,9 @@ and context rules backed by research and frontier lab guidance.
 It understands Agent Skills,
 [Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
 plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
-GEMINI.md, QWEN.md, Google Antigravity (.agents/ rules, hooks, plugins), Cursor, Copilot,
-Cline, Devin, Kiro, OpenCode, Muse Code, Grok Build, hooks, agent configuration,
-MCP Registry `server.json` publisher metadata,
+GEMINI.md, QWEN.md, Cursor, Copilot, Cline, Devin, Kiro, OpenCode, Muse Code,
+Grok Build, Google Antigravity, hooks, agent configuration, MCP Registry
+`server.json` publisher metadata,
 Vercel skills CLI lockfiles, and eval formats. Safe structural fixes can be applied
 automatically; everything else comes with precise, agent-friendly guidance.
 

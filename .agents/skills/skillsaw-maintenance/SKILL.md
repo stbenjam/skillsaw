@@ -43,6 +43,7 @@ to check, the rules that map, and sync notes (hand-copied values that can drift)
 | APM (`.apm/`) | [references/apm.md](references/apm.md) | `apm/` |
 | Muse Code (hooks) | [references/muse.md](references/muse.md) | `muse/`, `formats/muse.py` |
 | Grok Build (`.grok/` project layer) | [references/grok.md](references/grok.md) | `grok/`, `formats/grok.py` |
+| Google Antigravity (`.agents/` customization roots, plugins) | [references/antigravity.md](references/antigravity.md) | `antigravity/`, `formats/antigravity.py` |
 
 Pay special attention to the **Sync notes** in each reference: rules that hand-copy
 upstream value sets (OpenClaw's install kinds/os/archive, MCP transport types, APM

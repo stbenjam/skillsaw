@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "berth-allocator": {
+      "command": "./bin/berth-mcp",
+    }
+  }
+}

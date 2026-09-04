@@ -3,7 +3,7 @@
 
 # antigravity-hooks-valid
 
-hooks.json must declare valid Antigravity lifecycle hooks
+hooks.json must use Antigravity's hook events, handler types and fields
 
 | | |
 |---|---|
@@ -15,48 +15,131 @@ hooks.json must declare valid Antigravity lifecycle hooks
 
 ## Why
 
-`hooks.json` configures lifecycle hooks for Google Antigravity workspaces and plugins.
-Hooks run shell commands when specific agent lifecycle events occur (such as
-`PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, or `Stop`).
-Malformed hook configurations, unknown lifecycle events, invalid handler fields, or
-syntax errors prevent hooks from executing or cause Antigravity to fail to load the configuration.
+A customization root — `.agents/`, `.agent/`, `_agents/` or `_agent/` — can
+carry a `hooks.json` that runs shell commands and injects prompts around
+Antigravity's lifecycle events: before and after a tool runs, before and
+after an invocation, when a session starts, and when the agent stops. The
+file is committed, so the hooks are the team's, not one developer's. A
+plugin under `plugins/<name>/` carries its own `hooks.json` alongside its
+manifest.
+
+Antigravity tells nobody when it refuses one. Measured against `agy` 1.1.25:
+every load-time rejection drops the **whole file**, logs a single
+`failed to parse hooks.json at <path>` line to the debug log, and exits 0 —
+so a sibling hook that was working stops running and CI stays green. A key
+the parser does not recognise is quieter still: it is discarded, the file
+loads, and the hook it configures simply never fires.
+
+This rule reports both, and says which is which. Command execution is also
+scanned for security by [`hooks-dangerous`](hooks-dangerous.md) and can be
+inventoried against an allowlist with
+[`hooks-prohibited`](hooks-prohibited.md).
+
+## Severity
+
+**Errors** — Antigravity loads no hook from the file:
+
+- Invalid JSON, a non-finite number (`NaN`, `Infinity`, `-Infinity`), a
+  trailing comma or a comment. The parser is strict JSON.
+- A root that is not an object of named hooks.
+- An `enabled` key at the **top level**. Every top-level key is a hook
+  *name*, so there is no file-level switch to write there.
+- A named hook that is not an object, or an `enabled` inside one that is not
+  a boolean.
+- An event whose value is not an array; a group or a handler that is not an
+  object; a `matcher` that is not a string; a group's `hooks` that is not an
+  array.
+- A handler `type` outside `command` and `prompt`. The comparison is
+  case-sensitive: `"COMMAND"` is refused.
+- A command hook carrying `prompt` or `model`, or a prompt hook carrying
+  `command`.
+- A `timeout` that is not a whole number. It is a 32-bit integer: `0` and
+  negative values load, a float or a string does not.
+
+**Warnings** — the file loads and something in it never runs:
+
+- An event name Antigravity does not dispatch. Known names match
+  case-insensitively, so `pretooluse` is fine; `SessionEnd` is not an event
+  and its hooks never fire.
+- An unknown key on a handler or on a group. `env`, `cwd`, `name` and
+  `background` are all discarded, so a hook written with one does not do
+  what its author expects.
+- A command hook with no `command`, or an empty one. It loads and runs
+  nothing.
+
+While an error stands, the warnings are held back: nothing in the file has
+loaded, so nothing has been ignored yet.
+
+## What is not reported
+
+- **The `matcher` pattern.** Antigravity never compiles it at load time — an
+  unclosed character class loads clean — so no linter can say whether a
+  given pattern will be accepted, and the regex engine is unverified.
+  `""` and `"*"` are the documented catch-alls.
+- **A hook-level `"enabled": false`.** It is the documented per-hook switch
+  and a valid thing to commit. The security rules still read the commands
+  under it, because the command ships in the repository either way.
+- **A `prompt` hook with no `prompt` text**, and **an empty group or event
+  array**. All load.
+
+## Event names
+
+Two shapes, and the event decides which:
+
+- `PreToolUse`, `PostToolUse` — an array of `{matcher, hooks: [handler, …]}`
+  groups.
+- `PreInvocation`, `PostInvocation`, `Stop`, `SessionStart` — a flat array of
+  handlers. A `matcher` written on one of these is ignored.
 
 ## Examples
 
-**Bad:**
+**Bad** — a fractional `timeout`, which costs every hook in the file:
 
 ```json
 {
-  "audit-logger": {
-    "UnknownEvent": [
-      {
-        "command": "./scripts/audit.sh"
-      }
-    ]
-  }
-}
-```
-
-**Good:**
-
-```json
-{
-  "audit-logger": {
+  "shell-audit": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "run_command",
         "hooks": [
-          { "command": "./scripts/audit.sh", "timeout": 10 }
+          { "type": "command", "command": "./scripts/audit-command.sh", "timeout": 1.5 }
         ]
       }
     ]
   },
-  "test-hook": {
+  "lint-on-stop": {
+    "Stop": [{ "command": "make lint" }]
+  }
+}
+```
+
+**Good** — a tool matcher naming a tool Antigravity has, and a prompt hook
+that carries no `command`:
+
+```json
+{
+  "shell-audit": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          { "type": "command", "command": "./scripts/audit-command.sh", "timeout": 5 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "command": "./scripts/record-tool-call.sh" }]
+      }
+    ]
+  },
+  "timetable-reminder": {
     "PreInvocation": [
       {
-        "command": "echo test",
-        "timeout": 10,
-        "type": "command"
+        "type": "prompt",
+        "prompt": "Departure times in this repository are UTC.",
+        "model": "gemini-3-pro"
       }
     ]
   }
@@ -65,22 +148,25 @@ syntax errors prevent hooks from executing or cause Antigravity to fail to load 
 
 ## How to fix
 
-- Define a JSON object at the root of `hooks.json` containing hook groups keyed by hook name (e.g., `"audit-logger"`).
-- Optionally specify `"enabled": true` or `"enabled": false` within each hook group.
-- Use supported Antigravity lifecycle events:
-  - Tool events: `PreToolUse`, `PostToolUse` (configured as arrays of matcher objects with `matcher` regex and `hooks` list of handlers).
-  - Invocation/lifecycle events: `PreInvocation`, `PostInvocation`, `Stop` (configured as arrays of handler objects).
-- If Antigravity added an event after this skillsaw release, permit it under the rule's `extra-events` setting:
+- Write `timeout` as a whole number of seconds (`5`, not `5.0` or `"5"`).
+- Give a command hook a `command` and nothing else from the prompt side;
+  give a prompt hook a `prompt` and optionally a `model`.
+- Match against Antigravity's own tool names — `run_command`, `view_file`,
+  `write_to_file`, `replace_file_content`, `browser_*` — and use `""` or
+  `"*"` for every tool.
+- Move an `enabled` key inside the named hook it is meant to switch off.
+- Drop a key the parser discards, or move its value into the `command`
+  itself.
 
-  ```yaml
-  rules:
-    antigravity-hooks-valid:
-      extra-events:
-        - CustomLifecycleEvent
-  ```
+If Antigravity adds an event newer than this skillsaw release, allow it in
+`.skillsaw.yaml`:
 
-- Specify a `command` string, an optional `type` (`"command"`), and an optional positive number for `timeout` on each handler definition.
-- Verify that regular expression patterns in `matcher` fields are valid regexes.
+```yaml
+rules:
+  antigravity-hooks-valid:
+    extra-events:
+      - SessionEnd
+```
 
 ## Configuration
 
@@ -93,7 +179,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `extra-events` | Additional valid hook event names to permit beyond built-in events | `[]` |
+| `extra-events` | Additional hook event names to accept, for events newer than this skillsaw release | `[]` |
 
 
 *Run `skillsaw explain antigravity-hooks-valid` to see this documentation and the rule's effective configuration in your terminal.*

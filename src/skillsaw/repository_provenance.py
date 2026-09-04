@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
+from .discovery.antigravity import (
+    antigravity_manifest_is_contained,
+    antigravity_marker_escapes,
+)
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
 from .formats.grok import grok_manifest_is_contained, grok_marker_escapes
 from .paths import safe_exists, safe_resolve
@@ -25,7 +29,8 @@ class PluginProvenance:
 
     The single source of truth for every ecosystem-provenance question:
     which ecosystems declared the directory (``claude``, ``codex``,
-    ``agent-plugin``, or ``grok``), and whether it is vendor-installed
+    ``agent-plugin``, ``grok``, or ``antigravity``), and whether it is
+    vendor-installed
     content. Rules and
     the lint tree consult this record so two call sites cannot disagree about
     ownership and a directory cannot fall between per-ecosystem attach paths.
@@ -96,6 +101,18 @@ class PluginProvenance:
     def antigravity(self) -> bool:
         return "antigravity" in self.ecosystems
 
+    @property
+    def antigravity_only(self) -> bool:
+        """Antigravity claims the directory and Claude does not.
+
+        The same shape as :attr:`codex_only` and :attr:`grok_only`, and for
+        the same reason: the predicate asks whether Claude's looser reading
+        of hooks and MCP still governs the directory, and only a Claude
+        declaration answers yes. It gates the package-containment boundary
+        through ``_declares_containment``, never a skip.
+        """
+        return self.antigravity and not self.claude
+
 
 class RepositoryProvenanceMixin:
     """Cached provenance and containment behavior for RepositoryContext.
@@ -136,6 +153,8 @@ class RepositoryProvenanceMixin:
         def _grok_claim_set(self) -> Set[Path]: ...
 
         def _antigravity_claim_set(self) -> Set[Path]: ...
+
+        def antigravity_plugin_roots(self) -> List[Path]: ...
 
         def codex_plugin_roots(self) -> List[Path]: ...
 
@@ -226,7 +245,16 @@ class RepositoryProvenanceMixin:
             and not grok_marker_escapes(plugin_dir)
         ):
             ecosystems.add("grok")
-        if resolved is not None and resolved in self._antigravity_claim_set():
+        if antigravity_manifest_is_contained(plugin_dir) or (
+            resolved is not None
+            and resolved in self._antigravity_claim_set()
+            # A forced ``--type antigravity-plugin`` claims every direct
+            # child of a ``plugins/`` directory, manifest or not. The marker
+            # gets the same containment check discovery applies, so a
+            # ``plugin.json`` symlinked out of the plugin is not this
+            # plugin's and no node is built to read it.
+            and not antigravity_marker_escapes(plugin_dir)
+        ):
             ecosystems.add("antigravity")
         record = PluginProvenance(
             ecosystems=frozenset(ecosystems),
@@ -332,11 +360,14 @@ class RepositoryProvenanceMixin:
     def contained_plugin_owning(self, path: Path) -> Optional[Path]:
         """Nearest plugin root whose package files have containment semantics.
 
-        Codex, Agent Plugins and Grok all require supplied files to resolve
-        inside the package — Grok's enforcement is measured, a declared path
-        whose target exists outside the plugin loaded nothing. Claude's
-        legacy format has no equivalent package-wide contract, so it
-        deliberately remains outside this helper, and a Grok root a Claude
+        Codex, Agent Plugins, Grok and Antigravity all require supplied
+        files to resolve inside the package — Grok's enforcement is
+        measured, a declared path whose target exists outside the plugin
+        loaded nothing; Antigravity's is skillsaw's own deliberate
+        divergence from ``agy``, which follows a symlink out (see
+        ``discovery/antigravity.py``). Claude's legacy format has no
+        equivalent package-wide contract, so it deliberately remains
+        outside this helper, and a Grok or Antigravity root a Claude
         manifest also declares is left on Claude's looser reading for the
         same reason ``grok_only`` exists.
         """
@@ -345,6 +376,11 @@ class RepositoryProvenanceMixin:
                 set(self.codex_plugin_roots())
                 | set(self._agent_plugin_root_set())
                 | {root for root in self.grok_plugin_roots() if self.provenance(root).grok_only}
+                | {
+                    root
+                    for root in self.antigravity_plugin_roots()
+                    if self.provenance(root).antigravity_only
+                }
             )
         roots = self._contained_plugin_roots
         if not roots:
@@ -384,6 +420,7 @@ class RepositoryProvenanceMixin:
             self._codex_claims_possible()
             or bool(self._agent_plugin_root_set())
             or bool(self.grok_plugin_roots())
+            or bool(self.antigravity_plugin_roots())
         )
 
     def _is_containment_plugin(self, path: Path) -> bool:
@@ -396,9 +433,10 @@ class RepositoryProvenanceMixin:
     def _declares_containment(self, path: Path) -> bool:
         """Whether an ecosystem that contains its package files owns *path*.
 
-        Codex or Grok with no Claude declaration. The ``_only`` half is what
-        keeps a dual-manifest directory on Claude's looser reading, where a
-        supplied file has no package-wide containment contract.
+        Codex, Grok or Antigravity with no Claude declaration. The
+        ``_only`` half is what keeps a dual-manifest directory on Claude's
+        looser reading, where a supplied file has no package-wide
+        containment contract.
         """
         record = self.provenance(path)
-        return record.codex_only or record.grok_only
+        return record.codex_only or record.grok_only or record.antigravity_only

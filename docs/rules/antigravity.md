@@ -3,12 +3,12 @@
 
 # Google Antigravity
 
-Validates Google Antigravity primitives: plugin manifests (`plugin.json`), lifecycle hooks (`hooks.json`), MCP server configs (`mcp_config.json`), and configuration registries (`skills.json`, `agents.json`, `rules.json`). Auto-enabled when Antigravity primitives or `.agents/` / `.agent/` directories are detected.
+Validates Google Antigravity primitives: plugin manifests (`plugin.json`), lifecycle hooks (`hooks.json`), MCP servers (`mcp_config.json`), and the registries (`agents.json`, `plugins.json`, `skills.json`, `workflows.json`) that name where else to load customizations from. Detection needs one of those files, a populated `rules/` or `agents/`, or a plugin, inside a customization root — `.agents/`, `.agent/`, `_agents/` or `_agent/`; the directory's presence is not evidence on its own, because `.agents/skills/` and `.agents/memory/` are shared conventions every tool reads. The manifest, hooks and MCP rules are auto-enabled once Antigravity is detected; the registry rule is opt-in.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry JSON files (skills.json, agents.json, rules.json) under .agents/ or .agent/ must be valid JSON objects | error (disabled) | - |
-| [`antigravity-hooks-valid`](antigravity-hooks-valid.md) | hooks.json must declare valid Antigravity lifecycle hooks | error (auto) | - |
-| [`antigravity-mcp-valid`](antigravity-mcp-valid.md) | Antigravity mcp_config.json must declare valid MCP server configurations with supported transports ('serverUrl' or 'command') | error | - |
-| [`antigravity-plugin-json-valid`](antigravity-plugin-json-valid.md) | plugin.json must declare a valid Antigravity plugin manifest | warning (auto) | - |
+| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must parse as an object whose 'entries' are objects with a string 'path' | error (disabled) | - |
+| [`antigravity-hooks-valid`](antigravity-hooks-valid.md) | hooks.json must use Antigravity's hook events, handler types and fields | error (auto) | - |
+| [`antigravity-mcp-valid`](antigravity-mcp-valid.md) | mcp_config.json must parse and declare servers Antigravity can load | error (auto) | - |
+| [`antigravity-plugin-json-valid`](antigravity-plugin-json-valid.md) | plugin.json must parse as an Antigravity manifest with correctly typed fields | error (auto) | - |
 

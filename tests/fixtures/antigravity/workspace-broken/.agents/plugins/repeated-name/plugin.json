@@ -1,0 +1,5 @@
+{
+  "name": "repeated-name",
+  "description": "Two name keys, of which Antigravity's parser accepts neither.",
+  "name": "repeated-name-v2"
+}

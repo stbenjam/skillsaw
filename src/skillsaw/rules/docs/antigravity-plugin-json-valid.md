@@ -1,47 +1,81 @@
 ## Why
 
-`plugin.json` is the manifest declaring a Google Antigravity plugin package.
-Antigravity reads plugin metadata (such as name, description, version, and author)
-from this file. If the manifest contains invalid JSON, unexpected types, or
-unrecognized fields, the plugin may fail to load or behave unpredictably.
+An Antigravity plugin is a direct child of `plugins/` under a customization
+root — `.agents/plugins/<name>/`, or the `.agent/`, `_agents/`, `_agent/`
+equivalents — and `plugin.json` is what makes it one. Measured against `agy`
+1.1.25: a directory whose manifest does not parse is not loaded as a plugin
+at all. Its skills, agents, commands, rules, hooks and MCP servers all go
+unread, and the only trace is one line in the debug log.
+
+That is why a type error here is an error rather than a style note: the cost
+is the whole package, not the field.
+
+The manifest is a protobuf JSON message with exactly four fields that carry
+meaning — `name`, `description`, `disabled`, `logo`. Every other key,
+`$schema` and `version` and `author` included, is discarded as unknown and
+the plugin still loads, so none of them is reported.
+
+## Severity
+
+**Errors** — the directory is not a plugin:
+
+- `plugin.json` is missing, or is not a regular file.
+- Invalid JSON, or a duplicate key. Antigravity's parser rejects a repeated
+  field rather than keeping the last one.
+- A root that is not a JSON object.
+- A type error on one of the four fields: `name`, `description` and `logo`
+  must be strings, `disabled` a boolean.
+
+**Warnings** — the plugin loads in place but cannot be installed:
+
+- A `name` outside `[A-Za-z0-9_-]`, or one beginning with a dot.
+  `agy plugin install` refuses `Bad Name`, `a/b`, `../esc` and `.hidden`;
+  discovery does not.
+
+**Info**:
+
+- No `name` at all. Discovery falls back to the directory name, so the
+  plugin works where it sits, and `agy plugin validate` and
+  `agy plugin install` both refuse it.
+
+## What is not reported
+
+- **Unknown keys.** `$schema`, `version`, `author`, `homepage`, `license`,
+  `keywords`, `entrypoint` and everything else are discarded by the parser
+  and cost nothing. A package written to the portable Agent Plugins schema
+  and dropped into `.agents/plugins/` is claimed and loaded by Antigravity
+  unchanged, and this rule says nothing about it.
+- **A `$schema` value.** No plugin schema is published for this host, so
+  there is nothing to check one against.
+- **`disabled: true`.** It is the documented way to keep a plugin in the
+  tree without loading it.
 
 ## Examples
 
-**Bad:**
+**Bad** — `name` written as a number, so nothing in the directory loads:
 
 ```json
 {
-  "name": "Invalid Plugin Name!",
-  "disabled": "yes",
-  "extra_unknown": 123
+  "name": 42,
+  "description": "Berth allocation helpers"
 }
 ```
 
-**Good:**
+**Good**:
 
 ```json
 {
-  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "description": "Provides team utilities and workflows.",
-  "author": {
-    "name": "Team Dev"
-  },
-  "disabled": false
+  "name": "berth-tools",
+  "description": "Berth allocation helpers: a status command, an allocation reviewer, and the simulator MCP server.",
+  "logo": "assets/berth-tools.png"
 }
 ```
 
 ## How to fix
 
-Ensure `plugin.json` is valid JSON and its root element is a JSON object.
-
-Allowed fields in an Antigravity plugin manifest include:
-- `name` (string, required): The name of the plugin, matching `^[a-zA-Z0-9-_]+$`.
-- `$schema` (string, recommended): Schema URL (e.g., `"https://antigravity.google/schemas/v1/plugin.json"`).
-- `description` (string, optional): A short summary of the plugin's purpose.
-- `version` (string, optional): Plugin version string.
-- `author` (string or object, optional): Author attribution (either a string or an object with `name`).
-- `disabled` (boolean, optional): Whether the plugin is disabled.
-
-Remove any unrecognized keys or fix type mismatches.
+- Give `name` a string of letters, digits, `-` and `_`, matching the
+  directory name.
+- Give `description` a sentence saying when the plugin is worth loading —
+  it is what a reader sees before the components.
+- Write `disabled` as a boolean, not `"no"` or `0`.
+- Delete a repeated key rather than relying on one of the two winning.

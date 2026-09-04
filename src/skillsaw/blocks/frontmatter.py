@@ -598,6 +598,20 @@ class GrokAgentBlock(FrontmatteredBlock):
 
 
 @dataclass(eq=False)
+class AntigravityAgentBlock(FrontmatteredBlock):
+    """``<customization root>/agents/*.md`` — Antigravity's subagents.
+
+    Deliberately not an :class:`AgentBlock`: that class is what the Claude
+    agent-frontmatter rules select, and Antigravity's own frontmatter
+    contract is unmeasured. Budgeted as a ``command`` would be wrong too —
+    a subagent is loaded when it is delegated to, which is the ``agent``
+    role every peer tool's subagents carry.
+    """
+
+    category: str = "agent"
+
+
+@dataclass(eq=False)
 class CopilotPromptBlock(FrontmatteredBlock):
     """.github/prompts/**/*.prompt.md — Copilot prompt files."""
 

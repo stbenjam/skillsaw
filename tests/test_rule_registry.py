@@ -230,7 +230,7 @@ def test_every_detected_tool_type_is_listed_in_tool_repo_types(tmp_path):
     (tmp_path / "GEMINI.md").write_text("# Gemini\n\nRun `make test`.\n")
     (tmp_path / "QWEN.md").write_text("# Qwen\n\nRun `make test`.\n")
     (tmp_path / ".agents").mkdir(exist_ok=True)
-    (tmp_path / ".agents" / "hooks.json").write_text('{"hooks": {}}\n')
+    (tmp_path / ".agents" / "hooks.json").write_text('{"lint": {"Stop": []}}\n')
     (tmp_path / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
     (tmp_path / "CLAUDE.md").write_text("# Claude\n\nRun `make test`.\n")
     (tmp_path / ".coderabbit.yaml").write_text("reviews:\n  profile: chill\n")

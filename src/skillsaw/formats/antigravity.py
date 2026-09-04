@@ -1,202 +1,183 @@
 r"""Google Antigravity repository-context vocabulary, in one place.
 
-Google Antigravity is an agentic coding assistant and execution platform.
-A workspace or repository configures it through ``.agents/`` or ``.agent/``:
-portable Agent Skills in ``skills/``, rules in ``rules/**/*.md``, configuration
-registries in ``skills.json``, ``agents.json``, and ``rules.json``, lifecycle
-hooks in ``hooks.json``, MCP servers in ``mcp_config.json``, and plugins in
-``plugins/<name>/``.
+Google Antigravity is Google's agentic coding platform. A checkout
+configures its CLI (``agy``) through a *customization root* — ``.agents/``,
+``.agent/``, ``_agents/`` or ``_agent/`` — holding lifecycle hooks in
+``hooks.json``, MCP servers in ``mcp_config.json``, always-on prose in
+``rules/**/*.md``, portable Agent Skills in ``skills/``, subagents in
+``agents/``, plugins in ``plugins/<name>/``, and the registries listed in
+:data:`REGISTRY_FILENAMES`.
 
 Sources:
 
-* Antigravity Lifecycle Hooks specification:
-  https://antigravity.google/docs/hooks/ (read September 2026)
-* Antigravity Plugins specification:
-  https://antigravity.google/docs/plugins/ (read September 2026)
-* Antigravity CLI Plugins guide:
-  https://antigravity.google/docs/cli/plugins/ (read September 2026)
-* Antigravity MCP Server Configuration:
-  https://antigravity.google/docs/mcp/ (read September 2026)
-* Antigravity Rules and Workflows:
-  https://antigravity.google/docs/rules-workflows/ (read September 2026)
-* Antigravity Platform Changelog:
-  https://antigravity.google/changelog/ (read September 2026)
+* Measured against ``agy`` 1.1.25 (``agy changelog`` head; the language
+  server logs the same version). Method: an isolated ``HOME`` — the real
+  ``~/.gemini`` never read or written — outbound proxies pointed at a dead
+  port, one fixture per case, read back from ``agy agents``, ``agy mcp
+  list``, ``agy plugin validate`` and the ``--log-file`` diagnostics
+  (``hooks_manager.go``, ``discovery.go``, ``plugins.go``). A workspace is
+  reported only when passed with ``--add-dir``; the CWD alone is not
+  enough, which is a property of these subcommands rather than of the
+  layout. No model turn ever ran (``agy --print`` blocks on OAuth), so
+  every hooks fact below is about *loading*, never about dispatch.
+* The vendor documentation the binary embeds verbatim as string blobs
+  (``# Lifecycle Hooks (hooks.json)``, ``# MCP Servers
+  (mcp_config.json)``, ``# Plugins``, ``# JSON Configuration Files``,
+  ``# Antigravity Customization System Guide``), quoted where it settles a
+  point runtime could not. Marked "documented" wherever that is the only
+  evidence.
+* https://antigravity.google/docs/mcp/ (read 2026-09-03), which names the
+  workspace ``mcp_config.json`` location the embedded copy omits.
 
-Note: No formal JSON schema is published for registry files (``skills.json``,
-``agents.json``, ``rules.json``); validation reflects documented runtime conventions.
+**Failure scopes.** They differ per file and are what makes a defect worth
+reporting:
+
+* ``hooks.json`` — every load-time rejection is **file-scoped and
+  non-fatal**. The file contributes zero hooks, one ``failed to parse
+  hooks.json at <path>: <err>`` is logged, and ``agy`` still exits 0. There
+  is no entry-scoped rejection and no startup abort.
+* ``mcp_config.json`` — a JSON syntax error or a non-object root is
+  **startup-fatal** (exit 1, one message naming the file). Any per-server
+  shape problem drops **that server only, silently**. There is no middle
+  ground and no per-server diagnostic.
+* ``plugin.json`` — a manifest that does not parse means the directory is
+  not a plugin at all: it is skipped with one ``plugins.go`` line.
+* A registry — a non-object root logs one ``Failed to load JSON config
+  file`` line and that file is skipped.
+
+**What was not observable offline.** Whether a workspace or plugin
+``mcp_config.json`` is read at all (``agy mcp list`` and ``agy mcp add``
+are home-only; the shape matrix below was obtained at the global path,
+which exercises the same parser); skill discovery (no listing command);
+``skills.json`` and ``workflows.json`` as loaders (``agy agents`` queries
+only the agents and plugins kinds); and every runtime hook behaviour,
+including what a ``matcher`` is compiled with.
 """
 
 from __future__ import annotations
 
 import re
-import warnings
-from typing import Any, List, Optional, Set
 
-from skillsaw.diagnostics import safe_display
+#: The four customization roots, measured: a ``hooks.json`` or an
+#: ``agents/<n>.md`` under each is honoured. Discovery walks **up** from
+#: the entry directory to the repository root and unions every root it
+#: finds on the way; it never descends, and a ``.git`` directory is not
+#: required. ``.gemini/`` and ``.antigravity/`` are deliberately absent —
+#: neither is read from a workspace.
+ANTIGRAVITY_CONFIG_DIR_NAMES = (".agents", ".agent", "_agents", "_agent")
 
-ANTIGRAVITY_CONFIG_DIR_NAMES = (".agents", ".agent")
-
+#: The plugin marker, a direct child of ``<root>/plugins/`` only: a nested
+#: ``plugins/outer/inner/plugin.json`` is not discovered, and a directory
+#: named by a sibling catalog but carrying no manifest is not a plugin.
 PLUGIN_MANIFEST = "plugin.json"
+
+#: Lifecycle hooks, one file per customization root and one per plugin.
 HOOKS_FILENAME = "hooks.json"
+
+#: MCP servers, one file per customization root and one per plugin.
 MCP_CONFIG_FILENAME = "mcp_config.json"
-SKILLS_CONFIG_FILENAME = "skills.json"
-AGENTS_CONFIG_FILENAME = "agents.json"
-RULES_CONFIG_FILENAME = "rules.json"
 
-PLUGIN_KNOWN_FIELDS = frozenset({"$schema", "name", "description", "version", "author", "disabled"})
+#: Component directories under a customization root. ``rules/`` is read
+#: recursively as always-on prose and ``agents/`` holds subagents, so both
+#: are attached here. Two more are named by the host and belong elsewhere:
+#: ``skills/`` is the portable Agent Skills convention, walked through
+#: ``CONVENTIONAL_SKILL_DIRS``, which earns the whole skill rule set; and
+#: ``plugins/`` is the install location, which belongs to plugin discovery.
+#: A plugin adds a ``commands/`` that ``agy plugin validate`` reports as
+#: "converted to skills"; the shared plugin-prose attach reads it.
+RULES_DIR_NAME = "rules"
+AGENTS_DIR_NAME = "agents"
+PLUGINS_DIR_NAME = "plugins"
 
+#: Registry files a customization root may carry, each a
+#: ``customizations.JSONConfig`` document naming where else to load that
+#: kind of customization from. ``agents.json`` and ``plugins.json`` are
+#: measured (a non-object root logs ``Failed to load JSON config file``);
+#: ``skills.json`` is documented; ``workflows.json`` is named by the
+#: embedded migrate-workflows skill, which spells out all four roots. A
+#: ``rules.json`` literal exists in the binary but no loader was reached
+#: for it, so it is deliberately not here.
+REGISTRY_FILENAMES = ("agents.json", "plugins.json", "skills.json", "workflows.json")
+
+#: The four fields ``plugin.json`` carries meaning in. The manifest is a
+#: **protojson** message (errors read ``proto: (line 1:9): invalid value
+#: for string field name: 42``), so every other key — ``$schema``,
+#: ``version``, ``author``, ``mcpServers``, ``hooks`` — is discarded as
+#: unknown and the plugin still loads. Measured by giving each candidate
+#: key a wrong-typed value and reading the type error back.
+PLUGIN_MESSAGE_FIELDS = (
+    ("name", str, "string"),
+    ("description", str, "string"),
+    ("disabled", bool, "boolean"),
+    ("logo", str, "string"),
+)
+
+#: Names ``agy plugin validate`` and ``agy plugin install`` accept.
+#: Discovery enforces nothing — ``{"name": "has spaces"}`` and ``{"name":
+#: "a/b"}`` both load, and a manifest with no ``name`` at all defaults to
+#: the directory name — but ``install`` refuses both, and ``.hidden`` with
+#: them, so a committed manifest that cannot be installed is worth a word.
+PLUGIN_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+#: Events whose value is a list of ``{matcher, hooks: [handler, ...]}``
+#: groups (``[]jsonhook.ToolHookGroup``).
 TOOL_HOOK_EVENTS = frozenset({"PreToolUse", "PostToolUse"})
-NON_TOOL_HOOK_EVENTS = frozenset({"PreInvocation", "PostInvocation", "Stop"})
-HOOK_EVENTS = TOOL_HOOK_EVENTS | NON_TOOL_HOOK_EVENTS
 
-VALID_HOOK_HANDLER_TYPES = frozenset({"command"})
+#: Events whose value is a flat handler list (``[]jsonhook.HookHandler``).
+#: ``SessionStart`` is undocumented and real — the binary binds it like the
+#: other three.
+FLAT_HOOK_EVENTS = frozenset({"PreInvocation", "PostInvocation", "Stop", "SessionStart"})
 
-_PLUGIN_NAME_RE = re.compile(r"^[a-zA-Z0-9-_]+$")
+HOOK_EVENTS = TOOL_HOOK_EVENTS | FLAT_HOOK_EVENTS
 
+#: Event keys bind **case-insensitively**: ``{"n": {"pretooluse": 5}}``
+#: reports ``cannot unmarshal number into Go struct field .n.pretooluse of
+#: type []jsonhook.ToolHookGroup``, so ``pretooluse`` reached ``PreToolUse``.
+#: A rule that flags a lower-cased event name as unknown is a false positive.
+HOOK_EVENTS_BY_CASEFOLD = {name.casefold(): name for name in HOOK_EVENTS}
 
-def validate_antigravity_manifest(data: Any) -> List[str]:
-    """Validate parsed data from an Antigravity ``plugin.json`` manifest."""
-    if not isinstance(data, dict):
-        return ["manifest root must be a JSON object"]
+#: An unknown event key is **silently ignored**: no error, no counter
+#: change, and the hook it holds never runs.
+#:
+#: Handler types. ``command`` is the default when ``type`` is absent or
+#: ``""``; ``prompt`` is real (``prompt hook cannot specify 'command'``
+#: proves the branch). Any other value fails the file, and the comparison
+#: is case-sensitive — ``"COMMAND"`` is rejected.
+HOOK_HANDLER_TYPES = frozenset({"command", "prompt"})
 
-    errors: List[str] = []
-    unknown = set(data) - PLUGIN_KNOWN_FIELDS
-    for field in sorted(unknown):
-        errors.append(f"unknown field '{safe_display(field)}'")
+#: ``hookHandlerJSON``'s fields. Anything else on a handler — ``name``,
+#: ``env``, ``cwd``, ``enabled`` — is silently ignored, so a hook written
+#: with one never does what its author expects.
+HOOK_HANDLER_KEYS = frozenset({"type", "command", "prompt", "model", "timeout"})
 
-    if "name" in data:
-        name = data["name"]
-        if not isinstance(name, str) or not name.strip():
-            errors.append("'name' must be a non-empty string")
-        elif not _PLUGIN_NAME_RE.match(name):
-            errors.append(
-                f"invalid plugin name '{safe_display(name)}' (must contain only alphanumeric characters, dashes, or underscores)"
-            )
+#: ``ToolHookGroup``'s fields. ``type``, ``command``, ``tools`` and
+#: ``event`` inside a group are silently ignored.
+#:
+#: ``matcher`` must be a string and is **never compiled at load** —
+#: ``"[unclosed"`` loads clean — so no linter can claim ``agy`` will reject
+#: a pattern, and skillsaw compiles nothing here. ``""`` and ``"*"`` are the
+#: documented catch-alls. The engine is unproven: the binary is Go and
+#: carries ``regexp/syntax`` types, which implies RE2, but no run
+#: demonstrated it.
+HOOK_GROUP_KEYS = frozenset({"matcher", "hooks"})
 
-    if "description" in data:
-        description = data["description"]
-        if not isinstance(description, str):
-            errors.append("'description' must be a string")
+#: Per-named-hook fields that are not events. ``enabled`` is documented as
+#: the per-hook switch. At the **top level** ``enabled`` is not a switch at
+#: all: every top-level key is a hook *name*, so a boolean there is a hard
+#: parse error (``cannot unmarshal bool into Go struct field .enabled of
+#: type jsonhook.JSONHookSpec``) that kills the file.
+HOOK_SPEC_NON_EVENT_KEYS = frozenset({"enabled"})
 
-    if "version" in data:
-        version = data["version"]
-        if not isinstance(version, str) or not version.strip():
-            errors.append("'version' must be a non-empty string")
+#: Per-server maps in ``mcp_config.json`` whose values may hold a committed
+#: credential, as ``(key, is_http_header)``. All three are measured to
+#: load: ``env``, ``headers``, and ``oauth`` carrying ``clientId`` /
+#: ``clientSecret``. A server may also spell those two at its own top
+#: level, where they are scalars rather than a map — the shared scan reads
+#: maps, so that spelling stays out of reach of every host, Antigravity
+#: included.
+MCP_CREDENTIAL_MAPS = (("env", False), ("headers", True), ("oauth", False))
 
-    if "disabled" in data:
-        disabled = data["disabled"]
-        if not isinstance(disabled, bool):
-            errors.append("'disabled' must be a boolean")
-
-    if "author" in data:
-        author = data["author"]
-        if isinstance(author, dict):
-            if "name" in author and not isinstance(author["name"], str):
-                errors.append("'author.name' must be a string")
-        elif not isinstance(author, str):
-            errors.append("'author' must be an object or a string")
-
-    return errors
-
-
-def validate_antigravity_hooks(data: Any, extra_events: Optional[Set[str]] = None) -> List[str]:
-    """Validate parsed data from an Antigravity ``hooks.json`` document."""
-    if not isinstance(data, dict):
-        return ["hooks root must be a JSON object"]
-
-    errors: List[str] = []
-    allowed_events = HOOK_EVENTS | (extra_events or frozenset())
-
-    for hook_name, hook_spec in data.items():
-        prefix = f"hook '{safe_display(hook_name)}':"
-        if not isinstance(hook_spec, dict):
-            errors.append(f"{prefix} hook configuration must be a JSON object")
-            continue
-
-        if "enabled" in hook_spec and not isinstance(hook_spec["enabled"], bool):
-            errors.append(f"{prefix} 'enabled' must be a boolean")
-
-        for key, value in hook_spec.items():
-            if key == "enabled":
-                continue
-            if key not in allowed_events:
-                errors.append(f"{prefix} unknown event '{safe_display(key)}'")
-                continue
-
-            if not isinstance(value, list):
-                errors.append(f"{prefix} event '{safe_display(key)}' must be a list")
-                continue
-
-            if key in TOOL_HOOK_EVENTS:
-                # Grouped: [{matcher, hooks: [{command, type?, timeout?}]}]
-                for idx, matcher_entry in enumerate(value):
-                    entry_prefix = f"{prefix} {key}[{idx}]:"
-                    if not isinstance(matcher_entry, dict):
-                        errors.append(f"{entry_prefix} matcher entry must be an object")
-                        continue
-
-                    if "matcher" in matcher_entry:
-                        matcher = matcher_entry["matcher"]
-                        if not isinstance(matcher, str):
-                            errors.append(f"{entry_prefix} 'matcher' must be a string")
-                        elif len(matcher) > 1000:
-                            errors.append(
-                                f"{entry_prefix} 'matcher' regex pattern exceeds maximum length of 1000 characters"
-                            )
-                        else:
-                            try:
-                                with warnings.catch_warnings():
-                                    warnings.simplefilter("ignore", FutureWarning)
-                                    re.compile(matcher)
-                            except (re.error, RecursionError, OverflowError) as err:
-                                errors.append(
-                                    f"{entry_prefix} invalid regex in 'matcher': {safe_display(err)}"
-                                )
-
-                    if "hooks" not in matcher_entry:
-                        errors.append(f"{entry_prefix} missing required field 'hooks'")
-                    elif not isinstance(matcher_entry["hooks"], list):
-                        errors.append(f"{entry_prefix} 'hooks' must be a list of handlers")
-                    else:
-                        for h_idx, handler in enumerate(matcher_entry["hooks"]):
-                            h_prefix = f"{entry_prefix} hooks[{h_idx}]:"
-                            _validate_hook_handler(handler, h_prefix, errors)
-            else:
-                # Non-tool events: list of handler objects directly
-                for idx, handler in enumerate(value):
-                    h_prefix = f"{prefix} {key}[{idx}]:"
-                    _validate_hook_handler(handler, h_prefix, errors)
-
-    return errors
-
-
-def _validate_hook_handler(handler: Any, prefix: str, errors: List[str]) -> None:
-    if not isinstance(handler, dict):
-        errors.append(f"{prefix} handler must be an object")
-        return
-
-    if "command" not in handler:
-        errors.append(f"{prefix} missing required field 'command'")
-    elif not isinstance(handler["command"], str) or not handler["command"].strip():
-        errors.append(f"{prefix} 'command' must be a non-empty string")
-
-    if "type" in handler:
-        type_val = handler["type"]
-        if not isinstance(type_val, str):
-            errors.append(f"{prefix} 'type' must be a string")
-        elif type_val not in VALID_HOOK_HANDLER_TYPES:
-            errors.append(
-                f"{prefix} unsupported handler type '{safe_display(type_val)}' (only 'command' is supported)"
-            )
-
-    if "timeout" in handler:
-        timeout = handler["timeout"]
-        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
-            errors.append(f"{prefix} 'timeout' must be a positive number")
-
-
-def validate_antigravity_config(data: Any) -> List[str]:
-    """Validate parsed data from an Antigravity configuration file (skills.json, agents.json, rules.json)."""
-    if not isinstance(data, dict):
-        return ["configuration root must be a JSON object"]
-    return []
+#: The ``oauth`` map's keys, renamed to the snake_case spelling the shared
+#: credential-*name* detector knows. Without this ``clientSecret`` reads as
+#: an unremarkable key and a literal secret under it goes unreported.
+MCP_CREDENTIAL_KEY_ALIASES = {"clientId": "client_id", "clientSecret": "client_secret"}

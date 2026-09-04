@@ -15,8 +15,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
-from skillsaw.formats import codex, devin, grok, muse
-from skillsaw.formats.antigravity import ANTIGRAVITY_CONFIG_DIR_NAMES
+from skillsaw.formats import antigravity, codex, devin, grok, muse
 from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
@@ -44,8 +43,7 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         ".github",
         ".vscode",
         ".opencode",
-        ".agents",
-        ".agent",
+        *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
         codex.CODEX_DIR_NAME,
         grok.TOOL_DIR_NAME,
         muse.TOOL_DIR_NAME,
@@ -69,7 +67,11 @@ AGENT_TOOL_DIR_NAMES = frozenset(
 # ``RepositoryContext._discover_skills``, which passes them to
 # ``discover_skills``. A name in only one of the two is a skill that is
 # counted but never linted, or found but never counted.
-NESTED_TOOL_SKILL_DIRS = (*devin.TOOL_DIR_NAMES, grok.TOOL_DIR_NAME)
+NESTED_TOOL_SKILL_DIRS = (
+    *devin.TOOL_DIR_NAMES,
+    grok.TOOL_DIR_NAME,
+    *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
+)
 
 # Reserved marker directories an *ecosystem* uses to declare a plugin or a
 # catalog, as opposed to a tool's configuration directory above. Grok Build's
@@ -395,23 +397,65 @@ def tool_types(
         )
 
     def antigravity_marker() -> bool:
-        for dirname in ANTIGRAVITY_CONFIG_DIR_NAMES:
+        """Whether a customization root holds something only Antigravity reads.
+
+        The root's *presence* is not evidence: ``.agents/skills/`` is the
+        shared Agent Skills convention every ecosystem reads and
+        ``.agents/memory/`` is committed project memory that predates
+        Antigravity, so neither says which tool the repository configures.
+        ``skills/`` is left out of the list below for exactly that reason.
+        What remains is Antigravity's alone — its hooks file, its MCP file,
+        one of its registries, a populated ``rules/`` or ``agents/``, or a
+        ``plugins/`` holding a plugin. ``plugins/`` is asked for a manifest
+        rather than for any entry at all, because a Codex catalog is a
+        ``plugins/marketplace.json`` and a bare file there is no evidence
+        of this host.
+
+        Detection agrees with attachment: every marker here is a file or
+        directory ``build_lint_tree`` attaches for this host.
+        """
+        resolved_root = safe_resolve(root)
+        if resolved_root is None:
+            return False
+        for dirname in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES:
             candidates = list(dirs.get(dirname) or ())
             if not candidates:
                 candidates = [root / dirname]
             for base in candidates:
-                if is_excluded(base):
+                resolved_base = safe_resolve(base)
+                if (
+                    is_excluded(base)
+                    or resolved_base is None
+                    or not resolved_base.is_relative_to(resolved_root)
+                ):
                     continue
                 for name in (
-                    "hooks.json",
-                    "mcp_config.json",
-                    "skills.json",
-                    "agents.json",
-                    "rules.json",
+                    antigravity.HOOKS_FILENAME,
+                    antigravity.MCP_CONFIG_FILENAME,
+                    *antigravity.REGISTRY_FILENAMES,
                 ):
-                    p = base / name
-                    if not is_excluded(p) and p.exists():
+                    path = base / name
+                    if not is_excluded(path) and path.is_file():
                         return True
+                for name in (antigravity.RULES_DIR_NAME, antigravity.AGENTS_DIR_NAME):
+                    directory = base / name
+                    if is_excluded(directory) or not directory.is_dir():
+                        continue
+                    try:
+                        if any(True for _ in directory.iterdir()):
+                            return True
+                    except OSError:
+                        continue
+                plugins_dir = base / antigravity.PLUGINS_DIR_NAME
+                if not is_excluded(plugins_dir) and plugins_dir.is_dir():
+                    try:
+                        children = list(plugins_dir.iterdir())
+                    except OSError:
+                        children = []
+                    for child in children:
+                        manifest = child / antigravity.PLUGIN_MANIFEST
+                        if not is_excluded(manifest) and manifest.is_file():
+                            return True
         return False
 
     found: Set[str] = set()

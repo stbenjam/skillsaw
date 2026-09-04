@@ -1,0 +1,9 @@
+{
+  "berth-guard": {
+    "Stop": [
+      {
+        "command": "make lint",
+      }
+    ]
+  }
+}

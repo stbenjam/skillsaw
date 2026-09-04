@@ -170,10 +170,16 @@ RULE_GROUPS = [
             "antigravity-plugin-json-valid",
         ],
         "Validates Google Antigravity primitives: plugin manifests "
-        "(`plugin.json`), lifecycle hooks (`hooks.json`), MCP configurations "
-        "(`mcp_config.json`), and configuration "
-        "registries (`skills.json`, `agents.json`, `rules.json`). Auto-enabled when Antigravity "
-        "primitives or `.agents/` / `.agent/` directories are detected.",
+        "(`plugin.json`), lifecycle hooks (`hooks.json`), MCP servers "
+        "(`mcp_config.json`), and the registries (`agents.json`, "
+        "`plugins.json`, `skills.json`, `workflows.json`) that name where else "
+        "to load customizations from. Detection needs one of those files, a "
+        "populated `rules/` or `agents/`, or a plugin, inside a customization "
+        "root — `.agents/`, `.agent/`, `_agents/` or `_agent/`; the "
+        "directory's presence is not evidence on its own, because "
+        "`.agents/skills/` and `.agents/memory/` are shared conventions every "
+        "tool reads. The manifest, hooks and MCP rules are auto-enabled once "
+        "Antigravity is detected; the registry rule is opt-in.",
     ),
     (
         "Grok Build",
