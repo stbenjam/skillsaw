@@ -1,21 +1,10 @@
 """
 Rule: grok-marketplace-index-parity
 
-``plugin-index.json`` is the sole source of the component listing the
-marketplace browser shows before anything is installed, and a ``require_sha``
-deployment installs from the ``sha`` values it publishes. It is optional and
-never repaired: for a url source Grok gates the listing on ``sha`` equality
-with the catalog, so drift silently blanks it; for a local source there is
-no ``sha`` to gate on, so a stale index is displayed while the plugin on
-disk says otherwise. A name in the index with no catalog entry, and a
-malformed index, are both ignored without a word.
-
-One consolidated finding per index file: a drifted index is one regeneration
-for the author, and a finding per plugin would bury the rest of the run.
-
-Only :class:`GrokMarketplaceIndexNode`, attached under its catalog, is
-iterated — a node type only Grok populates, so the rule declares no
-``provenance_scope``.
+Verifies that ``.grok-plugin/plugin-index.json`` matches the declarations in
+``.grok-plugin/marketplace.json``. Grok Build uses the index to display
+plugin metadata and available components in the marketplace browser. Keeping
+both files in sync ensures users see accurate component details.
 """
 
 from dataclasses import dataclass, field
@@ -188,9 +177,7 @@ class GrokMarketplaceIndexParityRule(Rule):
     def _check_index(
         self, index: Path, catalog: Path, entries: Optional[List[_Entry]]
     ) -> List[RuleViolation]:
-        # Strict, as the two validity rules read their own files: Grok's
-        # parser refuses a bare ``NaN``/``Infinity`` token and a duplicated
-        # key, and an index it cannot parse is ignored without a word.
+        # Enforce strict JSON parsing to match Grok's parser behavior.
         data, error = strict_json(index)
         if error:
             return [self.violation(f"Invalid JSON: {error}", file_path=index)]

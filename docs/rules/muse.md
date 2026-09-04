@@ -3,7 +3,7 @@
 
 # Muse Code
 
-Validates `.muse/hooks.json`, the project hooks Muse Code loads and silently refuses when they are malformed. What a defect costs depends on where it is: a wrong-typed handler field rejects the whole file, a stray key on a matcher group drops that group, an unknown event skips its entries, and a bad handler drops that handler — none of it reported in a headless run. Muse's handler fields are a subset of Claude Code's, so a hooks file copied from `.claude/` is the usual way in. Muse reads AGENTS.md for portable instructions and the shared `.agents/memory/` convention for committed project memory; both get the content and security rules every format shares, so no Muse-specific instruction format is validated. Enabled automatically when a `.muse/hooks.json` exists.
+Validates `.muse/hooks.json` to ensure project hooks for Muse Code run reliably across lifecycle events. Checks that hook definitions use Muse's supported events, matcher groups, and handler fields so automation runs smoothly during interactive and headless sessions. Muse reads AGENTS.md for portable project instructions and uses the shared `.agents/memory/` convention for committed memory, both of which are covered by skillsaw's universal content and security checks. Enabled automatically when `.muse/hooks.json` is present.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|

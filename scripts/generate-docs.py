@@ -185,45 +185,21 @@ RULE_GROUPS = [
             "grok-plugin-json-valid",
             "grok-plugin-structure",
         ],
-        "Validates `.grok/hooks/*.json`, the project hooks Grok Build loads and "
-        "silently refuses when they are malformed. What a defect costs depends "
-        "on where it is: a wrong-typed field or a handler with no `type` "
-        "refuses the whole file, an uncompilable matcher drops that group, an "
-        "unknown event skips its entries, and a handler with nothing to run "
-        "drops that handler — none of it reported, because `grok inspect` "
-        "emits no configuration warning for any of them. Grok accepts several "
-        "spellings of every event, including Cursor's, so a shared hooks file "
-        "is not reported for the spelling it uses. `grok-agent-valid` covers the "
-        "other surface Grok refuses in silence: a `.grok/agents/*.md` subagent "
-        "missing the `name` or `description` its loader registers it by."
-        "\n\n`.grok/config.toml` fails in both directions at once. "
-        "`grok-config-valid` reports a file Grok loads nothing from — one "
-        "stray bracket costs the tables above it too, and the only trace is a "
-        "`parse error` note inside `grok inspect` — plus the servers it drops "
-        "and the permission keys it reads nothing from, which no diagnostic "
-        "mentions at any scope. `grok-config-project-scope` reports the other "
-        "half: a project file contributes only `[mcp_servers]`, "
-        "`[permission]`, `[plugins]` and `[mcp] max_output_bytes`, and "
-        "everything else in it — a `[model]` table, a `[hooks]` table written "
-        "where `.grok/hooks/*.json` was meant, `[mcpServers]` spelled the way "
-        "another host spells it — is dropped without a word, because Grok's "
-        "unknown-table warnings cover the user's own config and not a "
-        "project's."
-        "\n\nPackaging fails the same way: `grok-plugin-json-valid` reports a "
-        "manifest Grok skips the whole plugin directory over while "
-        "`grok plugin install` still prints success, `grok-plugin-structure` "
-        "reports a directory the installer refuses, "
-        "`grok-marketplace-json-valid` reports a catalog Grok discards for "
-        "a scan of `plugins/` and entries it drops one at a time, and "
-        "`grok-marketplace-index-parity` reports a `plugin-index.json` that "
-        "has drifted from the catalog beside it, which blanks what the "
-        "marketplace browser shows.\n\nGrok reads AGENTS.md for "
-        "portable instructions and portable Agent Skills from `.grok/skills/`, "
-        "and its rules, commands and agent prose get the content and security "
-        "rules every format shares, so no Grok-specific instruction format "
-        "is validated.\n\nThe hooks, subagent and config rules are enabled automatically "
-        "when a `.grok/` project layer exists; the packaging rules when a "
-        "`.grok-plugin/` manifest or catalog does.",
+        "Validates Grok Build project configuration, hooks, subagents, and "
+        "plugin packages. These rules ensure that project settings in "
+        "`.grok/config.toml` parse cleanly and contain only project-scoped "
+        "tables, lifecycle hooks in `.grok/hooks/*.json` use supported events "
+        "and valid handler options, and subagents in `.grok/agents/*.md` define "
+        "required frontmatter for task delegation. For plugin authors and "
+        "marketplace maintainers, they verify `.grok-plugin/plugin.json` "
+        "manifests, directory structures, and marketplace catalogs "
+        "(`marketplace.json` and `plugin-index.json`).\n\n"
+        "Grok reads AGENTS.md for portable project instructions and standard "
+        "Agent Skills from `.grok/skills/`, which automatically receive skillsaw's "
+        "shared content and security checks.\n\n"
+        "Project rules enable automatically when a `.grok/` directory is "
+        "present; plugin and marketplace rules enable when `.grok-plugin/` "
+        "manifests or catalogs are detected.",
     ),
     (
         "Hooks",
@@ -232,14 +208,10 @@ RULE_GROUPS = [
             "hooks-dangerous",
             "hooks-prohibited",
         ],
-        "Validates hook configuration. The security rules scan every hook a repository "
-        "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
-        "Codex's `.codex/hooks.json` and plugin hooks, Muse Code's `.muse/hooks.json`, "
-        "Grok Build's `.grok/hooks/*.json` and its plugin hooks, Cursor's "
-        "`.cursor/hooks.json`, and skill, "
-        "Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain "
-        "attack patterns (inspired by the "
-        "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
+        "Validates hook configuration files against dangerous execution patterns "
+        "and configurable security baselines. Structural rules for individual "
+        "hosts (such as Claude Code, Codex, Muse Code, and Grok Build) "
+        "auto-enable when their respective hook configurations are detected.",
     ),
     (
         "Instruction Files",
@@ -269,18 +241,14 @@ RULE_GROUPS = [
     (
         "Muse Code",
         ["muse-hooks-valid"],
-        "Validates `.muse/hooks.json`, the project hooks Muse Code loads and "
-        "silently refuses when they are malformed. What a defect costs "
-        "depends on where it is: a wrong-typed handler field rejects the "
-        "whole file, a stray key on a matcher group drops that group, an "
-        "unknown event skips its entries, and a bad handler drops that "
-        "handler — none of it reported in a headless run. Muse's handler "
-        "fields are a subset of Claude Code's, so a hooks file copied from "
-        "`.claude/` is the usual way in. Muse reads AGENTS.md for portable "
-        "instructions and the shared `.agents/memory/` convention for "
-        "committed project memory; both get the content and security rules "
-        "every format shares, so no Muse-specific instruction format is "
-        "validated. Enabled automatically when a `.muse/hooks.json` exists.",
+        "Validates `.muse/hooks.json` to ensure project hooks for Muse Code "
+        "run reliably across lifecycle events. Checks that hook definitions "
+        "use Muse's supported events, matcher groups, and handler fields so "
+        "automation runs smoothly during interactive and headless sessions. "
+        "Muse reads AGENTS.md for portable project instructions and uses the "
+        "shared `.agents/memory/` convention for committed memory, both of "
+        "which are covered by skillsaw's universal content and security checks. "
+        "Enabled automatically when `.muse/hooks.json` is present.",
     ),
     (
         "OpenAI Codex",

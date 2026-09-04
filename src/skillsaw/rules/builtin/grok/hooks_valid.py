@@ -1,15 +1,8 @@
 """
 Rule: grok-hooks-valid
 
-Validates `.grok/hooks/*.json` against Grok Build's events, alias table and
-handler fields. The vocabulary lives in ``skillsaw.formats.grok`` — this
-rule reads it and never restates it. Severity carries the blast radius —
-what each defect costs, and how to fix it, is on the rule's documentation
-page.
-
-Only :class:`GrokHooksBlock` is iterated, a node type that exists only where
-Grok's project layer does, so the rule declares no ``provenance_scope``:
-``.grok/`` is a tool directory no other ecosystem claims.
+Validates lifecycle hooks in `.grok/hooks/*.json` against Grok Build's
+supported events, alias tables, and handler fields.
 """
 
 from typing import Any, Dict, List, Optional, Set
@@ -55,9 +48,6 @@ class GrokHooksValidRule(Rule):
         return ".grok/hooks/*.json must use Grok's hook events, handler types and fields"
 
     def default_severity(self) -> Severity:
-        # A wrong-typed field anywhere in the file costs every hook in it,
-        # and Grok reports nothing: ``grok inspect --json`` returned
-        # ``configWarnings: null`` for every rejected file in the matrix.
         return Severity.ERROR
 
     def _known_events(self) -> Set[str]:

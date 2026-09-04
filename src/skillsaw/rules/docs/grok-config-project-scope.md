@@ -1,82 +1,57 @@
 ## Why
 
-Grok Build reads one `config.toml` at four layers, and the project layer —
-the `.grok/config.toml` committed to a repository — is the narrow one. It
-contributes `[mcp_servers]`, `[permission]`, `[plugins]` and `[mcp]
-max_output_bytes`. Everything else written there is dropped.
+Grok Build loads configuration across multiple layers, including personal user
+configuration (`~/.grok/config.toml`) and repository project configuration
+(`.grok/config.toml`).
 
-Dropped in silence, which is the whole reason for this rule. Grok's
-unknown-table warnings (`configWarnings` in `grok inspect`) are a *user*-layer
-diagnostic: they cover `~/.grok/config.toml` and say nothing about a project
-file. So a `[model]` table in a checkout, a `[hooks]` table written where
-`.grok/hooks/*.json` was meant, or `[mcpServers]` spelled the way another
-host spells it produces no warning, no error and no note — the file loads,
-the tables Grok knows take effect, and the rest is gone. Nothing at runtime
-will ever mention it.
+The project configuration file is designed specifically for shared repository
+settings: `[mcp_servers]`, `[permission]`, `[plugins]`, and `[mcp]
+max_output_bytes`. Other settings (such as `[model]`, `[ui]`, `[tools]`,
+`[telemetry]`, and user preferences) are intended for your personal user
+configuration and are ignored when placed in `.grok/config.toml`.
 
-The measured half of that list was verified against Grok Build 1.0.13 with a
-positive user-scope control for each refusal, so "nothing happened" is a
-refusal rather than a mis-run. `[plugins]` and `[mcp] max_output_bytes` are
-carried on the reference's word and are never reported, because reporting a
-table the documentation endorses would be a false positive on a file the
-docs bless.
+Additionally, project hooks should be configured in `.grok/hooks/*.json`
+rather than a `[hooks]` table in `config.toml`.
 
-Whether the honored tables are themselves well formed is a different
-question, and belongs to [`grok-config-valid`](grok-config-valid.md).
+This rule helps ensure project configurations stay focused and effective by
+identifying tables and settings that belong in user configuration or dedicated
+hook files.
+
+To validate the internal syntax and structure of the allowed tables, see
+[`grok-config-valid`](grok-config-valid.md).
 
 ## Severity
 
-Every finding is the same defect at the same cost — something the author
-wrote that the file cannot contribute, with no diagnostic anywhere — so all
-of them carry the rule's configured severity, `warning` by default.
+Findings carry the rule's configured severity (**warning** by default):
 
-**Ignored tables and keys**
+**Settings intended for user configuration**
 
-- Any top-level table or scalar outside the four a project file contributes.
-  Most of them — `[model]`, `[ui]`, `[tools]`, `[telemetry]`,
-  `disable_web_search` and their neighbors — are named in one consolidated
-  finding per file. `[hooks]` is named on its own, because it is the one
-  refusal with somewhere else in the repository to go: project hooks belong
-  in `.grok/hooks/*.json`, which *does* load. `[skills]` and `[sandbox]`
-  were measured refused too and go in the consolidated finding, since the
-  only place they work is your own `~/.grok/config.toml`.
-- `[plugins] paths`. Three independent runs ignored a project `paths`,
-  relative or absolute, in a git repository or not, while the user layer's
-  loaded — so it belongs in your own config too.
+- Top-level tables or scalar values outside the supported project scope.
+  Common user preferences like `[model]`, `[ui]`, `[tools]`, `[telemetry]`, and
+  `disable_web_search` belong in your personal `~/.grok/config.toml`.
+- `[hooks]` defined in `config.toml`: project hooks belong in
+  `.grok/hooks/*.json`.
+- `[plugins] paths`: local plugin development paths belong in your personal
+  `~/.grok/config.toml`.
 
-**Spellings that load nothing**
+**Common table naming mismatches**
 
-Each is a plausible misreading of a table Grok does read, and each is a
-total, silent loss of the declaration:
+- `[[mcp.servers]]` or `[mcp.servers]` instead of `[mcp_servers.<name>]`.
+- Hyphenated or camelCase spellings like `[mcp-servers.<name>]` or
+  `[mcpServers.<name>]`.
+- Plural `[permissions]` instead of `[permission]`.
+- Using `transport` instead of `type` inside a server table.
+- Using `defaultMode` inside `[permission]` (a Claude Code setting).
 
-- `[[mcp.servers]]` and `[mcp.servers]` — an array of tables under `[mcp]`,
-  rather than the top-level `[mcp_servers.<name>]`.
-- `[mcp-servers.<name>]` and `[mcpServers.<name>]` — the table name written
-  with a hyphen, or in camelCase.
-- `[permissions]`, the plural. The file also drops out of
-  `permissions.sources` entirely, so nothing marks its absence.
-- `transport` inside a server table. The field is `type`, and `transport` is
-  not an alias: Grok reports it unrecognized and ignores it.
-- `defaultMode` inside `[permission]`. It is a `.claude/settings.json` key
-  with no meaning in TOML.
+## What is not reported
 
-## What is not claimed
-
-`[plugins] enabled` and `[plugins] disabled` are documented and were **not**
-reproduced at project or user scope, and `[mcp] max_output_bytes` produces
-no observable at either. They are never reported, and no finding claims they
-do anything.
-
-Nor is an *unrecognized* key inside `[plugins]` or `[mcp]`. Nothing was
-measured in either direction there, and `extra-tables` reaches top-level
-names only — so a Grok release adding a key would leave a working config
-carrying a finding with no way to answer it. Only the measured refusal,
-`[plugins] paths`, is reported.
+- `[plugins] enabled` and `[plugins] disabled`, which are documented plugin
+  switches.
+- `[mcp] max_output_bytes`, which configures MCP message buffer limits.
 
 ## Examples
 
-**Bad** — the server loads, and the two tables under it are gone without a
-word:
+**Bad** — placing user settings and hooks inside project `.grok/config.toml`:
 
 ```toml
 [mcp_servers.gateway]
@@ -89,8 +64,7 @@ name = "grok-4"
 SessionStart = [{ hooks = [{ type = "command", command = "make deps" }] }]
 ```
 
-**Good** — the model choice belongs in the user's own `~/.grok/config.toml`,
-and the hook in a file Grok reads:
+**Good** — keeping project configuration focused and moving hooks to `.grok/hooks/`:
 
 ```toml
 # .grok/config.toml
@@ -114,24 +88,21 @@ allow = ["Bash(make test)"]
 
 ## How to fix
 
-- Move anything a project file cannot contribute into your own
-  `~/.grok/config.toml`, where it works and where Grok warns about a typo.
-- Write project hooks as `.grok/hooks/*.json` — Grok merges the whole
-  directory — and validate them with
-  [`grok-hooks-valid`](grok-hooks-valid.md).
-- Declare MCP servers as `[mcp_servers.<name>]`, spell a server's transport
-  field `type`, and spell the permission table `[permission]`.
+- Move personal preferences (such as default model, UI themes, and local plugin
+  paths) into your personal `~/.grok/config.toml`.
+- Configure project automation in `.grok/hooks/*.json` files and validate
+  them with [`grok-hooks-valid`](grok-hooks-valid.md).
+- Use `[mcp_servers.<name>]` for MCP servers and `[permission]` for tool
+  permissions.
 
 ## Configuration
 
-Grok adds configuration faster than skillsaw releases. Rather than turning
-the rule off, name the table:
+If a newer Grok Build release adds support for additional project-level tables,
+you can accept them in `.skillsaw.yaml`:
 
 ```yaml
 rules:
   grok-config-project-scope:
-    # A top-level table a Grok release contributes at project scope that
-    # this skillsaw release has not heard of.
     extra-tables:
       - toolset
 ```

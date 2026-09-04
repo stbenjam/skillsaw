@@ -1,27 +1,18 @@
 """
-Rules for Grok Build's repository-shipped configuration
+Rules for Grok Build repository configuration and packaging.
 
-Grok Build reads ``AGENTS.md`` for portable instructions and portable Agent
-Skills from ``.grok/skills/``, both of which the shared content, security
-and skill rules already cover. What is Grok's own and structural is
-whatever its loader refuses without a word. In the project layer that is
-``.grok/hooks/*.json``, where one wrong-typed field costs the whole file,
-and ``.grok/agents/*.md``, where a missing ``name`` or ``description`` costs
-the subagent. ``.grok/config.toml`` is the third: a parse error costs the
-whole file, a malformed server table costs that server, and a table the
-project layer does not contribute is dropped without a word.
+Grok Build reads ``AGENTS.md`` for portable instructions and loads Agent
+Skills from ``.grok/skills/``, both supported by skillsaw's universal rules.
+The Grok-specific rules in this package validate:
 
-Packaging is the other half, and it is silent in the same way. A plugin
-manifest that fails to load takes the whole directory with it while ``grok
-plugin install`` still prints success; a catalog that fails to parse is
-discarded and discovery falls back to scanning ``plugins/``; an entry with a
-path that does not resolve is dropped where nothing lists it; and a
-``plugin-index.json`` that drifts from its catalog blanks the component
-listing the marketplace browser shows.
+- Project layer configuration: subagent frontmatter in ``.grok/agents/*.md``,
+  project settings in ``.grok/config.toml``, and lifecycle hooks in
+  ``.grok/hooks/*.json``.
+- Plugin packaging: manifests in ``.grok-plugin/plugin.json`` and marketplace
+  catalogs in ``.grok-plugin/marketplace.json`` and ``plugin-index.json``.
 
-``.grok/commands/*.md`` has no rule of its own by design — Grok loads a
-command with no frontmatter at all, naming it from the filename, so there is
-nothing structural to require.
+These checks ensure your project configuration, subagents, hooks, and
+packaged plugins load smoothly across Grok Build environments.
 """
 
 from .agent_valid import GrokAgentValidRule
