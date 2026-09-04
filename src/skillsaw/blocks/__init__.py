@@ -16,6 +16,7 @@ single rule module.  Split across submodules by family:
 * :mod:`~skillsaw.blocks.coderabbit` — ``CodeRabbitContentBlock``
 * :mod:`~skillsaw.blocks.promptfoo` — ``PromptfooPromptBlock``
 * :mod:`~skillsaw.blocks.grok` — ``GrokConfigBlock`` (Grok's project TOML)
+* :mod:`~skillsaw.blocks.codex` — ``CodexConfigBlock`` (Codex's project TOML)
 * :mod:`~skillsaw.blocks.gather` — ``gather_all_content_blocks`` and friends
 
 Everything is re-exported here so ``from skillsaw.blocks import X`` keeps
@@ -111,6 +112,7 @@ from .coderabbit import (
 )
 from .promptfoo import PromptfooPromptBlock
 from .openai import OpenAIMetadataBlock
+from .codex import CodexConfigBlock
 from .grok import GrokConfigBlock
 from .gather import (
     gather_all_content_blocks,
@@ -208,6 +210,8 @@ __all__ = [
     "_extract_instructions",
     # promptfoo
     "PromptfooPromptBlock",
+    # Codex project config
+    "CodexConfigBlock",
     # Grok project config
     "GrokConfigBlock",
     # OpenAI metadata

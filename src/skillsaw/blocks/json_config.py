@@ -48,8 +48,8 @@ VSCODE_HOOK_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
 #: is benign and whose Windows variant pipes a download into a shell is
 #: exactly the shape this union exists to catch.
 #:
-#: Codex and Muse Code spell the Windows variant ``commandWindows``, and
-#: Muse Code also accepts ``command_windows``. This is deliberately a
+#: Codex and Muse Code spell the Windows variant ``commandWindows``, and both
+#: also accept ``command_windows``. This is deliberately a
 #: superset of every host's own vocabulary: it drives scanning only, never
 #: validity — a shape rule reads its host's table in ``skillsaw.formats``.
 HOOK_COMMAND_FIELDS = VSCODE_HOOK_COMMAND_FIELDS + ("commandWindows", "command_windows")
@@ -385,6 +385,13 @@ class HooksBlock(JsonConfigBlock):
     #: finding, the way :class:`McpConfigRole` names one. Announcing a TOML
     #: failure as invalid JSON would send the author to the wrong parser.
     syntax_name: ClassVar[str] = "JSON"
+    #: What this syntax calls a key/value mapping and an ordered sequence,
+    #: for the messages that name one. Declared beside :attr:`syntax_name`
+    #: rather than branched on in the rule: a ``config.toml`` author never
+    #: wrote a JSON object and has no way to write one. Bare nouns — the
+    #: article is chosen where the message is built.
+    mapping_noun: ClassVar[str] = "object"
+    sequence_noun: ClassVar[str] = "array"
 
     @property
     def events(self) -> Dict[str, List[HookEventConfig]]:
@@ -584,48 +591,44 @@ class CodexInlineHooksBlock(_InlineJsonPayload, CodexHooksBlock):
 
 
 @dataclass(eq=False)
-class CodexConfigHooksBlock(_InlineJsonPayload, CodexHooksBlock):
+class CodexConfigHooksBlock(CodexHooksBlock):
     """The ``[hooks]`` tables of a ``.codex/config.toml``.
 
-    Codex loads project hooks from two files and merges them, so a
-    TOML-only project's hooks are live configuration that no rule saw
-    before this block. The payload is the document
-    :func:`~skillsaw.formats.codex.codex_config_hooks` renders, which is why
-    the block takes it by value rather than parsing: the tree builder has to
-    parse the file anyway to know whether there are hooks to attach.
+    Codex loads project hooks from two files and merges them, so a TOML-only
+    project's hooks are live configuration. The payload is the document
+    :func:`~skillsaw.formats.codex.codex_config_hooks` renders from the
+    parsed TOML, which is why the block takes it by value rather than
+    parsing: its parent :class:`~skillsaw.blocks.codex.CodexConfigBlock`
+    reads the file once for the whole document.
 
-    ``path`` is the config file itself, unlike the manifest payloads the
-    mixin was written for, so the two answers that assumed "no file of my
-    own" are restored below.
+    A ``HooksBlock`` deliberately, though the file is TOML: the hooks rules
+    iterate that hierarchy and there is no hooks role to carry instead. See
+    the block-hierarchy rule in the development instructions, which records
+    the exception. Nothing JSON-shaped survives it —
+    :meth:`first_non_finite` stands down and :attr:`syntax_name` names the
+    parser that actually ran.
 
     The dangerous file of the two. Measured against codex-cli 0.153.0: a
     shape defect here — a syntax error, an event value that is not a
-    sequence, a missing ``type`` or ``command``, a non-integer ``timeout``,
-    an unknown handler ``type`` — makes ``codex`` exit 1 and refuse to start
-    in the project at all, where the same defect in ``hooks.json`` is a
-    warning that skips that one file.
+    sequence, a missing ``type`` or ``command``, a ``timeout`` that is not a
+    non-negative whole number, an unknown handler ``type`` — makes ``codex``
+    exit 1 and refuse to start in the project at all, where the same defect
+    in ``hooks.json`` is a warning that skips that one file.
     """
 
+    #: The rendered hooks document, or ``None`` when the file did not parse.
     inline_data: Optional[Dict[str, Any]] = None
     #: What ``read_toml`` said when the file did not parse. Carried rather
     #: than re-derived so the whole file is read once, in the builder.
     toml_error: Optional[str] = None
     syntax_name: ClassVar[str] = "TOML"
     timeout_must_be_integer: ClassVar[bool] = True
+    mapping_noun: ClassVar[str] = "table"
+    sequence_noun: ClassVar[str] = "array of tables"
 
     def _ensure_parsed(self) -> None:
         if self._parsed is None:
             self._parsed = (self.inline_data, self.toml_error)
-
-    def has_utf8_bom(self) -> bool:
-        """The file's own answer: this block has a file, and it is TOML.
-
-        ``read_toml`` strips a mark before the parser sees one, so nothing
-        here reports a BOM today — but the mixin's "never, there is no file"
-        is the wrong reason, and a host measured to refuse one would inherit
-        it.
-        """
-        return JsonConfigBlock.has_utf8_bom(self)
 
     def first_non_finite(self) -> Optional[Tuple[str, float]]:
         """Never: the scan is about tokens JSON has no spelling for.
@@ -640,7 +643,7 @@ class CodexConfigHooksBlock(_InlineJsonPayload, CodexHooksBlock):
         return None
 
     def tree_label(self) -> str:
-        return f"{self.path.name} (codex hooks)"
+        return "[hooks]"
 
 
 @dataclass(eq=False)

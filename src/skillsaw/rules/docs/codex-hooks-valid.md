@@ -8,19 +8,22 @@ a payload written inline in `.codex-plugin/plugin.json`.
 The TOML tables carry the same vocabulary as the JSON file:
 `[[hooks.<Event>]]` is one `{matcher?, hooks: [...]}` entry and
 `[[hooks.<Event>.hooks]]` one handler, so every check below applies to
-either file. The handler key for a Windows override is `commandWindows` in
-both — the docs page prose spells it `command_windows`, but the shipped
-binary deserializes only the camelCase name, and skillsaw follows the binary.
+either file. A Windows override may be spelled `commandWindows` or
+`command_windows` in either — Codex declares the second as an alias of the
+first. `[hooks.state]` is the one table the TOML file has that the JSON one
+does not: Codex writes per-hook enablement and trust there, ignores a
+project layer's copy, and it is not an event.
 
 **A shape defect in `config.toml` is worse than the same defect in
-`hooks.json`.** Six of them were measured against codex-cli 0.153.0: a TOML
+`hooks.json`.** The refusals were measured against codex-cli 0.153.0: a TOML
 syntax error, an event whose value is not an array of tables, a handler with
 no `type`, a handler with a `type` Codex has no variant for, a `command`
-handler with no `command`, and a `timeout` that is not a whole number of
-seconds. Each makes `codex` exit 1 and start no session in that project, for
-everyone who clones it. The identical mistake in `hooks.json` is a warning
-that costs that one file's hooks and nothing else. Both files are checked
-against the same vocabulary at the same severities.
+handler with no `command`, and a `timeout` that is not a non-negative whole
+number of seconds. Each makes `codex` exit 1 and start no session in that
+project, for everyone who clones it. The identical mistake in `hooks.json` is
+a warning that costs that one file's hooks and nothing else. Both files are
+checked against the same vocabulary at the same severities — the messages
+differ only in the noun each syntax uses for a table or an array.
 
 `.codex/config.toml` is read from every directory between the repository root
 and the one a session starts in, so a committed
@@ -90,7 +93,7 @@ back.
 A finding's severity is how much of the file the defect costs.
 
 **Errors** — Codex loads nothing, or a handler cannot run. In a `config.toml`
-the measured six above cost the whole CLI rather than the file.
+the measured refusals cost the whole CLI rather than the file.
 
 - *The document is refused*: invalid JSON or TOML, a non-object root, a
   missing or non-object `hooks` key, or a non-finite number (`NaN`,
@@ -102,25 +105,46 @@ the measured six above cost the whole CLI rather than the file.
   `server` and `tool` for MCP tool handlers).
 - *A field is the wrong type*: a non-string `command`, a `statusMessage` that
   is not a string, or a `timeout` that is not a number. In a `config.toml` a
-  `timeout` must also be a whole number of seconds, since Codex reads it
-  there as an unsigned integer.
+  `timeout` must also be a non-negative whole number of seconds. Both files
+  deserialize it as an unsigned integer; the JSON path keeps the looser check
+  deliberately, so an upgrade does not surface a finding on a file that
+  already worked.
 - *The combination is not supported*: an `mcp_tool` handler on `SessionEnd`.
   Codex warns and skips this one entry rather than refusing the file.
 
-**Warnings** — the file loads and something in it silently does not fire.
-Codex prints nothing at all for the first three, under any flag:
-`--strict-config` never descends into `[hooks]`.
+**Warnings** — the file loads and something in it does not fire. Codex says
+nothing at all about an unknown name — of an event, a handler field or an
+event-group key — under any flag: `--strict-config` never descends into
+`[hooks]`. It names the file for the two it does skip out loud.
 
 - An event name Codex does not dispatch. The rest of the file still loads.
-- A handler field no handler type takes — a misspelled `commandWindows`, for
-  instance, which is dropped on every platform.
+- A key no handler type takes — a misspelled `commandWindows`, for instance,
+  which is dropped on every platform — or a key beside `matcher` and `hooks`
+  on an event group.
 - A field belonging to a different handler type, such as `commandWindows` on
   an MCP tool handler.
 - A `prompt` or `agent` handler: parsed, never run. Codex warns and skips it.
 - A `timeout` above 3 seconds on `SessionEnd` or `Interrupt`, which Codex
   clamps for these quick-exit events.
 
-**Info**
+### Upgrading
+
+`hooks-json-valid` reported no unknown-key finding before 0.20.0 split it by
+host. This one applies to **every** Codex hooks file, not only `config.toml`:
+a repository's `.codex/hooks.json`, a Codex-only plugin's `hooks/hooks.json`,
+a file a manifest names in `hooks`, and hooks written inline in
+`.codex-plugin/plugin.json` all get it. A repository that has carried a
+misspelled handler key since before the upgrade will see a new warning where
+it saw none. Fix the spelling, or accept it:
+
+```yaml
+rules:
+  codex-hooks-valid:
+    extra-fields:
+      - somethingNew
+```
+
+**Info** — the file loads and does what it says, with one thing worth a look.
 
 - A `matcher` on an event that does not filter on tool names. Codex accepts
   it and ignores it.
@@ -192,7 +216,7 @@ timeout = 10
 ```
 
 **Bad** — the same tables written as a plain table rather than an array of
-them. This is one of the six measured refusals: `codex` exits 1 and starts no
+them. This is one of the measured refusals: `codex` exits 1 and starts no
 session in the project:
 
 ```toml
@@ -208,18 +232,29 @@ matcher = "Bash"
   `server` and `tool`. Keep handler-specific fields with their type:
   `commandWindows`, `additionalContextLimit` and `async` belong to command
   handlers, `input` to MCP tools. Spell them exactly — an unrecognized
-  handler key is dropped without a word.
+  handler key, and an unrecognized key on an event group, are both dropped
+  without a word.
 - In `config.toml`, write each event as an array of tables
-  (`[[hooks.<Event>]]`) and each `timeout` as a whole number of seconds.
+  (`[[hooks.<Event>]]`) and each `timeout` as a non-negative whole number of
+  seconds.
 - Drop `mcp_tool` handlers from `SessionEnd`, which does not support them.
 - Keep `SessionEnd` and `Interrupt` timeouts under 3 seconds.
 
-Codex ships events faster than skillsaw releases. Rather than turning the
-rule off, name a newer one:
+Codex ships events and handler fields faster than skillsaw releases. Rather
+than turning the rule off, name a newer one:
 
 ```yaml
 rules:
   codex-hooks-valid:
     extra-events:
       - SomethingNew
+    extra-fields:
+      - somethingNew
 ```
+
+`.codex/config.toml` also declares a project's MCP servers, in
+`[mcp_servers.<name>]` tables. Those are read by
+[`mcp-prohibited`](mcp-prohibited.md) and
+[`mcp-valid-json`](mcp-valid-json.md), not here — Codex diagnoses a malformed
+server table itself, naming the server and the field and exiting 1, so no
+rule restates it.

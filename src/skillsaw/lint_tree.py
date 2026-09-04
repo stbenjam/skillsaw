@@ -23,6 +23,7 @@ from .blocks import (
     ClineWorkflowBlock,
     CodeRabbitContentBlock,
     ClaudeHooksBlock,
+    CodexConfigBlock,
     CodexConfigHooksBlock,
     CodexHooksBlock,
     CodexInlineHooksBlock,
@@ -85,7 +86,7 @@ from .formats.codex import (
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.opencode import contained_instruction_globs
 from .formats import devin, grok, muse
-from .utils import has_apm_generated_header, read_text, read_toml
+from .utils import has_apm_generated_header, read_text
 from .paths import (
     contained_resolve,
     has_parent_traversal,
@@ -258,6 +259,33 @@ class _TreeBuildState:
         role-aware deduplication still prevents duplicate findings when two
         discovery paths select the same parser.
         """
+        if self._claim_parser_role(p, block_cls) is None:
+            return None
+        block = block_cls(path=p)
+        block.plugin_owner = owner
+        block.content_suppressed = content_suppressed
+        parent.children.append(block)
+        return block
+
+    def attach_prebuilt(self, parent: LintTarget, block: LintTarget) -> Optional[LintTarget]:
+        """Attach an already-constructed block under the same contract.
+
+        The seam for a block the caller has to build itself — one carrying a
+        payload rendered from the file rather than read off it — so
+        containment, exclusion and role deduplication are still decided in
+        the one place :meth:`add_parser_block` decides them.
+        """
+        if self._claim_parser_role(block.path, type(block)) is None:
+            return None
+        parent.children.append(block)
+        return block
+
+    def _claim_parser_role(self, p: Path, block_cls: type) -> Optional[Path]:
+        """Claim one parser role over *p*, or ``None`` if it is not ours.
+
+        Containment, existence, exclusion and role deduplication, in that
+        order — the contract both attachment paths share.
+        """
         resolved = self.resolve_repo_path(p)
         if resolved is None:
             return None
@@ -273,11 +301,7 @@ class _TreeBuildState:
         # and poisoning ``seen`` would drop that file from every content
         # rule that attaches later.
         self._record_role(resolved, block_cls)
-        block = block_cls(path=p)
-        block.plugin_owner = owner
-        block.content_suppressed = content_suppressed
-        parent.children.append(block)
-        return block
+        return resolved
 
     def _record_role(self, resolved: Path, block_cls: type) -> None:
         """Record one attached role, and index it by the two roles asked about."""
@@ -379,14 +403,14 @@ def _add_project_hooks(
     state.add_parser_block(root, path, block_cls)
 
 
-def _add_codex_config_hooks(state: _TreeBuildState, root: LintTarget, path: Path) -> None:
-    """Attach a ``.codex/config.toml`` that declares hooks, and only then.
+def _add_codex_config(state: _TreeBuildState, root: LintTarget, path: Path) -> None:
+    """Attach a ``.codex/config.toml``, and its ``[hooks]`` tables under it.
 
-    Codex reads lifecycle hooks from this file as well as from
-    ``hooks.json`` and merges the two, so a project that writes only the
-    TOML tables still ships executable configuration. A config declaring no
-    hooks gets no block: everything else in it is Codex settings no rule
-    here reads.
+    Two committed executable surfaces in one file. Codex reads lifecycle
+    hooks from ``[hooks]`` as well as from ``hooks.json`` and merges the two,
+    and ``[mcp_servers.<name>]`` is where a Codex project declares its MCP
+    servers — there is no ``.codex/mcp.json``. The document itself is one
+    node either way, so a config declaring neither is still in the tree.
 
     Every one in the repository, not only the root's. Measured against
     codex-cli 0.153.0: Codex merges a layer from every directory on the
@@ -396,24 +420,28 @@ def _add_codex_config_hooks(state: _TreeBuildState, root: LintTarget, path: Path
     the repository root is ever read, which is also the only place this walk
     cannot reach.
 
-    A file the parser refuses is attached anyway, carrying its error, so
-    ``codex-hooks-valid`` has something to report — a config Codex cannot
-    read stops it starting in the project at all.
+    The hooks child is attached whenever there are hooks to check, and also
+    when the file did not parse, so ``codex-hooks-valid`` has something to
+    report the failure on — a config Codex cannot read stops it starting in
+    the project at all.
     """
-    resolved = state.resolve_repo_path(path)
-    if resolved is None or not safe_is_file(resolved) or state.context.is_path_excluded(path):
+    config = state.add_parser_block(root, path, CodexConfigBlock)
+    if config is None:
         return
-    # One block per resolved file, for the reason ``_add_project_hooks``
-    # documents: a package's config symlinked to the root's is one file, and
-    # two blocks would report each of its commands twice.
+    # One hooks block per resolved file, for the reason
+    # ``_add_project_hooks`` documents: a package's config symlinked to the
+    # root's is one file, and two blocks would report each of its commands
+    # twice. ``hooks.json`` and ``config.toml`` are two paths, so a directory
+    # carrying both keeps a block for each — Codex merges them.
     if _attached_as_hooks(state, path):
         return
-    data, error = read_toml(path)
-    document = codex_config_hooks(data) if isinstance(data, dict) else None
+    data, error = config.raw_data, config.parse_error
+    document = codex_config_hooks(data) if data is not None else None
     if error is None and document is None:
         return
-    state._record_role(resolved, CodexConfigHooksBlock)
-    root.children.append(CodexConfigHooksBlock(path=path, inline_data=document, toml_error=error))
+    state.attach_prebuilt(
+        config, CodexConfigHooksBlock(path=path, inline_data=document, toml_error=error)
+    )
 
 
 def _claim_attached_hooks(
@@ -931,9 +959,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # attachment.
     for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
         _add_project_hooks(state, root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
-        # After ``hooks.json``, so the JSON file keeps the block it has
-        # always had when a directory carries both. Codex merges them.
-        _add_codex_config_hooks(state, root, codex_dir / CODEX_CONFIG_FILENAME)
+        _add_codex_config(state, root, codex_dir / CODEX_CONFIG_FILENAME)
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)

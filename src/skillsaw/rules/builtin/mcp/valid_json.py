@@ -71,10 +71,11 @@ class McpValidJsonRule(Rule):
 
     default_enabled = True
     # ``copilot-agent-valid`` gates the surface this rule reads at all;
-    # ``grok-config-valid`` owns the "does not parse" finding for a
-    # ``.grok/config.toml`` while it can run, and this rule makes it when a
-    # ``version:`` pin or a forced ``--type`` gates it off.
-    surface_dependencies = ("copilot-agent-valid", "grok-config-valid")
+    # ``grok-config-valid`` and ``codex-hooks-valid`` own the "does not parse"
+    # finding for a ``.grok/config.toml`` and a ``.codex/config.toml`` while
+    # they can run, and this rule makes it when a ``version:`` pin or a forced
+    # ``--type`` gates one off.
+    surface_dependencies = ("codex-hooks-valid", "copilot-agent-valid", "grok-config-valid")
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a
     # project that allowlisted its own placeholder convention must not be told

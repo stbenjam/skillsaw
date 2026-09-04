@@ -9,3 +9,7 @@ request; it fans out to the per-service suites.
 The root layer and four of the services declare Codex hooks in
 `.codex/config.toml`. Codex merges that file with `.codex/hooks.json` when a
 directory carries both.
+
+## MCP servers
+
+`services/telemetry` declares an MCP server as well as a hook.

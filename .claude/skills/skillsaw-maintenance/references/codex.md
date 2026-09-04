@@ -94,6 +94,9 @@ hedge (see Sync notes).
     one. `--strict-config` is fatal for an unknown key at the top level of
     `config.toml` and never descends into `[hooks]` (verified with a control), so
     skillsaw is the only thing that will ever report these.
+  `timeout` is an `Option<u64>` in both files: `timeout = -1` is fatal in
+  `config.toml` (`invalid value: integer \`-1\`, expected u64`) and `timeout = 0`
+  loads. No upper bound is needed — a TOML integer stops at `i64`.
   Also confirmed against the binary in the same pass: the 12 event names as the
   complete enum, the four handler types, the required fields per type, the
   `mcp_tool`-on-`SessionEnd` rejection, and the 3s `SessionEnd` clamp. Not
@@ -107,6 +110,32 @@ hedge (see Sync notes).
   git repo root down to the cwd, inclusive, and reads nothing above the root. A
   committed nested `.codex/config.toml` is therefore live for anyone working in
   that subtree, which is why the lint tree attaches every one it finds.
+
+- **`[mcp_servers.<name>]`** — the project's MCP servers; there is no
+  `.codex/mcp.json`. Measured against 0.153.0 with `codex mcp list --json`, which
+  runs offline and prints the transport Codex derived:
+  - `command` selects stdio and `url` streamable HTTP, and they are **mutually
+    exclusive**. A table carrying both is refused with `url is not supported for
+    stdio in \`mcp_servers.<name>\``, one carrying neither with `invalid transport`
+    — each fatal for the whole file, so `codex` exits 1 and `codex mcp list` prints
+    nothing. `command = ""` still loads as stdio.
+  - Fields: stdio takes `command`, `args`, `env`, `env_vars`, `cwd`,
+    `experimental_environment`; HTTP takes `url`, `auth`, `bearer_token_env_var`,
+    `http_headers`, `env_http_headers`, `http_headers_helper`; either takes
+    `enabled`, `required`, `startup_timeout_sec`, `tool_timeout_sec`,
+    `enabled_tools`, `disabled_tools`, `default_tools_approval_mode` and
+    `tools.<tool>.*`. A wrong scalar type on any of them (`args = "x"`,
+    `env = ["A=1"]`, `enabled_tools = "read"`) is fatal for the whole file and named
+    by server and field.
+  - An unknown server key loads silently, and `--strict-config` **does** name it —
+    unlike `[hooks]`, which that flag never descends into. So Codex diagnoses every
+    malformed server table itself, and skillsaw adds no shape rule over them: the
+    tables reach `mcp-prohibited` and `mcp-valid-json`'s dialect-neutral checks
+    through the MCP role on `CodexConfigBlock` and nothing restates the refusals.
+  - Same gates as the hooks: a project layer's servers are read only once the user
+    config trusts the directory, and layers merge from the repo root down to the
+    cwd. A name declared in both the user config and a project layer resolves to
+    the project's.
 
 ## skillsaw rules that map
 - `src/skillsaw/rules/builtin/codex/`: `codex-plugin-json-valid`,
@@ -128,7 +157,13 @@ hedge (see Sync notes).
   measured behavioural difference as a ClassVar (`timeout_must_be_integer`) so the
   rule stays free of per-file branches. The severities are the same on both files:
   the failure-scope asymmetry below is recorded here and in the rule doc, not
-  encoded in a message.
+  encoded in a message. Only the noun each syntax uses for a table or an array
+  differs, and the blocks declare it (`mapping_noun`, `sequence_noun`).
+- MCP — `src/skillsaw/blocks/codex.py`: `CodexConfigBlock` carries `McpConfigRole`
+  the way `GrokConfigBlock` does, with a `codex_mcp_transport()` derivation in
+  `formats/codex.py` and an unconditional `McpShapeDeferral`, so the JSON shape walk
+  stands down and `codex-hooks-valid` owns the one parse-error finding for the file.
+  No Codex MCP shape rule exists by design — see the measured note above.
 
 ## Sync notes
 Hand-copied value sets that drift — re-check each against upstream:
@@ -174,18 +209,33 @@ Hand-copied value sets that drift — re-check each against upstream:
   `codex_config_hooks()` in `formats/codex.py` — the one place the mapping lives.
   `[[hooks.<Event>]]` renders to a `{matcher?, hooks: [...]}` entry and
   `[[hooks.<Event>.hooks]]` to a handler, which is the JSON shape exactly, so the
-  mapping is a pass-through. Re-check on every sync: a dialect that stops matching
-  turns the mapping into a rename.
-- **`commandWindows`, not `command_windows`** (measured, 0.153.0). The docs page
-  prose spells the field `command_windows`; the shipped binary's serde field list
-  for the handler enum reads `command commandWindows timeout async statusMessage
-  additionalContextLimit server input prompt agent` and carries no snake_case
-  alias. skillsaw follows the binary, in both files. Re-check the docs page on
-  every sync — if upstream corrects the prose, this note goes; if it adds a real
-  alias, `CODEX_HOOK_OPTIONAL_FIELDS` gains one. `HOOK_COMMAND_FIELDS` keeps both
-  spellings regardless: it is the cross-host scan union and Muse Code accepts the
-  snake_case one, so a Windows command stays in front of `hooks-dangerous` however
-  it is written.
+  mapping is a pass-through apart from the `state` key below. Re-check on every
+  sync: a dialect that stops matching turns the mapping into a rename.
+- **Handler field aliases** — `CODEX_HOOK_FIELD_ALIASES` in `formats/codex.py`.
+  `command_windows` is a real alias of `commandWindows`:
+  `codex-rs/config/src/hook_config.rs` declares
+  `#[serde(default, rename = "commandWindows", alias = "command_windows")]`, and the
+  hooks documentation tells TOML authors to write the snake_case one. Both load, in
+  both files.
+  **A field list read from the shipped binary cannot see an alias.** Serde's
+  `unknown field ..., expected one of ...` message enumerates `rename` names only,
+  so `strings` over the binary — and any experiment that reads that error — is
+  systematically blind to exactly this. Re-derive every field claim from
+  `hook_config.rs` at the supported release's tag, never from a serde error.
+  `HOOK_COMMAND_FIELDS` keeps both spellings independently: it is the cross-host
+  scan union and Muse Code accepts the snake_case one, so a Windows command stays
+  in front of `hooks-dangerous` however it is written.
+- **`[hooks]` is `HooksToml`, not `HooksFile.hooks`.** The TOML table is a superset
+  of the JSON file's object: upstream flattens the event map into it
+  (`#[serde(flatten)] events: HookEventsToml`) and adds a sibling
+  `state: BTreeMap<String, HookStateToml>` — per-hook `enabled` and `trusted_hash`,
+  which only the user layer gets to write. Measured, 0.153.0: a project layer
+  carrying `[hooks.state."<key>"]` starts normally and its sibling hooks fire, with
+  no diagnostic. `codex_config_hooks()` drops the key
+  (`CODEX_CONFIG_HOOKS_STATE_KEY`) before the document reaches the rule; without
+  that it reads as an event whose value is not a sequence, which is an ERROR
+  claiming the CLI will not start. Re-check on every sync for a second non-event
+  sibling.
 
 Deliberate non-checks — do not "fix" these without a spec change. Each records what
 upstream requires and why skillsaw does not enforce it.

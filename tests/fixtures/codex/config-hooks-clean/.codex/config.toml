@@ -17,3 +17,18 @@ type = "command"
 command = "./scripts/audit-shell.sh"
 commandWindows = "powershell -File .\\scripts\\audit-shell.ps1"
 timeout = 15
+
+# Written by Codex when a hook is reviewed. Parsed and ignored in a project
+# layer — only the user config gets to write hook state.
+[hooks.state."0f3c1d"]
+enabled = true
+trusted_hash = "sha256:0f3c1d9a2b7e4c8f1a6d3b5e7c9f0a2d4b6e8c1f3a5d7b9e0c2f4a6d8b1e3c5f"
+
+[mcp_servers.postings]
+command = "./scripts/postings-mcp"
+args = ["--ledger", "nightly"]
+startup_timeout_sec = 20
+
+[mcp_servers.rates]
+url = "https://rates.internal.example.test/mcp"
+bearer_token_env_var = "RATES_MCP_TOKEN"

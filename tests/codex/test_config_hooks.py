@@ -12,16 +12,38 @@ import json
 
 import pytest
 
-from skillsaw.blocks import CodexConfigHooksBlock, CodexHooksBlock
+from skillsaw.blocks import CodexConfigBlock, CodexConfigHooksBlock, CodexHooksBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.codex import CodexHooksValidRule
 from skillsaw.rules.builtin.hooks import HooksDangerousRule
 from skillsaw.rules.builtin.hooks.prohibited import HooksProhibitedRule
 
+from skillsaw.config import LinterConfig
+
+from tests.cli_runner import run_cli
+
 from ._helpers import copy_fixture, messages
 
+
+def _enabled_reason(repo):
+    """``(enabled, reason)`` for the rule under the shipped defaults."""
+    rule = CodexHooksValidRule({})
+    return LinterConfig.default().rule_enabled_reason(
+        rule.rule_id,
+        RepositoryContext(repo),
+        rule.repo_types,
+        rule.since,
+        default_enabled=rule.default_enabled,
+    )
+
+
 _AGENTS_MD = "# Service\n\nRun `make test` before opening a pull request.\n"
+
+#: Stand-in for whatever the installed TOML parser says. ``tomli`` and
+#: ``tomllib`` word the same failure differently, and 3.14 reworked
+#: ``TOMLDecodeError`` again, so only the prefix skillsaw adds is pinned.
+_TOML_SYNTAX_ERROR = "Invalid TOML: <parser>"
 
 
 def _findings(repo, config=None):
@@ -56,6 +78,26 @@ def _json_repo(tmp_path, document, *, name="json-repo"):
 
 def _blocks(repo):
     return RepositoryContext(repo).lint_tree.find(CodexConfigHooksBlock)
+
+
+def _config_blocks(repo):
+    return RepositoryContext(repo).lint_tree.find(CodexConfigBlock)
+
+
+#: The words each syntax uses for the same construct. The twin comparison
+#: reads through them: a defect is the same defect either way, and only the
+#: noun naming the shape follows the file it is in.
+_SYNTAX_NOUNS = {
+    "a TOML table": "a JSON object",
+    "an array of tables": "an array",
+    "a table": "an object",
+}
+
+
+def _in_json_words(message):
+    for toml_word, json_word in _SYNTAX_NOUNS.items():
+        message = message.replace(toml_word, json_word)
+    return message
 
 
 _ONE_HOOK = """
@@ -112,12 +154,30 @@ class TestAttachment:
 
         assert len(_blocks(repo)) == 1
 
-    def test_a_config_with_no_hooks_attaches_nothing(self, tmp_path):
-        """Everything else in the file is Codex settings no rule here reads."""
+    def test_a_config_with_no_hooks_keeps_the_document_and_drops_the_hooks(self, tmp_path):
+        """The file is a supported surface either way — its ``[mcp_servers]``
+        tables are read by the MCP rules — so only the hooks child is
+        conditional."""
         repo = _toml_repo(tmp_path, 'model = "gpt-5-codex"\n')
 
+        assert [b.path.name for b in _config_blocks(repo)] == ["config.toml"]
         assert _blocks(repo) == []
         assert _findings(repo) == []
+
+    def test_the_hooks_block_hangs_under_the_document(self, tmp_path):
+        """One file, one node for the document and one for the surface
+        inside it."""
+        repo = _toml_repo(tmp_path, _ONE_HOOK)
+        config = _config_blocks(repo)[0]
+
+        assert [type(c) for c in config.children] == [CodexConfigHooksBlock]
+        assert config.tree_label() == "config.toml [codex]"
+
+    def test_an_excluded_layer_drops_the_document_too(self, tmp_path):
+        repo = _toml_repo(tmp_path, _ONE_HOOK)
+        context = RepositoryContext(repo, exclude_patterns=[".codex/**"])
+
+        assert context.lint_tree.find(CodexConfigBlock) == []
 
     def test_an_excluded_layer_drops_the_block(self, tmp_path):
         repo = _toml_repo(tmp_path, _ONE_HOOK)
@@ -137,8 +197,8 @@ class TestAttachment:
         assert _blocks(repo) == []
 
     def test_the_json_file_keeps_its_own_block(self, tmp_path):
-        """``hooks.json`` is attached first, so a directory with both files
-        keeps the block the JSON file has always had."""
+        """Codex merges the two files, so a directory carrying both gets a
+        block for each."""
         repo = _toml_repo(tmp_path, _ONE_HOOK, hooks_json=_ONE_HOOK_JSON)
         tree = RepositoryContext(repo).lint_tree
 
@@ -272,7 +332,7 @@ class TestTheJsonTwin:
             ),
             (
                 "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
-                'type = "command"\ncommand = "./warm.sh"\ncommand_windows = "warm.ps1"\n',
+                'type = "command"\ncommand = "./warm.sh"\nbogusKey = "warm.ps1"\n',
                 {
                     "hooks": {
                         "SessionStart": [
@@ -281,7 +341,7 @@ class TestTheJsonTwin:
                                     {
                                         "type": "command",
                                         "command": "./warm.sh",
-                                        "command_windows": "warm.ps1",
+                                        "bogusKey": "warm.ps1",
                                     }
                                 ]
                             }
@@ -297,19 +357,22 @@ class TestTheJsonTwin:
 
         assert json_found, "the case must report something for this to mean anything"
         assert [v.severity for v in toml_found] == [v.severity for v in json_found]
-        assert messages(toml_found) == messages(json_found)
+        assert [_in_json_words(m) for m in messages(toml_found)] == messages(json_found)
 
     def test_a_shape_defect_is_reported_at_the_configured_severity(self, tmp_path):
         """ERROR by default, and an override still moves it: nothing here is
         escalated past the operator on the file's account."""
         body = '[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\ntype = "command"\n'
-        found = _findings(_toml_repo(tmp_path, body))
+        repo = _toml_repo(tmp_path, body)
+        found = _findings(repo)
 
         assert [v.severity for v in found] == [Severity.ERROR]
         assert (
             found[0].message
             == "Hook SessionStart[0].hooks[0] of type 'command' is missing 'command'"
         )
+        overridden = _findings(repo, {"severity": "warning"})
+        assert [v.severity for v in overridden] == [Severity.WARNING]
 
     @pytest.mark.parametrize("literal,kind", [('"30"', "str"), ("1.5", "float")])
     def test_a_non_integer_timeout_refuses_the_toml_file(self, tmp_path, literal, kind):
@@ -370,9 +433,8 @@ class TestTheJsonTwin:
         assert _findings(repo) == []
 
     def test_the_windows_command_keeps_the_json_spelling(self, tmp_path):
-        """The binary's serde field list carries ``commandWindows`` and no
-        ``command_windows`` alias, whatever the docs prose says — and the
-        security rules scan the value the author wrote."""
+        """``commandWindows`` is the field's own name, and the security rules
+        scan the value the author wrote."""
         repo = _toml_repo(
             tmp_path,
             "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
@@ -387,21 +449,36 @@ class TestTheJsonTwin:
             "powershell -File .\\warm.ps1",
         ]
 
-    def test_the_snake_case_spelling_is_reported_as_unknown(self, tmp_path):
-        """Codex drops an unknown handler key without a word — even under
-        ``--strict-config``, which never descends into ``[hooks]`` — so this
-        finding is the only thing that will ever say the key does nothing."""
+    @pytest.mark.parametrize("key", ["commandWindows", "command_windows"])
+    def test_both_windows_spellings_are_accepted(self, tmp_path, key):
+        """``hook_config.rs`` declares ``#[serde(rename = "commandWindows",
+        alias = "command_windows")]``, and the hooks documentation tells TOML
+        authors to write the snake_case one. Both load, in both files."""
+        body = (
+            "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
+            f'type = "command"\ncommand = "./warm.sh"\n{key} = "warm.ps1"\n'
+        )
+        document = {
+            "hooks": {
+                "SessionStart": [
+                    {"hooks": [{"type": "command", "command": "./warm.sh", key: "warm.ps1"}]}
+                ]
+            }
+        }
+
+        assert _findings(_toml_repo(tmp_path, body, name="toml")) == []
+        assert _findings(_json_repo(tmp_path, document)) == []
+
+    @pytest.mark.parametrize("key", ["commandWindows", "command_windows"])
+    def test_a_mistyped_windows_command_is_reported_either_spelling(self, tmp_path, key):
+        """The alias resolves to the same field, so it carries the same type."""
         repo = _toml_repo(
             tmp_path,
             "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
-            'type = "command"\ncommand = "./warm.sh"\ncommand_windows = "warm.ps1"\n',
+            f'type = "command"\ncommand = "./warm.sh"\n{key} = 42\n',
         )
-        found = _findings(repo)
 
-        assert messages(found) == [
-            "Hook SessionStart[0].hooks[0] has unknown field 'command_windows'"
-        ]
-        assert found[0].severity is Severity.WARNING
+        assert messages(_findings(repo)) == [f"Hook SessionStart[0].hooks[0] '{key}' must be a str"]
 
     def test_a_mistyped_windows_command_is_reported(self, tmp_path):
         repo = _toml_repo(
@@ -441,10 +518,8 @@ class TestSecurityRules:
         pipes a download into a shell is exactly the shape the shared
         command-field scan exists to catch.
 
-        Both spellings, though only ``commandWindows`` is Codex's: the scan
-        union is cross-host, and a reviewer needs to see the command either
-        way. ``codex-hooks-valid`` is what says the snake_case one never
-        runs."""
+        Both spellings, both valid: Codex declares the snake_case one as a
+        serde alias, and the scan union is cross-host anyway."""
         repo = _toml_repo(
             tmp_path,
             "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
@@ -497,25 +572,34 @@ class TestStructuralShape:
         assert HooksDangerousRule({}).check(RepositoryContext(repo)) == []
 
     @pytest.mark.parametrize(
-        "body,fragment",
+        "body,message",
         [
-            ("hooks = 42\n", "'hooks' must be a table"),
-            ('hooks = { SessionStart = "echo hi" }\n', "must have an array of hook configurations"),
+            ("hooks = 42\n", "'hooks' must be a TOML table"),
+            (
+                'hooks = { SessionStart = "echo hi" }\n',
+                "Hook event 'SessionStart' must have an array of tables of hook configurations",
+            ),
             (
                 'hooks = { SessionStart = ["echo hi"] }\n',
-                "Hook SessionStart[0] must be an object",
+                "Hook SessionStart[0] must be a table",
             ),
-            ('[[hooks.SessionStart]]\nmatcher = "shell"\n', "is missing 'hooks'"),
-            ("[[hooks.SessionStart]]\nhooks = 3\n", "'hooks' must be an array"),
+            (
+                '[[hooks.SessionStart]]\nmatcher = "shell"\n',
+                "Hook SessionStart[0] is missing 'hooks'",
+            ),
+            (
+                "[[hooks.SessionStart]]\nhooks = 3\n",
+                "Hook SessionStart[0] 'hooks' must be an array of tables",
+            ),
         ],
     )
-    def test_a_wrong_shaped_hooks_table_is_reported_not_raised(self, tmp_path, body, fragment):
+    def test_a_wrong_shaped_hooks_table_is_reported_not_raised(self, tmp_path, body, message):
         """Nothing is dropped on the way in, which is the only way the rule
-        can report it."""
+        can report it. The nouns are TOML's: an author who wrote a table has
+        no JSON object to be told about."""
         repo = _toml_repo(tmp_path, body)
-        found = messages(_findings(repo))
 
-        assert any(fragment in m for m in found), found
+        assert messages(_findings(repo)) == [message]
 
     def test_a_nan_timeout_is_reported_as_the_field_it_is(self, tmp_path):
         """TOML spells ``nan`` natively, so the parser reaches it and the
@@ -565,6 +649,8 @@ class TestBothFiles:
         repo = _toml_repo(tmp_path, _ONE_HOOK, hooks_json=_ONE_HOOK_JSON)
         context = RepositoryContext(repo, exclude_patterns=[".codex/hooks.json"])
 
+        # Otherwise a clean result cannot be told from an empty tree.
+        assert len(context.lint_tree.find(CodexConfigHooksBlock)) == 1
         assert CodexHooksValidRule({}).check(context) == []
 
     def test_it_is_per_layer_not_per_repository(self, tmp_path):
@@ -577,14 +663,29 @@ class TestBothFiles:
 
         assert [v.file_path.relative_to(repo).as_posix() for v in found] == [".codex/config.toml"]
 
-    def test_an_unparseable_config_still_reports_the_merge(self, tmp_path):
-        """Both files load, and the author has to know which one they are
-        looking at before fixing either."""
+    def test_an_unparseable_config_reports_only_the_syntax_error(self, tmp_path):
+        """A file that does not parse declares no hooks to merge, and the
+        syntax error already points at it."""
         repo = _toml_repo(tmp_path, "[[hooks.SessionStart]\n", hooks_json=_ONE_HOOK_JSON)
         found = messages(_findings(repo))
 
-        assert self._MERGE in found, found
-        assert any(m.startswith("Invalid TOML: ") for m in found), found
+        assert self._MERGE not in found, found
+        assert len(found) == 1 and found[0].startswith("Invalid TOML: "), found
+
+    def test_an_empty_hooks_table_is_not_a_merge(self, tmp_path):
+        """A ``[hooks]`` header with everything under it commented out is how
+        a layer is turned off, and it declares nothing for Codex to merge."""
+        repo = _toml_repo(tmp_path, "[hooks]\n", hooks_json=_ONE_HOOK_JSON)
+
+        assert _findings(repo) == []
+
+    def test_a_state_table_alone_is_not_a_merge(self, tmp_path):
+        """``[hooks.state]`` is enablement bookkeeping, not an event group."""
+        repo = _toml_repo(
+            tmp_path, '[hooks.state."abc"]\nenabled = true\n', hooks_json=_ONE_HOOK_JSON
+        )
+
+        assert _findings(repo) == []
 
 
 # ── The fixtures ────────────────────────────────────────────────
@@ -594,8 +695,17 @@ class TestFixtures:
     def test_the_broken_fixture_reports_one_defect_per_file(self, tmp_path):
         repo = copy_fixture("codex/config-hooks-broken", tmp_path)
         found = _findings(repo)
+        # The parser's wording differs between ``tomli`` on the 3.9/3.10
+        # floor and stdlib ``tomllib`` above it, so only the prefix is ours.
+        reported = {
+            (
+                v.file_path.relative_to(repo).as_posix(),
+                _TOML_SYNTAX_ERROR if v.message.startswith("Invalid TOML: ") else v.message,
+            )
+            for v in found
+        }
 
-        assert {(v.file_path.relative_to(repo).as_posix(), v.message) for v in found} == {
+        assert reported == {
             (".codex/config.toml", "Unknown hook event 'PostToolUseFailure'"),
             (
                 "services/checkout/.codex/config.toml",
@@ -608,8 +718,7 @@ class TestFixtures:
             ),
             (
                 "services/legacy/.codex/config.toml",
-                "Invalid TOML: Expected ']]' at the end of an array declaration "
-                "(at line 1, column 21)",
+                _TOML_SYNTAX_ERROR,
             ),
         }
 
@@ -628,3 +737,204 @@ class TestFixtures:
         """Otherwise the clean result would be vacuous."""
         repo = copy_fixture("codex/config-hooks-clean", tmp_path)
         assert len(_blocks(repo)) == 1
+
+
+# ── The state table ─────────────────────────────────────────────
+
+
+class TestTheStateTable:
+    """``[hooks.state]`` is a ``config.toml`` sibling of the events.
+
+    Upstream's ``HooksToml`` is ``#[serde(flatten)] events`` beside
+    ``state: BTreeMap<String, HookStateToml>``, so the TOML table is a
+    superset of the JSON file's ``hooks`` object rather than the same shape.
+    Measured against codex-cli 0.153.0: a project layer carrying one loads,
+    the session starts, the sibling hooks fire, and Codex says nothing.
+    """
+
+    _WITH_STATE = (
+        '[hooks.state."3f2a"]\n'
+        "enabled = true\n"
+        'trusted_hash = "sha256:aa"\n'
+        "\n"
+        "[[hooks.SessionStart]]\n"
+        "\n"
+        "[[hooks.SessionStart.hooks]]\n"
+        'type = "command"\n'
+        'command = "./scripts/warm-cache.sh"\n'
+    )
+
+    def test_a_state_table_beside_real_events_reports_nothing(self, tmp_path):
+        assert _findings(_toml_repo(tmp_path, self._WITH_STATE)) == []
+
+    def test_the_events_beside_it_are_still_checked(self, tmp_path):
+        body = self._WITH_STATE.replace('command = "./scripts/warm-cache.sh"\n', "")
+
+        assert messages(_findings(_toml_repo(tmp_path, body))) == [
+            "Hook SessionStart[0].hooks[0] of type 'command' is missing 'command'"
+        ]
+
+    def test_the_state_table_is_not_in_the_hooks_document(self, tmp_path):
+        """Dropped in the mapping function, so no rule downstream sees it."""
+        repo = _toml_repo(tmp_path, self._WITH_STATE)
+
+        assert set(_blocks(repo)[0].inline_data["hooks"]) == {"SessionStart"}
+
+    def test_the_security_rules_see_the_hook_beside_it(self, tmp_path):
+        repo = _toml_repo(tmp_path, self._WITH_STATE)
+        found = HooksProhibitedRule({}).check(RepositoryContext(repo))
+
+        assert len(found) == 1, messages(found)
+        assert "./scripts/warm-cache.sh" in found[0].message
+
+
+# ── Keys Codex loads and never reads ────────────────────────────
+
+
+class TestUnknownKeys:
+    """Silent in both files, under every flag, so only a linter says so."""
+
+    _HANDLER = (
+        "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
+        'type = "command"\ncommand = "./warm.sh"\nstatusMesage = "warming"\n'
+    )
+    _ENTRY = (
+        '[[hooks.SessionStart]]\nmather = "shell"\n\n'
+        '[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "./warm.sh"\n'
+    )
+
+    def test_a_misspelled_handler_field_is_reported(self, tmp_path):
+        found = _findings(_toml_repo(tmp_path, self._HANDLER))
+
+        assert messages(found) == ["Hook SessionStart[0].hooks[0] has unknown field 'statusMesage'"]
+        assert found[0].severity is Severity.WARNING
+
+    def test_a_misspelled_event_group_key_is_reported(self, tmp_path):
+        """``mather = "shell"`` loses the filter it meant to set."""
+        found = _findings(_toml_repo(tmp_path, self._ENTRY))
+
+        assert messages(found) == ["Hook SessionStart[0] has unknown field 'mather'"]
+        assert found[0].severity is Severity.WARNING
+
+    def test_a_handler_field_at_the_group_level_is_reported(self, tmp_path):
+        """``type`` selects a handler; on the group above it, it is a key
+        Codex reads nothing from."""
+        body = (
+            '[[hooks.SessionStart]]\ntype = "command"\n\n'
+            '[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "./warm.sh"\n'
+        )
+
+        assert messages(_findings(_toml_repo(tmp_path, body))) == [
+            "Hook SessionStart[0] has unknown field 'type'"
+        ]
+
+    @pytest.mark.parametrize("key", ["statusMesage", "mather"])
+    def test_the_json_file_reports_the_same_keys(self, tmp_path, key):
+        """The scan is the vocabulary's, not the syntax's."""
+        entry = {"hooks": [{"type": "command", "command": "./warm.sh"}]}
+        if key == "mather":
+            entry[key] = "shell"
+        else:
+            entry["hooks"][0][key] = "warming"
+        found = _findings(_json_repo(tmp_path, {"hooks": {"SessionStart": [entry]}}))
+
+        assert [m.endswith(f"has unknown field '{key}'") for m in messages(found)] == [True]
+
+    @pytest.mark.parametrize("key", ["statusMesage", "mather"])
+    def test_extra_fields_accepts_a_newer_spelling(self, tmp_path, key):
+        """Codex's handler vocabulary grows between skillsaw releases the way
+        its event list does, so the warning gets the same release valve."""
+        body = self._HANDLER if key == "statusMesage" else self._ENTRY
+
+        assert _findings(_toml_repo(tmp_path, body, name="on")) != []
+        assert _findings(_toml_repo(tmp_path, body, name="off"), {"extra-fields": [key]}) == []
+
+    def test_a_wrongly_typed_extra_fields_costs_no_other_finding(self, tmp_path):
+        """The declared type is not enforced when the config loads."""
+        found = _findings(_toml_repo(tmp_path, self._HANDLER), {"extra-fields": 42})
+
+        assert messages(found) == ["Hook SessionStart[0].hooks[0] has unknown field 'statusMesage'"]
+
+
+# ── The timeout range ───────────────────────────────────────────
+
+
+class TestTheTimeoutRange:
+    """``timeout`` is an ``Option<u64>`` in both files."""
+
+    def _body(self, literal):
+        return (
+            "[[hooks.PreToolUse]]\n\n[[hooks.PreToolUse.hooks]]\n"
+            f'type = "command"\ncommand = "./report.sh"\ntimeout = {literal}\n'
+        )
+
+    def test_a_negative_timeout_refuses_the_toml_file(self, tmp_path):
+        """Measured: ``codex`` exits 1 with ``invalid value: integer `-1`,
+        expected u64`` and starts no session in the project."""
+        found = _findings(_toml_repo(tmp_path, self._body("-1")))
+
+        assert messages(found) == [
+            "Hook PreToolUse[0].hooks[0] 'timeout' must be a whole number of seconds, got -1"
+        ]
+
+    def test_zero_is_accepted(self, tmp_path):
+        """Measured: it loads and the hook fires."""
+        assert _findings(_toml_repo(tmp_path, self._body("0"))) == []
+
+    def test_the_json_path_keeps_accepting_a_negative(self, tmp_path):
+        """Deliberate backward compatibility, not an unmeasured contract:
+        both files deserialize the same ``Option<u64>``, and a defect in the
+        JSON one costs that file's hooks rather than the CLI."""
+        found = _findings(
+            _json_repo(
+                tmp_path,
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {"hooks": [{"type": "command", "command": "./x.sh", "timeout": -1}]}
+                        ]
+                    }
+                },
+            )
+        )
+
+        assert found == []
+
+
+# ── Where the rule runs ─────────────────────────────────────────
+
+
+class TestWhenTheRuleRuns:
+    """The evidence entry and the block have to agree, or a TOML-only
+    project gets a rule that never runs or a block nothing reads."""
+
+    def test_a_committed_config_toml_turns_the_rule_on(self, tmp_path):
+        """No plugin, no marketplace, no ``hooks.json`` — one config.toml."""
+        repo = copy_fixture("codex/config-hooks-clean", tmp_path)
+        enabled, reason = _enabled_reason(repo)
+
+        assert enabled is True
+        assert reason == "enabled: auto — detected repo type: codex-project"
+
+
+@pytest.mark.integration
+class TestConfigHooksThroughTheCli:
+    def test_the_broken_fixture_reports_through_the_cli(self, tmp_path):
+        repo = copy_fixture("codex/config-hooks-broken", tmp_path)
+        report = json.loads(run_cli(["lint", "--format", "json", "-v", str(repo)]).stdout)
+        found = [v for v in report["violations"] if v["rule_id"] == "codex-hooks-valid"]
+
+        assert {v["file_path"] for v in found} == {
+            ".codex/config.toml",
+            "services/checkout/.codex/config.toml",
+            "services/ledger/.codex/config.toml",
+            "services/legacy/.codex/config.toml",
+        }
+        dangerous = [v for v in report["violations"] if v["rule_id"] == "hooks-dangerous"]
+        assert [v["file_path"] for v in dangerous] == ["services/telemetry/.codex/config.toml"]
+
+    def test_the_summary_reports_a_toml_only_layer_as_codex(self, tmp_path):
+        repo = copy_fixture("codex/config-hooks-clean", tmp_path)
+        result = run_cli(["lint", str(repo)])
+
+        assert "codex-project" in result.stdout

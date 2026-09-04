@@ -21,7 +21,8 @@ would make a forced ``--type codex-plugin`` with no filesystem claim skip
 the very files the rule exists to report.
 """
 
-from typing import Any, Dict, List, Set
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
 
 from skillsaw.blocks import json_token
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -29,6 +30,7 @@ from skillsaw.diagnostics import safe_display
 from skillsaw.formats.codex import (
     CODEX_HOOK_EVENTS,
     CODEX_HOOKS_FILENAME,
+    CODEX_HOOK_FIELD_ALIASES,
     CODEX_HOOK_HANDLER_TYPES,
     CODEX_HOOK_MATCHER_EVENTS,
     CODEX_HOOK_NO_MCP_TOOL_EVENTS,
@@ -53,12 +55,11 @@ _KNOWN_HANDLER_TYPES = CODEX_HOOK_HANDLER_TYPES | CODEX_HOOK_SKIPPED_HANDLER_TYP
 _TIMEOUT = "timeout"
 
 #: The handler discriminator. In neither field table — it selects which table
-#: applies — so the unknown-field scan has to skip it by name.
+#: applies — so the unknown-key scan accepts it by name, on a handler only.
 _TYPE = "type"
 
-#: What each syntax calls a key/value mapping. A ``config.toml`` author never
-#: wrote a JSON object and has no way to write one.
-_MAPPING_NOUN = {"TOML": "table"}
+#: The keys an event-group table takes: ``{matcher?, hooks: [...]}``.
+_ENTRY_FIELDS = frozenset({"matcher", "hooks"})
 
 
 def _fields_by_handler_type() -> Dict[str, frozenset]:
@@ -66,7 +67,9 @@ def _fields_by_handler_type() -> Dict[str, frozenset]:
 
     Inverted from the required/optional tables rather than written out, so
     a field added to ``skillsaw.formats.codex`` is placed on the right
-    handler type here without a second edit.
+    handler type here without a second edit. Every alias Codex accepts is
+    entered beside the field it renames, so a handler writing either
+    spelling resolves to the same owner.
     """
     owners: Dict[str, Set[str]] = {}
     for handler_type, fields in CODEX_HOOK_REQUIRED_FIELDS.items():
@@ -75,10 +78,46 @@ def _fields_by_handler_type() -> Dict[str, frozenset]:
     for handler_type, fields in CODEX_HOOK_OPTIONAL_FIELDS.items():
         for field in fields:
             owners.setdefault(field, set()).add(handler_type)
+    for alias, field in CODEX_HOOK_FIELD_ALIASES.items():
+        if field in owners:
+            owners.setdefault(alias, set()).update(owners[field])
     return {field: frozenset(types) for field, types in owners.items()}
 
 
 _FIELD_OWNERS = _fields_by_handler_type()
+
+#: Every key a handler table may carry: any type's fields, plus the
+#: discriminator that chose the type. A key outside it is one no handler
+#: reads at all, as opposed to one read by the other type.
+_HANDLER_KEYS = frozenset(_FIELD_OWNERS) | {_TYPE}
+
+
+def _declared_fields() -> Dict[str, frozenset]:
+    """Every field name each handler type takes, aliases included.
+
+    Precomputed rather than rebuilt per handler: both source tables are
+    module-level and frozen, so the union is the same on every call.
+    """
+    declared: Dict[str, frozenset] = {}
+    for handler_type in set(CODEX_HOOK_REQUIRED_FIELDS) | set(CODEX_HOOK_OPTIONAL_FIELDS):
+        fields = set(CODEX_HOOK_REQUIRED_FIELDS.get(handler_type, ())) | set(
+            CODEX_HOOK_OPTIONAL_FIELDS.get(handler_type, {})
+        )
+        fields |= {a for a, f in CODEX_HOOK_FIELD_ALIASES.items() if f in fields}
+        declared[handler_type] = frozenset(fields)
+    return declared
+
+
+_DECLARED_FIELDS = _declared_fields()
+
+
+def _a(noun: str) -> str:
+    """*noun* with the article the message needs.
+
+    The blocks declare bare nouns — ``object``, ``table``, ``array of
+    tables`` — because the article follows the word, not the syntax.
+    """
+    return f"an {noun}" if noun[:1] in "aeiou" else f"a {noun}"
 
 
 def _matches_type(value: Any, expected) -> bool:
@@ -120,6 +159,14 @@ class CodexHooksValidRule(Rule):
                 "this skillsaw release"
             ),
         },
+        "extra-fields": {
+            "type": "list",
+            "default": [],
+            "description": (
+                "Additional hook handler field names to accept, for fields newer "
+                "than this skillsaw release"
+            ),
+        },
         "allow-both-files": {
             "type": "bool",
             "default": False,
@@ -154,16 +201,33 @@ class CodexHooksValidRule(Rule):
             return set(CODEX_HOOK_EVENTS)
         return set(CODEX_HOOK_EVENTS) | {e for e in extra if isinstance(e, str)}
 
+    def _extra_fields(self) -> Set[str]:
+        """Handler field names the project accepts on top of Codex's.
+
+        Codex's handler vocabulary grows between skillsaw releases the way
+        its event list does, so the unknown-field warning gets the same
+        release valve ``extra-events`` gives the unknown-event one. Typed
+        defensively for the same reason: the declared type is not enforced
+        when the config loads.
+        """
+        extra = self.setting("extra-fields") or []
+        if not isinstance(extra, (list, tuple, set, frozenset)):
+            return set()
+        return {f for f in extra if isinstance(f, str)}
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         known_events = self._known_events()
+        extra_fields = self._extra_fields()
         allow_both = bool(self.setting("allow-both-files"))
 
         blocks = context.lint_tree.find(CodexHooksBlock)
-        # The hooks files already in the tree, which is what the both-files
-        # finding asks about. ``hooks.json`` is attached before any
-        # ``config.toml``, so by now every one of them is here.
-        hooks_files = {safe_resolve(b.path) for b in blocks if b.path.name == CODEX_HOOKS_FILENAME}
+        # The hooks files in the tree, which is what the both-files finding
+        # asks about. Collected over the whole tree before the loop, so
+        # attachment order is not a thing this depends on.
+        hooks_files: Set[Path] = set()
+        if not allow_both:
+            hooks_files = {b.resolved_path for b in blocks if b.path.name == CODEX_HOOKS_FILENAME}
 
         for block in blocks:
             if isinstance(block, CodexConfigHooksBlock) and not allow_both:
@@ -211,17 +275,23 @@ class CodexHooksValidRule(Rule):
 
             raw_hooks = data["hooks"]
             if not isinstance(raw_hooks, dict):
-                noun = _MAPPING_NOUN.get(block.syntax_name, "JSON object")
-                violations.append(self.violation(f"'hooks' must be a {noun}", file_path=block.path))
+                violations.append(
+                    self.violation(
+                        f"'hooks' must be a {block.syntax_name} {block.mapping_noun}",
+                        file_path=block.path,
+                    )
+                )
                 continue
 
             for event, entries in raw_hooks.items():
-                violations.extend(self._check_event(event, entries, known_events, block))
+                violations.extend(
+                    self._check_event(event, entries, known_events, extra_fields, block)
+                )
 
         return violations
 
     def _check_both_files(
-        self, block: CodexConfigHooksBlock, hooks_files: Set[Any]
+        self, block: CodexConfigHooksBlock, hooks_files: Set[Path]
     ) -> List[RuleViolation]:
         """One ``.codex/`` layer declaring hooks in both of its files.
 
@@ -238,7 +308,17 @@ class CodexHooksValidRule(Rule):
 
         Asked of the tree rather than the filesystem: a ``hooks.json`` the
         project excluded is one it chose not to lint.
+
+        Only where the config actually declares an event group. A file
+        skillsaw attached for its parse error, or one whose ``[hooks]``
+        header stands over nothing, declares no hooks for Codex to merge,
+        and saying it does would be a claim about a file that makes no
+        claim.
         """
+        document = block.inline_data
+        events = document.get("hooks") if isinstance(document, dict) else None
+        if not isinstance(events, dict) or not events:
+            return []
         if safe_resolve(block.path.parent / CODEX_HOOKS_FILENAME) not in hooks_files:
             return []
         return [
@@ -250,7 +330,12 @@ class CodexHooksValidRule(Rule):
         ]
 
     def _check_event(
-        self, event: Any, entries: Any, known_events: Set[str], block: CodexHooksBlock
+        self,
+        event: Any,
+        entries: Any,
+        known_events: Set[str],
+        extra_fields: Set[str],
+        block: CodexHooksBlock,
     ) -> List[RuleViolation]:
         """One event key and the entries under it."""
         violations: List[RuleViolation] = []
@@ -281,14 +366,17 @@ class CodexHooksValidRule(Rule):
         if not isinstance(entries, list):
             violations.append(
                 self.violation(
-                    f"Hook event '{name}' must have an array of hook configurations",
+                    f"Hook event '{name}' must have {_a(block.sequence_noun)} of hook "
+                    "configurations",
                     file_path=block.path,
                 )
             )
             return violations
 
         for index, entry in enumerate(entries):
-            violations.extend(self._check_entry(name, event, index, entry, block, builtin))
+            violations.extend(
+                self._check_entry(name, event, index, entry, extra_fields, block, builtin)
+            )
         return violations
 
     def _check_entry(
@@ -297,6 +385,7 @@ class CodexHooksValidRule(Rule):
         event: Any,
         index: int,
         entry: Any,
+        extra_fields: Set[str],
         block: CodexHooksBlock,
         builtin: bool = True,
     ) -> List[RuleViolation]:
@@ -305,7 +394,17 @@ class CodexHooksValidRule(Rule):
         where = f"{name}[{index}]"
 
         if not isinstance(entry, dict):
-            return [self.violation(f"Hook {where} must be an object", file_path=block.path)]
+            return [
+                self.violation(
+                    f"Hook {where} must be {_a(block.mapping_noun)}", file_path=block.path
+                )
+            ]
+
+        # An event group takes ``matcher`` and ``hooks`` and nothing else.
+        # Codex drops anything beside them without a word — measured, under
+        # ``--strict-config`` too, which never descends into ``[hooks]`` — so
+        # ``mather = "shell"`` silently loses the filter it meant to set.
+        violations.extend(self._unknown_keys(where, entry, _ENTRY_FIELDS, extra_fields, block))
 
         if "matcher" in entry:
             matcher = entry["matcher"]
@@ -338,21 +437,30 @@ class CodexHooksValidRule(Rule):
         handlers = entry["hooks"]
         if not isinstance(handlers, list):
             return violations + [
-                self.violation(f"Hook {where} 'hooks' must be an array", file_path=block.path)
+                self.violation(
+                    f"Hook {where} 'hooks' must be {_a(block.sequence_noun)}",
+                    file_path=block.path,
+                )
             ]
 
         for handler_index, handler in enumerate(handlers):
             violations.extend(
-                self._check_handler(f"{where}.hooks[{handler_index}]", event, handler, block)
+                self._check_handler(
+                    f"{where}.hooks[{handler_index}]", event, handler, extra_fields, block
+                )
             )
         return violations
 
     def _check_handler(
-        self, where: str, event: Any, handler: Any, block: CodexHooksBlock
+        self, where: str, event: Any, handler: Any, extra_fields: Set[str], block: CodexHooksBlock
     ) -> List[RuleViolation]:
         """One handler object: its type, then the fields that type takes."""
         if not isinstance(handler, dict):
-            return [self.violation(f"Hook {where} must be an object", file_path=block.path)]
+            return [
+                self.violation(
+                    f"Hook {where} must be {_a(block.mapping_noun)}", file_path=block.path
+                )
+            ]
 
         if "type" not in handler:
             return [self.violation(f"Hook {where} is missing 'type'", file_path=block.path)]
@@ -382,7 +490,7 @@ class CodexHooksValidRule(Rule):
                 )
             ]
 
-        violations = self._check_fields(where, handler_type, handler, block)
+        violations = self._check_fields(where, handler_type, handler, extra_fields, block)
 
         if handler_type == "mcp_tool" and event in CODEX_HOOK_NO_MCP_TOOL_EVENTS:
             violations.append(
@@ -396,7 +504,12 @@ class CodexHooksValidRule(Rule):
         return violations
 
     def _check_fields(
-        self, where: str, handler_type: str, handler: Dict[str, Any], block: CodexHooksBlock
+        self,
+        where: str,
+        handler_type: str,
+        handler: Dict[str, Any],
+        extra_fields: Set[str],
+        block: CodexHooksBlock,
     ) -> List[RuleViolation]:
         """Required fields, this type's optional fields, and the other type's.
 
@@ -428,29 +541,14 @@ class CodexHooksValidRule(Rule):
         # for a handler type added to the set without a table beside it, and
         # then every key on it would read as unknown — see the required-field
         # note above.
-        declared = set(CODEX_HOOK_REQUIRED_FIELDS.get(handler_type, ())) | set(
-            CODEX_HOOK_OPTIONAL_FIELDS.get(handler_type, {})
-        )
+        if _DECLARED_FIELDS.get(handler_type):
+            violations.extend(
+                self._unknown_keys(where, handler, _HANDLER_KEYS, extra_fields, block)
+            )
 
         for field in handler:
-            if field == _TYPE:
-                continue
             owners = _FIELD_OWNERS.get(field)
-            if owners is None:
-                if not declared:
-                    continue
-                # A key no handler type takes. Codex drops it without a word
-                # — measured under ``--strict-config`` too, which never
-                # descends into ``[hooks]`` — so nothing but a linter will
-                # ever say that a misspelled ``commandWindows`` does nothing.
-                violations.append(
-                    self.violation(
-                        f"Hook {where} has unknown field '{safe_display(field)}'",
-                        file_path=block.path,
-                        severity=Severity.WARNING,
-                    )
-                )
-            elif handler_type not in owners:
+            if owners is not None and handler_type not in owners:
                 violations.append(
                     self.violation(
                         f"Hook {where} '{field}' is not a '{handler_type}' field",
@@ -460,17 +558,49 @@ class CodexHooksValidRule(Rule):
                 )
 
         for field, expected in CODEX_HOOK_OPTIONAL_FIELDS.get(handler_type, {}).items():
-            if field == _TIMEOUT or field not in handler:
+            if field == _TIMEOUT:
                 continue
-            if not _matches_type(handler[field], expected):
-                violations.append(
-                    self.violation(
-                        f"Hook {where} '{field}' must be a {expected.__name__}",
-                        file_path=block.path,
+            for spelling in (
+                field,
+                *(a for a, f in CODEX_HOOK_FIELD_ALIASES.items() if f == field),
+            ):
+                if spelling in handler and not _matches_type(handler[spelling], expected):
+                    violations.append(
+                        self.violation(
+                            f"Hook {where} '{spelling}' must be a {expected.__name__}",
+                            file_path=block.path,
+                        )
                     )
-                )
 
         return violations
+
+    def _unknown_keys(
+        self,
+        where: str,
+        table: Dict[str, Any],
+        accepted,
+        extra_fields: Set[str],
+        block: CodexHooksBlock,
+    ) -> List[RuleViolation]:
+        """Keys Codex loads the file over and then never reads.
+
+        Silent in both files: measured, an unrecognized key on a handler or
+        on an event group is dropped without a word, under
+        ``--strict-config`` too, which never descends into ``[hooks]``. So
+        nothing but a linter will ever say that a misspelled
+        ``commandWindows`` or ``matcher`` does nothing. WARNING because the
+        file still loads, and ``extra-fields`` accepts a spelling newer than
+        this release.
+        """
+        return [
+            self.violation(
+                f"Hook {where} has unknown field '{safe_display(field)}'",
+                file_path=block.path,
+                severity=Severity.WARNING,
+            )
+            for field in table
+            if field not in accepted and field not in extra_fields
+        ]
 
     def _check_timeout(
         self, where: str, event: Any, handler: Dict[str, Any], block: CodexHooksBlock
@@ -482,19 +612,34 @@ class CodexHooksValidRule(Rule):
         without the float conversion that would kill the rule.
 
         A ``config.toml`` is stricter, and the block says so: Codex
-        deserializes the field as a ``u64`` there, measured, so a float is
-        not a duration it can read. The JSON path is unmeasured and keeps
-        the number it has always accepted.
+        deserializes the field as a ``u64`` there, measured, so a float and a
+        negative are both refusals rather than durations —
+        ``timeout = -1`` exits 1 with ``invalid value: integer `-1`, expected
+        u64``, where ``timeout = 0`` loads. No upper bound is needed: TOML
+        integers stop at ``i64``, below the ``u64`` ceiling.
+
+        Both files deserialize the same ``Option<u64>``, so the JSON path is
+        not looser because it is unmeasured. It keeps the number it has
+        always accepted deliberately, for backward compatibility: a defect
+        there costs that file's hooks rather than the CLI.
         """
         if _TIMEOUT not in handler:
             return []
         timeout = handler[_TIMEOUT]
         whole_only = block.timeout_must_be_integer
+        # The type first, then the range: a wrong type is named by its type
+        # and a wrong value by its value, so the message says which it is.
         if not is_finite_number(timeout) or (whole_only and isinstance(timeout, float)):
+            got: Optional[Any] = type(timeout).__name__
+        elif whole_only and timeout < 0:
+            got = timeout
+        else:
+            got = None
+        if got is not None:
             wanted = "a whole number of seconds" if whole_only else "a number"
             return [
                 self.violation(
-                    f"Hook {where} 'timeout' must be {wanted}, " f"got {type(timeout).__name__}",
+                    f"Hook {where} 'timeout' must be {wanted}, got {got}",
                     file_path=block.path,
                 )
             ]

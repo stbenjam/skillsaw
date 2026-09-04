@@ -181,6 +181,7 @@ rules:
     enabled: auto
     severity: error
     # extra-events: []
+    # extra-fields: []
     # allow-both-files: false
 
   # .agents/plugins/marketplace.json must be valid JSON with required fields

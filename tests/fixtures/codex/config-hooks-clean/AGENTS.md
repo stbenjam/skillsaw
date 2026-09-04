@@ -10,3 +10,9 @@ This project keeps its Codex hooks in `.codex/config.toml` rather than a
 separate `hooks.json`, so the whole project layer is one file. Both hooks
 shell out to scripts under `scripts/`, which run before the agent has
 installed anything — keep them executable and dependency-free.
+
+## MCP servers
+
+The same file declares the two MCP servers the job needs: the local
+`postings` process and the internal rates service. Codex reads a project
+layer only once the developer's user config trusts this directory.

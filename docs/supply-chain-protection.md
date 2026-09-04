@@ -158,8 +158,9 @@ be defined:
 | `.mcp.json` (repo root) | mcp-prohibited, mcp-valid-json |
 | Plugin `hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | Plugin `.mcp.json` | mcp-prohibited, mcp-valid-json |
-| `.codex/hooks.json` (repo root or any package) | hooks-dangerous, hooks-prohibited |
+| `.codex/hooks.json` (repo root or any package) | hooks-dangerous, hooks-prohibited, codex-hooks-valid |
 | `.codex/config.toml` `[hooks]` (repo root or any package) | hooks-dangerous, hooks-prohibited, codex-hooks-valid |
+| `.codex/config.toml` `[mcp_servers]` (repo root or any package) | mcp-prohibited, mcp-valid-json |
 | Codex manifest-declared or inline `hooks` | hooks-dangerous, hooks-prohibited |
 | Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
 | `.muse/hooks.json` | hooks-dangerous, hooks-prohibited |

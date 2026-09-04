@@ -39,7 +39,7 @@ This rule flags hook commands that:
 - make network requests
 
 The scanner's vocabulary is POSIX shell: a Windows override (`commandWindows` in
-Codex and Muse Code, or `command_windows` in Muse Code) is scanned with the same
+Codex and Muse Code, either spelling in both) is scanned with the same
 heuristics as any other command, and PowerShell constructs are out of scope by
 design — a project that ships PowerShell hooks should enable
 [`hooks-prohibited`](hooks-prohibited.md), which reviews every hook regardless of

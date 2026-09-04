@@ -100,8 +100,17 @@ CODEX_DIR_NAME = ".codex"
 CODEX_HOOKS_FILENAME = "hooks.json"
 CODEX_CONFIG_FILENAME = "config.toml"
 
-#: The table a ``config.toml`` writes its hooks under.
+#: The tables a ``config.toml`` writes its two committed surfaces under.
 CODEX_CONFIG_HOOKS_TABLE = "hooks"
+CODEX_CONFIG_MCP_TABLE = "mcp_servers"
+
+#: The one key ``[hooks]`` carries that is not an event. Upstream's
+#: ``HooksToml`` is ``#[serde(flatten)] events: HookEventsToml`` beside
+#: ``state: BTreeMap<String, HookStateToml>``, so the TOML table is a
+#: superset of the JSON file's ``hooks`` object rather than the same shape.
+#: Codex writes per-hook enablement and trust here; a project layer's copy
+#: is parsed and ignored, measured, with no diagnostic and no refusal.
+CODEX_CONFIG_HOOKS_STATE_KEY = "state"
 
 # -- Lifecycle hooks ----------------------------------------------------------
 #
@@ -150,12 +159,6 @@ CODEX_HOOK_REQUIRED_FIELDS: Mapping[str, Tuple[str, ...]] = {
 #: command hook may return before Codex spills it to disk.
 CODEX_HOOK_OPTIONAL_FIELDS: Mapping[str, Mapping[str, Any]] = {
     "command": {
-        # The binary's serde field list for the handler enum reads
-        # ``command commandWindows timeout async statusMessage
-        # additionalContextLimit server input prompt agent`` and carries no
-        # ``command_windows`` alias — measured against codex-cli 0.153.0. The
-        # docs prose spells it ``command_windows``; skillsaw follows the
-        # binary, in the TOML file as in the JSON one.
         "commandWindows": str,
         "timeout": (int, float),
         "statusMessage": str,
@@ -185,6 +188,18 @@ CODEX_HOOK_MATCHER_EVENTS = frozenset(
     }
 )
 
+#: Handler-field spellings Codex accepts as another name for a declared
+#: field. Serde's ``unknown field ..., expected one of ...`` message lists
+#: ``rename`` names and never aliases, so a field list read from the shipped
+#: binary cannot see one; upstream ``codex-rs/config/src/hook_config.rs``
+#: declares ``#[serde(default, rename = "commandWindows", alias =
+#: "command_windows")]``, and the hooks documentation tells TOML authors to
+#: write the snake_case spelling. Both load, in both files.
+CODEX_HOOK_FIELD_ALIASES: Mapping[str, str] = {
+    "command_windows": "commandWindows",
+}
+
+
 #: Events that reject ``mcp_tool`` handlers.
 CODEX_HOOK_NO_MCP_TOOL_EVENTS = frozenset({"SessionEnd"})
 
@@ -200,23 +215,87 @@ def codex_config_hooks(data: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     of them — so the caller attaches nothing.
 
     The whole TOML-to-hooks mapping, in one function: a correction to the
-    dialect is an edit here and nowhere else. It is a pass-through, measured
-    against codex-cli 0.153.0: the TOML table ``hooks`` *is* the JSON
-    ``"hooks"`` object one level up. ``[[hooks.<Event>]]`` parses to the list
-    of ``{matcher?, hooks: [...]}`` groups, ``[[hooks.<Event>.hooks]]`` to
-    the handler list inside each, and every key keeps the spelling the JSON
-    file uses — including ``commandWindows``, which is what the binary
-    deserializes whatever the docs prose says. So the vocabulary in this
+    dialect is an edit here and nowhere else. The TOML table ``hooks`` is a
+    *superset* of the JSON file's ``hooks`` object — upstream's ``HooksToml``
+    flattens the event map and adds a ``state`` sibling that ``HooksFile``
+    has no room for — so :data:`CODEX_CONFIG_HOOKS_STATE_KEY` is dropped and
+    what is left is the JSON shape one level up. ``[[hooks.<Event>]]`` parses
+    to the list of ``{matcher?, hooks: [...]}`` groups,
+    ``[[hooks.<Event>.hooks]]`` to the handler list inside each, and every
+    key keeps the spelling the JSON file uses, so the vocabulary in this
     module reads both files.
 
-    Nothing is dropped or coerced: a ``hooks`` value that is not a table,
-    and an event whose value is not a sequence, arrive at
+    Nothing else is dropped or coerced: a ``hooks`` value that is not a
+    table, and an event whose value is not a sequence, arrive at
     ``codex-hooks-valid`` as written, which is the only way it can report
     them.
     """
     if CODEX_CONFIG_HOOKS_TABLE not in data:
         return None
-    return {"hooks": data[CODEX_CONFIG_HOOKS_TABLE]}
+    events = data[CODEX_CONFIG_HOOKS_TABLE]
+    if isinstance(events, dict) and CODEX_CONFIG_HOOKS_STATE_KEY in events:
+        events = {k: v for k, v in events.items() if k != CODEX_CONFIG_HOOKS_STATE_KEY}
+    return {"hooks": events}
+
+
+# -- Project MCP servers ------------------------------------------------------
+#
+# Source: https://learn.chatgpt.com/docs/extend/mcp (read 2026-09-03), and
+# measured against codex-cli 0.153.0 through ``codex mcp list --json``, which
+# runs offline and prints the transport Codex derived for each server.
+
+#: ``[mcp_servers.<name>]`` fields, by the transport that takes them.
+#: Measured: every one of these loads, and ``codex mcp list --json`` echoes
+#: it back under the transport named below.
+CODEX_MCP_STDIO_FIELDS = frozenset(
+    {"command", "args", "env", "env_vars", "cwd", "experimental_environment"}
+)
+CODEX_MCP_HTTP_FIELDS = frozenset(
+    {
+        "url",
+        "auth",
+        "bearer_token_env_var",
+        "http_headers",
+        "env_http_headers",
+        "http_headers_helper",
+    }
+)
+CODEX_MCP_COMMON_FIELDS = frozenset(
+    {
+        "enabled",
+        "required",
+        "startup_timeout_sec",
+        "tool_timeout_sec",
+        "enabled_tools",
+        "disabled_tools",
+        "default_tools_approval_mode",
+        "tools",
+    }
+)
+
+#: Every field a server table takes, whatever its transport.
+CODEX_MCP_SERVER_FIELDS = CODEX_MCP_STDIO_FIELDS | CODEX_MCP_HTTP_FIELDS | CODEX_MCP_COMMON_FIELDS
+
+
+def codex_mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
+    """The transport Codex derives for one ``[mcp_servers.<name>]`` table.
+
+    ``command`` selects stdio and ``url`` streamable HTTP, and the two are
+    mutually exclusive: measured, a table carrying both is refused with
+    ``url is not supported for stdio``, and one carrying neither with
+    ``invalid transport`` — each fatal for the whole file. ``None`` here
+    means only that there is no transport to model.
+
+    An empty ``command`` is still stdio, unlike Grok's: measured, Codex
+    loads ``command = ""`` and reports a stdio server. Neither field's
+    content is validated.
+    """
+    if isinstance(server.get("command"), str):
+        return "stdio"
+    url = server.get("url")
+    if isinstance(url, str) and url.strip():
+        return "http"
+    return None
 
 
 def codex_manifest(plugin_dir: Path) -> Dict[str, Any]:

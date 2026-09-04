@@ -494,26 +494,32 @@ detects each.
 ## OpenAI Codex project configuration
 
 Repositories with a `.codex/hooks.json` or a `.codex/config.toml`, the
-project layer Codex reads from
-the directory a session starts in — the repository root, or a package inside
-it. This is distinct from a Codex plugin (`.codex-plugin/plugin.json`) and
-from a Codex marketplace: it configures the checkout rather than packaging
-anything, so it is never treated as a plugin claim and never exempts the
-repository from another ecosystem's rules.
+project layer Codex reads. This is distinct from a Codex plugin
+(`.codex-plugin/plugin.json`) and from a Codex marketplace: it configures the
+checkout rather than packaging anything, so it is never treated as a plugin
+claim and never exempts the repository from another ecosystem's rules.
 
-Codex loads lifecycle hooks from both files and merges them, so the
-`[hooks]` tables of a `config.toml` get the same checks `hooks.json` gets —
-the rest of that file is Codex settings skillsaw reads nothing from, and a
-config declaring no hooks is attached to nothing. Codex reads the layer of
-every directory between the repository root and the one a session starts in,
-so a package's own `.codex/` is live configuration and every one in the
-checkout is linted.
-[`codex-hooks-valid`](rules/codex-hooks-valid.md) validates both files —
-a shape defect in `config.toml` stops Codex starting at all, where the same
-defect in `hooks.json` costs only that file's hooks, and its message says so
-— and reports a layer that carries hooks in each, while
+Codex reads the layer of every directory between the repository root and the
+one a session starts in, so a package's own `.codex/` is live configuration
+and every one in the checkout is linted.
+
+Lifecycle hooks come from both files, merged: the `[hooks]` tables of a
+`config.toml` get the same checks `hooks.json` gets.
+[`codex-hooks-valid`](rules/codex-hooks-valid.md) validates both files and
+reports a layer that declares hooks in both, while
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
-[`hooks-prohibited`](rules/hooks-prohibited.md) scan the commands in them.
+[`hooks-prohibited`](rules/hooks-prohibited.md) scan the commands in them. A
+shape defect in `config.toml` stops Codex starting at all, where the same
+defect in `hooks.json` costs only that file's hooks; the rule's page records
+that asymmetry.
+
+`config.toml` also carries the project's MCP servers, in
+`[mcp_servers.<name>]` tables — there is no `.codex/mcp.json` — so
+[`mcp-prohibited`](rules/mcp-prohibited.md) and
+[`mcp-valid-json`](rules/mcp-valid-json.md) read them the way they read any
+other host's. Everything else in the file is Codex settings skillsaw reads
+nothing from.
+
 `.codex/plugins/` is an install location rather than project configuration —
 see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
 
