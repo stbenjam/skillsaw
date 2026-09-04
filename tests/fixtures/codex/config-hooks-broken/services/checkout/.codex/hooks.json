@@ -1,0 +1,17 @@
+{
+  "description": "Checkout hooks, kept beside the ones in config.toml",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/audit-shell.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

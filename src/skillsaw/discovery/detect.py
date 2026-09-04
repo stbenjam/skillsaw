@@ -284,14 +284,21 @@ _TOOL_EVIDENCE = {
             (grok.SANDBOX_FILENAME, False),
         ),
     ),
-    # ``hooks.json`` is the only committed project-layer configuration
-    # skillsaw reads from ``.codex/``. ``.codex/plugins/`` is an install
-    # location — vendor-managed content that Codex's own plugin discovery
-    # finds and that the Codex plugin rules gate on repository type — so it
-    # is deliberately not evidence here.
+    # ``hooks.json`` and ``config.toml`` are the committed project-layer
+    # files skillsaw reads from ``.codex/``: Codex loads hooks from both and
+    # merges them, and a config declares this project's MCP servers, so
+    # either one alone is a Codex project. Existence is the whole test for
+    # the config, as it is for Grok's.
+    # ``.codex/plugins/`` is an install location — vendor-managed content
+    # that Codex's own plugin discovery finds and that the Codex plugin
+    # rules gate on repository type — so it is deliberately not evidence
+    # here.
     "codex-project": (
         codex.CODEX_DIR_NAME,
-        ((codex.CODEX_HOOKS_FILENAME, False),),
+        (
+            (codex.CODEX_HOOKS_FILENAME, False),
+            (codex.CODEX_CONFIG_FILENAME, False),
+        ),
     ),
 }
 

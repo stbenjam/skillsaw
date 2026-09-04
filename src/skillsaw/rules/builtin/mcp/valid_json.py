@@ -71,13 +71,15 @@ class McpValidJsonRule(Rule):
 
     default_enabled = True
     # ``copilot-agent-valid`` gates the surface this rule reads at all;
-    # ``grok-config-valid`` owns the "does not parse" finding for a
-    # ``.grok/config.toml`` while it can run, and this rule makes it when a
-    # ``version:`` pin or a forced ``--type`` gates it off.
+    # ``grok-config-valid``, ``codex-hooks-valid`` and ``antigravity-mcp-valid``
+    # own the "does not parse" finding for their own files while they can
+    # run, and this rule makes it when a ``version:`` pin or a forced
+    # ``--type`` gates one off.
     surface_dependencies = (
+        "antigravity-mcp-valid",
+        "codex-hooks-valid",
         "copilot-agent-valid",
         "grok-config-valid",
-        "antigravity-mcp-valid",
     )
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a

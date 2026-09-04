@@ -93,11 +93,24 @@ def inline_documents(declared: Any, key: str) -> List[Dict[str, Any]]:
 # the readers below need no repository state at all.
 CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
 
-#: The project directory Codex reads, and the one committed file skillsaw
+#: The project directory Codex reads, and the two committed files skillsaw
 #: lints inside it. Named here so discovery and the lint tree spell the
 #: location once, the way the Muse leg reads ``muse.TOOL_DIR_NAME``.
 CODEX_DIR_NAME = ".codex"
 CODEX_HOOKS_FILENAME = "hooks.json"
+CODEX_CONFIG_FILENAME = "config.toml"
+
+#: The tables a ``config.toml`` writes its two committed surfaces under.
+CODEX_CONFIG_HOOKS_TABLE = "hooks"
+CODEX_CONFIG_MCP_TABLE = "mcp_servers"
+
+#: The one key ``[hooks]`` carries that is not an event. Upstream's
+#: ``HooksToml`` is ``#[serde(flatten)] events: HookEventsToml`` beside
+#: ``state: BTreeMap<String, HookStateToml>``, so the TOML table is a
+#: superset of the JSON file's ``hooks`` object rather than the same shape.
+#: Codex writes per-hook enablement and trust here; a project layer's copy
+#: is parsed and ignored, measured, with no diagnostic and no refusal.
+CODEX_CONFIG_HOOKS_STATE_KEY = "state"
 
 # -- Lifecycle hooks ----------------------------------------------------------
 #
@@ -175,12 +188,91 @@ CODEX_HOOK_MATCHER_EVENTS = frozenset(
     }
 )
 
+#: Handler-field spellings Codex accepts as another name for a declared
+#: field. Serde's ``unknown field ..., expected one of ...`` message lists
+#: ``rename`` names and never aliases, so a field list read from the shipped
+#: binary cannot see one; upstream ``codex-rs/config/src/hook_config.rs``
+#: declares ``#[serde(default, rename = "commandWindows", alias =
+#: "command_windows")]``, and the hooks documentation tells TOML authors to
+#: write the snake_case spelling. Both load, in both files.
+CODEX_HOOK_FIELD_ALIASES: Mapping[str, str] = {
+    "command_windows": "commandWindows",
+}
+
+
 #: Events that reject ``mcp_tool`` handlers.
 CODEX_HOOK_NO_MCP_TOOL_EVENTS = frozenset({"SessionEnd"})
 
 #: Events whose hooks default to a one-second timeout and cap at three.
 CODEX_HOOK_SHORT_TIMEOUT_EVENTS = frozenset({"SessionEnd", "Interrupt"})
 CODEX_HOOK_SHORT_TIMEOUT_MAX_SECONDS = 3
+
+
+def codex_config_hooks(data: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """A parsed ``.codex/config.toml``'s ``[hooks]`` tables, in hooks.json shape.
+
+    ``None`` when the config declares no hooks — the overwhelming majority
+    of them — so the caller attaches nothing.
+
+    The whole TOML-to-hooks mapping, in one function: a correction to the
+    dialect is an edit here and nowhere else. The TOML table ``hooks`` is a
+    *superset* of the JSON file's ``hooks`` object — upstream's ``HooksToml``
+    flattens the event map and adds a ``state`` sibling that ``HooksFile``
+    has no room for — so :data:`CODEX_CONFIG_HOOKS_STATE_KEY` is dropped and
+    what is left is the JSON shape one level up. ``[[hooks.<Event>]]`` parses
+    to the list of ``{matcher?, hooks: [...]}`` groups,
+    ``[[hooks.<Event>.hooks]]`` to the handler list inside each, and every
+    key keeps the spelling the JSON file uses, so the vocabulary in this
+    module reads both files.
+
+    Nothing else is dropped or coerced: a ``hooks`` value that is not a
+    table, and an event whose value is not a sequence, arrive at
+    ``codex-hooks-valid`` as written, which is the only way it can report
+    them.
+    """
+    if CODEX_CONFIG_HOOKS_TABLE not in data:
+        return None
+    events = data[CODEX_CONFIG_HOOKS_TABLE]
+    if isinstance(events, dict) and CODEX_CONFIG_HOOKS_STATE_KEY in events:
+        events = {k: v for k, v in events.items() if k != CODEX_CONFIG_HOOKS_STATE_KEY}
+    return {"hooks": events}
+
+
+# -- Project MCP servers ------------------------------------------------------
+#
+# Source: https://learn.chatgpt.com/docs/extend/mcp (read 2026-09-03), and
+# measured against codex-cli 0.153.0 through ``codex mcp list --json``, which
+# runs offline and prints the transport Codex derived for each server, and
+# re-confirmed at 0.153.2 through ``codex exec --strict-config``, which names
+# an unrecognized server key.
+#
+# No field vocabulary is kept for a server table, unlike the hooks tables
+# above. Codex ignores an unrecognized server key outside ``--strict-config``,
+# so loading a table proves nothing about which of its keys are real, and it
+# refuses a malformed one itself — ``codex_mcp_transport`` below reads only
+# the two keys that pick a transport.
+
+
+def codex_mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
+    """The transport Codex derives for one ``[mcp_servers.<name>]`` table.
+
+    ``command`` selects stdio and ``url`` streamable HTTP, and the two are
+    mutually exclusive: measured, a table carrying both is refused with
+    ``url is not supported for stdio``, and one carrying neither with
+    ``invalid transport`` — each fatal for the whole file. ``None`` here
+    means only that there is no transport to model.
+
+    The key alone picks the transport, whatever its value: measured, Codex
+    loads ``command = ""`` as stdio and ``url = ""`` as streamable HTTP, and
+    refuses the whole file over ``command = ["npx"]`` rather than reading the
+    table some other way. Reading the value would drop a malformed table out
+    of the security scan over a defect Codex reports itself.
+    """
+    if "command" in server:
+        return "stdio"
+    if "url" in server:
+        return "http"
+    return None
 
 
 def codex_manifest(plugin_dir: Path) -> Dict[str, Any]:
