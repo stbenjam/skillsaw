@@ -73,9 +73,9 @@ rules:
     # required-fields: []
     # required-metadata: []
 
-  # Antigravity skills.json and plugins.json must conform to the Antigravity JSON config specification
+  # Antigravity skills.json, agents.json, and rules.json must conform to the Antigravity JSON config specification
   antigravity-config-json-valid:
-    enabled: auto
+    enabled: false
     severity: error
 
   # hooks.json must declare valid Antigravity lifecycle hooks
@@ -87,7 +87,7 @@ rules:
   # plugin.json must declare a valid Antigravity plugin manifest
   antigravity-plugin-json-valid:
     enabled: auto
-    severity: error
+    severity: warning
 
   # .apm/ directory must contain a recognized primitive subdirectory with valid structure
   apm-structure-valid:

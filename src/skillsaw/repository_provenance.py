@@ -253,23 +253,6 @@ class RepositoryProvenanceMixin:
         """
         return self.provenance(plugin_dir).codex_only
 
-    def is_antigravity_only_plugin(self, plugin_dir: Path) -> bool:
-        """Antigravity-claimed with no Claude declaration."""
-        return self.provenance(plugin_dir).antigravity_only
-
-    def antigravity_plugin_owning(self, path: Path) -> Optional[Path]:
-        """The Antigravity plugin *path* sits in, nearest first, or ``None``."""
-        roots = getattr(self, "antigravity_plugin_roots", lambda: [])()
-        if not roots:
-            return None
-        resolved = safe_resolve(path)
-        if resolved is None:
-            return None
-        for candidate in (resolved, *resolved.parents):
-            if candidate in roots:
-                return candidate
-        return None
-
     def is_grok_only_plugin(self, plugin_dir: Path) -> bool:
         """Grok-claimed with no Claude declaration.
 

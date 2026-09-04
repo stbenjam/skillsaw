@@ -218,7 +218,7 @@ RULE_GROUPS = [
         ],
         "Validates Google Antigravity primitives: plugin manifests "
         "(`plugin.json`), lifecycle hooks (`hooks.json`), and configuration "
-        "registries (`skills.json`, `plugins.json`). Auto-enabled when Antigravity "
+        "registries (`skills.json`, `agents.json`, `rules.json`). Auto-enabled when Antigravity "
         "primitives or `.agents/` / `.agent/` directories are detected.",
     ),
     (

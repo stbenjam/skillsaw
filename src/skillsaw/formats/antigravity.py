@@ -1,16 +1,35 @@
-"""Constants and validators for Antigravity primitives."""
+r"""Google Antigravity repository-context vocabulary, in one place.
+
+Google Antigravity is an agentic coding assistant and execution platform.
+A workspace or repository configures it through ``.agents/`` or ``.agent/``:
+portable Agent Skills in ``skills/``, rules in ``rules/**/*.md``, configuration
+registries in ``skills.json``, ``agents.json``, and ``rules.json``, lifecycle
+hooks in ``hooks.json``, MCP servers in ``mcp_config.json``, and plugins in
+``plugins/<name>/``.
+
+Sources:
+
+* Google Antigravity Customization System specification (September 2026).
+* Antigravity extension manifest schema and hook handler contracts.
+"""
 
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, List, Optional, Set
+
+from skillsaw.diagnostics import safe_display
+
+ANTIGRAVITY_CONFIG_DIR_NAMES = (".agents", ".agent")
 
 PLUGIN_MANIFEST = "plugin.json"
 HOOKS_FILENAME = "hooks.json"
 MCP_CONFIG_FILENAME = "mcp_config.json"
 SKILLS_CONFIG_FILENAME = "skills.json"
-PLUGINS_CONFIG_FILENAME = "plugins.json"
-INSTRUCTION_FILENAME = "ANTIGRAVITY.md"
+AGENTS_CONFIG_FILENAME = "agents.json"
+RULES_CONFIG_FILENAME = "rules.json"
+
+PLUGIN_KNOWN_FIELDS = frozenset({"$schema", "name", "description", "version", "author", "disabled"})
 
 TOOL_HOOK_EVENTS = frozenset({"PreToolUse", "PostToolUse"})
 NON_TOOL_HOOK_EVENTS = frozenset({"PreInvocation", "PostInvocation", "Stop"})
@@ -18,7 +37,7 @@ HOOK_EVENTS = TOOL_HOOK_EVENTS | NON_TOOL_HOOK_EVENTS
 
 VALID_HOOK_HANDLER_TYPES = frozenset({"command"})
 
-_PLUGIN_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+_PLUGIN_NAME_RE = re.compile(r"^[a-zA-Z0-9-_]+$")
 
 
 def validate_antigravity_manifest(data: Any) -> List[str]:
@@ -27,10 +46,9 @@ def validate_antigravity_manifest(data: Any) -> List[str]:
         return ["manifest root must be a JSON object"]
 
     errors: List[str] = []
-    known_fields = {"name", "description", "version", "author", "disabled"}
-    unknown = set(data) - known_fields
+    unknown = set(data) - PLUGIN_KNOWN_FIELDS
     for field in sorted(unknown):
-        errors.append(f"unknown field '{field}'")
+        errors.append(f"unknown field '{safe_display(field)}'")
 
     if "name" in data:
         name = data["name"]
@@ -38,7 +56,7 @@ def validate_antigravity_manifest(data: Any) -> List[str]:
             errors.append("'name' must be a non-empty string")
         elif not _PLUGIN_NAME_RE.match(name):
             errors.append(
-                f"invalid plugin name '{name}' (must start with alphanumeric and use alphanumeric, dots, dashes, or underscores)"
+                f"invalid plugin name '{safe_display(name)}' (must contain only alphanumeric characters, dashes, or underscores)"
             )
 
     if "description" in data:
@@ -76,7 +94,7 @@ def validate_antigravity_hooks(data: Any, extra_events: Optional[Set[str]] = Non
     allowed_events = HOOK_EVENTS | (extra_events or frozenset())
 
     for hook_name, hook_spec in data.items():
-        prefix = f"hook '{hook_name}':"
+        prefix = f"hook '{safe_display(hook_name)}':"
         if not isinstance(hook_spec, dict):
             errors.append(f"{prefix} hook configuration must be a JSON object")
             continue
@@ -88,11 +106,11 @@ def validate_antigravity_hooks(data: Any, extra_events: Optional[Set[str]] = Non
             if key == "enabled":
                 continue
             if key not in allowed_events:
-                errors.append(f"{prefix} unknown event '{key}'")
+                errors.append(f"{prefix} unknown event '{safe_display(key)}'")
                 continue
 
             if not isinstance(value, list):
-                errors.append(f"{prefix} event '{key}' must be a list")
+                errors.append(f"{prefix} event '{safe_display(key)}' must be a list")
                 continue
 
             if key in TOOL_HOOK_EVENTS:
@@ -110,8 +128,10 @@ def validate_antigravity_hooks(data: Any, extra_events: Optional[Set[str]] = Non
                         else:
                             try:
                                 re.compile(matcher)
-                            except re.error as err:
-                                errors.append(f"{entry_prefix} invalid regex in 'matcher': {err}")
+                            except (re.error, RecursionError, OverflowError) as err:
+                                errors.append(
+                                    f"{entry_prefix} invalid regex in 'matcher': {safe_display(err)}"
+                                )
 
                     if "hooks" not in matcher_entry:
                         errors.append(f"{entry_prefix} missing required field 'hooks'")
@@ -146,7 +166,7 @@ def _validate_hook_handler(handler: Any, prefix: str, errors: List[str]) -> None
             errors.append(f"{prefix} 'type' must be a string")
         elif type_val not in VALID_HOOK_HANDLER_TYPES:
             errors.append(
-                f"{prefix} unsupported handler type '{type_val}' (only 'command' is supported)"
+                f"{prefix} unsupported handler type '{safe_display(type_val)}' (only 'command' is supported)"
             )
 
     if "timeout" in handler:
@@ -156,54 +176,7 @@ def _validate_hook_handler(handler: Any, prefix: str, errors: List[str]) -> None
 
 
 def validate_antigravity_config(data: Any) -> List[str]:
-    """Validate parsed data from an Antigravity ``skills.json`` or ``plugins.json`` registry."""
+    """Validate parsed data from an Antigravity configuration file (skills.json, agents.json, rules.json)."""
     if not isinstance(data, dict):
         return ["configuration root must be a JSON object"]
-
-    errors: List[str] = []
-    known_fields = {"entries", "inherits", "$schema"}
-    unknown = set(data) - known_fields
-    for field in sorted(unknown):
-        errors.append(f"unknown field '{field}'")
-
-    for section in ("entries", "inherits"):
-        if section not in data:
-            continue
-        items = data[section]
-        if not isinstance(items, list):
-            errors.append(f"'{section}' must be a list")
-            continue
-
-        for idx, item in enumerate(items):
-            prefix = f"{section}[{idx}]:"
-            if not isinstance(item, dict):
-                errors.append(f"{prefix} item must be an object")
-                continue
-
-            entry_unknown = set(item) - {"path", "include_only", "exclude"}
-            for f in sorted(entry_unknown):
-                errors.append(f"{prefix} unknown field '{f}'")
-
-            if "path" not in item:
-                errors.append(f"{prefix} missing required field 'path'")
-            elif not isinstance(item["path"], str) or not item["path"].strip():
-                errors.append(f"{prefix} 'path' must be a non-empty string")
-
-            for list_field in ("include_only", "exclude"):
-                if list_field in item:
-                    val = item[list_field]
-                    if not isinstance(val, list):
-                        errors.append(f"{prefix} '{list_field}' must be a list of regex patterns")
-                    else:
-                        for p_idx, pat in enumerate(val):
-                            if not isinstance(pat, str):
-                                errors.append(f"{prefix} '{list_field}[{p_idx}]' must be a string")
-                            else:
-                                try:
-                                    re.compile(pat)
-                                except re.error as err:
-                                    errors.append(
-                                        f"{prefix} '{list_field}[{p_idx}]' invalid regex: {err}"
-                                    )
-
-    return errors
+    return []

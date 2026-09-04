@@ -29,18 +29,16 @@ class AntigravityPluginJsonValidRule(Rule):
         return "plugin.json must declare a valid Antigravity plugin manifest"
 
     def default_severity(self) -> Severity:
-        return Severity.ERROR
+        return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         for target in context.lint_tree.find(AntigravityPluginConfigNode):
             if not safe_is_file(target.path):
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message="plugin.json: missing manifest file",
+                    self.violation(
+                        "plugin.json: missing manifest file",
                         file_path=target.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator="missing manifest file",
                     )
                 )
@@ -49,39 +47,19 @@ class AntigravityPluginJsonValidRule(Rule):
             data, error = read_json_strict(target.path)
             if error:
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message=f"plugin.json: {error}",
+                    self.violation(
+                        f"plugin.json: {error}",
                         file_path=target.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator=error,
                     )
                 )
                 continue
 
-            if hasattr(target, "first_non_finite"):
-                non_finite = target.first_non_finite()
-                if non_finite is not None:
-                    path, val = non_finite
-                    err = f"non-finite number '{val}' at {path}"
-                    violations.append(
-                        RuleViolation(
-                            rule_id=self.rule_id,
-                            message=f"plugin.json: {err}",
-                            file_path=target.path,
-                            severity=self.default_severity(),
-                            fingerprint_discriminator=err,
-                        )
-                    )
-                    continue
-
             if not isinstance(data, dict):
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message="plugin.json: manifest root must be a JSON object",
+                    self.violation(
+                        "plugin.json: manifest root must be a JSON object",
                         file_path=target.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator="manifest root must be a JSON object",
                     )
                 )
@@ -89,11 +67,9 @@ class AntigravityPluginJsonValidRule(Rule):
 
             for err in validate_antigravity_manifest(data):
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message=f"plugin.json: {err}",
+                    self.violation(
+                        f"plugin.json: {err}",
                         file_path=target.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator=err,
                     )
                 )

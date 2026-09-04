@@ -91,9 +91,9 @@ skillsaw includes **100** built-in rules organized into the following categories
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
-| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity skills.json and plugins.json must conform to the Antigravity JSON config specification | error (auto) | - | Google Antigravity |
+| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity skills.json, agents.json, and rules.json must conform to the Antigravity JSON config specification | error (disabled) | - | Google Antigravity |
 | [`antigravity-hooks-valid`](antigravity-hooks-valid.md) | hooks.json must declare valid Antigravity lifecycle hooks | error (auto) | - | Google Antigravity |
-| [`antigravity-plugin-json-valid`](antigravity-plugin-json-valid.md) | plugin.json must declare a valid Antigravity plugin manifest | error (auto) | - | Google Antigravity |
+| [`antigravity-plugin-json-valid`](antigravity-plugin-json-valid.md) | plugin.json must declare a valid Antigravity plugin manifest | warning (auto) | - | Google Antigravity |
 | [`grok-agent-valid`](grok-agent-valid.md) | .grok/agents/*.md must declare a name and a description in frontmatter | error (auto) | - | Grok Build |
 | [`grok-config-project-scope`](grok-config-project-scope.md) | .grok/config.toml must only carry settings a project file contributes | warning (auto) | - | Grok Build |
 | [`grok-config-valid`](grok-config-valid.md) | .grok/config.toml must parse, and its servers and permissions must load | error (auto) | - | Grok Build |

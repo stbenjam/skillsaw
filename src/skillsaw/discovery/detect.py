@@ -16,6 +16,7 @@ from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.formats import codex, devin, grok, muse
+from skillsaw.formats.antigravity import ANTIGRAVITY_CONFIG_DIR_NAMES
 from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
@@ -387,30 +388,23 @@ def tool_types(
         )
 
     def antigravity_marker() -> bool:
-        if marker("ANTIGRAVITY.md"):
-            return True
-        for dirname in (".agents", ".agent"):
+        for dirname in ANTIGRAVITY_CONFIG_DIR_NAMES:
             candidates = list(dirs.get(dirname) or ())
             if not candidates:
                 candidates = [root / dirname]
             for base in candidates:
                 if is_excluded(base):
                     continue
-                for name, is_dir in (
-                    ("skills.json", False),
-                    ("plugins.json", False),
-                    ("mcp_config.json", False),
-                    ("hooks.json", False),
-                    ("rules", True),
-                    ("plugins", True),
+                for name in (
+                    "hooks.json",
+                    "mcp_config.json",
+                    "skills.json",
+                    "agents.json",
+                    "rules.json",
                 ):
                     p = base / name
-                    if not is_excluded(p) and (p.is_dir() if is_dir else p.exists()):
+                    if not is_excluded(p) and p.exists():
                         return True
-        for root_name in ("skills.json", "plugins.json", "mcp_config.json"):
-            p = root / root_name
-            if not is_excluded(p) and p.exists():
-                return True
         return False
 
     found: Set[str] = set()

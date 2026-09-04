@@ -59,10 +59,10 @@ class QwenMdBlock(InstructionBlock):
 
 
 @dataclass(eq=False)
-class AntigravityMdBlock(InstructionBlock):
-    """ANTIGRAVITY.md instruction file."""
+class AntigravityRuleBlock(InstructionBlock):
+    """Antigravity rule file under ``.agents/rules/**/*.md`` or ``.agent/rules/**/*.md``."""
 
-    category: str = "antigravity-md"
+    category: str = "antigravity-rule"
 
 
 @dataclass(eq=False)

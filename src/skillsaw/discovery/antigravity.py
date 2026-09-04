@@ -7,14 +7,14 @@ from typing import Any, Iterable, List, Mapping, Optional, Set
 
 from skillsaw.formats.agent_plugins import is_agent_plugin_schema
 from skillsaw.formats.antigravity import (
+    AGENTS_CONFIG_FILENAME,
+    ANTIGRAVITY_CONFIG_DIR_NAMES,
     PLUGIN_MANIFEST,
-    PLUGINS_CONFIG_FILENAME,
+    RULES_CONFIG_FILENAME,
     SKILLS_CONFIG_FILENAME,
 )
 from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.utils import read_json
-
-ANTIGRAVITY_CONFIG_DIR_NAMES = (".agents", ".agent")
 
 
 def antigravity_manifest_is_contained(plugin_dir: Path) -> bool:
@@ -38,53 +38,16 @@ def antigravity_manifest_is_contained(plugin_dir: Path) -> bool:
     return True
 
 
-def enumerate_antigravity_local_sources(
-    root: Path, plugins_json_paths: Iterable[Path]
-) -> List[Path]:
-    """Extract local plugin directory targets from discovered ``plugins.json`` files."""
-    resolved_root = safe_resolve(root)
-    if resolved_root is None:
-        return []
-
-    sources: List[Path] = []
-    seen: Set[Path] = set()
-
-    for config_path in plugins_json_paths:
-        data, error = read_json(config_path)
-        if error or not isinstance(data, dict):
-            continue
-        entries = data.get("entries")
-        if not isinstance(entries, list):
-            continue
-        base_dir = config_path.parent
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            raw_path = entry.get("path")
-            if not isinstance(raw_path, str) or not raw_path.strip():
-                continue
-            candidate = (
-                (base_dir / raw_path) if not Path(raw_path).is_absolute() else Path(raw_path)
-            )
-            resolved_candidate = contained_resolve(candidate, resolved_root)
-            if (
-                resolved_candidate is not None
-                and resolved_candidate not in seen
-                and safe_is_dir(resolved_candidate)
-            ):
-                seen.add(resolved_candidate)
-                sources.append(resolved_candidate)
-
-    return sorted(sources)
-
-
 def discover_antigravity_plugins(
     root: Path,
-    local_sources: Iterable[Path] = (),
     *,
     forced: bool = False,
 ) -> List[Path]:
-    """Return all directories identified as Antigravity plugins."""
+    """Return all directories identified as Antigravity plugins.
+
+    Antigravity plugins are discovered ONLY in ``.agents/plugins/*``,
+    ``.agent/plugins/*``, and ``_agents/plugins/*``.
+    """
     resolved_root = safe_resolve(root)
     if resolved_root is None:
         return []
@@ -101,30 +64,16 @@ def discover_antigravity_plugins(
         seen.add(resolved)
         plugins.append(p)
 
-    # 1. Root plugin
-    if forced or antigravity_manifest_is_contained(root):
-        add_if_valid(root)
-
-    # 2. .agents/plugins/* and .agent/plugins/* subdirectories
-    for config_dir_name in ANTIGRAVITY_CONFIG_DIR_NAMES:
+    for config_dir_name in (*ANTIGRAVITY_CONFIG_DIR_NAMES, "_agents"):
         dot_plugins = root / config_dir_name / "plugins"
         if safe_is_dir(dot_plugins):
             try:
                 for child in sorted(dot_plugins.iterdir()):
                     if safe_is_dir(child):
-                        # Under .agents/plugins/, any folder or one with plugin.json is an Antigravity plugin
-                        if (
-                            forced
-                            or antigravity_manifest_is_contained(child)
-                            or safe_is_file(child / PLUGIN_MANIFEST)
-                        ):
+                        if forced or antigravity_manifest_is_contained(child):
                             add_if_valid(child)
             except OSError:
                 pass
-
-    # 4. Catalog local sources
-    for source in local_sources:
-        add_if_valid(source)
 
     return sorted(plugins)
 
@@ -133,7 +82,7 @@ def discover_antigravity_configs(
     root: Path,
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
 ) -> List[Path]:
-    """Find ``skills.json`` and ``plugins.json`` files at the root or within config directories."""
+    """Find Antigravity configuration files (skills.json, agents.json, rules.json) within config directories."""
     configs: List[Path] = []
     seen: Set[Path] = set()
 
@@ -143,15 +92,20 @@ def discover_antigravity_configs(
             seen.add(resolved)
             configs.append(p)
 
-    for filename in (SKILLS_CONFIG_FILENAME, PLUGINS_CONFIG_FILENAME):
-        add_config(root / filename)
-        for dir_name in ANTIGRAVITY_CONFIG_DIR_NAMES:
+    config_filenames = (
+        SKILLS_CONFIG_FILENAME,
+        AGENTS_CONFIG_FILENAME,
+        RULES_CONFIG_FILENAME,
+    )
+
+    for dir_name in ANTIGRAVITY_CONFIG_DIR_NAMES:
+        for filename in config_filenames:
             add_config(root / dir_name / filename)
 
     if tool_dirs:
         for dir_name in ANTIGRAVITY_CONFIG_DIR_NAMES:
             for base in tool_dirs.get(dir_name) or ():
-                for filename in (SKILLS_CONFIG_FILENAME, PLUGINS_CONFIG_FILENAME):
+                for filename in config_filenames:
                     add_config(base / filename)
 
     return sorted(configs)

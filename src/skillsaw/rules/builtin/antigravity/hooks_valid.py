@@ -49,11 +49,9 @@ class AntigravityHooksValidRule(Rule):
             if found is not None:
                 non_path, val = found
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message=f"hooks.json: JSON standard forbids non-finite number at {non_path}",
+                    self.violation(
+                        f"hooks.json: JSON standard forbids non-finite number at {non_path}",
                         file_path=block.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator=non_path,
                     )
                 )
@@ -61,11 +59,9 @@ class AntigravityHooksValidRule(Rule):
 
             if block.parse_error:
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message=f"hooks.json: {block.parse_error}",
+                    self.violation(
+                        f"hooks.json: {block.parse_error}",
                         file_path=block.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator="parse-error",
                     )
                 )
@@ -73,11 +69,9 @@ class AntigravityHooksValidRule(Rule):
 
             if not isinstance(block.raw_data, dict):
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message="hooks.json: must be a JSON object",
+                    self.violation(
+                        "hooks.json: must be a JSON object",
                         file_path=block.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator="must be a JSON object",
                     )
                 )
@@ -85,11 +79,9 @@ class AntigravityHooksValidRule(Rule):
 
             for err in validate_antigravity_hooks(block.raw_data, extra_events=extra_events_set):
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message=f"hooks.json: {err}",
+                    self.violation(
+                        f"hooks.json: {err}",
                         file_path=block.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator=err,
                     )
                 )

@@ -1,15 +1,4 @@
 {
-  "entries": [
-    {
-      "path": "skills/my-skill",
-      "include_only": [
-        "my-.*"
-      ]
-    }
-  ],
-  "inherits": [
-    {
-      "path": "shared.json"
-    }
-  ]
+  "skills": []
 }
+

@@ -14,18 +14,15 @@ from .discovery import (
     agent_plugins as agent_plugins_discovery,
     claude as claude_discovery,
     codex as codex_discovery,
-    detect as detect_discovery,
     merge_plugin_dirs,
 )
 from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_local_source_path,  # noqa: F401 - compatibility re-export
 )
-from .discovery.excludes import (
-    is_root_or_ancestor_excluded,
-    path_matches_patterns,
-    pattern_variants as _pattern_variants,
-)
+from .discovery import detect as detect_discovery
+from .discovery.excludes import pattern_variants as _pattern_variants
+from .discovery.excludes import is_root_or_ancestor_excluded, path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
 from .repository_external_content import RepositoryExternalContentMixin
@@ -41,7 +38,6 @@ from .repository_types import (  # noqa: F401
     INSTRUCTION_REPO_TYPES,
     SKILL_REPO_TYPES,
     TOOL_REPO_TYPES,
-    TYPE_PRIORITY,
     RepositoryType,
 )
 
@@ -71,9 +67,41 @@ class RepositoryContext(
 ):
     """Detected repository metadata used during linting."""
 
-    _INSTRUCTION_FILENAMES = ("AGENTS.md", "ANTIGRAVITY.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
+    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
 
-    _TYPE_PRIORITY = TYPE_PRIORITY
+    _TYPE_PRIORITY = [
+        RepositoryType.MARKETPLACE,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.APM,
+        RepositoryType.DOT_CLAUDE,
+        # Below Claude equivalents, but above generic fallbacks.
+        RepositoryType.CODEX_MARKETPLACE,
+        RepositoryType.CODEX_PLUGIN,
+        RepositoryType.GROK_MARKETPLACE,
+        RepositoryType.GROK_PLUGIN,
+        RepositoryType.ANTIGRAVITY_PLUGIN,
+        RepositoryType.AGENT_PLUGIN,
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.MCP_REGISTRY,
+        RepositoryType.CODERABBIT,
+        RepositoryType.PROMPTFOO,
+        # Tool configuration sorts below packaging types.
+        RepositoryType.CODEX_PROJECT,
+        RepositoryType.MUSE,
+        RepositoryType.GROK_PROJECT,
+        RepositoryType.CURSOR,
+        RepositoryType.COPILOT,
+        RepositoryType.CLINE,
+        RepositoryType.DEVIN,
+        RepositoryType.OPENCODE,
+        RepositoryType.ANTIGRAVITY,
+        RepositoryType.KIRO,
+        RepositoryType.SKILLS_LOCK,
+        RepositoryType.CLAUDE_MD,
+        RepositoryType.AGENTS_MD,
+        RepositoryType.GEMINI,
+        RepositoryType.QWEN,
+    ]
 
     # Compiled output directories that APM generates from .apm/ sources.
     # When .apm/ is present these are generated artifacts and should not be linted.
@@ -150,25 +178,16 @@ class RepositoryContext(
         # directory still gets its container and prose in the lint tree —
         # content and security rules read it, while Codex-format rules
         # remain repo-type-gated and quiet.
-        self._codex_discovery_enabled = (
-            bool(_CODEX_TYPES & set(repo_types)) if repo_types is not None else True
-        )
-        # A forced Codex type seeds the entrypoint even when the marker file
-        # is missing — otherwise ``--type codex-plugin`` on a repository
-        # without ``.codex-plugin/`` would discover no plugin, create no
-        # node, and never run the requested check.
-        self._codex_plugin_forced = (
-            repo_types is not None and RepositoryType.CODEX_PLUGIN in repo_types
-        )
-        self._codex_marketplace_forced = repo_types is not None and (
-            RepositoryType.CODEX_MARKETPLACE in repo_types
+        rt_set = set(repo_types) if repo_types is not None else None
+        self._codex_discovery_enabled = bool(_CODEX_TYPES & rt_set) if rt_set is not None else True
+        self._codex_plugin_forced = rt_set is not None and RepositoryType.CODEX_PLUGIN in rt_set
+        self._codex_marketplace_forced = (
+            rt_set is not None and RepositoryType.CODEX_MARKETPLACE in rt_set
         )
         self._agent_plugin_discovery_enabled = (
-            repo_types is None or RepositoryType.AGENT_PLUGIN in repo_types
+            RepositoryType.AGENT_PLUGIN in rt_set if rt_set is not None else True
         )
-        self._agent_plugin_forced = (
-            repo_types is not None and RepositoryType.AGENT_PLUGIN in repo_types
-        )
+        self._agent_plugin_forced = rt_set is not None and RepositoryType.AGENT_PLUGIN in rt_set
         self.codex_plugins: List[Path] = (
             self._discover_codex_plugins() if self._codex_discovery_enabled else []
         )
@@ -177,17 +196,9 @@ class RepositoryContext(
         )
         self._init_grok(repo_types)
         self._init_antigravity(repo_types)
-        # An explicit ``--type`` answers "how is this content packaged", and
-        # ``_refresh_tool_types()`` keeps it authoritative for that half while
-        # still folding in the tools the checkout configures.
-        self._overridden_types: Optional[Set[RepositoryType]] = (
-            set(repo_types) if repo_types is not None else None
-        )
-        # Types describing how content is packaged. The tool types are folded
-        # in by ``_refresh_tool_types()`` once instruction-file discovery has
-        # run — an AGENTS.md is evidence of a tool, and it is not found yet.
+        self._overridden_types: Optional[Set[RepositoryType]] = rt_set
         self.repo_types: Set[RepositoryType] = (
-            set(repo_types) if repo_types is not None else self._detect_types()
+            set(rt_set) if rt_set is not None else self._detect_types()
         )
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = {}
@@ -689,15 +700,21 @@ class RepositoryContext(
         layouts (see :func:`skillsaw.discovery.codex.discover_codex_plugins`).
         """
         return codex_discovery.discover_codex_plugins(
-            self.root_path, self._codex_local_sources(), forced=self._codex_plugin_forced
+            self.root_path,
+            self._codex_local_sources(),
+            forced=self._codex_plugin_forced,
         )
 
     def _discover_agent_plugins(self) -> List[Path]:
         """Portable packages declared at the root or under ``plugins/*``."""
-        found = agent_plugins_discovery.discover_agent_plugins(
-            self.root_path, forced=self._agent_plugin_forced
-        )
-        return [p for p in found if not self.is_path_excluded(p)]
+        return [
+            path
+            for path in agent_plugins_discovery.discover_agent_plugins(
+                self.root_path,
+                forced=self._agent_plugin_forced,
+            )
+            if not self.is_path_excluded(path)
+        ]
 
     def _agent_plugin_claim_set(self) -> Set[Path]:
         """Filesystem-declared portable plugin roots, independent of ``--type``."""

@@ -12,8 +12,9 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 
 
 class AntigravityConfigJsonValidRule(Rule):
-    """Validate Antigravity skills.json and plugins.json configurations."""
+    """Validate Antigravity skills.json, agents.json, and rules.json configurations."""
 
+    default_enabled = False
     repo_types = frozenset({RepositoryType.ANTIGRAVITY_PLUGIN, RepositoryType.ANTIGRAVITY})
     since = "0.20.0"
 
@@ -23,7 +24,10 @@ class AntigravityConfigJsonValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Antigravity skills.json and plugins.json must conform to the Antigravity JSON config specification"
+        return (
+            "Antigravity skills.json, agents.json, and rules.json must conform to the "
+            "Antigravity JSON config specification"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -33,11 +37,9 @@ class AntigravityConfigJsonValidRule(Rule):
         for block in context.lint_tree.find(AntigravityConfigBlock):
             if block.parse_error is not None:
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message=f"{block.path.name}: {block.parse_error}",
+                    self.violation(
+                        f"{block.path.name}: {block.parse_error}",
                         file_path=block.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator=block.parse_error,
                     )
                 )
@@ -47,27 +49,31 @@ class AntigravityConfigJsonValidRule(Rule):
             if found is not None:
                 non_path, val = found
                 violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message=f"{block.path.name}: JSON standard forbids non-finite number at {non_path}",
+                    self.violation(
+                        f"{block.path.name}: JSON standard forbids non-finite number at {non_path}",
                         file_path=block.path,
-                        severity=self.default_severity(),
                         fingerprint_discriminator=non_path,
                     )
                 )
                 continue
 
-            if block.raw_data is not None:
-                errors = validate_antigravity_config(block.raw_data)
-                for err in errors:
-                    violations.append(
-                        RuleViolation(
-                            rule_id=self.rule_id,
-                            message=f"{block.path.name}: {err}",
-                            file_path=block.path,
-                            severity=self.default_severity(),
-                            fingerprint_discriminator=err,
-                        )
+            if not isinstance(block.raw_data, dict):
+                violations.append(
+                    self.violation(
+                        f"{block.path.name}: expected JSON object (mapping) at root",
+                        file_path=block.path,
                     )
+                )
+                continue
+
+            errors = validate_antigravity_config(block.raw_data)
+            for err in errors:
+                violations.append(
+                    self.violation(
+                        f"{block.path.name}: {err}",
+                        file_path=block.path,
+                        fingerprint_discriminator=err,
+                    )
+                )
 
         return violations

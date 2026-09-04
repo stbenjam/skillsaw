@@ -3,11 +3,11 @@
 
 # antigravity-config-json-valid
 
-Antigravity skills.json and plugins.json must conform to the Antigravity JSON config specification
+Antigravity skills.json, agents.json, and rules.json must conform to the Antigravity JSON config specification
 
 | | |
 |---|---|
-| **Severity** | error (auto) |
+| **Severity** | error (disabled) |
 | **Autofix** | - |
 | **Since** | v0.20.0 |
 | **Repo Types** | antigravity, antigravity-plugin |
@@ -15,23 +15,23 @@ Antigravity skills.json and plugins.json must conform to the Antigravity JSON co
 
 ## Why
 
-Google Antigravity uses dedicated JSON configuration files to register and configure
-customizations:
-- `skills.json`: Declares skills enabled, disabled, or imported from local or remote locations.
-- `plugins.json`: Registers plugin bundles enabled or loaded into the workspace.
-- `mcp_config.json`: Configures Model Context Protocol (MCP) servers available to the agent.
+Google Antigravity uses dedicated JSON configuration files under `.agents/` or `.agent/`
+to register workspace components and customizations:
+- `skills.json`: Registers skills and skill directories.
+- `agents.json`: Registers custom subagents.
+- `rules.json`: Registers workspace rules.
 
-Syntax errors, malformed entries, or invalid schemas prevent Antigravity from loading
-the declared skills, plugins, or tools.
+Syntax errors or non-object root structures prevent Antigravity from parsing
+the registries and loading the declared workspace components.
 
 ## Examples
 
 **Bad:**
 
 ```json
-{
-  "entries": "invalid-entries-type-must-be-array-or-object"
-}
+[
+  "invalid-root-array"
+]
 ```
 
 **Good:**
@@ -39,11 +39,17 @@ the declared skills, plugins, or tools.
 ```json
 {
   "entries": [
-    "./skills/my-custom-skill",
-    "./skills/another-skill"
+    {
+      "path": "skills/my-skill",
+      "include_only": [
+        "my-.*"
+      ]
+    }
   ],
-  "disabled": [
-    "unwanted-skill"
+  "inherits": [
+    {
+      "path": "shared.json"
+    }
   ]
 }
 ```
@@ -51,17 +57,16 @@ the declared skills, plugins, or tools.
 ## How to fix
 
 Ensure that:
-- The file contains valid JSON and the root is an object.
-- For `skills.json` and `plugins.json`, `entries` is a valid array or object of path references.
-- For `mcp_config.json`, `mcpServers` is an object defining valid MCP server configs with executable commands and arguments.
-- Any unrecognized fields or invalid types are corrected.
+- The configuration file (`skills.json`, `agents.json`, `rules.json`) is valid JSON.
+- The root of the JSON file is a JSON object.
+- Syntax errors, unterminated quotes, and non-finite numbers (NaN, Infinity) are resolved.
 
 ## Configuration
 
 ```yaml
 rules:
   antigravity-config-json-valid:
-    enabled: auto  # true | false | auto
+    enabled: false  # true | false | auto
     severity: error
 ```
 

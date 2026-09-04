@@ -5024,6 +5024,7 @@ OPT_IN_RULES = {
     "hooks-prohibited",
     "content-missing-stop-condition",
     "content-inline-tool-examples",
+    "antigravity-config-json-valid",
 }
 
 

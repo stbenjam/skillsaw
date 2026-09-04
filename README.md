@@ -26,7 +26,7 @@ and context rules backed by research and frontier lab guidance.
 It understands Agent Skills,
 [Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
 plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
-GEMINI.md, QWEN.md, ANTIGRAVITY.md, Google Antigravity plugins, Cursor, Copilot,
+GEMINI.md, QWEN.md, Google Antigravity (.agents/ rules, hooks, plugins), Cursor, Copilot,
 Cline, Devin, Kiro, OpenCode, Muse Code, Grok Build, hooks, agent configuration,
 MCP Registry `server.json` publisher metadata,
 Vercel skills CLI lockfiles, and eval formats. Safe structural fixes can be applied
@@ -65,7 +65,7 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 
 ## What it catches
 
-- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (plugins & marketplaces), Grok Build (project config, plugins & marketplaces), Google Antigravity (plugins, hooks, JSON configs, `ANTIGRAVITY.md`), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, APM packages, MCP server maps, and MCP Registry metadata.
+- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (plugins & marketplaces), Grok Build (project config, plugins & marketplaces), Google Antigravity (`.agents/` / `.agent/` configuration, `.agents/rules/`, plugins, hooks, registries), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, APM packages, MCP server maps, and MCP Registry metadata.
 - **Content quality & token economy:** research-backed rules detecting instruction drift across duplicate files, lost-in-the-middle attention dead zones, cognitive overload, section length violations, weak language, contradictions, and repetitive inline tool-call examples.
 - **Discovery & repository integrity:** unreferenced bundled files, broken internal file references, inconsistent terminology, missing stop conditions, and stale baselines.
 - **Security & supply chain:**

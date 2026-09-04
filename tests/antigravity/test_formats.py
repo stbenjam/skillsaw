@@ -57,7 +57,9 @@ class TestValidateAntigravityManifest:
         assert validate_antigravity_manifest({"name": "plugin", "disabled": True}) == []
 
     def test_valid_fixture_manifest(self) -> None:
-        fixture_path = FIXTURES_DIR / "valid-plugin" / "plugin.json"
+        fixture_path = (
+            FIXTURES_DIR / "valid-plugin" / ".agents" / "plugins" / "valid-plugin" / "plugin.json"
+        )
         data = json.loads(fixture_path.read_text(encoding="utf-8"))
         assert validate_antigravity_manifest(data) == []
 
@@ -87,9 +89,8 @@ class TestValidateAntigravityManifest:
     @pytest.mark.parametrize(
         "bad_format_name",
         [
-            "-starts-with-dash",
             ".starts-with-dot",
-            "_starts-with-underscore",
+            "has.dot",
             "Invalid Name!",
             "has space",
             "foo@bar",
@@ -101,7 +102,7 @@ class TestValidateAntigravityManifest:
 
     @pytest.mark.parametrize(
         "valid_name",
-        ["a", "my-plugin", "plugin_v2", "my.plugin-1.0"],
+        ["a", "my-plugin", "plugin_v2", "-starts-with-dash", "_starts-with-underscore"],
     )
     def test_valid_name_regex(self, valid_name) -> None:
         assert validate_antigravity_manifest({"name": valid_name}) == []
@@ -131,7 +132,14 @@ class TestValidateAntigravityManifest:
         assert "'author.name' must be a string" in errors
 
     def test_invalid_fixture_manifest(self) -> None:
-        fixture_path = FIXTURES_DIR / "invalid-plugin" / "plugin.json"
+        fixture_path = (
+            FIXTURES_DIR
+            / "invalid-plugin"
+            / ".agents"
+            / "plugins"
+            / "invalid-plugin"
+            / "plugin.json"
+        )
         data = json.loads(fixture_path.read_text(encoding="utf-8"))
         errors = validate_antigravity_manifest(data)
         assert "unknown field 'extra_unknown'" in errors
@@ -149,7 +157,9 @@ class TestValidateAntigravityHooks:
     """Tests for ``validate_antigravity_hooks``."""
 
     def test_valid_fixture_hooks(self) -> None:
-        fixture_path = FIXTURES_DIR / "valid-plugin" / "hooks.json"
+        fixture_path = (
+            FIXTURES_DIR / "valid-plugin" / ".agents" / "plugins" / "valid-plugin" / "hooks.json"
+        )
         data = json.loads(fixture_path.read_text(encoding="utf-8"))
         assert validate_antigravity_hooks(data) == []
 
@@ -281,7 +291,14 @@ class TestValidateAntigravityHooks:
         assert "hook 'hook': PreInvocation[0]: 'timeout' must be a positive number" in errors
 
     def test_invalid_fixture_hooks(self) -> None:
-        fixture_path = FIXTURES_DIR / "invalid-plugin" / "hooks.json"
+        fixture_path = (
+            FIXTURES_DIR
+            / "invalid-plugin"
+            / ".agents"
+            / "plugins"
+            / "invalid-plugin"
+            / "hooks.json"
+        )
         data = json.loads(fixture_path.read_text(encoding="utf-8"))
         errors = validate_antigravity_hooks(data)
         assert "hook 'bad-hook': unknown event 'InvalidEvent'" in errors
@@ -311,86 +328,18 @@ class TestValidateAntigravityConfig:
         data = json.loads(fixture_path.read_text(encoding="utf-8"))
         assert validate_antigravity_config(data) == []
 
-    def test_valid_fixture_plugins_config(self) -> None:
-        fixture_path = FIXTURES_DIR / "project-repo" / ".agents" / "plugins.json"
+    def test_valid_fixture_agents_config(self) -> None:
+        fixture_path = FIXTURES_DIR / "project-repo" / ".agents" / "agents.json"
         data = json.loads(fixture_path.read_text(encoding="utf-8"))
         assert validate_antigravity_config(data) == []
 
-    def test_valid_full_config(self) -> None:
-        config = {
-            "$schema": "https://example.com/schema.json",
-            "entries": [
-                {
-                    "path": "skills/my-skill",
-                    "include_only": ["^my-.*$", "helper_.*"],
-                    "exclude": ["test_.*"],
-                }
-            ],
-            "inherits": [
-                {
-                    "path": "shared.json",
-                    "include_only": [".*"],
-                    "exclude": ["temp"],
-                }
-            ],
-        }
-        assert validate_antigravity_config(config) == []
+    def test_valid_dict_configs(self) -> None:
+        assert validate_antigravity_config({}) == []
+        assert validate_antigravity_config({"entries": []}) == []
+        assert validate_antigravity_config({"skills": ["foo"]}) == []
 
     @pytest.mark.parametrize("invalid_root", [None, "config", 123, [1, 2], True])
     def test_non_dict_root_rejected(self, invalid_root) -> None:
         assert validate_antigravity_config(invalid_root) == [
             "configuration root must be a JSON object"
         ]
-
-    def test_unknown_root_fields_reported(self) -> None:
-        errors = validate_antigravity_config({"entries": [], "custom": 1, "extra": "val"})
-        assert "unknown field 'custom'" in errors
-        assert "unknown field 'extra'" in errors
-
-    @pytest.mark.parametrize("section", ["entries", "inherits"])
-    @pytest.mark.parametrize("bad_val", ["not-a-list", 123, True, {}])
-    def test_section_must_be_list(self, section, bad_val) -> None:
-        errors = validate_antigravity_config({section: bad_val})
-        assert f"'{section}' must be a list" in errors
-
-    @pytest.mark.parametrize("section", ["entries", "inherits"])
-    def test_item_not_dict(self, section) -> None:
-        errors = validate_antigravity_config({section: ["not-a-dict"]})
-        assert f"{section}[0]: item must be an object" in errors
-
-    @pytest.mark.parametrize("section", ["entries", "inherits"])
-    def test_item_unknown_fields(self, section) -> None:
-        errors = validate_antigravity_config({section: [{"path": "p", "unknown_key": "val"}]})
-        assert f"{section}[0]: unknown field 'unknown_key'" in errors
-
-    @pytest.mark.parametrize("section", ["entries", "inherits"])
-    def test_item_missing_path(self, section) -> None:
-        errors = validate_antigravity_config({section: [{}]})
-        assert f"{section}[0]: missing required field 'path'" in errors
-
-    @pytest.mark.parametrize("section", ["entries", "inherits"])
-    @pytest.mark.parametrize("bad_path", ["", "   ", 123, [], None])
-    def test_item_invalid_path(self, section, bad_path) -> None:
-        errors = validate_antigravity_config({section: [{"path": bad_path}]})
-        assert f"{section}[0]: 'path' must be a non-empty string" in errors
-
-    @pytest.mark.parametrize("section", ["entries", "inherits"])
-    @pytest.mark.parametrize("list_field", ["include_only", "exclude"])
-    @pytest.mark.parametrize("bad_list", ["not-a-list", 123, True, {}])
-    def test_regex_list_not_a_list(self, section, list_field, bad_list) -> None:
-        errors = validate_antigravity_config({section: [{"path": "p", list_field: bad_list}]})
-        assert f"{section}[0]: '{list_field}' must be a list of regex patterns" in errors
-
-    @pytest.mark.parametrize("section", ["entries", "inherits"])
-    @pytest.mark.parametrize("list_field", ["include_only", "exclude"])
-    def test_regex_pattern_not_a_string(self, section, list_field) -> None:
-        errors = validate_antigravity_config({section: [{"path": "p", list_field: [123]}]})
-        assert f"{section}[0]: '{list_field}[0]' must be a string" in errors
-
-    @pytest.mark.parametrize("section", ["entries", "inherits"])
-    @pytest.mark.parametrize("list_field", ["include_only", "exclude"])
-    def test_regex_pattern_invalid_regex(self, section, list_field) -> None:
-        errors = validate_antigravity_config(
-            {section: [{"path": "p", list_field: ["[invalid regex"]}]}
-        )
-        assert any(f"{section}[0]: '{list_field}[0]' invalid regex:" in err for err in errors)
