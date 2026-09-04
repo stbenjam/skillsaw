@@ -23,6 +23,8 @@ from .blocks import (
     ClineWorkflowBlock,
     CodeRabbitContentBlock,
     ClaudeHooksBlock,
+    CodexConfigBlock,
+    CodexConfigHooksBlock,
     CodexHooksBlock,
     CodexInlineHooksBlock,
     CodexInlineMcpBlock,
@@ -72,8 +74,10 @@ from .blocks import (
     VsCodeMcpBlock,
 )
 from .formats.codex import (
+    CODEX_CONFIG_FILENAME,
     CODEX_DIR_NAME,
     CODEX_HOOKS_FILENAME,
+    codex_config_hooks,
     codex_declared_hook_files,
     codex_declared_mcp_files,
     codex_inline_hooks,
@@ -255,6 +259,33 @@ class _TreeBuildState:
         role-aware deduplication still prevents duplicate findings when two
         discovery paths select the same parser.
         """
+        if self._claim_parser_role(p, block_cls) is None:
+            return None
+        block = block_cls(path=p)
+        block.plugin_owner = owner
+        block.content_suppressed = content_suppressed
+        parent.children.append(block)
+        return block
+
+    def attach_prebuilt(self, parent: LintTarget, block: LintTarget) -> Optional[LintTarget]:
+        """Attach an already-constructed block under the same contract.
+
+        The seam for a block the caller has to build itself — one carrying a
+        payload rendered from the file rather than read off it — so
+        containment, exclusion and role deduplication are still decided in
+        the one place :meth:`add_parser_block` decides them.
+        """
+        if self._claim_parser_role(block.path, type(block)) is None:
+            return None
+        parent.children.append(block)
+        return block
+
+    def _claim_parser_role(self, p: Path, block_cls: type) -> Optional[Path]:
+        """Claim one parser role over *p*, or ``None`` if it is not ours.
+
+        Containment, existence, exclusion and role deduplication, in that
+        order — the contract both attachment paths share.
+        """
         resolved = self.resolve_repo_path(p)
         if resolved is None:
             return None
@@ -270,11 +301,7 @@ class _TreeBuildState:
         # and poisoning ``seen`` would drop that file from every content
         # rule that attaches later.
         self._record_role(resolved, block_cls)
-        block = block_cls(path=p)
-        block.plugin_owner = owner
-        block.content_suppressed = content_suppressed
-        parent.children.append(block)
-        return block
+        return resolved
 
     def _record_role(self, resolved: Path, block_cls: type) -> None:
         """Record one attached role, and index it by the two roles asked about."""
@@ -376,6 +403,47 @@ def _add_project_hooks(
     state.add_parser_block(root, path, block_cls)
 
 
+def _add_codex_config(state: _TreeBuildState, root: LintTarget, path: Path) -> None:
+    """Attach a ``.codex/config.toml``, and its ``[hooks]`` tables under it.
+
+    Two committed executable surfaces in one file. Codex reads lifecycle
+    hooks from ``[hooks]`` as well as from ``hooks.json`` and merges the two,
+    and ``[mcp_servers.<name>]`` is where a Codex project declares its MCP
+    servers — there is no ``.codex/mcp.json``. The document itself is one
+    node either way, so a config declaring neither is still in the tree.
+
+    Every one in the repository, not only the root's. Measured against
+    codex-cli 0.153.0: Codex merges a layer from every directory on the
+    chain from the git repo root down to the cwd, so a committed
+    ``services/billing/.codex/config.toml`` is live for anyone working in
+    that subtree — and dormant, not absent, for everyone else. Nothing above
+    the repository root is ever read, which is also the only place this walk
+    cannot reach.
+
+    The hooks child is attached whenever there are hooks to check, and also
+    when the file did not parse, so ``codex-hooks-valid`` has something to
+    report the failure on — a config Codex cannot read stops it starting in
+    the project at all.
+    """
+    config = state.add_parser_block(root, path, CodexConfigBlock)
+    if config is None:
+        return
+    # One hooks block per resolved file, for the reason
+    # ``_add_project_hooks`` documents: a package's config symlinked to the
+    # root's is one file, and two blocks would report each of its commands
+    # twice. ``hooks.json`` and ``config.toml`` are two paths, so a directory
+    # carrying both keeps a block for each — Codex merges them.
+    if _attached_as_hooks(state, path):
+        return
+    data, error = config.raw_data, config.parse_error
+    document = codex_config_hooks(data) if data is not None else None
+    if error is None and document is None:
+        return
+    state.attach_prebuilt(
+        config, CodexConfigHooksBlock(path=path, inline_data=document, toml_error=error)
+    )
+
+
 def _claim_attached_hooks(
     state: _TreeBuildState,
     root: LintTarget,
@@ -392,10 +460,13 @@ def _claim_attached_hooks(
     branch, the Codex cluster's conventional file) keeps it.
 
     Only the tree root is scanned, which is where every ownerless attach
-    puts a hooks block: the project layer's ``.codex/hooks.json`` and
+    puts a hooks block bar one: the project layer's ``.codex/hooks.json`` and
     another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``. Scanning
     the subtree would mean ``find()`` mid-build, whose per-node memo the
-    attaches still to come would invalidate.
+    attaches still to come would invalidate. The exception is
+    ``CodexConfigHooksBlock``, which hangs under its ``CodexConfigBlock``
+    parent and is deliberately out of reach: no manifest can name a
+    ``config.toml``, so there is no declaration for this loop to record.
     """
     if not _attached_as_hooks(state, path):
         return False
@@ -891,6 +962,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # attachment.
     for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
         _add_project_hooks(state, root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
+        _add_codex_config(state, root, codex_dir / CODEX_CONFIG_FILENAME)
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)

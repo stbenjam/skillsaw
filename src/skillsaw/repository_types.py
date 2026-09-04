@@ -32,8 +32,9 @@ class RepositoryType(Enum):
     PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
     CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
     CODEX_MARKETPLACE = "codex-marketplace"  # .agents/plugins/marketplace.json
-    # Repository with `.codex/` project-layer configuration such as
-    # `.codex/hooks.json`; distinct from a Codex plugin or marketplace.
+    # Repository with `.codex/` project-layer configuration —
+    # `.codex/hooks.json` or `.codex/config.toml`; distinct from a Codex
+    # plugin or marketplace.
     CODEX_PROJECT = "codex-project"
     AGENT_PLUGIN = "agent-plugin"  # Portable Agent Plugins plugin.json
     MCP_REGISTRY = "mcp-registry"  # MCP Registry server.json publisher metadata
@@ -110,7 +111,7 @@ TOOL_REPO_TYPES = frozenset(
 # the instruction-file rules only ever look at
 # AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose only marker is
 # ``.clinerules``, ``opencode.json``, ``.muse/hooks.json``, ``.grok/`` or
-# ``.codex/hooks.json`` would auto-enable two rules structurally incapable of
+# ``.codex/`` would auto-enable two rules structurally incapable of
 # finding anything. OpenCode, Muse Code, Grok Build and Codex do read
 # AGENTS.md — and when one is present AGENTS_MD enables them for it. Grok's
 # own always-on prose lives in ``.grok/rules/``, which the content rules

@@ -99,17 +99,22 @@ class TestCodexHookLocations:
         assert found[0].file_path == repo / "services" / "billing" / ".codex" / "hooks.json"
 
     def test_the_location_is_spelled_once_in_formats_codex(self):
-        """Discovery and the lint tree read the directory and filename from
-        ``formats.codex``. A second spelling is how detection and attachment
-        drift apart and a hooks file reaches no rule."""
+        """Discovery and the lint tree read the directory and both filenames
+        from ``formats.codex``. A second spelling is how detection and
+        attachment drift apart and a hooks file reaches no rule."""
         from skillsaw.discovery.detect import AGENT_TOOL_DIR_NAMES, _TOOL_EVIDENCE
-        from skillsaw.formats.codex import CODEX_DIR_NAME, CODEX_HOOKS_FILENAME
+        from skillsaw.formats.codex import (
+            CODEX_CONFIG_FILENAME,
+            CODEX_DIR_NAME,
+            CODEX_HOOKS_FILENAME,
+        )
 
         assert (CODEX_DIR_NAME, CODEX_HOOKS_FILENAME) == (".codex", "hooks.json")
+        assert CODEX_CONFIG_FILENAME == "config.toml"
         assert CODEX_DIR_NAME in AGENT_TOOL_DIR_NAMES
         assert _TOOL_EVIDENCE[RepositoryType.CODEX_PROJECT.value] == (
             CODEX_DIR_NAME,
-            ((CODEX_HOOKS_FILENAME, False),),
+            ((CODEX_HOOKS_FILENAME, False), (CODEX_CONFIG_FILENAME, False)),
         )
 
 

@@ -247,7 +247,8 @@ RULE_GROUPS = [
         ],
         "Validates hook configuration. The security rules scan every hook a repository "
         "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
-        "Codex's `.codex/hooks.json` and plugin hooks, Muse Code's `.muse/hooks.json`, "
+        "Codex's `.codex/hooks.json`, the `[hooks]` tables of its `.codex/config.toml`, "
+        "and plugin hooks, Muse Code's `.muse/hooks.json`, "
         "Grok Build's `.grok/hooks/*.json` and its plugin hooks, Cursor's "
         "`.cursor/hooks.json`, and skill, "
         "Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain "

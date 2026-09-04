@@ -59,6 +59,7 @@ from skillsaw.blocks import (  # noqa: F401
     HookEventConfig,
     HookHandler,
     ClaudeHooksBlock,
+    CodexConfigHooksBlock,
     CodexHooksBlock,
     HooksBlock,
     MuseHooksBlock,

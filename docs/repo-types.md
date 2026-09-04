@@ -493,16 +493,36 @@ detects each.
 
 ## OpenAI Codex project configuration
 
-Repositories with a `.codex/hooks.json`, the project layer Codex reads from
-the directory a session starts in — the repository root, or a package inside
-it. This is distinct from a Codex plugin (`.codex-plugin/plugin.json`) and
-from a Codex marketplace: it configures the checkout rather than packaging
-anything, so it is never treated as a plugin claim and never exempts the
-repository from another ecosystem's rules.
+Repositories with a `.codex/hooks.json` or a `.codex/config.toml`, the
+project layer Codex reads. This is distinct from a Codex plugin
+(`.codex-plugin/plugin.json`) and from a Codex marketplace: it configures the
+checkout rather than packaging anything, so it is never treated as a plugin
+claim and never exempts the repository from another ecosystem's rules.
 
-[`codex-hooks-valid`](rules/codex-hooks-valid.md) validates the file, and
+Codex reads the layer of every directory between the repository root and the
+one a session starts in, so a package's own `.codex/` is live configuration
+and every one in the checkout is linted.
+
+Lifecycle hooks come from both files, merged: the `[hooks]` tables of a
+`config.toml` get the same checks `hooks.json` gets.
+[`codex-hooks-valid`](rules/codex-hooks-valid.md) validates both files and
+reports a layer that declares hooks in both, while
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
-[`hooks-prohibited`](rules/hooks-prohibited.md) scan the commands in it.
+[`hooks-prohibited`](rules/hooks-prohibited.md) scan the commands in them. A
+shape defect in `config.toml` stops Codex starting at all, where the same
+defect in `hooks.json` costs only that file's hooks; the rule's page records
+that asymmetry, and the one check `config.toml` gets and `hooks.json` does
+not.
+
+`config.toml` also carries the project's MCP servers, in
+`[mcp_servers.<name>]` tables — there is no `.codex/mcp.json` — so
+[`mcp-prohibited`](rules/mcp-prohibited.md) inventories them and
+[`mcp-valid-json`](rules/mcp-valid-json.md) applies its dialect-neutral
+checks, such as a committed credential in an `env` or `http_headers` table.
+No rule validates a server table's shape: Codex names the server and the
+field and exits 1 over a malformed one itself. Everything else in the file is
+Codex settings skillsaw reads nothing from.
+
 `.codex/plugins/` is an install location rather than project configuration —
 see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
 
@@ -567,7 +587,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Kiro** | `kiro` | `.kiro/steering/*.md` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
 | **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
-| **OpenAI Codex** | `codex-project` | `.codex/hooks.json` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
+| **OpenAI Codex** | `codex-project` | `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
 | **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
 
 `.agents/memory/` is the one row with no type of its own: the convention

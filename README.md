@@ -64,7 +64,7 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 
 ## What it catches
 
-- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (plugins & marketplaces), Grok Build (project config, plugins & marketplaces), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, APM packages, MCP server maps, and MCP Registry metadata.
+- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (project config, plugins & marketplaces), Grok Build (project config, plugins & marketplaces), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, APM packages, MCP server maps, and MCP Registry metadata.
 - **Content quality & token economy:** research-backed rules detecting instruction drift across duplicate files, lost-in-the-middle attention dead zones, cognitive overload, section length violations, weak language, contradictions, and repetitive inline tool-call examples.
 - **Discovery & repository integrity:** unreferenced bundled files, broken internal file references, inconsistent terminology, missing stop conditions, and stale baselines.
 - **Security & supply chain:**

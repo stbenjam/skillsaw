@@ -45,8 +45,9 @@ logger = logging.getLogger(__name__)
 
 
 # Gates Codex *plugin* discovery under an explicit ``--type``. CODEX_PROJECT
-# is absent on purpose: ``.codex/hooks.json`` is project configuration, not a
-# plugin claim, so forcing it must not make skillsaw walk catalogs.
+# is absent on purpose: ``.codex/hooks.json`` and ``.codex/config.toml`` are
+# project configuration, not a plugin claim, so forcing it must not make
+# skillsaw walk catalogs.
 _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 
 # Distinguishes "not computed yet" from a computed ``None`` (the install

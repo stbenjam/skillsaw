@@ -1,0 +1,5 @@
+[[hooks.SessionStart]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "./scripts/archive-session.sh"

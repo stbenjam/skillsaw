@@ -14,7 +14,18 @@ from itertools import islice
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, ClassVar, Dict, Iterator, List, Mapping, Optional, Set, Tuple
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    FrozenSet,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+)
 
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
@@ -48,8 +59,8 @@ VSCODE_HOOK_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
 #: is benign and whose Windows variant pipes a download into a shell is
 #: exactly the shape this union exists to catch.
 #:
-#: Codex and Muse Code spell the Windows variant ``commandWindows``, and
-#: Muse Code also accepts ``command_windows``. This is deliberately a
+#: Codex and Muse Code spell the Windows variant ``commandWindows``, and both
+#: also accept ``command_windows``. This is deliberately a
 #: superset of every host's own vocabulary: it drives scanning only, never
 #: validity — a shape rule reads its host's table in ``skillsaw.formats``.
 HOOK_COMMAND_FIELDS = VSCODE_HOOK_COMMAND_FIELDS + ("commandWindows", "command_windows")
@@ -381,6 +392,17 @@ class HooksBlock(JsonConfigBlock):
     """
 
     category: str = "hooks"
+    #: The syntax this document is written in, named in a parse-error
+    #: finding, the way :class:`McpConfigRole` names one. Announcing a TOML
+    #: failure as invalid JSON would send the author to the wrong parser.
+    syntax_name: ClassVar[str] = "JSON"
+    #: What this syntax calls a key/value mapping and an ordered sequence,
+    #: for the messages that name one. Declared beside :attr:`syntax_name`
+    #: rather than branched on in the rule: a ``config.toml`` author never
+    #: wrote a JSON object and has no way to write one. Bare nouns — the
+    #: article is chosen where the message is built.
+    mapping_noun: ClassVar[str] = "object"
+    sequence_noun: ClassVar[str] = "array"
 
     @property
     def events(self) -> Dict[str, List[HookEventConfig]]:
@@ -420,6 +442,12 @@ class CodexHooksBlock(HooksBlock):
     or a file that plugin's manifest names in ``hooks``. Same nested shape as
     Claude's, with Codex's own events, handler types, and fields.
     """
+
+    #: Handler fields this file must write as a non-negative whole number.
+    #: Empty here: Codex refuses a ``hooks.json`` over a negative ``timeout``
+    #: too, but the looser check is the one ``hooks-json-valid`` released,
+    #: and tightening it would newly fail files that pass today.
+    whole_number_fields: ClassVar[FrozenSet[str]] = frozenset()
 
     def tree_label(self) -> str:
         return f"{self.path.name} (codex hooks)"
@@ -572,6 +600,66 @@ class CodexInlineHooksBlock(_InlineJsonPayload, CodexHooksBlock):
 
     def tree_label(self) -> str:
         return f"{self.path.name} (inline hooks)"
+
+
+@dataclass(eq=False)
+class CodexConfigHooksBlock(CodexHooksBlock):
+    """The ``[hooks]`` tables of a ``.codex/config.toml``.
+
+    Codex loads project hooks from two files and merges them, so a TOML-only
+    project's hooks are live configuration. The payload is the document
+    :func:`~skillsaw.formats.codex.codex_config_hooks` renders from the
+    parsed TOML, which is why the block takes it by value rather than
+    parsing: its parent :class:`~skillsaw.blocks.codex.CodexConfigBlock`
+    reads the file once for the whole document.
+
+    A ``HooksBlock`` deliberately, though the file is TOML: the hooks rules
+    iterate that hierarchy and there is no hooks role to carry instead. See
+    the block-hierarchy rule in the development instructions, which records
+    the exception. Nothing JSON-shaped survives it —
+    :meth:`first_non_finite` stands down and :attr:`syntax_name` names the
+    parser that actually ran.
+
+    The dangerous file of the two. Measured against codex-cli 0.153.2: a
+    shape defect here — a syntax error, an event value that is not a
+    sequence, a missing ``type`` or ``command``, a ``timeout`` or
+    ``additionalContextLimit`` that is not a non-negative whole number, two
+    spellings of one field, an unknown handler ``type`` — makes ``codex``
+    exit 1 and refuse to start in the project at all, where the same defect
+    in ``hooks.json`` is a warning that skips that one file.
+    """
+
+    #: The rendered hooks document, or ``None`` when the file did not parse.
+    inline_data: Optional[Dict[str, Any]] = None
+    #: What ``read_toml`` said when the file did not parse. Carried rather
+    #: than re-derived so the whole file is read once, in the builder.
+    toml_error: Optional[str] = None
+    syntax_name: ClassVar[str] = "TOML"
+    #: Both fields deserialize as unsigned: ``timeout`` a ``u64`` and
+    #: ``additionalContextLimit`` a ``usize``. Measured, a negative in either
+    #: exits 1 with ``invalid value: integer `-1```.
+    whole_number_fields: ClassVar[FrozenSet[str]] = frozenset({"timeout", "additionalContextLimit"})
+    mapping_noun: ClassVar[str] = "table"
+    sequence_noun: ClassVar[str] = "array of tables"
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = (self.inline_data, self.toml_error)
+
+    def first_non_finite(self) -> Optional[Tuple[str, float]]:
+        """Never: the scan is about tokens JSON has no spelling for.
+
+        ``json.loads`` accepts bare ``NaN``/``Infinity`` and no JSON host
+        does, which is the defect the base implementation finds. TOML spells
+        both natively (``nan``, ``inf``), so the parser reaches them and the
+        document is not refused over the token. A ``timeout`` of ``nan`` is
+        still a float where Codex wants a ``u64``, and the rule's field check
+        reports it as the fatal defect it is.
+        """
+        return None
+
+    def tree_label(self) -> str:
+        return "[hooks]"
 
 
 @dataclass(eq=False)
