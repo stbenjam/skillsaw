@@ -1,9 +1,8 @@
 """
 Rule: muse-hooks-valid
 
-Validates `.muse/hooks.json` against Muse Code's events, matcher-group keys
-and handler fields. Severity carries the blast radius — what each defect
-costs, and how to fix it, is on the rule's documentation page.
+Validates `.muse/hooks.json` against Muse Code's supported events,
+matcher-group keys, and handler fields.
 """
 
 from typing import Any, Dict, List, Optional, Set
@@ -25,8 +24,7 @@ _WILDCARD_MATCHERS = frozenset({"", "*"})
 _ACCEPTED_TYPES = ", ".join(f"'{name}'" for name in sorted(muse.HOOK_HANDLER_TYPES))
 
 #: How many group or handler locations a consolidated finding names before
-#: it stops listing them. A file copied from Claude Code carries the same
-#: stray key in every group, and thirty findings for one habit is noise.
+#: it stops listing them to keep findings concise.
 _MAX_LOCATIONS = 4
 
 
@@ -73,18 +71,10 @@ class MuseHooksValidRule(Rule):
         return ".muse/hooks.json must use Muse's events, matcher groups and handler fields"
 
     def default_severity(self) -> Severity:
-        # Every defect this rule reports is a hook that does not run, and
-        # Muse says nothing about any of them in a headless run.
         return Severity.ERROR
 
     def _declared(self, option: str) -> Set[str]:
-        """The string members of a list-valued config option.
-
-        The declared type is not enforced when the config loads, so
-        ``extra-events: 42`` arrives here as an int. Iterating it would raise
-        ``TypeError`` and cost every structural finding in the file over one
-        bad config line; a value of the wrong shape contributes nothing.
-        """
+        """Extract valid string items from a list-valued config setting."""
         value = self.setting(option) or []
         if not isinstance(value, (list, tuple, set, frozenset)):
             return set()
@@ -407,9 +397,8 @@ class _FileCheck:
                 (key for key in ("commandWindows", "command_windows") if key in handler), None
             )
             if windows is not None:
-                # The handler loads and its Windows command runs there; on
-                # every other platform it is a hook that silently does
-                # nothing, which is not what the file looks like it says.
+                # The handler runs on Windows but lacks a fallback command for
+                # Linux and macOS environments.
                 return [
                     self._violation(
                         f"Hook {where} has '{windows}' but no 'command'", Severity.WARNING
@@ -418,16 +407,13 @@ class _FileCheck:
             return [self._violation(f"Hook {where} is missing 'command'")]
 
         command = handler["command"]
-        # A non-string ``command`` rejects the file and the field-type check
-        # already said so. Present is still not the same as runnable: ``""``
-        # and ``"  "`` both satisfy a key-existence check while naming
-        # nothing to spawn, and those cost only the handler.
+        # Empty commands or whitespace-only strings cannot be executed.
         if isinstance(command, str) and not command.strip():
             return [self._violation(f"Hook {where} 'command' is empty")]
         return []
 
     def _check_unsupported_fields(self, where: str, handler: Dict[str, Any]) -> List[RuleViolation]:
-        """Fields Muse parses and then refuses the handler for."""
+        """Check for handler fields unsupported by Muse Code."""
         violations: List[RuleViolation] = []
         for key, value in handler.items():
             if key in muse.UNSUPPORTED_HANDLER_FIELDS and isinstance(value, str):

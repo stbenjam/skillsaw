@@ -1,19 +1,9 @@
 """
 Rule: grok-plugin-structure
 
-Whether Grok would install anything from a plugin directory at all. A
-manifest is optional — a directory holding ``skills/``, ``agents/``,
-``hooks/hooks.json`` or ``.mcp.json`` installs without one — but a directory
-with neither is skipped at discovery, and ``grok plugin validate`` prints
-the same sentence for it as for a plugin with everything.
-
-Measured correction to the documented component list: ``commands/`` alone
-and ``.lsp.json`` alone are discovered and then refused by ``grok plugin
-install`` ("no plugins found in the source"), so neither makes a directory
-installable.
-
-Only :class:`GrokPluginConfigNode` is iterated, a node type only Grok
-populates, so the rule declares no ``provenance_scope``.
+Checks that a Grok Build plugin directory contains either a manifest or
+recognized installable components (`skills/`, `agents/`, `hooks/hooks.json`,
+or `.mcp.json`).
 """
 
 from pathlib import Path
@@ -24,6 +14,7 @@ from skillsaw.formats import grok
 from skillsaw.lint_target import GrokPluginConfigNode
 from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.rules.builtin.utils import strict_json
 
 from ._helpers import GROK_PLUGIN_REPO_TYPES
 
@@ -59,8 +50,6 @@ class GrokPluginStructureRule(Rule):
         return "A Grok plugin directory needs a manifest or a component Grok installs"
 
     def default_severity(self) -> Severity:
-        # The repository still lints and every other plugin still installs;
-        # what is lost is this one directory, with no diagnostic.
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:

@@ -1,11 +1,10 @@
 """
-Rules for Muse Code's repository-shipped configuration
+Rules for Muse Code repository configuration.
 
 Muse Code reads AGENTS.md for portable instructions and ``.agents/memory/``
-for project memory, both of which the shared content and security rules
-already cover. What is Muse-specific and structural is ``.muse/hooks.json``:
-its loader is strict where Claude's is lenient, and it reports nothing when
-it rejects a file, a matcher group, or a handler.
+for committed project memory, both covered by skillsaw's universal rules.
+Structural validation focuses on ``.muse/hooks.json`` to ensure lifecycle
+hooks run reliably across interactive and headless sessions.
 """
 
 from .hooks_valid import MuseHooksValidRule

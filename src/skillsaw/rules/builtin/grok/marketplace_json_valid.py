@@ -1,20 +1,9 @@
 """
 Rule: grok-marketplace-json-valid
 
-The shape of a Grok Build catalog, and severity that carries what each
-defect costs. A catalog Grok cannot read is discarded whole and discovery
-falls back to scanning ``plugins/`` — so a repository keeping third-party
-plugins anywhere else loses exactly those, and the browser still looks
-right. An entry defect is quieter still: the entry is dropped with no
-diagnostic at add or list time.
-
-The loader keys a local source on ``path`` alone. ``{"type": "local"}``,
-``{"source": "local"}``, a bare string, an object with no discriminator and
-one with a bogus ``type`` all install identically, so requiring a
-discriminator would be a false positive on catalogs that work.
-
-Only :class:`GrokMarketplaceConfigNode` is iterated, a node type only Grok
-populates, so the rule declares no ``provenance_scope``.
+Validates `.grok-plugin/marketplace.json` catalogs for Grok Build.
+Ensures catalogs have valid JSON syntax, proper plugin array structures,
+resolvable local paths, and pinned Git repositories.
 """
 
 from pathlib import Path
@@ -65,9 +54,6 @@ class GrokMarketplaceJsonValidRule(Rule):
         return ".grok-plugin/marketplace.json must be valid JSON with installable entries"
 
     def default_severity(self) -> Severity:
-        # Every defect at this severity costs a plugin: the catalog is
-        # discarded, the entry is dropped, the install is refused, or the
-        # clone is unpinned. None of it is reported by Grok.
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:

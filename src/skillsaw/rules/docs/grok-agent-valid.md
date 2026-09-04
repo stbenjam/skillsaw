@@ -1,40 +1,39 @@
 ## Why
 
-A `.grok/agents/*.md` file is a Grok Build subagent: prose the model is
-handed when it delegates, plus the frontmatter Grok registers it by. That
-frontmatter needs a `name` and a `description`. Without either, Grok drops
-the file and says nothing — the agent is committed, reviewed, and simply
-never appears in the agent list. From the outside that is
-indistinguishable from an agent the model had no reason to pick, which is
-why the mistake survives review.
+In Grok Build, custom project subagents live in `.grok/agents/*.md`. These
+markdown files provide specialized instructions that the model delegates to
+during multi-step workflows.
 
-The `description` is also what routes the subagent: it is the text the model
-reads when deciding whether to delegate. Whether the description that *is*
-there says when to use the agent is
-[`content-description-routing`](content-description-routing.md)'s question;
-this rule only asks whether Grok will load the file at all.
+To register a subagent and make it available in the agent list, Grok Build
+requires two YAML frontmatter fields: `name` and `description`. If either
+field is omitted, Grok skips registering the subagent during session startup,
+so it won't appear in the list of available agents.
 
-`.grok/commands/*.md` is deliberately not checked. Grok loads a command with
-no frontmatter, naming it from the filename, so requiring any there would
-report a file that works.
+The `description` also helps the model decide when to delegate tasks to the
+subagent. While [`content-description-routing`](content-description-routing.md)
+evaluates whether the description provides clear routing context, this rule
+verifies that the required frontmatter fields exist so the agent registers
+cleanly.
+
+Slash commands in `.grok/commands/*.md` do not require frontmatter; Grok
+automatically derives command names from their filenames.
 
 ## Severity
 
-**Error** — Grok does not register the subagent.
+**Error** — Grok does not register the subagent without required frontmatter:
 
 - Frontmatter that is not valid YAML.
-- No frontmatter block at all.
-- No `name` key.
-- No `description` key.
+- Missing YAML frontmatter block.
+- Missing `name` key.
+- Missing `description` key.
 
-Presence is the whole test. An empty value satisfies Grok — an agent
-carrying `description: ""` still registers — so an empty description is
-not reported here.
+Both keys must be present. Grok accepts an empty value (e.g. `description: ""`)
+for basic registration, so description quality and guidance are checked
+separately by [`content-description-routing`](content-description-routing.md).
 
 ## Examples
 
-**Bad** — a subagent Grok never loads, because the frontmatter names it and
-stops:
+**Bad** — missing `description`, so Grok skips registering the agent:
 
 ```markdown
 ---
@@ -46,13 +45,12 @@ name: migration-reviewer
 Read the migration and report anything the schema diff does not explain.
 ```
 
-**Good** — both keys present, so the agent registers and the model has
-something to route on:
+**Good** — includes both `name` and `description` so the agent registers cleanly:
 
 ```markdown
 ---
 name: migration-reviewer
-description: Use when reviewing a database migration, to check that it is forward-only and matched by the code that reads the new columns.
+description: Use when reviewing a database migration to check that it is forward-only and matches the code reading new columns.
 tools: read_file, run_terminal_command
 ---
 
@@ -63,9 +61,9 @@ Read the migration and report anything the schema diff does not explain.
 
 ## How to fix
 
-- Give every `.grok/agents/*.md` a frontmatter block with `name` and
-  `description`.
-- Write the `description` as the condition for delegating to the agent
-  ("Use when ..."), not as a restatement of its name — that is what the
-  model reads to choose it.
-- Keys Grok does not require, such as `tools` and `model`, are fine to keep.
+- Add a YAML frontmatter block containing both `name` and `description` to
+  each agent file under `.grok/agents/*.md`.
+- Phrase the `description` with actionable guidance on when the model should
+  delegate to this agent (e.g., "Use when ...").
+- Optional metadata fields like `tools` and `model` are welcome and can be
+  kept in frontmatter alongside `name` and `description`.

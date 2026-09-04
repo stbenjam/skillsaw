@@ -1,26 +1,9 @@
 """
 Rule: grok-config-valid
 
-The shape of a Grok Build project ``.grok/config.toml``, at the severity
-each defect's blast radius earns. The vocabulary — the honored tables, the
-server fields, the transport derivation, the permission keys — lives in
-``skillsaw.formats.grok``, which this rule reads.
-
-A parse error is the whole file: Grok loads nothing from it, including the
-tables above the error, and exits 0 with an empty stderr. Everything below
-that costs one server or one permission key, so it is a warning whatever
-the rule's configured severity — the siblings and ``[permission]`` beside
-it still load.
-
-Grok is not silent everywhere here. A bad server shape raises
-``mcpConfigProblems``, so those findings restate Grok's own verdict at lint
-time; a bad ``[permission]`` shape raises nothing at all, which is where
-the rule adds signal.
-
-Only :class:`GrokConfigBlock` is iterated, a node type that exists only
-where Grok's project layer does, so the rule declares no
-``provenance_scope``: ``.grok/`` is a tool directory no other ecosystem
-claims.
+Validates syntax and configuration in Grok Build project ``.grok/config.toml``.
+Verifies TOML syntax, MCP server entries under ``[mcp_servers]``, and tool
+permissions under ``[permission]``.
 """
 
 from typing import Any, Dict, List, Optional
@@ -67,9 +50,6 @@ class GrokConfigValidRule(Rule):
         return ".grok/config.toml must parse, and its servers and permissions must load"
 
     def default_severity(self) -> Severity:
-        # The rule's own severity covers the whole-file defect only: a
-        # malformed file loads nothing at all, and the sole signal Grok
-        # gives is a ``note: "parse error"`` inside ``grok inspect``.
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -218,12 +198,7 @@ class GrokConfigValidRule(Rule):
         return violations
 
     def _warn(self, block: GrokConfigBlock, message: str) -> RuleViolation:
-        """A defect that costs one server or one key, never the file.
-
-        Hardcoded, because the severity is the blast radius rather than the
-        rule's verdict: the tables beside it still load whatever the
-        author configures this rule to.
-        """
+        """Report a warning-level violation scoped to an entry or field."""
         return self.violation(message, file_path=block.path, severity=Severity.WARNING)
 
 

@@ -15,43 +15,34 @@ A Grok plugin directory needs a manifest or a component Grok installs
 
 ## Why
 
-Grok Build installs a plugin directory on the strength of what is in it. A
-manifest is optional, and a directory holding `skills/`, `agents/`,
-`hooks/hooks.json` or `.mcp.json` installs without one. A directory holding
-neither a manifest nor one of those is skipped, and nothing says so: `grok
-plugin validate` prints the same sentence for a directory with everything
-and a directory with nothing —
+In Grok Build, a plugin package can be installed with or without an explicit
+`plugin.json` manifest. When installing without a manifest, Grok discovers
+plugins based on the presence of recognized component directories or files:
+`skills/`, `agents/`, `hooks/hooks.json`, or `.mcp.json`.
 
-> No plugin.json found. Grok discovers skills, agents, and hooks
-> automatically from standard directories. A manifest is only needed for
-> custom paths or metadata.
+If a plugin directory has neither a manifest nor recognized components, Grok
+Build cannot install it when users attempt `grok plugin install`.
 
-— and the refusal only appears later, at `grok plugin install`, as `no
-plugins found in the source`.
+Additionally, directories containing only `commands/` or `.lsp.json` require
+either a manifest or an accompanying component (such as a skill or hook) to be
+recognized as installable packages during installation.
 
-Two components are documented and still do not make a directory
-installable, measured against Grok Build 1.0.13: `commands/` alone and
-`.lsp.json` alone. A directory holding only slash commands is discovered
-when it is already under `<home>/plugins/`, and refused when you try to
-install it — so a marketplace listing one publishes a plugin nobody can add.
+This rule verifies that directories intended as Grok plugins include either
+an installable component or a manifest so users can install them smoothly.
 
 ## Severity
 
-**Warning** — one directory of the repository installs nothing. Everything
-else in the checkout is unaffected, and the refusal arrives only at
-`grok plugin install`, as `no plugins found in the source`: `grok plugin
-validate` called the directory fine.
+**Warning** — the directory lacks recognized components or a manifest, so Grok
+cannot install it.
 
-**Info** — a directory with components but no manifest installs under a
-synthesized `<dir>-<hash>` name. That is fine for a plugin nobody addresses
-by name, and wrong for one a catalog lists: the catalog entry says
-`current-log` and the installed plugin is `current-log-9feb213e`. The
-finding fires only when a Grok catalog lists the directory as a local
-source, because that is what makes the name someone else's problem.
+**Info** — when a catalog references a local plugin directory that lacks a
+manifest, Grok installs it under a generated name (like `<dir>-<hash>`). Adding a
+manifest with an explicit `name` ensures clean, predictable naming.
 
 ## Examples
 
-**Bad** — listed in a catalog, and `grok plugin install` refuses it:
+**Bad** — contains only `commands/` without a manifest, so the installer cannot
+register it:
 
 ```text
 plugins/berth-notes/
@@ -60,8 +51,7 @@ plugins/berth-notes/
     └── handover.md
 ```
 
-**Good** — one component the installer recognizes, and a manifest naming
-the plugin:
+**Good** — includes a manifest and recognized components:
 
 ```text
 plugins/berth-notes/
@@ -77,17 +67,12 @@ plugins/berth-notes/
 
 ## How to fix
 
-- Add a `.grok-plugin/plugin.json` with at least a `name`. That makes the
-  directory installable on its own and fixes the synthesized name at the
-  same time.
-- Or move a component the installer recognizes into the directory:
-  `skills/<name>/SKILL.md`, an `agents/*.md`, a `hooks/hooks.json`, or a
-  `.mcp.json`.
-- Keep slash commands, but do not rely on them alone to make a plugin.
+- Add a `.grok-plugin/plugin.json` with a `name` field to establish the
+  plugin's identity.
+- Alternatively, include standard components such as `skills/`, `agents/`,
+  `hooks/hooks.json`, or `.mcp.json`.
 
-A repository whose components are generated at build time has none of them
-on disk when skillsaw runs. Drop the installability finding rather than the
-rule, so the synthesized-name advisory still fires:
+If your build pipeline generates plugin files or manifests during packaging:
 
 ```yaml
 rules:

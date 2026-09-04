@@ -3,15 +3,11 @@
 
 # Grok Build
 
-Validates `.grok/hooks/*.json`, the project hooks Grok Build loads and silently refuses when they are malformed. What a defect costs depends on where it is: a wrong-typed field or a handler with no `type` refuses the whole file, an uncompilable matcher drops that group, an unknown event skips its entries, and a handler with nothing to run drops that handler — none of it reported, because `grok inspect` emits no configuration warning for any of them. Grok accepts several spellings of every event, including Cursor's, so a shared hooks file is not reported for the spelling it uses. `grok-agent-valid` covers the other surface Grok refuses in silence: a `.grok/agents/*.md` subagent missing the `name` or `description` its loader registers it by.
+Validates Grok Build project configuration, hooks, subagents, and plugin packages. These rules ensure that project settings in `.grok/config.toml` parse cleanly and contain only project-scoped tables, lifecycle hooks in `.grok/hooks/*.json` use supported events and valid handler options, and subagents in `.grok/agents/*.md` define required frontmatter for task delegation. For plugin authors and marketplace maintainers, they verify `.grok-plugin/plugin.json` manifests, directory structures, and marketplace catalogs (`marketplace.json` and `plugin-index.json`).
 
-`.grok/config.toml` fails in both directions at once. `grok-config-valid` reports a file Grok loads nothing from — one stray bracket costs the tables above it too, and the only trace is a `parse error` note inside `grok inspect` — plus the servers it drops and the permission keys it reads nothing from, which no diagnostic mentions at any scope. `grok-config-project-scope` reports the other half: a project file contributes only `[mcp_servers]`, `[permission]`, `[plugins]` and `[mcp] max_output_bytes`, and everything else in it — a `[model]` table, a `[hooks]` table written where `.grok/hooks/*.json` was meant, `[mcpServers]` spelled the way another host spells it — is dropped without a word, because Grok's unknown-table warnings cover the user's own config and not a project's.
+Grok reads AGENTS.md for portable project instructions and standard Agent Skills from `.grok/skills/`, which automatically receive skillsaw's shared content and security checks.
 
-Packaging fails the same way: `grok-plugin-json-valid` reports a manifest Grok skips the whole plugin directory over while `grok plugin install` still prints success, `grok-plugin-structure` reports a directory the installer refuses, `grok-marketplace-json-valid` reports a catalog Grok discards for a scan of `plugins/` and entries it drops one at a time, and `grok-marketplace-index-parity` reports a `plugin-index.json` that has drifted from the catalog beside it, which blanks what the marketplace browser shows.
-
-Grok reads AGENTS.md for portable instructions and portable Agent Skills from `.grok/skills/`, and its rules, commands and agent prose get the content and security rules every format shares, so no Grok-specific instruction format is validated.
-
-The hooks, subagent and config rules are enabled automatically when a `.grok/` project layer exists; the packaging rules when a `.grok-plugin/` manifest or catalog does.
+Project rules enable automatically when a `.grok/` directory is present; plugin and marketplace rules enable when `.grok-plugin/` manifests or catalogs are detected.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
