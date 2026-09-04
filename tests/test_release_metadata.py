@@ -228,10 +228,12 @@ def test_the_pins_recipes_together_find_every_documented_pin_form(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
 
+    # A prose mention such as `git grep --untracked` carries no pattern and
+    # is not a recipe.
     commands = [
         command
         for command in _GIT_GREP_LINE.findall((SKILL_DIR / "references" / "03-pins.md").read_text())
-        if command.startswith("git grep")
+        if len(_command_tokens(command)) >= 4
     ]
     # Actions, action metadata, Makefile, pre-commit, container, PyPI, the
     # pyproject mapping sweep and the lockfile lookup: a dropped recipe must
