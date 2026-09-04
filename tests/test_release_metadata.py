@@ -76,10 +76,24 @@ def _grep_matches(pattern: str, line: str) -> bool:
     return result.returncode == 0
 
 
+def _command_tokens(command: str) -> list:
+    """The `git grep …` tokens up to a pipe: a pattern may itself hold `|`,
+    so the command is tokenised before the pipe is looked for."""
+    tokens = shlex.split(command)
+    return tokens[: tokens.index("|")] if "|" in tokens else tokens
+
+
 def _grep_pattern(command: str) -> str:
     """The pattern argument of a `git grep …` command line."""
-    tokens = shlex.split(command.split("|", 1)[0])
+    tokens = _command_tokens(command)
     return next(token for token in tokens[2:] if not token.startswith("-"))
+
+
+def _is_extended(command: str) -> bool:
+    """Whether the `git grep` itself (not a downstream `grep`) takes `-E`."""
+    tokens = _command_tokens(command)
+    options = tokens[2 : tokens.index(_grep_pattern(command))]
+    return any("E" in option for option in options)
 
 
 def test_glob_pathspecs_in_skill_recipes_also_match_the_repo_root():
@@ -91,9 +105,10 @@ def test_glob_pathspecs_in_skill_recipes_also_match_the_repo_root():
         for command in _GIT_GREP_LINE.findall(path.read_text()):
             if " -- " not in command:
                 continue
-            # Pathspecs end at the first pipe: a downstream `grep` pattern
-            # must not satisfy the bare-name check by accident.
-            pathspecs = shlex.split(command.split(" -- ", 1)[1].split("|", 1)[0])
+            # Pathspecs end at the pipe: a downstream `grep` pattern must
+            # not satisfy the bare-name check by accident.
+            tokens = _command_tokens(command)
+            pathspecs = tokens[tokens.index("--") + 1 :]
             for nested in (spec[3:] for spec in pathspecs if spec.startswith("**/")):
                 checked += 1
                 assert (
@@ -169,9 +184,7 @@ def test_the_pins_recipes_together_find_every_documented_pin_form():
         assert any(_grep_matches(p, line) for p in patterns), f"no recipe finds: {line!r}"
     # Only the extended-regex recipes carry a boundary; the plain-word ones
     # (action metadata, Makefile, pre-commit) are scoped by their pathspecs.
-    extended = [
-        _grep_pattern(command) for command in commands if re.search(r"\s-[a-zA-Z]*E\b", command)
-    ]
+    extended = [_grep_pattern(command) for command in commands if _is_extended(command)]
     assert len(extended) >= 4, extended
     for line in ROUTER_MUST_NOT_MATCH:
         assert not any(_grep_matches(p, line) for p in extended), f"a recipe over-matches: {line!r}"
