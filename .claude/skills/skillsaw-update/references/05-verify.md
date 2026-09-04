@@ -16,8 +16,8 @@ pin or rule change was made. Summarize:
 - added rules, with each rule's finding count in this repository;
 - removed rules and any baseline cleanup applied;
 - pins updated (workflows, action inputs, Makefile, pre-commit config,
-  container tags in Dockerfiles or GitLab CI, PyPI pins) and `.skillsaw.yaml`'s
-  `version:`;
+  container tags in Dockerfiles or GitLab CI, PyPI pins) and the config
+  file's `version:`;
 - triage outcomes: fixed, baselined, and configured counts;
 - every file created or modified.
 

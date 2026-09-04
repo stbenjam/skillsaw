@@ -24,24 +24,35 @@ the violation message when describing the rule.
 
 ## Lift the config version gate
 
-`.skillsaw.yaml`'s top-level `version:` gates rule activation: a rule whose
+The config file's top-level `version:` gates rule activation: a rule whose
 `since` is newer than that value is skipped unless the file names it, and a
-config with no `version` is read as `0.6.0`. Left stale, it switches off
-exactly the rules this upgrade added, and the scan below would report nothing
-for them. Read it:
+config with no `version` key is read as `0.6.0` (skillsaw prints a warning
+saying so). Left stale, it switches off exactly the rules this upgrade added,
+and the scan below would report nothing for them. Find the active config:
+`<new-prefix> lint -v` prints `Using config: {config}` for `.skillsaw.yaml`,
+`.skillsaw.yml`, `.claudelint.yaml` or `.claudelint.yml`. No such line means
+no config file exists and nothing is gated, so skip this section. Otherwise
+`{old}` is the `version:` value in `{config}`, or `0.6.0` when the key is
+absent.
+
+If `{old}` is below `{latest}`, keep a scan taken under the old gate:
 
 ```console
-git grep -n '^version:' -- .skillsaw.yaml
+<new-prefix> lint --format json -v > /tmp/skillsaw-update-scan-gated.json
 ```
 
-If the value is below `{latest}`, or the key is absent, ask:
+Then ask:
 
-> `.skillsaw.yaml` pins version {old}, which keeps the rules added since then
-> switched off. Set it to {latest} so the new rules run here?
+> {config} reads as version {old}, which keeps every rule added since then
+> switched off. Set it to {latest} so those rules run here?
 
-If yes, set (or add) `version: "{latest}"`, keeping the file's quoting, and
-count the file as edited. If no, the added rules stay off: report that, skip
-the scan below, and say so in the summary.
+If yes, set (or add) `version: "{latest}"` in `{config}`, keeping its quoting,
+and count the file as edited; never create a second config file. The bump
+switches on every rule added between `{old}` and `{installed}` as well, not
+only the ones the list comparison found, so after the scan below treat each
+rule that reports findings there and not in the gated scan as added, for the
+report and for triage. If no, the gated rules stay off: run the scan below
+anyway and report which added rules it could not exercise.
 
 ## Scan the repository with the new version
 

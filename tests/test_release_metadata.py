@@ -65,7 +65,21 @@ def test_documented_skillsaw_floor_is_installable():
     )
 
 
-_GIT_GREP_LINE = re.compile(r"^\s*[`(]*\$?\s*git grep .*$", re.MULTILINE)
+_GIT_GREP_LINE = re.compile(r"^\s*[`(]*\$?\s*git grep [^`\n]*", re.MULTILINE)
+SKILL_DIR = REPO_ROOT / "skills" / "skillsaw-update"
+
+
+def _grep_matches(pattern: str, line: str) -> bool:
+    """Run *pattern* through `grep -E`, the engine the agent runs (Python's
+    `re` has no `[[:alnum:]]`)."""
+    result = subprocess.run(["grep", "-qE", pattern], input=line + "\n", text=True, check=False)
+    return result.returncode == 0
+
+
+def _grep_pattern(command: str) -> str:
+    """The pattern argument of a `git grep …` command line."""
+    tokens = shlex.split(command.split("|", 1)[0])
+    return next(token for token in tokens[2:] if not token.startswith("-"))
 
 
 def test_glob_pathspecs_in_skill_recipes_also_match_the_repo_root():
@@ -85,10 +99,8 @@ def test_glob_pathspecs_in_skill_recipes_also_match_the_repo_root():
                 assert (
                     nested in pathspecs
                 ), f"{path.relative_to(REPO_ROOT)}: '**/{nested}' needs a bare '{nested}' too"
-    assert checked >= 6, "the pathspec guard found no recipes to check"
+    assert checked >= 6, f"the pathspec guard checked only {checked} '**/' pathspecs"
 
-
-_ROUTER_SCAN = re.compile(r"^git grep --untracked -lE '([^']+)'$", re.MULTILINE)
 
 # One line per pin form the skill's references document. The router scan
 # decides whether the pins reference is read at all, so a form it misses is a
@@ -107,8 +119,11 @@ ROUTER_MUST_MATCH = [
     "uvx skillsaw@0.19.0",
     "skillsaw >= 0.19.0",
     "skillsaw != 0.18.0",
+    "skillsaw @ git+https://github.com/stbenjam/skillsaw.git@v0.19.0",
     'skillsaw = { version = "0.19.0" }',
     'skillsaw = "^0.19.0"',
+    "skillsaw = '^0.19.0'",
+    'name = "skillsaw"',
 ]
 ROUTER_MUST_NOT_MATCH = [
     "acme-skillsaw==1.0.0",
@@ -118,36 +133,59 @@ ROUTER_MUST_NOT_MATCH = [
 ]
 
 
+def _router_pattern() -> str:
+    commands = [
+        command
+        for command in _GIT_GREP_LINE.findall((SKILL_DIR / "SKILL.md").read_text())
+        if command.startswith("git grep --untracked -lE")
+    ]
+    assert len(commands) == 1, commands
+    return _grep_pattern(commands[0])
+
+
 def test_the_router_pin_scan_matches_every_documented_pin_form():
     """The step-3 scan in SKILL.md gates the pins reference. Run the pattern
-    it ships through `grep -E`, the engine the agent runs, against one line
-    per documented pin form and a few near misses. The pattern is read from
-    the skill, so this cannot go stale against it."""
-    skill = (REPO_ROOT / "skills" / "skillsaw-update" / "SKILL.md").read_text()
-    patterns = _ROUTER_SCAN.findall(skill)
-    assert len(patterns) == 1, patterns
-
-    def matches(line: str) -> bool:
-        result = subprocess.run(
-            ["grep", "-qE", patterns[0]], input=line + "\n", text=True, check=False
-        )
-        return result.returncode == 0
-
+    it ships against one line per documented pin form and a few near misses.
+    The pattern is read from the skill, so this cannot go stale against it."""
+    pattern = _router_pattern()
     for line in ROUTER_MUST_MATCH:
-        assert matches(line), f"router scan misses: {line!r}"
+        assert _grep_matches(pattern, line), f"router scan misses: {line!r}"
     for line in ROUTER_MUST_NOT_MATCH:
-        assert not matches(line), f"router scan over-matches: {line!r}"
+        assert not _grep_matches(pattern, line), f"router scan over-matches: {line!r}"
+
+
+def test_the_pins_recipes_together_find_every_documented_pin_form():
+    """Each recipe in the pins reference owns one surface; between them they
+    must reach every form the router routes there, and none of the near
+    misses. Patterns are read from the reference itself."""
+    commands = [
+        command
+        for command in _GIT_GREP_LINE.findall((SKILL_DIR / "references" / "03-pins.md").read_text())
+        if command.startswith("git grep")
+    ]
+    patterns = [_grep_pattern(command) for command in commands]
+    assert len(patterns) >= 7, patterns
+    for line in ROUTER_MUST_MATCH:
+        assert any(_grep_matches(p, line) for p in patterns), f"no recipe finds: {line!r}"
+    # Only the extended-regex recipes carry a boundary; the plain-word ones
+    # (action metadata, Makefile, pre-commit) are scoped by their pathspecs.
+    extended = [
+        _grep_pattern(command) for command in commands if re.search(r"\s-[a-zA-Z]*E\b", command)
+    ]
+    assert len(extended) >= 4, extended
+    for line in ROUTER_MUST_NOT_MATCH:
+        assert not any(_grep_matches(p, line) for p in extended), f"a recipe over-matches: {line!r}"
 
 
 def test_image_tags_in_skills_and_docs_carry_no_v():
     """The image is tagged `0.19.0`, never `v0.19.0` (docker.yml publishes
     `type=semver,pattern={{version}}`), so a `:v` tag in a recipe pulls
-    nothing."""
+    nothing, at ghcr.io or at a mirror."""
     hits = [
         f"{path.relative_to(REPO_ROOT)}:{number}"
         for root in ("skills", "docs")
         for path in sorted((REPO_ROOT / root).rglob("*.md"))
         for number, line in enumerate(path.read_text().splitlines(), 1)
-        if "ghcr.io/stbenjam/skillsaw:v" in line
+        if "stbenjam/skillsaw:v" in line
     ]
     assert hits == []

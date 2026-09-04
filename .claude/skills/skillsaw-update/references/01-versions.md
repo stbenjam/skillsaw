@@ -8,12 +8,17 @@ rule list is captured in the next section.
 Run `skillsaw --version`. If it works, retain that command prefix (`skillsaw`)
 as `<installed-prefix>` and note the version as `{installed}`.
 
-If `skillsaw --version` is not found or fails, the repository is not on a
-working install yet. Resolve `{latest}` first (see below), then bootstrap
-pinned to that version: prefer zero-install execution with
-`uvx skillsaw=={latest}`, then `pip install "skillsaw=={latest}"`, then the
-installed container runtime. For containers, `<installed-prefix>` is a
-complete run command mounting the repository at `/workspace`:
+If `skillsaw --version` is not found or fails, look for the version the
+repository itself runs before installing anything: a `uvx skillsaw==N.N.N` or
+`SKILLSAW_VERSION` in a Makefile or CI file, or a `ghcr.io/stbenjam/skillsaw`
+image tag. When one exists, that command (`uvx skillsaw==N.N.N` for a plain
+version) is `<installed-prefix>` and its version is `{installed}`, so the old
+rule list below is the one the repository really runs. When nothing pins a
+version, resolve `{latest}` first (see below), then bootstrap pinned to that
+version: prefer zero-install execution with `uvx skillsaw=={latest}`, then
+`pip install "skillsaw=={latest}"`, then the installed container runtime. For
+containers, `<installed-prefix>` is a complete run command mounting the
+repository at `/workspace`:
 
 ```console
 podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:{latest}
@@ -84,11 +89,16 @@ to "Declining the upgrade".
 
 - **Project dependency**: when the prefix resolves inside the repository's
   own `.venv`, or a `uv.lock`, `poetry.lock` or `Pipfile.lock` lists
-  skillsaw, upgrade through the project manager, which bumps the manifest
-  and the lockfile together: `uv add --dev "skillsaw=={latest}"`,
-  `poetry add --group dev "skillsaw=={latest}"`, or
-  `pipenv install --dev "skillsaw=={latest}"`. The project's own invocation
-  (`uv run skillsaw`, `poetry run skillsaw`) is `<new-prefix>`.
+  skillsaw, the version lives in the manifest, so this is a pin edit made
+  with the user's consent: keep the dependency group and the operator the
+  manifest uses (`uv add --dev` and `poetry add --group dev` would move the
+  entry and replace a caret or floor), set an exact pin to `{latest}` and
+  leave a floor or caret unless the user chooses to raise it, then move the
+  lock with the scoped
+  command (`uv lock --upgrade-package skillsaw`,
+  `poetry update --lock skillsaw`, `pipenv update skillsaw`). The project's
+  own invocation (`uv run skillsaw`, `poetry run skillsaw`,
+  `pipenv run skillsaw`) is `<new-prefix>`.
 - **uvx**: nothing to install. The new prefix is `uvx skillsaw=={latest}`;
   the old one stays usable for comparison.
 - **pip, pipx or uv tool**: identify the manager first; the first line of
@@ -124,15 +134,18 @@ and continue below; the router then skips to verification.
 An isolated command sees only skillsaw itself, so if the installed one
 carries rule plugins (packages providing `skillsaw.plugins` entry points,
 such as `skillsaw-runbooks`; `pipx list --include-injected`,
-`uv tool list --show-with` or `pip list` shows them), add them
-(`uvx --with <plugin> skillsaw=={latest}`) or the comparison below reports
-their rules as removed.
+`uv tool list --show-with` or `pip list` shows them with their versions), add
+each one at the version installed (`uvx --with "<plugin>==<version>"
+skillsaw=={latest}`) or the comparison below reports their rules as removed.
+A plugin from a path or a private index the isolated command cannot reach
+rules the isolated comparison out: say so and take the retained prefix.
 
 If an upgrade or an isolated prefix was accepted, `<new-prefix> --version`
 must report `{latest}` (the output is `skillsaw {latest}`). If it does not,
 the upgrade did not take; report which manager ran and stop. Then, on every
 path, save the new prefix's rules (the already-current path repeats the old
-list, so its comparison comes out empty):
+list, so its comparison comes out empty; the paused path writes it and never
+compares):
 
 ```console
 <new-prefix> list-rules > /tmp/skillsaw-rules-new.txt

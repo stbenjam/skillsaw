@@ -1,7 +1,7 @@
 ---
 name: skillsaw-update
 description: "Update a repository to the newest skillsaw — upgrade the install, report new rules and their findings in your repo, and bump version pins (GitHub Action SHAs and action inputs, Makefile targets, pre-commit hooks, container image tags in Dockerfiles or GitLab CI, PyPI pins). Use when a new skillsaw release is out and you want its latest checks."
-compatibility: "Bootstraps skillsaw when absent (uvx, pip, or a container runtime). Requires git and network access for version lookup."
+compatibility: "Bootstraps skillsaw when absent (uvx, pip, or a container runtime). Needs network access for the version lookup; git is used for discovery, with grep fallbacks."
 license: Apache-2.0
 user-invocable: true
 disable-model-invocation: true
@@ -54,8 +54,8 @@ version cannot run here, skip to step 5.
 ### 2. Report new rules
 
 Read [new rules](references/02-new-rules.md). It diffs the old and new rule
-lists, explains each added rule, lifts the `version:` gate in `.skillsaw.yaml`
-with the user's consent so the added rules can run, and scans the repository
+lists, explains each added rule, lifts the config file's `version:` gate with
+the user's consent so the added rules can run, and scans the repository
 with the new version so every new rule is presented with its actual findings
 here.
 
@@ -66,14 +66,14 @@ definitions, Makefile targets, pre-commit hooks, container image tags in
 Dockerfiles, Containerfiles or GitLab CI, PyPI requirement pins):
 
 ```console
-git grep --untracked -lE 'stbenjam/skillsaw|SKILLSAW_VERSION|(^|[^/[:alnum:]._-])skillsaw *(\[[^]]*\])? *(={1,3}|~=|>=?|<=?|!=|@) *["{$0-9]'
+git grep --untracked -lE 'stbenjam/skillsaw|SKILLSAW_VERSION|name = "skillsaw"|(^|[^/[:alnum:]._-])skillsaw *(\[[^]]*\])? *(={1,3}|~=|>=?|<=?|!=|@) *["'"'"'{$0-9]'
 ```
 
-The first two alternatives take any prefix, so `ghcr.io/stbenjam/skillsaw`
-and the pre-commit URL route here; the boundary applies only to the bare
-package name. Outside a git work tree, use `grep -rlE --exclude-dir=.git`
-with the same pattern. If it lists any file, name them as {locations} and
-ask:
+The first three alternatives take any prefix, so `ghcr.io/stbenjam/skillsaw`,
+the pre-commit URL and a lockfile entry route here; the boundary applies only
+to the bare package name. Outside a git work tree, use
+`grep -rlE --exclude-dir={.git,.venv,node_modules,vendor,dist,site}` with
+the same pattern. If it lists any file, name them as {locations} and ask:
 
 > I found skillsaw pinned in {locations}. Bumping them to {latest} keeps CI
 > and local runs on the version just installed. Should I update those pins?

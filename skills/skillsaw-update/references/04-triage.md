@@ -32,13 +32,15 @@ A removed rule may leave stale baseline entries behind. Run
 the entries no current finding matches, and those are the ones to delete
 from `.skillsaw-baseline.json`. Never judge an entry by its rule ID: an old
 ID can live on as a live rule's baseline alias, so its entries still suppress
-findings while `<new-prefix> explain <id>` fails for it. In the same run,
-confirm the only unbaselined findings are the added rules' or ones the user
-has just agreed to baseline: `<new-prefix> baseline` records every current
-non-info finding, so refreshing over an unrelated regression from an existing
-rule would accept it silently. If other findings are present, delete the
-stale entries by hand instead of regenerating, or resolve those findings
-first. `invalid-config` also fires for a malformed option of a live rule,
+findings while `<new-prefix> explain <id>` fails for it. The listing shows
+rule, file and message only, so when two entries in one file share all three,
+keep both rather than guess which is stale. In the same run, confirm the only
+unbaselined findings are the ones the user agreed to baseline:
+`<new-prefix> baseline` records every current non-info finding, so refreshing
+over a finding the user declined or chose to fix, or one an existing rule
+raised, would accept it silently. If any such finding is present, resolve it
+first or add the agreed entries by hand instead of regenerating.
+`invalid-config` also fires for a malformed option of a live rule,
 so delete a rule's key from `.skillsaw.yaml` only when the message reads
 `Unknown rule '<id>' in config` and that ID is in the removed list; repair an
 option-level finding instead. A key the new version still accepts is an
