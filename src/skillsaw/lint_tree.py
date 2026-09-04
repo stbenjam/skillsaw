@@ -154,6 +154,8 @@ _EDITOR_GLOBS = (
     (".opencode", "command", "**/*.md", "OpenCodeCommandBlock"),
     (".opencode", "agents", "**/*.md", "OpenCodeAgentBlock"),
     (".opencode", "agent", "**/*.md", "OpenCodeAgentBlock"),
+    (".agents", "rules", "**/*.md", "AntigravityRuleBlock"),
+    (".agent", "rules", "**/*.md", "AntigravityRuleBlock"),
 )
 
 # The OpenCode directories the loader reads *flat*: ``{mode,modes}/*.md``,
@@ -217,6 +219,11 @@ class _TreeBuildState:
     mcp_paths: Set[Path] = field(default_factory=set)
     openai_seen: Set[Tuple[Path, Path]] = field(default_factory=set)
     opencode_configs: List[OpenCodeConfigBlock] = field(default_factory=list)
+
+    @property
+    def resolved_root(self) -> Path:
+        """Resolved repository root directory."""
+        return self.repo_root
 
     def resolve_repo_path(self, path: Path) -> Path | None:
         """Resolve *path* only when repository containment is safe."""
@@ -1325,7 +1332,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # Conventional Claude configs belong only to Claude or legacy
         # unclaimed packages. Portable-only packages must not accidentally
         # inherit Claude's hooks, .mcp.json, or settings semantics.
-        if prov.claude or (not (prov.ecosystems - {"antigravity"}) and not is_agent_plugin):
+        if prov.claude or (not prov.ecosystems and not is_agent_plugin):
             state.add_block(
                 container,
                 plugin_path / "hooks" / "hooks.json",
@@ -1339,7 +1346,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # counterpart: attached only for Claude-style directories, keeping
         # the generic attachment path away from content a hostile
         # Codex-only checkout controls.
-        if prov.claude or (not (prov.ecosystems - {"antigravity"}) and not is_agent_plugin):
+        if prov.claude or (not prov.ecosystems and not is_agent_plugin):
             state.add_block(
                 container, plugin_path / "settings.json", SettingsBlock, owner=resolved_plugin
             )
@@ -1549,49 +1556,52 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # Antigravity manifest cluster. A directory claimed by Antigravity
         # attaches its plugin.json manifest, hooks.json, and mcp_config.json.
         if prov.antigravity:
-            node = AntigravityPluginConfigNode(path=plugin_path / "plugin.json")
-            node.plugin_owner = resolved_plugin
-            conventional_hooks = plugin_path / "hooks.json"
-            if not _attached_as_hooks(state, conventional_hooks):
-                _add_contained_plugin_block(
-                    node,
-                    conventional_hooks,
-                    AntigravityHooksBlock,
-                    owner=resolved_plugin,
-                )
-            native_mcp = plugin_path / "mcp_config.json"
-            if not _attached_as_mcp(state, native_mcp):
-                _add_contained_plugin_block(
-                    node,
-                    native_mcp,
-                    AntigravityMcpBlock,
-                    owner=resolved_plugin,
-                )
-            claude_hooks = plugin_path / "hooks" / "hooks.json"
-            if not _attached_as_hooks(state, claude_hooks):
-                _add_contained_plugin_block(
-                    node,
-                    claude_hooks,
-                    ClaudeHooksBlock,
-                    owner=resolved_plugin,
-                )
-            claude_mcp = plugin_path / ".mcp.json"
-            if not _attached_as_mcp(state, claude_mcp) and not _shadowed_by_agent_plugin_mcp(
-                claude_mcp, agent_plugin_mcp
-            ):
-                _add_contained_plugin_block(
-                    node,
-                    claude_mcp,
-                    McpBlock,
-                    owner=resolved_plugin,
-                )
-            _add_contained_plugin_block(
-                node, plugin_path / "settings.json", SettingsBlock, owner=resolved_plugin
-            )
-            _add_contained_plugin_block(
-                node, plugin_path / "settings.local.json", SettingsBlock, owner=resolved_plugin
-            )
-            container.children.append(node)
+            manifest = plugin_path / "plugin.json"
+            if contained_resolve(manifest, state.resolved_root) is not None:
+                node = AntigravityPluginConfigNode(path=manifest)
+                node.plugin_owner = resolved_plugin
+                conventional_hooks = plugin_path / "hooks.json"
+                if not _attached_as_hooks(state, conventional_hooks):
+                    _add_contained_plugin_block(
+                        node,
+                        conventional_hooks,
+                        AntigravityHooksBlock,
+                        owner=resolved_plugin,
+                    )
+                native_mcp = plugin_path / "mcp_config.json"
+                if not _attached_as_mcp(state, native_mcp):
+                    _add_contained_plugin_block(
+                        node,
+                        native_mcp,
+                        AntigravityMcpBlock,
+                        owner=resolved_plugin,
+                    )
+                if prov.claude:
+                    hooks_cls, mcp_cls = ClaudeHooksBlock, McpBlock
+                elif prov.codex:
+                    hooks_cls, mcp_cls = CodexHooksBlock, McpBlock
+                else:
+                    hooks_cls, mcp_cls = HooksBlock, McpBlock
+
+                claude_hooks = plugin_path / "hooks" / "hooks.json"
+                if not _attached_as_hooks(state, claude_hooks):
+                    _add_contained_plugin_block(
+                        node,
+                        claude_hooks,
+                        hooks_cls,
+                        owner=resolved_plugin,
+                    )
+                claude_mcp = plugin_path / ".mcp.json"
+                if not _attached_as_mcp(state, claude_mcp) and not _shadowed_by_agent_plugin_mcp(
+                    claude_mcp, agent_plugin_mcp
+                ):
+                    _add_contained_plugin_block(
+                        node,
+                        claude_mcp,
+                        mcp_cls,
+                        owner=resolved_plugin,
+                    )
+                container.children.append(node)
 
         if container is not root:
             if marketplace_node is not None and resolved_plugin.is_relative_to(

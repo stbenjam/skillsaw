@@ -3,7 +3,7 @@
 
 # antigravity-config-json-valid
 
-Antigravity skills.json, agents.json, and rules.json must conform to the Antigravity JSON config specification
+Antigravity registry JSON files (skills.json, agents.json, rules.json) under .agents/ or .agent/ must be valid JSON objects
 
 | | |
 |---|---|
@@ -21,8 +21,10 @@ to register workspace components and customizations:
 - `agents.json`: Registers custom subagents.
 - `rules.json`: Registers workspace rules.
 
-Syntax errors or non-object root structures prevent Antigravity from parsing
-the registries and loading the declared workspace components.
+This rule validates that Antigravity registry JSON files (`skills.json`, `agents.json`, `rules.json`)
+under `.agents/` or `.agent/` are valid JSON objects. Syntax errors, non-object root structures,
+or non-finite numbers prevent Antigravity from parsing the registries and loading the declared
+workspace components.
 
 ## Examples
 
@@ -38,28 +40,15 @@ the registries and loading the declared workspace components.
 
 ```json
 {
-  "entries": [
-    {
-      "path": "skills/my-skill",
-      "include_only": [
-        "my-.*"
-      ]
-    }
-  ],
-  "inherits": [
-    {
-      "path": "shared.json"
-    }
-  ]
+  "skills": []
 }
 ```
 
 ## How to fix
 
-Ensure that:
-- The configuration file (`skills.json`, `agents.json`, `rules.json`) is valid JSON.
-- The root of the JSON file is a JSON object.
-- Syntax errors, unterminated quotes, and non-finite numbers (NaN, Infinity) are resolved.
+- Format the configuration file (`skills.json`, `agents.json`, `rules.json`) as valid JSON.
+- Define a JSON object at the root of the file rather than an array or primitive value.
+- Fix any syntax errors, unterminated strings, and non-finite numbers (`NaN`, `Infinity`).
 
 ## Configuration
 

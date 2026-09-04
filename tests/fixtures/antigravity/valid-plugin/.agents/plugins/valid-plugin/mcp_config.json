@@ -5,6 +5,12 @@
       "args": [
         "hello"
       ]
+    },
+    "remote-server": {
+      "serverUrl": "https://example.com/sse",
+      "headers": {
+        "X-Custom-Header": "value"
+      }
     }
   }
 }

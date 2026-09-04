@@ -166,10 +166,12 @@ RULE_GROUPS = [
         [
             "antigravity-config-json-valid",
             "antigravity-hooks-valid",
+            "antigravity-mcp-valid",
             "antigravity-plugin-json-valid",
         ],
         "Validates Google Antigravity primitives: plugin manifests "
-        "(`plugin.json`), lifecycle hooks (`hooks.json`), and configuration "
+        "(`plugin.json`), lifecycle hooks (`hooks.json`), MCP configurations "
+        "(`mcp_config.json`), and configuration "
         "registries (`skills.json`, `agents.json`, `rules.json`). Auto-enabled when Antigravity "
         "primitives or `.agents/` / `.agent/` directories are detected.",
     ),

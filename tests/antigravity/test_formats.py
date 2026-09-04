@@ -18,9 +18,7 @@ from skillsaw.formats.antigravity import (
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "antigravity"
 
 
-# ==============================================================================
 # validate_antigravity_manifest
-# ==============================================================================
 
 
 class TestValidateAntigravityManifest:
@@ -98,7 +96,9 @@ class TestValidateAntigravityManifest:
     )
     def test_invalid_name_regex(self, bad_format_name) -> None:
         errors = validate_antigravity_manifest({"name": bad_format_name})
-        assert any("invalid plugin name" in err for err in errors)
+        assert errors == [
+            f"invalid plugin name '{bad_format_name}' (must contain only alphanumeric characters, dashes, or underscores)"
+        ]
 
     @pytest.mark.parametrize(
         "valid_name",
@@ -142,15 +142,15 @@ class TestValidateAntigravityManifest:
         )
         data = json.loads(fixture_path.read_text(encoding="utf-8"))
         errors = validate_antigravity_manifest(data)
-        assert "unknown field 'extra_unknown'" in errors
-        assert any("invalid plugin name 'Invalid Name!'" in e for e in errors)
-        assert "'version' must be a non-empty string" in errors
-        assert "'disabled' must be a boolean" in errors
+        assert errors == [
+            "unknown field 'extra_unknown'",
+            "invalid plugin name 'Invalid Name!' (must contain only alphanumeric characters, dashes, or underscores)",
+            "'version' must be a non-empty string",
+            "'disabled' must be a boolean",
+        ]
 
 
-# ==============================================================================
 # validate_antigravity_hooks
-# ==============================================================================
 
 
 class TestValidateAntigravityHooks:
@@ -243,7 +243,16 @@ class TestValidateAntigravityHooks:
         errors = validate_antigravity_hooks(
             {"hook": {"PreToolUse": [{"matcher": "[unterminated", "hooks": [{"command": "echo"}]}]}}
         )
-        assert any("invalid regex in 'matcher'" in err for err in errors)
+        assert len(errors) == 1
+        assert errors[0].startswith("hook 'hook': PreToolUse[0]: invalid regex in 'matcher':")
+
+    def test_tool_event_matcher_length_exceeded(self) -> None:
+        long_matcher = "a" * 1001
+        errors = validate_antigravity_hooks(
+            {"hook": {"PreToolUse": [{"matcher": long_matcher, "hooks": [{"command": "echo"}]}]}}
+        )
+        assert len(errors) == 1
+        assert "exceeds maximum length of 1000 characters" in errors[0]
 
     def test_tool_event_missing_hooks_field(self) -> None:
         errors = validate_antigravity_hooks({"hook": {"PreToolUse": [{"matcher": "run_command"}]}})
@@ -301,8 +310,12 @@ class TestValidateAntigravityHooks:
         )
         data = json.loads(fixture_path.read_text(encoding="utf-8"))
         errors = validate_antigravity_hooks(data)
+        assert len(errors) == 4
         assert "hook 'bad-hook': unknown event 'InvalidEvent'" in errors
-        assert any("invalid regex in 'matcher'" in e for e in errors)
+        assert any(
+            e.startswith("hook 'bad-hook': PreToolUse[0]: invalid regex in 'matcher':")
+            for e in errors
+        )
         assert (
             "hook 'bad-hook': PreToolUse[0]: hooks[0]: missing required field 'command'" in errors
         )
@@ -312,9 +325,7 @@ class TestValidateAntigravityHooks:
         )
 
 
-# ==============================================================================
 # validate_antigravity_config
-# ==============================================================================
 
 
 class TestValidateAntigravityConfig:

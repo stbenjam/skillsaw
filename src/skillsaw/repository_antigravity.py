@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, List, Optional, Set
 
 from .discovery import antigravity as antigravity_discovery
-from .formats.antigravity import ANTIGRAVITY_CONFIG_DIR_NAMES
 from .paths import safe_resolve
 from .repository_types import RepositoryType
 
@@ -29,12 +28,9 @@ class RepositoryAntigravityMixin:
         skills: List[Path]
         grok_plugins: List[Path]
         antigravity_plugins: List[Path]
-        _antigravity_config_paths: Optional[List[Path]]
         _antigravity_claims: Optional[Set[Path]]
         _antigravity_discovery_enabled: bool
         _antigravity_plugin_forced: bool
-
-        def agent_tool_dirs(self, name: str) -> List[Path]: ...
 
         def is_path_excluded(self, path: Path) -> bool: ...
 
@@ -48,21 +44,10 @@ class RepositoryAntigravityMixin:
         else:
             self._antigravity_plugin_forced = False
         self._antigravity_discovery_enabled = selected is not False
-        self._antigravity_config_paths = None
         self._antigravity_claims = None
         self.antigravity_plugins = (
             self._discover_antigravity_plugins() if self._antigravity_discovery_enabled else []
         )
-
-    def antigravity_config_files(self) -> List[Path]:
-        """Discovered Antigravity configuration files."""
-        if self._antigravity_config_paths is None:
-            tool_dirs = {d: self.agent_tool_dirs(d) for d in ANTIGRAVITY_CONFIG_DIR_NAMES}
-            configs = antigravity_discovery.discover_antigravity_configs(
-                self.root_path, tool_dirs=tool_dirs
-            )
-            self._antigravity_config_paths = [p for p in configs if not self.is_path_excluded(p)]
-        return self._antigravity_config_paths
 
     def _discover_antigravity_plugins(self) -> List[Path]:
         """Directories declaring an Antigravity plugin."""
@@ -85,7 +70,6 @@ class RepositoryAntigravityMixin:
 
     def _reset_antigravity_caches(self, filtering: bool = False) -> None:
         """Drop every cached Antigravity view; re-run discovery when excludes narrowed."""
-        self._antigravity_config_paths = None
         self._antigravity_claims = None
         if filtering and self._antigravity_discovery_enabled:
             self.antigravity_plugins = self._discover_antigravity_plugins()

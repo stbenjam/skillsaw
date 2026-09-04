@@ -74,7 +74,10 @@ class RepositoryContext(
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.APM,
         RepositoryType.DOT_CLAUDE,
-        # Below Claude equivalents, but above generic fallbacks.
+        # Below the Claude equivalents, so a repository that is both keeps
+        # its Claude primary type — but above the generic fallbacks: an
+        # authored Codex plugin whose skills also match the Agent Skills
+        # convention is a Codex plugin first, not an agentskills.io repo.
         RepositoryType.CODEX_MARKETPLACE,
         RepositoryType.CODEX_PLUGIN,
         RepositoryType.GROK_MARKETPLACE,
@@ -85,7 +88,9 @@ class RepositoryContext(
         RepositoryType.MCP_REGISTRY,
         RepositoryType.CODERABBIT,
         RepositoryType.PROMPTFOO,
-        # Tool configuration sorts below packaging types.
+        # Tool configuration sorts below everything that describes how the
+        # repository packages its content, so a marketplace that also ships
+        # a `.cursor/` keeps `marketplace` as its primary type.
         RepositoryType.CODEX_PROJECT,
         RepositoryType.MUSE,
         RepositoryType.GROK_PROJECT,
@@ -180,23 +185,31 @@ class RepositoryContext(
         # remain repo-type-gated and quiet.
         rt_set = set(repo_types) if repo_types is not None else None
         self._codex_discovery_enabled = bool(_CODEX_TYPES & rt_set) if rt_set is not None else True
+        # A forced Codex type seeds the entrypoint even when the marker file
+        # is missing — otherwise ``--type codex-plugin`` on a repository
+        # without ``.codex-plugin/`` would discover no plugin, create no
+        # node, and never run the requested check.
         self._codex_plugin_forced = rt_set is not None and RepositoryType.CODEX_PLUGIN in rt_set
         self._codex_marketplace_forced = (
             rt_set is not None and RepositoryType.CODEX_MARKETPLACE in rt_set
         )
         self._agent_plugin_discovery_enabled = (
-            RepositoryType.AGENT_PLUGIN in rt_set if rt_set is not None else True
+            rt_set is None or RepositoryType.AGENT_PLUGIN in rt_set
         )
         self._agent_plugin_forced = rt_set is not None and RepositoryType.AGENT_PLUGIN in rt_set
-        self.codex_plugins: List[Path] = (
-            self._discover_codex_plugins() if self._codex_discovery_enabled else []
-        )
-        self.agent_plugins: List[Path] = (
+        self.codex_plugins = self._discover_codex_plugins() if self._codex_discovery_enabled else []
+        self.agent_plugins = (
             self._discover_agent_plugins() if self._agent_plugin_discovery_enabled else []
         )
         self._init_grok(repo_types)
         self._init_antigravity(repo_types)
+        # An explicit ``--type`` answers "how is this content packaged", and
+        # ``_refresh_tool_types()`` keeps it authoritative for that half while
+        # still folding in the tools the checkout configures.
         self._overridden_types: Optional[Set[RepositoryType]] = rt_set
+        # Types describing how content is packaged. The tool types are folded
+        # in by ``_refresh_tool_types()`` once instruction-file discovery has
+        # run — an AGENTS.md is evidence of a tool, and it is not found yet.
         self.repo_types: Set[RepositoryType] = (
             set(rt_set) if rt_set is not None else self._detect_types()
         )
@@ -427,10 +440,8 @@ class RepositoryContext(
         # type detection consults provenance before marketplace_entries
         # exists, and this end-of-init clear is what discards those early
         # records. Never scope it under ``if self.exclude_patterns:``.
-        self._codex_claims = None
-        self._codex_evidence = None
-        self._agent_plugin_claims = None
-        self._agent_plugin_roots = None
+        self._codex_claims = self._codex_evidence = None
+        self._agent_plugin_claims = self._agent_plugin_roots = None
         self._reset_grok_caches(filtering=bool(self.exclude_patterns))
         self._reset_antigravity_caches(filtering=bool(self.exclude_patterns))
         self._contained_plugin_roots = self._mcp_registry_paths = None
@@ -700,9 +711,7 @@ class RepositoryContext(
         layouts (see :func:`skillsaw.discovery.codex.discover_codex_plugins`).
         """
         return codex_discovery.discover_codex_plugins(
-            self.root_path,
-            self._codex_local_sources(),
-            forced=self._codex_plugin_forced,
+            self.root_path, self._codex_local_sources(), forced=self._codex_plugin_forced
         )
 
     def _discover_agent_plugins(self) -> List[Path]:
@@ -710,8 +719,7 @@ class RepositoryContext(
         return [
             path
             for path in agent_plugins_discovery.discover_agent_plugins(
-                self.root_path,
-                forced=self._agent_plugin_forced,
+                self.root_path, forced=self._agent_plugin_forced
             )
             if not self.is_path_excluded(path)
         ]
@@ -840,9 +848,7 @@ class RepositoryContext(
     def _discover_skills(self) -> List[Path]:
         """Discover Agent Skills through the state-free Claude discovery seam."""
         recursive_agent_plugins = [
-            plugin
-            for plugin in self.agent_plugin_roots()
-            if (provenance := self.provenance(plugin)).claude or provenance.codex
+            p for p in self.agent_plugin_roots() if (pr := self.provenance(p)).claude or pr.codex
         ]
         return claude_discovery.discover_skills(
             self.root_path,
@@ -851,9 +857,9 @@ class RepositoryContext(
             # Agent-only sibling. Only an actual Claude declaration permits
             # recursive Claude skill discovery for a portable package.
             plugins=[
-                plugin
-                for plugin in self.plugins
-                if not self.provenance(plugin).agent_plugin or self.provenance(plugin).claude
+                p
+                for p in self.plugins
+                if not self.provenance(p).agent_plugin or self.provenance(p).claude
             ],
             codex_plugins=self.codex_plugins,
             grok_plugins=self.grok_plugins,

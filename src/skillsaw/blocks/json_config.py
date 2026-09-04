@@ -740,9 +740,13 @@ class AntigravityHooksBlock(HooksBlock):
         data = self.raw_data
         if not isinstance(data, dict):
             return {}
+        if data.get("enabled") is False:
+            return {}
         result: Dict[str, List[HookEventConfig]] = {}
         for hook_name, hook_spec in data.items():
             if not isinstance(hook_spec, dict):
+                continue
+            if hook_spec.get("enabled") is False:
                 continue
             for event_type, entries in hook_spec.items():
                 if event_type == "enabled" or not isinstance(entries, list):
@@ -753,11 +757,16 @@ class AntigravityHooksBlock(HooksBlock):
                         continue
                     if isinstance(entry.get("hooks"), list):
                         nested = HookEventConfig.from_dict(entry)
-                        if nested:
+                        for h in nested.handlers:
+                            if not h.type:
+                                h.type = "command"
+                        if nested.handlers:
                             configs.append(nested)
                     else:
                         handler = HookHandler.from_dict(entry)
                         if handler:
+                            if not handler.type:
+                                handler.type = "command"
                             configs.append(HookEventConfig(matcher="", handlers=[handler]))
                 if configs:
                     result.setdefault(event_type, []).extend(configs)
@@ -1288,6 +1297,10 @@ class AntigravityMcpBlock(McpBlock):
     claude_builtins_reserved: ClassVar[bool] = False
     require_usable_connection: ClassVar[bool] = True
     strict_json: ClassVar[bool] = True
+    shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
+        syntax_error_rule="antigravity-mcp-valid",
+        keeps_dialect_neutral_checks=True,
+    )
 
     def tree_label(self) -> str:
         return f"{self.path.name} (antigravity MCP)"
@@ -1295,7 +1308,7 @@ class AntigravityMcpBlock(McpBlock):
 
 @dataclass(eq=False)
 class AntigravityConfigBlock(JsonConfigBlock):
-    """Antigravity ``skills.json`` or ``plugins.json`` registry."""
+    """Antigravity ``skills.json``, ``agents.json``, or ``rules.json`` registry."""
 
     category: str = "antigravity config"
     strict_json: ClassVar[bool] = True

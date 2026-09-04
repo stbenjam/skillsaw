@@ -25,8 +25,8 @@ class AntigravityConfigJsonValidRule(Rule):
     @property
     def description(self) -> str:
         return (
-            "Antigravity skills.json, agents.json, and rules.json must conform to the "
-            "Antigravity JSON config specification"
+            "Antigravity registry JSON files (skills.json, agents.json, rules.json) "
+            "under .agents/ or .agent/ must be valid JSON objects"
         )
 
     def default_severity(self) -> Severity:

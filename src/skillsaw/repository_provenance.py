@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
-from .discovery.antigravity import antigravity_manifest_is_contained
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
 from .formats.grok import grok_manifest_is_contained, grok_marker_escapes
 from .paths import safe_exists, safe_resolve
@@ -97,11 +96,6 @@ class PluginProvenance:
     def antigravity(self) -> bool:
         return "antigravity" in self.ecosystems
 
-    @property
-    def antigravity_only(self) -> bool:
-        """Antigravity claims the directory and Claude does not."""
-        return self.antigravity and not self.claude
-
 
 class RepositoryProvenanceMixin:
     """Cached provenance and containment behavior for RepositoryContext.
@@ -140,6 +134,8 @@ class RepositoryProvenanceMixin:
         def _agent_plugin_root_set(self) -> Set[Path]: ...
 
         def _grok_claim_set(self) -> Set[Path]: ...
+
+        def _antigravity_claim_set(self) -> Set[Path]: ...
 
         def codex_plugin_roots(self) -> List[Path]: ...
 
@@ -230,10 +226,7 @@ class RepositoryProvenanceMixin:
             and not grok_marker_escapes(plugin_dir)
         ):
             ecosystems.add("grok")
-        if (
-            resolved is not None
-            and resolved in getattr(self, "_antigravity_claim_set", lambda: set())()
-        ):
+        if resolved is not None and resolved in self._antigravity_claim_set():
             ecosystems.add("antigravity")
         record = PluginProvenance(
             ecosystems=frozenset(ecosystems),

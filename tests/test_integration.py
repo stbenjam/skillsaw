@@ -5011,6 +5011,7 @@ CLEAN_FIXTURES = [
     "grok/dual-manifest",
     "agent-memory/notes",
     "antigravity/valid-plugin",
+    "antigravity/project-repo",
 ]
 
 OPT_IN_RULES = {

@@ -495,8 +495,14 @@ detects each.
 
 Repositories configured for Google Antigravity, or declaring Antigravity customizations.
 Google Antigravity workspaces are configured via `.agents/` or `.agent/` directories
-containing `hooks.json`, `mcp_config.json`, rules in `.agents/rules/*.md`, and registry
+containing `hooks.json`, `mcp_config.json`, rules in `.agents/rules/**/*.md`, and registry
 files (`skills.json`, `agents.json`, `rules.json`).
+
+Both Google Antigravity and OpenAI Codex share the `.agents/` directory convention.
+Codex uses `.agents/plugins/marketplace.json` for marketplace catalogs, whereas Antigravity
+uses `.agents/` (or `.agent/`) for workspace configuration files (`hooks.json`,
+`mcp_config.json`, registries, and rules) and `.agents/plugins/<plugin-name>/` for
+Antigravity plugins. Skillsaw distinguishes them cleanly without collision.
 
 Supported Antigravity configuration files are validated by:
 
@@ -504,11 +510,11 @@ Supported Antigravity configuration files are validated by:
 - [`antigravity-config-json-valid`](rules/antigravity-config-json-valid.md): validates configuration registry files (`skills.json`, `agents.json`, `rules.json`).
 - [`mcp-valid-json`](rules/mcp-valid-json.md): validates MCP server configurations in `mcp_config.json`.
 
-Rules in `.agents/rules/*.md` receive the full suite of content-quality and context-budgeting checks.
+Rules in `.agents/rules/**/*.md` (or `.agent/rules/**/*.md`) receive the full suite of content-quality and context-budgeting checks.
 
 ## Google Antigravity Plugin
 
-Plugin directories declaring an Antigravity plugin under `.agents/plugins/<plugin-name>/` or `_agents/plugins/<plugin-name>/` (or standalone plugin checkouts):
+Plugin directories declaring an Antigravity plugin under `.agents/plugins/<plugin-name>/`, `.agent/plugins/<plugin-name>/`, or `_agents/plugins/<plugin-name>/`:
 
 ```text
 my-plugin/
@@ -596,6 +602,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Windsurf** | `devin` | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
 | **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `kiro` | `.kiro/steering/*.md` |
+| **Google Antigravity** | `antigravity` | `.agents/rules/**/*.md`, `.agents/hooks.json`, `.agents/mcp_config.json`, `.agents/{skills,agents,rules}.json`, and `.agent/` counterparts — see [Google Antigravity](#google-antigravity) |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
 | **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
 | **OpenAI Codex** | `codex-project` | `.codex/hooks.json` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |

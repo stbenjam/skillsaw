@@ -65,14 +65,22 @@ syntax errors prevent hooks from executing or cause Antigravity to fail to load 
 
 ## How to fix
 
-Ensure that:
-- The root of `hooks.json` is a JSON object defining hook groups keyed by hook name (e.g., `"audit-logger"`).
-- Hook groups can optionally specify `"enabled": true` or `"enabled": false`.
-- Lifecycle events belong to the supported Antigravity event set:
+- Define a JSON object at the root of `hooks.json` containing hook groups keyed by hook name (e.g., `"audit-logger"`).
+- Optionally specify `"enabled": true` or `"enabled": false` within each hook group.
+- Use supported Antigravity lifecycle events:
   - Tool events: `PreToolUse`, `PostToolUse` (configured as arrays of matcher objects with `matcher` regex and `hooks` list of handlers).
   - Invocation/lifecycle events: `PreInvocation`, `PostInvocation`, `Stop` (configured as arrays of handler objects).
-- Handler definitions specify a `command` string, an optional `type` (`"command"`), and an optional positive number for `timeout`.
-- Regular expression patterns in `matcher` fields are valid.
+- If Antigravity added an event after this skillsaw release, permit it under the rule's `extra-events` setting:
+
+  ```yaml
+  rules:
+    antigravity-hooks-valid:
+      extra-events:
+        - CustomLifecycleEvent
+  ```
+
+- Specify a `command` string, an optional `type` (`"command"`), and an optional positive number for `timeout` on each handler definition.
+- Verify that regular expression patterns in `matcher` fields are valid regexes.
 
 ## Configuration
 

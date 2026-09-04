@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "project-remote": {
+      "serverUrl": "https://mcp.internal.net/sse",
+      "headers": {
+        "X-Project-Token": "test"
+      }
+    }
+  }
+}

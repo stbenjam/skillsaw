@@ -1,0 +1,15 @@
+{
+  "name": "foreign-nested-catalog",
+  "interface": {
+    "displayName": "Foreign Nested Catalog"
+  },
+  "plugins": [
+    {
+      "name": "foreign-plugin",
+      "source": {
+        "source": "local",
+        "path": "./foreign-plugin"
+      }
+    }
+  ]
+}

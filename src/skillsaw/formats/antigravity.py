@@ -9,13 +9,27 @@ hooks in ``hooks.json``, MCP servers in ``mcp_config.json``, and plugins in
 
 Sources:
 
-* Google Antigravity Customization System specification (September 2026).
-* Antigravity extension manifest schema and hook handler contracts.
+* Antigravity Lifecycle Hooks specification:
+  https://antigravity.google/docs/hooks/ (read September 2026)
+* Antigravity Plugins specification:
+  https://antigravity.google/docs/plugins/ (read September 2026)
+* Antigravity CLI Plugins guide:
+  https://antigravity.google/docs/cli/plugins/ (read September 2026)
+* Antigravity MCP Server Configuration:
+  https://antigravity.google/docs/mcp/ (read September 2026)
+* Antigravity Rules and Workflows:
+  https://antigravity.google/docs/rules-workflows/ (read September 2026)
+* Antigravity Platform Changelog:
+  https://antigravity.google/changelog/ (read September 2026)
+
+Note: No formal JSON schema is published for registry files (``skills.json``,
+``agents.json``, ``rules.json``); validation reflects documented runtime conventions.
 """
 
 from __future__ import annotations
 
 import re
+import warnings
 from typing import Any, List, Optional, Set
 
 from skillsaw.diagnostics import safe_display
@@ -125,9 +139,15 @@ def validate_antigravity_hooks(data: Any, extra_events: Optional[Set[str]] = Non
                         matcher = matcher_entry["matcher"]
                         if not isinstance(matcher, str):
                             errors.append(f"{entry_prefix} 'matcher' must be a string")
+                        elif len(matcher) > 1000:
+                            errors.append(
+                                f"{entry_prefix} 'matcher' regex pattern exceeds maximum length of 1000 characters"
+                            )
                         else:
                             try:
-                                re.compile(matcher)
+                                with warnings.catch_warnings():
+                                    warnings.simplefilter("ignore", FutureWarning)
+                                    re.compile(matcher)
                             except (re.error, RecursionError, OverflowError) as err:
                                 errors.append(
                                     f"{entry_prefix} invalid regex in 'matcher': {safe_display(err)}"

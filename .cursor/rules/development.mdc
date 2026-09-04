@@ -245,22 +245,21 @@ per-ecosystem attach paths and loses its content silently.
   (`TestDualManifestBackwardCompat` pins this).
 - **Hooks get one subclass per host instead of conditional strictness.**
   Each host's hooks file is its own `HooksBlock` subclass — Claude, Codex,
-  Muse, Cursor, Grok — chosen from provenance in `build_lint_tree`, with a
+  Muse, Cursor, Grok, Antigravity (`AntigravityHooksBlock`) — chosen from provenance in `build_lint_tree`, with a
   `<host>-hooks-valid` rule iterating it. `hooks-dangerous` and
-  `hooks-prohibited` read the shared `HooksBlock` base, so a new host needs
-  no changes there. Exception: `GrokPluginHooksBlock` has no shape rule —
-  another adapter loads a Grok plugin's hooks file, and 1.0.13 shows no
-  observable.
+  `hooks-prohibited` read the shared base, so new hosts need no changes.
+  Exception: `GrokPluginHooksBlock` has no shape rule — another adapter
+  loads Grok plugin hooks (1.0.13 has no observable).
 
 **Ecosystems and editor tools are different problems.** An *ecosystem*
 packages and installs content (Claude plugins, Codex, Grok Build, Agent
-Plugins), so it needs provenance: two can claim one directory, and the
+Plugins, Antigravity), so it needs provenance: two can claim one directory, and the
 format rules must stay out of each other's trees. An *editor tool* (Cursor,
 Copilot, Cline, Qwen) reads its own configuration locations, which no other
 tool claims, so it needs no provenance machinery at all. Both are
 `RepositoryType` members — detection produces one set, and that enum is the
 only vocabulary. Pick the recipe that matches; following the ecosystem one
-for an editor tool builds machinery that design does not need.
+for an editor tool builds unneeded machinery.
 
 **Adding an editor tool** (Cursor is the worked example): add its directory
 name to `AGENT_TOOL_DIR_NAMES` in the `detect.py` discovery module if it reads a

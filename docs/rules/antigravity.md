@@ -3,11 +3,12 @@
 
 # Google Antigravity
 
-Validates Google Antigravity primitives: plugin manifests (`plugin.json`), lifecycle hooks (`hooks.json`), and configuration registries (`skills.json`, `agents.json`, `rules.json`). Auto-enabled when Antigravity primitives or `.agents/` / `.agent/` directories are detected.
+Validates Google Antigravity primitives: plugin manifests (`plugin.json`), lifecycle hooks (`hooks.json`), MCP server configs (`mcp_config.json`), and configuration registries (`skills.json`, `agents.json`, `rules.json`). Auto-enabled when Antigravity primitives or `.agents/` / `.agent/` directories are detected.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity skills.json, agents.json, and rules.json must conform to the Antigravity JSON config specification | error (disabled) | - |
+| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry JSON files (skills.json, agents.json, rules.json) under .agents/ or .agent/ must be valid JSON objects | error (disabled) | - |
 | [`antigravity-hooks-valid`](antigravity-hooks-valid.md) | hooks.json must declare valid Antigravity lifecycle hooks | error (auto) | - |
+| [`antigravity-mcp-valid`](antigravity-mcp-valid.md) | Antigravity mcp_config.json must declare valid MCP server configurations with supported transports ('serverUrl' or 'command') | error | - |
 | [`antigravity-plugin-json-valid`](antigravity-plugin-json-valid.md) | plugin.json must declare a valid Antigravity plugin manifest | warning (auto) | - |
 

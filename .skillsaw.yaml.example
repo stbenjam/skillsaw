@@ -73,7 +73,7 @@ rules:
     # required-fields: []
     # required-metadata: []
 
-  # Antigravity skills.json, agents.json, and rules.json must conform to the Antigravity JSON config specification
+  # Antigravity registry JSON files (skills.json, agents.json, rules.json) under .agents/ or .agent/ must be valid JSON objects
   antigravity-config-json-valid:
     enabled: false
     severity: error
@@ -83,6 +83,11 @@ rules:
     enabled: auto
     severity: error
     # extra-events: []
+
+  # Antigravity mcp_config.json must declare valid MCP server configurations with supported transports ('serverUrl' or 'command')
+  antigravity-mcp-valid:
+    enabled: true
+    severity: error
 
   # plugin.json must declare a valid Antigravity plugin manifest
   antigravity-plugin-json-valid:

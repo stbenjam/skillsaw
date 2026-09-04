@@ -74,7 +74,11 @@ class McpValidJsonRule(Rule):
     # ``grok-config-valid`` owns the "does not parse" finding for a
     # ``.grok/config.toml`` while it can run, and this rule makes it when a
     # ``version:`` pin or a forced ``--type`` gates it off.
-    surface_dependencies = ("copilot-agent-valid", "grok-config-valid")
+    surface_dependencies = (
+        "copilot-agent-valid",
+        "grok-config-valid",
+        "antigravity-mcp-valid",
+    )
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a
     # project that allowlisted its own placeholder convention must not be told
