@@ -3,9 +3,15 @@
 An Antigravity plugin conventionally lives under a customization root at
 `.agents/plugins/<name>/`, or the `.agent/`, `_agents/`, `_agent/` equivalents.
 A `plugins.json` entry or inherited registry can also name a plugin elsewhere
-in the repository. Both require `plugin.json`. Measured against `agy`
-1.1.25: a directory whose manifest does not parse is not loaded as a plugin
-at all. Its skills, agents, commands, rules, hooks and MCP servers all go
+in the repository. Both require `plugin.json`. A standalone package at the
+lint root is also recognized when its manifest declares
+`"$schema": "https://antigravity.google/schemas/v1/plugin.json"`.
+Use `--type antigravity-plugin` to check an existing root manifest without
+that declaration, including a malformed document. A collection with no root
+manifest does not acquire a missing-root-manifest finding.
+
+Measured against `agy` 1.1.25: a directory whose manifest does not parse is
+not loaded as a plugin at all. Its skills, agents, commands, rules, hooks and MCP servers all go
 unread, and the only trace is one line in the debug log.
 
 That is why a type error here is an error rather than a style note: the cost

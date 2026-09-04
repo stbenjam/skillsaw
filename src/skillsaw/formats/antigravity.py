@@ -34,6 +34,11 @@ EXCLUSIVE_ROOT_NAMES = frozenset({".agent"})
 #: a registry can also name a manifest-bearing directory elsewhere.
 PLUGIN_MANIFEST = "plugin.json"
 
+#: The official schema identifier also identifies a standalone package at
+#: the requested lint root. The loader ignores the field; discovery uses
+#: the author's exact declaration without fetching the schema.
+PLUGIN_SCHEMA_ID = "https://antigravity.google/schemas/v1/plugin.json"
+
 #: Lifecycle hooks, one file per customization root and one per plugin.
 HOOKS_FILENAME = "hooks.json"
 
