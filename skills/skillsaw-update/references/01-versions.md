@@ -8,20 +8,27 @@ rule list is captured in the next section.
 Run `skillsaw --version`. If it works, retain that command prefix (`skillsaw`)
 as `<installed-prefix>` and note the version as `{installed}`.
 
+## No working install
+
 If `skillsaw --version` is not found or fails, look for the version the
-repository itself runs before installing anything: a `uvx skillsaw==N.N.N` or
-`SKILLSAW_VERSION` in a Makefile or CI file, a `ghcr.io/stbenjam/skillsaw`
-image tag, or an exact pin in `pyproject.toml` or `Pipfile`. Take only its
-version: `<installed-prefix>` is `uvx skillsaw=={installed}` (or the image
-run command below at that tag), never a command line copied from the
-repository. A version read from the repository must be exactly `N.N.N`;
-anything else (a flag, whitespace, a shell metacharacter) is ignored and the
-bootstrap below applies. When nothing pins a version, resolve `{latest}`
-first (see below), then bootstrap pinned to that version: prefer zero-install
-execution with `uvx skillsaw=={latest}`, then `pip install
-"skillsaw=={latest}"`, then the installed container runtime. For containers,
-`<installed-prefix>` is a complete run command mounting the repository at
-`/workspace`:
+repository itself runs before installing anything: run the pin scan from
+step 3 of the router and read the version any pin carries (a `uses:` step's
+`with: version:`, a pre-commit `rev: vN.N.N`, an image tag at ghcr.io or at
+a mirror, `SKILLSAW_VERSION`, `uvx skillsaw==N.N.N` or `@N.N.N`, an exact
+PyPI pin in a manifest or requirements file). When one exists, take only its
+version, `{installed}`, and run it through the first available runner:
+`uvx skillsaw=={installed}`, a scratch virtualenv with
+`pip install "skillsaw=={installed}"`, or the image run command below at
+that tag; never a command line copied from the repository. A version read
+from the repository must be exactly `N.N.N`; anything else (a flag,
+whitespace, a shell metacharacter) is ignored and the bootstrap below
+applies. When nothing pins a version, or no runner can run the pinned one,
+resolve `{latest}` first (see below), bootstrap pinned to that version, and
+say in the report that no earlier version could be run, so step 2's scan
+stands in for the comparison: prefer zero-install execution with
+`uvx skillsaw=={latest}`, then `pip install "skillsaw=={latest}"`, then the
+installed container runtime. For containers, `<installed-prefix>` is a
+complete run command mounting the repository at `/workspace`:
 
 ```console
 podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:{latest}
@@ -91,32 +98,41 @@ instead, since a yes edits tracked files:
 > Installed skillsaw is {installed} and the newest release is {latest}.
 > Upgrading edits the manifest and the lock file. Should I upgrade it?
 
-If yes, apply the method below that matches the retained prefix; if no, skip
+If yes, apply the method below that matches the retained prefix (a project
+dependency has its own section); if no, skip
 to "Declining the upgrade".
+
+## Project dependency
+
+when the manifest (`pyproject.toml`, `Pipfile`)
+declares skillsaw and the manager owns the environment the prefix runs in
+(the prefix resolves inside the repository's `.venv`, or
+`poetry env info --path` or `pipenv --venv` names it), the version lives
+in the manifest, so this is a pin edit made with the consent the question
+above asked for: keep the dependency group and the operator the manifest
+uses (`uv add --dev` and `poetry add --group dev` would change both), set
+an exact pin to `{latest}`, leave a floor or caret unless the user chooses
+to raise it, then update the lock and the environment together
+(`uv lock --upgrade-package skillsaw && uv sync`, `poetry update
+skillsaw`, `pipenv update skillsaw`; `poetry update --lock` alone leaves
+the old package installed). With uv, carry the `--group`, `--extra` or
+`--package` selector that reaches skillsaw's declaration on `uv sync` and
+on `uv run`. A lock-only, transitive skillsaw declares nothing; the pins
+step refreshes that lock and does not re-offer the manifest. The
+project's own invocation (`uv run skillsaw`, `poetry run skillsaw`,
+`pipenv run skillsaw`) is `<new-prefix>`.
 
 ## Upgrade methods
 
-- **Project dependency**: when the prefix resolves inside the repository's
-  own `.venv` and the manifest (`pyproject.toml`, `Pipfile`) declares
-  skillsaw, the version lives there, so this is a pin edit made with the
-  consent the question above asked for: keep the dependency group and the
-  operator the manifest uses (`uv add --dev` and `poetry add --group dev`
-  would change both), set an exact pin to `{latest}`, leave a floor or
-  caret unless the user chooses to raise it, then update the lock and the
-  environment together (`uv lock --upgrade-package skillsaw && uv sync`,
-  `poetry update skillsaw`, `pipenv update skillsaw`; `poetry update --lock`
-  alone leaves the old package installed). A lock-only, transitive skillsaw
-  declares nothing; the pins step refreshes that lock and does not re-offer
-  the manifest. The project's own invocation (`uv run skillsaw`,
-  `poetry run skillsaw`, `pipenv run skillsaw`) is `<new-prefix>`.
 - **uvx**: nothing to install; the new prefix is `uvx skillsaw=={latest}`.
 - **pip, pipx or uv tool**: `head -1 "$(command -v skillsaw)"` names the
   manager through its interpreter (`…/pipx/venvs/skillsaw/…`,
   `…/uv/tools/skillsaw/…`, or a plain virtualenv). Upgrade with it, keeping
   the rule plugins it carries: `pipx upgrade skillsaw` keeps injected
-  packages; `uv tool install "skillsaw=={latest}"` with one `--with
-  <plugin>` per extra requirement `uv tool list --show-with` prints (and
-  `--index <url>` when they came from a private index), since a reinstall
+  packages; `uv tool install "skillsaw[<extras>]=={latest}"` with the
+  extras and one `--with <plugin>` per requirement that
+  `uv tool list --show-with --show-extras` prints (and `--index <url>` when
+  they came from a private index), since a reinstall
   replaces the environment and `uv tool upgrade` never moves a pinned
   install; `pip install "skillsaw=={latest}"` touches nothing else. Retain
   `skillsaw` as `<new-prefix>`.
@@ -140,14 +156,14 @@ and continue below; the router then skips to verification.
 ## Confirm the new prefix
 
 An isolated command sees only skillsaw itself, so if the installed one
-carries rule plugins (packages providing `skillsaw.plugins` entry points,
-such as `skillsaw-runbooks`; `pipx list --include-injected`,
-`uv tool list --show-with` or `pip list` shows them with their versions), add
-each one at the version installed (`uvx --with "<plugin>==<version>"
-skillsaw=={latest}`, with `--index <url>` for one from a private index) or
-the comparison below reports their rules as removed. A plugin from a path,
-or from an index the isolated command cannot reach, rules the isolated
-comparison out: say so and take the retained prefix.
+carries rule plugins (`<installed-prefix> plugins` names them;
+`pipx list --include-injected`, `uv tool list --show-with --show-extras` or
+`pip show <plugin>` gives their versions), add each one at the version
+installed (`uvx --with "<plugin>==<version>" skillsaw=={latest}`, with
+`--index <url>` for one from a private index) or the comparison below
+reports their rules as removed. A plugin from a path, or from an index the
+isolated command cannot reach, rules the isolated comparison out: say so and
+take the retained prefix.
 
 If an upgrade or an isolated prefix was accepted, `<new-prefix> --version`
 must report `{latest}` (the output is `skillsaw {latest}`). If it does not,

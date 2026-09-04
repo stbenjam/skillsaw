@@ -85,8 +85,9 @@ the scan listed nothing, say so and continue to step 4.
 
 ### 4. Triage findings from new rules
 
-If the new version reports findings from added rules, or if removed rules
-leave baseline cleanup to do, read [triage](references/04-triage.md) and
+If the new version reports findings from added rules, if removed rules
+leave baseline cleanup to do, or if the scan reports `invalid-config` for a
+removed rule's key, read [triage](references/04-triage.md) and
 present its summary table for confirmation before making changes. Carry the
 agreed buckets forward.
 

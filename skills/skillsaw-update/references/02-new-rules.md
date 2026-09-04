@@ -12,7 +12,7 @@ comm -13 <(grep -oE '^  [a-z][a-z0-9-]*' /tmp/skillsaw-rules-old.txt | sort) <(g
 Rules printed by `comm -23` with the files swapped were removed: findings or
 baseline entries naming them are stale, and the triage step handles them.
 
-## Lift the config version gate
+## Find the active config
 
 The config file's top-level `version:` gates rule activation: a rule whose
 `since` is newer than that value is skipped unless the file names it, and a
@@ -20,12 +20,20 @@ config with no `version` key is read as `0.6.0` (skillsaw prints a warning
 saying so). Left stale, it switches off the rules added since then, and the
 scan below would report nothing for them. Find the active config:
 `<new-prefix> lint -v` prints `Using config: {config}` for `.skillsaw.yaml`,
-`.skillsaw.yml`, `.claudelint.yaml` or `.claudelint.yml`. No such line means
-no config file exists and nothing is gated, so skip this section. Under a
-container prefix the printed path is the container's: strip `/workspace/` to
-reach the host file. A path outside the repository is not this repository's
-config: report it and do not edit it. Otherwise `{config-version}` is the
-`version:` value in `{config}`, or `0.6.0` when the key is absent.
+`.skillsaw.yml`, `.claudelint.yaml` or `.claudelint.yml`. A non-zero exit
+with `Error loading config:` on stderr means the active config could not be
+loaded: stop and report that error. No such line on a run that succeeds
+means no config file exists and nothing is gated, so skip this section.
+Under a container prefix the printed path is the container's: strip
+`/workspace/` to reach the host file. A path above the repository is a
+parent config skillsaw inherits (`find_config` walks up): never edit it;
+read `{config-version}` from it, and when its gate is below `{latest}` ask
+whether to lift it there, or run the scans through a temporary copy that
+carries `version: "{latest}"`, passed with `-c`, so the comparison still
+sees the new rules. Otherwise `{config-version}` is the `version:` value in
+`{config}`, or `0.6.0` when the key is absent.
+
+## Lift the config version gate
 
 Do this before deciding whether anything is new: the list comparison above
 sees only the binaries, while a gate below `{installed}` keeps rules off that

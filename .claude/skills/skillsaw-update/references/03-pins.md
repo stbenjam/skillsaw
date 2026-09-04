@@ -20,10 +20,14 @@ already own some pins: each `package-ecosystem:` entry in
 `uv`, `docker` for Dockerfiles but not Containerfiles, `pre-commit`), and
 Renovate (`renovate.json*`, `.renovaterc*`, `.github/renovate.json*`,
 `.gitlab/renovate.json*`) covers actions, Dockerfiles, GitLab CI and PyPI by
-default but pre-commit only when its `pre-commit` manager is enabled. Offer
-to bump only what no bot covers (action `version:` inputs and defaults,
-`SKILLSAW_VERSION`, mirrored registry paths) unless the user wants them all
-now. Track each edited file for the final summary.
+default but pre-commit only when its `pre-commit` manager is enabled. A bot
+entry covers only the `directory:` it names and what its filters admit
+(Renovate can disable a manager, ignore paths or exclude skillsaw through
+package rules), so a pin outside that is uncovered, and uncertain coverage
+means the pin is offered. Offer to bump only what no bot covers (action
+`version:` inputs and defaults, `SKILLSAW_VERSION`, mirrored registry paths)
+unless the user wants them all now. Track each edited file for the final
+summary.
 
 ## GitHub Actions and action definitions
 
