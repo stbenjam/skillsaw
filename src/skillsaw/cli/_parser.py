@@ -336,6 +336,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Path to .skillsaw.yaml config file (default: auto-discover)",
     )
     _add_color_flag(explain_parser)
+    explain_parser.add_argument(
+        "--pager",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="pager",
+        help="Use a pager (e.g. less) to display documentation (default: auto when tty present)",
+    )
 
     # --- docs ---
     docs_parser = subparsers.add_parser(

@@ -181,3 +181,137 @@ def test_rule_enabled_reason_matches_is_rule_enabled(temp_dir, config_yaml):
         )
         assert enabled == reason_enabled, rule.rule_id
         assert reason, rule.rule_id
+
+
+# --- explain pager behavior ---
+
+
+def test_explain_no_pager_flag(temp_dir):
+    result = run_explain("content-weak-language", str(temp_dir), "--no-pager")
+    assert result.returncode == 0
+    assert "content-weak-language" in result.stdout
+
+
+def test_explain_pager_flag_forced(temp_dir):
+    env = dict(os.environ)
+    env["MANPAGER"] = ""
+    env["PAGER"] = f"{sys.executable} -c \"import sys; print('PAGED:'); print(sys.stdin.read())\""
+    args = [
+        sys.executable,
+        "-m",
+        "skillsaw",
+        "explain",
+        "content-weak-language",
+        str(temp_dir),
+        "--pager",
+    ]
+    result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+    assert result.returncode == 0
+    assert "PAGED:" in result.stdout
+    assert "content-weak-language" in result.stdout
+
+
+def test_explain_pager_flag_forced_with_empty_pager_env(temp_dir):
+    env = dict(os.environ)
+    env["PAGER"] = ""
+    env["MANPAGER"] = ""
+    args = [
+        sys.executable,
+        "-m",
+        "skillsaw",
+        "explain",
+        "content-weak-language",
+        str(temp_dir),
+        "--pager",
+    ]
+    result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+    assert result.returncode == 0
+    assert "content-weak-language" in result.stdout
+
+
+def test_explain_interactive_pty_uses_pager(temp_dir):
+    try:
+        import pty
+    except ImportError:
+        pytest.skip("pty module not available on this platform")
+
+    master, slave = pty.openpty()
+    env = dict(os.environ)
+    env["MANPAGER"] = ""
+    env["PAGER"] = (
+        f"{sys.executable} -c \"import sys; print('PTY_PAGED:'); print(sys.stdin.read())\""
+    )
+    env["TERM"] = "xterm"
+
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "skillsaw", "explain", "content-weak-language", str(temp_dir)],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env=env,
+        close_fds=True,
+    )
+    os.close(slave)
+    output = b""
+    while True:
+        try:
+            chunk = os.read(master, 1024)
+            if not chunk:
+                break
+            output += chunk
+        except OSError:
+            break
+    os.close(master)
+    proc.wait()
+    text = output.decode("utf-8", errors="replace")
+    assert proc.returncode == 0
+    assert "PTY_PAGED:" in text
+    assert "content-weak-language" in text
+
+
+def test_explain_interactive_pty_no_pager_flag(temp_dir):
+    try:
+        import pty
+    except ImportError:
+        pytest.skip("pty module not available on this platform")
+
+    master, slave = pty.openpty()
+    env = dict(os.environ)
+    env["MANPAGER"] = ""
+    env["PAGER"] = (
+        f"{sys.executable} -c \"import sys; print('PTY_PAGED:'); print(sys.stdin.read())\""
+    )
+    env["TERM"] = "xterm"
+
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "skillsaw",
+            "explain",
+            "--no-pager",
+            "content-weak-language",
+            str(temp_dir),
+        ],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env=env,
+        close_fds=True,
+    )
+    os.close(slave)
+    output = b""
+    while True:
+        try:
+            chunk = os.read(master, 1024)
+            if not chunk:
+                break
+            output += chunk
+        except OSError:
+            break
+    os.close(master)
+    proc.wait()
+    text = output.decode("utf-8", errors="replace")
+    assert proc.returncode == 0
+    assert "PTY_PAGED:" not in text
+    assert "content-weak-language" in text

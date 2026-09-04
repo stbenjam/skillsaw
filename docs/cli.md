@@ -86,6 +86,7 @@ Show documentation and effective configuration for a rule
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
+| `--pager`, `--no-pager` | Use a pager (e.g. less) to display documentation (default: auto when tty present) |  |
 
 ## `skillsaw docs`
 
