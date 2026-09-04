@@ -30,6 +30,12 @@ document. `[hooks.state]` is the one table the TOML file has that the JSON one
 does not: Codex writes per-hook enablement and trust there, ignores a
 project layer's copy, and it is not an event.
 
+The JSON file's root accepts only `description` and `hooks`. Unknown root
+fields, including `$schema`, make Codex refuse the file. `description` must
+be a string or null. Group and handler metadata have different rules: Codex
+ignores unknown fields there, so skillsaw reports them as warnings and
+`extra-fields` can allow intentional metadata.
+
 In JSON, `matcher: null` means unset. Command handlers also accept null for
 `commandWindows` (or `command_windows`), `statusMessage`, `timeout`, and
 `additionalContextLimit`; MCP tool handlers accept it for `statusMessage`

@@ -98,6 +98,9 @@ CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
 #: location once, the way the Muse leg reads ``muse.TOOL_DIR_NAME``.
 CODEX_DIR_NAME = ".codex"
 CODEX_HOOKS_FILENAME = "hooks.json"
+
+#: The released JSON HooksFile wrapper rejects unknown fields.
+CODEX_HOOK_FILE_FIELDS = frozenset({"description", "hooks"})
 CODEX_CONFIG_FILENAME = "config.toml"
 
 #: The tables a ``config.toml`` writes its two committed surfaces under.

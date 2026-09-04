@@ -31,6 +31,7 @@ from skillsaw.formats.codex import (
     CODEX_HOOK_EVENTS,
     CODEX_HOOKS_FILENAME,
     CODEX_HOOK_FIELD_ALIASES,
+    CODEX_HOOK_FILE_FIELDS,
     CODEX_HOOK_HANDLER_TYPES,
     CODEX_HOOK_MATCHER_EVENTS,
     CODEX_HOOK_MATCHER_TYPES,
@@ -319,6 +320,26 @@ class CodexHooksValidRule(Rule):
                     )
                 )
                 continue
+
+            # The TOML block supplies only its rendered hooks table here,
+            # never the enclosing config.toml. JSON's root is stricter than
+            # groups and handlers, whose unknown metadata Codex ignores.
+            unknown = [key for key in data if key not in CODEX_HOOK_FILE_FIELDS]
+            if unknown:
+                violations.append(
+                    self.violation(
+                        f"Unknown hooks file fields {_sample(unknown)}; Codex refuses "
+                        "the file. Keep only 'description' and 'hooks' at the root",
+                        file_path=block.path,
+                    )
+                )
+            if not isinstance(data.get("description"), (str, type(None))):
+                violations.append(
+                    self.violation(
+                        "Hooks file 'description' must be a string or null",
+                        file_path=block.path,
+                    )
+                )
 
             if "hooks" not in data:
                 violations.append(
