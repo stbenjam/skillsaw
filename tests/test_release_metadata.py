@@ -75,6 +75,6 @@ def test_glob_pathspecs_in_skill_recipes_also_match_the_repo_root():
                 continue
             pathspecs = command.split(" -- ", 1)[1]
             for nested in re.findall(r"'\*\*/([^']+)'", pathspecs):
-                assert f"'{nested}'" in pathspecs or f" {nested} " in f" {pathspecs} ", (
-                    f"{path.relative_to(REPO_ROOT)}: '**/{nested}' needs a bare '{nested}' too"
-                )
+                assert (
+                    f"'{nested}'" in pathspecs or f" {nested} " in f" {pathspecs} "
+                ), f"{path.relative_to(REPO_ROOT)}: '**/{nested}' needs a bare '{nested}' too"

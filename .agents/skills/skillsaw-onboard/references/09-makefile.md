@@ -6,14 +6,15 @@ Resolve the latest version to pin:
 python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://pypi.org/pypi/skillsaw/json', timeout=10))['info']['version'])"
 ```
 
-If `python3` is unavailable:
+If `python3` is unavailable or the lookup fails:
 
 ```console
 git ls-remote --refs --tags --sort='v:refname' https://github.com/stbenjam/skillsaw.git 'v[0-9]*.[0-9]*.[0-9]*' | grep -E 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' | tail -1 | sed 's|.*refs/tags/v||'
 ```
 
 The result must look like `N.N.N`; a floating `v0` tag exists beside the
-releases, which is what the pattern and the `grep` keep out.
+releases, which is what the pattern and the `grep` keep out. If it does not,
+stop and report the value.
 
 Ask whether to use uvx or the installed container runtime.
 

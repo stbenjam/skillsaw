@@ -84,16 +84,19 @@ If yes, follow the method behind the retained prefix:
 - **pip, pipx or uv tool**: identify the manager first; the first line of
   the `skillsaw` script (`head -1 "$(command -v skillsaw)"`) names its
   interpreter (`…/pipx/venvs/skillsaw/…`, `…/uv/tools/skillsaw/…`, or a
-  plain virtualenv). Then pin explicitly with that manager:
-  `pipx install --force "skillsaw=={latest}"`,
-  `uv tool install "skillsaw=={latest}"`, or
-  `pip install "skillsaw=={latest}"`. `uv tool upgrade` keeps the constraint
-  of a pinned install and exits 0 without upgrading, so it is not used.
-  Retain `skillsaw` as `<new-prefix>`.
+  plain virtualenv). Then upgrade with that manager, keeping the rule
+  plugins it carries: `pipx upgrade skillsaw` keeps injected packages
+  (`pipx list --include-injected` shows them); `uv tool install
+  "skillsaw=={latest}"` with one `--with <plugin>` per extra requirement
+  `uv tool list --show-with` prints, because a reinstall replaces the
+  environment and `uv tool upgrade` keeps a pinned install's constraint
+  without upgrading; `pip install "skillsaw=={latest}"` leaves the other
+  packages in its environment alone. Retain `skillsaw` as `<new-prefix>`.
 - **Container**: pull the pinned image
   (`podman pull ghcr.io/stbenjam/skillsaw:{latest}` or `docker pull ...`) and
   define `<new-prefix>` as the run command from "Installed version" with
-  `{latest}` in the tag.
+  `{latest}` in the tag. The image carries skillsaw alone; an install that
+  relies on rule plugins takes the `uvx --with` form below instead.
 
 If no, do not modify the local installation. Offer an isolated, zero-install
 command as `<new-prefix>` instead, such as `uvx skillsaw=={latest}` or the
@@ -107,8 +110,11 @@ and continue below; the router then skips to verification.
 ## Confirm the new prefix
 
 An isolated command sees only skillsaw itself, so if the installed one
-carries rule plugins, add them (`uvx --with <plugin> skillsaw=={latest}`) or
-the comparison below reports their rules as removed.
+carries rule plugins (packages providing `skillsaw.plugins` entry points,
+such as `skillsaw-runbooks`; `pipx list --include-injected`,
+`uv tool list --show-with` or `pip list` shows them), add them
+(`uvx --with <plugin> skillsaw=={latest}`) or the comparison below reports
+their rules as removed.
 
 If an upgrade or an isolated prefix was accepted, `<new-prefix> --version`
 must report `{latest}` (the output is `skillsaw {latest}`). If it does not,

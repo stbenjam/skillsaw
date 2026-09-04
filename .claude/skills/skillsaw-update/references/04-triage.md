@@ -39,9 +39,11 @@ has just agreed to baseline: `<new-prefix> baseline` records every current
 non-info finding, so refreshing over an unrelated regression from an existing
 rule would accept it silently. If other findings are present, delete the
 stale entries by hand instead of regenerating, or resolve those findings
-first. A `.skillsaw.yaml` key the new version reports as `invalid-config`
-belongs to a removed rule: delete it. A key it still accepts is an alias of a
-live rule and stays.
+first. `invalid-config` also fires for a malformed option of a live rule,
+so delete a rule's key from `.skillsaw.yaml` only when the message reads
+`Unknown rule '<id>' in config` and that ID is in the removed list; repair an
+option-level finding instead. A key the new version still accepts is an
+alias of a live rule and stays.
 
 ## 3. Configure
 

@@ -63,11 +63,14 @@ definitions, Makefile targets, pre-commit hooks, container image tags in
 Dockerfiles, Containerfiles or GitLab CI, PyPI requirement pins):
 
 ```console
-git grep -lE '(^|[^/[:alnum:]._-])(stbenjam/skillsaw|SKILLSAW_VERSION|skillsaw *(\[[^]]*\])? *(={1,3}|~=|>=?|<=?) *["{$0-9])'
+git grep --untracked -lE 'stbenjam/skillsaw|SKILLSAW_VERSION|(^|[^/[:alnum:]._-])skillsaw *(\[[^]]*\])? *(={1,3}|~=|>=?|<=?) *["{$0-9]'
 ```
 
-Outside a git work tree, use `grep -rlE --exclude-dir=.git` with the same
-pattern. If it lists any file, name them as {locations} and ask:
+The first two alternatives take any prefix, so `ghcr.io/stbenjam/skillsaw`
+and the pre-commit URL route here; the boundary applies only to the bare
+package name. Outside a git work tree, use `grep -rlE --exclude-dir=.git`
+with the same pattern. If it lists any file, name them as {locations} and
+ask:
 
 > I found skillsaw pinned in {locations}. Bumping them to {latest} keeps CI
 > and local runs on the version just installed. Should I update those pins?
