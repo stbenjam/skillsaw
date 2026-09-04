@@ -15,75 +15,52 @@
 
 ## Why
 
-`.grok-plugin/plugin-index.json` is the display catalog beside
-`marketplace.json`. The user guide calls it optional and "for display only",
-which undersells it: it is the *sole* source of the component listing `grok
-plugin list --json --available` shows, so it is what someone reads before
-deciding to install anything.
+In Grok Build marketplaces, `.grok-plugin/plugin-index.json` acts as the display
+catalog alongside `marketplace.json`. When users run `grok plugin list
+--available`, Grok uses this index to display plugin summaries, available skills,
+commands, and version info.
 
-For a url source Grok gates that listing on `sha` equality with the catalog
-entry. Measured against Grok Build 1.0.13: with the two shas equal the
-listing showed every skill, command, agent, hook and MCP server; with them
-different the `components` block was **absent**, with no diagnostic. A
-`require_sha` deployment installs from the index's `sha` as well, so drift
-is a supply-chain question rather than cosmetics.
+Keeping `plugin-index.json` in sync with `marketplace.json` ensures that what
+users see in the marketplace browser accurately reflects what gets installed:
 
-For a local source there is no `sha` to gate on, so a stale index is
-displayed verbatim while the plugin on disk disagrees — measured with a
-plugin shipping one skill against an index claiming three, and the index
-won the display. Nothing in the runtime will ever flag it.
+- For remote Git repository plugins, Grok matches the `sha` between
+  `marketplace.json` and `plugin-index.json` to verify component details. If
+  these commit hashes drift, component listings may be omitted from display.
+- For local plugin sources, keeping component listings updated ensures the
+  displayed skills match what the plugin actually provides on disk.
 
-A name in the index with no catalog entry is silently ignored, a malformed
-index is silently ignored, and an index that is not beside its catalog is
-never read at all.
-
-The rule does not fire when there is no index. That is the documented case,
-and it is harmless.
+This rule checks that `plugin-index.json` accurately reflects the contents of
+`marketplace.json`. If a repository does not include `plugin-index.json`, this
+rule simply stands down, as the index file is optional.
 
 ## Severity
 
-**Warning** throughout. The catalog still loads and every plugin still
-installs; what drifts is what the marketplace browser shows before anyone
-installs anything.
+Findings carry **Warning** severity. The marketplace catalog remains
+functional, and plugins can still be installed; keeping parity ensures a smooth
+and accurate browsing experience for users.
 
 ## What it checks
 
-One consolidated finding per index file, naming up to three examples of
-each disagreement:
+Skillsaw reports parity discrepancies across the index and catalog:
 
-- Plugin names in the catalog but not in the index, and index names with no
-  catalog entry.
-- A `sha` present on one side and not the other.
-- `sha` values that disagree. Compared case-insensitively, because the
-  installer treats a commit id that way and
-  [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md) already
-  owns the casing on its own.
-- Index keys whose value is not an object. Grok has nothing to display for
-  one, and the key is matched, so no other check here would name it.
-- For a **local** source, skills the index lists that the plugin does not
-  ship, and skills it ships that the index does not list. An entry with no
-  `components`, no `skills` under it, or a non-list `skills` displays no
-  skills at all, so each reads as an empty listing rather than a check to
-  skip. A skill matches under the SKILL.md frontmatter `name` *or* its
-  directory name: the official generator writes the first and falls back to
-  the second, and a plugin whose two differ is not drift.
+- Plugin names present in one file but missing from the other.
+- Commit `sha` values that differ between the catalog and index (compared
+  case-insensitively).
+- Plugin entries in `plugin-index.json` whose values are not objects.
+- For local plugins: skills listed in the index that do not match the skills
+  present in the plugin source on disk. Skills match by either their
+  `SKILL.md` frontmatter `name` or their directory name.
 
-Two more, each their own finding:
+Additional checks:
 
-- An index whose JSON is invalid, or whose `plugins` is not an object keyed
-  by plugin name. Grok ignores it without a word, so the browser falls back
-  to a listing that is wrong for any plugin declaring inline `hooks` or
-  `mcpServers` — those report `has_hooks: false, has_mcp: false` while both
-  load at runtime.
-- A `plugin-index.json` at the marketplace root or beside
-  `.claude-plugin/marketplace.json` while the catalog Grok reads is in
-  `.grok-plugin/`. The index must sit beside the catalog it belongs to; one
-  a level up was measured as never read. It is compared against nothing —
-  Grok does not read it, so it has nothing to drift from.
+- Syntax errors in `plugin-index.json`, or an index where `plugins` is not an
+  object.
+- Placement: ensures `plugin-index.json` is located in `.grok-plugin/` alongside
+  `marketplace.json` so Grok can discover it.
 
 ## Examples
 
-**Bad** — the pin drifted, so the browser shows nothing for `annotations`:
+**Bad** — the index commit `sha` has drifted from the catalog entry:
 
 ```json
 {
@@ -98,7 +75,7 @@ Two more, each their own finding:
 }
 ```
 
-**Good** — the same `sha` the catalog entry carries:
+**Good** — matching commit `sha` and accurate component details:
 
 ```json
 {
@@ -119,15 +96,13 @@ Two more, each their own finding:
 
 ## How to fix
 
-- Regenerate the index from the catalog rather than editing it by hand. The
-  official marketplace generates it in CI for exactly this reason.
-- Keep the index beside the catalog Grok reads — `.grok-plugin/` — and
-  delete any copy left at the marketplace root or in `.claude-plugin/`.
-- Drop index entries for plugins the catalog no longer lists.
+- Regenerate `plugin-index.json` whenever updating plugins in `marketplace.json`.
+- Place `plugin-index.json` in `.grok-plugin/` directly alongside `marketplace.json`.
+- Remove entries from `plugin-index.json` when removing plugins from `marketplace.json`.
 
-A repository whose index is generated from a source the checkout does not
-hold can keep the name and `sha` checks while dropping the component
-comparison:
+If your workflow generates index components during a separate packaging or CI
+step, you can disable component-level checks while preserving catalog `sha`
+validation:
 
 ```yaml
 rules:

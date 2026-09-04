@@ -1,122 +1,83 @@
 ## Why
 
-`.grok/hooks/*.json` automates shell commands and HTTP calls during Grok
-Build agent lifecycle events — right before a tool runs, when a session
-starts, when the agent finishes. The files are committed, so those commands
-are shared by everyone working on the project.
+`.grok/hooks/*.json` allows you to automate shell commands and HTTP requests
+during Grok Build agent lifecycle events — such as right before a tool runs,
+when a session begins, or when the agent completes its work. Because hooks are
+committed to the repository, they provide a reliable, shared mechanism for
+running checks and automations across your team.
 
-Grok prints no diagnostic when it refuses something. A rejected file, a
-dropped matcher group, a skipped event and a discarded handler all look
-identical from the outside: a hook that had nothing to do. `grok inspect
---json` reports no configuration warning for any of them. This rule reads
-each file the way Grok's loader does, so the mistake shows up before the
-silence does.
+Grok Build reads all `*.json` files directly inside `.grok/hooks/` and merges
+their hook definitions. If a hook file has syntax or structural issues, Grok
+may skip the file or individual handlers quietly during headless sessions.
+This rule verifies your `.grok/hooks/*.json` files against Grok's supported
+events, handler types, and options so that your automations run reliably.
 
-Grok reads the directory as a flat `*.json` glob and merges every file in
-it, so a finding names the file it belongs to. A file in a subdirectory, or
-under any other extension, is never loaded at all.
-
-The commands themselves are a separate concern — they are scanned for risky
-patterns by [`hooks-dangerous`](hooks-dangerous.md) and can be inventoried
-against an explicit allowlist with
-[`hooks-prohibited`](hooks-prohibited.md).
+Command execution patterns are also scanned for security by
+[`hooks-dangerous`](hooks-dangerous.md) and can be inventoried against an
+explicit allowlist with [`hooks-prohibited`](hooks-prohibited.md).
 
 ## Severity
 
-A finding's severity is how much of the file the defect costs.
+Severity reflects how much of the hook configuration is affected by an issue:
 
-**Errors** — nothing in the file runs. Grok reads it with a parser that
-refuses the whole document rather than the offending part, so one mistake
-here costs every hook in the file, including the ones under other events.
+**Errors** — issues that prevent Grok Build from loading the hooks file:
 
-- Invalid JSON, or a non-finite number (`NaN`, `Infinity`, `-Infinity`),
-  which Grok's parser does not accept.
-- A UTF-8 byte-order mark at the start of the file. Grok's reader does not
-  strip one and refuses the whole file; most editors and every JSON viewer
-  hide the mark, so the file looks correct everywhere you would go to check
-  it. Only Grok is reported for this — no other host skillsaw supports has
-  been measured, and reporting one that tolerates a BOM would be a false
-  positive.
-- No top-level `hooks` object, or one that is not an object.
-- An event whose value is not an array, a matcher group that is not an
-  object, a group with no `hooks` key or a non-array one, or a handler that
-  is not an object.
-- A handler with no `type`, or a `null` one. There is no default, and Grok
-  reads a `null` as the key being absent.
-- A `matcher` that is not a string — a list or an object, say. Grok's field
-  is a string; anything else never reaches the regex compiler.
-- A known field carrying the wrong JSON type: `type`, `command` and `url`
-  are strings, `timeout` is a non-negative integer, and `env` is an object
-  whose values are strings. `"timeout": "30"`, `30.0`, `-1` and `true` each
-  cost the file. A large `timeout` is fine — `Stop` and `SubagentStop`
-  default to 600 seconds because gates run test suites — up to
-  `18446744073709551615`. Grok reads the field as a 64-bit unsigned integer
-  and JSON has no integer width, so one digit past that refuses the file
-  exactly as `30.0` does. A JSON `null` is not one of those wrong types: it
-  is the key being absent, and costs whatever omitting the key costs —
-  nothing for `timeout`, `env` or a field the handler's type does not
-  require, and one handler for a `command` handler's `command` or an `http`
-  handler's `url`.
+- Invalid JSON syntax, non-finite numbers (`NaN`, `Infinity`, `-Infinity`), or
+  a file starting with a UTF-8 Byte Order Mark (BOM).
+- Missing top-level `hooks` object, or an object that is not a dictionary.
+- Event values that are not arrays, matcher groups that are not objects, or
+  matcher groups missing their `hooks` array.
+- Handlers missing a `type` field.
+- A `matcher` that is not a string.
+- Handler fields with incompatible data types: `type`, `command`, and `url`
+  must be strings; `timeout` must be a non-negative integer; and `env` must be
+  an object with string values.
 
-**Warnings** — the file loads and something in it does not fire.
+**Warnings** — the file loads, but specific events or handlers may not run:
 
-- An unrecognized event name. Grok skips the entries under it so the rest of
-  the file still loads, which is why a typo is invisible at runtime.
-- A `matcher` that does not compile. Grok compiles matchers with Rust's
-  regex engine, which differs from Python's in both directions, so skillsaw
-  checks both and warns rather than errors. Unicode classes, the
-  character-class set operators, the `(?<name>...)` capture group and the
-  `\z` anchor are Rust's spelling: skillsaw rewrites them rather than
-  calling a working matcher broken. Look-around (`(?=`, `(?!`, `(?<=`,
-  `(?<!`), backreferences (`\1`, `(?P=name)`), the `\Z` anchor, and
-  conditional, comment and atomic groups (`(?(1)`, `(?#`, `(?>`) are the
-  other direction — Python compiles them and Rust does not, so skillsaw
-  names the construct instead of waiting for a compile error that never
-  comes. The rest is the syntax the two dialects share. A matcher longer than 1,000
-  characters is left alone: Grok sets no
-  length limit, so length is not a defect, and a hooks file is untrusted
-  input that the syntax check has no reason to scan without a bound.
-- A `command` handler with no `command` or a `null` one, an `http` handler
-  with no `url` or a `null` one, or a `type` other than `command` and
-  `http`. Each drops that one handler; siblings in the same group still run.
-- An empty `hooks` object or event array — valid, and it configures nothing.
+- Unrecognized hook event names.
+- A regex `matcher` that does not compile under Rust's regex engine. Rust's
+  regex syntax supports Unicode property classes (`\p{...}`) and set operations
+  (`&&`, `--`, `~~`), but does not support lookarounds, backreferences, or
+  conditional groups. Matchers longer than 1,000 characters are skipped to keep
+  checks responsive.
+- A `command` handler missing a `command` string, or an `http` handler missing
+  a `url` string.
+- Handlers specifying an unsupported `type` (supported types are `command` and
+  `http`).
+- An empty `hooks` object or empty event array (valid JSON, but configures no
+  actions).
 
-**Info** — the file loads, the hook runs, and one thing in it is ignored.
+**Info** — helpful configuration tips:
 
-- An `env` entry naming a variable the hook runner injects
-  (`GROK_HOOK_EVENT`, `GROK_HOOK_NAME`, `GROK_SESSION_ID`,
-  `GROK_WORKSPACE_ROOT`, `CLAUDE_PROJECT_DIR`). The runner's value always
-  wins, so the declared one never reaches the process.
-- A `matcher` on `Stop` or `UserPromptSubmit`. Those events always fire, so
-  the pattern is kept in the configuration and never consulted — Grok does
-  not even compile it.
+- Environment variables in `env` that are automatically provided by Grok's
+  hook runner (such as `GROK_HOOK_EVENT`, `GROK_SESSION_ID`, or
+  `GROK_WORKSPACE_ROOT`), as the runner's values take precedence.
+- Defining a `matcher` on events like `Stop` or `UserPromptSubmit` where
+  matchers are not evaluated by Grok.
 
 ## Event names
 
-Grok accepts several spellings of each event and normalizes them, so a hooks
-file shared with Claude Code or Cursor loads unchanged. All of these are
-accepted and none is a finding:
+Grok accepts several spellings of each event and normalizes them, making it easy
+to share hooks across tools like Claude Code or Cursor. Accepted variations
+include:
 
-- The 15 names Grok documents: `SessionStart`, `SessionEnd`,
-  `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-  `PermissionDenied`, `Stop`, `StopFailure`, `StopCancelled`,
-  `Notification`, `SubagentStart`, `SubagentStop`, `PreCompact`,
-  `PostCompact`.
-- `SubagentEnd`, Grok's documented alias for `SubagentStop`.
-- The `snake_case` spelling of each, the wire name the hook itself receives
-  in `GROK_HOOK_EVENT`.
-- The `camelCase` spelling of each, with one exception: `userPromptSubmit`
-  is *not* accepted. Write `UserPromptSubmit`, `user_prompt_submit`, or
-  Cursor's `beforeSubmitPrompt`.
-- Cursor's per-operation names, which map to the generic tool events:
-  `beforeShellExecution`, `beforeMCPExecution` and `beforeReadFile` become
-  `PreToolUse`; `afterShellExecution`, `afterMCPExecution`, `afterFileEdit`,
-  `afterAgentResponse` and `afterAgentThought` become `PostToolUse`.
+- Standard Grok event names: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
+  `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionDenied`, `Stop`,
+  `StopFailure`, `StopCancelled`, `Notification`, `SubagentStart`, `SubagentStop`,
+  `PreCompact`, `PostCompact`.
+- Documented aliases: `SubagentEnd` (alias for `SubagentStop`).
+- The `snake_case` representation passed to `GROK_HOOK_EVENT`.
+- Cased variants, with the note that `userPromptSubmit` should be written as
+  `UserPromptSubmit`, `user_prompt_submit`, or Cursor's `beforeSubmitPrompt`.
+- Cursor lifecycle events: `beforeShellExecution`, `beforeMCPExecution`, and
+  `beforeReadFile` map to `PreToolUse`; `afterShellExecution`,
+  `afterMCPExecution`, `afterFileEdit`, `afterAgentResponse`, and
+  `afterAgentThought` map to `PostToolUse`.
 
 ## Examples
 
-**Bad** — the string `timeout` costs every hook in the file, including the
-`Stop` hook under another event:
+**Bad** — a string `timeout` prevents the file from loading:
 
 ```json
 {
@@ -135,8 +96,7 @@ accepted and none is a finding:
 }
 ```
 
-**Good** — one matcher group per event, each handler carrying the field its
-type needs:
+**Good** — well-formed matcher groups and appropriate handler options:
 
 ```json
 {
@@ -163,26 +123,20 @@ type needs:
 
 ## How to fix
 
-- Write `timeout` as a non-negative integer of seconds (`30`, not `30.0` or
-  `"30"`), and give a `Stop` or `SubagentStop` gate enough of them for the
-  command it runs.
-- Give every handler a `type`, and the field that type needs: `command` for
-  a `command` handler, `url` for an `http` one.
-- Keep `env` values as strings, and set anything the runner already injects
-  inside the script rather than in `env`.
-- Match one of the event spellings above, and drop a `matcher` from `Stop`
-  and `UserPromptSubmit` — put the condition in the script, which receives
-  the event as JSON on stdin.
-- Split a matcher into a group per pattern rather than reaching for a
-  construct Rust's regex engine does not have.
+- Specify `timeout` as a non-negative integer of seconds (`30`, rather than
+  `30.0` or `"30"`). For longer tasks like test suites in `Stop` hooks, generous
+  timeouts (such as 600 seconds) work well.
+- Provide each handler with `"type": "command"` and a `command` string, or
+  `"type": "http"` and a `url` string.
+- Keep `env` values as strings. Variables provided by Grok's runner do not
+  need to be repeated in `env`.
+- Use standard Grok event names or supported aliases.
 
-Grok adds events faster than skillsaw releases. Rather than turning the rule
-off, name the new one:
+If Grok introduces newer event names, you can allow them in `.skillsaw.yaml`:
 
 ```yaml
 rules:
   grok-hooks-valid:
-    # An event name Grok dispatches that this release has not heard of.
     extra-events:
       - PreSomethingNew
 ```
