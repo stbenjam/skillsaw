@@ -79,46 +79,52 @@ def _run_explain(args):
     )
     if plugin_name:
         header_meta += f", plugin: {plugin_name}"
-    print(f"{c['bold']}{args.rule_id}{c['reset']} ({header_meta})")
+
+    out: list[str] = []
+
+    def emit(text: str = "") -> None:
+        out.append(text)
+
+    emit(f"{c['bold']}{args.rule_id}{c['reset']} ({header_meta})")
     if requested_id != args.rule_id:
-        print(f"('{requested_id}' is a legacy alias of '{args.rule_id}')")
+        emit(f"('{requested_id}' is a legacy alias of '{args.rule_id}')")
     if default_rule.deprecated is not None:
         notice = (
             f"DEPRECATED since {default_rule.deprecated} — " "will be removed in a future release"
         )
         if default_rule.replaced_by:
             notice += f"; use '{default_rule.replaced_by}' instead"
-        print(f"{c['red']}{notice}{c['reset']}")
+        emit(f"{c['red']}{notice}{c['reset']}")
         if default_rule.deprecated_reason:
-            print(default_rule.deprecated_reason)
-    print()
-    print(default_rule.description)
+            emit(default_rule.deprecated_reason)
+    emit()
+    emit(default_rule.description)
 
     long_docs = load_rule_docs(args.rule_id)
     if long_docs:
-        print()
-        print(long_docs)
+        emit()
+        emit(long_docs)
 
     if default_rule.repo_types:
         # repo_types may mix RepositoryType members with plugin type names.
         repo_types_str = ", ".join(sorted(getattr(t, "value", t) for t in default_rule.repo_types))
-        print()
-        print(f"{c['bold']}Applies to repo types:{c['reset']} {repo_types_str}")
+        emit()
+        emit(f"{c['bold']}Applies to repo types:{c['reset']} {repo_types_str}")
 
-    print()
-    print(f"{c['bold']}Configuration{c['reset']} (.skillsaw.yaml):")
-    print("  rules:")
-    print(f"    {args.rule_id}:")
+    emit()
+    emit(f"{c['bold']}Configuration{c['reset']} (.skillsaw.yaml):")
+    emit("  rules:")
+    emit(f"    {args.rule_id}:")
     enabled_str = LinterConfig._yaml_value(default_enabled)
-    print(f"      enabled: {enabled_str}        # true | false | auto")
-    print(f"      severity: {default_rule.severity.value}     " f"# error | warning | info")
+    emit(f"      enabled: {enabled_str}        # true | false | auto")
+    emit(f"      severity: {default_rule.severity.value}     " f"# error | warning | info")
     for param_name, param_info in default_rule.config_schema.items():
         default_val = LinterConfig._yaml_value(param_info.get("default"), indent=8)
         desc = param_info.get("description", "")
         if default_val.startswith("\n"):
-            print(f"      {param_name}:  # {desc}{default_val}")
+            emit(f"      {param_name}:  # {desc}{default_val}")
         else:
-            print(f"      {param_name}: {default_val}  # {desc}")
+            emit(f"      {param_name}: {default_val}  # {desc}")
 
     config, config_path = load_config(args, args.path)
     context = RepositoryContext(
@@ -158,16 +164,20 @@ def _run_explain(args):
         effective_severity = "(invalid severity in config)"
 
     state = f"{c['green']}enabled{c['reset']}" if enabled else f"{c['red']}disabled{c['reset']}"
-    print()
-    print(
+    emit()
+    emit(
         f"{c['bold']}Effective in {(safe_resolve(args.path) or args.path)}{c['reset']} ({config_label}):"
     )
-    print(f"  {state} — {reason}")
+    emit(f"  {state} — {reason}")
     if enabled:
-        print(f"  severity: {effective_severity}")
+        emit(f"  severity: {effective_severity}")
 
     if plugin_name is None:
         # Plugin rules have no page on the skillsaw documentation site.
-        print()
-        print(f"{c['bold']}Docs:{c['reset']} {rule_doc_url(args.rule_id)}")
+        emit()
+        emit(f"{c['bold']}Docs:{c['reset']} {rule_doc_url(args.rule_id)}")
+
+    from ._pager import display_paged
+
+    display_paged("\n".join(out) + "\n", args)
     sys.exit(0)
