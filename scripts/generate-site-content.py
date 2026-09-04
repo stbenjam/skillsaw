@@ -228,7 +228,10 @@ RULE_GROUPS = [
         "conventions. Detection therefore needs one of the named JSON files or "
         "a plugin — except under `.agent/`, which no other tool reads, where a "
         "populated `rules/` or `agents/` counts too. What skillsaw *lints* is "
-        "wider: every dot root's prose and configuration attaches either way. "
+        "wider: every customization root's prose and configuration attaches "
+        "whether or not the repository is typed `antigravity` — with `_agents/` "
+        "and `_agent/` attaching once they declare one of Antigravity's own "
+        "files, since any source package may take those two names. "
         "The manifest, hooks and MCP rules are auto-enabled once "
         "Antigravity is detected; the registry rule is opt-in.",
     ),

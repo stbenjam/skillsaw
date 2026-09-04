@@ -948,8 +948,14 @@ def _agent_docs(blocks) -> List[AgentDoc]:
 def _extract_hooks(blocks: List[HooksBlock]) -> List[HookDoc]:
     docs = []
     for block in blocks:
-        for event_type in sorted(block.events):
-            configs = block.events[event_type]
+        # A published document says what the host does, so a block whose
+        # ``events`` deliberately over-reports for the security scanners —
+        # Antigravity shows both readings of every entry — offers the
+        # dispatched one here instead. Every other host renders one reading
+        # and has no such property.
+        events = getattr(block, "effective_events", block.events)
+        for event_type in sorted(events):
+            configs = events[event_type]
             entries = [
                 HookEntry(
                     matcher=cfg.matcher,

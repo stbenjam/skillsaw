@@ -905,6 +905,32 @@ class AntigravityHooksBlock(HooksBlock):
 
     @property
     def events(self) -> Dict[str, List[HookEventConfig]]:
+        """Every command the file commits, for the security scanners.
+
+        Both readings of every entry; see :meth:`effective_events` for the
+        one ``agy`` actually dispatches.
+        """
+        return self._render_events(effective_only=False)
+
+    @property
+    def effective_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Only the reading ``agy`` dispatches, for ``skillsaw docs``.
+
+        A published document says what the tool does, so it must not list a
+        command the host discards. The event decides: a grouped event runs
+        the nested ``hooks`` and ignores a stray top-level ``command``; a
+        flat event runs the entry's own handler and ignores a ``hooks`` key.
+        An event this release does not know — one a project declares
+        through ``extra-events`` — has no binding to consult, so both
+        readings stand.
+
+        :attr:`events` keeps every command either way: the security rules
+        report what a repository ships, and one key turns the other half
+        on.
+        """
+        return self._render_events(effective_only=True)
+
+    def _render_events(self, *, effective_only: bool) -> Dict[str, List[HookEventConfig]]:
         data = self.raw_data
         if not isinstance(data, dict):
             return {}
@@ -928,23 +954,29 @@ class AntigravityHooksBlock(HooksBlock):
                 for entry in entries:
                     if not isinstance(entry, dict):
                         continue
-                    # Both readings, always — never one chosen from the
-                    # event or the payload. ``agy`` runs one of them: a
-                    # grouped event runs the nested ``hooks`` and discards a
-                    # stray top-level ``command``, a flat event runs the
-                    # entry's own ``command`` and discards a ``hooks`` key.
-                    # Either way both commands are committed to the
-                    # repository, and a scanner that saw only the half this
-                    # release believes runs would miss the other on the next
-                    # one-word edit. Measured across 74 real files: 7 write a
-                    # flat event in the grouped shape, hiding 17 commands
-                    # from a reading that picks by event.
-                    nested = HookEventConfig.from_dict(entry)
-                    for handler in nested.handlers:
-                        _normalize_antigravity_handler_type(handler)
-                    if nested.handlers:
-                        configs.append(nested)
-                    if _antigravity_entry_declares_a_handler(entry):
+                    # For the scanners, both readings, always — never one
+                    # chosen from the event or the payload. ``agy`` runs one
+                    # of them, and which one turns on a single key; both
+                    # commands are committed either way, and a scanner shown
+                    # only the half this release believes runs misses the
+                    # other on the next one-word edit. Measured across 74
+                    # real files: 7 write a flat event in the grouped shape,
+                    # hiding 17 commands from a reading that picks by event.
+                    #
+                    # For a published document, only what dispatches: an
+                    # unknown event has no binding to consult, so it keeps
+                    # both.
+                    grouped = canonical in antigravity.TOOL_HOOK_EVENTS
+                    flat = canonical in antigravity.FLAT_HOOK_EVENTS
+                    show_nested = not (effective_only and flat)
+                    show_own = not (effective_only and grouped)
+                    if show_nested:
+                        nested = HookEventConfig.from_dict(entry)
+                        for handler in nested.handlers:
+                            _normalize_antigravity_handler_type(handler)
+                        if nested.handlers:
+                            configs.append(nested)
+                    if show_own and _antigravity_entry_declares_a_handler(entry):
                         handler = HookHandler.from_dict(entry)
                         _normalize_antigravity_handler_type(handler)
                         configs.append(HookEventConfig(handlers=[handler]))
@@ -1190,8 +1222,18 @@ class McpConfigRole:
         render with an empty endpoint and the ``stdio`` default — a process
         with no command, which is not what the file says.
 
-        Only when ``url`` is absent, so every host that writes the portable
-        key keeps exactly the reading it has.
+        A *host-specific* remote key — one declared in
+        :attr:`connection_url_types`, so the host is known to read it as a
+        transport, and not the portable ``url`` the model already reads —
+        also clears ``command`` and ``args``. Antigravity is measured to
+        take ``serverUrl`` over ``command`` when a server names both, and
+        both document renderers pick ``command`` first: leaving it would
+        publish the command the host ignores as the endpoint, under a
+        ``http`` label.
+
+        The portable ``url`` beside a ``command`` is left exactly as it
+        was. Which of the two the Claude family runs is unmeasured, and a
+        guess there would rewrite established output.
         """
         server = McpServerConfig.from_dict(name, cfg)
         present = next((key for key in self.connection_url_keys if cfg.get(key) is not None), None)
@@ -1199,12 +1241,16 @@ class McpConfigRole:
             return server
         if server.url is None:
             server.url = cfg[present]
+        remote = present != "url" and present in self.connection_url_types
         if cfg.get("type") is None:
             # The transport the *host* infers for a remote server, whichever
             # of its keys supplied the URL: ``url`` and ``serverUrl`` both
             # load as ``http`` here, and rendering ``stdio`` would show a
             # remote server as a process with no command.
             server.type = self.connection_url_types.get(present, server.type)
+        if remote:
+            server.command = None
+            server.args = None
         return server
 
     @property

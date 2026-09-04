@@ -164,12 +164,13 @@ the docs:
   `prompt hooks are not supported for the PostToolUse event`.
 - The 12,000-character cap the rules-and-workflows page publishes for a rules file is
   not implemented as a rule.
-- **Description routing.** Antigravity routes by description — the skills page says the
-  agent picks from names and descriptions, and `define_subagent` takes a `description` —
-  but neither Antigravity repository type is in `content-description-routing`'s
-  `repo_types` and `AntigravityAgentBlock` is not in its traversal list. Deliberate,
-  pending a measurement: the frontmatter contract for `<root>/agents/*.md` was not
-  reachable offline, so there is no measured field to route on.
+- **Description routing on the workspace `agents/` block.** Both `ANTIGRAVITY` and
+  `ANTIGRAVITY_PLUGIN` are in `content-description-routing`'s `repo_types`, so the rule
+  runs on a plugin's skills and on the prose the shared plugin pass attaches. What stays
+  out is `AntigravityAgentBlock` — the workspace `<root>/agents/*.md` — which is absent
+  from the rule's explicit traversal list. Deliberate, pending a measurement: the
+  frontmatter contract for that file was not reachable offline, so there is no measured
+  field to route on.
 - **`<root>/workflows/` prose.** `workflows.json` is attached as a registry; the
   directory beside it is not walked, so `.agent/workflows/*.md` contributes no blocks.
   Both the file's role as a loader and the workflow files' own frontmatter are

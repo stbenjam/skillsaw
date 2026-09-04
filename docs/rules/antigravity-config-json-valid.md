@@ -100,9 +100,11 @@ there loads nothing.
 ## How to fix
 
 - Wrap the list in an object under `entries`.
-- Give every entry a string `path` pointing at the directory of items
-  itself. A parent directory loads nothing — the path must name the
-  directory the agents, skills or plugins sit directly inside.
+- Give every entry a string `path`. What it may name depends on the
+  registry: for `agents.json` and `skills.json` it must be the directory
+  the items sit directly inside, and a parent of that loads nothing. For
+  `plugins.json` either spelling works — one plugin directory, or a
+  container whose direct children are plugins.
 
 ## Configuration
 

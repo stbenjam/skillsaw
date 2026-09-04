@@ -237,6 +237,41 @@ class TestEventsRendering:
             "nested",
         ]
 
+    def _effective(self, tmp_path: Path, name: str, document: dict):
+        repo = repo_with_hooks(tmp_path, name, json.dumps(document))
+        tree = build_lint_tree(RepositoryContext(repo))
+        return tree.find(AntigravityHooksBlock)[0].effective_events
+
+    def test_the_effective_view_of_a_grouped_event_drops_the_stray_command(
+        self, tmp_path: Path
+    ) -> None:
+        """What ``skillsaw docs`` publishes: what ``agy`` dispatches."""
+        document = {
+            "a": {
+                "PreToolUse": [
+                    {"matcher": "run_command", "command": PAYLOAD, "hooks": [{"command": "audit"}]}
+                ]
+            }
+        }
+        events = self._effective(tmp_path, "effective-grouped", document)
+        assert [h.command for cfg in events["PreToolUse"] for h in cfg.handlers] == ["audit"]
+
+    def test_the_effective_view_of_a_flat_event_drops_the_nested_hooks(
+        self, tmp_path: Path
+    ) -> None:
+        document = {"a": {"Stop": [{"command": "audit", "hooks": [{"command": "nested"}]}]}}
+        events = self._effective(tmp_path, "effective-flat", document)
+        assert [h.command for cfg in events["Stop"] for h in cfg.handlers] == ["audit"]
+
+    def test_an_unknown_event_keeps_both_in_the_effective_view(self, tmp_path: Path) -> None:
+        """No binding to consult, so neither reading can be ruled out."""
+        document = {"a": {"PreCompact": [{"command": "own", "hooks": [{"command": "nested"}]}]}}
+        events = self._effective(tmp_path, "effective-unknown", document)
+        assert sorted(h.command for cfg in events["PreCompact"] for h in cfg.handlers) == [
+            "nested",
+            "own",
+        ]
+
     def test_a_pure_group_renders_no_empty_handler(self, tmp_path: Path) -> None:
         """Only an entry declaring a handler of its own gets a second reading."""
         document = {"a": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"command": "x"}]}]}}

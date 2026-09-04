@@ -643,6 +643,37 @@ class TestAntigravityExtractor:
         (plugin / "mcp_config.json").write_text(json.dumps(mcp, indent=2))
         return plugin
 
+    def test_published_hooks_list_only_what_dispatches(self, temp_dir):
+        """``events`` over-reports for the scanners; a document must not."""
+        plugin = self._plugin(temp_dir, {"mcpServers": {}})
+        (plugin / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "audit": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "run_command",
+                                "command": "ignored-by-agy",
+                                "hooks": [{"command": "make lint"}],
+                            }
+                        ],
+                        "Stop": [{"command": "make test", "hooks": [{"command": "also-ignored"}]}],
+                    }
+                },
+                indent=2,
+            )
+        )
+
+        hooks = extract_docs(RepositoryContext(temp_dir)).plugins[0].hooks
+        published = {
+            hook.event_type: sorted(
+                handler["command"] for entry in hook.entries for handler in entry.hooks
+            )
+            for hook in hooks
+        }
+
+        assert published == {"PreToolUse": ["make lint"], "Stop": ["make test"]}
+
     def test_server_url_is_published_as_the_endpoint(self, temp_dir):
         self._plugin(
             temp_dir,
@@ -673,6 +704,33 @@ class TestAntigravityExtractor:
 
         assert servers[0].server_type == "sse"
 
+    def test_a_server_naming_both_publishes_the_one_that_runs(self, temp_dir):
+        """Measured: ``serverUrl`` wins over ``command``.
+
+        Both renderers pick ``command`` before ``url``, so leaving it would
+        publish the command ``agy`` ignores as the endpoint of an ``http``
+        server.
+        """
+        self._plugin(
+            temp_dir,
+            {
+                "mcpServers": {
+                    "both": {
+                        "command": "./bin/db",
+                        "args": ["--ro"],
+                        "serverUrl": "https://feeds.example/mcp",
+                    }
+                }
+            },
+        )
+
+        servers = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers
+
+        assert servers[0].server_type == "http"
+        assert servers[0].config["url"] == "https://feeds.example/mcp"
+        assert "command" not in servers[0].config
+        assert "args" not in servers[0].config
+
     def test_the_portable_key_still_supplies_the_endpoint(self, temp_dir):
         """``url`` wins the endpoint; the transport is remote either way."""
         self._plugin(
@@ -692,6 +750,18 @@ class TestAntigravityExtractor:
         assert servers[0].config["url"] == "https://portable.example/mcp"
         # Measured: a bare ``url`` loads as ``http`` for this host too.
         assert servers[0].server_type == "http"
+
+    def test_the_portable_key_beside_a_command_is_left_alone(self, temp_dir):
+        """Unmeasured for every host, so the established reading stands."""
+        self._plugin(
+            temp_dir,
+            {"mcpServers": {"mixed": {"command": "./bin/db", "url": "https://e.example/mcp"}}},
+        )
+
+        servers = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers
+
+        assert servers[0].config["command"] == "./bin/db"
+        assert servers[0].config["url"] == "https://e.example/mcp"
 
 
 # ---------------------------------------------------------------------------

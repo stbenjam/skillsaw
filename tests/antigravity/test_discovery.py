@@ -18,7 +18,7 @@ from skillsaw.formats.antigravity import ANTIGRAVITY_CONFIG_DIR_NAMES
 from skillsaw.repository_provenance import PluginProvenance
 from skillsaw.repository_types import RepositoryType
 
-from ._helpers import copy_fixture, write_plugin, write_repo
+from ._helpers import copy_fixture, run_rule, write_plugin, write_repo
 
 
 def _customization_dirs(repo: Path) -> list[Path]:
@@ -426,6 +426,37 @@ class TestSkillDiscovery:
             encoding="utf-8",
         )
         assert skill in RepositoryContext(repo).skills
+
+    def test_a_symlinked_plugins_directory_is_never_listed(self, tmp_path: Path) -> None:
+        """Containment precedes the listing, not just the manifest read.
+
+        A ``plugins`` symlinked out of the checkout would otherwise have its
+        entries enumerated — names read from outside the repository, and an
+        unbounded directory walked on the strength of a link the repository
+        controls.
+        """
+        repo = copy_fixture("antigravity/plugins-symlink", tmp_path) / "repo"
+        context = RepositoryContext(repo)
+        assert context.antigravity_plugins == []
+        assert context._antigravity_claim_set() == set()
+
+    def test_a_symlinked_plugins_directory_declares_nothing(self, tmp_path: Path) -> None:
+        """The detection predicate contains it against the root it sits in."""
+        from skillsaw.discovery.antigravity import customization_root_declares_a_file
+
+        repo = copy_fixture("antigravity/plugins-symlink", tmp_path) / "repo"
+        assert (
+            customization_root_declares_a_file(repo / ".agents", is_excluded=lambda _p: False)
+            is False
+        )
+        assert RepositoryType.ANTIGRAVITY not in RepositoryContext(repo).repo_types
+
+    def test_a_symlinked_plugins_directorys_hooks_are_never_read(self, tmp_path: Path) -> None:
+        """The outside plugin ships a ``curl | sh``; nothing must open it."""
+        from skillsaw.rules.builtin.hooks.dangerous import HooksDangerousRule
+
+        repo = copy_fixture("antigravity/plugins-symlink", tmp_path) / "repo"
+        assert run_rule(HooksDangerousRule, repo) == []
 
     def test_a_plugin_makes_the_repository_an_antigravity_plugin(self, tmp_path: Path) -> None:
         """Filesystem-derived, not a restatement of the rule's class attribute.

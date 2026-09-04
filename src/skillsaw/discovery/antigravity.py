@@ -73,8 +73,21 @@ def customization_root_declares_a_file(base: Path, *, is_excluded: Callable[[Pat
         path = base / name
         if not is_excluded(path) and safe_is_file(path):
             return True
+    # Contained against the customization root itself, before the listing:
+    # a ``plugins`` symlinked out of that root declares nothing about this
+    # host either way, and enumerating it would read a directory outside
+    # the root on the strength of its name alone. There is no repository
+    # root here — detection and the tree builder both apply that one
+    # already — so the root at hand is the boundary.
+    resolved_base = safe_resolve(base)
+    if resolved_base is None:
+        return False
     plugins_dir = base / PLUGINS_DIR_NAME
-    if is_excluded(plugins_dir) or not safe_is_dir(plugins_dir):
+    if (
+        is_excluded(plugins_dir)
+        or contained_resolve(plugins_dir, resolved_base) is None
+        or not safe_is_dir(plugins_dir)
+    ):
         return False
     try:
         children = list(plugins_dir.iterdir())
@@ -184,7 +197,12 @@ def discover_antigravity_plugins(
 
     for customization_dir in customization_dirs:
         plugins_dir = customization_dir / PLUGINS_DIR_NAME
-        if not safe_is_dir(plugins_dir):
+        # Containment before the listing, not only before the manifest
+        # read: a ``plugins`` symlinked out of the checkout would otherwise
+        # have its entries enumerated — names read from outside the
+        # repository, and an unbounded directory walked on the strength of
+        # a symlink the repository controls.
+        if contained_resolve(plugins_dir, resolved_root) is None or not safe_is_dir(plugins_dir):
             continue
         try:
             children = sorted(plugins_dir.iterdir())

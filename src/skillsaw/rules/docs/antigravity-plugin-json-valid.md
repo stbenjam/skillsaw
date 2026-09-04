@@ -83,4 +83,6 @@ the plugin still loads, so none of them is reported.
 - Give `description` a sentence saying when the plugin is worth loading —
   it is what a reader sees before the components.
 - Write `disabled` as a boolean, not `"no"` or `0`.
-- Delete a repeated key rather than relying on one of the two winning.
+- Delete a repeated key. Neither copy wins: this manifest is protojson,
+  which refuses the document outright (`proto: duplicate field "name"`), so
+  the directory is not a plugin at all.
