@@ -26,8 +26,8 @@ applies. When nothing pins a version, or no runner can run the pinned one,
 resolve `{latest}` first (see below), bootstrap pinned to that version, and
 say in the report that no earlier version could be run, so step 2's scan
 stands in for the comparison: prefer zero-install execution with
-`uvx skillsaw=={latest}`, then `pip install "skillsaw=={latest}"`, then the
-installed container runtime. For containers, `<installed-prefix>` is a
+`uvx skillsaw=={latest}`, then `pip install "skillsaw=={latest}"` after the
+user agrees to that install, then the installed container runtime. For containers, `<installed-prefix>` is a
 complete run command mounting the repository at `/workspace`:
 
 ```console
@@ -132,7 +132,9 @@ project's own invocation (`uv run skillsaw`, `poetry run skillsaw`,
   packages; `uv tool install "skillsaw[<extras>]=={latest}"` with the
   extras and one `--with <plugin>` per requirement that
   `uv tool list --show-with --show-extras` prints (and `--index <url>` when
-  they came from a private index), since a reinstall
+  they came from a private index, read from the operator's own uv or pip
+  configuration, never from a repository file; with no such source, keep the
+  environment's existing index), since a reinstall
   replaces the environment and `uv tool upgrade` never moves a pinned
   install; `pip install "skillsaw=={latest}"` touches nothing else. Retain
   `skillsaw` as `<new-prefix>`.
@@ -162,8 +164,10 @@ carries rule plugins (`<installed-prefix> plugins` names them;
 installed (`uvx --with "<plugin>==<version>" skillsaw=={latest}`, with
 `--index <url>` for one from a private index) or the comparison below
 reports their rules as removed. A plugin from a path, or from an index the
-isolated command cannot reach, rules the isolated comparison out: say so and
-take the retained prefix.
+isolated command cannot reach, means the isolated comparison is ruled out:
+say so and take the retained prefix. An index URL comes from the operator's
+own configuration (uv's `[[index]]` or `UV_INDEX`, pip's `index-url`), never
+from a repository file.
 
 If an upgrade or an isolated prefix was accepted, `<new-prefix> --version`
 must report `{latest}` (the output is `skillsaw {latest}`). If it does not,

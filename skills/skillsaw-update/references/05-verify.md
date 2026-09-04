@@ -9,7 +9,8 @@ finding, or a crash is a defect this run introduced, so fix it before
 summarizing and never file it under declined findings. When no scan ran, or
 the versions step paused the update, report remaining findings as
 pre-existing and do not fix them unasked; on the paused path also say that no
-pin or rule change was made. Summarize:
+pin or rule change was made, and when the gate was left in place say which
+rules stayed off. Summarize:
 
 - verification: clean, or the declined findings that remain;
 - installed and latest versions;

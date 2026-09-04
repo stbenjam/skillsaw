@@ -5,8 +5,7 @@ unrelated tooling untouched. `{old}` below is the version a pin currently
 carries, which may differ from `{installed}`. Search with
 `git grep --untracked`, as the router does: ignored build output stays out
 while a pin in a file not yet added still counts. A tracked vendored or
-generated tree is searched like any other; the judgment two sentences on
-filters it. Pathspec lists name a file both bare and under `**/`, because
+generated tree is searched like any other; the judgment below filters it. Pathspec lists name a file both bare and under `**/`, because
 the `**/` form matches only below a directory. Outside a git work tree, use
 `grep -rn --exclude-dir={.git,.venv,node_modules,vendor,dist,site}` (brace
 expansion; list them separately in a shell without it), with
@@ -14,20 +13,26 @@ expansion; list them separately in a shell without it), with
 the repository executes: edit only pins CI or local tooling runs, skip
 documentation, examples, templates shipped to others and test fixtures, and
 list those as found, not changed. A floating `@v0` action ref is a deliberate
-pinning strategy; convert it to a SHA only after the user agrees. A bot may
-already own some pins: each `package-ecosystem:` entry in
+pinning strategy; convert it to a SHA only after the user agrees. Track each
+edited file for the final summary.
+
+## Bot-managed pins
+
+A bot may already own some pins: each `package-ecosystem:` entry in
 `.github/dependabot.yml` names a surface it covers (`github-actions`, `pip`,
-`uv`, `docker` for Dockerfiles but not Containerfiles, `pre-commit`), and
-Renovate (`renovate.json*`, `.renovaterc*`, `.github/renovate.json*`,
-`.gitlab/renovate.json*`) covers actions, Dockerfiles, GitLab CI and PyPI by
-default but pre-commit only when its `pre-commit` manager is enabled. A bot
-entry covers only the `directory:` it names and what its filters admit
-(Renovate can disable a manager, ignore paths or exclude skillsaw through
-package rules), so a pin outside that is uncovered, and uncertain coverage
-means the pin is offered. Offer to bump only what no bot covers (action
-`version:` inputs and defaults, `SKILLSAW_VERSION`, mirrored registry paths)
-unless the user wants them all now. Track each edited file for the final
-summary.
+`uv`, `docker` for Dockerfiles and Containerfiles, `docker-compose`,
+`pre-commit`), and Renovate (`renovate.json*`, `.renovaterc*`,
+`.github/renovate.json*`, `.gitlab/renovate.json*`) covers actions,
+Dockerfiles, GitLab CI and PyPI by default but pre-commit only when its
+`pre-commit` manager is enabled. A bot's PyPI coverage reaches dependency
+manifests and requirements files only: a pin in `tox.ini`, a Dockerfile
+`RUN pip install` or a CI `run:` step is never bot-owned and always belongs
+in the offer. A bot entry covers only the `directory:` it names and what its
+filters admit (Renovate can disable a manager, ignore paths or exclude
+skillsaw through package rules), so a pin outside that is uncovered, and
+uncertain coverage means the pin is offered. Offer to bump only what no bot
+covers (action `version:` inputs and defaults, `SKILLSAW_VERSION`, mirrored
+registry paths) unless the user wants them all now.
 
 ## GitHub Actions and action definitions
 
@@ -139,11 +144,15 @@ The suffix form finds `ghcr.io/stbenjam/skillsaw` and a mirrored path such as
 `registry.example.com/mirror/stbenjam/skillsaw` alike, an untagged reference
 included, while `uses:` action refs (`@<SHA>`) stay out. Retag `:{old}` to
 `:{latest}` where the repository runs the image: Dockerfiles, Containerfiles,
-`.gitlab-ci.yml` and any GitLab CI file it includes, any other CI file that
+`.gitlab-ci.yml` and any GitLab CI file it includes, a workflow's
+`container:` or `services:` image, a Compose file, any other CI file that
 names the image (CircleCI, Azure Pipelines, Tekton), and a mirrored path the
 same way. Image tags carry no `v`. A digest pin (`:{old}@sha256:…`, or a
 digest alone) needs the new tag's digest, read from the registry the pin
-names: `skopeo inspect --format '{{.Digest}}' docker://<pinned path>:{latest}`,
+names; `<pinned path>` is that registry path as written, and it must be a
+plain `host/path` with no whitespace or shell metacharacter before it goes
+into a command:
+`skopeo inspect --format '{{.Digest}}' docker://<pinned path>:{latest}`,
 `crane digest <pinned path>:{latest}` or
 `docker buildx imagetools inspect <pinned path>:{latest}` prints it;
 retagging around a stale digest changes nothing. With none of those tools at
@@ -151,9 +160,10 @@ hand, leaving the digest pin as it is and reporting it is the safe default;
 drop the digest only if the user prefers, and say in the summary that the
 pin is now a mutable tag. When the tag is indirect (`:$(SKILLSAW_VERSION)`,
 `:${SKILLSAW_VERSION}`, or a `FROM` built from an `ARG`), update the variable
-or build argument it reads instead. A `:latest` tag, or an untagged reference,
-which means the same, floats onto the new release by itself; recommend pinning
-it to `:{latest}` for repeatable pipelines, but only change it after the user
+or build argument it reads instead. A `:latest` tag, an untagged reference,
+which means the same, or a partial tag (`:0`, `:0.19`, which the image
+publishes too) floats onto the new release by itself; recommend pinning it
+to `:{latest}` for repeatable pipelines, but only change it after the user
 agrees.
 
 ## PyPI pins

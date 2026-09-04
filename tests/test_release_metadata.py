@@ -3,6 +3,7 @@
 import re
 import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 
 from skillsaw.utils import read_yaml_commented
@@ -81,7 +82,7 @@ def _grep_matches(pattern: str, line: str) -> bool:
     return result.returncode == 0
 
 
-def _command_tokens(command: str) -> list:
+def _command_tokens(command: str) -> list[str]:
     """The `git grep …` tokens up to a pipe: a pattern may itself hold `|`,
     so the command is tokenised before the pipe is looked for."""
     tokens = shlex.split(command)
@@ -139,8 +140,8 @@ ROUTER_MUST_MATCH = [
     "  - uses: stbenjam/skillsaw@abc123 # v0.19.0",
     "  - uses: stbenjam/skillsaw/review@abc123",
     "SKILLSAW_VERSION := 0.19.0",
-    "    - pip install skillsaw==0.20.0",
-    "uvx skillsaw@0.19.0",
+    "RUN pip install skillsaw==0.20.0",
+    "\tuvx skillsaw@0.19.0",
     "skillsaw >= 0.19.0",
     "skillsaw != 0.18.0",
     "skillsaw[dev]==0.19.0",
@@ -172,6 +173,38 @@ def _router_pattern() -> str:
     return _grep_pattern(commands[0])
 
 
+def test_the_router_pin_scan_lists_every_fixture_file(tmp_path):
+    """The router scan decides whether the pins reference is read at all, so
+    every file the recipes are tested against must be one it lists; the two
+    guards otherwise drift apart."""
+    for name, lines in PIN_FIXTURE.items():
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(lines) + "\n")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    commands = [
+        command
+        for command in _GIT_GREP_LINE.findall((SKILL_DIR / "SKILL.md").read_text())
+        if command.startswith("git grep --untracked -lE")
+    ]
+    assert len(commands) == 1, commands
+    result = subprocess.run(
+        ["bash", "-c", commands[0]], cwd=tmp_path, capture_output=True, text=True, check=False
+    )
+    listed = set(result.stdout.split())
+    assert set(PIN_FIXTURE) - {"docs/notes.md"} <= listed, sorted(set(PIN_FIXTURE) - listed)
+    assert "docs/notes.md" not in listed
+
+
+def test_the_router_cases_are_all_placed_in_the_fixture():
+    """Every router case is also a pin the recipes are run against, so the
+    two lists cannot describe different worlds."""
+    placed = {line.strip() for lines in PIN_FIXTURE.values() for line in lines}
+    missing = [line for line in ROUTER_MUST_MATCH if line.strip() not in placed]
+    assert not missing, missing
+
+
 def test_the_router_pin_scan_matches_every_documented_pin_form():
     """The step-3 scan in SKILL.md gates the pins reference. Run the pattern
     it ships against one line per documented pin form and a few near misses.
@@ -198,9 +231,35 @@ PIN_FIXTURE = {
         "  version:",
         "    description: The skillsaw version to install",
         '    default: "0.19.0"',
+        "runs:",
+        "  using: composite",
+        "  steps:",
+        "    - uses: stbenjam/skillsaw@abc123 # v0.19.0",
+    ],
+    "packages/a/action.yml": [
+        "inputs:",
+        "  version:",
+        "    description: The skillsaw version to install",
+        '    default: "0.19.0"',
+        "runs:",
+        "  using: composite",
+        "  steps:",
+        "    - uses: stbenjam/skillsaw/review@abc123",
     ],
     "Makefile": ["SKILLSAW_VERSION := 0.19.0", "\tuvx skillsaw@0.19.0"],
-    ".pre-commit-config.yaml": ["  - repo: https://github.com/stbenjam/skillsaw"],
+    "tools/Makefile": ["SKILLSAW_VERSION := 0.19.0"],
+    ".pre-commit-config.yaml": [
+        "repos:",
+        "  - repo: https://github.com/stbenjam/skillsaw",
+        "    rev: v0.19.0",
+        "    hooks:",
+        "      - id: skillsaw",
+    ],
+    "sub/.pre-commit-config.yaml": [
+        "repos:",
+        "  - repo: https://github.com/stbenjam/skillsaw",
+        "    rev: v0.19.0",
+    ],
     "Dockerfile": [
         "FROM ghcr.io/stbenjam/skillsaw:0.19.0",
         "FROM ghcr.io/stbenjam/skillsaw@sha256:dead",
@@ -234,7 +293,11 @@ PIN_FIXTURE = {
 # action-metadata recipe keeps only the `default:` line, and the `inputs:`
 # scaffolding around it is not a pin.
 PIN_EXPECTED = {
-    "action.yml": ['    default: "0.19.0"'],
+    "action.yml": ['    default: "0.19.0"', "    - uses: stbenjam/skillsaw@abc123 # v0.19.0"],
+    "packages/a/action.yml": [
+        '    default: "0.19.0"',
+        "    - uses: stbenjam/skillsaw/review@abc123",
+    ],
     "docs/notes.md": [],
 }
 
@@ -265,9 +328,12 @@ def test_the_pins_recipes_together_find_every_documented_pin_form(tmp_path):
         result = subprocess.run(
             ["bash", "-c", command], cwd=tmp_path, capture_output=True, text=True, check=False
         )
-        # 1 is "no match"; anything above is git grep refusing the command.
+        # 1 is "no match"; anything above is grep refusing the command (for a
+        # piped recipe the status is the trailing grep's).
         assert result.returncode in (0, 1), (command, result.stderr)
         found += result.stdout
+    # The ``**/`` half of every pathspec pair is exercised by the nested
+    # copies (tools/, sub/, packages/a/) beside the root ones.
     for name, lines in PIN_FIXTURE.items():
         expected = PIN_EXPECTED.get(name, lines)
         for index, line in enumerate(lines, 1):
@@ -292,7 +358,13 @@ def test_image_tags_in_skills_and_docs_carry_no_v():
         for path in (sorted((REPO_ROOT / root).rglob("*.md")) or [REPO_ROOT / root])
         if path.is_file()
     ]
-    assert len(files) >= 50, "the image-tag guard walked almost nothing"
+    per_root = {
+        root: sum(1 for f in files if root in f.relative_to(REPO_ROOT).parts[:1])
+        for root in ("skills", "docs", "examples")
+    }
+    assert (
+        per_root["skills"] >= 20 and per_root["docs"] >= 50 and per_root["examples"] >= 1
+    ), per_root
     hits = [
         f"{path.relative_to(REPO_ROOT)}:{number}"
         for path in files
@@ -329,10 +401,14 @@ def test_the_git_tag_fallback_pipeline_returns_the_newest_release():
     `grep | tail | sed` pipeline that must drop the floating `v0`, a
     prerelease and any peeled `^{}` line and print a bare `N.N.N`. Run the
     shipped pipeline over a listing in `--sort=v:refname` order."""
+    # Version-sorted, with the peeled `^{}` lines an annotated tag would add
+    # if `--refs` were dropped; the pipeline must still print a bare version.
     listing = (
         "aaaa\trefs/tags/v0\n"
         "bbbb\trefs/tags/v0.19.0\n"
+        "bbbc\trefs/tags/v0.19.0^{}\n"
         "cccc\trefs/tags/v0.20.0\n"
+        "cccd\trefs/tags/v0.20.0^{}\n"
         "dddd\trefs/tags/v0.21.0-rc1\n"
     )
     for reference in (
@@ -341,10 +417,52 @@ def test_the_git_tag_fallback_pipeline_returns_the_newest_release():
     ):
         commands = re.findall(r"^git ls-remote .*$", reference.read_text(), re.MULTILINE)
         assert len(commands) == 1, (reference, commands)
-        # `tail -1` is only right because the listing arrives version-sorted.
-        assert "--sort='v:refname'" in commands[0], commands[0]
+        # `tail -1` is only right because the listing arrives version-sorted,
+        # and `--refs` is what keeps the peeled lines out of it.
+        head_tokens = shlex.split(commands[0].split("|", 1)[0])
+        assert "--sort=v:refname" in head_tokens and "--refs" in head_tokens, head_tokens
         pipeline = commands[0].split("|", 1)[1]
         result = subprocess.run(
             ["bash", "-c", pipeline], input=listing, text=True, capture_output=True, check=True
         )
         assert result.stdout.strip() == "0.20.0", (reference, result.stdout)
+
+
+def test_the_rule_diff_recipe_reports_added_ids_only():
+    """The new-rules reference diffs two `list-rules` captures with a `comm`
+    over an ID-extracting grep. Run the shipped line over two realistic
+    captures: description lines must not read as IDs, and a rule that gained
+    a `(DEPRECATED …)` annotation must not read as removed."""
+    reference = SKILL_DIR / "references" / "02-new-rules.md"
+    commands = re.findall(r"^comm .*$", reference.read_text(), re.MULTILINE)
+    assert len(commands) == 1, commands
+    old = (
+        "Available builtin rules:\n\n"
+        "  agentskill-description\n    Skill description present\n    Default severity: error\n\n"
+        "  content-weak-language\n    Weak language\n    Default severity: warning\n"
+    )
+    new = (
+        "Available builtin rules:\n\n"
+        "  agentskill-description\n    Skill description present\n    Default severity: error\n\n"
+        "  antigravity-hooks-valid\n    hooks.json must use Antigravity's events\n\n"
+        "  content-weak-language (DEPRECATED since 0.20.0)\n    Weak language\n"
+    )
+    with tempfile.TemporaryDirectory() as scratch:
+        command = (
+            commands[0]
+            .replace("/tmp/skillsaw-rules-old.txt", f"{scratch}/old")
+            .replace("/tmp/skillsaw-rules-new.txt", f"{scratch}/new")
+        )
+        Path(scratch, "old").write_text(old)
+        Path(scratch, "new").write_text(new)
+        added = subprocess.run(
+            ["bash", "-c", command], capture_output=True, text=True, check=True
+        ).stdout.split()
+        removed = subprocess.run(
+            ["bash", "-c", command.replace("comm -13", "comm -23")],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+    assert added == ["antigravity-hooks-valid"], added
+    assert removed == [], removed

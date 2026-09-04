@@ -55,8 +55,9 @@ switches on every rule added between `{config-version}` and `{installed}` as
 well, not only the ones the list comparison found: after the scan below, the
 rules in its `stats.rules_run` list that the gated scan's list lacks are added
 rules too, so run `explain` on each and carry them into the report and the
-triage. If no, the gated rules stay off: run the scan below anyway and report
-which added rules it could not exercise.
+triage. If no, the gated rules stay off: run the scan below anyway, and
+report the rules it could not exercise, which are the `list-rules` IDs absent
+from its `stats.rules_run`.
 
 ## When no rule was added
 

@@ -50,7 +50,9 @@ alias of a live rule and stays.
 ## 3. Configure
 
 Best when a new rule clashes with an intentional project convention. Check
-`<new-prefix> explain <rule-id>` for options such as `exclude` or limits first,
+`<new-prefix> explain <rule-id>` (an ID is lowercase letters, digits and
+hyphens; anything else is not one) for options such as `exclude` or limits
+first,
 then consider lowering to `severity: info`, and use `enabled: false` only as
 a last resort for advisory content rules. Always add a brief `#` comment in
 `.skillsaw.yaml` explaining the rationale.
@@ -63,7 +65,8 @@ a last resort for advisory content rules. Always add a brief `#` comment in
 
 ## Presenting the plan to the user
 
-Share the summary table and confirm the plan:
+When only removed-rule cleanup is in scope, confirm that cleanup alone and
+skip the table. Otherwise share the summary table and confirm the plan:
 
 > The upgrade adds {new rule count} with {total} findings in this repo. Here
 > is a proposed plan:
