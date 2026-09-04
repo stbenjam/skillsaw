@@ -559,6 +559,39 @@ def test_embedded_mcp_reuses_shape_secret_and_policy_rules(tmp_path):
     assert prohibited[0].line == 3
 
 
+def test_disabling_copilot_shape_validation_keeps_shared_credential_checks(tmp_path):
+    """The host's shape toggle does not control shared credential checks."""
+    from tests.test_integration import run_lint
+
+    token = "ghp_" + "abcdefghijklmnopqrst" + "uvwxyzABCDEFGHIJ"
+    _write_agent(
+        tmp_path,
+        "description: Reviews changes\n"
+        "mcp-servers:\n"
+        "  broken:\n"
+        "    type: local\n"
+        "    command: ''\n"
+        "    env:\n"
+        f"      API_TOKEN: {token}",
+    )
+    (tmp_path / ".skillsaw.yaml").write_text(
+        "rules:\n  copilot-agent-valid:\n    enabled: false\n", encoding="utf-8"
+    )
+
+    found = (run_lint(tmp_path)["out"] or {}).get("violations", [])
+    mcp = [v for v in found if v["rule_id"] == "mcp-valid-json"]
+    assert len(mcp) == 1
+    assert "GitHub personal access token" in mcp[0]["message"]
+    assert mcp[0]["line"] == 8
+
+    # Enabling shape validation adds the malformed-command finding.
+    (tmp_path / ".skillsaw.yaml").unlink()
+    ungated = (run_lint(tmp_path)["out"] or {}).get("violations", [])
+    mcp = [v for v in ungated if v["rule_id"] == "mcp-valid-json"]
+    assert any("GitHub personal access token" in v["message"] for v in mcp)
+    assert any("non-empty string" in v["message"] for v in mcp)
+
+
 def test_mcp_role_parsing_is_prefiltered_by_the_top_level_key(tmp_path, monkeypatch):
     _write_agent(tmp_path, "description: Has no MCP configuration")
 

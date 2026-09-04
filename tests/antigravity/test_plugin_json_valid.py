@@ -1,0 +1,288 @@
+"""``antigravity-plugin-json-valid``: the manifest is the marker."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from skillsaw.repository_types import RepositoryType
+from skillsaw.rule import Severity
+from skillsaw.rules.builtin.antigravity.plugin_json_valid import AntigravityPluginJsonValidRule
+
+from ._helpers import messages, only, run_rule, write_plugin, write_repo
+
+
+def check(tmp_path: Path, name: str, manifest, *, raw: bool = False, repo_types=None):
+    repo = write_repo(tmp_path / name)
+    plugin = write_plugin(repo, "berth-tools", None if raw else manifest)
+    if raw:
+        (plugin / "plugin.json").write_text(manifest, encoding="utf-8")
+    return run_rule(AntigravityPluginJsonValidRule, repo, repo_types=repo_types)
+
+
+class TestAcceptedManifests:
+    """Manifests ``agy`` loads, including every key it discards."""
+
+    @pytest.mark.parametrize(
+        "name,manifest",
+        [
+            (
+                "full",
+                {"name": "berth-tools", "description": "d", "disabled": False, "logo": "a.png"},
+            ),
+            ("name-only", {"name": "berth-tools"}),
+            # Measured with ``agy plugin validate``: protojson takes null as
+            # the field default, so these carry no type error.
+            ("null-disabled", {"name": "berth-tools", "disabled": None}),
+            ("null-description", {"name": "berth-tools", "description": None}),
+            ("null-logo", {"name": "berth-tools", "logo": None}),
+            ("underscored", {"name": "berth_tools_2"}),
+            ("uppercase", {"name": "BerthTools"}),
+            ("disabled", {"name": "berth-tools", "disabled": True}),
+            # Every other key is discarded as unknown and the plugin loads.
+            ("schema", {"name": "berth-tools", "$schema": "https://agentplugins.org/x.json"}),
+            ("version", {"name": "berth-tools", "version": "1.4.0"}),
+            ("author-string", {"name": "berth-tools", "author": "Routeboard"}),
+            ("author-object", {"name": "berth-tools", "author": {"name": "Routeboard"}}),
+            ("inline-mcp", {"name": "berth-tools", "mcpServers": {"db": {"command": "x"}}}),
+            ("keywords", {"name": "berth-tools", "keywords": ["berth", "ferry"]}),
+        ],
+    )
+    def test_no_findings(self, tmp_path: Path, name: str, manifest) -> None:
+        assert messages(check(tmp_path, name, manifest)) == []
+
+
+class TestNotAPlugin:
+    """A manifest that does not parse means the whole tree goes unloaded."""
+
+    @pytest.mark.parametrize(
+        "name,body,needle",
+        [
+            ("unparseable", '{"name": "berth-tools"', "does not parse"),
+            ("bom", '\ufeff{"name": "berth-tools"}', "UTF-8 BOM"),
+            ("array-root", '[{"name": "berth-tools"}]', "must be a JSON object"),
+            ("string-root", '"berth-tools"', "must be a JSON object"),
+            (
+                "duplicate-name",
+                '{"name": "a", "description": "d", "name": "b"}',
+                'duplicate JSON object key: "name"',
+            ),
+        ],
+    )
+    def test_reported_at_error(self, tmp_path: Path, name: str, body: str, needle: str) -> None:
+        found = only(check(tmp_path, name, body, raw=True), needle)
+        assert found.severity == Severity.ERROR
+
+    @pytest.mark.parametrize(
+        "field,value,label",
+        [
+            ("name", 42, "string"),
+            ("description", ["d"], "string"),
+            ("disabled", "no", "boolean"),
+            ("logo", {"path": "a.png"}, "string"),
+        ],
+    )
+    def test_field_types(self, tmp_path: Path, field: str, value, label: str) -> None:
+        manifest = {"name": "berth-tools"}
+        manifest[field] = value
+        found = only(check(tmp_path, f"type-{field}", manifest), f"'{field}' must be a {label}")
+        assert found.severity == Severity.ERROR
+
+    def test_missing_manifest_under_a_forced_type(self, tmp_path: Path) -> None:
+        """``--type antigravity-plugin`` is what asks for this check."""
+        violations = check(
+            tmp_path,
+            "forced-missing",
+            None,
+            raw=False,
+            repo_types=[RepositoryType.ANTIGRAVITY_PLUGIN],
+        )
+        found = only(violations, "plugin.json is missing")
+        assert found.severity == Severity.ERROR
+
+
+class TestInstallability:
+    """What discovery tolerates and ``agy plugin install`` refuses."""
+
+    @pytest.mark.parametrize(
+        "case,name",
+        (
+            ("space", "Berth Tools"),
+            ("slash", "berth/tools"),
+            ("traversal", "../escape"),
+            ("hidden", ".hidden"),
+            # A JSON string can hold a newline, and ``$`` matches before a
+            # final one. ``agy plugin install`` refuses this name.
+            ("trailing-newline", "berth-tools\n"),
+        ),
+    )
+    def test_uninstallable_names(self, tmp_path: Path, case: str, name: str) -> None:
+        found = only(check(tmp_path, f"charset-{case}", {"name": name}), "is not installable")
+        assert found.severity == Severity.WARNING
+
+    def _dual_claimed(self, tmp_path: Path, name: str, manifest) -> Path:
+        """A plugin both ecosystems claim: an Agent Plugins collection whose
+        package root is also ``<customization root>/plugins/<name>``, which
+        is what a lint run pointed at the customization root produces."""
+        root = tmp_path / name / ".agents"
+        plugin = root / "plugins" / "acme.tools"
+        plugin.mkdir(parents=True)
+        (plugin / "plugin.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return root
+
+    def test_a_dual_claimed_directory_keeps_its_agent_plugins_name(self, tmp_path: Path) -> None:
+        """Agent Plugins' grammar permits a dot; the warning is for the wrong author."""
+        root = self._dual_claimed(
+            tmp_path,
+            "dual-claimed",
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "acme.tools",
+            },
+        )
+        assert messages(run_rule(AntigravityPluginJsonValidRule, root)) == []
+
+    def test_the_same_name_without_the_second_claim_is_reported(self, tmp_path: Path) -> None:
+        """Antigravity alone claims this one, so its grammar is the one that applies."""
+        found = only(check(tmp_path, "single-claim", {"name": "acme.tools"}), "is not installable")
+        assert found.severity == Severity.WARNING
+
+    @pytest.mark.parametrize(
+        "case,manifest",
+        (
+            ("absent", {}),
+            # Measured: ``""`` and ``null`` are protojson's default for a
+            # string field, and ``agy plugin validate`` reports ``missing
+            # name`` for all three.
+            ("empty", {"name": ""}),
+            ("null", {"name": None}),
+        ),
+    )
+    def test_an_unnamed_plugin_is_advisory(self, tmp_path: Path, case: str, manifest) -> None:
+        violations = check(tmp_path, f"unnamed-{case}", manifest)
+        assert len(violations) == 1
+        assert "'name' is absent" in violations[0].message
+        assert violations[0].severity == Severity.INFO
+
+    def test_a_dangling_symlink_manifest_is_not_a_regular_file(self, tmp_path: Path) -> None:
+        """``safe_is_symlink`` is exactly the ``safe_exists``-false case.
+
+        A forced ``--type`` builds the node for a manifest-less directory,
+        so the branch that tells "not a regular file" from "missing" needs a
+        link pointing at nothing.
+        """
+        repo = write_repo(tmp_path / "dangling")
+        plugin = write_plugin(repo, "berth-tools", None)
+        (plugin / "plugin.json").symlink_to("nowhere.json")
+        found = only(
+            run_rule(
+                AntigravityPluginJsonValidRule,
+                repo,
+                repo_types=[RepositoryType.ANTIGRAVITY_PLUGIN],
+            ),
+            "not a regular file",
+        )
+        assert found.severity == Severity.ERROR
+
+    def test_a_directory_named_plugin_json_is_not_a_regular_file(self, tmp_path: Path) -> None:
+        repo = write_repo(tmp_path / "manifest-dir")
+        plugin = write_plugin(repo, "berth-tools", None)
+        (plugin / "plugin.json").mkdir()
+        found = only(
+            run_rule(
+                AntigravityPluginJsonValidRule,
+                repo,
+                repo_types=[RepositoryType.ANTIGRAVITY_PLUGIN],
+            ),
+            "not a regular file",
+        )
+        assert found.severity == Severity.ERROR
+
+    def test_an_empty_boolean_is_still_a_type_error(self, tmp_path: Path) -> None:
+        """``""`` is not a bool's zero value.
+
+        Measured through the *loader*: ``invalid value for bool field
+        disabled`` and the plugin's agents do not load. (``agy plugin
+        validate`` disagrees and prints ``[ok]`` — it reads the manifest
+        with ``encoding/json`` rather than protojson — and the loader is
+        what decides whether the directory is a plugin.)
+        """
+        found = only(
+            check(tmp_path, "empty-disabled", {"name": "berth-tools", "disabled": ""}),
+            "'disabled' must be a boolean",
+        )
+        assert found.severity == Severity.ERROR
+
+    def test_mistyped_name_is_not_also_a_charset_finding(self, tmp_path: Path) -> None:
+        violations = check(tmp_path, "mistyped-once", {"name": 42})
+        assert len(violations) == 1
+        assert "must be a string" in violations[0].message
+
+
+class TestUnknownKeysAreNeverReported:
+    """``$schema``, ``version`` and ``author`` are discarded by ``agy``."""
+
+    def test_a_dense_foreign_manifest_reports_nothing(self, tmp_path: Path) -> None:
+        manifest = {
+            "$schema": "https://agentplugins.org/schemas/v1/plugin.json",
+            "name": "route-kit",
+            "version": "1.4.0",
+            "author": {"name": "Routeboard"},
+            "homepage": "https://routeboard.example",
+            "license": "Apache-2.0",
+            "entrypoint": "./bin/route-kit",
+        }
+        assert messages(check(tmp_path, "foreign", manifest)) == []
+
+
+class TestDiagnosticSafety:
+    """A hostile manifest cannot write its own content into the report."""
+
+    def test_lone_surrogate_in_a_name(self, tmp_path: Path) -> None:
+        repo = write_repo(tmp_path / "surrogate")
+        plugin = write_plugin(repo, "berth-tools", None)
+        (plugin / "plugin.json").write_text(
+            json.dumps({"name": "berth\ud800tools"}), encoding="utf-8"
+        )
+        rendered = messages(run_rule(AntigravityPluginJsonValidRule, repo))
+        assert rendered
+        for message in rendered:
+            message.encode("utf-8")
+
+    def test_rtl_override_in_a_name(self, tmp_path: Path) -> None:
+        repo = write_repo(tmp_path / "rtl")
+        write_plugin(repo, "berth-tools", {"name": "berth‮tools"})
+        rendered = messages(run_rule(AntigravityPluginJsonValidRule, repo))
+        assert rendered
+        assert all("‮" not in message for message in rendered)
+
+
+class TestGating:
+    """``auto``, versioned, and gated on the two Antigravity types."""
+
+    def test_rule_declares_the_release_it_shipped_in(self) -> None:
+        assert AntigravityPluginJsonValidRule.since == "0.20.0"
+        assert AntigravityPluginJsonValidRule.default_enabled == "auto"
+
+    def test_repo_types(self) -> None:
+        assert AntigravityPluginJsonValidRule.repo_types == frozenset(
+            {RepositoryType.ANTIGRAVITY, RepositoryType.ANTIGRAVITY_PLUGIN}
+        )
+
+    def test_severity_override_reaches_the_default_findings(self, tmp_path: Path) -> None:
+        from tests.test_integration import run_lint
+
+        repo = write_repo(tmp_path / "override")
+        write_plugin(repo, "berth-tools", {"name": 42})
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n  antigravity-plugin-json-valid:\n    severity: warning\n", encoding="utf-8"
+        )
+        report = run_lint(repo)["out"] or {}
+        severities = {
+            v["severity"]
+            for v in report.get("violations", [])
+            if v["rule_id"] == "antigravity-plugin-json-valid"
+        }
+        assert severities == {"warning"}

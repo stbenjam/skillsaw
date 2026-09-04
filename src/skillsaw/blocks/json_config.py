@@ -8,13 +8,13 @@ content-quality rules never see them.  Dedicated rules locate them with
 
 from __future__ import annotations
 
-import codecs
 import math
 from itertools import islice
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import (
+    AbstractSet,
     Any,
     ClassVar,
     Dict,
@@ -27,15 +27,45 @@ from typing import (
     Tuple,
 )
 
+from skillsaw.formats import antigravity
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
 from skillsaw.repository_types import RepositoryType
-from skillsaw.utils import commented_key_line, read_text, read_json, read_json_strict, read_jsonc
+from skillsaw.utils import (
+    commented_key_line,
+    has_utf8_bom,
+    read_text,
+    read_json,
+    read_json_strict,
+    read_jsonc,
+)
 
 
 def _as_str(value: Any) -> Optional[str]:
     """*value* when it is a string, else ``None``."""
     return value if isinstance(value, str) else None
+
+
+def _normalize_antigravity_handler_type(handler: "HookHandler") -> None:
+    """Give an Antigravity handler with no ``type`` its default.
+
+    ``agy`` treats an absent or empty ``type`` as ``command``. The shared
+    security rules skip any handler whose type is not ``command``, so
+    leaving it empty would silently exempt every hook written the short way
+    — which is the way the vendor's own examples write them.
+    """
+    if not handler.type:
+        handler.type = "command"
+
+
+def _antigravity_entry_declares_a_handler(entry: Dict[str, Any]) -> bool:
+    """Whether *entry* carries a handler of its own, beside any ``hooks``.
+
+    A pure group — ``{"matcher": …, "hooks": […]}`` — declares no command
+    at its own level, and rendering an empty handler for it would put a
+    finding-less entry in front of every scanner.
+    """
+    return any(entry.get(field) is not None for field in antigravity.HOOK_HANDLER_COMMAND_KEYS)
 
 
 def _as_str_list(value: Any) -> Optional[List[str]]:
@@ -91,6 +121,17 @@ class HookHandler:
     source_line: Optional[int] = None
     # Keep new fields at the end to preserve positional construction.
     command_variants: List[Tuple[str, Optional[int]]] = field(default_factory=list)
+    #: Fields that are this linter's own bookkeeping rather than anything
+    #: a host reads, so a published document must not carry them.
+    #: ``command_variants`` in particular defaults to ``[]`` rather than
+    #: ``None``, so a "drop the empty ones" filter alone lets it through.
+    #: Declared here so a new internal field is named beside the field
+    #: itself rather than in ``docs/extractor.py``.
+    INTERNAL_FIELDS: ClassVar[Tuple[str, ...]] = (
+        "command_variants",
+        "source_line",
+        "type_line",
+    )
     #: Line of the handler's ``type:`` key. ``source_line`` follows the
     #: ``command``, which an ``http``/``mcp_tool``/``prompt``/``agent``
     #: handler does not have — every finding about one was line-less until
@@ -234,14 +275,24 @@ def json_token(value: float) -> str:
 
 
 def _parse_json_file(
-    path: Path, *, strict: bool = False, jsonc: bool = False
+    path: Path,
+    *,
+    strict: bool = False,
+    jsonc: bool = False,
+    duplicate_keys_fatal: bool = True,
+    merge_duplicate_fields: Tuple[Tuple[str, ...], ...] = (),
 ) -> Tuple[Optional[Any], Optional[str]]:
     if jsonc:
         # JSONC is always strict about the non-finite tokens; the locations
         # that opt into it are new surfaces with no shipped results.
         return read_jsonc(path)
-    data, error = (read_json_strict if strict else read_json)(path)
-    return data, error
+    if not strict:
+        return read_json(path)
+    return read_json_strict(
+        path,
+        allow_duplicate_keys=not duplicate_keys_fatal,
+        merge_duplicate_fields=merge_duplicate_fields,
+    )
 
 
 @dataclass(eq=False)
@@ -270,13 +321,29 @@ class JsonConfigBlock(LintTarget):
     #: as a parse error. Implies :attr:`strict_json`, which is why the
     #: locations setting this leave that one at its default.
     jsonc: ClassVar[bool] = False
+    #: Whether a repeated object key kills the file, asked only where
+    #: :attr:`strict_json` is set. On by default, which is what every host
+    #: measured before Antigravity does. Google's ``agy`` reads its
+    #: ``hooks.json``, ``mcp_config.json`` and registries with Go's
+    #: ``encoding/json``: the last value wins and the file loads, measured
+    #: at all three nesting depths against 1.1.25, so the blocks it reads
+    #: turn this off and keep the non-finite half. Not consulted on the
+    #: JSONC path, where no host accepts a duplicate.
+    duplicate_keys_fatal: ClassVar[bool] = True
+    merge_duplicate_fields: ClassVar[Tuple[Tuple[str, ...], ...]] = ()
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
         default=None, init=False, repr=False
     )
 
     def _ensure_parsed(self) -> None:
         if self._parsed is None:
-            self._parsed = _parse_json_file(self.path, strict=self.strict_json, jsonc=self.jsonc)
+            self._parsed = _parse_json_file(
+                self.path,
+                strict=self.strict_json,
+                jsonc=self.jsonc,
+                duplicate_keys_fatal=self.duplicate_keys_fatal,
+                merge_duplicate_fields=self.merge_duplicate_fields,
+            )
 
     @property
     def parse_error(self) -> Optional[str]:
@@ -307,20 +374,21 @@ class JsonConfigBlock(LintTarget):
         Three bytes off the front rather than the cached text, because the
         cache is exactly what already dropped the mark.
         """
-        try:
-            with open(self.path, "rb") as handle:
-                return handle.read(3) == codecs.BOM_UTF8
-        except OSError:
-            return False
+        return has_utf8_bom(self.path)
 
     def first_non_finite(self) -> Optional[Tuple[str, float]]:
         """The first ``NaN``/``Infinity`` in this document, as ``(path, value)``.
 
-        Only a block left at :attr:`strict_json` ``False`` can have one:
-        ``json.loads`` accepts the bare tokens and no JSON host does, so a
-        lenient block parses a document the tool it configures refuses. A
-        rule that reads such a block asks here, before its shape walk, so
-        the finding names the file's real defect rather than a field's type.
+        Two routes reach a value here, and a :attr:`strict_json` block is
+        one of them. A block left at ``False`` parses the bare tokens
+        ``json.loads`` accepts and no JSON host does, so it holds a
+        document the tool it configures refuses. A block at ``True``
+        rejects those tokens — but not ``1e400``, which is valid JSON that
+        overflows to ``inf`` without ever passing through
+        ``parse_constant``.
+
+        So a rule reads this before its shape walk either way, and the
+        finding names the file's real defect rather than a field's type.
 
         Document order, iteratively: a document nested deeply enough to
         parse but deep enough to exhaust the recursion limit on a second
@@ -403,6 +471,16 @@ class HooksBlock(JsonConfigBlock):
     #: article is chosen where the message is built.
     mapping_noun: ClassVar[str] = "object"
     sequence_noun: ClassVar[str] = "array"
+
+    @property
+    def security_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Handlers exposed to the hook security and policy rules."""
+        return self.events
+
+    @property
+    def effective_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Events to publish in documentation; hosts may narrow the scan view."""
+        return self.events
 
     @property
     def events(self) -> Dict[str, List[HookEventConfig]]:
@@ -807,6 +885,139 @@ class CursorHooksBlock(HooksBlock):
                     found.append((event_type, index, prompt))
         return found
 
+    @property
+    def security_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Include prompt hooks in policy checks as well as command hooks."""
+        events = self.events
+        for event, _index, prompt in self.prompt_hooks():
+            events.setdefault(event, []).append(
+                HookEventConfig(handlers=[HookHandler(type="prompt", prompt=prompt)])
+            )
+        return events
+
+
+@dataclass(eq=False)
+class AntigravityHooksBlock(HooksBlock):
+    """``<customization root>/hooks.json`` — Antigravity's lifecycle hooks.
+
+    A map of *named* hooks rather than one ``hooks`` object:
+    ``{name: {enabled?, Event: [...]}}``. ``PreToolUse`` and ``PostToolUse``
+    hold ``{matcher, hooks: [handler, ...]}`` groups; ``PreInvocation``,
+    ``PostInvocation``, ``Stop`` and ``SessionStart`` hold flat handler
+    lists. A :class:`HooksBlock` so the security rules find it with every
+    other host's file; the :attr:`events` override renders both shapes as
+    the shared :class:`HookEventConfig` structure, so ``hooks-dangerous``
+    and ``hooks-prohibited`` scan Antigravity hooks with no per-ecosystem
+    branch. ``antigravity-hooks-valid`` reads ``raw_data`` for the shape
+    itself.
+
+    The security view applies three policies:
+
+    * A top-level ``enabled`` is **not** a kill switch. Every top-level key
+      is a hook *name*, so ``{"enabled": {"Stop": [...]}}`` is an ordinary
+      hook that loads, and only a non-object value there is a hard parse
+      error that drops the whole file — reading either as "hooks off" would
+      hand any repository a one-word way to silence the command scanners.
+    * A hook-level ``"enabled": false`` still exposes its handlers. The
+      command is committed either way, and the one-word commit that arms it
+      is not the diff a reviewer should first learn of it from. skillsaw
+      reports what a repository ships, not what it currently runs.
+    * The security rendering shows **both** readings of every entry — the
+      entry's own handler and its nested ``hooks`` — rather than picking
+      one from the event or from the payload. ``agy`` runs one of them, and
+      which one turns on a single key; both commands are committed either
+      way, and a scanner shown only the half this release believes runs
+      misses the other on the next one-word edit. Picking by payload hides
+      the ``command`` in ``{"Stop": [{"command": "…", "hooks": []}]}``;
+      picking by event hides committed nested commands under a flat event.
+    """
+
+    category: str = "hooks"
+    #: Measured: a bare ``NaN``/``Infinity`` token, a comment and a
+    #: trailing comma each drop the whole file — ``failed to parse
+    #: hooks.json … invalid character``, and the run loads zero named
+    #: hooks.
+    strict_json: ClassVar[bool] = True
+    #: Measured: a repeated hook name, a repeated event key inside one
+    #: hook, and a repeated key inside one handler all load, last value
+    #: winning, with the same named-hook count as the file without them.
+    duplicate_keys_fatal: ClassVar[bool] = False
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (antigravity hooks)"
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        """Every command the file commits, for the security scanners.
+
+        Both readings of every entry; see :meth:`effective_events` for the
+        one ``agy`` actually dispatches.
+        """
+        return self._render_events(effective_only=False)
+
+    @property
+    def effective_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Only the reading ``agy`` dispatches, for ``skillsaw docs``.
+
+        A published document says what the tool does, so it must not list a
+        command the host discards. The event decides: a grouped event runs
+        the nested ``hooks`` and ignores a stray top-level ``command``; a
+        flat event runs the entry's own handler and ignores a ``hooks`` key.
+        An event this release does not know — one a project declares
+        through ``extra-events`` — has no binding to consult, so both
+        readings stand.
+
+        :attr:`events` keeps every command either way: the security rules
+        report what a repository ships, and one key turns the other half
+        on.
+        """
+        return self._render_events(effective_only=True)
+
+    def _render_events(self, *, effective_only: bool) -> Dict[str, List[HookEventConfig]]:
+        data = self.raw_data
+        if not isinstance(data, dict):
+            return {}
+        result: Dict[str, List[HookEventConfig]] = {}
+        for hook_spec in data.values():
+            if not isinstance(hook_spec, dict):
+                continue
+            if effective_only and hook_spec.get("enabled") is False:
+                continue
+            for event_type, entries in hook_spec.items():
+                if event_type in antigravity.HOOK_SPEC_NON_EVENT_KEYS:
+                    continue
+                if not isinstance(entries, list):
+                    continue
+                # ``agy`` binds event keys case-insensitively, so the file's
+                # own spelling is normalized to the canonical name and two
+                # spellings of one event land in the same bucket.
+                canonical = antigravity.HOOK_EVENTS_BY_CASEFOLD.get(
+                    event_type.casefold() if isinstance(event_type, str) else "",
+                    event_type,
+                )
+                configs: List[HookEventConfig] = []
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    # Scan both payloads; documentation follows the event's shape.
+                    grouped = canonical in antigravity.TOOL_HOOK_EVENTS
+                    flat = canonical in antigravity.FLAT_HOOK_EVENTS
+                    show_nested = not (effective_only and flat)
+                    show_own = not (effective_only and grouped)
+                    if show_nested:
+                        nested = HookEventConfig.from_dict(entry)
+                        for handler in nested.handlers:
+                            _normalize_antigravity_handler_type(handler)
+                        if nested.handlers:
+                            configs.append(nested)
+                    if show_own and _antigravity_entry_declares_a_handler(entry):
+                        handler = HookHandler.from_dict(entry)
+                        _normalize_antigravity_handler_type(handler)
+                        configs.append(HookEventConfig(handlers=[handler]))
+                if configs:
+                    result.setdefault(canonical, []).extend(configs)
+        return result
+
 
 @dataclass
 class McpServerConfig:
@@ -854,13 +1065,17 @@ class McpShapeDeferral:
     running both would report a correct file as invalid — so the block
     declares the deferral rather than the rule naming block classes.
 
-    *repo_type* is the type gating that format rule. The tree role is
-    deliberately ``--type``-invariant while every format rule is
-    ``repo_types``-gated, so a deferral conditioned on it falls back to the
-    shared walk under a forced ``--type`` rather than leaving the file
-    validated by nothing. ``None`` defers whatever ``--type`` says, for a
+    *repo_types* are the types gating that format rule — a set, because a
+    host whose rule is gated on more than one (Antigravity's file appears
+    both in a workspace and in a plugin) needs every one of them. The tree
+    role is deliberately ``--type``-invariant while every format rule is
+    ``repo_types``-gated, so a deferral conditioned on them falls back to
+    the shared walk under a forced ``--type`` rather than leaving the file
+    validated by nothing. Empty defers whatever ``--type`` says, for a
     document the shared walk cannot read at all — a fallback that reported
-    a correct file would be worse than no fallback.
+    a correct file would be worse than no fallback. A block that also
+    names a :attr:`McpConfigRole.surface_rule` reaches that gate first, so
+    for it the fallback is the one that gate describes, not this one.
 
     *keeps_dialect_neutral_checks* is False only where the owning rule
     already makes those findings itself.
@@ -868,13 +1083,28 @@ class McpShapeDeferral:
     *syntax_error_rule* names the rule that reports "this file does not
     parse" for itself, so one defect gets one finding. ``None`` leaves that
     finding with ``mcp-valid-json``, where no ``version:`` pin can reach it;
-    naming a rule falls back to the same place whenever a pin or a forced
-    ``--type`` gates that rule off.
+    naming a rule falls back to the same place whenever a forced ``--type``
+    gates that rule off *and* no ``surface_rule`` gate stood the walk down
+    first.
     """
 
-    repo_type: Optional[RepositoryType] = None
+    repo_types: FrozenSet[RepositoryType] = frozenset()
     keeps_dialect_neutral_checks: bool = True
     syntax_error_rule: Optional[str] = None
+
+    def applies(self, active_types: AbstractSet[RepositoryType]) -> bool:
+        """Whether the owning rule can run under *active_types*.
+
+        Empty :attr:`repo_types` always defers; otherwise the deferral
+        holds only while at least one gating type is active, so a forced
+        ``--type`` that switches the owning rule off returns the file to
+        the shared walk.
+
+        ``isdisjoint`` rather than an intersection: this is asked once per
+        block, and building a set of the caller's types to throw away is
+        the kind of allocation that adds up over a large repository.
+        """
+        return not self.repo_types or not self.repo_types.isdisjoint(active_types)
 
 
 class McpConfigRole:
@@ -922,6 +1152,19 @@ class McpConfigRole:
         ("env", False),
         ("headers", True),
     )
+    #: Per-server keys whose *scalar* string value may hold a committed
+    #: credential — Antigravity accepts ``clientSecret`` on the server
+    #: itself, not only inside ``oauth``. Scanned by the same rules as a map
+    #: value, so a placeholder is still a placeholder. Empty for a host that
+    #: puts every credential in a map.
+    credential_fields: ClassVar[Tuple[str, ...]] = ()
+    #: Per-server keys holding the URL a remote server is reached at, read
+    #: by the dialect-neutral user-information check ``mcp-valid-json``
+    #: keeps for a block whose *shape* it defers. Declared on the block
+    #: because the spelling is the host's: the Claude family writes ``url``
+    #: and Antigravity writes ``serverUrl``. A host that spells it both
+    #: ways lists both.
+    connection_url_keys: ClassVar[Tuple[str, ...]] = ("url",)
     #: Key renames to apply before the credential-*name* test only, for a
     #: host whose older spelling the shared detector cannot split (OpenCode's
     #: 1.x ``clientSecret`` against its 2.0 ``client_secret``). Findings
@@ -937,6 +1180,10 @@ class McpConfigRole:
     #: :class:`McpShapeDeferral`. ``None`` — every Claude-family location —
     #: keeps the shared shape walk.
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = None
+    #: The host rule gating shared shape and syntax checks at this location.
+    #: Disabling it never disables credential checks or server policy.
+    #: ``None`` leaves the shared shape walk unconditional.
+    surface_rule: ClassVar[Optional[str]] = None
     #: The syntax this document is written in, named in a parse-error
     #: finding. Announcing a TOML failure as invalid JSON would send the
     #: author to the wrong parser.
@@ -976,10 +1223,14 @@ class McpConfigRole:
     @property
     def servers(self) -> List[McpServerConfig]:
         return [
-            McpServerConfig.from_dict(name, cfg)
+            self._server_config(name, cfg)
             for name, cfg in self.server_entries()
             if isinstance(cfg, dict)
         ]
+
+    def _server_config(self, name: str, cfg: Dict[str, Any]) -> McpServerConfig:
+        """Read the portable shape; hosts override their endpoint semantics."""
+        return McpServerConfig.from_dict(name, cfg)
 
     @property
     def server_names(self) -> Set[str]:
@@ -1007,7 +1258,7 @@ class AgentPluginMcpBlock(McpBlock):
     """
 
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
-        repo_type=RepositoryType.AGENT_PLUGIN,
+        repo_types=frozenset({RepositoryType.AGENT_PLUGIN}),
         keeps_dialect_neutral_checks=False,
     )
 
@@ -1173,7 +1424,7 @@ class OpenCodeMcpBlock(McpBlock):
 
     servers_key: ClassVar[str] = "mcp"
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
-        repo_type=RepositoryType.OPENCODE
+        repo_types=frozenset({RepositoryType.OPENCODE})
     )
     # OpenCode's config has a documented top-level key for everything from
     # ``model`` to ``keybinds``. A document with no ``mcp`` key declares no
@@ -1283,6 +1534,7 @@ class CopilotAgentMcpBlock(McpConfigRole, LintTarget):
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
     require_usable_connection: ClassVar[bool] = True
+    surface_rule: ClassVar[Optional[str]] = "copilot-agent-valid"
     type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({"local": "stdio"})
 
     @property
@@ -1322,3 +1574,100 @@ class SettingsBlock(JsonConfigBlock):
         if data is None:
             return {}
         return parse_hooks_events(data.get("hooks", {}))
+
+
+@dataclass(eq=False)
+class AntigravityMcpBlock(McpBlock):
+    """``mcp_config.json`` — Antigravity's MCP servers.
+
+    One per customization root and one per plugin. The *shape* is its own:
+    a remote server is spelled ``serverUrl`` (which wins over ``command``
+    when both are present), ``url`` plus ``type`` is a third accepted
+    form, and a server with no connection field at all loads without
+    complaint. ``mcp-valid-json`` therefore stands aside from the shape
+    checks here and ``antigravity-mcp-valid`` performs them instead; the
+    policy rules and the dialect-neutral checks — a ``url`` carrying user
+    information, and the credentials in the maps :attr:`credential_maps`
+    and the scalars :attr:`credential_fields` declare — still read this
+    block where they read every other host's, including when
+    ``antigravity-mcp-valid`` itself is gated off. The parse failure goes
+    with the shape rather than with them: ``antigravity-mcp-valid`` owns
+    it while it runs, and nothing reports it while that rule is off, so a
+    user who pinned a ``version:`` past this release sees the results that
+    release had.
+    """
+
+    #: A document with no ``mcpServers`` wrapper is silently ignored:
+    #: ``agy`` loads no server from it and says nothing. Reading it as a
+    #: bare server map would validate a file that does nothing.
+    allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
+    #: Measured: a server with neither ``command`` nor ``serverUrl`` loads
+    #: without any ``agy`` complaint, so "unusable connection" is not a
+    #: defect this host has.
+    require_usable_connection: ClassVar[bool] = False
+    #: Measured: a comment or a trailing comma is exit 1, not a warning.
+    strict_json: ClassVar[bool] = True
+    #: Measured with ``agy mcp list``: a repeated ``mcpServers`` wrapper, a
+    #: repeated server name and a repeated key inside one server all load,
+    #: the last value winning, with no diagnostic.
+    duplicate_keys_fatal: ClassVar[bool] = False
+    # agy merges these typed maps, but replaces repeated server names and
+    # mcpServers wrappers. Null clears a map. Verified with agy 1.1.26.
+    merge_duplicate_fields: ClassVar[Tuple[Tuple[str, ...], ...]] = (
+        ("mcpServers", "*", "env"),
+        ("mcpServers", "*", "headers"),
+        ("mcpServers", "*", "oauth"),
+    )
+    surface_rule: ClassVar[Optional[str]] = "antigravity-mcp-valid"
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = antigravity.MCP_CREDENTIAL_MAPS
+    #: ``clientId`` and ``clientSecret`` load at a server's own top level as
+    #: well as inside ``oauth``, so the flatter spelling is scanned too.
+    credential_fields: ClassVar[Tuple[str, ...]] = antigravity.MCP_CREDENTIAL_FIELDS
+    credential_key_aliases: ClassVar[Mapping[str, str]] = antigravity.MCP_CREDENTIAL_KEY_ALIASES
+    #: ``serverUrl`` is Antigravity's spelling and wins over ``command``;
+    #: ``url`` is a third accepted form. Both carry a credential when
+    #: someone writes one into the authority, so both are scanned.
+    connection_url_keys: ClassVar[Tuple[str, ...]] = ("serverUrl", "url")
+    shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
+        repo_types=frozenset({RepositoryType.ANTIGRAVITY, RepositoryType.ANTIGRAVITY_PLUGIN}),
+        syntax_error_rule="antigravity-mcp-valid",
+        keeps_dialect_neutral_checks=True,
+    )
+
+    def _server_config(self, name: str, cfg: Dict[str, Any]) -> McpServerConfig:
+        """Apply Antigravity's endpoint precedence without changing other hosts."""
+        server = super()._server_config(name, cfg)
+        if cfg.get("serverUrl") not in (None, ""):
+            server.url = cfg["serverUrl"]
+            server.command = None
+            server.args = None
+        # Both URL spellings imply http unless the author names a type.
+        # Unlike serverUrl, the portable url does not replace command/args.
+        if server.url not in (None, "") and cfg.get("type") is None:
+            server.type = "http"
+        return server
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (antigravity MCP)"
+
+
+@dataclass(eq=False)
+class AntigravityConfigBlock(JsonConfigBlock):
+    """An Antigravity registry file in a customization root.
+
+    ``agents.json``, ``plugins.json``, ``skills.json`` or
+    ``workflows.json`` — a ``customizations.JSONConfig`` document naming
+    where else to load that kind of customization from, not the
+    customizations themselves.
+    """
+
+    category: str = "antigravity config"
+    strict_json: ClassVar[bool] = True
+    #: Measured against a functional ``agents.json``: a repeated
+    #: ``entries`` key and a repeated ``path`` inside one entry both load
+    #: the last value's directory, with no diagnostic.
+    duplicate_keys_fatal: ClassVar[bool] = False
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (antigravity config)"

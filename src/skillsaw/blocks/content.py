@@ -59,6 +59,21 @@ class QwenMdBlock(InstructionBlock):
 
 
 @dataclass(eq=False)
+class AntigravityRuleBlock(InstructionBlock):
+    """``<customization root>/rules/**/*.md`` — Antigravity's always-on prose.
+
+    One of the four customization roots — ``.agents/``, ``.agent/``,
+    ``_agents/``, ``_agent/`` — read recursively. Always-on context, so it
+    is budgeted as ``instruction`` like every peer tool's rules directory;
+    a category of its own would appear in no lookup table and silently
+    exempt the file from ``context-budget``, ``content-instruction-drift``
+    and ``content-progressive-disclosure``.
+    """
+
+    category: str = "instruction"
+
+
+@dataclass(eq=False)
 class AgentMemoryIndexBlock(FileContentBlock):
     """``.agents/memory/MEMORY.md`` — the index of committed project memory.
 

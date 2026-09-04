@@ -26,3 +26,5 @@ rules:
     enabled: true
   content-inline-tool-examples:
     enabled: true
+  antigravity-config-json-valid:
+    enabled: true

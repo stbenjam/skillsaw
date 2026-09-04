@@ -229,6 +229,8 @@ def test_every_detected_tool_type_is_listed_in_tool_repo_types(tmp_path):
     (tmp_path / ".kiro").mkdir()
     (tmp_path / "GEMINI.md").write_text("# Gemini\n\nRun `make test`.\n")
     (tmp_path / "QWEN.md").write_text("# Qwen\n\nRun `make test`.\n")
+    (tmp_path / ".agents").mkdir(exist_ok=True)
+    (tmp_path / ".agents" / "hooks.json").write_text('{"lint": {"Stop": []}}\n')
     (tmp_path / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
     (tmp_path / "CLAUDE.md").write_text("# Claude\n\nRun `make test`.\n")
     (tmp_path / ".coderabbit.yaml").write_text("reviews:\n  profile: chill\n")
@@ -431,3 +433,41 @@ def test_config_reads_are_declared_in_config_schema():
                 problems.append(f"{rule_id}: reads undeclared config key '{key}'")
 
     assert problems == [], "\n".join(problems)
+
+
+def _mcp_config_role_subclasses():
+    """Every ``McpConfigRole`` subclass, with the block modules imported."""
+    import skillsaw.lint_tree  # noqa: F401  (imports every block module)
+    from skillsaw.blocks import McpConfigRole
+
+    def walk(cls):
+        for sub in cls.__subclasses__():
+            yield sub
+            yield from walk(sub)
+
+    return list(walk(McpConfigRole))
+
+
+def test_every_surface_rule_is_a_declared_dependency_of_mcp_valid_json():
+    """``mcp-valid-json`` gates on *every* ``surface_rule``, deferral or not.
+
+    A block whose rule is not in ``surface_dependencies`` reads as gated
+    off, and the shape walk is skipped silently. Same for a ``syntax_error_rule``: the
+    parse finding is handed back only when that rule is known to be off,
+    and an undeclared one always looks off.
+    """
+    from skillsaw.rules.builtin.mcp.valid_json import McpValidJsonRule
+
+    subs = _mcp_config_role_subclasses()
+    declared = set(McpValidJsonRule.surface_dependencies)
+    surfaces = {sub.surface_rule for sub in subs if sub.surface_rule is not None}
+    owners = {
+        sub.shape_deferral.syntax_error_rule
+        for sub in subs
+        if sub.shape_deferral is not None and sub.shape_deferral.syntax_error_rule is not None
+    }
+
+    assert surfaces, "no block declares a surface_rule — the walk found nothing"
+    assert owners, "no block declares a syntax_error_rule — the walk found nothing"
+    assert sorted(surfaces - declared) == []
+    assert sorted(owners - declared) == []

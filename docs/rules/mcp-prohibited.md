@@ -24,6 +24,7 @@ The conventional MCP files are inventoried wherever the host that reads
 them keeps one: `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, the
 `mcp` section of an `opencode.json` or `opencode.jsonc`, the
 `[mcp_servers]` tables of a `.codex/config.toml` or a `.grok/config.toml`,
+Google Antigravity's `mcp_config.json` in a customization root or plugin,
 and a plugin's `mcp.json`. Cloud or shared GitHub Copilot agents are inventoried from the
 `mcp-servers` YAML mapping in `.github/agents/**/*.md`. Servers written
 inline in a manifest are covered too. OpenCode is inventoried in

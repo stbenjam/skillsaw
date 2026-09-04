@@ -1,0 +1,6 @@
+{
+  "legacy-planner": {
+    "command": "./bin/planner-mcp",
+    "args": ["--legacy"]
+  }
+}

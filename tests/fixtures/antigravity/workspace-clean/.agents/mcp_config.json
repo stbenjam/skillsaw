@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "gtfs-feed": {
+      "serverUrl": "https://feeds.ferrymark.example/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer ${GTFS_FEED_TOKEN}"
+      },
+      "disabledTools": ["publish_feed"]
+    },
+    "harbour-db": {
+      "command": "./bin/harbour-mcp",
+      "args": ["--read-only", "--schema", "public"],
+      "env": {
+        "PGHOST": "127.0.0.1",
+        "PGPASSWORD": "${PGPASSWORD}"
+      },
+      "cwd": "/srv/ferrymark"
+    },
+    "tide-tables": {
+      "type": "http",
+      "url": "https://tides.ferrymark.example/mcp"
+    },
+    "legacy-planner": {
+      "command": "./bin/planner-mcp",
+      "disabled": true
+    }
+  }
+}

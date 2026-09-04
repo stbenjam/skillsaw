@@ -1,0 +1,9 @@
+{
+  "entries": [
+    "internal/provisioning/skills",
+    "vendor/flange-sdk/skills"
+  ],
+  "inherits": [
+    { "path": "tools/shared/skills.json" }
+  ]
+}

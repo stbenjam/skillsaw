@@ -15,8 +15,9 @@ hide:
 <p class="hero-subtitle" markdown>
 skillsaw lints the files that steer your AI coding agents: skills, plugins,
 instructions, and tool configs across Claude Code, Codex, Copilot, Agent Skills,
-OpenCode, and more. It catches security risks, structural flaws, and content dead
-zones with 97 rules, then applies deterministic autofixes.
+Google Antigravity, OpenCode, and more. It catches security risks, structural
+flaws, and content dead zones with 101 rules, then applies deterministic
+autofixes.
 </p>
 
 <p class="hero-badges" markdown>
@@ -50,7 +51,7 @@ zones with 97 rules, then applies deterministic autofixes.
     ---
 
     Schema and syntax validation across [supported ecosystems](repo-types.md): Agent Skills,
-    Claude Code, OpenAI Codex, Grok Build, Agent Plugins v1, Copilot custom agents, OpenCode, Muse Code, APM, and MCP Registry.
+    Claude Code, OpenAI Codex, Grok Build, Google Antigravity, Agent Plugins v1, Copilot custom agents, OpenCode, Muse Code, APM, and MCP Registry.
 
 -   :wrench:{ .lg .middle } **Deterministic Autofixes**
 

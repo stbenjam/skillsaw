@@ -1,0 +1,4 @@
+{
+  "hooks": {"stop": [{"command": "make lint"}]},
+  "audit": {"Stop": [{"command": "make audit"}]}
+}

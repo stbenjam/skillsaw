@@ -10,7 +10,7 @@ Validate skill openai.yaml and catalog-compatible plugin metadata
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.18.0 |
-| **Repo Types** | agent-plugin, agentskills, codex-marketplace, codex-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, single-plugin |
+| **Repo Types** | agent-plugin, agentskills, antigravity-plugin, codex-marketplace, codex-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, single-plugin |
 | **Category** | [OpenAI Codex](codex.md) |
 
 ## Why

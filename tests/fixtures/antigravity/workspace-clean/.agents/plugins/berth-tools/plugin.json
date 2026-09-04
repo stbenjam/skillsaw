@@ -1,0 +1,5 @@
+{
+  "name": "berth-tools",
+  "description": "Berth allocation helpers: a status command, an allocation reviewer, and the simulator MCP server.",
+  "logo": "assets/berth-tools.png"
+}

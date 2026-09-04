@@ -99,6 +99,7 @@ class _MergedContext:
         codex_plugins=(),
         agent_plugins=(),
         grok_plugins=(),
+        antigravity_plugins=(),
     ):
         self.root_path = root_path
         self.repo_types = repo_types
@@ -108,11 +109,16 @@ class _MergedContext:
         self.codex_plugins = list(codex_plugins)
         self.agent_plugins = list(agent_plugins)
         self.grok_plugins = list(grok_plugins)
+        self.antigravity_plugins = list(antigravity_plugins)
 
     def distinct_plugin_dirs(self):
         """Same contract as :meth:`RepositoryContext.distinct_plugin_dirs`."""
         return merge_plugin_dirs(
-            self.plugins, self.codex_plugins, self.agent_plugins, self.grok_plugins
+            self.plugins,
+            self.codex_plugins,
+            self.agent_plugins,
+            self.grok_plugins,
+            self.antigravity_plugins,
         )
 
     @property
@@ -146,6 +152,7 @@ def _build_merged_context(contexts):
     codex_plugins = []
     agent_plugins = []
     grok_plugins = []
+    antigravity_plugins = []
     for ctx in contexts:
         repo_types |= ctx.repo_types
         plugin_repo_types |= ctx.plugin_repo_types
@@ -154,6 +161,13 @@ def _build_merged_context(contexts):
         codex_plugins.extend(ctx.codex_plugins)
         agent_plugins.extend(ctx.agent_plugins)
         grok_plugins.extend(ctx.grok_plugins)
+        # Both spellings, as ``RepositoryContext.distinct_plugin_dirs``
+        # takes them: the direct list keeps its unresolved path for display,
+        # and the claim union adds the plugins a ``plugins.json`` registry
+        # names, which no other list holds. ``merge_plugin_dirs`` dedupes by
+        # resolved path.
+        antigravity_plugins.extend(ctx.antigravity_plugins)
+        antigravity_plugins.extend(ctx.antigravity_plugin_roots())
     return _MergedContext(
         root_path,
         repo_types,
@@ -163,6 +177,7 @@ def _build_merged_context(contexts):
         codex_plugins,
         agent_plugins,
         grok_plugins,
+        antigravity_plugins,
     )
 
 

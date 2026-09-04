@@ -1,0 +1,11 @@
+{
+  "lint-on-stop": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "make lint",
+        "timeout": 120
+      }
+    ]
+  }
+}

@@ -13,9 +13,13 @@ import os
 from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
+from skillsaw.discovery.antigravity import (
+    customization_root_declares_a_file,
+    customization_root_is_marked,
+)
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
-from skillsaw.formats import codex, devin, grok, muse
+from skillsaw.formats import antigravity, codex, devin, grok, muse
 from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
@@ -43,6 +47,7 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         ".github",
         ".vscode",
         ".opencode",
+        *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
         codex.CODEX_DIR_NAME,
         grok.TOOL_DIR_NAME,
         muse.TOOL_DIR_NAME,
@@ -66,7 +71,11 @@ AGENT_TOOL_DIR_NAMES = frozenset(
 # ``RepositoryContext._discover_skills``, which passes them to
 # ``discover_skills``. A name in only one of the two is a skill that is
 # counted but never linted, or found but never counted.
-NESTED_TOOL_SKILL_DIRS = (*devin.TOOL_DIR_NAMES, grok.TOOL_DIR_NAME)
+NESTED_TOOL_SKILL_DIRS = (
+    *devin.TOOL_DIR_NAMES,
+    grok.TOOL_DIR_NAME,
+    *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
+)
 
 # Reserved marker directories an *ecosystem* uses to declare a plugin or a
 # catalog, as opposed to a tool's configuration directory above. Grok Build's
@@ -391,6 +400,50 @@ def tool_types(
             for path in files
         )
 
+    def antigravity_marker() -> bool:
+        """Whether any customization root holds something only Antigravity reads.
+
+        Which evidence counts depends on how exclusively the root's *name*
+        belongs to this host.
+
+        ``.agent/`` is the documented Windsurf-lineage back-compat path and
+        nothing else reads it, so a populated ``rules/`` or ``agents/``
+        under it is enough — the wide predicate.
+
+        The other three take ``customization_root_declares_a_file``.
+        ``_agents/`` and ``_agent/`` are ordinary source-package names, and
+        ``.agents/`` is the tool-neutral layout: of 30 sampled real
+        repositories carrying ``.agents/rules``, 27 hold no Antigravity file
+        at all (see the corpus survey in the maintenance reference) —
+        ``rules/`` there says no more about which tool is configured than
+        ``skills/`` does.
+
+        Nothing moves in the lint tree: blocks attach under every dot root
+        regardless of detection, and the two non-dot roots read the same
+        predicate ``build_lint_tree`` gates them on, so detection and
+        attachment agree there too.
+        """
+        resolved_root = safe_resolve(root)
+        if resolved_root is None:
+            return False
+        for dirname in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES:
+            marked = (
+                customization_root_is_marked
+                if dirname in antigravity.EXCLUSIVE_ROOT_NAMES
+                else customization_root_declares_a_file
+            )
+            candidates = list(dirs.get(dirname) or ())
+            if not candidates:
+                candidates = [root / dirname]
+            for base in candidates:
+                # ``contained_resolve`` resolves symlinks before proving
+                # containment; it is the one containment idiom.
+                if is_excluded(base) or contained_resolve(base, resolved_root) is None:
+                    continue
+                if marked(base, is_excluded=is_excluded):
+                    return True
+        return False
+
     found: Set[str] = set()
     checks = (
         ("cursor", tool_marker("cursor") or legacy_cursor()),
@@ -418,6 +471,7 @@ def tool_types(
         # that is Grok Build's alone.
         ("grok-project", tool_marker("grok-project")),
         ("codex-project", tool_marker("codex-project")),
+        ("antigravity", antigravity_marker()),
         ("gemini", marker("GEMINI.md")),
         ("qwen", marker("QWEN.md")),
         (

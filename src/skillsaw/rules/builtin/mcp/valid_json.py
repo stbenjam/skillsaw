@@ -7,7 +7,6 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from pathlib import Path
 
 from skillsaw.blocks import (
-    CopilotAgentMcpBlock,
     JsonConfigBlock,
     McpConfigRole,
 )
@@ -70,12 +69,15 @@ class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
     default_enabled = True
-    # ``copilot-agent-valid`` gates the surface this rule reads at all;
-    # ``grok-config-valid`` and ``codex-hooks-valid`` own the "does not parse"
-    # finding for a ``.grok/config.toml`` and a ``.codex/config.toml`` while
-    # they can run, and this rule makes it when a ``version:`` pin or a forced
-    # ``--type`` gates one off.
-    surface_dependencies = ("codex-hooks-valid", "copilot-agent-valid", "grok-config-valid")
+    # These rules own surface or syntax checks consulted below. Each block's
+    # surface and deferral declarations determine whether disabling its rule
+    # permits a fallback.
+    surface_dependencies = (
+        "antigravity-mcp-valid",
+        "codex-hooks-valid",
+        "copilot-agent-valid",
+        "grok-config-valid",
+    )
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a
     # project that allowlisted its own placeholder convention must not be told
@@ -131,13 +133,14 @@ class McpValidJsonRule(Rule):
         violations = []
 
         for block in self.dependency_scoped_find(context, McpConfigRole):
-            # This tree role exists so the format rule and shared MCP rules
-            # can read one parsed payload. When a version pin disables the
-            # format rule that introduced the surface, keep the established
-            # rule set unchanged rather than leaking a new MCP diagnostic.
-            if isinstance(block, CopilotAgentMcpBlock) and not self.surface_rule_enabled(
-                "copilot-agent-valid"
-            ):
+            deferral = block.shape_deferral
+            # Gating a host's shape rule does not disable shared credential
+            # checks. Syntax failures stay with the gated shape validation.
+            surface = block.surface_rule
+            if surface is not None and not self.surface_rule_enabled(surface):
+                violations.extend(
+                    self._dialect_neutral_violations(block, report_syntax_error=False)
+                )
                 continue
             # A host whose dialect its own format rule validates. Every
             # *shape* check below reads the document the way the Claude
@@ -155,10 +158,7 @@ class McpValidJsonRule(Rule):
             # See ``_dialect_neutral_violations``. Policy rules are
             # unaffected either way — they read ``server_names``, which the
             # block normalizes.
-            deferral = block.shape_deferral
-            if deferral is not None and (
-                deferral.repo_type is None or deferral.repo_type in context.repo_types
-            ):
+            if deferral is not None and deferral.applies(context.repo_types):
                 if deferral.keeps_dialect_neutral_checks:
                     owner = deferral.syntax_error_rule
                     violations.extend(
@@ -323,14 +323,19 @@ class McpValidJsonRule(Rule):
         everything that does not depend on the host's spelling. A document
         that is not JSON is unreadable to every host. A ``url`` carrying
         user information is the same defect in every dialect. So is a
-        credential sitting in a per-server map — the map's *name* differs
+        credential sitting on a server — the *name* that carries it differs
         between hosts, which is why the block declares it in
-        :attr:`McpBlock.credential_maps` rather than this rule naming it.
+        :attr:`McpBlock.credential_maps` (a map of values) and
+        :attr:`McpBlock.credential_fields` (a scalar on the server itself)
+        rather than this rule naming it, and why the URL field itself comes
+        from :attr:`McpBlock.connection_url_keys`.
 
         Keeping them here rather than in the deferring rule is what makes
-        them survive a ``.skillsaw.yaml`` pinning a ``version:`` older than
-        that rule's ``since``, which is the ordinary state right after an
-        upgrade.
+        them survive every way that rule can be gated off — a
+        ``.skillsaw.yaml`` pinning a ``version:`` older than its ``since``,
+        which is the ordinary state right after an upgrade; an explicit
+        ``enabled: false``; a ``--skip-rule``; a forced ``--type``. None of
+        those is a request to stop looking for a committed credential.
 
         The line stops at what the *document* must be. That an OpenCode
         config's top level is an object is a claim about OpenCode's own
@@ -355,18 +360,23 @@ class McpValidJsonRule(Rule):
                     file_path=block.path,
                 )
             ]
+        line = getattr(block, "source_line", None)
+        line_for = getattr(block, "source_line_for", None)
         for name, server in block.server_entries():
             if not isinstance(server, dict):
                 continue
             shown = safe_display(str(name))
-            url = server.get("url")
-            if isinstance(url, str) and url_has_userinfo(url):
-                violations.append(
-                    self.violation(
-                        f"MCP server '{shown}' 'url' must not contain user information",
-                        file_path=block.path,
+            for url_key in block.connection_url_keys:
+                url = server.get(url_key)
+                if isinstance(url, str) and url_has_userinfo(url):
+                    violations.append(
+                        self.violation(
+                            f"MCP server '{shown}' '{url_key}' must not contain "
+                            "user information",
+                            file_path=block.path,
+                            line=line_for(server, url_key) if line_for is not None else line,
+                        )
                     )
-                )
             for key, header in block.credential_maps:
                 values = server.get(key)
                 if not isinstance(values, dict):
@@ -379,8 +389,46 @@ class McpValidJsonRule(Rule):
                         header=header,
                         aliases=block.credential_key_aliases,
                         location=key,
+                        line=line,
+                        line_for=line_for,
                     )
                 )
+            violations.extend(self._field_secret_violations(server, server_name=shown, block=block))
+        return violations
+
+    def _field_secret_violations(
+        self, server: Dict[str, Any], *, server_name: str, block: McpConfigRole
+    ) -> List[RuleViolation]:
+        """Report a credential written as a scalar on the server itself.
+
+        The same placeholder and structured-token rules a map value gets:
+        ``"${CLIENT_SECRET}"`` is a reference, a literal is a committed
+        credential. Only the keys :attr:`McpBlock.credential_fields` names
+        are read, so a host that puts every credential in a map does no
+        extra work here.
+        """
+        violations: List[RuleViolation] = []
+        for key in block.credential_fields:
+            value = server.get(key)
+            if not isinstance(value, str):
+                continue
+            description = mapped_secret_description(
+                block.credential_key_aliases.get(key, key),
+                value,
+                header=False,
+                markers=self._placeholder_markers(),
+                kind="server field",
+            )
+            if description is None:
+                continue
+            violations.append(
+                self.violation(
+                    f"MCP server '{server_name}' '{safe_display(key)}' embeds "
+                    f"{description}; use a placeholder or environment substitution "
+                    "instead of a credential value",
+                    file_path=block.path,
+                )
+            )
         return violations
 
     def _validate_plugin_json_mcp(self, plugin_json: Path) -> List[RuleViolation]:

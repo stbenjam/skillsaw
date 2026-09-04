@@ -10,8 +10,10 @@ hooks), APM's compiled
 copy, `.claude/settings*.json`, **skill/agent frontmatter** (`hooks:` key),
 `<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`, the
 `[hooks]` tables of a `.codex/config.toml`,
-`.muse/hooks.json`, Grok Build's `.grok/hooks/*.json`, and Cursor's
-`.cursor/hooks.json`.
+`.muse/hooks.json`, Grok Build's `.grok/hooks/*.json`, Cursor's
+`.cursor/hooks.json`, and Google Antigravity's `hooks.json` in a
+customization root (`.agents/`, `.agent/`, `_agents/`, `_agent/`) or in one
+of its plugins.
 
 Not every hook spawns a process. Claude Code also dispatches `http`,
 `mcp_tool`, `prompt` and `agent` handlers, and Codex dispatches `mcp_tool`
@@ -21,7 +23,7 @@ handler in `.muse/hooks.json` is reported even though Muse runs only
 `command` handlers, because the entry is in the repository and a reviewer
 reads the file. Whether a given host actually dispatches it is what that
 host's shape rule (`muse-hooks-valid`, `grok-hooks-valid`,
-`cursor-hooks-valid`) reports.
+`cursor-hooks-valid`, `antigravity-hooks-valid`) reports.
 
 A prompt handler is named by its text: `prompt:<text>` in the nested shape
 Claude Code defines, and the same spelling for a Cursor `type: "prompt"`

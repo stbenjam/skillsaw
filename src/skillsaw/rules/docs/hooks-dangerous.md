@@ -13,8 +13,10 @@ compiled copy, `.claude/settings*.json`, **skill and agent frontmatter**
 (the `hooks:` YAML key, same schema as settings hooks),
 `<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`, the
 `[hooks]` tables of a `.codex/config.toml`,
-`.muse/hooks.json`, Grok Build's `.grok/hooks/*.json`, and Cursor's
-`.cursor/hooks.json`. This rule scans every one of them — a `curl | sh`
+`.muse/hooks.json`, Grok Build's `.grok/hooks/*.json`, Cursor's
+`.cursor/hooks.json`, and Google Antigravity's `hooks.json` in a
+customization root (`.agents/`, `.agent/`, `_agents/`, `_agent/`) or in one
+of its plugins. This rule scans every one of them — a `curl | sh`
 hook hidden in SKILL.md frontmatter or in a Cursor lifecycle hook is just
 as dangerous as one in `hooks.json`.
 

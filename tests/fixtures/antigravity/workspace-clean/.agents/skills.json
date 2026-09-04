@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "path": "internal/schedule/skills",
+      "include_only": ["gtfs-*"]
+    }
+  ],
+  "inherits": [
+    {
+      "path": "~/.gemini/config"
+    }
+  ]
+}

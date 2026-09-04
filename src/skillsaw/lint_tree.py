@@ -18,6 +18,11 @@ from .blocks import (
     AgentMemoryIndexBlock,
     AgentPluginMcpBlock,
     AgentsMdBlock,
+    AntigravityAgentBlock,
+    AntigravityConfigBlock,
+    AntigravityHooksBlock,
+    AntigravityMcpBlock,
+    AntigravityRuleBlock,
     ChatmodeBlock,
     ClaudeMdBlock,
     ClineWorkflowBlock,
@@ -85,7 +90,7 @@ from .formats.codex import (
 )
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.opencode import contained_instruction_globs
-from .formats import devin, grok, muse
+from .formats import antigravity, devin, grok, muse
 from .utils import has_apm_generated_header, read_text
 from .paths import (
     contained_resolve,
@@ -105,6 +110,8 @@ from .formats.promptfoo import (
 from .lint_target import (
     AgentPluginConfigNode,
     AgentPluginNode,
+    AntigravityPluginConfigNode,
+    AntigravityPluginNode,
     LintTarget,
     ApmConfigNode,
     ApmNode,
@@ -152,6 +159,10 @@ _EDITOR_GLOBS = (
     (".opencode", "command", "**/*.md", "OpenCodeCommandBlock"),
     (".opencode", "agents", "**/*.md", "OpenCodeAgentBlock"),
     (".opencode", "agent", "**/*.md", "OpenCodeAgentBlock"),
+    *(
+        (root, antigravity.RULES_DIR_NAME, "**/*.md", "AntigravityRuleBlock")
+        for root in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES
+    ),
 )
 
 # The OpenCode directories the loader reads *flat*: ``{mode,modes}/*.md``,
@@ -306,7 +317,9 @@ class _TreeBuildState:
     def _record_role(self, resolved: Path, block_cls: type) -> None:
         """Record one attached role, and index it by the two roles asked about."""
         self.seen_roles.add((resolved, block_cls))
-        if issubclass(block_cls, HooksBlock):
+        # Antigravity's named-hook dialect must not suppress another host's
+        # parser. Shared commands are deduplicated by the hook scanners.
+        if issubclass(block_cls, HooksBlock) and block_cls is not AntigravityHooksBlock:
             self.hooks_paths.add(resolved)
         elif issubclass(block_cls, McpBlock):
             self.mcp_paths.add(resolved)
@@ -384,21 +397,14 @@ def _add_project_hooks(
     path: Path,
     block_cls: type,
 ) -> None:
-    """Attach a project-layer hooks file unless another host already has it.
+    """Keep the first conventional parser and Antigravity's distinct reading.
 
-    ``.cursor/hooks.json``, ``.codex/hooks.json`` and ``.muse/hooks.json``
-    are three names for one shape, and a repository supporting several tools
-    commonly symlinks them to a single file. Each host's loop runs
-    independently, so without this the one resolved file gets a block per
-    host and the security rules report each of its commands once per block.
-    Whichever host reaches it first keeps it: the security rules read every
-    hooks class alike, and the later host's shape rule simply does not see a
-    file that host chose to share. Grok contributes a directory of candidates
-    (``.grok/hooks/*.json``) rather than one well-known name, and its loop
-    runs last, so a Grok file symlinked to another host's is that host's
-    block.
+    Symlinked files can serve several hosts. Conventional readers retain
+    their first-host ownership; Antigravity also attaches because its named
+    hooks can expose additional handlers. The security rules scan the union
+    of those readings and report shared handlers once.
     """
-    if _attached_as_hooks(state, path):
+    if block_cls is not AntigravityHooksBlock and _attached_as_hooks(state, path):
         return
     state.add_parser_block(root, path, block_cls)
 
@@ -449,6 +455,7 @@ def _claim_attached_hooks(
     root: LintTarget,
     path: Path,
     owner: Path,
+    block_cls: Optional[type] = None,
 ) -> bool:
     """Claim an already-attached hooks file for *owner*, if there is one.
 
@@ -468,12 +475,16 @@ def _claim_attached_hooks(
     parent and is deliberately out of reach: no manifest can name a
     ``config.toml``, so there is no declaration for this loop to record.
     """
-    if not _attached_as_hooks(state, path):
-        return False
     resolved = state.resolve_repo_path(path)
+    if block_cls is not None:
+        if (resolved, block_cls) not in state.seen_roles:
+            return False
+    elif not _attached_as_hooks(state, path):
+        return False
     for child in root.children:
         if (
             isinstance(child, HooksBlock)
+            and (block_cls is None or type(child) is block_cls)
             and child.plugin_owner is None
             and safe_resolve(child.path) == resolved
         ):
@@ -592,12 +603,27 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # vendored and excluded ones, so this is narrower than "any directory
     # with the right name" — and the sweep must use the same set, or it
     # yields to an owner that never arrives.
+    # Antigravity's two non-dot roots are attached only where the root
+    # declares one of its files, so the sweep has to ask the same question
+    # the attach does. Reading the ungated walk here would make the sweep
+    # yield to an owner that never turns up, and an ``AGENTS.md`` under an
+    # ordinary package's ``_agents/rules/`` would fall out of the tree
+    # entirely rather than attaching as the instruction file it is.
+    antigravity_roots = {
+        resolved
+        for directory in context.antigravity_workspace_roots()
+        if (resolved := safe_resolve(directory)) is not None
+    }
     eligible_tool_dirs = {
-        editor: {
-            resolved
-            for directory in context.agent_tool_dirs(editor)
-            if (resolved := safe_resolve(directory)) is not None
-        }
+        editor: (
+            antigravity_roots
+            if editor in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES
+            else {
+                resolved
+                for directory in context.agent_tool_dirs(editor)
+                if (resolved := safe_resolve(directory)) is not None
+            }
+        )
         for editor in {editor for editor, _sub, _pattern, _cls in _EDITOR_GLOBS}
     }
 
@@ -624,8 +650,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
           matching on the directory *name* alone would silently discard
           vendored content the linter reports.
 
-        All of it reads from ``_EDITOR_GLOBS`` and ``agent_tool_dirs``, so
-        the two halves cannot drift apart.
+        All of it reads from ``_EDITOR_GLOBS`` and from the same eligible
+        set the attach loops use — ``agent_tool_dirs`` for most editors,
+        and ``antigravity_workspace_roots()`` for the four customization
+        roots, whose two non-dot names attach only where the root declares
+        one of Antigravity's own files. One source per editor, so the two
+        halves cannot drift apart.
         """
 
         def _lexically_claimed(candidate: Path) -> bool:
@@ -700,7 +730,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         return agent_plugin_mcp is not None and safe_resolve(path) == agent_plugin_mcp
 
     def _add_contained_plugin_block(
-        parent: CodexPluginConfigNode | GrokPluginConfigNode | AgentPluginConfigNode,
+        parent: (
+            CodexPluginConfigNode
+            | GrokPluginConfigNode
+            | AgentPluginConfigNode
+            | AntigravityPluginConfigNode
+        ),
         p: Path,
         block_cls: type,
         owner: Path | None = None,
@@ -760,7 +795,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             ("rules", PluginRuleBlock, "**/*.md"),
         ):
             content_dir = plugin_dir / dirname
-            if not safe_is_dir(content_dir):
+            if not _contained(content_dir) or not safe_is_dir(content_dir):
                 continue
             try:
                 files = sorted(content_dir.glob(pattern))
@@ -991,6 +1026,55 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # there is no ``.grok/mcp.json`` — so it is attached under its own
         # parser role rather than as prose, and one block per resolved file.
         state.add_parser_block(root, grok_dir / grok.CONFIG_FILENAME, GrokConfigBlock)
+
+    # Antigravity reads a customization root — ``.agents/``, ``.agent/``,
+    # ``_agents/`` or ``_agent/`` — walking *up* from the directory it was
+    # started in to the repository root and unioning every root it finds, so
+    # a monorepo package's own root is live configuration and the
+    # walk-backed lookup finds both. ``rules/`` is read recursively;
+    # ``skills/`` is walked through ``CONVENTIONAL_SKILL_DIRS``, which earns
+    # the whole skill rule set; ``plugins/`` is the install location and
+    # belongs to plugin discovery, so nothing here descends into it. Which
+    # roots qualify is ``antigravity_workspace_roots``: the two non-dot
+    # names are also ordinary source-package names, so they are attached
+    # only where the root declares one of Antigravity's own files.
+    for agents_dir in context.antigravity_workspace_roots():
+        _add_project_hooks(
+            state, root, agents_dir / antigravity.HOOKS_FILENAME, AntigravityHooksBlock
+        )
+        state.add_parser_block(
+            root, agents_dir / antigravity.MCP_CONFIG_FILENAME, AntigravityMcpBlock
+        )
+        # No compiled-output suppression here, unlike every other editor
+        # directory below. ``APM_COMPILED_DIR_TARGETS`` maps ``.agents`` to
+        # the ``codex`` target because that target's skills converge on
+        # ``.agents/skills/`` — and a converged *skill* is suppressed by the
+        # per-match check in the skills loop, which reads the file's own
+        # path. Nothing APM writes for ``codex`` lands in ``rules/``
+        # (apm-cli 0.24.0 deploys that target to ``.codex/``), so asking the
+        # question of the whole root here would hide every hand-authored
+        # Antigravity rule in a repository that happens to target Codex.
+        _add_glob(
+            root,
+            agents_dir / antigravity.RULES_DIR_NAME,
+            "**/*.md",
+            AntigravityRuleBlock,
+        )
+        _add_glob(root, agents_dir / antigravity.AGENTS_DIR_NAME, "*.md", AntigravityAgentBlock)
+
+    for registry in context.antigravity_registry_files():
+        state.add_parser_block(root, registry, AntigravityConfigBlock)
+
+    # An ``agents.json`` registry points ``agy`` at subagents living outside
+    # the customization root, and measurement shows it loads them: the
+    # directory it names is as much this repository's agent prose as
+    # ``<root>/agents/`` is. Resolved once for every root rather than inside
+    # the loop above, because two roots may name the same directory and it
+    # gets one block either way. ``plugins.json`` needs nothing here — its
+    # targets join the provenance claim set, so the single plugin pass
+    # builds their containers.
+    for registry_dir in context.antigravity_registry_dirs(antigravity.AGENTS_REGISTRY):
+        _add_glob(root, registry_dir, "*.md", AntigravityAgentBlock)
 
     # Committed project memory: notes a team checks in for whatever agent
     # reads the checkout. The index is loaded whole and every other Markdown
@@ -1247,6 +1331,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     plugin_nodes: dict[Path, PluginNode] = {}
     codex_plugin_nodes: dict[Path, CodexPluginNode] = {}
     grok_plugin_nodes: dict[Path, GrokPluginNode] = {}
+    antigravity_plugin_nodes: dict[Path, AntigravityPluginNode] = {}
     agent_plugin_nodes: dict[Path, AgentPluginNode] = {}
     marketplace_dir = context.root_path / "plugins"
     marketplace_node: MarketplaceNode | None = None
@@ -1269,9 +1354,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *context.plugins,
         *context.codex_plugins,
         *context.grok_plugins,
+        *context.antigravity_plugins,
         *context.agent_plugins,
         *sorted(p for p in context._codex_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._grok_claim_set() if not context.is_path_excluded(p)),
+        *sorted(p for p in context._antigravity_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._agent_plugin_claim_set() if not context.is_path_excluded(p)),
     ):
         resolved_candidate = safe_resolve(candidate)
@@ -1292,9 +1379,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     root_plugin_owner: Path | None = None
     for plugin_path in plugin_dirs:
         prov = context.provenance(plugin_path)
-        # Compiled-output filtering is a Claude/APM concept; a Codex claim
-        # is its own provenance and keeps the directory.
-        if _is_in_compiled_dir(plugin_path) and not prov.codex:
+        # Compiled-output filtering is a Claude/APM concept; a Codex or
+        # Antigravity claim is its own provenance and keeps the directory.
+        # ``.agents/`` is both an APM compile target and Antigravity's
+        # customization root, so without the second half an authored
+        # ``.agents/plugins/<name>/`` would be discarded as generated output
+        # in every APM repository with a Codex target.
+        if _is_in_compiled_dir(plugin_path) and not (prov.codex or prov.antigravity):
             continue
         resolved_plugin = safe_resolve(plugin_path)
         if resolved_plugin is None:
@@ -1312,7 +1403,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if prov.claude:
             container = PluginNode(path=plugin_path)
             plugin_nodes[resolved_plugin] = container
-        elif resolved_plugin == root.resolved_path and (prov.codex or prov.grok or is_agent_plugin):
+        elif resolved_plugin == root.resolved_path and (
+            prov.codex or prov.grok or prov.antigravity or is_agent_plugin
+        ):
             container = root
         elif prov.codex:
             container = CodexPluginNode(path=plugin_path)
@@ -1320,6 +1413,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         elif prov.grok:
             container = GrokPluginNode(path=plugin_path)
             grok_plugin_nodes[resolved_plugin] = container
+        elif prov.antigravity:
+            container = AntigravityPluginNode(path=plugin_path)
+            antigravity_plugin_nodes[resolved_plugin] = container
         elif is_agent_plugin:
             container = AgentPluginNode(path=plugin_path)
             agent_plugin_nodes[resolved_plugin] = container
@@ -1583,6 +1679,32 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             )
             container.children.append(node)
 
+        # Antigravity manifest cluster, for any directory Antigravity
+        # claims. Not gated on the manifest existing: a forced ``--type
+        # antigravity-plugin`` seeds a directory without one, and the node
+        # is what ``antigravity-plugin-json-valid`` reads to report it.
+        # Antigravity's plugin content is ``plugin.json``, ``hooks.json``
+        # and ``mcp_config.json``; ``skills/``, ``commands/``, ``agents/``
+        # and ``rules/`` are already attached — by the skill walk and by
+        # ``_add_plugin_prose`` — and the Claude-conventional
+        # ``hooks/hooks.json`` and ``.mcp.json`` are deliberately absent,
+        # because ``agy`` reads neither.
+        if prov.antigravity:
+            node = AntigravityPluginConfigNode(path=plugin_path / antigravity.PLUGIN_MANIFEST)
+            node.plugin_owner = resolved_plugin
+            conventional_hooks = plugin_path / antigravity.HOOKS_FILENAME
+            if _inside_plugin(conventional_hooks, resolved_plugin) and not _claim_attached_hooks(
+                state, root, conventional_hooks, resolved_plugin, AntigravityHooksBlock
+            ):
+                state.add_parser_block(
+                    node, conventional_hooks, AntigravityHooksBlock, owner=resolved_plugin
+                )
+            native_mcp = plugin_path / antigravity.MCP_CONFIG_FILENAME
+            _add_contained_plugin_block(
+                node, native_mcp, AntigravityMcpBlock, owner=resolved_plugin
+            )
+            container.children.append(node)
+
         if container is not root:
             if marketplace_node is not None and resolved_plugin.is_relative_to(
                 (safe_resolve(marketplace_dir) or marketplace_dir)
@@ -1633,6 +1755,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 plugin_nodes.get(candidate)
                 or codex_plugin_nodes.get(candidate)
                 or grok_plugin_nodes.get(candidate)
+                or antigravity_plugin_nodes.get(candidate)
                 or agent_plugin_nodes.get(candidate)
             )
             if node is not None:

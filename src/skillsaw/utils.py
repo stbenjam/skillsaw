@@ -1,5 +1,6 @@
 """Shared utilities for builtin rules."""
 
+import codecs
 import json
 import math
 import os
@@ -654,6 +655,15 @@ def _bounded_json_string(value: str, max_length: int = 120) -> str:
     return f'"{"".join(fragments)}"'
 
 
+def has_utf8_bom(file_path: Path) -> bool:
+    """Inspect the prefix before ``read_text`` strips a UTF-8 byte-order mark."""
+    try:
+        with open(file_path, "rb") as handle:
+            return handle.read(3) == codecs.BOM_UTF8
+    except OSError:
+        return False
+
+
 def reject_duplicate_json_keys(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
     """Build a JSON object while rejecting keys a normal decoder collapses."""
     result: Dict[str, Any] = {}
@@ -664,14 +674,56 @@ def reject_duplicate_json_keys(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
     return result
 
 
+class _JsonObjectPairs(list):
+    """Preserve repeated object keys without confusing objects with arrays."""
+
+
+def _merge_duplicate_json_fields(
+    value: Any, paths: Tuple[Tuple[str, ...], ...], path: Tuple[str, ...] = ()
+) -> Any:
+    """Materialize objects, merging only at selected paths (``*`` is one key)."""
+    if isinstance(value, _JsonObjectPairs):
+        result: Dict[str, Any] = {}
+        for key, child in value:
+            child_path = (*path, key)
+            decoded = _merge_duplicate_json_fields(child, paths, child_path)
+            previous = result.get(key)
+            merge = any(
+                len(pattern) == len(child_path)
+                and all(p == "*" or p == actual for p, actual in zip(pattern, child_path))
+                for pattern in paths
+            )
+            if merge and isinstance(previous, dict) and isinstance(decoded, dict):
+                previous.update(decoded)
+            else:
+                result[key] = decoded
+        return result
+    if isinstance(value, list):
+        return [
+            _merge_duplicate_json_fields(child, paths, (*path, str(index)))
+            for index, child in enumerate(value)
+        ]
+    return value
+
+
 @_file_cache.cached
-def read_json_strict(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
+def read_json_strict(
+    file_path: Path,
+    *,
+    allow_duplicate_keys: bool = False,
+    merge_duplicate_fields: Tuple[Tuple[str, ...], ...] = (),
+) -> Tuple[Optional[object], Optional[str]]:
     """Like :func:`read_json`, but rejecting duplicate keys and non-finite numbers.
 
     ``json.loads`` accepts the bare tokens ``NaN``, ``Infinity`` and
     ``-Infinity`` anywhere a number is allowed. No JSON host does: Node
     throws on the whole document, so a config carrying one is dead on
     arrival for the tool that reads it while skillsaw reports it clean.
+
+    *allow_duplicate_keys* accepts repeated keys with the last value winning.
+    *merge_duplicate_fields* selects paths whose object members merge;
+    ``*`` matches one key, and scalars/null still replace the previous value. Hosts opt in
+    after verifying their decoder's behavior. Non-finite tokens stay fatal.
 
     Kept separate from :func:`read_json` rather than folded into it because
     discovery reads manifests through that function — tightening it there
@@ -683,15 +735,18 @@ def read_json_strict(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     content = read_text(file_path)
     if content is None:
         return None, f"Failed to read {file_path.name}"
+    pairs_hook = None if allow_duplicate_keys else reject_duplicate_json_keys
+    if allow_duplicate_keys and merge_duplicate_fields:
+        pairs_hook = _JsonObjectPairs
     try:
-        return (
-            json.loads(
-                content,
-                parse_constant=_reject_non_finite,
-                object_pairs_hook=reject_duplicate_json_keys,
-            ),
-            None,
+        data = json.loads(
+            content,
+            parse_constant=_reject_non_finite,
+            object_pairs_hook=pairs_hook,
         )
+        if pairs_hook is _JsonObjectPairs:
+            data = _merge_duplicate_json_fields(data, merge_duplicate_fields)
+        return data, None
     except ValueError as e:
         # Same rationale as read_json: bare ValueError, not just the
         # JSONDecodeError subclass.

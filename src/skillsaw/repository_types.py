@@ -56,6 +56,9 @@ class RepositoryType(Enum):
     AGENTS_MD = "agents-md"  # Repository with an AGENTS.md
     CLAUDE_MD = "claude-md"  # Repository with a CLAUDE.md
     SKILLS_LOCK = "skills-lock"  # Repository with a Vercel skills CLI skills-lock.json
+    # Antigravity primitives (plugin with plugin.json, or project configuration)
+    ANTIGRAVITY_PLUGIN = "antigravity-plugin"
+    ANTIGRAVITY = "antigravity"
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -78,6 +81,7 @@ SKILL_REPO_TYPES = {
     RepositoryType.AGENT_PLUGIN,
     RepositoryType.GROK_PLUGIN,
     RepositoryType.GROK_MARKETPLACE,
+    RepositoryType.ANTIGRAVITY_PLUGIN,
 }
 
 
@@ -95,6 +99,7 @@ TOOL_REPO_TYPES = frozenset(
         RepositoryType.MUSE,
         RepositoryType.GROK_PROJECT,
         RepositoryType.CODEX_PROJECT,
+        RepositoryType.ANTIGRAVITY,
         RepositoryType.KIRO,
         RepositoryType.GEMINI,
         RepositoryType.QWEN,

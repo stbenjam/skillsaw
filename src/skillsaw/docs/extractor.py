@@ -39,6 +39,7 @@ from skillsaw.blocks import (
     AgentBlock,
     CommandBlock,
     DevinSkillBlock,
+    HookHandler,
     HooksBlock,
     McpBlock,
     PluginRuleBlock,
@@ -47,6 +48,7 @@ from skillsaw.blocks import (
 )
 from skillsaw.lint_target import (
     AgentPluginConfigNode,
+    AntigravityPluginConfigNode,
     CodexPluginConfigNode,
     DevinSkillNode,
     GrokPluginConfigNode,
@@ -89,6 +91,7 @@ def extract_docs(
     # ecosystems claim is documented once, under the strongest declaration.
     grok_plugins = _extract_grok_plugins(context, documented)
     plugins = plugins + grok_plugins
+    plugins = plugins + _extract_antigravity_plugins(context, documented)
     plugins = plugins + _extract_agent_plugins(context, documented)
 
     marketplace = None
@@ -597,6 +600,53 @@ def _grok_entry_doc(
     return (catalog, name), doc
 
 
+def _extract_antigravity_plugins(
+    context: RepositoryContext,
+    documented: Set[Path],
+) -> List[PluginDoc]:
+    """Document Antigravity plugins not already covered by another ecosystem.
+
+    A directory another ecosystem also claims is already in *documented*
+    through that doc; what is left is the Antigravity-only plugin, whose
+    ``AntigravityPluginConfigNode`` is the only thing that names it.
+    """
+    docs: List[PluginDoc] = []
+    for node in context.lint_tree.find(AntigravityPluginConfigNode):
+        # The tree's ownership decision, read back rather than re-derived.
+        plugin_resolved = node.plugin_owner or safe_resolve(node.plugin_dir)
+        if plugin_resolved is None or plugin_resolved in documented:
+            continue
+        documented.add(plugin_resolved)
+        docs.append(_extract_antigravity_plugin(context, node, plugin_resolved))
+    return docs
+
+
+def _extract_antigravity_plugin(
+    context: RepositoryContext,
+    node: AntigravityPluginConfigNode,
+    plugin_resolved: Path,
+) -> PluginDoc:
+    """Build a PluginDoc from an Antigravity manifest and its subtree.
+
+    The manifest is a four-field protojson message, so only ``name`` and
+    ``description`` have anything to publish — ``version``, ``author`` and
+    the rest are discarded by Antigravity itself and are left empty rather
+    than invented from keys it ignores. An absent or empty name falls back
+    to the directory name, matching Antigravity's in-place discovery.
+    """
+    plugin_dir = node.plugin_dir
+    meta = _read_json_dict(node)
+    name = meta.get("name")
+    description = meta.get("description")
+    return PluginDoc(
+        name=name if isinstance(name, str) and name else plugin_dir.name,
+        path=plugin_dir,
+        description=description if isinstance(description, str) else "",
+        **_owned_components(context, node, plugin_resolved),
+        has_readme=safe_is_file(plugin_dir / "README.md"),
+    )
+
+
 def _extract_agent_plugins(
     context: RepositoryContext,
     documented: Set[Path],
@@ -898,13 +948,21 @@ def _agent_docs(blocks) -> List[AgentDoc]:
 def _extract_hooks(blocks: List[HooksBlock]) -> List[HookDoc]:
     docs = []
     for block in blocks:
-        for event_type in sorted(block.events):
-            configs = block.events[event_type]
+        # Use the host's documentation view rather than its broader security view.
+        events = block.effective_events
+        for event_type in sorted(events):
+            configs = events[event_type]
             entries = [
                 HookEntry(
                     matcher=cfg.matcher,
                     hooks=[
-                        {k: v for k, v in h.__dict__.items() if v is not None and k != "type"}
+                        {
+                            k: v
+                            for k, v in h.__dict__.items()
+                            if v is not None
+                            and k != "type"
+                            and k not in HookHandler.INTERNAL_FIELDS
+                        }
                         | {"type": h.type}
                         for h in cfg.handlers
                     ],

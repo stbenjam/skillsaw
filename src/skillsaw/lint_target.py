@@ -400,6 +400,22 @@ class AgentPluginNode(LintTarget):
 
 
 @dataclass(eq=False)
+class AntigravityPluginNode(LintTarget):
+    """An Antigravity-only plugin directory.
+
+    Deliberately not a ``PluginNode`` subclass: Claude plugin rules select
+    ``PluginNode`` targets, and an Antigravity-only directory needs a hierarchy
+    container without acquiring Claude semantics.
+    """
+
+    def provenance_dir(self) -> Optional[Path]:
+        return self.path
+
+    def tree_label(self) -> str:
+        return f"{self.path.name}/ [antigravity plugin]"
+
+
+@dataclass(eq=False)
 class SkillNode(LintTarget):
     """A skill directory."""
 
@@ -533,6 +549,21 @@ class AgentPluginConfigNode(LintTarget):
 
     def tree_label(self) -> str:
         return "plugin.json [agent plugin]"
+
+
+@dataclass(eq=False)
+class AntigravityPluginConfigNode(LintTarget):
+    """The root ``plugin.json`` manifest for an Antigravity plugin."""
+
+    @property
+    def plugin_dir(self) -> Path:
+        return self.path.parent
+
+    def provenance_dir(self) -> Optional[Path]:
+        return self.plugin_dir
+
+    def tree_label(self) -> str:
+        return "plugin.json [antigravity]"
 
 
 @dataclass(eq=False)

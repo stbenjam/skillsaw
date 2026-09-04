@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "route-kit",
+  "version": "1.4.0",
+  "description": "Validate transit route definitions before publication."
+}

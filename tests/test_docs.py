@@ -142,6 +142,30 @@ class TestExtractor:
         assert plugin.rules[0].name == "style"
         assert plugin.rules[0].globs == ["src/**/*.py"]
 
+    def test_hook_entries_publish_no_internal_fields(self, dot_claude_repo):
+        """A cross-host guard, on a Claude fixture.
+
+        ``command_variants`` defaults to ``[]`` rather than ``None``, so
+        before the filter it leaked into every host's published hook entry.
+        ``source_line`` and ``type_line`` are the linter's own bookkeeping
+        and belong in no published document either.
+        """
+        docs = extract_docs(RepositoryContext(dot_claude_repo))
+        published = [
+            handler
+            for plugin in docs.plugins
+            for hook in plugin.hooks
+            for entry in hook.entries
+            for handler in entry.hooks
+        ]
+
+        assert published
+        for handler in published:
+            assert "command_variants" not in handler
+            assert "source_line" not in handler
+            assert "type_line" not in handler
+            assert handler["type"] == "command"
+
     def test_extract_standalone_devin_skills_with_optional_frontmatter(self, temp_dir):
         plain = temp_dir / ".devin" / "skills" / "review"
         plain.mkdir(parents=True)
@@ -601,6 +625,227 @@ class TestAgentPluginExtractor:
         html = render_html(docs)["index.html"]
         assert "acme.release-tools" in html
         assert "release-auditor" in html
+
+
+class TestAntigravityExtractor:
+    """``skillsaw docs`` on Antigravity packaging.
+
+    The endpoint column reads whichever key the host spells it with, so a
+    remote server declared with ``serverUrl`` is not rendered as a process
+    with no command.
+    """
+
+    def _plugin(self, root: Path, mcp: dict) -> Path:
+        (root / "AGENTS.md").write_text("# Ferrymark\n\nRun `make test`.\n")
+        plugin = root / ".agents" / "plugins" / "berth-tools"
+        plugin.mkdir(parents=True)
+        (plugin / "plugin.json").write_text(json.dumps({"name": "berth-tools"}, indent=2))
+        (plugin / "mcp_config.json").write_text(json.dumps(mcp, indent=2))
+        return plugin
+
+    def test_a_manifest_without_a_name_falls_back_to_the_directory_name(self, temp_dir):
+        """Documentation can still name an incomplete plugin by its directory."""
+        self._plugin(temp_dir, {"mcpServers": {}})
+        (temp_dir / ".agents" / "plugins" / "berth-tools" / "plugin.json").write_text("{}")
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert [p.name for p in docs.plugins] == ["berth-tools"]
+        assert docs.plugins[0].description == ""
+
+    def test_a_dual_claimed_plugin_is_documented_once(self, temp_dir):
+        """A directory both ecosystems claim gets one entry, not two.
+
+        The ``documented`` bookkeeping in the Antigravity leg is the only
+        thing preventing ``_extract_agent_plugins`` from listing it again.
+        """
+        from tests.antigravity._helpers import copy_fixture
+
+        from skillsaw.lint_target import AgentPluginConfigNode, AntigravityPluginConfigNode
+
+        repo = copy_fixture("antigravity/dual-manifest", temp_dir)
+        context = RepositoryContext(repo)
+        assert len(context.lint_tree.find(AgentPluginConfigNode)) == 1
+        assert len(context.lint_tree.find(AntigravityPluginConfigNode)) == 1
+        assert context.provenance(repo / "plugins/route-kit").ecosystems == {
+            "agent-plugin",
+            "antigravity",
+        }
+        docs = extract_docs(context)
+
+        assert [p.name for p in docs.plugins] == ["route-kit"]
+
+    @pytest.mark.parametrize("empty", ("", None))
+    def test_empty_server_url_preserves_the_command(self, temp_dir, empty):
+        self._plugin(
+            temp_dir,
+            {"mcpServers": {"local": {"command": "echo", "args": ["ok"], "serverUrl": empty}}},
+        )
+        docs = extract_docs(RepositoryContext(temp_dir))
+        server = docs.plugins[0].mcp_servers[0]
+        assert server.server_type == "stdio"
+        assert server.config["command"] == "echo"
+        assert server.config["args"] == ["ok"]
+        assert "| local | `stdio` | `echo` |" in render_markdown(docs)["README.md"]
+
+    def test_published_hooks_list_only_what_dispatches(self, temp_dir):
+        """``events`` over-reports for the scanners; a document must not."""
+        plugin = self._plugin(temp_dir, {"mcpServers": {}})
+        (plugin / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "audit": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "run_command",
+                                "command": "ignored-by-agy",
+                                "hooks": [{"command": "make lint"}],
+                            }
+                        ],
+                        "Stop": [{"command": "make test", "hooks": [{"command": "also-ignored"}]}],
+                    }
+                },
+                indent=2,
+            )
+        )
+
+        hooks = extract_docs(RepositoryContext(temp_dir)).plugins[0].hooks
+        published = {
+            hook.event_type: sorted(
+                handler["command"] for entry in hook.entries for handler in entry.hooks
+            )
+            for hook in hooks
+        }
+
+        assert published == {"PreToolUse": ["make lint"], "Stop": ["make test"]}
+
+    def test_server_url_is_published_as_the_endpoint(self, temp_dir):
+        self._plugin(
+            temp_dir,
+            {
+                "mcpServers": {
+                    "remote": {"serverUrl": "https://feeds.example/mcp/sse"},
+                    "local": {"command": "./bin/db"},
+                }
+            },
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+        by_name = {s.name: s for s in docs.plugins[0].mcp_servers}
+
+        assert by_name["remote"].config["url"] == "https://feeds.example/mcp/sse"
+        # Measured: ``serverUrl`` with no ``type`` loads as ``http``.
+        assert by_name["remote"].server_type == "http"
+        assert by_name["local"].server_type == "stdio"
+        assert by_name["local"].config["command"] == "./bin/db"
+
+    def test_disabled_hooks_are_scanned_but_not_published(self, temp_dir):
+        from skillsaw.blocks.json_config import AntigravityHooksBlock
+
+        plugin = self._plugin(temp_dir, {"mcpServers": {}})
+        (plugin / "hooks.json").write_text(
+            json.dumps({"audit": {"enabled": False, "Stop": [{"command": "make lint"}]}}),
+            encoding="utf-8",
+        )
+        context = RepositoryContext(temp_dir)
+        assert context.lint_tree.find(AntigravityHooksBlock)[0].events
+        assert extract_docs(context).plugins[0].hooks == []
+
+    def test_server_url_takes_precedence_over_url(self, temp_dir):
+        self._plugin(
+            temp_dir,
+            {
+                "mcpServers": {
+                    "remote": {
+                        "serverUrl": "https://primary.example/mcp",
+                        "url": "https://fallback.example/mcp",
+                    }
+                }
+            },
+        )
+        server = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers[0]
+        assert server.server_type == "http"
+        assert server.config["url"] == "https://primary.example/mcp"
+
+    def test_registry_root_plugin_owns_pre_attached_hooks(self, temp_dir):
+        root = temp_dir / ".agents"
+        root.mkdir()
+        (root / "plugins.json").write_text('{"entries": [{"path": ".agents"}]}', encoding="utf-8")
+        (root / "plugin.json").write_text('{"name": "berth-tools"}', encoding="utf-8")
+        (root / "hooks.json").write_text(
+            '{"audit": {"Stop": [{"command": "make lint"}]}}', encoding="utf-8"
+        )
+        docs = extract_docs(RepositoryContext(temp_dir))
+        assert len(docs.plugins) == 1
+        assert [hook.event_type for hook in docs.plugins[0].hooks] == ["Stop"]
+
+    def test_an_explicit_type_is_not_overridden(self, temp_dir):
+        self._plugin(
+            temp_dir,
+            {"mcpServers": {"remote": {"serverUrl": "https://feeds.example/mcp", "type": "sse"}}},
+        )
+
+        servers = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers
+
+        assert servers[0].server_type == "sse"
+
+    def test_a_server_naming_both_publishes_the_one_that_runs(self, temp_dir):
+        """Measured: ``serverUrl`` wins over ``command``.
+
+        Both renderers pick ``command`` before ``url``, so leaving it would
+        publish the command ``agy`` ignores as the endpoint of an ``http``
+        server.
+        """
+        self._plugin(
+            temp_dir,
+            {
+                "mcpServers": {
+                    "both": {
+                        "command": "./bin/db",
+                        "args": ["--ro"],
+                        "serverUrl": "https://feeds.example/mcp",
+                    }
+                }
+            },
+        )
+
+        servers = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers
+
+        assert servers[0].server_type == "http"
+        assert servers[0].config["url"] == "https://feeds.example/mcp"
+        assert "command" not in servers[0].config
+        assert "args" not in servers[0].config
+
+    def test_the_portable_key_still_supplies_the_endpoint(self, temp_dir):
+        """``url`` alone supplies a remote endpoint."""
+        self._plugin(
+            temp_dir,
+            {
+                "mcpServers": {
+                    "remote": {
+                        "url": "https://portable.example/mcp",
+                    }
+                }
+            },
+        )
+
+        servers = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers
+
+        assert servers[0].config["url"] == "https://portable.example/mcp"
+        # Measured: a bare ``url`` loads as ``http`` for this host too.
+        assert servers[0].server_type == "http"
+
+    def test_the_portable_key_beside_a_command_is_left_alone(self, temp_dir):
+        """Unmeasured for every host, so the established reading stands."""
+        self._plugin(
+            temp_dir,
+            {"mcpServers": {"mixed": {"command": "./bin/db", "url": "https://e.example/mcp"}}},
+        )
+
+        servers = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers
+
+        assert servers[0].config["command"] == "./bin/db"
+        assert servers[0].config["url"] == "https://e.example/mcp"
 
 
 # ---------------------------------------------------------------------------
@@ -1526,6 +1771,18 @@ class TestDocsCLI:
         result = self._run(str(valid_plugin), "--format", "markdown", "--output", str(out_dir))
         assert result.returncode == 0
         assert (out_dir / "README.md").exists()
+
+    @pytest.mark.parametrize("fixture", ("workspace-clean", "shared-plugin-hooks"))
+    def test_docs_recognizes_antigravity_repositories(self, temp_dir, fixture):
+        from tests.antigravity._helpers import copy_fixture
+        from tests.cli_runner import run_cli
+
+        repo = copy_fixture(f"antigravity/{fixture}", temp_dir)
+        out_dir = temp_dir / "out"
+        result = run_cli(["docs", str(repo), "--output", str(out_dir)])
+        assert result.returncode == 0
+        assert "doesn't appear to be a recognized repository" not in result.stderr
+        assert (out_dir / "index.html").exists()
 
     def test_docs_warns_for_registry_only_repository(self, temp_dir):
         (temp_dir / "server.json").write_text(

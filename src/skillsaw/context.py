@@ -25,6 +25,7 @@ from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
 from .repository_external_content import RepositoryExternalContentMixin
 from .repository_grok import RepositoryGrokMixin
+from .repository_antigravity import RepositoryAntigravityMixin
 from .repository_mcp_registry import RepositoryMcpRegistryMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 from .repository_scan import RepositoryScanMixin
@@ -60,6 +61,7 @@ class RepositoryContext(
     RepositoryMcpRegistryMixin,
     RepositoryExternalContentMixin,
     RepositoryGrokMixin,
+    RepositoryAntigravityMixin,
     RepositoryProvenanceMixin,
 ):
     """Detected repository metadata used during linting."""
@@ -79,6 +81,7 @@ class RepositoryContext(
         RepositoryType.CODEX_PLUGIN,
         RepositoryType.GROK_MARKETPLACE,
         RepositoryType.GROK_PLUGIN,
+        RepositoryType.ANTIGRAVITY_PLUGIN,
         RepositoryType.AGENT_PLUGIN,
         RepositoryType.AGENTSKILLS,
         RepositoryType.MCP_REGISTRY,
@@ -95,6 +98,7 @@ class RepositoryContext(
         RepositoryType.CLINE,
         RepositoryType.DEVIN,
         RepositoryType.OPENCODE,
+        RepositoryType.ANTIGRAVITY,
         RepositoryType.KIRO,
         RepositoryType.SKILLS_LOCK,
         RepositoryType.CLAUDE_MD,
@@ -204,6 +208,7 @@ class RepositoryContext(
             self._discover_agent_plugins() if self._agent_plugin_discovery_enabled else []
         )
         self._init_grok(repo_types)
+        self._init_antigravity(repo_types)
         # An explicit ``--type`` answers "how is this content packaged", and
         # ``_refresh_tool_types()`` keeps it authoritative for that half while
         # still folding in the tools the checkout configures.
@@ -448,6 +453,7 @@ class RepositoryContext(
         self._agent_plugin_claims = None
         self._agent_plugin_roots = None
         self._reset_grok_caches(filtering=bool(self.exclude_patterns))
+        self._reset_antigravity_caches(filtering=bool(self.exclude_patterns))
         self._contained_plugin_roots = self._mcp_registry_paths = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
@@ -527,6 +533,8 @@ class RepositoryContext(
             types.add(RepositoryType.GROK_MARKETPLACE)
         if self.grok_plugins:
             types.add(RepositoryType.GROK_PLUGIN)
+        if self.antigravity_plugin_roots():
+            types.add(RepositoryType.ANTIGRAVITY_PLUGIN)
         if self.mcp_registry_server_paths():
             types.add(RepositoryType.MCP_REGISTRY)
 
@@ -697,7 +705,16 @@ class RepositoryContext(
         manifest-only Codex catalog or a portable Agent Plugins collection.
         """
         return merge_plugin_dirs(
-            self.plugins, self.codex_plugins, self.agent_plugins, self.grok_plugins
+            self.plugins,
+            self.codex_plugins,
+            self.agent_plugins,
+            self.grok_plugins,
+            # Both spellings: the direct list keeps its unresolved path for
+            # display, and the claim union adds the plugins a
+            # ``plugins.json`` registry names, which are counted nowhere
+            # else. ``merge_plugin_dirs`` dedupes by resolved path.
+            self.antigravity_plugins,
+            self.antigravity_plugin_roots(),
         )
 
     def codex_marketplace_paths(self) -> List[Path]:
@@ -844,50 +861,6 @@ class RepositoryContext(
         """Return merged manifest and marketplace plugin metadata."""
         return claude_discovery.plugin_metadata(
             plugin_path, self.plugin_metadata, self.marketplace_entries
-        )
-
-    def _discover_skills(self) -> List[Path]:
-        """Discover Agent Skills through the state-free Claude discovery seam."""
-        recursive_agent_plugins = [
-            plugin
-            for plugin in self.agent_plugin_roots()
-            if (provenance := self.provenance(plugin)).claude or provenance.codex
-        ]
-        return claude_discovery.discover_skills(
-            self.root_path,
-            agentskills=RepositoryType.AGENTSKILLS in self.repo_types,
-            # A plugins/* layout can cause legacy Claude discovery to list an
-            # Agent-only sibling. Only an actual Claude declaration permits
-            # recursive Claude skill discovery for a portable package.
-            plugins=[
-                plugin
-                for plugin in self.plugins
-                if not self.provenance(plugin).agent_plugin or self.provenance(plugin).claude
-            ],
-            codex_plugins=self.codex_plugins,
-            grok_plugins=self.grok_plugins,
-            # Declaration-invariant roots keep portable skills visible under
-            # an unrelated ``--type`` override while still enforcing their
-            # fixed immediate-child discovery semantics.
-            agent_plugins=self.agent_plugin_roots(),
-            recursive_agent_plugins=recursive_agent_plugins,
-            in_apm_compiled_dir=self.in_apm_compiled_dir,
-            should_skip=self._should_skip_dir,
-            claim_boundary=self._contained_plugin_claim_boundary,
-            containment_claims_possible=self._contained_plugin_claims_possible,
-            is_containment_plugin=self._is_containment_plugin,
-            # Devin/Windsurf and Grok Build each read the nearest enclosing
-            # tool directory, so a monorepo package carries its own
-            # ``skills/``. ``CONVENTIONAL_SKILL_DIRS`` covers only the
-            # root-relative spelling and the generic walk skips hidden
-            # directories, so the nested roots are handed over from the walk
-            # that already found them — the same tuple detection reads.
-            additional_skill_dirs=(
-                directory / "skills"
-                for name in detect_discovery.NESTED_TOOL_SKILL_DIRS
-                for directory in self.agent_tool_dirs(name)
-            ),
-            is_excluded=self.is_path_excluded,
         )
 
     def __str__(self):

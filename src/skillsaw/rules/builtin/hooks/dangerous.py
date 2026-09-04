@@ -12,6 +12,7 @@ from typing import Dict, List, Set
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from ._events import unique_hook_events
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
     CopilotAgentBlock,
@@ -537,13 +538,8 @@ class HooksDangerousRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        # Every host's hooks file is a HooksBlock — Claude, Codex, Muse,
-        # Cursor — and each renders its own shape as HookEventConfig.
-        hook_blocks = context.lint_tree.find(HooksBlock)
-        for block in hook_blocks:
-            if block.parse_error:
-                continue
-            violations.extend(self._check_events(block.events, block.path))
+        for path, events in unique_hook_events(context.lint_tree.find(HooksBlock)):
+            violations.extend(self._check_events(events, path))
 
         for block in context.lint_tree.find(SettingsBlock):
             if block.parse_error:

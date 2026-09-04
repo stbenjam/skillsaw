@@ -162,6 +162,32 @@ RULE_GROUPS = [
         "automatically when Devin repository context is present.",
     ),
     (
+        "Google Antigravity",
+        [
+            "antigravity-config-json-valid",
+            "antigravity-hooks-valid",
+            "antigravity-mcp-valid",
+            "antigravity-plugin-json-valid",
+        ],
+        "Validates Google Antigravity primitives: plugin manifests "
+        "(`plugin.json`), lifecycle hooks (`hooks.json`), MCP servers "
+        "(`mcp_config.json`), and the registries (`agents.json`, "
+        "`plugins.json`, `skills.json`, `workflows.json`) that name where else "
+        "to load customizations from. A customization root is `.agents/`, "
+        "`.agent/`, `_agents/` or `_agent/`, and the directory's presence is "
+        "not evidence on its own: `.agents/` is a tool-neutral layout other "
+        "ecosystems use, and `skills/` and `memory/` under it are shared "
+        "conventions. Detection therefore needs one of the named JSON files or "
+        "a plugin — except under `.agent/`, which no other tool reads, where a "
+        "populated `rules/` or `agents/` counts too. What skillsaw *lints* is "
+        "wider: every customization root's prose and configuration attaches "
+        "whether or not the repository is typed `antigravity` — with `_agents/` "
+        "and `_agent/` attaching once they declare one of Antigravity's own "
+        "files, since any source package may take those two names. "
+        "The manifest, hooks and MCP rules are auto-enabled once "
+        "Antigravity is detected; the registry rule is opt-in.",
+    ),
+    (
         "Grok Build",
         [
             "grok-agent-valid",
