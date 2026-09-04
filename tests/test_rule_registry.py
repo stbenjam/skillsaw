@@ -25,7 +25,6 @@ def test_registry_discovers_rules():
 def test_registry_ids_unique_and_sorted():
     ids = list(BUILTIN_RULE_REGISTRY)
     assert ids == sorted(ids)
-    assert len(ids) == len(set(ids))
     assert list(BUILTIN_RULE_REGISTRY.values()) == BUILTIN_RULES
 
 

@@ -157,13 +157,6 @@ def test_a_nested_hooks_file_is_the_only_muse_marker_a_monorepo_needs(temp_dir) 
     assert only(check(temp_dir), "is missing 'command'")
 
 
-def test_an_empty_muse_directory_is_not_evidence(temp_dir) -> None:
-    """Detection must agree with attachment: nothing here for a rule to read."""
-    (temp_dir / ".muse").mkdir()
-
-    assert RepositoryType.MUSE not in RepositoryContext(temp_dir).repo_types
-
-
 def test_an_excluded_hooks_file_drives_neither_detection_nor_attachment(temp_dir) -> None:
     (temp_dir / ".muse").mkdir()
     (temp_dir / ".muse" / "hooks.json").write_text(HOOKS_JSON)

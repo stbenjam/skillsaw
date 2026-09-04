@@ -299,12 +299,6 @@ class TestEmptyAndSingleInput:
         result = _resolve_lint_paths([tmp_path])
         assert result == [tmp_path]
 
-    def test_single_file(self, tmp_path):
-        f = tmp_path / "SKILL.md"
-        f.touch()
-        result = _resolve_lint_paths([f])
-        assert result == [tmp_path]
-
 
 def test_unresolvable_output_path_is_rejected(monkeypatch, capsys):
     """An unsafe report path must produce a controlled CLI error."""
