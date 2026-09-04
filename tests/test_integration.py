@@ -84,8 +84,18 @@ def _fix_widened(repo, *extra_args):
     return _run_fix(repo, *extra_args)
 
 
+def _report(r):
+    output = r["out"]
+    assert (
+        isinstance(output, dict)
+        and isinstance(output.get("violations"), list)
+        and isinstance(output.get("summary"), dict)
+    ), f"Expected JSON lint report, got {r!r}"
+    return output
+
+
 def violations(r):
-    return r["out"]["violations"] if r["out"] else []
+    return _report(r)["violations"]
 
 
 def by_rule(r):
@@ -100,7 +110,34 @@ def rule_ids(r):
 
 
 def summary(r):
-    return r["out"]["summary"] if r["out"] else {}
+    return _report(r)["summary"]
+
+
+class TestReportHelpers:
+    @pytest.mark.parametrize("extract", [violations, summary], ids=["violations", "summary"])
+    @pytest.mark.parametrize(
+        "output",
+        [None, [], {}, {"violations": None, "summary": {}}, {"violations": [], "summary": None}],
+    )
+    def test_missing_or_invalid_report_is_rejected(self, extract, output):
+        result = {"rc": 1, "out": output, "stdout": "", "stderr": "CLI failed"}
+
+        with pytest.raises(AssertionError, match="Expected JSON lint report"):
+            extract(result)
+
+    def test_cli_crash_is_not_a_clean_report(self, tmp_path, monkeypatch):
+        def crash():
+            raise RuntimeError("seeded CLI failure")
+
+        monkeypatch.setattr("skillsaw.cli.main", crash)
+        result = run_lint(tmp_path)
+
+        assert result["rc"] == 1
+        assert result["out"] is None
+        assert "RuntimeError: seeded CLI failure" in result["stderr"]
+        for extract in (violations, summary):
+            with pytest.raises(AssertionError, match="Expected JSON lint report"):
+                extract(result)
 
 
 def copy_fixture(name, tmp_path):
@@ -782,6 +819,9 @@ class TestUnreferencedSkillFiles:
         """SKILL.md links references/guide.md, which mentions release-weeks.md."""
         repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "report-builder")]
         flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
         assert "report-builder/references/release-weeks.md" not in flagged
 
@@ -789,6 +829,9 @@ class TestUnreferencedSkillFiles:
         """assets/theme.css is only covered by the `assets/` directory mention."""
         repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "report-builder")]
         assert self.RULE not in rule_ids(r)
 
     def test_directory_mention_covers_disabled(self, tmp_path):
@@ -814,7 +857,11 @@ class TestUnreferencedSkillFiles:
             "rules:\n" "  agentskill-unreferenced-files:\n" "    directory_mention_covers: false\n"
         )
         r = run_lint(repo, config=config)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "report-builder")]
         flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert "report-builder/assets/theme.css" in flagged
         assert "report-builder/assets/shell.html" not in flagged
 
     def test_default_exclusions_never_flagged(self, tmp_path):
@@ -827,6 +874,9 @@ class TestUnreferencedSkillFiles:
         assert (skill / "tests" / "evals.json").is_file()
         assert (skill / "assets" / ".gitkeep").is_file()
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "report-builder")]
         assert self.RULE not in rule_ids(r)
 
     def test_exclude_glob_suppresses_violation(self, tmp_path):
@@ -839,7 +889,16 @@ class TestUnreferencedSkillFiles:
             '      - "scripts/upload.py"\n'
             '      - "references/*.md"\n'
         )
+        unfiltered = run_lint(repo)
+        assert unfiltered["rc"] == 0
+        assert {v["file_path"] for v in by_rule(unfiltered)[self.RULE]} == {
+            "log-analyzer/scripts/upload.py",
+            "log-analyzer/references/unused-notes.md",
+        }
         r = run_lint(repo, config=config)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "log-analyzer")]
         assert self.RULE not in rule_ids(r)
 
     def test_fully_referenced_skill_passes(self, tmp_path):
@@ -1229,6 +1288,7 @@ class TestDirectManifestInputs:
         before = command.read_bytes()
 
         r = run_lint(manifest)
+        assert r["rc"] == 0
         assert all(
             not str(v.get("file_path", "")).endswith("capture.md") for v in violations(r)
         ), violations(r)
@@ -1247,6 +1307,7 @@ class TestDirectManifestInputs:
         before = command.read_bytes()
 
         r = run_lint(repo / ".claude-plugin" / "plugin.json")
+        assert r["rc"] == 0
         assert all(
             not str(v.get("file_path", "")).endswith("deploy.md") for v in violations(r)
         ), violations(r)
@@ -1489,6 +1550,10 @@ class TestMultiplePaths:
         broken_file = repo_broken / "Bad_Formatter" / "SKILL.md"
         r = run_lint(broken_file, str(repo_clean))
         assert r["rc"] == 1
+        assert any(
+            v["file_path"] == str(broken_file.relative_to(tmp_path))
+            for v in by_rule(r)["agentskill-name"]
+        )
 
     def test_lint_clean_dir_and_broken_file(self, tmp_path):
         """A clean dir and a broken file should exit 1."""
@@ -1497,6 +1562,10 @@ class TestMultiplePaths:
         broken_file = repo_broken / "Bad_Formatter" / "SKILL.md"
         r = run_lint(repo_clean, str(broken_file))
         assert r["rc"] == 1
+        assert any(
+            v["file_path"] == str(broken_file.relative_to(tmp_path))
+            for v in by_rule(r)["agentskill-name"]
+        )
 
     def test_lint_valid_dir_and_nonexistent_dir(self, tmp_path):
         """valid dir, nonexistent dir should warn, lint valid, exit 1."""
@@ -1975,7 +2044,11 @@ class TestCursorRules:
         """
         repo = self._lenient_repo(tmp_path, "validcomment", "alwaysApply: true # applies globally")
 
-        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "cursor" in r["out"]["stats"]["repo_types"]
+        assert "cursor-rules-valid" in r["out"]["stats"]["rules_run"]
+        assert by_rule(r).get("cursor-rules-valid", []) == []
 
     def test_a_hash_inside_a_quoted_value_is_data(self, tmp_path):
         repo = self._lenient_repo(
@@ -2012,7 +2085,11 @@ class TestCursorRules:
     def test_a_flow_style_globs_list_of_relative_patterns_passes(self, tmp_path):
         repo = self._lenient_repo(tmp_path, "flowok", "globs: [src/**, tests/**]")
 
-        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "cursor" in r["out"]["stats"]["repo_types"]
+        assert "cursor-rules-valid" in r["out"]["stats"]["rules_run"]
+        assert by_rule(r).get("cursor-rules-valid", []) == []
 
     def test_lenient_mdc_frontmatter_with_a_list_does_not_crash(self, tmp_path):
         """A bare `key:` opening a list must not be appended to as if it were one."""
@@ -2429,6 +2506,8 @@ class TestCursorRules:
         """Cursor's flatter shape must not be judged against the Claude schema."""
         repo = copy_fixture("cursor-rules/broken-hooks", tmp_path)
         r = run_lint(repo)
+        assert r["rc"] == 1
+        assert {v["file_path"] for v in by_rule(r)["cursor-hooks-valid"]} == {".cursor/hooks.json"}
 
         assert not [
             v for v in violations(r) if v["rule_id"] == "claude-hooks-valid"
@@ -3573,7 +3652,10 @@ class TestOpenCode:
         }
         repo = self._opencode_repo(tmp_path, "merged-collections", json.dumps(config))
 
-        grouped = by_rule(run_lint(repo))
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "opencode-config-valid" in r["out"]["stats"]["rules_run"]
+        grouped = by_rule(r)
         messages = [violation["message"] for violation in grouped.get("opencode-config-valid", [])]
 
         assert grouped.get("rule-execution-error", []) == []
@@ -3820,7 +3902,11 @@ class TestOpenCode:
         repo = copy_fixture("opencode/native-v1", tmp_path)
         assert "{env:SENTRY_MCP_TOKEN}" in (repo / "opencode.json").read_text()
 
-        messages = [v["message"] for v in violations(run_lint(repo))]
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "opencode" in r["out"]["stats"]["repo_types"]
+        assert "mcp-valid-json" in r["out"]["stats"]["rules_run"]
+        messages = [v["message"] for v in violations(r)]
         assert not any("embeds" in m for m in messages)
 
     def test_mcp_valid_json_stands_aside_for_the_opencode_dialect(self, tmp_path):
@@ -3927,7 +4013,19 @@ class TestOpenCode:
         source = (repo / ".opencode/command/conventions.md").read_text()
         assert "should probably" in source, "the fixture must carry a content defect"
 
+        from skillsaw.blocks import OpenCodeCommandBlock
+        from skillsaw.context import RepositoryContext
+        from skillsaw.lint_target import ApmNode
+
+        tree = RepositoryContext(repo).lint_tree
+        assert [node.path for node in tree.find(ApmNode)] == [repo / ".apm"]
+        assert [node.path for node in tree.find(OpenCodeCommandBlock)] == [
+            repo / ".opencode/command/conventions.md"
+        ]
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "apm" in r["out"]["stats"]["repo_types"]
+        assert "content-weak-language" in r["out"]["stats"]["rules_run"]
         assert not [
             v for v in violations(r) if v["file_path"].startswith(".opencode/")
         ], "APM-compiled OpenCode output must not report content findings"
@@ -4078,7 +4176,10 @@ class TestOpenCode:
         config = (repo / ".opencode/opencode.jsonc").read_text()
         assert '"startup"' in config and '"codemode"' in config
 
-        assert by_rule(run_lint(repo)).get("opencode-config-valid", []) == []
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "opencode-config-valid" in r["out"]["stats"]["rules_run"]
+        assert by_rule(r).get("opencode-config-valid", []) == []
 
     @staticmethod
     def _opencode_repo(tmp_path, name, config_text):
@@ -4369,7 +4470,15 @@ class TestPromptfoo:
 
     def test_nested_promptfoo_config_validates(self, tmp_path):
         repo = copy_fixture("promptfoo/nested-config", tmp_path)
+        from skillsaw.context import RepositoryContext
+        from skillsaw.lint_target import PromptfooConfigNode
+
+        assert [
+            node.path for node in RepositoryContext(repo).lint_tree.find(PromptfooConfigNode)
+        ] == [repo / "ai/evals/promptfoo/promptfooconfig.yaml"]
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "promptfoo-valid" in r["out"]["stats"]["rules_run"]
         promptfoo_violations = [v for v in violations(r) if v["rule_id"].startswith("promptfoo-")]
         assert len(promptfoo_violations) == 0
 
@@ -8095,20 +8204,31 @@ class TestUnrecognizedRepositoryWarning:
 
     def test_editor_only_repositories_are_not_warned_about(self, tmp_path):
         cursor = copy_fixture("cursor-rules/clean", tmp_path)
-        assert self.WARNING not in run_lint(cursor)["stderr"]
+        cursor_result = run_lint(cursor)
+        assert cursor_result["rc"] == 0
+        assert "cursor" in _report(cursor_result)["stats"]["repo_types"]
+        assert "cursor-rules-valid" in cursor_result["out"]["stats"]["rules_run"]
+        assert self.WARNING not in cursor_result["stderr"]
 
         cline = tmp_path / "cline"
         (cline / ".clinerules").mkdir(parents=True)
         (cline / ".clinerules" / "style.md").write_text(
             "# Style\n\nPrefer small, focused pull requests with a clear description.\n"
         )
-        assert self.WARNING not in run_lint(cline)["stderr"]
+        cline_result = run_lint(cline)
+        assert cline_result["rc"] == 0
+        assert "cline" in _report(cline_result)["stats"]["repo_types"]
+        assert self.WARNING not in cline_result["stderr"]
 
     def test_root_agents_md_is_a_recognized_repository(self, tmp_path):
         repo = tmp_path / "agents-only"
         repo.mkdir()
         (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test` before opening a PR.\n")
-        assert self.WARNING not in run_lint(repo)["stderr"]
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "agents-md" in _report(r)["stats"]["repo_types"]
+        assert "instruction-file-valid" in r["out"]["stats"]["rules_run"]
+        assert self.WARNING not in r["stderr"]
 
     def test_empty_directory_is_still_warned_about(self, tmp_path):
         empty = tmp_path / "empty"

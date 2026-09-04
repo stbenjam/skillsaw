@@ -423,9 +423,24 @@ class TestFindCache:
 
     def test_rebuild_lint_tree_resets_cache(self, tmp_path):
         context = self._make_skill_repo(tmp_path)
-        assert len(context.lint_tree.find(FrontmatterField)) == 2
+        assert {f.name for f in context.lint_tree.find(FrontmatterField)} == {
+            "name",
+            "description",
+        }
+        (tmp_path / "skills" / "demo" / "SKILL.md").write_text(
+            "---\nname: demo\ndescription: A demo skill for cache tests\n"
+            "version: 1.0.0\n---\n\n# Demo\n",
+            encoding="utf-8",
+        )
+        # This external write invalidates raw reads; rebuilding must replace
+        # the already-parsed tree and its cached field lookup independently.
+        invalidate_read_caches()
         context.rebuild_lint_tree()
-        assert len(context.lint_tree.find(FrontmatterField)) == 2
+        assert {f.name for f in context.lint_tree.find(FrontmatterField)} == {
+            "name",
+            "description",
+            "version",
+        }
 
 
 class TestAdversarialInputStaysLinear:
