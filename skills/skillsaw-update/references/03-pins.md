@@ -123,7 +123,7 @@ Find every image reference, including nested Dockerfiles, Containerfiles and
 GitLab CI configurations:
 
 ```console
-git grep -nE 'stbenjam/skillsaw(:|@sha256:|[[:space:]]|"|$)'
+git grep -nE 'stbenjam/skillsaw(:|@sha256:|[[:space:]]|"|'"'"'|$)'
 ```
 
 The suffix form finds `ghcr.io/stbenjam/skillsaw` and a mirrored path such as

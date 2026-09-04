@@ -88,23 +88,24 @@ to "Declining the upgrade".
 ## Upgrade methods
 
 - **Project dependency**: when the prefix resolves inside the repository's
-  own `.venv`, or a `uv.lock`, `poetry.lock` or `Pipfile.lock` lists
-  skillsaw, the version lives in the manifest, so this is a pin edit made
-  with the user's consent: keep the dependency group and the operator the
-  manifest uses (`uv add --dev` and `poetry add --group dev` would move the
-  entry and replace a caret or floor), set an exact pin to `{latest}` and
-  leave a floor or caret unless the user chooses to raise it, then move the
-  lock with the scoped
-  command (`uv lock --upgrade-package skillsaw`,
-  `poetry update --lock skillsaw`, `pipenv update skillsaw`). The project's
-  own invocation (`uv run skillsaw`, `poetry run skillsaw`,
-  `pipenv run skillsaw`) is `<new-prefix>`.
+  own `.venv` and the manifest (`pyproject.toml`, `Pipfile`) declares
+  skillsaw, the version lives there, so this is a pin edit made with the
+  user's consent: keep the dependency group and the operator the manifest
+  uses (`uv add --dev` and `poetry add --group dev` would change both), set
+  an exact pin to `{latest}`, leave a floor or caret unless the user chooses
+  to raise it, then update the lock
+  and the environment together (`uv lock --upgrade-package skillsaw && uv
+  sync`, `poetry update skillsaw`, `pipenv update skillsaw`; `poetry update
+  --lock` alone leaves the old package installed). A lock-only, transitive
+  skillsaw declares nothing; the pins step refreshes that lock. The
+  project's own invocation (`uv run skillsaw`,
+  `poetry run skillsaw`, `pipenv run skillsaw`) is `<new-prefix>`.
 - **uvx**: nothing to install. The new prefix is `uvx skillsaw=={latest}`;
   the old one stays usable for comparison.
-- **pip, pipx or uv tool**: identify the manager first; the first line of
-  the `skillsaw` script (`head -1 "$(command -v skillsaw)"`) names its
-  interpreter (`…/pipx/venvs/skillsaw/…`, `…/uv/tools/skillsaw/…`, or a
-  plain virtualenv). Then upgrade with that manager, keeping the rule
+- **pip, pipx or uv tool**: `head -1 "$(command -v skillsaw)"` names the
+  manager through its interpreter (`…/pipx/venvs/skillsaw/…`,
+  `…/uv/tools/skillsaw/…`, or a plain virtualenv). Upgrade with it, keeping
+  the rule
   plugins it carries: `pipx upgrade skillsaw` keeps injected packages;
   `uv tool install "skillsaw=={latest}"` with one `--with <plugin>` per
   extra requirement `uv tool list --show-with` prints, since a reinstall
@@ -115,8 +116,8 @@ to "Declining the upgrade".
 - **Container**: pull the pinned image
   (`podman pull ghcr.io/stbenjam/skillsaw:{latest}` or `docker pull ...`) and
   define `<new-prefix>` as the run command from "Installed version" with
-  `{latest}` in the tag. The image carries skillsaw alone; an install that
-  relies on rule plugins takes the `uvx --with` form below instead.
+  `{latest}` in the tag. The image carries skillsaw alone; plugin users take
+  the `uvx --with` form below.
 
 ## Declining the upgrade
 

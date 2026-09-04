@@ -10,18 +10,6 @@ comm -13 <(sort /tmp/skillsaw-rules-old.txt) <(sort /tmp/skillsaw-rules-new.txt)
 Rules printed by `comm -23` with the files swapped were removed: findings or
 baseline entries naming them are stale, and the triage step handles them.
 
-## When no rule was added
-
-Report that the upgrade adds no new checks and return to the router. The pin
-updates and the verification step still apply.
-
-## Explain each added rule
-
-For every added rule ID, run `<new-prefix> explain <rule-id>` and summarize
-in one line each: what it checks, its default severity, whether it has an
-autofix, and its most useful option. Prefer the explanation's own words over
-the violation message when describing the rule.
-
 ## Lift the config version gate
 
 The config file's top-level `version:` gates rule activation: a rule whose
@@ -35,7 +23,10 @@ no config file exists and nothing is gated, so skip this section. Otherwise
 `{old}` is the `version:` value in `{config}`, or `0.6.0` when the key is
 absent.
 
-If `{old}` is below `{latest}`, keep a scan taken under the old gate:
+Do this before deciding whether anything is new: the list comparison above
+sees only the binaries, while a gate below `{installed}` keeps rules off that
+both binaries carry. If `{old}` is below `{latest}`, keep a scan taken under
+the old gate:
 
 ```console
 <new-prefix> lint --format json -v > /tmp/skillsaw-update-scan-gated.json
@@ -53,6 +44,21 @@ only the ones the list comparison found, so after the scan below treat each
 rule that reports findings there and not in the gated scan as added, for the
 report and for triage. If no, the gated rules stay off: run the scan below
 anyway and report which added rules it could not exercise.
+
+## When no rule was added
+
+If the list comparison adds nothing and the gate needed no change (or the
+user declined to move it), report that the upgrade adds no new checks and
+return to the router; the pin updates and the verification step still apply.
+If the gate was moved, continue below even with an empty comparison: the
+rules added between `{old}` and `{installed}` are the new checks.
+
+## Explain each added rule
+
+For every added rule ID, run `<new-prefix> explain <rule-id>` and summarize
+in one line each: what it checks, its default severity, whether it has an
+autofix, and its most useful option. Prefer the explanation's own words over
+the violation message when describing the rule.
 
 ## Scan the repository with the new version
 

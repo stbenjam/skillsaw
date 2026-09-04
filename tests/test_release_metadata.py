@@ -65,7 +65,7 @@ def test_documented_skillsaw_floor_is_installable():
     )
 
 
-_GIT_GREP_LINE = re.compile(r"^\s*[`(]*\$?\s*git grep [^`\n]*", re.MULTILINE)
+_GIT_GREP_LINE = re.compile(r"^\s*[`(]*\$?\s*(git grep [^`\n]*)", re.MULTILINE)
 SKILL_DIR = REPO_ROOT / "skills" / "skillsaw-update"
 
 
@@ -87,13 +87,6 @@ def _grep_pattern(command: str) -> str:
     """The pattern argument of a `git grep …` command line."""
     tokens = _command_tokens(command)
     return next(token for token in tokens[2:] if not token.startswith("-"))
-
-
-def _is_extended(command: str) -> bool:
-    """Whether the `git grep` itself (not a downstream `grep`) takes `-E`."""
-    tokens = _command_tokens(command)
-    options = tokens[2 : tokens.index(_grep_pattern(command))]
-    return any("E" in option for option in options)
 
 
 def test_glob_pathspecs_in_skill_recipes_also_match_the_repo_root():
@@ -126,6 +119,7 @@ ROUTER_MUST_MATCH = [
     "  image: registry.example.com/mirror/stbenjam/skillsaw:0.19.0",
     "FROM ghcr.io/stbenjam/skillsaw@sha256:dead",
     "FROM ghcr.io/stbenjam/skillsaw",
+    "  image: 'ghcr.io/stbenjam/skillsaw'",
     "  - repo: https://github.com/stbenjam/skillsaw",
     "  - uses: stbenjam/skillsaw@abc123 # v0.19.0",
     "  - uses: stbenjam/skillsaw/review@abc123",
@@ -169,25 +163,72 @@ def test_the_router_pin_scan_matches_every_documented_pin_form():
         assert not _grep_matches(pattern, line), f"router scan over-matches: {line!r}"
 
 
-def test_the_pins_recipes_together_find_every_documented_pin_form():
-    """Each recipe in the pins reference owns one surface; between them they
-    must reach every form the router routes there, and none of the near
-    misses. Patterns are read from the reference itself."""
+# The same pin lines placed where a repository keeps them, so each recipe runs
+# with its own pathspecs against a real git work tree. Near misses live in a
+# file no recipe is scoped to and must surface nowhere.
+PIN_FIXTURE = {
+    ".github/workflows/lint.yml": [
+        "  - uses: stbenjam/skillsaw@abc123 # v0.19.0",
+        "  - uses: stbenjam/skillsaw/review@abc123",
+    ],
+    "Makefile": ["SKILLSAW_VERSION := 0.19.0", "\tuvx skillsaw@0.19.0"],
+    ".pre-commit-config.yaml": ["  - repo: https://github.com/stbenjam/skillsaw"],
+    "Dockerfile": [
+        "FROM ghcr.io/stbenjam/skillsaw:0.19.0",
+        "FROM ghcr.io/stbenjam/skillsaw@sha256:dead",
+        "FROM ghcr.io/stbenjam/skillsaw",
+        "RUN pip install skillsaw==0.20.0",
+    ],
+    ".gitlab-ci.yml": [
+        "  image: ghcr.io/stbenjam/skillsaw:0.19.0",
+        "  image: registry.example.com/mirror/stbenjam/skillsaw:0.19.0",
+        "  image: 'ghcr.io/stbenjam/skillsaw'",
+    ],
+    "requirements.txt": [
+        "skillsaw >= 0.19.0",
+        "skillsaw != 0.18.0",
+        "skillsaw @ git+https://github.com/stbenjam/skillsaw.git@v0.19.0",
+    ],
+    "pyproject.toml": [
+        'skillsaw = { version = "0.19.0" }',
+        'skillsaw = "^0.19.0"',
+        "skillsaw = '^0.19.0'",
+    ],
+    "uv.lock": ['name = "skillsaw"'],
+    "docs/notes.md": ROUTER_MUST_NOT_MATCH,
+}
+
+
+def test_the_pins_recipes_together_find_every_documented_pin_form(tmp_path):
+    """Each recipe in the pins reference owns one surface; run every one, with
+    its own pathspecs, against a git work tree holding one pin per documented
+    form, and require the union to reach each pin and none of the near misses.
+    Commands are read from the reference itself."""
+    for name, lines in PIN_FIXTURE.items():
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(lines) + "\n")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+
     commands = [
         command
         for command in _GIT_GREP_LINE.findall((SKILL_DIR / "references" / "03-pins.md").read_text())
         if command.startswith("git grep")
     ]
-    patterns = [_grep_pattern(command) for command in commands]
-    assert len(patterns) >= 7, patterns
-    for line in ROUTER_MUST_MATCH:
-        assert any(_grep_matches(p, line) for p in patterns), f"no recipe finds: {line!r}"
-    # Only the extended-regex recipes carry a boundary; the plain-word ones
-    # (action metadata, Makefile, pre-commit) are scoped by their pathspecs.
-    extended = [_grep_pattern(command) for command in commands if _is_extended(command)]
-    assert len(extended) >= 4, extended
-    for line in ROUTER_MUST_NOT_MATCH:
-        assert not any(_grep_matches(p, line) for p in extended), f"a recipe over-matches: {line!r}"
+    assert len(commands) >= 7, commands
+    found = ""
+    for command in commands:
+        result = subprocess.run(
+            ["bash", "-c", command], cwd=tmp_path, capture_output=True, text=True, check=False
+        )
+        found += result.stdout
+    for name, lines in PIN_FIXTURE.items():
+        for line in lines:
+            if name == "docs/notes.md":
+                assert line not in found, f"a recipe over-matches: {line!r}"
+            else:
+                assert line.strip() in found, f"no recipe finds: {line!r}"
 
 
 def test_image_tags_in_skills_and_docs_carry_no_v():
