@@ -22,7 +22,7 @@ the very files the rule exists to report.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import AbstractSet, Any, Dict, List, Optional, Set, Tuple
 
 from skillsaw.blocks import json_token
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -111,13 +111,59 @@ def _declared_fields() -> Dict[str, frozenset]:
 _DECLARED_FIELDS = _declared_fields()
 
 
-def _a(noun: str) -> str:
+def _field_spellings() -> Dict[str, Tuple[str, ...]]:
+    """Every spelling of each field Codex accepts more than one name for.
+
+    Keyed by the canonical name and starting with it, so a message names the
+    field before its alias. Precomputed for the same reason
+    :data:`_DECLARED_FIELDS` is: the alias table is module-level and frozen.
+    """
+    spellings: Dict[str, List[str]] = {}
+    for alias, field in CODEX_HOOK_FIELD_ALIASES.items():
+        spellings.setdefault(field, [field]).append(alias)
+    return {field: tuple(names) for field, names in spellings.items()}
+
+
+_FIELD_SPELLINGS = _field_spellings()
+
+#: How many names a consolidated finding shows before it counts the rest.
+_SAMPLE_LIMIT = 3
+
+
+def _sample(names: List[str]) -> str:
+    """*names* rendered for a message, bounded with a count.
+
+    Sliced before it is rendered: ``safe_display`` walks each string, and a
+    crafted file can carry thousands of keys.
+    """
+    shown = ", ".join(f"'{safe_display(name)}'" for name in names[:_SAMPLE_LIMIT])
+    remaining = len(names) - _SAMPLE_LIMIT
+    if remaining > 0:
+        shown += f", and {remaining} more"
+    return shown
+
+
+def _with_article(noun: str) -> str:
     """*noun* with the article the message needs.
 
     The blocks declare bare nouns — ``object``, ``table``, ``array of
     tables`` — because the article follows the word, not the syntax.
     """
     return f"an {noun}" if noun[:1] in "aeiou" else f"a {noun}"
+
+
+def _declares_hooks(block: CodexHooksBlock) -> bool:
+    """Whether *block* declares an event group Codex would merge.
+
+    The one test for both files, so the both-files finding is made only
+    where there is something to merge: a document that did not parse, or
+    whose ``hooks`` mapping is absent or empty, declares nothing.
+    """
+    if block.parse_error is not None:
+        return False
+    data = block.raw_data
+    events = data.get("hooks") if isinstance(data, dict) else None
+    return isinstance(events, dict) and bool(events)
 
 
 def _matches_type(value: Any, expected) -> bool:
@@ -222,12 +268,17 @@ class CodexHooksValidRule(Rule):
         allow_both = bool(self.setting("allow-both-files"))
 
         blocks = context.lint_tree.find(CodexHooksBlock)
-        # The hooks files in the tree, which is what the both-files finding
-        # asks about. Collected over the whole tree before the loop, so
-        # attachment order is not a thing this depends on.
+        # The ``hooks.json`` files that declare hooks for Codex to merge —
+        # the same test the config side applies to itself, so an empty or
+        # unparseable one does not make the claim. Built from the full
+        # ``find()`` result, so it must stay outside the loop.
         hooks_files: Set[Path] = set()
         if not allow_both:
-            hooks_files = {b.resolved_path for b in blocks if b.path.name == CODEX_HOOKS_FILENAME}
+            hooks_files = {
+                b.resolved_path
+                for b in blocks
+                if b.path.name == CODEX_HOOKS_FILENAME and _declares_hooks(b)
+            }
 
         for block in blocks:
             if isinstance(block, CodexConfigHooksBlock) and not allow_both:
@@ -295,11 +346,11 @@ class CodexHooksValidRule(Rule):
     ) -> List[RuleViolation]:
         """One ``.codex/`` layer declaring hooks in both of its files.
 
-        Benign, and INFO for that reason: measured against codex-cli 0.153.0,
-        both files load, every handler runs once, and Codex prints one
-        startup warning naming both paths. What it costs is surprise — a
-        reader editing ``hooks.json`` does not see the ``config.toml`` copy
-        firing too. ``allow-both-files`` silences it for a layer that splits
+        Benign, and INFO for that reason: measured against codex-cli 0.153.0
+        and re-confirmed at 0.153.2, both files load, every handler runs once,
+        and Codex prints one startup warning naming both paths. What it costs
+        is surprise — a reader editing ``hooks.json`` does not see the
+        ``config.toml`` copy firing too. ``allow-both-files`` silences it for a layer that splits
         them deliberately; the rule's page carries the advice about which
         file to keep.
 
@@ -309,15 +360,12 @@ class CodexHooksValidRule(Rule):
         Asked of the tree rather than the filesystem: a ``hooks.json`` the
         project excluded is one it chose not to lint.
 
-        Only where the config actually declares an event group. A file
-        skillsaw attached for its parse error, or one whose ``[hooks]``
-        header stands over nothing, declares no hooks for Codex to merge,
-        and saying it does would be a claim about a file that makes no
-        claim.
+        Only where both files actually declare an event group, by the same
+        :func:`_declares_hooks` test: a file skillsaw attached for its parse
+        error, or one whose ``[hooks]`` header stands over nothing, declares
+        no hooks for Codex to merge.
         """
-        document = block.inline_data
-        events = document.get("hooks") if isinstance(document, dict) else None
-        if not isinstance(events, dict) or not events:
+        if not _declares_hooks(block):
             return []
         if safe_resolve(block.path.parent / CODEX_HOOKS_FILENAME) not in hooks_files:
             return []
@@ -366,7 +414,7 @@ class CodexHooksValidRule(Rule):
         if not isinstance(entries, list):
             violations.append(
                 self.violation(
-                    f"Hook event '{name}' must have {_a(block.sequence_noun)} of hook "
+                    f"Hook event '{name}' must have {_with_article(block.sequence_noun)} of hook "
                     "configurations",
                     file_path=block.path,
                 )
@@ -396,7 +444,8 @@ class CodexHooksValidRule(Rule):
         if not isinstance(entry, dict):
             return [
                 self.violation(
-                    f"Hook {where} must be {_a(block.mapping_noun)}", file_path=block.path
+                    f"Hook {where} must be {_with_article(block.mapping_noun)}",
+                    file_path=block.path,
                 )
             ]
 
@@ -438,7 +487,7 @@ class CodexHooksValidRule(Rule):
         if not isinstance(handlers, list):
             return violations + [
                 self.violation(
-                    f"Hook {where} 'hooks' must be {_a(block.sequence_noun)}",
+                    f"Hook {where} 'hooks' must be {_with_article(block.sequence_noun)}",
                     file_path=block.path,
                 )
             ]
@@ -458,7 +507,8 @@ class CodexHooksValidRule(Rule):
         if not isinstance(handler, dict):
             return [
                 self.violation(
-                    f"Hook {where} must be {_a(block.mapping_noun)}", file_path=block.path
+                    f"Hook {where} must be {_with_article(block.mapping_noun)}",
+                    file_path=block.path,
                 )
             ]
 
@@ -560,17 +610,27 @@ class CodexHooksValidRule(Rule):
         for field, expected in CODEX_HOOK_OPTIONAL_FIELDS.get(handler_type, {}).items():
             if field == _TIMEOUT:
                 continue
-            for spelling in (
-                field,
-                *(a for a, f in CODEX_HOOK_FIELD_ALIASES.items() if f == field),
-            ):
-                if spelling in handler and not _matches_type(handler[spelling], expected):
+            for spelling in _FIELD_SPELLINGS.get(field, (field,)):
+                if spelling not in handler:
+                    continue
+                value = handler[spelling]
+                if not _matches_type(value, expected):
                     violations.append(
                         self.violation(
                             f"Hook {where} '{spelling}' must be a {expected.__name__}",
                             file_path=block.path,
                         )
                     )
+                elif field in block.whole_number_fields and value < 0:
+                    violations.append(
+                        self.violation(
+                            f"Hook {where} '{spelling}' must not be negative, got "
+                            f"{safe_display(value)}",
+                            file_path=block.path,
+                        )
+                    )
+
+        violations.extend(self._check_alias_conflicts(where, handler_type, handler, block))
 
         return violations
 
@@ -578,7 +638,7 @@ class CodexHooksValidRule(Rule):
         self,
         where: str,
         table: Dict[str, Any],
-        accepted,
+        accepted: AbstractSet[str],
         extra_fields: Set[str],
         block: CodexHooksBlock,
     ) -> List[RuleViolation]:
@@ -591,16 +651,57 @@ class CodexHooksValidRule(Rule):
         ``commandWindows`` or ``matcher`` does nothing. WARNING because the
         file still loads, and ``extra-fields`` accepts a spelling newer than
         this release.
+
+        One finding per table: the defect is the table, and a handler
+        pasted from another host's file would otherwise report every key it
+        carries. Bounded by :func:`_sample`, so a crafted file cannot buy a
+        message per key.
         """
+        unknown = [f for f in table if f not in accepted and f not in extra_fields]
+        if not unknown:
+            return []
+        plural = "s" if len(unknown) > 1 else ""
         return [
             self.violation(
-                f"Hook {where} has unknown field '{safe_display(field)}'",
+                f"Hook {where} has unknown field{plural} {_sample(unknown)}",
                 file_path=block.path,
                 severity=Severity.WARNING,
             )
-            for field in table
-            if field not in accepted and field not in extra_fields
         ]
+
+    def _check_alias_conflicts(
+        self, where: str, handler_type: str, handler: Dict[str, Any], block: CodexHooksBlock
+    ) -> List[RuleViolation]:
+        """Two spellings of one field on the same handler.
+
+        Codex's alias is a second name for a single serde field, so a
+        handler carrying both is a duplicate key. Measured against codex-cli
+        0.153.2: a ``config.toml`` exits 1 with ``duplicate field
+        `commandWindows` `` and a ``hooks.json`` is dropped with the same
+        message, so both files lose their hooks over it.
+
+        Only where the handler type owns the field. Measured, a ``mcp_tool``
+        handler carrying both spellings loads: neither is a field of that
+        variant, so serde flattens both away and there is no duplicate — the
+        unknown-field finding above is the whole story there.
+
+        Two spellings are named, and there is one alias per field, so
+        naming a pair says everything about a conflict.
+        """
+        violations = []
+        for field in sorted(_DECLARED_FIELDS.get(handler_type, ())):
+            spellings = _FIELD_SPELLINGS.get(field)
+            if spellings is None:
+                continue
+            present = [s for s in spellings if s in handler]
+            if len(present) > 1:
+                violations.append(
+                    self.violation(
+                        f"Hook {where} sets both '{present[0]}' and '{present[1]}'",
+                        file_path=block.path,
+                    )
+                )
+        return violations
 
     def _check_timeout(
         self, where: str, event: Any, handler: Dict[str, Any], block: CodexHooksBlock
@@ -618,21 +719,22 @@ class CodexHooksValidRule(Rule):
         u64``, where ``timeout = 0`` loads. No upper bound is needed: TOML
         integers stop at ``i64``, below the ``u64`` ceiling.
 
-        Both files deserialize the same ``Option<u64>``, so the JSON path is
-        not looser because it is unmeasured. It keeps the number it has
-        always accepted deliberately, for backward compatibility: a defect
-        there costs that file's hooks rather than the CLI.
+        Both files deserialize the same ``Option<u64>`` and a ``hooks.json``
+        is dropped over a float or a negative just as measurably. The JSON
+        path keeps the number ``hooks-json-valid`` shipped, deliberately: it
+        is a released check, and tightening it would newly fail files that
+        pass today.
         """
         if _TIMEOUT not in handler:
             return []
         timeout = handler[_TIMEOUT]
-        whole_only = block.timeout_must_be_integer
+        whole_only = _TIMEOUT in block.whole_number_fields
         # The type first, then the range: a wrong type is named by its type
         # and a wrong value by its value, so the message says which it is.
         if not is_finite_number(timeout) or (whole_only and isinstance(timeout, float)):
-            got: Optional[Any] = type(timeout).__name__
+            got: Optional[str] = type(timeout).__name__
         elif whole_only and timeout < 0:
-            got = timeout
+            got = safe_display(timeout)
         else:
             got = None
         if got is not None:

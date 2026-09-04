@@ -94,9 +94,21 @@ hedge (see Sync notes).
     one. `--strict-config` is fatal for an unknown key at the top level of
     `config.toml` and never descends into `[hooks]` (verified with a control), so
     skillsaw is the only thing that will ever report these.
-  `timeout` is an `Option<u64>` in both files: `timeout = -1` is fatal in
-  `config.toml` (`invalid value: integer \`-1\`, expected u64`) and `timeout = 0`
-  loads. No upper bound is needed — a TOML integer stops at `i64`.
+  `timeout` is an `Option<u64>` and `additionalContextLimit` an `Option<usize>`,
+  in both files. Measured against 0.153.2: `timeout = -1` and
+  `additionalContextLimit = -1` are each fatal in `config.toml` (`invalid value:
+  integer \`-1\`, expected u64` / `expected usize`) and each drop a `hooks.json`
+  with the same message under a `failed to parse hooks config` warning;
+  `timeout = 0` loads. No upper bound is needed — a TOML integer stops at `i64`.
+  skillsaw enforces the range on the TOML file only: the looser number is what
+  `hooks-json-valid` released for `hooks.json`, and tightening it would newly
+  fail files that pass today.
+  `command_windows` is a serde *alias* for `commandWindows`, so a handler
+  carrying both is a duplicate field. Measured against 0.153.2: a `config.toml`
+  exits 1 with `Error loading config.toml: duplicate field \`commandWindows\``
+  and a `hooks.json` is dropped with the same message. Only on a handler type
+  that owns the field — an `mcp_tool` handler carrying both spellings loads,
+  because neither is a field of that variant.
   Also confirmed against the binary in the same pass: the 12 event names as the
   complete enum, the four handler types, the required fields per type, the
   `mcp_tool`-on-`SessionEnd` rejection, and the 3s `SessionEnd` clamp. Not
@@ -113,25 +125,28 @@ hedge (see Sync notes).
 
 - **`[mcp_servers.<name>]`** — the project's MCP servers; there is no
   `.codex/mcp.json`. Measured against 0.153.0 with `codex mcp list --json`, which
-  runs offline and prints the transport Codex derived:
+  runs offline and prints the transport Codex derived, and re-confirmed at 0.153.2
+  with `codex exec --strict-config`:
   - `command` selects stdio and `url` streamable HTTP, and they are **mutually
     exclusive**. A table carrying both is refused with `url is not supported for
     stdio in \`mcp_servers.<name>\``, one carrying neither with `invalid transport`
     — each fatal for the whole file, so `codex` exits 1 and `codex mcp list` prints
-    nothing. `command = ""` still loads as stdio.
-  - Fields: stdio takes `command`, `args`, `env`, `env_vars`, `cwd`,
-    `experimental_environment`; HTTP takes `url`, `auth`, `bearer_token_env_var`,
-    `http_headers`, `env_http_headers`, `http_headers_helper`; either takes
-    `enabled`, `required`, `startup_timeout_sec`, `tool_timeout_sec`,
-    `enabled_tools`, `disabled_tools`, `default_tools_approval_mode` and
-    `tools.<tool>.*`. A wrong scalar type on any of them (`args = "x"`,
-    `env = ["A=1"]`, `enabled_tools = "read"`) is fatal for the whole file and named
-    by server and field.
-  - An unknown server key loads silently, and `--strict-config` **does** name it —
-    unlike `[hooks]`, which that flag never descends into. So Codex diagnoses every
-    malformed server table itself, and skillsaw adds no shape rule over them: the
-    tables reach `mcp-prohibited` and `mcp-valid-json`'s dialect-neutral checks
-    through the MCP role on `CodexConfigBlock` and nothing restates the refusals.
+    nothing. The key alone picks the transport, whatever its value: `command = ""`
+    loads as stdio, `url = ""` as streamable HTTP, and `command = ["npx"]` refuses
+    the whole file (`invalid type: sequence, expected a string`) rather than
+    reading the table some other way.
+  - **No server field vocabulary is kept**, deliberately. An unknown server key
+    loads silently, so watching a table load proves nothing about whether its
+    keys are real; only `--strict-config` names one (`unknown configuration field
+    \`mcp_servers.<name>.enviroment\``), and it does so for every malformed
+    server table, which is why skillsaw adds no shape rule here. The tables reach
+    `mcp-prohibited` and `mcp-valid-json`'s dialect-neutral checks through the MCP
+    role on `CodexConfigBlock`, and nothing restates the refusals.
+  - `env` is the one server field that holds literal values, so it is the one in
+    `credential_maps` beside `http_headers`. `env_vars` is a *sequence* under
+    `--strict-config` (`invalid type: map, expected a sequence`) whose entries
+    name an env-var source, and `env_http_headers`/`bearer_token_env_var` hold
+    env-var names, so none of the three can carry a committed secret.
   - Same gates as the hooks: a project layer's servers are read only once the user
     config trusts the directory, and layers merge from the repo root down to the
     cwd. A name declared in both the user config and a project layer resolves to
@@ -154,16 +169,27 @@ hedge (see Sync notes).
   Vocabulary (events, handler types, per-handler fields) lives in
   `src/skillsaw/formats/codex.py`, not the rule. Both project-layer files reach it
   as a `CodexHooksBlock`; the TOML one is `CodexConfigHooksBlock`, which carries the
-  measured behavioural difference as a ClassVar (`timeout_must_be_integer`) so the
+  measured behavioural differences as ClassVars (`whole_number_fields`) so the
   rule stays free of per-file branches. The severities are the same on both files:
-  the failure-scope asymmetry below is recorded here and in the rule doc, not
-  encoded in a message. Only the noun each syntax uses for a table or an array
-  differs, and the blocks declare it (`mapping_noun`, `sequence_noun`).
-- MCP — `src/skillsaw/blocks/codex.py`: `CodexConfigBlock` carries `McpConfigRole`
-  the way `GrokConfigBlock` does, with a `codex_mcp_transport()` derivation in
-  `formats/codex.py` and an unconditional `McpShapeDeferral`, so the JSON shape walk
-  stands down and `codex-hooks-valid` owns the one parse-error finding for the file.
-  No Codex MCP shape rule exists by design — see the measured note above.
+  the failure-scope asymmetry above is recorded here and in the rule doc, not
+  encoded in a message. Two things differ between the two files' messages: the
+  noun each syntax uses for a table or an array, which the blocks declare
+  (`mapping_noun`, `sequence_noun`), and one check `config.toml` gets and
+  `hooks.json` does not — `timeout` and `additionalContextLimit` must be
+  non-negative whole numbers there.
+- Both-files merge — measured against 0.153.0 and re-confirmed at 0.153.2: a
+  `.codex/` layer declaring hooks in both `hooks.json` and `config.toml` loads
+  both, runs every handler once, and prints `warning: loading hooks from both
+  <hooks.json> and <config.toml>; prefer a single representation for this layer`. Nothing is dropped and nothing
+  wins, which is why `codex-hooks-valid` reports it at INFO with an
+  `allow-both-files` escape hatch rather than as a defect.
+- MCP — `src/skillsaw/blocks/codex.py`: `CodexConfigBlock` and `GrokConfigBlock`
+  share a `TomlMcpConfigBlock` base (`src/skillsaw/blocks/toml_config.py`) and
+  differ only in `servers_key`, `credential_maps`, `shape_deferral` and a
+  `transport()` hook — `codex_mcp_transport()` in `formats/codex.py`. The
+  deferral is unconditional, so the JSON shape walk stands down and
+  `codex-hooks-valid` owns the one parse-error finding for the file. No Codex MCP
+  shape rule exists by design — see the measured note above.
 
 ## Sync notes
 Hand-copied value sets that drift — re-check each against upstream:

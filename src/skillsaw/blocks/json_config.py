@@ -14,7 +14,18 @@ from itertools import islice
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, ClassVar, Dict, Iterator, List, Mapping, Optional, Set, Tuple
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    FrozenSet,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+)
 
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.lint_target import LintTarget
@@ -432,10 +443,11 @@ class CodexHooksBlock(HooksBlock):
     Claude's, with Codex's own events, handler types, and fields.
     """
 
-    #: Whether ``timeout`` must be a whole number of seconds. The TOML
-    #: deserializer takes a ``u64`` and refuses a float; the JSON path is
-    #: unmeasured, so it keeps the number it has always accepted.
-    timeout_must_be_integer: ClassVar[bool] = False
+    #: Handler fields this file must write as a non-negative whole number.
+    #: Empty here: Codex refuses a ``hooks.json`` over a negative ``timeout``
+    #: too, but the looser check is the one ``hooks-json-valid`` released,
+    #: and tightening it would newly fail files that pass today.
+    whole_number_fields: ClassVar[FrozenSet[str]] = frozenset()
 
     def tree_label(self) -> str:
         return f"{self.path.name} (codex hooks)"
@@ -608,10 +620,11 @@ class CodexConfigHooksBlock(CodexHooksBlock):
     :meth:`first_non_finite` stands down and :attr:`syntax_name` names the
     parser that actually ran.
 
-    The dangerous file of the two. Measured against codex-cli 0.153.0: a
+    The dangerous file of the two. Measured against codex-cli 0.153.2: a
     shape defect here — a syntax error, an event value that is not a
-    sequence, a missing ``type`` or ``command``, a ``timeout`` that is not a
-    non-negative whole number, an unknown handler ``type`` — makes ``codex``
+    sequence, a missing ``type`` or ``command``, a ``timeout`` or
+    ``additionalContextLimit`` that is not a non-negative whole number, two
+    spellings of one field, an unknown handler ``type`` — makes ``codex``
     exit 1 and refuse to start in the project at all, where the same defect
     in ``hooks.json`` is a warning that skips that one file.
     """
@@ -622,7 +635,10 @@ class CodexConfigHooksBlock(CodexHooksBlock):
     #: than re-derived so the whole file is read once, in the builder.
     toml_error: Optional[str] = None
     syntax_name: ClassVar[str] = "TOML"
-    timeout_must_be_integer: ClassVar[bool] = True
+    #: Both fields deserialize as unsigned: ``timeout`` a ``u64`` and
+    #: ``additionalContextLimit`` a ``usize``. Measured, a negative in either
+    #: exits 1 with ``invalid value: integer `-1```.
+    whole_number_fields: ClassVar[FrozenSet[str]] = frozenset({"timeout", "additionalContextLimit"})
     mapping_noun: ClassVar[str] = "table"
     sequence_noun: ClassVar[str] = "array of tables"
 

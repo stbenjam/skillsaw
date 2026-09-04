@@ -7,7 +7,7 @@ tables reach ``mcp-prohibited`` with the shape an ``.mcp.json`` server has,
 and that ``mcp-valid-json`` keeps its dialect-neutral checks while standing
 its JSON shape walk down.
 
-Measured against codex-cli 0.153.0 through ``codex mcp list --json``, which
+Measured against codex-cli 0.153.2 through ``codex mcp list --json``, which
 prints the transport Codex derived for each server and runs offline.
 """
 
@@ -79,11 +79,44 @@ class TestTheServerTables:
         assert block.servers == []
         assert [name for name, _ in block.server_entries()] == ["s"]
 
+    def test_an_empty_url_is_still_http(self, tmp_path):
+        """The key alone picks the transport: measured, ``url = ""`` loads
+        and Codex reports a streamable-HTTP server."""
+        server = _block(_repo(tmp_path, '[mcp_servers.s]\nurl = "   "\n')).servers[0]
+
+        assert (server.type, server.url) == ("http", "   ")
+
+    def test_a_non_string_command_is_still_stdio(self, tmp_path):
+        """Measured, ``command = ["npx"]`` refuses the whole file rather
+        than being read some other way, so reading the value would drop a
+        table out of the security scan over a defect Codex reports itself."""
+        server = _block(_repo(tmp_path, '[mcp_servers.s]\ncommand = ["npx", "-y", "p"]\n')).servers[
+            0
+        ]
+
+        assert server.type == "stdio"
+
+    def test_a_non_table_mcp_servers_costs_only_that_table(self, tmp_path):
+        """Measured fatal — ``invalid type: string "x", expected a map`` —
+        and the type guard keeps the block usable for every other rule."""
+        block = _block(_repo(tmp_path, 'mcp_servers = "x"\n'))
+
+        assert (block.servers, block.server_entries()) == ([], [])
+
+    def test_a_non_table_server_is_dropped_but_still_enumerated(self, tmp_path):
+        """``servers`` models what runs; ``server_entries`` keeps the name so
+        a rule that wants to report the table can find it."""
+        body = "[mcp_servers]\nscalar = 42\n" + _STDIO
+        block = _block(_repo(tmp_path, body))
+
+        assert {s.name for s in block.servers} == {"postings"}
+        assert {name for name, _ in block.server_entries()} == {"postings", "scalar"}
+
     def test_a_server_beside_a_malformed_sibling_is_still_seen(self, tmp_path):
         """A ``command`` beside a ``url`` refuses the whole file, measured,
-        so nothing in it runs today — but every command in it is committed
-        and one line away from live. Hiding a sibling behind a deliberate
-        typo is not something the security scan should do."""
+        so nothing in it runs — but every command in it is committed and one
+        line away from live. Hiding a sibling behind a malformed neighbour is
+        not something the security scan should do."""
         body = _STDIO + '\n[mcp_servers.both]\ncommand = "./x.sh"\nurl = "https://x.example.test"\n'
         block = _block(_repo(tmp_path, body))
 
@@ -136,6 +169,20 @@ class TestTheMcpRules:
         body = (
             "[mcp_servers.rates]\n"
             'url = "https://rates.example.test/mcp"\n'
+            'http_headers = { Authorization = "Bearer 4f1c2ae87b03d9615a7e2c40b8d31f96" }\n'
+        )
+        found = McpValidJsonRule({}).check(RepositoryContext(_repo(tmp_path, body)))
+
+        assert len(found) == 1, messages(found)
+        assert "'Authorization' embeds" in found[0].message
+        assert "4f1c2ae8" not in found[0].message
+
+    def test_a_credential_survives_a_malformed_transport(self, tmp_path):
+        """The credential scan reads ``server_entries``, not ``servers``, so
+        a table Codex refuses does not take its committed token with it."""
+        body = (
+            "[mcp_servers.rates]\n"
+            "command = 42\n"
             'http_headers = { Authorization = "Bearer 4f1c2ae87b03d9615a7e2c40b8d31f96" }\n'
         )
         found = McpValidJsonRule({}).check(RepositoryContext(_repo(tmp_path, body)))
@@ -225,6 +272,32 @@ class TestThroughTheCli:
         ]
 
         assert [v["rule_id"] for v in parse_errors] == ["codex-hooks-valid"]
+
+    def test_the_parse_error_falls_back_when_the_owner_is_disabled(self, tmp_path):
+        """The deferral is a hand-off, not a suppression: with
+        ``codex-hooks-valid`` off, ``mcp-valid-json`` reports the parse
+        failure itself, once."""
+        repo = copy_fixture("codex/config-hooks-broken", tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n  codex-hooks-valid:\n    enabled: false\n", encoding="utf-8"
+        )
+        report = json.loads(run_cli(["lint", "--format", "json", str(repo)]).stdout)
+        parse_errors = [
+            v for v in report["violations"] if v["message"].startswith("Invalid TOML: ")
+        ]
+
+        assert [v["rule_id"] for v in parse_errors] == ["mcp-valid-json"]
+
+    def test_the_parse_error_falls_back_under_an_older_version_pin(self, tmp_path):
+        """A ``version:`` pin older than the rule gates it off the same way."""
+        repo = copy_fixture("codex/config-hooks-broken", tmp_path)
+        (repo / ".skillsaw.yaml").write_text("version: 0.19.0\n", encoding="utf-8")
+        report = json.loads(run_cli(["lint", "--format", "json", str(repo)]).stdout)
+        parse_errors = [
+            v for v in report["violations"] if v["message"].startswith("Invalid TOML: ")
+        ]
+
+        assert [v["rule_id"] for v in parse_errors] == ["mcp-valid-json"]
 
     def test_the_credential_is_reported_through_the_cli(self, tmp_path):
         repo = copy_fixture("codex/config-hooks-broken", tmp_path)

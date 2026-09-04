@@ -283,10 +283,9 @@ _TOOL_EVIDENCE = {
     ),
     # ``hooks.json`` and ``config.toml`` are the committed project-layer
     # files skillsaw reads from ``.codex/``: Codex loads hooks from both and
-    # merges them, so either one alone is a Codex project. Existence is the
-    # whole test for the config, as it is for Grok's — a config declaring no
-    # hooks attaches nothing, and evidence without a block costs a rule that
-    # finds nothing, where a block without evidence is a silent no-op.
+    # merges them, and a config declares this project's MCP servers, so
+    # either one alone is a Codex project. Existence is the whole test for
+    # the config, as it is for Grok's.
     # ``.codex/plugins/`` is an install location — vendor-managed content
     # that Codex's own plugin discovery finds and that the Codex plugin
     # rules gate on repository type — so it is deliberately not evidence

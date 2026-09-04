@@ -460,10 +460,13 @@ def _claim_attached_hooks(
     branch, the Codex cluster's conventional file) keeps it.
 
     Only the tree root is scanned, which is where every ownerless attach
-    puts a hooks block: the project layer's ``.codex/hooks.json`` and
+    puts a hooks block bar one: the project layer's ``.codex/hooks.json`` and
     another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``. Scanning
     the subtree would mean ``find()`` mid-build, whose per-node memo the
-    attaches still to come would invalidate.
+    attaches still to come would invalidate. The exception is
+    ``CodexConfigHooksBlock``, which hangs under its ``CodexConfigBlock``
+    parent and is deliberately out of reach: no manifest can name a
+    ``config.toml``, so there is no declaration for this loop to record.
     """
     if not _attached_as_hooks(state, path):
         return False

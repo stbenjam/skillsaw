@@ -136,7 +136,12 @@ class TestAttachment:
         monorepo is a service directory as often as the repository root."""
         repo = copy_fixture("codex/config-hooks-broken", tmp_path)
 
-        assert {b.path.relative_to(repo).as_posix() for b in _blocks(repo)} == {
+        blocks = _blocks(repo)
+
+        # A count beside the set: two discovery legs claiming one file would
+        # build two identical blocks, and the set alone would not notice.
+        assert len(blocks) == 5
+        assert {b.path.relative_to(repo).as_posix() for b in blocks} == {
             ".codex/config.toml",
             "services/checkout/.codex/config.toml",
             "services/ledger/.codex/config.toml",
@@ -215,11 +220,14 @@ class TestTheJsonTwin:
     """One vocabulary, two syntaxes: a defect reads the same either way.
 
     The two files differ in what a defect costs — measured against codex-cli
-    0.153.0, six shape defects make ``codex`` exit 1 in a ``config.toml``
-    where ``hooks.json`` only loses its own hooks — and in one thing skillsaw
-    checks differently, the integer ``timeout``. Neither changes what a
-    finding says or the severity it carries: the blast radius is on the
-    rule's page, not in every message.
+    0.153.2, a syntax error, a non-sequence event value, a missing ``type``
+    or ``command``, an unknown handler ``type`` and an out-of-range
+    ``timeout`` each make ``codex`` exit 1 in a ``config.toml`` where
+    ``hooks.json`` only loses its own hooks. The severities are the same
+    either way, and the messages differ in two places: the noun each syntax
+    uses for a table or an array, and the non-negative whole-number range
+    ``config.toml`` alone enforces on ``timeout`` and
+    ``additionalContextLimit``.
     """
 
     @pytest.mark.parametrize(
@@ -374,7 +382,7 @@ class TestTheJsonTwin:
         overridden = _findings(repo, {"severity": "warning"})
         assert [v.severity for v in overridden] == [Severity.WARNING]
 
-    @pytest.mark.parametrize("literal,kind", [('"30"', "str"), ("1.5", "float")])
+    @pytest.mark.parametrize("literal,kind", [('"30"', "str"), ("1.5", "float"), ("true", "bool")])
     def test_a_non_integer_timeout_refuses_the_toml_file(self, tmp_path, literal, kind):
         """Codex deserializes the field as a u64 in this layer, so a string
         and a float are both defects it will not start over."""
@@ -393,9 +401,9 @@ class TestTheJsonTwin:
     @pytest.mark.parametrize(
         "value,expected",
         [
-            # The JSON deserializer was not measured, so its contract is the
-            # one it has always had: any finite number, and a string is a
-            # defect scoped to the file rather than to the CLI.
+            # Codex refuses a ``hooks.json`` over a float too, measured.
+            # The looser number is the one ``hooks-json-valid`` released,
+            # and tightening it would newly fail files that pass today.
             (1.5, []),
             ("30", ["Hook PreToolUse[0].hooks[0] 'timeout' must be a number, got str"]),
         ],
@@ -687,6 +695,31 @@ class TestBothFiles:
 
         assert _findings(repo) == []
 
+    def test_a_state_only_table_reports_nothing_on_its_own(self, tmp_path):
+        """No sibling ``hooks.json``: the block is attached with an empty
+        event map and every check runs over nothing."""
+        repo = _toml_repo(tmp_path, '[hooks.state."abc"]\nenabled = true\n')
+
+        assert len(_blocks(repo)) == 1
+        assert _findings(repo) == []
+
+    def test_an_empty_hooks_json_is_not_a_merge(self, tmp_path):
+        """The JSON twin of the empty ``[hooks]`` table: ``{"hooks": {}}`` is
+        a valid, hook-less file, and Codex merges nothing with it."""
+        repo = _toml_repo(tmp_path, _ONE_HOOK, hooks_json={"hooks": {}})
+
+        assert _findings(repo) == []
+
+    def test_an_unparseable_hooks_json_is_not_a_merge(self, tmp_path):
+        """The same reasoning the config side already applies to itself: a
+        file that does not parse declares no hooks to merge."""
+        repo = _toml_repo(tmp_path, _ONE_HOOK)
+        (repo / ".codex" / "hooks.json").write_text('{"hooks":', encoding="utf-8")
+        found = messages(_findings(repo))
+
+        assert self._MERGE not in found, found
+        assert len(found) == 1 and found[0].startswith("Invalid JSON: "), found
+
 
 # ── The fixtures ────────────────────────────────────────────────
 
@@ -705,6 +738,7 @@ class TestFixtures:
             for v in found
         }
 
+        assert len(found) == 4
         assert reported == {
             (".codex/config.toml", "Unknown hook event 'PostToolUseFailure'"),
             (
@@ -849,6 +883,34 @@ class TestUnknownKeys:
         assert _findings(_toml_repo(tmp_path, body, name="on")) != []
         assert _findings(_toml_repo(tmp_path, body, name="off"), {"extra-fields": [key]}) == []
 
+    def test_a_handler_with_several_unknown_keys_reports_once(self, tmp_path):
+        """One defect, one finding: a handler pasted from another host's
+        file would otherwise buy a message per key it carries."""
+        body = (
+            "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
+            'type = "command"\ncommand = "./warm.sh"\n'
+            'statusMesage = "warming"\nasyncRewake = true\nonce = true\n'
+        )
+        found = _findings(_toml_repo(tmp_path, body))
+
+        assert messages(found) == [
+            "Hook SessionStart[0].hooks[0] has unknown fields 'statusMesage', "
+            "'asyncRewake', 'once'"
+        ]
+
+    def test_a_long_run_of_unknown_keys_is_bounded(self, tmp_path):
+        """A crafted file cannot buy an unbounded message either."""
+        keys = "".join(f"k{i} = 1\n" for i in range(40))
+        body = (
+            "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
+            f'type = "command"\ncommand = "./warm.sh"\n{keys}'
+        )
+        found = _findings(_toml_repo(tmp_path, body))
+
+        assert messages(found) == [
+            "Hook SessionStart[0].hooks[0] has unknown fields 'k0', 'k1', 'k2', and 37 more"
+        ]
+
     def test_a_wrongly_typed_extra_fields_costs_no_other_finding(self, tmp_path):
         """The declared type is not enforced when the config loads."""
         found = _findings(_toml_repo(tmp_path, self._HANDLER), {"extra-fields": 42})
@@ -882,9 +944,10 @@ class TestTheTimeoutRange:
         assert _findings(_toml_repo(tmp_path, self._body("0"))) == []
 
     def test_the_json_path_keeps_accepting_a_negative(self, tmp_path):
-        """Deliberate backward compatibility, not an unmeasured contract:
-        both files deserialize the same ``Option<u64>``, and a defect in the
-        JSON one costs that file's hooks rather than the CLI."""
+        """Backward compatibility with a released check. Codex refuses a
+        ``hooks.json`` over ``timeout = -1`` too, measured, but the looser
+        number is what ``hooks-json-valid`` shipped, and tightening it would
+        newly fail files that pass today."""
         found = _findings(
             _json_repo(
                 tmp_path,
@@ -899,6 +962,129 @@ class TestTheTimeoutRange:
         )
 
         assert found == []
+
+    def test_a_negative_context_limit_refuses_the_toml_file(self, tmp_path):
+        """``additionalContextLimit`` is an ``Option<usize>``. Measured:
+        ``codex`` exits 1 with ``invalid value: integer `-1`, expected
+        usize`` and starts no session in the project."""
+        body = (
+            "[[hooks.PreToolUse]]\n\n[[hooks.PreToolUse.hooks]]\n"
+            'type = "command"\ncommand = "./report.sh"\nadditionalContextLimit = -1\n'
+        )
+        found = _findings(_toml_repo(tmp_path, body))
+
+        assert messages(found) == [
+            "Hook PreToolUse[0].hooks[0] 'additionalContextLimit' must not be negative, got -1"
+        ]
+
+    def test_a_zero_context_limit_is_accepted(self, tmp_path):
+        body = (
+            "[[hooks.PreToolUse]]\n\n[[hooks.PreToolUse.hooks]]\n"
+            'type = "command"\ncommand = "./report.sh"\nadditionalContextLimit = 0\n'
+        )
+
+        assert _findings(_toml_repo(tmp_path, body)) == []
+
+    def test_the_json_path_keeps_accepting_a_negative_context_limit(self, tmp_path):
+        """The same released contract the ``timeout`` range keeps."""
+        found = _findings(
+            _json_repo(
+                tmp_path,
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "./x.sh",
+                                        "additionalContextLimit": -1,
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                },
+            )
+        )
+
+        assert found == []
+
+
+# ── Two spellings of one field ──────────────────────────────────
+
+
+class TestTheAliasConflict:
+    """``command_windows`` is a serde alias, so writing both is a duplicate.
+
+    Measured against codex-cli 0.153.2: a ``config.toml`` exits 1 with
+    ``duplicate field `commandWindows``` and a ``hooks.json`` is dropped
+    with the same message under a ``failed to parse hooks config`` warning.
+    """
+
+    _BOTH = (
+        "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
+        'type = "command"\ncommand = "./warm.sh"\n'
+        'commandWindows = "warm.ps1"\ncommand_windows = "warm.ps1"\n'
+    )
+    _BOTH_JSON = {
+        "hooks": {
+            "SessionStart": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "./warm.sh",
+                            "commandWindows": "warm.ps1",
+                            "command_windows": "warm.ps1",
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    _CONFLICT = "Hook SessionStart[0].hooks[0] sets both 'commandWindows' and 'command_windows'"
+
+    def test_both_spellings_on_one_handler_are_reported(self, tmp_path):
+        found = _findings(_toml_repo(tmp_path, self._BOTH))
+
+        assert messages(found) == [self._CONFLICT]
+        assert [v.severity for v in found] == [Severity.ERROR]
+
+    def test_the_json_file_reports_the_same_conflict(self, tmp_path):
+        """The same defect, because it is the vocabulary's and not the
+        syntax's: Codex drops the file over the duplicate either way."""
+        assert messages(_findings(_json_repo(tmp_path, self._BOTH_JSON))) == [self._CONFLICT]
+
+    def test_the_configured_severity_is_respected(self, tmp_path):
+        repo = _toml_repo(tmp_path, self._BOTH)
+
+        assert [v.severity for v in _findings(repo, {"severity": "warning"})] == [Severity.WARNING]
+
+    def test_one_spelling_is_not_a_conflict(self, tmp_path):
+        body = (
+            "[[hooks.SessionStart]]\n\n[[hooks.SessionStart.hooks]]\n"
+            'type = "command"\ncommand = "./warm.sh"\ncommand_windows = "warm.ps1"\n'
+        )
+
+        assert _findings(_toml_repo(tmp_path, body)) == []
+
+    def test_a_handler_type_that_owns_neither_is_not_a_conflict(self, tmp_path):
+        """Measured: an ``mcp_tool`` handler carrying both spellings loads.
+        Neither is a field of that variant, so serde flattens both away and
+        there is no duplicate — the wrong-field warnings are the whole
+        story."""
+        body = (
+            "[[hooks.PreToolUse]]\n\n[[hooks.PreToolUse.hooks]]\n"
+            'type = "mcp_tool"\nserver = "policy"\ntool = "load"\n'
+            'commandWindows = "warm.ps1"\ncommand_windows = "warm.ps1"\n'
+        )
+        found = messages(_findings(_toml_repo(tmp_path, body)))
+
+        assert sorted(found) == [
+            "Hook PreToolUse[0].hooks[0] 'commandWindows' is not a 'mcp_tool' field",
+            "Hook PreToolUse[0].hooks[0] 'command_windows' is not a 'mcp_tool' field",
+        ]
 
 
 # ── Where the rule runs ─────────────────────────────────────────
@@ -924,6 +1110,7 @@ class TestConfigHooksThroughTheCli:
         report = json.loads(run_cli(["lint", "--format", "json", "-v", str(repo)]).stdout)
         found = [v for v in report["violations"] if v["rule_id"] == "codex-hooks-valid"]
 
+        assert len(found) == 4
         assert {v["file_path"] for v in found} == {
             ".codex/config.toml",
             "services/checkout/.codex/config.toml",

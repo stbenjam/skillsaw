@@ -17,6 +17,8 @@ from skillsaw.blocks import (
     CursorPromptHookBlock,
     CursorRuleBlock,
     ClaudeHooksBlock,
+    CodexConfigBlock,
+    CodexConfigHooksBlock,
     HooksBlock,
     InstructionBlock,
     PromptBlock,
@@ -188,6 +190,8 @@ def test_tree_labels():
     assert ApmConfigNode(path=Path("/apm.yml")).tree_label() == "apm.yml"
     assert ApmNode(path=Path("/.apm")).tree_label() == ".apm/"
     assert CodeRabbitNode(path=Path("/.coderabbit.yaml")).tree_label() == ".coderabbit.yaml"
+    assert CodexConfigBlock(path=Path("/.codex/config.toml")).tree_label() == "config.toml [codex]"
+    assert CodexConfigHooksBlock(path=Path("/.codex/config.toml")).tree_label() == "[hooks]"
 
 
 # --- print_tree ---

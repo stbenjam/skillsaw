@@ -25,8 +25,8 @@ Grok Build plugins, including Codex's and Grok's manifest-declared and
 inline hooks), APM's
 compiled copy, `.claude/settings*.json`, **skill and agent frontmatter**
 (the `hooks:` YAML key, same schema as settings hooks),
-`<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`, inline
-`[hooks]` tables in `.codex/config.toml`,
+`<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`, the
+`[hooks]` tables of a `.codex/config.toml`,
 `.muse/hooks.json`, Grok Build's `.grok/hooks/*.json`, and Cursor's
 `.cursor/hooks.json`. This rule scans every one of them — a `curl | sh`
 hook hidden in SKILL.md frontmatter or in a Cursor lifecycle hook is just
@@ -38,8 +38,8 @@ This rule flags hook commands that:
 - obfuscate their payload (`eval`, `base64 -d`)
 - make network requests
 
-The scanner's vocabulary is POSIX shell: a Windows override (`commandWindows` in
-Codex and Muse Code, either spelling in both) is scanned with the same
+The scanner's vocabulary is POSIX shell: a Windows override (`commandWindows` or
+`command_windows` — Codex and Muse Code accept either) is scanned with the same
 heuristics as any other command, and PowerShell constructs are out of scope by
 design — a project that ships PowerShell hooks should enable
 [`hooks-prohibited`](hooks-prohibited.md), which reviews every hook regardless of

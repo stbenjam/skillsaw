@@ -511,14 +511,17 @@ reports a layer that declares hooks in both, while
 [`hooks-prohibited`](rules/hooks-prohibited.md) scan the commands in them. A
 shape defect in `config.toml` stops Codex starting at all, where the same
 defect in `hooks.json` costs only that file's hooks; the rule's page records
-that asymmetry.
+that asymmetry, and the one check `config.toml` gets and `hooks.json` does
+not.
 
 `config.toml` also carries the project's MCP servers, in
 `[mcp_servers.<name>]` tables — there is no `.codex/mcp.json` — so
-[`mcp-prohibited`](rules/mcp-prohibited.md) and
-[`mcp-valid-json`](rules/mcp-valid-json.md) read them the way they read any
-other host's. Everything else in the file is Codex settings skillsaw reads
-nothing from.
+[`mcp-prohibited`](rules/mcp-prohibited.md) inventories them and
+[`mcp-valid-json`](rules/mcp-valid-json.md) applies its dialect-neutral
+checks, such as a committed credential in an `env` or `http_headers` table.
+No rule validates a server table's shape: Codex names the server and the
+field and exits 1 over a malformed one itself. Everything else in the file is
+Codex settings skillsaw reads nothing from.
 
 `.codex/plugins/` is an install location rather than project configuration —
 see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.

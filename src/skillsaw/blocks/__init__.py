@@ -15,6 +15,7 @@ single rule module.  Split across submodules by family:
 * :mod:`~skillsaw.blocks.json_config` — ``JsonConfigBlock`` + hooks/MCP/settings
 * :mod:`~skillsaw.blocks.coderabbit` — ``CodeRabbitContentBlock``
 * :mod:`~skillsaw.blocks.promptfoo` — ``PromptfooPromptBlock``
+* :mod:`~skillsaw.blocks.toml_config` — ``TomlMcpConfigBlock`` (project TOML)
 * :mod:`~skillsaw.blocks.grok` — ``GrokConfigBlock`` (Grok's project TOML)
 * :mod:`~skillsaw.blocks.codex` — ``CodexConfigBlock`` (Codex's project TOML)
 * :mod:`~skillsaw.blocks.gather` — ``gather_all_content_blocks`` and friends
@@ -112,6 +113,7 @@ from .coderabbit import (
 )
 from .promptfoo import PromptfooPromptBlock
 from .openai import OpenAIMetadataBlock
+from .toml_config import TomlMcpConfigBlock
 from .codex import CodexConfigBlock
 from .grok import GrokConfigBlock
 from .gather import (
@@ -212,6 +214,7 @@ __all__ = [
     "PromptfooPromptBlock",
     # Codex project config
     "CodexConfigBlock",
+    "TomlMcpConfigBlock",
     # Grok project config
     "GrokConfigBlock",
     # OpenAI metadata

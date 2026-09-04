@@ -242,39 +242,15 @@ def codex_config_hooks(data: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
 #
 # Source: https://learn.chatgpt.com/docs/extend/mcp (read 2026-09-03), and
 # measured against codex-cli 0.153.0 through ``codex mcp list --json``, which
-# runs offline and prints the transport Codex derived for each server.
-
-#: ``[mcp_servers.<name>]`` fields, by the transport that takes them.
-#: Measured: every one of these loads, and ``codex mcp list --json`` echoes
-#: it back under the transport named below.
-CODEX_MCP_STDIO_FIELDS = frozenset(
-    {"command", "args", "env", "env_vars", "cwd", "experimental_environment"}
-)
-CODEX_MCP_HTTP_FIELDS = frozenset(
-    {
-        "url",
-        "auth",
-        "bearer_token_env_var",
-        "http_headers",
-        "env_http_headers",
-        "http_headers_helper",
-    }
-)
-CODEX_MCP_COMMON_FIELDS = frozenset(
-    {
-        "enabled",
-        "required",
-        "startup_timeout_sec",
-        "tool_timeout_sec",
-        "enabled_tools",
-        "disabled_tools",
-        "default_tools_approval_mode",
-        "tools",
-    }
-)
-
-#: Every field a server table takes, whatever its transport.
-CODEX_MCP_SERVER_FIELDS = CODEX_MCP_STDIO_FIELDS | CODEX_MCP_HTTP_FIELDS | CODEX_MCP_COMMON_FIELDS
+# runs offline and prints the transport Codex derived for each server, and
+# re-confirmed at 0.153.2 through ``codex exec --strict-config``, which names
+# an unrecognized server key.
+#
+# No field vocabulary is kept for a server table, unlike the hooks tables
+# above. Codex ignores an unrecognized server key outside ``--strict-config``,
+# so loading a table proves nothing about which of its keys are real, and it
+# refuses a malformed one itself — ``codex_mcp_transport`` below reads only
+# the two keys that pick a transport.
 
 
 def codex_mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
@@ -286,14 +262,15 @@ def codex_mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
     ``invalid transport`` — each fatal for the whole file. ``None`` here
     means only that there is no transport to model.
 
-    An empty ``command`` is still stdio, unlike Grok's: measured, Codex
-    loads ``command = ""`` and reports a stdio server. Neither field's
-    content is validated.
+    The key alone picks the transport, whatever its value: measured, Codex
+    loads ``command = ""`` as stdio and ``url = ""`` as streamable HTTP, and
+    refuses the whole file over ``command = ["npx"]`` rather than reading the
+    table some other way. Reading the value would drop a malformed table out
+    of the security scan over a defect Codex reports itself.
     """
-    if isinstance(server.get("command"), str):
+    if "command" in server:
         return "stdio"
-    url = server.get("url")
-    if isinstance(url, str) and url.strip():
+    if "url" in server:
         return "http"
     return None
 
