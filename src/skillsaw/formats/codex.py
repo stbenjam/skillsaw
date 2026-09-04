@@ -9,7 +9,7 @@ them directly.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from skillsaw.paths import (
     contained_resolve,
@@ -154,7 +154,7 @@ CODEX_HOOK_REQUIRED_FIELDS: Mapping[str, Tuple[str, ...]] = {
     "mcp_tool": ("server", "tool"),
 }
 
-#: Optional fields per handler type and the JSON types Codex accepts.
+#: Optional fields per handler type and their non-null JSON types.
 #: ``timeout`` is in seconds; ``additionalContextLimit`` caps the context a
 #: command hook may return before Codex spills it to disk.
 CODEX_HOOK_OPTIONAL_FIELDS: Mapping[str, Mapping[str, Any]] = {
@@ -170,6 +170,19 @@ CODEX_HOOK_OPTIONAL_FIELDS: Mapping[str, Mapping[str, Any]] = {
         "timeout": (int, float),
         "statusMessage": str,
     },
+}
+
+#: Released Codex 0.153.2's ``MatcherGroup.matcher: Option<String>``
+#: accepts JSON null as unset, alongside an absent field.
+CODEX_HOOK_MATCHER_TYPES = (str, type(None))
+
+#: Nullable optional handler fields from the same release's
+#: ``codex-rs/config/src/hook_config.rs``. These are ``Option<T>`` fields;
+#: the defaulted ``async`` boolean and ``input`` map do not accept null.
+#: Canonical names only: an alias inherits its owning field's nullability.
+CODEX_HOOK_NULLABLE_FIELDS: Mapping[str, FrozenSet[str]] = {
+    "command": frozenset({"commandWindows", "timeout", "statusMessage", "additionalContextLimit"}),
+    "mcp_tool": frozenset({"timeout", "statusMessage"}),
 }
 
 #: Events whose ``matcher`` filters something. On any other event the field

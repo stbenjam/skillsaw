@@ -33,7 +33,9 @@ from skillsaw.formats.codex import (
     CODEX_HOOK_FIELD_ALIASES,
     CODEX_HOOK_HANDLER_TYPES,
     CODEX_HOOK_MATCHER_EVENTS,
+    CODEX_HOOK_MATCHER_TYPES,
     CODEX_HOOK_NO_MCP_TOOL_EVENTS,
+    CODEX_HOOK_NULLABLE_FIELDS,
     CODEX_HOOK_OPTIONAL_FIELDS,
     CODEX_HOOK_REQUIRED_FIELDS,
     CODEX_HOOK_SHORT_TIMEOUT_EVENTS,
@@ -457,11 +459,10 @@ class CodexHooksValidRule(Rule):
 
         if "matcher" in entry:
             matcher = entry["matcher"]
-            if not isinstance(matcher, str):
-                # The block boundary coerces a non-string matcher so nothing
-                # crashes; reporting here keeps the coercion from hiding the
-                # defect — Codex matches tool names against the pattern, and
-                # a non-string value disables the hook without an error.
+            if not isinstance(matcher, CODEX_HOOK_MATCHER_TYPES):
+                # The block boundary coerces an invalid matcher so consumers
+                # still see its commands. Codex accepts null as unset, but
+                # cannot decode other non-string values.
                 violations.append(
                     self.violation(
                         f"Hook {where} 'matcher' must be a string, got "
@@ -469,7 +470,7 @@ class CodexHooksValidRule(Rule):
                         file_path=block.path,
                     )
                 )
-            elif builtin and event not in CODEX_HOOK_MATCHER_EVENTS:
+            elif matcher is not None and builtin and event not in CODEX_HOOK_MATCHER_EVENTS:
                 violations.append(
                     self.violation(
                         f"Hook {where}.matcher has no effect on {name}",
@@ -614,6 +615,8 @@ class CodexHooksValidRule(Rule):
                 if spelling not in handler:
                     continue
                 value = handler[spelling]
+                if value is None and field in CODEX_HOOK_NULLABLE_FIELDS.get(handler_type, ()):
+                    continue
                 if not _matches_type(value, expected):
                     violations.append(
                         self.violation(
@@ -728,6 +731,8 @@ class CodexHooksValidRule(Rule):
         if _TIMEOUT not in handler:
             return []
         timeout = handler[_TIMEOUT]
+        if timeout is None and _TIMEOUT in CODEX_HOOK_NULLABLE_FIELDS.get(handler["type"], ()):
+            return []
         whole_only = _TIMEOUT in block.whole_number_fields
         # The type first, then the range: a wrong type is named by its type
         # and a wrong value by its value, so the message says which it is.

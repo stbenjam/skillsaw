@@ -30,6 +30,15 @@ document. `[hooks.state]` is the one table the TOML file has that the JSON one
 does not: Codex writes per-hook enablement and trust there, ignores a
 project layer's copy, and it is not an event.
 
+In JSON, `matcher: null` means unset. Command handlers also accept null for
+`commandWindows` (or `command_windows`), `statusMessage`, `timeout`, and
+`additionalContextLimit`; MCP tool handlers accept it for `statusMessage`
+and `timeout`. These are optional fields in Codex's released configuration
+deserializer. A default does not imply nullability: command `async` must
+still be a boolean, and MCP `input` must still be an object. Null does not
+make a field valid on another handler type or resolve a Windows alias
+conflict.
+
 **A shape defect in `config.toml` is worse than the same defect in
 `hooks.json`.** The refusals were measured against codex-cli 0.153.2: a TOML
 syntax error, an event whose value is not an array of tables, a handler with
@@ -123,10 +132,11 @@ the measured refusals cost the whole CLI rather than the file.
   or a handler missing a required field (`command` for command handlers,
   `server` and `tool` for MCP tool handlers).
 - *A field is the wrong type*: a non-string `command`, a `statusMessage` that
-  is not a string, or a `timeout` that is not a number. In a `config.toml`
-  `timeout` and `additionalContextLimit` must also be non-negative whole
-  numbers. Both files deserialize them as unsigned integers; the JSON path
-  keeps the looser check deliberately, so an upgrade does not surface a
+  is neither a string nor null, or a `timeout` that is neither a number nor
+  null. In a `config.toml`, `timeout` and `additionalContextLimit` must also
+  be non-negative whole numbers. Both files deserialize them as unsigned
+  integers; the JSON path keeps the looser check deliberately, so an upgrade
+  does not surface a
   finding on a file that already worked.
 - *One field written twice*: a handler carrying both `commandWindows` and
   `command_windows`. They are one field, and Codex refuses the document over
@@ -152,8 +162,8 @@ event-group key — under any flag: `--strict-config` never descends into
 
 **Info** — the file loads and does what it says, and something is worth a look.
 
-- A `matcher` on an event that does not filter on tool names. Codex accepts
-  it and ignores it.
+- A non-null `matcher` on an event that does not filter on tool names.
+  Codex accepts it and ignores it.
 - A `.codex/` layer declaring hooks in both `hooks.json` and `config.toml`.
   Both load and every handler runs; Codex names both paths on startup and
   asks for a single representation per layer. Keep the hooks in one of them,
