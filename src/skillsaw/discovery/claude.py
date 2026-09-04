@@ -348,7 +348,7 @@ def discover_skills(
         if plugin_root is None:
             return
         for path in (plugin / "skills", *declared):
-            if not path.is_dir():
+            if contained_resolve(path, plugin_root) is None or not path.is_dir():
                 continue
             if is_root_or_ancestor_excluded(path, plugin_root, is_excluded):
                 continue

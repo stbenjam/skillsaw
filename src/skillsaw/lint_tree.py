@@ -795,7 +795,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             ("rules", PluginRuleBlock, "**/*.md"),
         ):
             content_dir = plugin_dir / dirname
-            if not safe_is_dir(content_dir):
+            if not _contained(content_dir) or not safe_is_dir(content_dir):
                 continue
             try:
                 files = sorted(content_dir.glob(pattern))

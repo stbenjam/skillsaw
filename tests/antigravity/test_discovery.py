@@ -282,6 +282,50 @@ class TestAgentPluginsManifestIsClaimed:
 class TestContainment:
     """skillsaw never reads outside the checkout, where ``agy`` would."""
 
+    def test_uncontained_skill_root_is_not_probed(self, tmp_path, monkeypatch):
+        from skillsaw.discovery import claude
+
+        repo = copy_fixture("antigravity/portable-manifest", tmp_path)
+        context = RepositoryContext(repo)
+        component = repo / ".agents/plugins/route-kit/skills"
+        assert len(context.skills) == 1
+        resolve = claude.contained_resolve
+        is_dir = Path.is_dir
+
+        def contained(path, root):
+            return None if path == component else resolve(path, root)
+
+        def probe(path):
+            assert path != component, "Probed a skill root before checking containment"
+            return is_dir(path)
+
+        monkeypatch.setattr(claude, "contained_resolve", contained)
+        monkeypatch.setattr(Path, "is_dir", probe)
+        assert context._discover_skills() == []
+
+    @pytest.mark.parametrize("dirname", ("commands", "agents", "rules"))
+    def test_uncontained_plugin_prose_root_is_not_globbed(self, tmp_path, monkeypatch, dirname):
+        repo = copy_fixture("antigravity/portable-manifest", tmp_path)
+        context = RepositoryContext(repo)
+        plugin = repo / ".agents/plugins/route-kit"
+        component = plugin / dirname
+        component.mkdir(exist_ok=True)
+        resolve = Path.resolve
+        glob = Path.glob
+
+        def resolved(path, *args, **kwargs):
+            # Simulate a component resolving outside its owner, without
+            # creating or reading any external directory.
+            return repo / "unclaimed" if path == component else resolve(path, *args, **kwargs)
+
+        def matches(path, pattern, **kwargs):
+            assert path != component, "Globbed plugin prose before checking containment"
+            return glob(path, pattern, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", resolved)
+        monkeypatch.setattr(Path, "glob", matches)
+        context.lint_tree
+
     def test_uncontained_prose_is_not_probed(self, tmp_path, monkeypatch):
         from skillsaw.discovery import antigravity
 
