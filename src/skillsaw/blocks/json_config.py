@@ -1078,9 +1078,7 @@ class McpShapeDeferral:
     for it the fallback is the one that gate describes, not this one.
 
     *keeps_dialect_neutral_checks* is False only where the owning rule
-    already makes those findings itself. It is also what a
-    :attr:`McpConfigRole.surface_rule` gate reads to decide how much of
-    ``mcp-valid-json`` survives being gated off.
+    already makes those findings itself.
 
     *syntax_error_rule* names the rule that reports "this file does not
     parse" for itself, so one defect gets one finding. ``None`` leaves that
@@ -1167,13 +1165,6 @@ class McpConfigRole:
     #: and Antigravity writes ``serverUrl``. A host that spells it both
     #: ways lists both.
     connection_url_keys: ClassVar[Tuple[str, ...]] = ("url",)
-    #: The transport a non-portable connection key implies when the server
-    #: names no ``type``, as measured for the host that spells it that way.
-    #: Antigravity's ``serverUrl`` loads as ``http``; without this the
-    #: ``stdio`` default would render a remote server as a process with no
-    #: command. Vocabulary, so it lives with the key set rather than in the
-    #: reader.
-    connection_url_types: ClassVar[Mapping[str, str]] = MappingProxyType({})
     #: Key renames to apply before the credential-*name* test only, for a
     #: host whose older spelling the shared detector cannot split (OpenCode's
     #: 1.x ``clientSecret`` against its 2.0 ``client_secret``). Findings
@@ -1189,19 +1180,9 @@ class McpConfigRole:
     #: :class:`McpShapeDeferral`. ``None`` — every Claude-family location —
     #: keeps the shared shape walk.
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = None
-    #: The rule whose release first put this location in the lint tree.
-    #: When a ``version:`` pin — or an explicit ``enabled: false``, or a
-    #: forced ``--type`` — gates that rule off, the location is not part
-    #: of that user's results, so ``mcp-valid-json`` stands its shape walk
-    #: and its parse failure down rather than leaking a new diagnostic. It
-    #: keeps the dialect-neutral checks for a block whose
-    #: :attr:`shape_deferral` declares
-    #: ``keeps_dialect_neutral_checks``: a committed credential in this
-    #: file is reported by nothing else, and gating off a shape rule is
-    #: not a request to stop looking for one. A block with no deferral
-    #: declares no surviving half and stands down entirely.
-    #: ``None`` — every location that predates the mechanism — is read
-    #: unconditionally.
+    #: The host rule gating shared shape and syntax checks at this location.
+    #: Disabling it never disables credential checks or server policy.
+    #: ``None`` leaves the shared shape walk unconditional.
     surface_rule: ClassVar[Optional[str]] = None
     #: The syntax this document is written in, named in a parse-error
     #: finding. Announcing a TOML failure as invalid JSON would send the
@@ -1248,46 +1229,8 @@ class McpConfigRole:
         ]
 
     def _server_config(self, name: str, cfg: Dict[str, Any]) -> McpServerConfig:
-        """One parsed server, with this host's spelling of the endpoint.
-
-        :class:`McpServerConfig` reads the portable ``url``. A host that
-        spells it otherwise declares that in :attr:`connection_url_keys`,
-        and without this a remote server it reaches by ``serverUrl`` would
-        render with an empty endpoint and the ``stdio`` default — a process
-        with no command, which is not what the file says.
-
-        A *host-specific* remote key — one declared in
-        :attr:`connection_url_types`, so the host is known to read it as a
-        transport, and not the portable ``url`` the model already reads —
-        also clears ``command`` and ``args``. Antigravity is measured to
-        take ``serverUrl`` over ``command`` when a server names both, and
-        both document renderers pick ``command`` first: leaving it would
-        publish the command the host ignores as the endpoint, under a
-        ``http`` label.
-
-        The portable ``url`` beside a ``command`` is left exactly as it
-        was. Which of the two the Claude family runs is unmeasured, and a
-        guess there would rewrite established output.
-        """
-        server = McpServerConfig.from_dict(name, cfg)
-        present = next(
-            (key for key in self.connection_url_keys if cfg.get(key) not in (None, "")), None
-        )
-        if present is None:
-            return server
-        if present != "url" or server.url is None:
-            server.url = cfg[present]
-        remote = present != "url" and present in self.connection_url_types
-        if cfg.get("type") is None:
-            # The transport the *host* infers for a remote server, whichever
-            # of its keys supplied the URL: ``url`` and ``serverUrl`` both
-            # load as ``http`` here, and rendering ``stdio`` would show a
-            # remote server as a process with no command.
-            server.type = self.connection_url_types.get(present, server.type)
-        if remote:
-            server.command = None
-            server.args = None
-        return server
+        """Read the portable shape; hosts override their endpoint semantics."""
+        return McpServerConfig.from_dict(name, cfg)
 
     @property
     def server_names(self) -> Set[str]:
@@ -1686,17 +1629,24 @@ class AntigravityMcpBlock(McpBlock):
     #: ``url`` is a third accepted form. Both carry a credential when
     #: someone writes one into the authority, so both are scanned.
     connection_url_keys: ClassVar[Tuple[str, ...]] = ("serverUrl", "url")
-    #: Measured: ``{"serverUrl": "https://…/sse"}`` and ``{"url": "https://…"}``
-    #: each load as ``http`` when the server names no ``type``. Both keys, so
-    #: the reading does not turn on which spelling the author chose.
-    connection_url_types: ClassVar[Mapping[str, str]] = MappingProxyType(
-        {"serverUrl": "http", "url": "http"}
-    )
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
         repo_types=frozenset({RepositoryType.ANTIGRAVITY, RepositoryType.ANTIGRAVITY_PLUGIN}),
         syntax_error_rule="antigravity-mcp-valid",
         keeps_dialect_neutral_checks=True,
     )
+
+    def _server_config(self, name: str, cfg: Dict[str, Any]) -> McpServerConfig:
+        """Apply Antigravity's endpoint precedence without changing other hosts."""
+        server = super()._server_config(name, cfg)
+        if cfg.get("serverUrl") not in (None, ""):
+            server.url = cfg["serverUrl"]
+            server.command = None
+            server.args = None
+        # Both URL spellings imply http unless the author names a type.
+        # Unlike serverUrl, the portable url does not replace command/args.
+        if server.url not in (None, "") and cfg.get("type") is None:
+            server.type = "http"
+        return server
 
     def tree_label(self) -> str:
         return f"{self.path.name} (antigravity MCP)"

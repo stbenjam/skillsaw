@@ -17,6 +17,7 @@ from skillsaw.blocks.json_config import (
     AntigravityConfigBlock,
     AntigravityHooksBlock,
     AntigravityMcpBlock,
+    CursorMcpBlock,
 )
 from skillsaw.context import RepositoryContext
 from skillsaw.formats.antigravity import ANTIGRAVITY_CONFIG_DIR_NAMES, REGISTRY_FILENAMES
@@ -77,6 +78,42 @@ class TestWorkspaceAttachment:
         (repo / ".agents").mkdir()
         (repo / ".agents" / "rules.json").write_text("[]", encoding="utf-8")
         assert tree_for(repo).find(AntigravityConfigBlock) == []
+
+    def test_plugin_mcp_keeps_its_parser_when_shared_with_cursor(self, tmp_path: Path) -> None:
+        from tests.cli_runner import run_cli
+
+        repo = copy_fixture("antigravity/shared-plugin-hooks", tmp_path)
+        plugin = repo / ".agents/plugins/berth-tools"
+        mcp = plugin / "mcp_config.json"
+        cursor = repo / ".cursor"
+        cursor.mkdir(exist_ok=True)
+        (cursor / "mcp.json").symlink_to(mcp)
+
+        tree = tree_for(repo)
+        assert len(tree.find(CursorMcpBlock)) == 1
+        blocks = tree.find(AntigravityMcpBlock)
+        assert len(blocks) == 1
+        assert blocks[0].plugin_owner == plugin
+        assert blocks[0].server_names == {"berth-status"}
+
+        mcp.write_text('{"mcpServers": {"berth-status": {"args": "ready"}}}', encoding="utf-8")
+        result = run_cli(
+            [
+                "lint",
+                str(repo),
+                "--rule",
+                "antigravity-mcp-valid",
+                "--format",
+                "json",
+                "--fail-on",
+                "warning",
+            ]
+        )
+        assert result.returncode == 1
+        findings = json.loads(result.stdout)["violations"]
+        assert len(findings) == 1
+        assert findings[0]["rule_id"] == "antigravity-mcp-valid"
+        assert "'args'" in findings[0]["message"]
 
 
 class TestTheNonDotRootsNeedAMarker:

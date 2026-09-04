@@ -16,7 +16,11 @@ from pathlib import Path
 import pytest
 
 from skillsaw.blocks import AntigravityAgentBlock
-from skillsaw.blocks.json_config import AntigravityHooksBlock, AntigravityMcpBlock
+from skillsaw.blocks.json_config import (
+    AntigravityConfigBlock,
+    AntigravityHooksBlock,
+    AntigravityMcpBlock,
+)
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_tree import build_lint_tree
 from skillsaw.repository_types import RepositoryType
@@ -107,6 +111,33 @@ class TestPluginsRegistry:
 
 class TestInherits:
     """``inherits`` names another registry *file*, and only a file."""
+
+    def test_inherited_registries_attach_for_validation(self, repo: Path) -> None:
+        blocks = tree_for(repo).find(AntigravityConfigBlock)
+        assert relative(blocks, repo) == [
+            ".agents/agents.json",
+            ".agents/plugins.json",
+            "tools/shared/defaults.json",
+        ]
+
+    @pytest.mark.parametrize("body", ("{broken", "[]", '{"entries": [42]}'))
+    def test_cli_validates_malformed_inherited_registries(self, repo: Path, body: str) -> None:
+        from tests.cli_runner import run_cli
+
+        inherited = repo / "tools/shared/defaults.json"
+        inherited.write_text(body, encoding="utf-8")
+        result = run_cli(
+            ["lint", str(repo), "--rule", "antigravity-config-json-valid", "--format", "json"]
+        )
+        assert result.returncode == 1
+        findings = json.loads(result.stdout)["violations"]
+        assert len(findings) == 1
+        assert findings[0]["file_path"].endswith("tools/shared/defaults.json")
+        assert findings[0]["rule_id"] == "antigravity-config-json-valid"
+
+    def test_an_excluded_inherited_registry_is_not_attached(self, repo: Path) -> None:
+        tree = tree_for(repo, exclude_patterns=["tools/shared/defaults.json"])
+        assert "tools/shared/defaults.json" not in relative(tree.find(AntigravityConfigBlock), repo)
 
     def test_a_registry_file_contributes_its_entries(self, repo: Path) -> None:
         (repo / "tools" / "shared" / "plugins.json").write_text(

@@ -134,29 +134,13 @@ class McpValidJsonRule(Rule):
 
         for block in self.dependency_scoped_find(context, McpConfigRole):
             deferral = block.shape_deferral
-            # This tree role exists so the format rule and shared MCP rules
-            # can read one parsed payload. When a version pin — or a
-            # ``.skillsaw.yaml`` disabling it outright — gates off the
-            # format rule that introduced the surface, the *shape* walk
-            # stands down: those findings are about a document the pinned
-            # user's results never contained, and the Claude-family reading
-            # would report another dialect's correct file as invalid.
-            #
-            # What the gate never stops is the dialect-neutral half, for a
-            # block that declares it survives. A committed credential in
-            # this file is reported by nothing else — the file is a
-            # ``JsonConfigBlock``, so ``content-embedded-secrets`` never
-            # sees it — and gating off a shape rule is not a request to
-            # stop scanning for one. The parse failure stays behind the
-            # gate with the shape, being a statement about the whole
-            # document. A block with no deferral declares no surviving half
-            # and stands down entirely.
+            # Gating a host's shape rule does not disable shared credential
+            # checks. Syntax failures stay with the gated shape validation.
             surface = block.surface_rule
             if surface is not None and not self.surface_rule_enabled(surface):
-                if deferral is not None and deferral.keeps_dialect_neutral_checks:
-                    violations.extend(
-                        self._dialect_neutral_violations(block, report_syntax_error=False)
-                    )
+                violations.extend(
+                    self._dialect_neutral_violations(block, report_syntax_error=False)
+                )
                 continue
             # A host whose dialect its own format rule validates. Every
             # *shape* check below reads the document the way the Claude
@@ -376,6 +360,8 @@ class McpValidJsonRule(Rule):
                     file_path=block.path,
                 )
             ]
+        line = getattr(block, "source_line", None)
+        line_for = getattr(block, "source_line_for", None)
         for name, server in block.server_entries():
             if not isinstance(server, dict):
                 continue
@@ -388,6 +374,7 @@ class McpValidJsonRule(Rule):
                             f"MCP server '{shown}' '{url_key}' must not contain "
                             "user information",
                             file_path=block.path,
+                            line=line_for(server, url_key) if line_for is not None else line,
                         )
                     )
             for key, header in block.credential_maps:
@@ -402,6 +389,8 @@ class McpValidJsonRule(Rule):
                         header=header,
                         aliases=block.credential_key_aliases,
                         location=key,
+                        line=line,
+                        line_for=line_for,
                     )
                 )
             violations.extend(self._field_secret_violations(server, server_name=shown, block=block))

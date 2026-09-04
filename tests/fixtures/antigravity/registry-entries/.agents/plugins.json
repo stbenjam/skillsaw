@@ -1,4 +1,5 @@
 {
+  "inherits": [{ "path": "tools/shared/defaults.json" }],
   "entries": [
     { "path": "tools/shared/plugins" }
   ]

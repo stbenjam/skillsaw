@@ -1045,8 +1045,6 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         state.add_parser_block(
             root, agents_dir / antigravity.MCP_CONFIG_FILENAME, AntigravityMcpBlock
         )
-        for registry in antigravity.REGISTRY_FILENAMES:
-            state.add_parser_block(root, agents_dir / registry, AntigravityConfigBlock)
         # No compiled-output suppression here, unlike every other editor
         # directory below. ``APM_COMPILED_DIR_TARGETS`` maps ``.agents`` to
         # the ``codex`` target because that target's skills converge on
@@ -1063,6 +1061,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             AntigravityRuleBlock,
         )
         _add_glob(root, agents_dir / antigravity.AGENTS_DIR_NAME, "*.md", AntigravityAgentBlock)
+
+    for registry in context.antigravity_registry_files():
+        state.add_parser_block(root, registry, AntigravityConfigBlock)
 
     # An ``agents.json`` registry points ``agy`` at subagents living outside
     # the customization root, and measurement shows it loads them: the
@@ -1699,10 +1700,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                     node, conventional_hooks, AntigravityHooksBlock, owner=resolved_plugin
                 )
             native_mcp = plugin_path / antigravity.MCP_CONFIG_FILENAME
-            if not _attached_as_mcp(state, native_mcp):
-                _add_contained_plugin_block(
-                    node, native_mcp, AntigravityMcpBlock, owner=resolved_plugin
-                )
+            _add_contained_plugin_block(
+                node, native_mcp, AntigravityMcpBlock, owner=resolved_plugin
+            )
             container.children.append(node)
 
         if container is not root:

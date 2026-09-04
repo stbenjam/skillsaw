@@ -1718,7 +1718,7 @@ class TestCopilotAgentValidation:
         assert found[0]["line"] == 3
         assert "Invalid frontmatter" in found[0]["message"]
 
-    def test_version_pin_keeps_new_schema_and_shared_mcp_findings_disabled(self, tmp_path):
+    def test_version_pin_disables_new_shape_checks_but_keeps_mcp_policy(self, tmp_path):
         agent = tmp_path / ".github" / "agents" / "pinned.agent.md"
         agent.parent.mkdir(parents=True)
         agent.write_text(
@@ -1749,7 +1749,7 @@ class TestCopilotAgentValidation:
 
         assert grouped.get("copilot-agent-valid", []) == []
         assert grouped.get("mcp-valid-json", []) == []
-        assert grouped.get("mcp-prohibited", []) == []
+        assert [v["line"] for v in grouped["mcp-prohibited"]] == [3]
         assert grouped.get("hooks-dangerous", []) == []
         assert grouped.get("hooks-prohibited", []) == []
         assert [v["line"] for v in grouped["content-description-routing"]] == [2]

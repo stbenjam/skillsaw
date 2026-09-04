@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "berth-status": {"command": "echo", "args": ["ready"]}
+  }
+}

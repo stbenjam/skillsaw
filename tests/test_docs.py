@@ -644,7 +644,7 @@ class TestAntigravityExtractor:
         return plugin
 
     def test_a_manifest_without_a_name_falls_back_to_the_directory_name(self, temp_dir):
-        """``name`` is optional, and the directory is what ``agy`` installs under."""
+        """Documentation can still name an incomplete plugin by its directory."""
         self._plugin(temp_dir, {"mcpServers": {}})
         (temp_dir / ".agents" / "plugins" / "berth-tools" / "plugin.json").write_text("{}")
 
@@ -1771,6 +1771,18 @@ class TestDocsCLI:
         result = self._run(str(valid_plugin), "--format", "markdown", "--output", str(out_dir))
         assert result.returncode == 0
         assert (out_dir / "README.md").exists()
+
+    @pytest.mark.parametrize("fixture", ("workspace-clean", "shared-plugin-hooks"))
+    def test_docs_recognizes_antigravity_repositories(self, temp_dir, fixture):
+        from tests.antigravity._helpers import copy_fixture
+        from tests.cli_runner import run_cli
+
+        repo = copy_fixture(f"antigravity/{fixture}", temp_dir)
+        out_dir = temp_dir / "out"
+        result = run_cli(["docs", str(repo), "--output", str(out_dir)])
+        assert result.returncode == 0
+        assert "doesn't appear to be a recognized repository" not in result.stderr
+        assert (out_dir / "index.html").exists()
 
     def test_docs_warns_for_registry_only_repository(self, temp_dir):
         (temp_dir / "server.json").write_text(

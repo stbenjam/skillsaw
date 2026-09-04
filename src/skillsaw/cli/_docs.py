@@ -21,6 +21,8 @@ _DOCS_REPO_TYPES = {
     RepositoryType.AGENT_PLUGIN,
     RepositoryType.GROK_PLUGIN,
     RepositoryType.GROK_MARKETPLACE,
+    RepositoryType.ANTIGRAVITY,
+    RepositoryType.ANTIGRAVITY_PLUGIN,
 }
 
 
@@ -48,7 +50,8 @@ def _run_docs(args):
     if not context.repo_types.intersection(_DOCS_REPO_TYPES):
         print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)
         print(
-            "Expected: .claude-plugin/plugin.json, plugins/ directory, or SKILL.md (agentskills.io)\n",
+            "Expected: plugin metadata, an Antigravity customization root, "
+            "or SKILL.md (agentskills.io)\n",
             file=sys.stderr,
         )
 

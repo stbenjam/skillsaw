@@ -452,8 +452,7 @@ def test_every_surface_rule_is_a_declared_dependency_of_mcp_valid_json():
     """``mcp-valid-json`` gates on *every* ``surface_rule``, deferral or not.
 
     A block whose rule is not in ``surface_dependencies`` reads as gated
-    off, and the shape walk — plus, for a block with no deferral, the whole
-    block — is skipped silently. Same for a ``syntax_error_rule``: the
+    off, and the shape walk is skipped silently. Same for a ``syntax_error_rule``: the
     parse finding is handed back only when that rule is known to be off,
     and an undeclared one always looks off.
     """
@@ -472,28 +471,3 @@ def test_every_surface_rule_is_a_declared_dependency_of_mcp_valid_json():
     assert owners, "no block declares a syntax_error_rule — the walk found nothing"
     assert sorted(surfaces - declared) == []
     assert sorted(owners - declared) == []
-
-
-def test_every_surface_rule_is_a_declared_dependency_of_mcp_prohibited():
-    """``mcp-prohibited`` reads ``block.surface_rule`` declaratively.
-
-    ``surface_rule_enabled`` answers from the set the linter builds out of
-    every rule's ``surface_dependencies``, so a rule named on a block but
-    not declared there reads as *off* and the block is skipped silently. A
-    block that also declares a ``shape_deferral`` never reaches that gate —
-    its dialect-neutral half survives being gated off — so only the others
-    have to be listed.
-    """
-    from skillsaw.rules.builtin.mcp.prohibited import McpProhibitedRule
-
-    gated = {
-        sub.surface_rule
-        for sub in _mcp_config_role_subclasses()
-        if sub.surface_rule is not None and sub.shape_deferral is None
-    }
-    assert gated, "no block reaches this gate — the walk found nothing"
-    missing = sorted(gated - set(McpProhibitedRule.surface_dependencies))
-    assert missing == [], (
-        "these blocks name a surface_rule with no shape_deferral, so mcp-prohibited "
-        f"gates on it, but it is not in surface_dependencies: {missing}"
-    )

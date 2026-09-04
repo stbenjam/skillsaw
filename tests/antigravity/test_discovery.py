@@ -342,7 +342,7 @@ class TestProvenance:
         repo = write_repo(tmp_path / "forced-elsewhere")
         plugin = write_plugin(repo, "berth-tools", {"name": "berth-tools"})
         ctx = RepositoryContext(repo, repo_types=[RepositoryType.MARKETPLACE])
-        assert ctx.antigravity_plugins == []
+        assert ctx.antigravity_plugins == [plugin]
         assert ctx.provenance(plugin).antigravity is True
 
     @pytest.mark.parametrize(

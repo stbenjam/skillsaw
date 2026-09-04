@@ -19,7 +19,7 @@ See THREAT_MODEL.md, T6.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Set
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 from skillsaw.formats.antigravity import (
     AGENTS_DIR_NAME,
@@ -145,9 +145,8 @@ def customization_root_is_marked(base: Path, *, is_excluded: Callable[[Path], bo
 def antigravity_manifest_is_contained(plugin_dir: Path) -> bool:
     """Whether *plugin_dir* carries an Antigravity manifest of its own.
 
-    The authorship evidence, asked directly of the filesystem rather than
-    of discovery — discovery is switched off by a ``--type`` override, and
-    the answer must be override-invariant.
+    Authorship evidence is read directly from the filesystem, independently
+    of the requested ``--type``.
 
     Existence, not parseability: a manifest that does not parse means
     ``agy`` skips the directory, and reporting that is
@@ -260,6 +259,45 @@ def _registry_entry_path(root: Path, value: object) -> Optional[Path]:
     return contained_resolve(root / candidate, root)
 
 
+def iter_registries(
+    root: Path,
+    customization_dirs: Iterable[Path],
+    filename: str,
+    *,
+    is_excluded: Callable[[Path], bool],
+) -> Iterator[Tuple[Path, Optional[Dict[str, Any]]]]:
+    """Yield contained registries and their data, following inheritance once.
+
+    Invalid documents yield ``None`` so the tree can still attach them for
+    validation. Discovery and attachment follow the same paths.
+    """
+    resolved_root = safe_resolve(root)
+    if resolved_root is None:
+        return
+    visited: Set[Path] = set()
+    pending = [directory / filename for directory in customization_dirs]
+    while pending:
+        path = pending.pop()
+        resolved = contained_resolve(path, resolved_root)
+        if resolved is None or resolved in visited or is_excluded(path):
+            continue
+        visited.add(resolved)
+        if not safe_is_file(resolved):
+            continue
+        data, error = read_json_strict(resolved, allow_duplicate_keys=True)
+        if error or not isinstance(data, dict):
+            yield path, None
+            continue
+        yield path, data
+        inherits = data.get("inherits")
+        if isinstance(inherits, list):
+            for entry in inherits:
+                if isinstance(entry, dict):
+                    target = _registry_entry_path(resolved_root, entry.get("path"))
+                    if target is not None:
+                        pending.append(target)
+
+
 def resolve_registry_entries(
     root: Path,
     customization_dirs: Iterable[Path],
@@ -296,21 +334,10 @@ def resolve_registry_entries(
 
     found: List[Path] = []
     seen: Set[Path] = set()
-    visited_registries: Set[Path] = set()
-
-    pending = [directory / filename for directory in customization_dirs]
-    while pending:
-        path = pending.pop()
-        resolved = contained_resolve(path, resolved_root)
-        if resolved is None or resolved in visited_registries or is_excluded(path):
-            continue
-        visited_registries.add(resolved)
-        if not safe_is_file(resolved):
-            continue
-        # The reader the block uses: strict about the tokens ``agy``
-        # refuses, lenient about a repeated key it collapses.
-        data, error = read_json_strict(resolved, allow_duplicate_keys=True)
-        if error or not isinstance(data, dict):
+    for _, data in iter_registries(
+        resolved_root, customization_dirs, filename, is_excluded=is_excluded
+    ):
+        if data is None:
             continue
         entries = data.get("entries")
         if isinstance(entries, list):
@@ -323,17 +350,6 @@ def resolve_registry_entries(
                 if directory not in seen:
                     seen.add(directory)
                     found.append(directory)
-        inherits = data.get("inherits")
-        if not isinstance(inherits, list):
-            continue
-        for entry in inherits:
-            if not isinstance(entry, dict):
-                continue
-            target = _registry_entry_path(resolved_root, entry.get("path"))
-            # Measured: a directory in ``inherits`` loads nothing. Only a
-            # registry *file* is followed.
-            if target is not None:
-                pending.append(target)
     return sorted(found)
 
 

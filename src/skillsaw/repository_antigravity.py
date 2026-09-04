@@ -1,9 +1,8 @@
 """Stateful Antigravity plugin discovery views.
 
 Discovery gathers Antigravity's filesystem evidence without state. This
-mixin is the small stateful seam that caches it for ``RepositoryContext``
-and applies the ``--type`` gate, keeping the orchestrator itself free of
-another ecosystem's bookkeeping.
+mixin caches it for ``RepositoryContext``. Declared plugins survive every
+``--type`` override; forcing the plugin type also discovers missing manifests.
 """
 
 from __future__ import annotations
@@ -12,15 +11,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, List, Optional, Set
 
 from .discovery import antigravity as antigravity_discovery
-from .formats.antigravity import ANTIGRAVITY_CONFIG_DIR_NAMES, PLUGINS_REGISTRY
+from .formats.antigravity import ANTIGRAVITY_CONFIG_DIR_NAMES, PLUGINS_REGISTRY, REGISTRY_FILENAMES
 from .paths import safe_resolve
 from .repository_types import RepositoryType
-
-#: The type the ``--type`` gate selects on. A member rather than its string
-#: value, so a renamed enum member is a type error here instead of a
-#: silently disabled gate. ``ANTIGRAVITY`` is deliberately absent: a
-#: customization root is project configuration, not a plugin claim.
-_ANTIGRAVITY_TYPES = frozenset({RepositoryType.ANTIGRAVITY_PLUGIN})
 
 
 class RepositoryAntigravityMixin:
@@ -41,7 +34,6 @@ class RepositoryAntigravityMixin:
         _antigravity_claims: Optional[Set[Path]]
         _antigravity_roots: Optional[List[Path]]
         _antigravity_workspace_roots: Optional[List[Path]]
-        _antigravity_discovery_enabled: bool
         _antigravity_plugin_forced: bool
 
         def agent_tool_dirs(self, name: str) -> List[Path]: ...
@@ -52,28 +44,14 @@ class RepositoryAntigravityMixin:
         def _under_any(path: Path, roots: Set[Path]) -> bool: ...
 
     def _init_antigravity(self, repo_types: Optional[Iterable[RepositoryType]]) -> None:
-        """Set up Antigravity caches and the ``--type`` gate, then discover.
-
-        The gate mirrors Codex's and Grok's: an override decides which
-        directories are *walked* and which format rules activate, never what
-        the author declared — ``provenance()`` reads the manifest straight
-        off the filesystem, so a declared plugin keeps its container and
-        prose in the lint tree under an unrelated ``--type``.
-        """
-        selected = None
-        if repo_types is not None:
-            selected_types = set(repo_types)
-            selected = bool(selected_types & _ANTIGRAVITY_TYPES)
-            self._antigravity_plugin_forced = RepositoryType.ANTIGRAVITY_PLUGIN in selected_types
-        else:
-            self._antigravity_plugin_forced = False
-        self._antigravity_discovery_enabled = selected is not False
+        """Initialize caches and discover declared or explicitly requested plugins."""
+        self._antigravity_plugin_forced = (
+            repo_types is not None and RepositoryType.ANTIGRAVITY_PLUGIN in repo_types
+        )
         self._antigravity_claims = None
         self._antigravity_roots = None
         self._antigravity_workspace_roots = None
-        self.antigravity_plugins = (
-            self._discover_antigravity_plugins() if self._antigravity_discovery_enabled else []
-        )
+        self.antigravity_plugins = self._discover_antigravity_plugins()
 
     def antigravity_customization_dirs(self) -> List[Path]:
         """Every non-excluded customization root, from the shared walk.
@@ -150,6 +128,17 @@ class RepositoryAntigravityMixin:
             is_excluded=self.is_path_excluded,
         )
 
+    def antigravity_registry_files(self) -> List[Path]:
+        """Conventional and inherited registries, including malformed documents."""
+        roots = self.antigravity_customization_dirs()
+        return [
+            path
+            for filename in REGISTRY_FILENAMES
+            for path, _ in antigravity_discovery.iter_registries(
+                self.root_path, roots, filename, is_excluded=self.is_path_excluded
+            )
+        ]
+
     def _antigravity_registry_plugin_roots(self) -> List[Path]:
         """Plugin roots a ``plugins.json`` names outside the install location."""
         return [
@@ -168,12 +157,7 @@ class RepositoryAntigravityMixin:
         seeds manifest-less install directories for the requested check.
         """
         if self._antigravity_claims is None:
-            declared = (
-                self.antigravity_plugins
-                if self._antigravity_discovery_enabled
-                else self._discover_antigravity_plugins()
-            )
-            claims = {r for r in (safe_resolve(p) for p in declared) if r is not None}
+            claims = {r for p in self.antigravity_plugins if (r := safe_resolve(p)) is not None}
             claims.update(self._antigravity_registry_plugin_roots())
             self._antigravity_claims = claims
         return self._antigravity_claims
@@ -201,10 +185,7 @@ class RepositoryAntigravityMixin:
         self._antigravity_roots = None
         self._antigravity_workspace_roots = None
         if filtering:
-            # The discovery list stays gated; the prune does not, for the
-            # same reason the claim set is ``--type``-invariant.
-            if self._antigravity_discovery_enabled:
-                self.antigravity_plugins = self._discover_antigravity_plugins()
+            self.antigravity_plugins = self._discover_antigravity_plugins()
             self._prune_skills_of_dropped_antigravity_plugins(before)
         # Preserve the current claim set before a caller changes exclusions.
         # Skill discovery used these roots, so later pruning needs this snapshot.
