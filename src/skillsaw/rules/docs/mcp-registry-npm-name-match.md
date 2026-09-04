@@ -16,6 +16,15 @@ not package location. Ambiguous and external packages stay quiet; missing npm
 versions are reported by
 `mcp-registry-server-json-valid`.
 
+When a workspace container shares the published name and version with a member,
+the rule checks the declared member. Literal paths and positive `*`, `?` and
+whole-segment `**` workspace patterns are supported, including a leading `./`.
+The list and `{ "packages": [...] }` declaration forms are both recognized.
+Complex patterns, including braces, character classes and ordered exclusions,
+leave workspace membership unresolved. The rule then stays quiet unless other
+repository-directory evidence identifies the package; it does not assume the
+container is published because it could not resolve those patterns.
+
 For the selected package, the rule verifies that:
 
 - `package.json` declares a string-valued `mcpName`; and

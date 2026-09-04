@@ -426,6 +426,73 @@ class TestMcpRegistry:
         assert "mcp-registry-version-semver" not in rule_ids(r)
         assert "mcp-registry-npm-name-match" not in rule_ids(r)
 
+    @pytest.mark.parametrize("workspaces", [["local"], ["./local"], {"packages": ["./local"]}])
+    def test_workspace_spelling_selects_the_published_member(self, tmp_path, workspaces):
+        repo = copy_fixture("mcp-registry/workspace-container", tmp_path)
+        container_path = repo / "package.json"
+        container = json.loads(container_path.read_text())
+        container["workspaces"] = workspaces
+        container_path.write_text(json.dumps(container))
+        rule = "mcp-registry-npm-name-match"
+
+        clean = run_lint(repo, "--rule", rule)
+        assert clean["rc"] == 0, clean["stderr"]
+        assert clean["out"] is not None
+        assert rule in clean["out"]["stats"]["rules_run"]
+        assert clean["out"]["violations"] == []
+
+        member_path = repo / "local" / "package.json"
+        member = json.loads(member_path.read_text())
+        member.pop("mcpName")
+        member_path.write_text(json.dumps(member))
+        broken = run_lint(repo, "--rule", rule)
+        assert broken["rc"] == 1, broken["stderr"]
+        assert broken["out"] is not None
+        assert [(v["rule_id"], v["file_path"]) for v in broken["out"]["violations"]] == [
+            (rule, "local/package.json")
+        ]
+        assert "io.github.example/weather" in broken["out"]["violations"][0]["message"]
+
+    @pytest.mark.parametrize(
+        "patterns",
+        [
+            ["{local,other}"],
+            ["[l]ocal"],
+            ["@(local|other)"],
+            ["*", "!local"],
+            ["*", "!local", "local"],
+            ["./local", "!other"],
+        ],
+    )
+    def test_unsupported_workspace_membership_stays_unresolved(self, tmp_path, patterns):
+        repo = copy_fixture("mcp-registry/workspace-container", tmp_path)
+        member_path = repo / "local" / "package.json"
+        member = json.loads(member_path.read_text())
+        member.pop("mcpName")
+        member_path.write_text(json.dumps(member))
+        container_path = repo / "package.json"
+        container = json.loads(container_path.read_text())
+        container["workspaces"] = patterns
+        container_path.write_text(json.dumps(container))
+        rule = "mcp-registry-npm-name-match"
+
+        unresolved = run_lint(repo, "--rule", rule)
+        assert unresolved["rc"] == 0, unresolved["stderr"]
+        assert unresolved["out"] is not None
+        assert rule in unresolved["out"]["stats"]["rules_run"]
+        assert unresolved["out"]["violations"] == []
+
+        # The same manifest is found and checked once supported membership
+        # evidence identifies it; silence above must not mask missing targets.
+        container["workspaces"] = ["./local"]
+        container_path.write_text(json.dumps(container))
+        resolved = run_lint(repo, "--rule", rule)
+        assert resolved["rc"] == 1, resolved["stderr"]
+        assert resolved["out"] is not None
+        assert [(v["rule_id"], v["file_path"]) for v in resolved["out"]["violations"]] == [
+            (rule, "local/package.json")
+        ]
+
     def test_unrelated_same_coordinate_package_is_not_cross_matched(self, tmp_path):
         repo = copy_fixture("mcp-registry/locality", tmp_path)
         r = run_lint(repo)
