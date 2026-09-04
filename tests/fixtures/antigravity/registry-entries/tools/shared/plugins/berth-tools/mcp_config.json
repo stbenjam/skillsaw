@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "berths": {
+      "command": "./bin/berths",
+      "env": { "BERTH_DB_PORT": 5432 }
+    }
+  }
+}

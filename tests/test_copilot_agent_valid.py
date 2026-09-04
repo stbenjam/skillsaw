@@ -559,6 +559,35 @@ def test_embedded_mcp_reuses_shape_secret_and_policy_rules(tmp_path):
     assert prohibited[0].line == 3
 
 
+def test_disabling_copilot_agent_valid_stands_the_shared_mcp_rule_down_entirely(tmp_path):
+    """No shape deferral, so nothing survives the gate — established behaviour.
+
+    ``mcp-servers`` in agent frontmatter is a Copilot-only surface with no
+    ``McpShapeDeferral``: a block that declares no surviving half keeps the
+    total stand-down it has always had, including for a committed token.
+    """
+    from tests.test_integration import run_lint
+
+    token = "ghp_" + "abcdefghijklmnopqrst" + "uvwxyzABCDEFGHIJ"
+    _write_agent(
+        tmp_path,
+        "description: Reviews changes\n"
+        "mcp-servers:\n"
+        "  broken:\n"
+        "    type: local\n"
+        "    command: ''\n"
+        "    env:\n"
+        f"      API_TOKEN: {token}",
+    )
+    (tmp_path / ".skillsaw.yaml").write_text(
+        "rules:\n  copilot-agent-valid:\n    enabled: false\n", encoding="utf-8"
+    )
+
+    found = (run_lint(tmp_path)["out"] or {}).get("violations", [])
+
+    assert [v for v in found if v["rule_id"] == "mcp-valid-json"] == []
+
+
 def test_mcp_role_parsing_is_prefiltered_by_the_top_level_key(tmp_path, monkeypatch):
     _write_agent(tmp_path, "description: Has no MCP configuration")
 

@@ -603,6 +603,72 @@ class TestAgentPluginExtractor:
         assert "release-auditor" in html
 
 
+class TestAntigravityExtractor:
+    """``skillsaw docs`` on Antigravity packaging.
+
+    The endpoint column reads whichever key the host spells it with, so a
+    remote server declared with ``serverUrl`` is not rendered as a process
+    with no command.
+    """
+
+    def _plugin(self, root: Path, mcp: dict) -> Path:
+        (root / "AGENTS.md").write_text("# Ferrymark\n\nRun `make test`.\n")
+        plugin = root / ".agents" / "plugins" / "berth-tools"
+        plugin.mkdir(parents=True)
+        (plugin / "plugin.json").write_text(json.dumps({"name": "berth-tools"}, indent=2))
+        (plugin / "mcp_config.json").write_text(json.dumps(mcp, indent=2))
+        return plugin
+
+    def test_server_url_is_published_as_the_endpoint(self, temp_dir):
+        self._plugin(
+            temp_dir,
+            {
+                "mcpServers": {
+                    "remote": {"serverUrl": "https://feeds.example/mcp/sse"},
+                    "local": {"command": "./bin/db"},
+                }
+            },
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+        by_name = {s.name: s for s in docs.plugins[0].mcp_servers}
+
+        assert by_name["remote"].config["url"] == "https://feeds.example/mcp/sse"
+        # Measured: ``serverUrl`` with no ``type`` loads as ``http``.
+        assert by_name["remote"].server_type == "http"
+        assert by_name["local"].server_type == "stdio"
+        assert by_name["local"].config["command"] == "./bin/db"
+
+    def test_an_explicit_type_is_not_overridden(self, temp_dir):
+        self._plugin(
+            temp_dir,
+            {"mcpServers": {"remote": {"serverUrl": "https://feeds.example/mcp", "type": "sse"}}},
+        )
+
+        servers = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers
+
+        assert servers[0].server_type == "sse"
+
+    def test_the_portable_key_still_wins(self, temp_dir):
+        """A host listing both spellings keeps ``url``'s established reading."""
+        self._plugin(
+            temp_dir,
+            {
+                "mcpServers": {
+                    "remote": {
+                        "url": "https://portable.example/mcp",
+                        "serverUrl": "https://other.example/mcp",
+                    }
+                }
+            },
+        )
+
+        servers = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers
+
+        assert servers[0].config["url"] == "https://portable.example/mcp"
+        assert servers[0].server_type == "stdio"
+
+
 # ---------------------------------------------------------------------------
 # HTML renderer tests
 # ---------------------------------------------------------------------------

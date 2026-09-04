@@ -67,6 +67,10 @@ loaded, so nothing has been ignored yet.
   under it, because the command ships in the repository either way.
 - **A `prompt` hook with no `prompt` text**, and **an empty group or event
   array**. All load.
+- **A repeated key.** Antigravity reads this file with Go's `encoding/json`,
+  which takes the last value. A hook name, an event key or a handler key
+  written twice loads with the second one in force, so the file is
+  confusing rather than broken.
 
 ## Event names
 

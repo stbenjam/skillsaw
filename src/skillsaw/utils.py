@@ -665,13 +665,23 @@ def reject_duplicate_json_keys(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
 
 
 @_file_cache.cached
-def read_json_strict(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
+def read_json_strict(
+    file_path: Path, *, allow_duplicate_keys: bool = False
+) -> Tuple[Optional[object], Optional[str]]:
     """Like :func:`read_json`, but rejecting duplicate keys and non-finite numbers.
 
     ``json.loads`` accepts the bare tokens ``NaN``, ``Infinity`` and
     ``-Infinity`` anywhere a number is allowed. No JSON host does: Node
     throws on the whole document, so a config carrying one is dead on
     arrival for the tool that reads it while skillsaw reports it clean.
+
+    *allow_duplicate_keys* separates the second half for a host whose
+    reader really does collapse a repeated key. Go's ``encoding/json``
+    takes the last value and loads the file, so calling that a parse
+    failure would assert a consequence the host does not have; the
+    non-finite tokens stay fatal there either way. Off by default: a
+    duplicate key is a defect in every host measured before it, and
+    turning it on is a claim about one reader.
 
     Kept separate from :func:`read_json` rather than folded into it because
     discovery reads manifests through that function — tightening it there
@@ -688,7 +698,7 @@ def read_json_strict(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
             json.loads(
                 content,
                 parse_constant=_reject_non_finite,
-                object_pairs_hook=reject_duplicate_json_keys,
+                object_pairs_hook=None if allow_duplicate_keys else reject_duplicate_json_keys,
             ),
             None,
         )

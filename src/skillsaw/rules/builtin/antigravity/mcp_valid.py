@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, FrozenSet, List
 
 from skillsaw.blocks import json_token
 from skillsaw.blocks.json_config import AntigravityMcpBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
+from skillsaw.formats import antigravity
 from skillsaw.repository_types import RepositoryType
 from skillsaw.rule import Rule, RuleViolation, Severity
-
-#: The one value ``authProviderType`` parses. The proto enum also spells it
-#: ``MCP_AUTH_PROVIDER_TYPE_GOOGLE_CREDENTIALS``, and that spelling drops
-#: the server — only the lowercase JSON alias is accepted.
-_AUTH_PROVIDER_TYPES = frozenset({"google_credentials"})
 
 #: What a per-server defect costs, and the reason it is worth reporting at
 #: all: ``agy`` drops the server and says nothing, so the tools it was
@@ -43,10 +39,24 @@ class AntigravityMcpValidRule(Rule):
     since = "0.20.0"
     # ``enabled: auto`` on the base default, gated on the two places these
     # files live: an Antigravity workspace and an Antigravity plugin.
-    # ``AntigravityMcpBlock.shape_deferral`` names the same two types, so a
-    # forced ``--type`` that gates this rule off returns the file to
-    # ``mcp-valid-json`` rather than leaving it validated by nothing.
+    # Whatever gates this rule off — a forced ``--type``, a ``version:``
+    # pin, an explicit ``enabled: false`` — ``mcp-valid-json`` keeps
+    # scanning the file for a committed credential and a connection URL
+    # carrying user information, and takes back neither the shape walk nor
+    # the parse failure: the Claude-family reading would report this
+    # dialect's correct file as invalid.
     repo_types = frozenset({RepositoryType.ANTIGRAVITY, RepositoryType.ANTIGRAVITY_PLUGIN})
+
+    config_schema = {
+        "extra-auth-provider-types": {
+            "type": "list",
+            "default": [],
+            "description": (
+                "Additional 'authProviderType' values to accept, for providers "
+                "newer than this skillsaw release"
+            ),
+        },
+    }
 
     @property
     def rule_id(self) -> str:
@@ -59,13 +69,34 @@ class AntigravityMcpValidRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.ERROR
 
+    def _accepted_auth_providers(self) -> FrozenSet[str]:
+        """The measured provider, plus any the project declares.
+
+        A release that adds a second provider would otherwise turn a
+        working file into a finding with no way out but disabling the rule.
+
+        The declared type is not enforced when the config loads, so
+        ``extra-auth-provider-types: 42`` arrives here as an int. Iterating
+        it would raise ``TypeError`` and cost every finding in every MCP
+        file over one bad config line.
+        """
+        extra = self.setting("extra-auth-provider-types") or []
+        if not isinstance(extra, (list, tuple, set, frozenset)):
+            return antigravity.MCP_AUTH_PROVIDER_TYPES
+        return antigravity.MCP_AUTH_PROVIDER_TYPES | {
+            value for value in extra if isinstance(value, str)
+        }
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
+        accepted = self._accepted_auth_providers()
         for block in context.lint_tree.find(AntigravityMcpBlock):
-            violations.extend(self._check_file(block))
+            violations.extend(self._check_file(block, accepted))
         return violations
 
-    def _check_file(self, block: AntigravityMcpBlock) -> List[RuleViolation]:
+    def _check_file(
+        self, block: AntigravityMcpBlock, accepted: FrozenSet[str]
+    ) -> List[RuleViolation]:
         if block.parse_error:
             return [
                 self.violation(
@@ -97,14 +128,15 @@ class AntigravityMcpValidRule(Rule):
                 )
             ]
 
-        servers = data.get("mcpServers")
+        servers = data.get(block.servers_key)
         if not isinstance(servers, dict):
             # A bare server map — the shape several other hosts accept — is
             # not an error here. ``agy`` reads no wrapper, finds no servers,
             # and starts anyway, so the file is inert rather than broken.
             return [
                 self.violation(
-                    "no 'mcpServers' object, so Antigravity loads no server from this file",
+                    f"no '{block.servers_key}' object, so Antigravity loads no server "
+                    "from this file",
                     file_path=block.path,
                     severity=Severity.WARNING,
                     fingerprint_discriminator="no-mcpservers",
@@ -113,7 +145,7 @@ class AntigravityMcpValidRule(Rule):
 
         violations: List[RuleViolation] = []
         for name, server in servers.items():
-            violations.extend(self._check_server(block, str(name), server))
+            violations.extend(self._check_server(block, str(name), server, accepted))
         return violations
 
     def _dropped(self, block: AntigravityMcpBlock, name: str, problem: str) -> RuleViolation:
@@ -125,7 +157,7 @@ class AntigravityMcpValidRule(Rule):
         )
 
     def _check_server(
-        self, block: AntigravityMcpBlock, name: str, server: Any
+        self, block: AntigravityMcpBlock, name: str, server: Any, accepted: FrozenSet[str]
     ) -> List[RuleViolation]:
         shown = safe_display(name)
         if not isinstance(server, dict):
@@ -164,13 +196,13 @@ class AntigravityMcpValidRule(Rule):
         # ``isinstance`` first: an array or an object is unhashable, and
         # testing set membership on one raises rather than reporting the
         # server ``agy`` drops for exactly that reason.
-        if auth is not None and (not isinstance(auth, str) or auth not in _AUTH_PROVIDER_TYPES):
-            accepted = ", ".join(f"'{value}'" for value in sorted(_AUTH_PROVIDER_TYPES))
+        if auth is not None and (not isinstance(auth, str) or auth not in accepted):
+            rendered = ", ".join(f"'{safe_display(value)}'" for value in sorted(accepted))
             violations.append(
                 self._dropped(
                     block,
                     shown,
-                    f"'authProviderType' must be {accepted}",
+                    f"'authProviderType' must be {rendered}",
                 )
             )
         return violations

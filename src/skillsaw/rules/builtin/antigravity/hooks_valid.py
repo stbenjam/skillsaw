@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import AbstractSet, Any, Dict, List, Optional, Tuple
 
 from skillsaw.blocks import json_token
 from skillsaw.blocks.json_config import AntigravityHooksBlock
@@ -202,7 +202,10 @@ class _FileCheck:
                 "so its hooks never run",
             )
             return
-        event_where = f"{where} {canonical}"
+        # Sanitized because ``canonical`` can come from ``extra-events``, so
+        # a ``.skillsaw.yaml`` string reaches terminal, JSON and SARIF
+        # output the way a repository-supplied one would.
+        event_where = f"{where} {safe_display(canonical)}"
         if not isinstance(value, list):
             self._fatal(event_where, "an event's value must be an array")
             return
@@ -299,7 +302,9 @@ class _FileCheck:
             return None, False
         return raw, True
 
-    def _report_unknown_keys(self, where: str, obj: Dict[str, Any], known: Any, label: str) -> None:
+    def _report_unknown_keys(
+        self, where: str, obj: Dict[str, Any], known: AbstractSet[str], label: str
+    ) -> None:
         """One finding per object, listing every key its parser discards."""
         unknown = sorted(str(key) for key in obj if key not in known)
         if not unknown:

@@ -88,6 +88,7 @@ rules:
   antigravity-mcp-valid:
     enabled: auto
     severity: error
+    # extra-auth-provider-types: []
 
   # plugin.json must parse as an Antigravity manifest with correctly typed fields
   antigravity-plugin-json-valid:

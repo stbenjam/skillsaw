@@ -18,8 +18,9 @@ Measured against `agy` 1.1.25:
 This rule reports both and says which one a finding is.
 
 `mcp-valid-json` stands its own shape walk down for this file, because
-Antigravity's dialect is its own — `serverUrl` rather than `url`, and a
-server with no connection field at all is legal. What it keeps are the
+Antigravity's dialect is its own — `serverUrl` is a remote form beside
+`url`, and it wins over `command` when both are present, while a server
+with no connection field at all is legal. What it keeps are the
 checks no dialect changes: a file that is not JSON, a connection URL
 carrying user information, and a credential written into `env`, `headers`,
 `oauth`, or a server's own `clientId` / `clientSecret`.
@@ -59,6 +60,9 @@ carrying user information, and a credential written into `env`, `headers`,
   knowing but is not a defect in the file's shape.
 - **`timeout`.** It appears in no measured or documented property list for
   this host.
+- **A repeated key.** Antigravity reads this file with Go's `encoding/json`,
+  which takes the last value. A server named twice, or a key written twice
+  inside one, loads with the second one in force.
 
 ## Examples
 
@@ -112,3 +116,13 @@ says nothing:
 - Keep credentials out of the file: reference an environment variable
   (`"${GTFS_FEED_TOKEN}"`) rather than pasting a token into `env`,
   `headers`, `oauth`, or a server's own `clientId` / `clientSecret`.
+
+If Antigravity adds an auth provider newer than this skillsaw release,
+allow it in `.skillsaw.yaml`:
+
+```yaml
+rules:
+  antigravity-mcp-valid:
+    extra-auth-provider-types:
+      - workspace_credentials
+```

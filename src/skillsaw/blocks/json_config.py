@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import (
+    AbstractSet,
     Any,
     ClassVar,
     Dict,
@@ -269,14 +270,15 @@ def json_token(value: float) -> str:
 
 
 def _parse_json_file(
-    path: Path, *, strict: bool = False, jsonc: bool = False
+    path: Path, *, strict: bool = False, jsonc: bool = False, duplicate_keys_fatal: bool = True
 ) -> Tuple[Optional[Any], Optional[str]]:
     if jsonc:
         # JSONC is always strict about the non-finite tokens; the locations
         # that opt into it are new surfaces with no shipped results.
         return read_jsonc(path)
-    data, error = (read_json_strict if strict else read_json)(path)
-    return data, error
+    if not strict:
+        return read_json(path)
+    return read_json_strict(path, allow_duplicate_keys=not duplicate_keys_fatal)
 
 
 @dataclass(eq=False)
@@ -305,13 +307,27 @@ class JsonConfigBlock(LintTarget):
     #: as a parse error. Implies :attr:`strict_json`, which is why the
     #: locations setting this leave that one at its default.
     jsonc: ClassVar[bool] = False
+    #: Whether a repeated object key kills the file, asked only where
+    #: :attr:`strict_json` is set. On by default, which is what every host
+    #: measured before Antigravity does. Google's ``agy`` reads its
+    #: ``hooks.json``, ``mcp_config.json`` and registries with Go's
+    #: ``encoding/json``: the last value wins and the file loads, measured
+    #: at all three nesting depths against 1.1.25, so the blocks it reads
+    #: turn this off and keep the non-finite half. Not consulted on the
+    #: JSONC path, where no host accepts a duplicate.
+    duplicate_keys_fatal: ClassVar[bool] = True
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
         default=None, init=False, repr=False
     )
 
     def _ensure_parsed(self) -> None:
         if self._parsed is None:
-            self._parsed = _parse_json_file(self.path, strict=self.strict_json, jsonc=self.jsonc)
+            self._parsed = _parse_json_file(
+                self.path,
+                strict=self.strict_json,
+                jsonc=self.jsonc,
+                duplicate_keys_fatal=self.duplicate_keys_fatal,
+            )
 
     @property
     def parse_error(self) -> Optional[str]:
@@ -351,11 +367,16 @@ class JsonConfigBlock(LintTarget):
     def first_non_finite(self) -> Optional[Tuple[str, float]]:
         """The first ``NaN``/``Infinity`` in this document, as ``(path, value)``.
 
-        Only a block left at :attr:`strict_json` ``False`` can have one:
-        ``json.loads`` accepts the bare tokens and no JSON host does, so a
-        lenient block parses a document the tool it configures refuses. A
-        rule that reads such a block asks here, before its shape walk, so
-        the finding names the file's real defect rather than a field's type.
+        Two routes reach a value here, and a :attr:`strict_json` block is
+        one of them. A block left at ``False`` parses the bare tokens
+        ``json.loads`` accepts and no JSON host does, so it holds a
+        document the tool it configures refuses. A block at ``True``
+        rejects those tokens — but not ``1e400``, which is valid JSON that
+        overflows to ``inf`` without ever passing through
+        ``parse_constant``.
+
+        So a rule reads this before its shape walk either way, and the
+        finding names the file's real defect rather than a field's type.
 
         Document order, iteratively: a document nested deeply enough to
         parse but deep enough to exhaust the recursion limit on a second
@@ -876,7 +897,15 @@ class AntigravityHooksBlock(HooksBlock):
     """
 
     category: str = "hooks"
+    #: Measured: a bare ``NaN``/``Infinity`` token, a comment and a
+    #: trailing comma each drop the whole file — ``failed to parse
+    #: hooks.json … invalid character``, and the run loads zero named
+    #: hooks.
     strict_json: ClassVar[bool] = True
+    #: Measured: a repeated hook name, a repeated event key inside one
+    #: hook, and a repeated key inside one handler all load, last value
+    #: winning, with the same named-hook count as the file without them.
+    duplicate_keys_fatal: ClassVar[bool] = False
 
     def tree_label(self) -> str:
         return f"{self.path.name} (antigravity hooks)"
@@ -975,31 +1004,40 @@ class McpShapeDeferral:
     the shared walk under a forced ``--type`` rather than leaving the file
     validated by nothing. Empty defers whatever ``--type`` says, for a
     document the shared walk cannot read at all — a fallback that reported
-    a correct file would be worse than no fallback.
+    a correct file would be worse than no fallback. A block that also
+    names a :attr:`McpConfigRole.surface_rule` reaches that gate first, so
+    for it the fallback is the one that gate describes, not this one.
 
     *keeps_dialect_neutral_checks* is False only where the owning rule
-    already makes those findings itself.
+    already makes those findings itself. It is also what a
+    :attr:`McpConfigRole.surface_rule` gate reads to decide how much of
+    ``mcp-valid-json`` survives being gated off.
 
     *syntax_error_rule* names the rule that reports "this file does not
     parse" for itself, so one defect gets one finding. ``None`` leaves that
     finding with ``mcp-valid-json``, where no ``version:`` pin can reach it;
-    naming a rule falls back to the same place whenever a pin or a forced
-    ``--type`` gates that rule off.
+    naming a rule falls back to the same place whenever a forced ``--type``
+    gates that rule off *and* no ``surface_rule`` gate stood the walk down
+    first.
     """
 
     repo_types: FrozenSet[RepositoryType] = frozenset()
     keeps_dialect_neutral_checks: bool = True
     syntax_error_rule: Optional[str] = None
 
-    def applies(self, active_types: Any) -> bool:
+    def applies(self, active_types: AbstractSet[RepositoryType]) -> bool:
         """Whether the owning rule can run under *active_types*.
 
         Empty :attr:`repo_types` always defers; otherwise the deferral
         holds only while at least one gating type is active, so a forced
         ``--type`` that switches the owning rule off returns the file to
         the shared walk.
+
+        ``isdisjoint`` rather than an intersection: this is asked once per
+        block, and building a set of the caller's types to throw away is
+        the kind of allocation that adds up over a large repository.
         """
-        return not self.repo_types or bool(self.repo_types & set(active_types))
+        return not self.repo_types or not self.repo_types.isdisjoint(active_types)
 
 
 class McpConfigRole:
@@ -1060,6 +1098,13 @@ class McpConfigRole:
     #: and Antigravity writes ``serverUrl``. A host that spells it both
     #: ways lists both.
     connection_url_keys: ClassVar[Tuple[str, ...]] = ("url",)
+    #: The transport a non-portable connection key implies when the server
+    #: names no ``type``, as measured for the host that spells it that way.
+    #: Antigravity's ``serverUrl`` loads as ``http``; without this the
+    #: ``stdio`` default would render a remote server as a process with no
+    #: command. Vocabulary, so it lives with the key set rather than in the
+    #: reader.
+    connection_url_types: ClassVar[Mapping[str, str]] = MappingProxyType({})
     #: Key renames to apply before the credential-*name* test only, for a
     #: host whose older spelling the shared detector cannot split (OpenCode's
     #: 1.x ``clientSecret`` against its 2.0 ``client_secret``). Findings
@@ -1076,9 +1121,16 @@ class McpConfigRole:
     #: keeps the shared shape walk.
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = None
     #: The rule whose release first put this location in the lint tree.
-    #: When a ``version:`` pin gates that rule off, the location is not yet
-    #: part of the pinned user's results, so ``mcp-valid-json`` skips the
-    #: block entirely rather than leaking a new diagnostic on an upgrade.
+    #: When a ``version:`` pin — or an explicit ``enabled: false``, or a
+    #: forced ``--type`` — gates that rule off, the location is not part
+    #: of that user's results, so ``mcp-valid-json`` stands its shape walk
+    #: and its parse failure down rather than leaking a new diagnostic. It
+    #: keeps the dialect-neutral checks for a block whose
+    #: :attr:`shape_deferral` declares
+    #: ``keeps_dialect_neutral_checks``: a committed credential in this
+    #: file is reported by nothing else, and gating off a shape rule is
+    #: not a request to stop looking for one. A block with no deferral
+    #: declares no surviving half and stands down entirely.
     #: ``None`` — every location that predates the mechanism — is read
     #: unconditionally.
     surface_rule: ClassVar[Optional[str]] = None
@@ -1121,10 +1173,34 @@ class McpConfigRole:
     @property
     def servers(self) -> List[McpServerConfig]:
         return [
-            McpServerConfig.from_dict(name, cfg)
+            self._server_config(name, cfg)
             for name, cfg in self.server_entries()
             if isinstance(cfg, dict)
         ]
+
+    def _server_config(self, name: str, cfg: Dict[str, Any]) -> McpServerConfig:
+        """One parsed server, with this host's spelling of the endpoint.
+
+        :class:`McpServerConfig` reads the portable ``url``. A host that
+        spells it otherwise declares that in :attr:`connection_url_keys`,
+        and without this a remote server it reaches by ``serverUrl`` would
+        render with an empty endpoint and the ``stdio`` default — a process
+        with no command, which is not what the file says.
+
+        Only when ``url`` is absent, so every host that writes the portable
+        key keeps exactly the reading it has.
+        """
+        server = McpServerConfig.from_dict(name, cfg)
+        if server.url is not None:
+            return server
+        for key in self.connection_url_keys:
+            if key == "url" or key not in cfg:
+                continue
+            server.url = cfg[key]
+            if "type" not in cfg:
+                server.type = self.connection_url_types.get(key, server.type)
+            break
+        return server
 
     @property
     def server_names(self) -> Set[str]:
@@ -1480,10 +1556,15 @@ class AntigravityMcpBlock(McpBlock):
     form, and a server with no connection field at all loads without
     complaint. ``mcp-valid-json`` therefore stands aside from the shape
     checks here and ``antigravity-mcp-valid`` performs them instead; the
-    policy rules and the dialect-neutral checks — a file that is not JSON,
-    a ``url`` carrying user information, and the credentials in the maps
-    :attr:`credential_maps` and the scalars :attr:`credential_fields`
-    declare — still read this block where they read every other host's.
+    policy rules and the dialect-neutral checks — a ``url`` carrying user
+    information, and the credentials in the maps :attr:`credential_maps`
+    and the scalars :attr:`credential_fields` declare — still read this
+    block where they read every other host's, including when
+    ``antigravity-mcp-valid`` itself is gated off. The parse failure goes
+    with the shape rather than with them: ``antigravity-mcp-valid`` owns
+    it while it runs, and nothing reports it while that rule is off, so a
+    user who pinned a ``version:`` past this release sees the results that
+    release had.
     """
 
     #: A document with no ``mcpServers`` wrapper is silently ignored:
@@ -1497,6 +1578,10 @@ class AntigravityMcpBlock(McpBlock):
     require_usable_connection: ClassVar[bool] = False
     #: Measured: a comment or a trailing comma is exit 1, not a warning.
     strict_json: ClassVar[bool] = True
+    #: Measured with ``agy mcp list``: a repeated ``mcpServers`` wrapper, a
+    #: repeated server name and a repeated key inside one server all load,
+    #: the last value winning, with no diagnostic.
+    duplicate_keys_fatal: ClassVar[bool] = False
     surface_rule: ClassVar[Optional[str]] = "antigravity-mcp-valid"
     credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = antigravity.MCP_CREDENTIAL_MAPS
     #: ``clientId`` and ``clientSecret`` load at a server's own top level as
@@ -1509,6 +1594,9 @@ class AntigravityMcpBlock(McpBlock):
     #: ``url`` is a third accepted form. Both carry a credential when
     #: someone writes one into the authority, so both are scanned.
     connection_url_keys: ClassVar[Tuple[str, ...]] = ("serverUrl", "url")
+    #: Measured: ``{"serverUrl": "https://…/sse"}`` with no ``type`` loads
+    #: as ``http``.
+    connection_url_types: ClassVar[Mapping[str, str]] = MappingProxyType({"serverUrl": "http"})
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
         repo_types=frozenset({RepositoryType.ANTIGRAVITY, RepositoryType.ANTIGRAVITY_PLUGIN}),
         syntax_error_rule="antigravity-mcp-valid",
@@ -1531,6 +1619,10 @@ class AntigravityConfigBlock(JsonConfigBlock):
 
     category: str = "antigravity config"
     strict_json: ClassVar[bool] = True
+    #: Measured against a functional ``agents.json``: a repeated
+    #: ``entries`` key and a repeated ``path`` inside one entry both load
+    #: the last value's directory, with no diagnostic.
+    duplicate_keys_fatal: ClassVar[bool] = False
 
     def tree_label(self) -> str:
         return f"{self.path.name} (antigravity config)"

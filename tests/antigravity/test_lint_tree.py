@@ -79,6 +79,165 @@ class TestWorkspaceAttachment:
         assert tree_for(repo).find(AntigravityConfigBlock) == []
 
 
+class TestTheNonDotRootsNeedAMarker:
+    """``_agents/`` and ``_agent/`` are ordinary source-package names too."""
+
+    def _package_rules(self, repo: Path, root_name: str) -> Path:
+        rules = repo / "src" / root_name / "rules"
+        rules.mkdir(parents=True)
+        (rules / "scheduling.md").write_text(
+            "# Scheduling\n\nA published timetable row is superseded, never edited.\n",
+            encoding="utf-8",
+        )
+        return rules / "scheduling.md"
+
+    @pytest.mark.parametrize("root_name", ("_agents", "_agent"))
+    def test_a_marked_root_attaches_its_prose(self, tmp_path: Path, root_name: str) -> None:
+        repo = write_repo(tmp_path / f"marked-{root_name.lstrip('_')}")
+        prose = self._package_rules(repo, root_name)
+        (repo / "src" / root_name / "hooks.json").write_text("{}", encoding="utf-8")
+        assert [b.path for b in tree_for(repo).find(AntigravityRuleBlock)] == [prose]
+
+    @pytest.mark.parametrize("root_name", ("_agents", "_agent"))
+    def test_a_source_package_of_the_same_name_attaches_nothing(
+        self, tmp_path: Path, root_name: str
+    ) -> None:
+        """No hooks file, no MCP file, no registry — a populated ``rules/``
+        is the only thing here, and on its own it is not this host."""
+        repo = write_repo(tmp_path / f"plain-{root_name.lstrip('_')}")
+        self._package_rules(repo, root_name)
+        assert tree_for(repo).find(AntigravityRuleBlock) == []
+
+    @pytest.mark.parametrize("root_name", (".agents", ".agent"))
+    def test_a_dot_root_attaches_without_a_second_marker(
+        self, tmp_path: Path, root_name: str
+    ) -> None:
+        """The gate is the two non-dot names only; a dot root is claimed by
+        nothing else, so its established behaviour is unchanged."""
+        repo = write_repo(tmp_path / f"dot-{root_name.lstrip('.')}")
+        prose = self._package_rules(repo, root_name)
+        assert [b.path for b in tree_for(repo).find(AntigravityRuleBlock)] == [prose]
+
+
+class TestDescriptionRoutingActivation:
+    """The rule gates on ``repo_types``, so attaching the block is not enough."""
+
+    def test_a_plugin_agent_earns_the_routing_finding(self, tmp_path: Path) -> None:
+        from skillsaw.linter import Linter
+
+        repo = write_repo(tmp_path / "routing-agent")
+        plugin = write_plugin(repo, "berth-tools", {"name": "berth-tools"})
+        agents = plugin / "agents"
+        agents.mkdir()
+        (agents / "helper.md").write_text(
+            "---\nname: helper\ndescription: A helper agent\n---\n\n"
+            "# Helper\n\nRead the berth allocation and report what it changes.\n",
+            encoding="utf-8",
+        )
+
+        found = [
+            v
+            for v in Linter(RepositoryContext(repo)).run()
+            if v.rule_id == "content-description-routing"
+        ]
+
+        assert [v.file_path for v in found] == [agents / "helper.md"] * len(found)
+        assert found
+
+    def test_a_plugin_skill_earns_it_too(self, tmp_path: Path) -> None:
+        from skillsaw.linter import Linter
+
+        repo = write_repo(tmp_path / "routing-skill")
+        plugin = write_plugin(repo, "berth-tools", {"name": "berth-tools"})
+        skill = plugin / "skills" / "berth-audit"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: berth-audit\ndescription: Berth audit\n---\n\n"
+            "# Berth audit\n\nRead the allocation and report what it changes.\n",
+            encoding="utf-8",
+        )
+
+        found = [
+            v
+            for v in Linter(RepositoryContext(repo)).run()
+            if v.rule_id == "content-description-routing"
+        ]
+
+        assert [v.file_path for v in found] == [skill / "SKILL.md"] * len(found)
+        assert found
+
+    def test_the_workspace_agent_block_stays_out_of_the_traversal(self, tmp_path: Path) -> None:
+        """Activation, not traversal: ``<root>/agents/*.md`` is unmeasured."""
+        from skillsaw.linter import Linter
+
+        repo = write_repo(tmp_path / "routing-workspace")
+        agents = repo / ".agents" / "agents"
+        agents.mkdir(parents=True)
+        (agents / "helper.md").write_text(
+            "---\nname: helper\ndescription: A helper agent\n---\n\n"
+            "# Helper\n\nRead the berth allocation and report what it changes.\n",
+            encoding="utf-8",
+        )
+
+        found = [
+            v
+            for v in Linter(RepositoryContext(repo)).run()
+            if v.rule_id == "content-description-routing"
+        ]
+
+        assert found == []
+
+
+class TestApmDoesNotSuppressAuthoredRules:
+    """A Codex target converges *skills* on ``.agents/``, never ``rules/``."""
+
+    def _apm_repo(self, tmp_path: Path, name: str) -> Path:
+        repo = write_repo(tmp_path / name)
+        (repo / "apm.yml").write_text(
+            "name: ferrymark\nversion: 0.1.0\ntargets:\n  - codex\n", encoding="utf-8"
+        )
+        source = repo / ".apm" / "instructions"
+        source.mkdir(parents=True)
+        (source / "scheduling.instructions.md").write_text(
+            "---\napplyTo: '**'\n---\n\n# Scheduling\n\nRun `make test` before pushing.\n",
+            encoding="utf-8",
+        )
+        return repo
+
+    def test_authored_rules_are_not_content_suppressed(self, tmp_path: Path) -> None:
+        repo = self._apm_repo(tmp_path, "apm-codex")
+        rules = repo / ".agents" / "rules"
+        rules.mkdir(parents=True)
+        authored = rules / "berths.md"
+        authored.write_text("# Berths\n\nNever widen `route_id` past 32 bytes.\n", encoding="utf-8")
+        blocks = [b for b in tree_for(repo).find(AntigravityRuleBlock) if b.path == authored]
+        assert len(blocks) == 1
+        assert blocks[0].content_suppressed is False
+
+    def test_a_converged_skill_under_the_same_root_is_still_held_back(self, tmp_path: Path) -> None:
+        """What the ``.agents`` → ``codex`` mapping is really for.
+
+        A skill APM converges on ``.agents/skills/`` is dropped by skill
+        *discovery*, which reads the compiled roots directly — so the rules
+        glob was never what protected it, and dropping the flag there costs
+        nothing here.
+        """
+        from skillsaw.blocks import SkillBlock
+
+        repo = self._apm_repo(tmp_path, "apm-codex-skill")
+        skill = repo / ".agents" / "skills" / "berth-audit"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: berth-audit\ndescription: Use when auditing a berth allocation change.\n"
+            "---\n\n# Berth audit\n\nRun `make test`.\n",
+            encoding="utf-8",
+        )
+        context = RepositoryContext(repo)
+        assert context.apm_compiled_roots() == {repo / ".agents"}
+        assert context.skills == []
+        assert [b for b in build_lint_tree(context).find(SkillBlock)] == []
+
+
 class TestRuleBlockCategory:
     """``rules/**/*.md`` is always-on prose and is budgeted as one."""
 

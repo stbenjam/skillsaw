@@ -606,6 +606,16 @@ class AntigravityAgentBlock(FrontmatteredBlock):
     contract is unmeasured. Budgeted as a ``command`` would be wrong too —
     a subagent is loaded when it is delegated to, which is the ``agent``
     role every peer tool's subagents carry.
+
+    For the same reason this type is absent from the traversal list in
+    ``content-description-routing``, while both Antigravity repository
+    types *do* activate that rule — for a plugin's skills and for the
+    prose the shared plugin pass attaches. A decision, not an oversight:
+    Antigravity does route by description, its skills page saying the agent
+    picks from names and descriptions, but no frontmatter field for this
+    file was reachable offline, and a routing rule with no measured field
+    to read would report against a contract nobody confirmed. The
+    maintenance reference records it under "Not covered yet".
     """
 
     category: str = "agent"

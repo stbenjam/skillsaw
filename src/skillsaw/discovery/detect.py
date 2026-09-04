@@ -13,6 +13,10 @@ import os
 from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
+from skillsaw.discovery.antigravity import (
+    customization_root_declares_a_file,
+    customization_root_is_marked,
+)
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.formats import antigravity, codex, devin, grok, muse
@@ -397,27 +401,27 @@ def tool_types(
         )
 
     def antigravity_marker() -> bool:
-        """Whether a customization root holds something only Antigravity reads.
+        """Whether any customization root holds something only Antigravity reads.
 
-        The root's *presence* is not evidence: ``.agents/skills/`` is the
-        shared Agent Skills convention every ecosystem reads and
-        ``.agents/memory/`` is committed project memory that predates
-        Antigravity, so neither says which tool the repository configures.
-        ``skills/`` is left out of the list below for exactly that reason.
-        What remains is Antigravity's alone — its hooks file, its MCP file,
-        one of its registries, a populated ``rules/`` or ``agents/``, or a
-        ``plugins/`` holding a plugin. ``plugins/`` is asked for a manifest
-        rather than for any entry at all, because a Codex catalog is a
-        ``plugins/marketplace.json`` and a bare file there is no evidence
-        of this host.
-
-        Detection agrees with attachment: every marker here is a file or
-        directory ``build_lint_tree`` attaches for this host.
+        Detection agrees with attachment root for root, because both read
+        the same per-root predicate. A dot root takes the wide one — a
+        populated ``rules/`` or ``agents/`` under ``.agents/`` counts,
+        because nothing else claims that name. The two non-dot names are
+        also ordinary source-package names, so they take
+        ``customization_root_declares_a_file``, which is the gate
+        ``build_lint_tree`` applies before attaching their prose; admitting
+        a populated ``rules/`` there would type a repository by the very
+        directory it then declines to read.
         """
         resolved_root = safe_resolve(root)
         if resolved_root is None:
             return False
         for dirname in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES:
+            marked = (
+                customization_root_is_marked
+                if dirname.startswith(".")
+                else customization_root_declares_a_file
+            )
             candidates = list(dirs.get(dirname) or ())
             if not candidates:
                 candidates = [root / dirname]
@@ -429,33 +433,8 @@ def tool_types(
                     or not resolved_base.is_relative_to(resolved_root)
                 ):
                     continue
-                for name in (
-                    antigravity.HOOKS_FILENAME,
-                    antigravity.MCP_CONFIG_FILENAME,
-                    *antigravity.REGISTRY_FILENAMES,
-                ):
-                    path = base / name
-                    if not is_excluded(path) and path.is_file():
-                        return True
-                for name in (antigravity.RULES_DIR_NAME, antigravity.AGENTS_DIR_NAME):
-                    directory = base / name
-                    if is_excluded(directory) or not directory.is_dir():
-                        continue
-                    try:
-                        if any(True for _ in directory.iterdir()):
-                            return True
-                    except OSError:
-                        continue
-                plugins_dir = base / antigravity.PLUGINS_DIR_NAME
-                if not is_excluded(plugins_dir) and plugins_dir.is_dir():
-                    try:
-                        children = list(plugins_dir.iterdir())
-                    except OSError:
-                        children = []
-                    for child in children:
-                        manifest = child / antigravity.PLUGIN_MANIFEST
-                        if not is_excluded(manifest) and manifest.is_file():
-                            return True
+                if marked(base, is_excluded=is_excluded):
+                    return True
         return False
 
     found: Set[str] = set()

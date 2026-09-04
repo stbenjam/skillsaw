@@ -95,9 +95,17 @@ changing a rule here.
   `$schema` under `.agents/plugins/` is loaded unchanged, so a directory can belong to
   both ecosystems.
 - **Registries**: `{"entries": [{"path", "include_only", "exclude"}], "inherits": […]}`.
-  `path` is absolute, `~/`-relative, or repo-root-relative and must name the item
-  directory itself. A non-object root logs one `Failed to load JSON config file` line
-  and skips the file.
+  `path` is absolute, `~/`-relative, or repo-root-relative. A non-object root logs one
+  `Failed to load JSON config file` line and skips the file.
+  - `agents.json`: `path` names the directory holding the agent `.md` files.
+  - `plugins.json`: `path` names a plugin directory *or* a container of them; both
+    load. `inherits` names another registry **file** — a directory there loads
+    nothing. `include_only` / `exclude` filter by directory name.
+  - skillsaw resolves both into the lint tree (`resolve_registry_entries`): a
+    `plugins.json` target joins the provenance claim set so the single plugin pass
+    builds its container, and an `agents.json` target's `*.md` attaches as agent
+    prose. `include_only` / `exclude` are ignored for what is linted, on the same
+    policy as a hook-level `"enabled": false`.
 
 ## skillsaw rules that map
 - Hooks, MCP, manifest, registries — `src/skillsaw/rules/builtin/antigravity/`:
@@ -141,9 +149,21 @@ the docs:
   doc names the workspace location; the embedded doc does not.
 - Skill discovery has no offline listing command, so `<root>/skills/<n>/SKILL.md`
   produced no output and no diagnostic.
-- `skills.json` and `workflows.json` could not be triggered as loaders.
+- `skills.json` and `workflows.json` could not be triggered as loaders, so the lint
+  tree resolves neither registry's `entries` — only `agents.json` and `plugins.json`,
+  both measured end to end.
 - Everything after load: dispatch, `matcher` semantics, the runtime effect of a
   hook-level `enabled: false`, hook stdout contracts, and the runtime string
   `prompt hooks are not supported for the PostToolUse event`.
 - The 12,000-character cap the rules-and-workflows page publishes for a rules file is
   not implemented as a rule.
+- **Description routing.** Antigravity routes by description — the skills page says the
+  agent picks from names and descriptions, and `define_subagent` takes a `description` —
+  but neither Antigravity repository type is in `content-description-routing`'s
+  `repo_types` and `AntigravityAgentBlock` is not in its traversal list. Deliberate,
+  pending a measurement: the frontmatter contract for `<root>/agents/*.md` was not
+  reachable offline, so there is no measured field to route on.
+- **`<root>/workflows/` prose.** `workflows.json` is attached as a registry; the
+  directory beside it is not walked, so `.agent/workflows/*.md` contributes no blocks.
+  Both the file's role as a loader and the workflow files' own frontmatter are
+  unmeasured.

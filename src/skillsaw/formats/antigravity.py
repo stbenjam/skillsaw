@@ -45,6 +45,19 @@ reporting:
 * A registry — a non-object root logs one ``Failed to load JSON config
   file`` line and that file is skipped.
 
+**Duplicate object keys are not a defect here.** ``hooks.json``,
+``mcp_config.json`` and the registries are read with Go's
+``encoding/json``, which takes the last value: measured at every nesting
+depth — a repeated hook name, event key and handler key; a repeated
+``mcpServers`` wrapper, server name and server key; a repeated ``entries``
+key and ``path`` — the file loads with the last value in force and logs
+nothing. So the blocks reading them turn :attr:`duplicate_keys_fatal` off
+while keeping the rest of ``strict_json``: a bare ``NaN`` or ``Infinity``
+token, a comment and a trailing comma each still drop the whole file.
+``plugin.json`` is the exception and keeps both halves — protojson refuses
+a repeated field outright (``proto: duplicate field "name"``), which means
+the directory is not a plugin.
+
 **What was not observable offline.** Whether a workspace or plugin
 ``mcp_config.json`` is read at all (``agy mcp list`` and ``agy mcp add``
 are home-only; the shape matrix below was obtained at the global path,
@@ -99,6 +112,17 @@ PLUGINS_DIR_NAME = "plugins"
 #: for it, so it is deliberately not here.
 REGISTRY_FILENAMES = ("agents.json", "plugins.json", "skills.json", "workflows.json")
 
+#: The two registries whose ``entries`` the lint tree resolves. Both are
+#: measured end to end — a ``plugins.json`` naming a container loads every
+#: plugin under it, an ``agents.json`` naming a directory loads the agents
+#: in it — so what they point at is part of the repository's configuration.
+#: ``skills.json`` and ``workflows.json`` stay out: neither could be
+#: triggered as a loader offline, and resolving an unmeasured one would
+#: attach content on a guess.
+AGENTS_REGISTRY = "agents.json"
+PLUGINS_REGISTRY = "plugins.json"
+RESOLVED_REGISTRY_FILENAMES = (AGENTS_REGISTRY, PLUGINS_REGISTRY)
+
 #: The four fields ``plugin.json`` carries meaning in. The manifest is a
 #: **protojson** message (errors read ``proto: (line 1:9): invalid value
 #: for string field name: 42``), so every other key — ``$schema``,
@@ -112,12 +136,18 @@ PLUGIN_MESSAGE_FIELDS = (
     ("logo", str, "string"),
 )
 
-#: Names ``agy plugin validate`` and ``agy plugin install`` accept.
+#: Names ``agy plugin install`` accepts.
 #: Discovery enforces nothing — ``{"name": "has spaces"}`` and ``{"name":
 #: "a/b"}`` both load, and a manifest with no ``name`` at all defaults to
 #: the directory name — but ``install`` refuses both, and ``.hidden`` with
 #: them, so a committed manifest that cannot be installed is worth a word.
-PLUGIN_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+#: ``agy plugin validate`` is not the check: it prints ``[ok]`` for
+#: ``has spaces`` and for a trailing newline, while ``install`` exits 1 with
+#: ``Error: invalid plugin name``.
+#: Anchored with ``\A``/``\Z`` and read with ``fullmatch``: ``$`` also
+#: matches before a final newline, and a JSON string can hold one, so
+#: ``{"name": "berth-tools\n"}`` would otherwise read as installable.
+PLUGIN_NAME_RE = re.compile(r"\A[A-Za-z0-9_-]+\Z")
 
 #: Events whose value is a list of ``{matcher, hooks: [handler, ...]}``
 #: groups (``[]jsonhook.ToolHookGroup``).
@@ -174,6 +204,13 @@ HOOK_GROUP_KEYS = frozenset({"matcher", "hooks"})
 #: parse error (``cannot unmarshal bool into Go struct field .enabled of
 #: type jsonhook.JSONHookSpec``) that kills the file.
 HOOK_SPEC_NON_EVENT_KEYS = frozenset({"enabled"})
+
+#: The one value ``authProviderType`` parses. The proto enum also spells it
+#: ``MCP_AUTH_PROVIDER_TYPE_GOOGLE_CREDENTIALS``, and that spelling drops
+#: the server — only the lowercase JSON alias is accepted. Measured:
+#: ``"oauth"``, either enum spelling, and a bare ``1`` are each dropped
+#: silently.
+MCP_AUTH_PROVIDER_TYPES = frozenset({"google_credentials"})
 
 #: Per-server maps in ``mcp_config.json`` whose values may hold a committed
 #: credential, as ``(key, is_http_header)``. All three are measured to

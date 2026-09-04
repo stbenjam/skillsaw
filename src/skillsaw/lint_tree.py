@@ -1015,25 +1015,46 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # walk-backed lookup finds both. ``rules/`` is read recursively;
     # ``skills/`` is walked through ``CONVENTIONAL_SKILL_DIRS``, which earns
     # the whole skill rule set; ``plugins/`` is the install location and
-    # belongs to plugin discovery, so nothing here descends into it.
-    for agents_dir_name in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES:
-        for agents_dir in context.agent_tool_dirs(agents_dir_name):
-            _add_project_hooks(
-                state, root, agents_dir / antigravity.HOOKS_FILENAME, AntigravityHooksBlock
-            )
-            state.add_parser_block(
-                root, agents_dir / antigravity.MCP_CONFIG_FILENAME, AntigravityMcpBlock
-            )
-            for registry in antigravity.REGISTRY_FILENAMES:
-                state.add_parser_block(root, agents_dir / registry, AntigravityConfigBlock)
-            _add_glob(
-                root,
-                agents_dir / antigravity.RULES_DIR_NAME,
-                "**/*.md",
-                AntigravityRuleBlock,
-                content_suppressed=_is_in_compiled_dir(agents_dir),
-            )
-            _add_glob(root, agents_dir / antigravity.AGENTS_DIR_NAME, "*.md", AntigravityAgentBlock)
+    # belongs to plugin discovery, so nothing here descends into it. Which
+    # roots qualify is ``antigravity_workspace_roots``: the two non-dot
+    # names are also ordinary source-package names, so they are attached
+    # only where the root carries a marker of its own.
+    for agents_dir in context.antigravity_workspace_roots():
+        _add_project_hooks(
+            state, root, agents_dir / antigravity.HOOKS_FILENAME, AntigravityHooksBlock
+        )
+        state.add_parser_block(
+            root, agents_dir / antigravity.MCP_CONFIG_FILENAME, AntigravityMcpBlock
+        )
+        for registry in antigravity.REGISTRY_FILENAMES:
+            state.add_parser_block(root, agents_dir / registry, AntigravityConfigBlock)
+        # No compiled-output suppression here, unlike every other editor
+        # directory below. ``APM_COMPILED_DIR_TARGETS`` maps ``.agents`` to
+        # the ``codex`` target because that target's skills converge on
+        # ``.agents/skills/`` — and a converged *skill* is suppressed by the
+        # per-match check in the skills loop, which reads the file's own
+        # path. Nothing APM writes for ``codex`` lands in ``rules/``
+        # (apm-cli 0.24.0 deploys that target to ``.codex/``), so asking the
+        # question of the whole root here would hide every hand-authored
+        # Antigravity rule in a repository that happens to target Codex.
+        _add_glob(
+            root,
+            agents_dir / antigravity.RULES_DIR_NAME,
+            "**/*.md",
+            AntigravityRuleBlock,
+        )
+        _add_glob(root, agents_dir / antigravity.AGENTS_DIR_NAME, "*.md", AntigravityAgentBlock)
+
+    # An ``agents.json`` registry points ``agy`` at subagents living outside
+    # the customization root, and measurement shows it loads them: the
+    # directory it names is as much this repository's agent prose as
+    # ``<root>/agents/`` is. Resolved once for every root rather than inside
+    # the loop above, because two roots may name the same directory and it
+    # gets one block either way. ``plugins.json`` needs nothing here — its
+    # targets join the provenance claim set, so the single plugin pass
+    # builds their containers.
+    for registry_dir in context.antigravity_registry_dirs(antigravity.AGENTS_REGISTRY):
+        _add_glob(root, registry_dir, "*.md", AntigravityAgentBlock)
 
     # Committed project memory: notes a team checks in for whatever agent
     # reads the checkout. The index is loaded whole and every other Markdown

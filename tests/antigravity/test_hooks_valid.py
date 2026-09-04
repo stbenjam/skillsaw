@@ -72,6 +72,33 @@ class TestAcceptedFiles:
     def test_no_findings(self, tmp_path: Path, name: str, body: str) -> None:
         assert messages(check(tmp_path, name, body)) == []
 
+    @pytest.mark.parametrize(
+        "name,body",
+        [
+            (
+                "hook-name",
+                '{"audit": {"Stop": [{"command": "make lint"}]},'
+                ' "audit": {"Stop": [{"command": "make test"}]}}',
+            ),
+            (
+                "event-key",
+                '{"audit": {"Stop": [{"command": "make lint"}],'
+                ' "Stop": [{"command": "make test"}]}}',
+            ),
+            (
+                "handler-key",
+                '{"audit": {"Stop": [{"command": "make lint", "command": "make test"}]}}',
+            ),
+        ],
+    )
+    def test_repeated_event_key_is_last_wins(self, tmp_path: Path, name: str, body: str) -> None:
+        """Go's ``encoding/json`` collapses it; the file loads with one hook.
+
+        Measured against ``agy`` 1.1.25 at all three depths: the named-hook
+        counter reads the same as for the file without the repetition.
+        """
+        assert messages(check(tmp_path, f"dup-{name}", body)) == []
+
 
 class TestFileScopedDefects:
     """One defect, and a message that says the whole file stops loading."""

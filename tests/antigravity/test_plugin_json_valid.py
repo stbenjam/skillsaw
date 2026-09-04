@@ -100,11 +100,50 @@ class TestNotAPlugin:
 class TestInstallability:
     """What discovery tolerates and ``agy plugin install`` refuses."""
 
-    @pytest.mark.parametrize("name", ("Berth Tools", "berth/tools", "../escape", ".hidden", ""))
+    @pytest.mark.parametrize(
+        "name",
+        (
+            "Berth Tools",
+            "berth/tools",
+            "../escape",
+            ".hidden",
+            "",
+            # A JSON string can hold a newline, and ``$`` matches before a
+            # final one. ``agy plugin install`` refuses this name.
+            "berth-tools\n",
+        ),
+    )
     def test_uninstallable_names(self, tmp_path: Path, name: str) -> None:
         found = only(
             check(tmp_path, f"charset-{abs(hash(name))}", {"name": name}), "is not installable"
         )
+        assert found.severity == Severity.WARNING
+
+    def _dual_claimed(self, tmp_path: Path, name: str, manifest) -> Path:
+        """A plugin both ecosystems claim: an Agent Plugins collection whose
+        package root is also ``<customization root>/plugins/<name>``, which
+        is what a lint run pointed at the customization root produces."""
+        root = tmp_path / name / ".agents"
+        plugin = root / "plugins" / "acme.tools"
+        plugin.mkdir(parents=True)
+        (plugin / "plugin.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return root
+
+    def test_a_dual_claimed_directory_keeps_its_agent_plugins_name(self, tmp_path: Path) -> None:
+        """Agent Plugins' grammar permits a dot; the warning is for the wrong author."""
+        root = self._dual_claimed(
+            tmp_path,
+            "dual-claimed",
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "acme.tools",
+            },
+        )
+        assert messages(run_rule(AntigravityPluginJsonValidRule, root)) == []
+
+    def test_the_same_name_without_the_second_claim_is_reported(self, tmp_path: Path) -> None:
+        """Antigravity alone claims this one, so its grammar is the one that applies."""
+        found = only(check(tmp_path, "single-claim", {"name": "acme.tools"}), "is not installable")
         assert found.severity == Severity.WARNING
 
     def test_absent_name_is_advisory(self, tmp_path: Path) -> None:

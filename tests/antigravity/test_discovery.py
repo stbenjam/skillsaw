@@ -45,6 +45,31 @@ class TestCustomizationRoots:
         (repo / root_name / "hooks.json").write_text("{}", encoding="utf-8")
         assert RepositoryType.ANTIGRAVITY not in RepositoryContext(repo).repo_types
 
+    @pytest.mark.parametrize("root_name", ("_agents", "_agent"))
+    def test_a_non_dot_root_needs_a_file_not_a_populated_directory(
+        self, tmp_path: Path, root_name: str
+    ) -> None:
+        """A source package may be called either name, and may hold ``rules/``.
+
+        Detection has to agree with attachment, and attachment declines to
+        read a non-dot root that declares none of Antigravity's own files.
+        """
+        repo = write_repo(tmp_path / f"pkg-{root_name.lstrip('_')}")
+        rules = repo / "src" / root_name / "rules"
+        rules.mkdir(parents=True)
+        (rules / "base.md").write_text("# Base\n\nRun `make test`.\n", encoding="utf-8")
+        assert RepositoryType.ANTIGRAVITY not in RepositoryContext(repo).repo_types
+
+    @pytest.mark.parametrize("root_name", (".agents", ".agent"))
+    def test_a_dot_root_is_still_detected_by_a_populated_directory(
+        self, tmp_path: Path, root_name: str
+    ) -> None:
+        repo = write_repo(tmp_path / f"dot-{root_name.lstrip('.')}")
+        rules = repo / root_name / "rules"
+        rules.mkdir(parents=True)
+        (rules / "base.md").write_text("# Base\n\nRun `make test`.\n", encoding="utf-8")
+        assert RepositoryType.ANTIGRAVITY in RepositoryContext(repo).repo_types
+
     def test_repository_root_hooks_file_is_not_a_root(self, tmp_path: Path) -> None:
         repo = write_repo(tmp_path / "root-hooks")
         (repo / "hooks.json").write_text("{}", encoding="utf-8")

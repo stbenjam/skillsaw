@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, List, Optional, Set
 
 from .discovery import antigravity as antigravity_discovery
-from .formats.antigravity import ANTIGRAVITY_CONFIG_DIR_NAMES
+from .formats.antigravity import ANTIGRAVITY_CONFIG_DIR_NAMES, PLUGINS_REGISTRY
 from .paths import safe_resolve
 from .repository_types import RepositoryType
 
@@ -40,6 +40,7 @@ class RepositoryAntigravityMixin:
         antigravity_plugins: List[Path]
         _antigravity_claims: Optional[Set[Path]]
         _antigravity_roots: Optional[List[Path]]
+        _antigravity_workspace_roots: Optional[List[Path]]
         _antigravity_discovery_enabled: bool
         _antigravity_plugin_forced: bool
 
@@ -69,6 +70,7 @@ class RepositoryAntigravityMixin:
         self._antigravity_discovery_enabled = selected is not False
         self._antigravity_claims = None
         self._antigravity_roots = None
+        self._antigravity_workspace_roots = None
         self.antigravity_plugins = (
             self._discover_antigravity_plugins() if self._antigravity_discovery_enabled else []
         )
@@ -86,6 +88,40 @@ class RepositoryAntigravityMixin:
             for directory in self.agent_tool_dirs(name)
         ]
 
+    def antigravity_workspace_roots(self) -> List[Path]:
+        """The customization roots whose prose and config the tree attaches.
+
+        Every dot root, unconditionally: ``.agents/`` and ``.agent/`` are
+        names no other tool claims, and a repository that creates one has
+        said which tool it means.
+
+        ``_agents/`` and ``_agent/`` are the only non-dot names any tool
+        directory list carries, and an ordinary source package is free to
+        be called either — so those two are attached only where the root
+        declares one of Antigravity's own files. Without the gate a package
+        named ``_agents/`` anywhere in a checkout contributes its
+        ``rules/**/*.md`` as always-on instruction prose to a repository
+        that configures no Antigravity at all, and ``agy`` walks *up* from
+        the entry directory, so a nested one is live configuration for far
+        fewer checkouts than the walk finds it in.
+
+        A *file*, not the wider detection marker: ``rules/`` and
+        ``agents/`` are the prose this method decides whether to attach, so
+        admitting them would let the directory vouch for itself.
+        """
+        if self._antigravity_workspace_roots is None:
+            roots: List[Path] = []
+            for name in ANTIGRAVITY_CONFIG_DIR_NAMES:
+                gated = not name.startswith(".")
+                for directory in self.agent_tool_dirs(name):
+                    if gated and not antigravity_discovery.customization_root_declares_a_file(
+                        directory, is_excluded=self.is_path_excluded
+                    ):
+                        continue
+                    roots.append(directory)
+            self._antigravity_workspace_roots = roots
+        return self._antigravity_workspace_roots
+
     def _discover_antigravity_plugins(self) -> List[Path]:
         """Directories declaring an Antigravity plugin."""
         return [
@@ -98,22 +134,55 @@ class RepositoryAntigravityMixin:
             if not self.is_path_excluded(path)
         ]
 
+    def antigravity_registry_dirs(self, filename: str) -> List[Path]:
+        """Directories every customization root's *filename* registry names.
+
+        Filesystem-enumerated rather than discovery-gated, for the reason
+        Grok's catalog sources are: these feed the provenance claim set,
+        which must be ``--type``-invariant.
+        """
+        return antigravity_discovery.resolve_registry_entries(
+            self.root_path,
+            self.antigravity_customization_dirs(),
+            filename,
+            is_excluded=self.is_path_excluded,
+        )
+
+    def _antigravity_registry_plugin_roots(self) -> List[Path]:
+        """Plugin roots a ``plugins.json`` names outside the install location."""
+        return [
+            path
+            for path in antigravity_discovery.registry_plugin_roots(
+                self.antigravity_registry_dirs(PLUGINS_REGISTRY)
+            )
+            if not self.is_path_excluded(path)
+        ]
+
     def _antigravity_claim_set(self) -> Set[Path]:
         """Every resolved directory Antigravity claims, computed once.
 
-        Only the discovered plugin roots: Antigravity has no catalog, so
-        there is no second source of claims. The marker half of the
-        evidence does not come from here — ``provenance()`` asks
-        ``antigravity_manifest_is_contained`` directly, which is what keeps
-        a declared plugin declared under a ``--type`` override that switched
-        this discovery off. What the union adds is the seed a forced
-        ``--type antigravity-plugin`` needs, so the check the operator asked
-        for has a node to run against.
+        The union of the discovered plugin roots and the plugin roots a
+        ``plugins.json`` registry names: a registry points ``agy`` at
+        plugins living outside ``<root>/plugins/``, and a plugin it loads
+        brings its hooks, MCP servers, skills and agents with it. The
+        marker half of the evidence does not come from here —
+        ``provenance()`` asks ``antigravity_manifest_is_contained``
+        directly, which is what keeps a declared plugin declared under a
+        ``--type`` override that switched this discovery off. What the
+        union adds is the registry claims and the seed a forced ``--type
+        antigravity-plugin`` needs, so the check the operator asked for has
+        a node to run against.
+
+        Registry claims join here rather than ``antigravity_plugins``,
+        mirroring Grok: the claim half is ``--type``-invariant while the
+        list the format rules discover from stays gated.
         """
         if self._antigravity_claims is None:
-            self._antigravity_claims = {
+            claims = {
                 r for r in (safe_resolve(p) for p in self.antigravity_plugins) if r is not None
             }
+            claims.update(self._antigravity_registry_plugin_roots())
+            self._antigravity_claims = claims
         return self._antigravity_claims
 
     def antigravity_plugin_roots(self) -> List[Path]:
@@ -134,6 +203,7 @@ class RepositoryAntigravityMixin:
         before = {r for r in (safe_resolve(p) for p in self.antigravity_plugins) if r is not None}
         self._antigravity_claims = None
         self._antigravity_roots = None
+        self._antigravity_workspace_roots = None
         if filtering and self._antigravity_discovery_enabled:
             self.antigravity_plugins = self._discover_antigravity_plugins()
             self._prune_skills_of_dropped_antigravity_plugins(before)

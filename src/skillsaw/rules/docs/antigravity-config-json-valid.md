@@ -44,10 +44,18 @@ rules:
 - **Whether a `path` resolves.** A path is absolute, `~/`-relative, or
   relative to the repository root, and a registry may legitimately name a
   directory that only exists on a developer's machine.
-- **`include_only`, `exclude` and `inherits`.** Their shapes were not
-  reachable offline.
+
+  skillsaw still *follows* the ones that do resolve inside the repository.
+  A `plugins.json` entry's plugins get their hooks, MCP servers, skills and
+  prose linted, and an `agents.json` entry's `*.md` is read as agent prose —
+  independently of this rule, which is opt-in. `include_only` and `exclude`
+  are ignored when deciding what to lint: skillsaw reports what a
+  repository ships, not what it currently loads.
+- **`include_only` and `exclude` shapes.** Neither was reachable offline.
 - **Unknown keys.** Antigravity reads these files with a tolerant JSON
   decoder that discards them.
+- **A repeated key.** The same decoder takes the last value: an `entries`
+  key or a `path` written twice loads the second one's directory.
 
 ## Examples
 

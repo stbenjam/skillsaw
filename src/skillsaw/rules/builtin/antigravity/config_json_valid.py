@@ -29,7 +29,15 @@ class AntigravityConfigJsonValidRule(Rule):
     subcommand exercises the others, so the checks below stop at what a
     measurement covers — the document parses, its root is an object, and
     ``entries`` holds objects with a string ``path``. Whether a listed path
-    resolves is deliberately not asked.
+    resolves is deliberately not asked: a registry may name a directory
+    that exists only on a developer's machine, and this rule is opt-in
+    while the lint tree is not.
+
+    The *tree* does resolve them, for the two registries measured to load
+    what they name — a ``plugins.json`` entry's plugins get containers and
+    a ``agents.json`` entry's ``*.md`` attaches as agent prose — so the
+    security and content rules read customization a repository ships
+    outside its customization root whether or not this rule runs.
     """
 
     since = "0.20.0"

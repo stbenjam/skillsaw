@@ -119,6 +119,16 @@ class DescriptionRoutingRule(Rule):
         # the ``GrokAgentBlock`` and ``GrokCommandBlock`` traversals below
         # would never run on a repository configured only through `.grok/`.
         RepositoryType.GROK_PROJECT,
+        # An Antigravity plugin's ``agents/`` and ``commands/`` prose and its
+        # ``skills/`` attach through the same shared plugin pass a Codex or
+        # Grok plugin's do, so a repository detected only as Antigravity
+        # needs the same activation — without it the traversals below simply
+        # never run there. Activation only: ``AntigravityAgentBlock``, the
+        # *workspace* ``<root>/agents/*.md``, is deliberately absent from the
+        # traversal list, because that file's frontmatter contract is
+        # unmeasured.
+        RepositoryType.ANTIGRAVITY,
+        RepositoryType.ANTIGRAVITY_PLUGIN,
     }
 
     config_schema = {

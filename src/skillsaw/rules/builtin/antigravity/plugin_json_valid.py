@@ -50,10 +50,17 @@ class AntigravityPluginJsonValidRule(Rule):
         # forced ``--type antigravity-plugin`` still reports a directory
         # that carries no manifest at all.
         for node in context.lint_tree.find(AntigravityPluginConfigNode):
-            violations.extend(self._check_manifest(node))
+            violations.extend(
+                self._check_manifest(
+                    node,
+                    dual_claimed=context.provenance(node.plugin_dir).agent_plugin,
+                )
+            )
         return violations
 
-    def _check_manifest(self, node: AntigravityPluginConfigNode) -> List[RuleViolation]:
+    def _check_manifest(
+        self, node: AntigravityPluginConfigNode, *, dual_claimed: bool = False
+    ) -> List[RuleViolation]:
         manifest = node.path
         if not safe_is_file(manifest):
             problem = (
@@ -121,7 +128,11 @@ class AntigravityPluginJsonValidRule(Rule):
                     fingerprint_discriminator="name-absent",
                 )
             )
-        elif isinstance(name, str) and not PLUGIN_NAME_RE.match(name):
+        # Not on a directory Agent Plugins also claims: that grammar permits
+        # a dot, so warning that ``acme.tools`` is uninstallable addresses
+        # the wrong author — the name is correct for the format the manifest
+        # was written in, and the directory declares itself to both.
+        elif isinstance(name, str) and not dual_claimed and not PLUGIN_NAME_RE.fullmatch(name):
             violations.append(
                 self.violation(
                     f"plugin name '{safe_display(name)}' is not installable; "

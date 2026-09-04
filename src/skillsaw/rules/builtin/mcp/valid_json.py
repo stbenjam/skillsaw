@@ -135,14 +135,30 @@ class McpValidJsonRule(Rule):
         violations = []
 
         for block in self.dependency_scoped_find(context, McpConfigRole):
+            deferral = block.shape_deferral
             # This tree role exists so the format rule and shared MCP rules
-            # can read one parsed payload. When a version pin disables the
-            # format rule that introduced the surface, keep the established
-            # rule set unchanged rather than leaking a new MCP diagnostic —
-            # including the dialect-neutral ones, which are about a document
-            # the pinned user's results never contained.
+            # can read one parsed payload. When a version pin — or a
+            # ``.skillsaw.yaml`` disabling it outright — gates off the
+            # format rule that introduced the surface, the *shape* walk
+            # stands down: those findings are about a document the pinned
+            # user's results never contained, and the Claude-family reading
+            # would report another dialect's correct file as invalid.
+            #
+            # What the gate never stops is the dialect-neutral half, for a
+            # block that declares it survives. A committed credential in
+            # this file is reported by nothing else — the file is a
+            # ``JsonConfigBlock``, so ``content-embedded-secrets`` never
+            # sees it — and gating off a shape rule is not a request to
+            # stop scanning for one. The parse failure stays behind the
+            # gate with the shape, being a statement about the whole
+            # document. A block with no deferral declares no surviving half
+            # and stands down entirely.
             surface = block.surface_rule
             if surface is not None and not self.surface_rule_enabled(surface):
+                if deferral is not None and deferral.keeps_dialect_neutral_checks:
+                    violations.extend(
+                        self._dialect_neutral_violations(block, report_syntax_error=False)
+                    )
                 continue
             # A host whose dialect its own format rule validates. Every
             # *shape* check below reads the document the way the Claude
@@ -160,7 +176,6 @@ class McpValidJsonRule(Rule):
             # See ``_dialect_neutral_violations``. Policy rules are
             # unaffected either way — they read ``server_names``, which the
             # block normalizes.
-            deferral = block.shape_deferral
             if deferral is not None and deferral.applies(context.repo_types):
                 if deferral.keeps_dialect_neutral_checks:
                     owner = deferral.syntax_error_rule
@@ -334,9 +349,11 @@ class McpValidJsonRule(Rule):
         from :attr:`McpBlock.connection_url_keys`.
 
         Keeping them here rather than in the deferring rule is what makes
-        them survive a ``.skillsaw.yaml`` pinning a ``version:`` older than
-        that rule's ``since``, which is the ordinary state right after an
-        upgrade.
+        them survive every way that rule can be gated off — a
+        ``.skillsaw.yaml`` pinning a ``version:`` older than its ``since``,
+        which is the ordinary state right after an upgrade; an explicit
+        ``enabled: false``; a ``--skip-rule``; a forced ``--type``. None of
+        those is a request to stop looking for a committed credential.
 
         The line stops at what the *document* must be. That an OpenCode
         config's top level is an object is a claim about OpenCode's own

@@ -6,7 +6,7 @@ from typing import List
 
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.blocks import CopilotAgentMcpBlock, McpConfigRole
+from skillsaw.blocks import McpConfigRole
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.utils import read_json
@@ -16,6 +16,9 @@ class McpProhibitedRule(Rule):
     """Check that the repository does not enable non-allowlisted MCP servers"""
 
     default_enabled = False
+    # Every ``surface_rule`` a block reaching the gate below can name — that
+    # is, every one declared without a ``shape_deferral``. A new host adds
+    # its rule here as well as on its block, or the gate reads it as off.
     surface_dependencies = ("copilot-agent-valid",)
 
     config_schema = {
@@ -53,8 +56,21 @@ class McpProhibitedRule(Rule):
         allowlist = set(self.config.get("allowlist", []))
 
         for block in context.lint_tree.find(McpConfigRole):
-            if isinstance(block, CopilotAgentMcpBlock) and not self.surface_rule_enabled(
-                "copilot-agent-valid"
+            # A location whose format rule is gated off is not part of that
+            # user's results, so it is not inventoried either — declared on
+            # the block as ``surface_rule`` rather than named here, so a
+            # fourth host costs no visit to this loop.
+            #
+            # Only where the block declares no ``shape_deferral``. A
+            # deferring block has a dialect-neutral half that survives its
+            # rule being gated off, and a prohibited server is policy, not
+            # shape: the name is in the repository whichever rule reads the
+            # file's structure.
+            surface = block.surface_rule
+            if (
+                surface is not None
+                and block.shape_deferral is None
+                and not self.surface_rule_enabled(surface)
             ):
                 continue
             prohibited = block.server_names - allowlist if allowlist else block.server_names

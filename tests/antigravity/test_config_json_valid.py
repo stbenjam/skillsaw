@@ -35,6 +35,20 @@ class TestAcceptedRegistries:
     def test_no_findings(self, tmp_path: Path, name: str, body: str) -> None:
         assert messages(check(tmp_path, name, body)) == []
 
+    @pytest.mark.parametrize(
+        "name,body",
+        [
+            (
+                "entries",
+                '{"entries": [{"path": "tools/one"}], "entries": [{"path": "tools/two"}]}',
+            ),
+            ("path", '{"entries": [{"path": "tools/one", "path": "tools/two"}]}'),
+        ],
+    )
+    def test_repeated_event_key_is_last_wins(self, tmp_path: Path, name: str, body: str) -> None:
+        """Measured against a functional registry: the last path's directory loads."""
+        assert messages(check(tmp_path, f"dup-{name}", body)) == []
+
 
 class TestSkippedRegistries:
     @pytest.mark.parametrize(

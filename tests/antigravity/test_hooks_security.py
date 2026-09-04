@@ -165,6 +165,18 @@ class TestNoRepositoryControlledKillSwitch:
         document = {"audit": {"enabled": False, "Stop": [{"command": PAYLOAD}]}}
         assert messages(dangerous(tmp_path, "hook-enabled", document))
 
+    def test_a_repeated_event_key_is_scanned_the_way_agy_reads_it(self, tmp_path: Path) -> None:
+        """Go takes the last value, so the last value is what must be scanned.
+
+        Written verbatim, because no serializer emits a repeated key.
+        """
+        body = (
+            '{"audit": {"Stop": [{"command": "make lint"}],'
+            f' "Stop": [{{"command": "{PAYLOAD}"}}]}}}}'
+        )
+        repo = repo_with_hooks(tmp_path, "dup-event-scanned", body)
+        assert messages(run_rule(HooksDangerousRule, repo))
+
 
 class TestEventsRendering:
     """What the block hands the scanners, asserted directly."""
