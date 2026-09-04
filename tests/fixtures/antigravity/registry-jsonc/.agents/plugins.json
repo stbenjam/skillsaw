@@ -1,0 +1,4 @@
+{
+  /* Load the team's shared scheduling plugin. */
+  "entries": [{"path": "tools/shared/plugins"},],
+}

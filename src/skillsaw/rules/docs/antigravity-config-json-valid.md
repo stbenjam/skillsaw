@@ -3,7 +3,8 @@
 A customization root can carry registry files — `agents.json`,
 `plugins.json`, `skills.json`, `workflows.json` — that name *where else* to
 load that kind of customization from. They hold no customizations
-themselves:
+themselves. These files accept JSONC: line and block comments and trailing
+commas. Registry discovery and this opt-in validator use the same syntax:
 
 ```json
 { "entries": [{ "path": "internal/schedule/agents" }] }
@@ -32,7 +33,8 @@ rules:
 
 **Errors** — the registry is skipped and loads nothing:
 
-- Invalid JSON, or a non-finite number (`NaN`, `Infinity`, `-Infinity`).
+- Invalid JSONC, including single-quoted strings or unquoted keys, or a
+  non-finite number (`NaN`, `Infinity`, `-Infinity`).
 - A UTF-8 byte-order mark (BOM). Remove it; the loader does not strip it.
 - A root that is not a JSON object.
 - Non-null `entries` that is not an array.

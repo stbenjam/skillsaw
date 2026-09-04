@@ -1324,12 +1324,13 @@ class TestStripJsonc:
         path.write_text('{"a": [1, 2], "b": {"c": "https://x.example//p"}}')
         assert read_jsonc(path) == ({"a": [1, 2], "b": {"c": "https://x.example//p"}}, None)
 
-    def test_read_jsonc_rejects_the_non_finite_extension(self, tmp_path):
+    @pytest.mark.parametrize("allow_duplicate_keys", [False, True])
+    def test_read_jsonc_rejects_the_non_finite_extension(self, tmp_path, allow_duplicate_keys):
         from skillsaw.utils import read_jsonc
 
         path = tmp_path / "opencode.jsonc"
         path.write_text('{"timeout": NaN}')
-        data, error = read_jsonc(path)
+        data, error = read_jsonc(path, allow_duplicate_keys=allow_duplicate_keys)
         assert data is None
         assert "NaN" in error
 
@@ -1350,6 +1351,23 @@ class TestStripJsonc:
 
         assert data is None
         assert 'duplicate JSON object key: "name"' in error
+
+    @pytest.mark.parametrize("comment", ["", "// Registry metadata\n"])
+    def test_duplicate_key_policy_is_explicit_and_cached_separately(self, tmp_path, comment):
+        from skillsaw.blocks.json_config import OpenCodeConfigBlock
+        from skillsaw.utils import read_jsonc
+
+        path = tmp_path / "config.jsonc"
+        path.write_text(comment + '{"name":"first","name":"second"}')
+        assert read_jsonc(path, allow_duplicate_keys=True) == ({"name": "second"}, None)
+        data, error = read_jsonc(path)
+        assert data is None
+        assert 'duplicate JSON object key: "name"' in error
+        assert read_jsonc(path, allow_duplicate_keys=True) == ({"name": "second"}, None)
+        # Enabling Antigravity's policy must not relax another JSONC host.
+        block = OpenCodeConfigBlock(path=path)
+        assert block.raw_data is None
+        assert 'duplicate JSON object key: "name"' in block.parse_error
 
 
 def test_read_json_strict_rejects_duplicate_object_keys(tmp_path):

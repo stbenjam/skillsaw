@@ -833,12 +833,14 @@ def strip_jsonc(content: str) -> str:
 
 
 @_file_cache.cached
-def read_jsonc(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
+def read_jsonc(
+    file_path: Path, *, allow_duplicate_keys: bool = False
+) -> Tuple[Optional[object], Optional[str]]:
     """Read a JSON file that may carry comments and trailing commas.
 
-    Always strict about duplicate keys and non-finite tokens, for the reason
-    :func:`read_json_strict` gives: the locations that opt into JSONC are new
-    surfaces with no shipped results a tightened parser would change.
+    Non-finite tokens are always rejected. Duplicate keys are rejected by
+    default; a host whose decoder takes the last value can explicitly set
+    *allow_duplicate_keys*, as with :func:`read_json_strict`.
 
     Parsed as-is first, and stripped only if that fails. Most files at these
     locations are plain JSON, and :func:`strip_jsonc` materializes one list
@@ -859,7 +861,7 @@ def read_jsonc(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
             json.loads(
                 content,
                 parse_constant=_reject_non_finite,
-                object_pairs_hook=reject_duplicate_json_keys,
+                object_pairs_hook=None if allow_duplicate_keys else reject_duplicate_json_keys,
             ),
             None,
         )
@@ -872,7 +874,7 @@ def read_jsonc(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
             json.loads(
                 strip_jsonc(content),
                 parse_constant=_reject_non_finite,
-                object_pairs_hook=reject_duplicate_json_keys,
+                object_pairs_hook=None if allow_duplicate_keys else reject_duplicate_json_keys,
             ),
             None,
         )

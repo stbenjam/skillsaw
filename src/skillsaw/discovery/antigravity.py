@@ -40,7 +40,7 @@ from skillsaw.paths import (
     safe_is_file,
     safe_resolve,
 )
-from skillsaw.utils import read_json_strict
+from skillsaw.utils import read_json_strict, read_jsonc
 
 
 def is_antigravity_plugin_location(plugin_dir: Path) -> bool:
@@ -293,7 +293,7 @@ def iter_registries(
         visited.add(resolved)
         if not safe_is_file(resolved):
             continue
-        data, error = read_json_strict(resolved, allow_duplicate_keys=True)
+        data, error = read_jsonc(resolved, allow_duplicate_keys=True)
         if error or not isinstance(data, dict):
             yield path, None
             continue

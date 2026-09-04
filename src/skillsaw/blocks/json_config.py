@@ -285,7 +285,7 @@ def _parse_json_file(
     if jsonc:
         # JSONC is always strict about the non-finite tokens; the locations
         # that opt into it are new surfaces with no shipped results.
-        return read_jsonc(path)
+        return read_jsonc(path, allow_duplicate_keys=not duplicate_keys_fatal)
     if not strict:
         return read_json(path)
     return read_json_strict(
@@ -321,14 +321,14 @@ class JsonConfigBlock(LintTarget):
     #: as a parse error. Implies :attr:`strict_json`, which is why the
     #: locations setting this leave that one at its default.
     jsonc: ClassVar[bool] = False
-    #: Whether a repeated object key kills the file, asked only where
-    #: :attr:`strict_json` is set. On by default, which is what every host
+    #: Whether a repeated object key kills the file, asked where
+    #: :attr:`strict_json` or :attr:`jsonc` is set. On by default, which is what every host
     #: measured before Antigravity does. Google's ``agy`` reads its
     #: ``hooks.json``, ``mcp_config.json`` and registries with Go's
     #: ``encoding/json``: the last value wins and the file loads, measured
     #: at all three nesting depths against 1.1.25, so the blocks it reads
-    #: turn this off and keep the non-finite half. Not consulted on the
-    #: JSONC path, where no host accepts a duplicate.
+    #: turn this off and keep the non-finite half, including registries
+    #: written with JSONC comments and trailing commas.
     duplicate_keys_fatal: ClassVar[bool] = True
     merge_duplicate_fields: ClassVar[Tuple[Tuple[str, ...], ...]] = ()
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
@@ -1663,7 +1663,7 @@ class AntigravityConfigBlock(JsonConfigBlock):
     """
 
     category: str = "antigravity config"
-    strict_json: ClassVar[bool] = True
+    jsonc: ClassVar[bool] = True
     #: Measured against a functional ``agents.json``: a repeated
     #: ``entries`` key and a repeated ``path`` inside one entry both load
     #: the last value's directory, with no diagnostic.
