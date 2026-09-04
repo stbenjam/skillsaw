@@ -88,6 +88,14 @@ def _command_tokens(command: str) -> list:
     return tokens[: tokens.index("|")] if "|" in tokens else tokens
 
 
+def _is_recipe(command: str) -> bool:
+    """A harvested `git grep …` line is a recipe only when it carries a
+    pattern; a backticked prose mention such as `git grep --untracked`
+    does not, and running it would be a patternless `git grep`."""
+    tokens = _command_tokens(command)
+    return tokens[:2] == ["git", "grep"] and any(not t.startswith("-") for t in tokens[2:])
+
+
 def _grep_pattern(command: str) -> str:
     """The pattern argument of a `git grep …` command line."""
     tokens = _command_tokens(command)
@@ -181,7 +189,15 @@ def test_the_router_pin_scan_matches_every_documented_pin_form():
 PIN_FIXTURE = {
     ".github/workflows/lint.yml": [
         "  - uses: stbenjam/skillsaw@abc123 # v0.19.0",
+        "    with:",
+        "      version: 0.19.0",
         "  - uses: stbenjam/skillsaw/review@abc123",
+    ],
+    "action.yml": [
+        "inputs:",
+        "  version:",
+        "    description: The skillsaw version to install",
+        '    default: "0.19.0"',
     ],
     "Makefile": ["SKILLSAW_VERSION := 0.19.0", "\tuvx skillsaw@0.19.0"],
     ".pre-commit-config.yaml": ["  - repo: https://github.com/stbenjam/skillsaw"],
@@ -214,6 +230,13 @@ PIN_FIXTURE = {
     "uv.lock": ['name = "skillsaw"'],
     "docs/notes.md": ROUTER_MUST_NOT_MATCH,
 }
+# Lines a recipe must surface, where that is not every line of the file: the
+# action-metadata recipe keeps only the `default:` line, and the `inputs:`
+# scaffolding around it is not a pin.
+PIN_EXPECTED = {
+    "action.yml": ['    default: "0.19.0"'],
+    "docs/notes.md": [],
+}
 
 
 def test_the_pins_recipes_together_find_every_documented_pin_form(tmp_path):
@@ -228,40 +251,51 @@ def test_the_pins_recipes_together_find_every_documented_pin_form(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
 
-    # A prose mention such as `git grep --untracked` carries no pattern and
-    # is not a recipe.
     commands = [
         command
         for command in _GIT_GREP_LINE.findall((SKILL_DIR / "references" / "03-pins.md").read_text())
-        if len(_command_tokens(command)) >= 4
+        if _is_recipe(command)
     ]
     # Actions, action metadata, Makefile, pre-commit, container, PyPI, the
     # pyproject mapping sweep and the lockfile lookup: a dropped recipe must
-    # fail here, not land on a floor.
+    # fail here rather than pass unnoticed.
     assert len(commands) == 8, commands
     found = ""
     for command in commands:
         result = subprocess.run(
             ["bash", "-c", command], cwd=tmp_path, capture_output=True, text=True, check=False
         )
+        # 1 is "no match"; anything above is git grep refusing the command.
+        assert result.returncode in (0, 1), (command, result.stderr)
         found += result.stdout
     for name, lines in PIN_FIXTURE.items():
-        for line in lines:
-            if name == "docs/notes.md":
-                assert line not in found, f"a recipe over-matches: {line!r}"
+        expected = PIN_EXPECTED.get(name, lines)
+        for index, line in enumerate(lines, 1):
+            # Anchored on `git grep -n`'s own output shape (`file:line:text`,
+            # or `file-line-text` for a context line), so a shorter pin is
+            # never credited by a longer line above it and a line from
+            # another file never stands in.
+            hit = f"{name}:{index}:{line}" in found or f"{name}-{index}-{line}" in found
+            if line in expected:
+                assert hit, f"no recipe finds: {name}:{index}:{line!r}"
             else:
-                assert line.strip() in found, f"no recipe finds: {line!r}"
+                assert not hit, f"a recipe over-matches: {name}:{index}:{line!r}"
 
 
 def test_image_tags_in_skills_and_docs_carry_no_v():
     """The image is tagged `0.19.0`, never `v0.19.0` (docker.yml publishes
     `type=semver,pattern={{version}}`), so a `:v` tag in a recipe pulls
     nothing, at ghcr.io or at a mirror."""
-    hits = [
-        f"{path.relative_to(REPO_ROOT)}:{number}"
+    files = [
+        path
         for root in ("skills", "docs", "examples", "README.md")
         for path in (sorted((REPO_ROOT / root).rglob("*.md")) or [REPO_ROOT / root])
         if path.is_file()
+    ]
+    assert len(files) >= 50, "the image-tag guard walked almost nothing"
+    hits = [
+        f"{path.relative_to(REPO_ROOT)}:{number}"
+        for path in files
         for number, line in enumerate(path.read_text().splitlines(), 1)
         if "stbenjam/skillsaw:v" in line
     ]
@@ -269,14 +303,22 @@ def test_image_tags_in_skills_and_docs_carry_no_v():
 
 
 def test_the_cli_strings_the_update_skill_parses(tmp_path):
-    """The update skill reads two lines the CLI prints: `Using config: <path>`
-    from `lint -v`, which names the file whose `version:` gates rules, and
-    `skillsaw N.N.N` from `--version`. Neither was asserted anywhere."""
-    (tmp_path / ".skillsaw.yaml").write_text('version: "99.0.0"\n')
+    """The update skill reads three things the CLI prints: `Using config:
+    <path>` from `lint -v` (absent when no config file exists), the
+    two-space-indented rule IDs of `list-rules`, and `skillsaw N.N.N` from
+    `--version`."""
     (tmp_path / "AGENTS.md").write_text("# Notes\n\nKeep changes small.\n")
+    without = run_cli(["lint", "-v", str(tmp_path)])
+    assert "Using config: " not in without.stdout, without.stdout
+
+    (tmp_path / ".skillsaw.yaml").write_text('version: "99.0.0"\n')
     result = run_cli(["lint", "-v", str(tmp_path)])
     using = [line for line in result.stdout.splitlines() if line.startswith("Using config: ")]
     assert using and using[0].endswith(".skillsaw.yaml"), result.stdout
+
+    listing = run_cli(["list-rules"])
+    ids = re.findall(r"^  ([a-z][a-z0-9-]*)", listing.stdout, re.MULTILINE)
+    assert len(ids) >= 50 and "content-description-routing" in ids, listing.stdout[:400]
 
     version = run_cli(["--version"])
     assert re.fullmatch(r"skillsaw \d+\.\d+\.\d+\s*", version.stdout), version.stdout
@@ -299,6 +341,8 @@ def test_the_git_tag_fallback_pipeline_returns_the_newest_release():
     ):
         commands = re.findall(r"^git ls-remote .*$", reference.read_text(), re.MULTILINE)
         assert len(commands) == 1, (reference, commands)
+        # `tail -1` is only right because the listing arrives version-sorted.
+        assert "--sort='v:refname'" in commands[0], commands[0]
         pipeline = commands[0].split("|", 1)[1]
         result = subprocess.run(
             ["bash", "-c", pipeline], input=listing, text=True, capture_output=True, check=True

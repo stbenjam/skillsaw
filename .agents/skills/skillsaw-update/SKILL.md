@@ -37,7 +37,8 @@ Replace brace-delimited fields below with facts from the repository or scan;
 never show placeholders to the user, and render singular or plural wording
 naturally. Two angle-delimited names, `<installed-prefix>` and `<new-prefix>`,
 are command prefixes the references bind: run them, never show them. Every
-other angle-delimited name is a placeholder to fill in.
+other angle-delimited name is a placeholder to fill in. Doubled braces
+(`{{…}}`) inside a command are that tool's template syntax, not a field.
 
 When a reference says to stop, end the workflow there and tell the user what
 happened and what was not done; the summary in step 5 belongs to a run that
@@ -66,17 +67,18 @@ definitions, Makefile targets, pre-commit hooks, container image tags in
 Dockerfiles, Containerfiles or GitLab CI, PyPI requirement pins):
 
 ```console
-git grep --untracked -lE 'stbenjam/skillsaw|SKILLSAW_VERSION|name = "skillsaw"|(^|[^/[:alnum:]._-])skillsaw *(\[[^]]*\])? *(={1,3}|~=|>=?|<=?|!=|@) *["'"'"'{$0-9]'
+git grep --untracked -lE 'stbenjam/skillsaw|SKILLSAW_VERSION|name = "skillsaw"|(^|[^/[:alnum:]._-])skillsaw *(\[[^]]*\])? *(={1,3}|~=|>=?|<=?|!=|@) *(["'"'"'{$0-9]|git\+|https?://)'
 ```
 
 The first three alternatives take any prefix, so `ghcr.io/stbenjam/skillsaw`,
 the pre-commit URL and a lockfile entry route here; the boundary applies only
 to the bare package name. Outside a git work tree, use
-`grep -rlE --exclude-dir={.git,.venv,node_modules,vendor,dist,site}` with
-the same pattern. If it lists any file, name them as {locations} and ask:
+`grep -rlE --exclude-dir={.git,.venv,node_modules,vendor,dist,site}` (brace
+expansion; list them separately in a shell without it) with the same
+pattern. If it lists any file, name them as {locations} and ask:
 
 > I found skillsaw pinned in {locations}. Bumping them to {latest} keeps CI
-> and local runs on the version just installed. Should I update those pins?
+> and local runs on the newest release. Should I update those pins?
 
 If yes, read [pins](references/03-pins.md). If no, preserve the locations. If
 the scan listed nothing, say so and continue to step 4.

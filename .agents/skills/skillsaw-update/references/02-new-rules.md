@@ -1,11 +1,12 @@
 # Report new rules and their findings
 
 Compare the rule-ID lists captured in the versions step. Rule IDs are the
-two-space-indented names in `list-rules` output; the `grep` keeps those and
-drops the description lines:
+two-space-indented names in `list-rules` output; the `grep` extracts the ID
+alone, leaving the description lines and a `(DEPRECATED …)` annotation
+behind, so a deprecated rule does not read as removed:
 
 ```console
-comm -13 <(grep -E '^  [a-z]' /tmp/skillsaw-rules-old.txt | sort) <(grep -E '^  [a-z]' /tmp/skillsaw-rules-new.txt | sort)
+comm -13 <(grep -oE '^  [a-z][a-z0-9-]*' /tmp/skillsaw-rules-old.txt | sort) <(grep -oE '^  [a-z][a-z0-9-]*' /tmp/skillsaw-rules-new.txt | sort)
 ```
 
 Rules printed by `comm -23` with the files swapped were removed: findings or
@@ -16,8 +17,8 @@ baseline entries naming them are stale, and the triage step handles them.
 The config file's top-level `version:` gates rule activation: a rule whose
 `since` is newer than that value is skipped unless the file names it, and a
 config with no `version` key is read as `0.6.0` (skillsaw prints a warning
-saying so). Left stale, it switches off exactly the rules this upgrade added,
-and the scan below would report nothing for them. Find the active config:
+saying so). Left stale, it switches off the rules added since then, and the
+scan below would report nothing for them. Find the active config:
 `<new-prefix> lint -v` prints `Using config: {config}` for `.skillsaw.yaml`,
 `.skillsaw.yml`, `.claudelint.yaml` or `.claudelint.yml`. No such line means
 no config file exists and nothing is gated, so skip this section. Under a
@@ -51,9 +52,9 @@ which added rules it could not exercise.
 
 ## When no rule was added
 
-If the list comparison adds nothing and the gate needed no change (or the
-user declined to move it), report that the upgrade adds no new checks and
-return to the router; the pin updates and the verification step still apply.
+If the list comparison adds nothing and the gate needed no change, report
+that the upgrade adds no new checks and return to the router; the pin updates
+and the verification step still apply.
 If the gate was moved, continue below even with an empty comparison: the
 rules added between `{config-version}` and `{installed}` are the new checks.
 
