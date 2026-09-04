@@ -20,10 +20,13 @@ Best for high-priority issues and quick wins:
 
 ## 2. Baseline
 
-Best for valid findings that are not urgent to fix immediately. Recording them
-with `<new-prefix> baseline` absorbs the new findings into the existing baseline
-file so CI passes while preventing regressions on future changes. Only errors
-and warnings can go here: `<new-prefix> baseline` never records info findings.
+Best for valid findings that are not urgent to fix immediately. Recording
+them with `<new-prefix> baseline` absorbs the new findings into the existing
+baseline file so CI passes while preventing regressions on future changes.
+Only errors and warnings can go here: `<new-prefix> baseline` never records
+info findings. It records every current non-info finding, so before any
+refresh confirm the only unbaselined findings are the ones the user agreed to
+baseline, and report `git diff --stat .skillsaw-baseline.json` in the summary.
 
 A removed rule may leave stale baseline entries behind. Before refreshing,
 run `<new-prefix>` and confirm the only unbaselined findings are the added
@@ -33,7 +36,8 @@ regression from an existing rule would accept it silently. If other findings
 are present, delete the removed rule's entries from `.skillsaw-baseline.json`
 instead of regenerating, or resolve those findings first. An ID the new
 version still resolves (`<new-prefix> explain <id>` succeeds) is an alias of a
-live rule, not a removed rule; leave its entries.
+live rule, not a removed rule; leave its entries. Delete a removed rule's key
+from `.skillsaw.yaml` too; the new version reports it as `invalid-config`.
 
 ## 3. Configure
 

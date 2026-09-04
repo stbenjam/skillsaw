@@ -9,8 +9,11 @@ python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('
 If `python3` is unavailable:
 
 ```console
-git ls-remote --tags https://github.com/stbenjam/skillsaw.git 'v*' | sort -t/ -k3 -V | tail -1
+git ls-remote --refs --tags --sort='v:refname' https://github.com/stbenjam/skillsaw.git 'v[0-9]*.[0-9]*.[0-9]*' | grep -E 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' | tail -1 | sed 's|.*refs/tags/v||'
 ```
+
+The result must look like `N.N.N`; a floating `v0` tag exists beside the
+releases, which is what the pattern and the `grep` keep out.
 
 Ask whether to use uvx or the installed container runtime.
 
@@ -38,7 +41,7 @@ lint:
 	$(CONTAINER_ENGINE) run --rm -v $$(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw:$(SKILLSAW_VERSION) --strict
 
 lint-fix:
-	$(CONTAINER_ENGINE) run --rm -v $$(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw:$(SKILLSAW_VERSION) fix
+	$(CONTAINER_ENGINE) run --rm $(if $(findstring podman,$(CONTAINER_ENGINE)),--userns=keep-id,) --user $$(id -u):$$(id -g) -v $$(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw:$(SKILLSAW_VERSION) fix
 ```
 
 Append to an existing `Makefile` or create one. Never overwrite existing

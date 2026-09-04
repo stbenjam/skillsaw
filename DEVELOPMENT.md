@@ -83,10 +83,10 @@ make update       # regenerate everything: APM, example config, README docs, sit
   `.github/copilot-instructions.md`, and `AGENTS.md` (codex/opencode) —
   APM-compiled instruction files for the targets in `apm.yml`
 - `.agents/skills/` (shared, cross-client) and `.claude/skills/` — APM-managed
-  skills. The published product skills live in top-level `skills/` (the
-  plugin export, which `.claude-plugin/plugin.json` exports wholesale) and
-  are referenced as local-path deps in
-  `apm.yml` so APM deploys them into the agent dirs — do not hand-edit or
+  skills. The published product skills live in top-level `skills/`, which
+  `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` export
+  wholesale, and are referenced as local-path deps in `apm.yml` so APM
+  deploys them into the agent dirs — do not hand-edit or
   symlink them into `.claude/`
 
 The `verify-update` CI check will fail if generated files are stale.

@@ -16,7 +16,7 @@ installed container runtime. For containers, `<installed-prefix>` is a
 complete run command mounting the repository at `/workspace`:
 
 ```console
-podman run --rm --userns=keep-id -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:{latest}
+podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" -v "$PWD:/workspace:Z" ghcr.io/stbenjam/skillsaw:{latest}
 ```
 
 or, with Docker:
@@ -25,12 +25,13 @@ or, with Docker:
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:{latest}
 ```
 
-Image tags carry no `v`: release `0.19.0` is the image tag `0.19.0`.
-Rootless Podman maps the host user to the container's root, so
-`--userns=keep-id` is what lets the later `fix` and `baseline` steps write to
-the checkout, and `:Z` relabels the mount on SELinux hosts; Docker takes the
-explicit user mapping and no relabel. Verify with `<installed-prefix> --version`
-and treat that version as both `{installed}` and the starting prefix.
+Image tags carry no `v`: release `0.19.0` is the image tag `0.19.0`. The image
+runs as a non-root user, so both commands map the invoking user in to keep the
+later `fix` and `baseline` steps able to write; rootless Podman additionally
+needs `--userns=keep-id` for that mapping to reach the host user, and `:Z`
+relabels the mount on SELinux hosts. Verify with `<installed-prefix> --version`
+and treat that version as both `{installed}` and the starting prefix. If
+`python3` is unavailable for the PyPI lookup below, use its git fallback.
 
 ## Latest version
 
@@ -42,10 +43,11 @@ python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('
 
 If PyPI is unreachable, read the newest release tag instead. Release tags
 carry a `v`, and floating tags such as `v0` exist beside them, so the pattern
-asks for three numeric parts and `--refs` leaves the peeled `^{}` lines out:
+asks for three numeric parts, the `grep` drops prerelease tags such as
+`v0.21.0-rc1`, and `--refs` leaves the peeled `^{}` lines out:
 
 ```console
-git ls-remote --refs --tags --sort='v:refname' https://github.com/stbenjam/skillsaw.git 'v[0-9]*.[0-9]*.[0-9]*' | tail -1 | sed 's|.*refs/tags/v||'
+git ls-remote --refs --tags --sort='v:refname' https://github.com/stbenjam/skillsaw.git 'v[0-9]*.[0-9]*.[0-9]*' | grep -E 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' | tail -1 | sed 's|.*refs/tags/v||'
 ```
 
 `{latest}` must look like `N.N.N`. If it does not, stop and report the value
@@ -93,11 +95,16 @@ user agrees, continue below with that prefix. If the user also declines
 running the new version, skip the rule report and triage, still offer the pin
 update, and run verification with the retained prefix.
 
-Whenever no upgrade happens, `<new-prefix>` is the retained prefix.
+Whenever no upgrade happens, `<new-prefix>` is the prefix in hand: the
+isolated zero-install command if the user accepted one, otherwise the
+retained prefix. An isolated command sees only skillsaw itself, so if the
+installed one carries rule plugins, add them (`uvx --with <plugin>
+skillsaw=={latest}`) or the comparison below reports their rules as removed.
 
-Verify the new prefix: `<new-prefix> --version` must print `{latest}`. If it
-does not, the upgrade did not take (a `pipx` or `uv tool` install ignores
-`pip`); report that and stop. Then save its rules:
+If an upgrade or an isolated prefix was accepted, `<new-prefix> --version`
+must report `{latest}` (the output is `skillsaw {latest}`). If it does not,
+the upgrade did not take (a `pipx` or `uv tool` install ignores `pip`);
+report that and stop. Then save its rules:
 
 ```console
 <new-prefix> list-rules > /tmp/skillsaw-rules-new.txt

@@ -14,8 +14,9 @@ metadata:
 
 Update this repository from its installed skillsaw to the newest release:
 upgrade the local install, report which rules are new and what they find in
-this repository, and bump every pinned skillsaw version (GitHub Actions
-SHAs, Makefile targets, pre-commit hooks, container tags).
+this repository, and bump every pinned skillsaw version (GitHub Actions SHAs
+and action inputs, Makefile targets, pre-commit hooks, container image tags in
+Dockerfiles or GitLab CI, PyPI pins).
 
 ## Workflow
 
@@ -34,7 +35,8 @@ location.
 
 Replace brace-delimited fields below with facts from the repository or scan;
 never show placeholders to the user, and render singular or plural wording
-naturally.
+naturally. Angle-delimited names (`<installed-prefix>`, `<new-prefix>`) are
+command prefixes the references bind; run them, never show them.
 
 ### 1. Upgrade to the newest version
 
@@ -62,10 +64,10 @@ If yes, read [pins](references/03-pins.md). If no, preserve the locations.
 
 ### 4. Triage findings from new rules
 
-If the new version reports findings from added rules or removed-rule cleanup
-requires handling, read [triage](references/04-triage.md) and present its
-summary table for confirmation before making changes. Carry the agreed buckets
-forward.
+If the new version reports findings from added rules, or if removed rules
+leave baseline cleanup to do, read [triage](references/04-triage.md) and
+present its summary table for confirmation before making changes. Carry the
+agreed buckets forward.
 
 ### 5. Verify the result
 
