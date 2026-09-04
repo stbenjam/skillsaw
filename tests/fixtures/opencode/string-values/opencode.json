@@ -1,0 +1,51 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "command": {
+    "ctx": {
+      "template": "",
+      "model": "anthropic/claude-sonnet"
+    },
+    "review": {
+      "template": "Review the current diff."
+    }
+  },
+  "commands": {
+    "ctx": {
+      "template": "",
+      "model": {
+        "providerID": "anthropic",
+        "model": "claude-sonnet"
+      }
+    },
+    "space": {
+      "template": " "
+    },
+    "check": {
+      "template": "Check the test results."
+    }
+  },
+  "mcp": {
+    "local-tools": {
+      "type": "local",
+      "command": [
+        "node",
+        "tools/mcp.js",
+        "--prefix",
+        "",
+        "--separator",
+        " "
+      ]
+    },
+    "servers": {
+      "native-tools": {
+        "type": "local",
+        "command": [
+          "node",
+          "tools/native.js",
+          "",
+          " "
+        ]
+      }
+    }
+  }
+}

@@ -3644,7 +3644,7 @@ class TestOpenCode:
         assert any("'command' must be a non-empty array of strings" in m for m in messages)
         assert any("MCP server 'typo' is missing 'type'" in m for m in messages)
         assert any("'agents.planner.disabled' must be a boolean" in m for m in messages)
-        assert any("'command.changelog.template' must be a non-empty string" in m for m in messages)
+        assert not any("command.changelog.template" in m for m in messages)
         assert any("names the TUI schema" in m for m in messages)
         # Unknown top-level keys never rise above info: the schema moves
         # faster than skillsaw releases.
@@ -3655,6 +3655,88 @@ class TestOpenCode:
         ]
         assert [v["severity"] for v in unknown] == ["info"]
         assert "'modle'" in unknown[0]["message"]
+
+    def test_empty_templates_and_argument_values_are_valid(self, tmp_path):
+        from skillsaw.blocks import OpenCodeMcpBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("opencode/string-values", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(OpenCodeMcpBlock)
+        assert [block.path for block in blocks] == [repo / "opencode.json"]
+        assert {name: server["command"] for name, server in blocks[0].server_entries()} == {
+            "local-tools": ["node", "tools/mcp.js", "--prefix", "", "--separator", " "],
+            "native-tools": ["node", "tools/native.js", "", " "],
+        }
+        r = run_lint(repo, "--rule", "opencode-config-valid", "--no-custom-rules", "--no-plugins")
+        assert r["rc"] == 0, r
+        assert r["out"] is not None
+        assert "opencode" in r["out"]["stats"]["repo_types"]
+        assert "opencode-config-valid" in r["out"]["stats"]["rules_run"]
+        assert violations(r) == []
+
+        # Empty native templates still participate in model lowering and
+        # overlap checks; accepting them must not hide conflicting entries.
+        path = repo / "opencode.json"
+        data = json.loads(path.read_text())
+        data["command"]["ctx"]["model"] = "anthropic/claude-opus"
+        path.write_text(json.dumps(data))
+        conflict = run_lint(
+            repo,
+            "--rule",
+            "opencode-config-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+            "--fail-on",
+            "warning",
+        )
+        assert conflict["rc"] == 1, conflict
+        assert conflict["out"] is not None
+        found = violations(conflict)
+        assert [(v["rule_id"], v["file_path"], v["severity"]) for v in found] == [
+            ("opencode-config-valid", "opencode.json", "warning")
+        ]
+        assert found[0]["message"].startswith(
+            "'command.ctx' and 'commands.ctx' define the same entry differently"
+        )
+
+    @pytest.mark.parametrize("section", ["command", "commands"])
+    @pytest.mark.parametrize("entry", [{}, {"template": None}, {"template": []}])
+    def test_template_remains_required_and_string_typed(self, tmp_path, section, entry):
+        repo = copy_fixture("opencode/string-values", tmp_path)
+        path = repo / "opencode.json"
+        data = json.loads(path.read_text())
+        data[section]["invalid"] = entry
+        path.write_text(json.dumps(data))
+
+        r = run_lint(repo, "--rule", "opencode-config-valid", "--no-custom-rules", "--no-plugins")
+        assert r["rc"] == 1, r
+        assert r["out"] is not None
+        found = violations(r)
+        assert [(v["rule_id"], v["file_path"], v["severity"]) for v in found] == [
+            ("opencode-config-valid", "opencode.json", "error")
+        ]
+        assert found[0]["message"].startswith(f"'{section}.invalid.template' must be a string")
+
+    @pytest.mark.parametrize("layout", ["flat", "nested"])
+    @pytest.mark.parametrize("command", [[], [""], [" "], [None], ["node", 42]])
+    def test_argv_requires_an_executable_and_string_arguments(self, tmp_path, layout, command):
+        repo = copy_fixture("opencode/string-values", tmp_path)
+        path = repo / "opencode.json"
+        data = json.loads(path.read_text())
+        entries = data["mcp"] if layout == "flat" else data["mcp"]["servers"]
+        entries["invalid"] = {"type": "local", "command": command}
+        path.write_text(json.dumps(data))
+
+        r = run_lint(repo, "--rule", "opencode-config-valid", "--no-custom-rules", "--no-plugins")
+        assert r["rc"] == 1, r
+        assert r["out"] is not None
+        found = violations(r)
+        assert [(v["rule_id"], v["file_path"], v["severity"]) for v in found] == [
+            ("opencode-config-valid", "opencode.json", "error")
+        ]
+        assert found[0]["message"].startswith(
+            "MCP server 'invalid' 'command' must be a non-empty array"
+        )
 
     def test_only_conflicting_spellings_are_reported(self, tmp_path):
         """Disjoint collection sections merge; one-to-one field aliases do not."""
@@ -4222,9 +4304,7 @@ class TestOpenCode:
         assert any("'agents.not-an-object' must be an object" in m for m in messages)
         # `template` is the only required key on a command entry, and a JSON
         # entry has no body to supply it.
-        assert any(
-            "'commands.no-template.template' must be a non-empty string" in m for m in messages
-        )
+        assert any("'commands.no-template.template' must be a string" in m for m in messages)
         # An OAuth client secret is as committed as one in a header. It is
         # reported by the rule that owns the credential scan for a deferred
         # block, with the 1.x camelCase spelling normalized first.
