@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from skillsaw.utils import read_yaml_commented
+from tests.cli_runner import run_cli
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -72,7 +73,11 @@ SKILL_DIR = REPO_ROOT / "skills" / "skillsaw-update"
 def _grep_matches(pattern: str, line: str) -> bool:
     """Run *pattern* through `grep -E`, the engine the agent runs (Python's
     `re` has no `[[:alnum:]]`)."""
-    result = subprocess.run(["grep", "-qE", pattern], input=line + "\n", text=True, check=False)
+    result = subprocess.run(
+        ["grep", "-qE", pattern], input=line + "\n", text=True, check=False, capture_output=True
+    )
+    # 1 is "no match"; anything above is grep refusing the pattern.
+    assert result.returncode in (0, 1), result.stderr
     return result.returncode == 0
 
 
@@ -86,7 +91,9 @@ def _command_tokens(command: str) -> list:
 def _grep_pattern(command: str) -> str:
     """The pattern argument of a `git grep …` command line."""
     tokens = _command_tokens(command)
-    return next(token for token in tokens[2:] if not token.startswith("-"))
+    pattern = next((token for token in tokens[2:] if not token.startswith("-")), None)
+    assert pattern is not None, f"no pattern in {command!r}"
+    return pattern
 
 
 def test_glob_pathspecs_in_skill_recipes_also_match_the_repo_root():
@@ -96,11 +103,11 @@ def test_glob_pathspecs_in_skill_recipes_also_match_the_repo_root():
     checked = 0
     for path in sorted((REPO_ROOT / "skills").rglob("*.md")):
         for command in _GIT_GREP_LINE.findall(path.read_text()):
-            if " -- " not in command:
+            tokens = _command_tokens(command)
+            if "--" not in tokens:
                 continue
             # Pathspecs end at the pipe: a downstream `grep` pattern must
             # not satisfy the bare-name check by accident.
-            tokens = _command_tokens(command)
             pathspecs = tokens[tokens.index("--") + 1 :]
             for nested in (spec[3:] for spec in pathspecs if spec.startswith("**/")):
                 checked += 1
@@ -128,6 +135,11 @@ ROUTER_MUST_MATCH = [
     "uvx skillsaw@0.19.0",
     "skillsaw >= 0.19.0",
     "skillsaw != 0.18.0",
+    "skillsaw[dev]==0.19.0",
+    "skillsaw ~= 0.19",
+    "skillsaw===0.19.0",
+    "skillsaw<0.21",
+    "skillsaw==$SKILLSAW_VERSION",
     "skillsaw @ git+https://github.com/stbenjam/skillsaw.git@v0.19.0",
     'skillsaw = { version = "0.19.0" }',
     'skillsaw = "^0.19.0"',
@@ -187,6 +199,11 @@ PIN_FIXTURE = {
     "requirements.txt": [
         "skillsaw >= 0.19.0",
         "skillsaw != 0.18.0",
+        "skillsaw[dev]==0.19.0",
+        "skillsaw ~= 0.19",
+        "skillsaw===0.19.0",
+        "skillsaw<0.21",
+        "skillsaw==$SKILLSAW_VERSION",
         "skillsaw @ git+https://github.com/stbenjam/skillsaw.git@v0.19.0",
     ],
     "pyproject.toml": [
@@ -216,7 +233,10 @@ def test_the_pins_recipes_together_find_every_documented_pin_form(tmp_path):
         for command in _GIT_GREP_LINE.findall((SKILL_DIR / "references" / "03-pins.md").read_text())
         if command.startswith("git grep")
     ]
-    assert len(commands) >= 7, commands
+    # Actions, action metadata, Makefile, pre-commit, container, PyPI, the
+    # pyproject mapping sweep and the lockfile lookup: a dropped recipe must
+    # fail here, not land on a floor.
+    assert len(commands) == 8, commands
     found = ""
     for command in commands:
         result = subprocess.run(
@@ -237,9 +257,48 @@ def test_image_tags_in_skills_and_docs_carry_no_v():
     nothing, at ghcr.io or at a mirror."""
     hits = [
         f"{path.relative_to(REPO_ROOT)}:{number}"
-        for root in ("skills", "docs")
-        for path in sorted((REPO_ROOT / root).rglob("*.md"))
+        for root in ("skills", "docs", "examples", "README.md")
+        for path in (sorted((REPO_ROOT / root).rglob("*.md")) or [REPO_ROOT / root])
+        if path.is_file()
         for number, line in enumerate(path.read_text().splitlines(), 1)
         if "stbenjam/skillsaw:v" in line
     ]
     assert hits == []
+
+
+def test_the_cli_strings_the_update_skill_parses(tmp_path):
+    """The update skill reads two lines the CLI prints: `Using config: <path>`
+    from `lint -v`, which names the file whose `version:` gates rules, and
+    `skillsaw N.N.N` from `--version`. Neither was asserted anywhere."""
+    (tmp_path / ".skillsaw.yaml").write_text('version: "99.0.0"\n')
+    (tmp_path / "AGENTS.md").write_text("# Notes\n\nKeep changes small.\n")
+    result = run_cli(["lint", "-v", str(tmp_path)])
+    using = [line for line in result.stdout.splitlines() if line.startswith("Using config: ")]
+    assert using and using[0].endswith(".skillsaw.yaml"), result.stdout
+
+    version = run_cli(["--version"])
+    assert re.fullmatch(r"skillsaw \d+\.\d+\.\d+\s*", version.stdout), version.stdout
+
+
+def test_the_git_tag_fallback_pipeline_returns_the_newest_release():
+    """The `ls-remote` fallback in both skills filters its listing through a
+    `grep | tail | sed` pipeline that must drop the floating `v0`, a
+    prerelease and any peeled `^{}` line and print a bare `N.N.N`. Run the
+    shipped pipeline over a listing in `--sort=v:refname` order."""
+    listing = (
+        "aaaa\trefs/tags/v0\n"
+        "bbbb\trefs/tags/v0.19.0\n"
+        "cccc\trefs/tags/v0.20.0\n"
+        "dddd\trefs/tags/v0.21.0-rc1\n"
+    )
+    for reference in (
+        SKILL_DIR / "references" / "01-versions.md",
+        REPO_ROOT / "skills" / "skillsaw-onboard" / "references" / "09-makefile.md",
+    ):
+        commands = re.findall(r"^git ls-remote .*$", reference.read_text(), re.MULTILINE)
+        assert len(commands) == 1, (reference, commands)
+        pipeline = commands[0].split("|", 1)[1]
+        result = subprocess.run(
+            ["bash", "-c", pipeline], input=listing, text=True, capture_output=True, check=True
+        )
+        assert result.stdout.strip() == "0.20.0", (reference, result.stdout)

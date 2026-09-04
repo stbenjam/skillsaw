@@ -40,8 +40,9 @@ unbaselined findings are the ones the user agreed to baseline:
 over a finding the user declined or chose to fix, or one an existing rule
 raised, would accept it silently. If any such finding is present, resolve it
 first or add the agreed entries by hand instead of regenerating.
-`invalid-config` also fires for a malformed option of a live rule,
-so delete a rule's key from `.skillsaw.yaml` only when the message reads
+`invalid-config` fires both for a rule ID the new version does not know and
+for a malformed option of a live rule, so delete a rule's key from
+`.skillsaw.yaml` only when the message reads
 `Unknown rule '<id>' in config` and that ID is in the removed list; repair an
 option-level finding instead. A key the new version still accepts is an
 alias of a live rule and stays.

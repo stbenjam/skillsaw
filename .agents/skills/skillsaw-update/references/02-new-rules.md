@@ -1,10 +1,11 @@
 # Report new rules and their findings
 
 Compare the rule-ID lists captured in the versions step. Rule IDs are the
-indented names in `list-rules` output:
+two-space-indented names in `list-rules` output; the `grep` keeps those and
+drops the description lines:
 
 ```console
-comm -13 <(sort /tmp/skillsaw-rules-old.txt) <(sort /tmp/skillsaw-rules-new.txt)
+comm -13 <(grep -E '^  [a-z]' /tmp/skillsaw-rules-old.txt | sort) <(grep -E '^  [a-z]' /tmp/skillsaw-rules-new.txt | sort)
 ```
 
 Rules printed by `comm -23` with the files swapped were removed: findings or
@@ -19,14 +20,16 @@ saying so). Left stale, it switches off exactly the rules this upgrade added,
 and the scan below would report nothing for them. Find the active config:
 `<new-prefix> lint -v` prints `Using config: {config}` for `.skillsaw.yaml`,
 `.skillsaw.yml`, `.claudelint.yaml` or `.claudelint.yml`. No such line means
-no config file exists and nothing is gated, so skip this section. Otherwise
-`{old}` is the `version:` value in `{config}`, or `0.6.0` when the key is
-absent.
+no config file exists and nothing is gated, so skip this section. Under a
+container prefix the printed path is the container's: strip `/workspace/` to
+reach the host file. A path outside the repository is not this repository's
+config: report it and do not edit it. Otherwise `{config-version}` is the
+`version:` value in `{config}`, or `0.6.0` when the key is absent.
 
 Do this before deciding whether anything is new: the list comparison above
 sees only the binaries, while a gate below `{installed}` keeps rules off that
-both binaries carry. If `{old}` is below `{latest}`, keep a scan taken under
-the old gate:
+both binaries carry. If `{config-version}` is below `{latest}`, keep a scan
+taken under the old gate:
 
 ```console
 <new-prefix> lint --format json -v > /tmp/skillsaw-update-scan-gated.json
@@ -34,16 +37,17 @@ the old gate:
 
 Then ask:
 
-> {config} reads as version {old}, which keeps every rule added since then
-> switched off. Set it to {latest} so those rules run here?
+> {config} reads as version {config-version}, which keeps every rule added
+> since then switched off. Set it to {latest} so those rules run here?
 
 If yes, set (or add) `version: "{latest}"` in `{config}`, keeping its quoting,
 and count the file as edited; never create a second config file. The bump
-switches on every rule added between `{old}` and `{installed}` as well, not
-only the ones the list comparison found, so after the scan below treat each
-rule that reports findings there and not in the gated scan as added, for the
-report and for triage. If no, the gated rules stay off: run the scan below
-anyway and report which added rules it could not exercise.
+switches on every rule added between `{config-version}` and `{installed}` as
+well, not only the ones the list comparison found: after the scan below, the
+rules in its `stats.rules_run` list that the gated scan's list lacks are added
+rules too, so run `explain` on each and carry them into the report and the
+triage. If no, the gated rules stay off: run the scan below anyway and report
+which added rules it could not exercise.
 
 ## When no rule was added
 
@@ -51,7 +55,7 @@ If the list comparison adds nothing and the gate needed no change (or the
 user declined to move it), report that the upgrade adds no new checks and
 return to the router; the pin updates and the verification step still apply.
 If the gate was moved, continue below even with an empty comparison: the
-rules added between `{old}` and `{installed}` are the new checks.
+rules added between `{config-version}` and `{installed}` are the new checks.
 
 ## Explain each added rule
 

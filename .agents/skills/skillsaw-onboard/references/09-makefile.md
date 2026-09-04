@@ -12,9 +12,9 @@ If `python3` is unavailable or the lookup fails:
 git ls-remote --refs --tags --sort='v:refname' https://github.com/stbenjam/skillsaw.git 'v[0-9]*.[0-9]*.[0-9]*' | grep -E 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' | tail -1 | sed 's|.*refs/tags/v||'
 ```
 
-The result must look like `N.N.N`; a floating `v0` tag exists beside the
-releases, which is what the pattern and the `grep` keep out. If it does not,
-stop and report the value.
+A floating `v0` tag exists beside the releases, which is what the pattern and
+the `grep` keep out. The result must look like `N.N.N`; if it does not, stop
+and report the value.
 
 Ask whether to use uvx or the installed container runtime.
 
