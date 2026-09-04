@@ -4,7 +4,7 @@
 plugin package and discover the components it provides.
 
 While a manifest is optional — plugins containing standard `skills/`,
-`agents/`, or `hooks/` directories load conventions automatically — including
+`agents/`, or `hooks/hooks.json` load conventions automatically — including
 a well-formed `plugin.json` enables you to specify custom paths, component
 declarations, metadata, and versioning.
 

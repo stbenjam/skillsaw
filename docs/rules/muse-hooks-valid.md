@@ -137,7 +137,7 @@ and an unsupported handler option is dropped:
 ## How to fix
 
 - Give each matcher group only `hooks` and, optionally, `matcher`. Notes or
-  descriptions can be kept in a companion markdown file or code comment.
+  descriptions can be kept in companion documentation or inside invoked hook scripts.
 - Give every handler `"type": "command"` and a non-empty `command` string.
   Include a POSIX `command` alongside any `commandWindows` so your hooks work
   across all platforms.

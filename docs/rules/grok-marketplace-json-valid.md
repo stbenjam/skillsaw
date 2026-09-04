@@ -48,10 +48,10 @@ Findings distinguish between structural errors and upstream recommendations:
 - Missing or invalid `source` (must be a path string or source object).
 - Missing, empty, or non-string plugin entry `name`.
 - Duplicate resolved plugin names within the same catalog.
-- Local `source.path` pointing to a directory that does not exist within the
-  marketplace repository.
+- Local `source.path` pointing to a directory that does not exist under the
+  marketplace root.
 - Local `source.path` that is absolute, contains `..`, or resolves outside the
-  repository.
+  marketplace root.
 - Remote Git source missing a commit `sha` (unpinned clone).
 - Remote Git source with an invalid `sha` (must be a 40- or 64-character hex
   string).
@@ -124,7 +124,9 @@ Findings distinguish between structural errors and upstream recommendations:
 - Pin remote Git sources with a 40-character lowercase commit hash.
 - Ensure local `source.path` references point to existing directories relative
   to the marketplace root.
-- Give each entry a unique `name`.
+- Ensure every entry has a `name` and resolves to a unique plugin name. For
+  local plugins, duplicate checks compare the name declared in each plugin's
+  manifest rather than the catalog entry's declared `name`.
 - Place your Grok marketplace catalog at `.grok-plugin/marketplace.json`.
 
 If your marketplace intentionally tracks a branch rather than pinned commits,
