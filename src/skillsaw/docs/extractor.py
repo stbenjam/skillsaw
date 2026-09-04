@@ -904,7 +904,13 @@ def _extract_hooks(blocks: List[HooksBlock]) -> List[HookDoc]:
                 HookEntry(
                     matcher=cfg.matcher,
                     hooks=[
-                        {k: v for k, v in h.__dict__.items() if v is not None and k != "type"}
+                        {
+                            k: v
+                            for k, v in h.__dict__.items()
+                            if v is not None
+                            and k != "type"
+                            and k not in ("command_variants", "source_line", "type_line")
+                        }
                         | {"type": h.type}
                         for h in cfg.handlers
                     ],
