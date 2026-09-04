@@ -1,8 +1,9 @@
 # Run final verification
 
-Re-run the linter until it exits successfully.
-Then run `skillsaw` from the repository root and confirm that it exits
-successfully. Summarize:
+Re-run the linter with `<new-prefix>` until it exits successfully.
+Then run `<new-prefix>` from the repository root and confirm that it exits
+successfully; bare `skillsaw` may be absent or still the old release when the
+retained prefix is `uvx` or a container. Summarize:
 
 - verification checks completed (targeted re-lint and root lint both passing);
 - installed and latest versions;

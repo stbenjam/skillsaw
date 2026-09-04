@@ -16,10 +16,12 @@ installed container runtime. For containers, define `{installed-prefix}` as a
 complete run command mounting the repository at `/workspace`:
 
 ```console
-podman run --rm -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}
+podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}
 ```
 
-(or `docker run --rm -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`).
+(or `docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`).
+The user mapping lets the later `fix` and `baseline` steps write to the
+checkout, which the image's non-root user otherwise cannot.
 Verify with `<installed-prefix> --version` and treat that version as both
 `{installed}` and the starting prefix.
 
@@ -69,7 +71,7 @@ If yes, follow the method behind the retained prefix:
 - **Container**: pull the pinned image
   (`podman pull ghcr.io/stbenjam/skillsaw:v{latest}` or `docker pull ...`)
   and define `<new-prefix>` as
-  `podman run --rm -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`
+  `podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`
   (or `docker run ...`).
 - **Local binary (`skillsaw`)**: upgrade via `pip install --upgrade "skillsaw=={latest}"`
   or the project's package manager, retaining `skillsaw` as `<new-prefix>`.
@@ -77,7 +79,7 @@ If yes, follow the method behind the retained prefix:
 If no:
 Do not modify the local installation. Offer to select an isolated, zero-install
 command as `<new-prefix>` (such as `uvx skillsaw=={latest}` or
-`podman run --rm -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`) to
+`podman run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" ghcr.io/stbenjam/skillsaw:v{latest}`) to
 evaluate new rules and bump version pins without modifying local packages.
 If the user agrees, use that prefix for `<new-prefix>` and continue below;
 if the user also declines running the new version, stop the update workflow

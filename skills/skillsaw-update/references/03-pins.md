@@ -19,11 +19,12 @@ For GitHub Actions workflows (`.github/workflows/*.yml`), resolve the commit
 SHA of the newest release tag before editing:
 
 ```console
-git ls-remote --tags https://github.com/stbenjam/skillsaw.git 'v{latest}*'
+git ls-remote https://github.com/stbenjam/skillsaw.git 'refs/tags/v{latest}' 'refs/tags/v{latest}^{}'
 ```
 
-An annotated tag yields two lines; use the SHA on the `^{}` line, which is
-the commit the tag points to. Replace the old SHA with it and refresh the
+The exact refs keep `v{latest}-rc1` and `v{latest}0` out of the answer. An
+annotated tag yields two lines; use the SHA on the `^{}` line, which is the
+commit the tag points to. Replace the old SHA with it and refresh the
 trailing version comment to `# v{latest}`:
 
 ```yaml
@@ -36,14 +37,15 @@ Or for the review action:
 - uses: stbenjam/skillsaw/review@<NEW_SHA> # v{latest}
 ```
 
-If the repository defines its own action in `action.yml`, check for a default
-pinned version:
+If the repository defines its own actions, check every action metadata file
+for a skillsaw version input with a pinned default:
 
 ```console
-grep -n "default: '[0-9]" action.yml 2>/dev/null
+grep -rn -B3 "default: '[0-9]" --include=action.yml --include=action.yaml . | grep -iA3 skillsaw
 ```
 
-Update `default: '{old}'` to `default: '{latest}'`.
+Update that input's `default: '{old}'` to `default: '{latest}'`; leave other
+inputs' defaults alone.
 
 ## Makefile targets
 
@@ -84,8 +86,8 @@ Containerfiles, and GitLab CI configurations:
 grep -rn "ghcr.io/stbenjam/skillsaw" . 2>/dev/null
 ```
 
-Retag `:v{old}` to `:v{latest}` across all matching Dockerfiles, Containerfiles,
-or `.gitlab-ci.yml` files. A `:latest` tag floats onto the new release
+Retag `:v{old}` to `:v{latest}` in every file the search found: Dockerfiles,
+Containerfiles, `.gitlab-ci.yml`, and any GitLab CI file it includes. A `:latest` tag floats onto the new release
 by itself; recommend pinning it to `:v{latest}` for repeatable pipelines,
 but only change it after the user agrees.
 

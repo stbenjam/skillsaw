@@ -25,9 +25,13 @@ with `skillsaw baseline` absorbs the new findings into the existing baseline
 file so CI passes while preventing regressions on future changes. Only errors
 and warnings can go here: `skillsaw baseline` never records info findings.
 
-A removed rule may leave stale baseline entries behind. Refreshing the
-baseline with `skillsaw baseline` drops entries that no longer match, so
-mention that cleanup when removed rules were reported.
+A removed rule may leave stale baseline entries behind. Before refreshing,
+run `<new-prefix>` and confirm the only unbaselined findings are the added
+rules' or ones the user has just agreed to baseline: `skillsaw baseline`
+records every current non-info finding, so refreshing over an unrelated
+regression from an existing rule would accept it silently. If other findings
+are present, delete the removed rule's entries from `.skillsaw-baseline.json`
+instead of regenerating, or resolve those findings first.
 
 ## 3. Configure
 
