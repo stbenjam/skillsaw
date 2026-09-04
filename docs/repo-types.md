@@ -42,7 +42,8 @@ skills-repo/
 ```
 
 Standard discovery paths are checked automatically: `.agents/skills/`,
-`.apm/skills/`, `.claude/skills/`, `.github/skills/`, `.cursor/skills/`,
+`.agent/skills/`, `_agents/skills/`, `_agent/skills/`, `.apm/skills/`,
+`.claude/skills/`, `.github/skills/`, `.cursor/skills/`,
 `.clinerules/skills/`, `.cline/skills/`, `.qwen/skills/`,
 `.opencode/skills/` and `.opencode/skill/`. A portable `SKILL.md` under any
 of them makes the repository an Agent Skills repository, which turns on the
@@ -497,7 +498,10 @@ Repositories that configure Google Antigravity's CLI, `agy`. Configuration
 lives in a *customization root* — `.agents/`, `.agent/`, `_agents/` or
 `_agent/`. `agy` walks up from the directory it was started in to the
 repository root and reads every root it finds on the way, so a monorepo
-package carries its own layer, and skillsaw attaches each one the same way.
+package carries its own layer. skillsaw attaches every dot root's content
+the same way; `_agents/` and `_agent/` are also ordinary source-package
+names, so those two attach only where the root declares one of Antigravity's
+own files.
 
 A root holds `hooks.json`, `mcp_config.json`, always-on prose in
 `rules/**/*.md`, subagents in `agents/*.md`, portable Agent Skills in
@@ -505,13 +509,22 @@ A root holds `hooks.json`, `mcp_config.json`, always-on prose in
 `plugins.json`, `skills.json` and `workflows.json`, each naming where else
 to load that kind of customization from.
 
-The root's *presence* is not what detects the type. `.agents/skills/` is the
-portable Agent Skills convention every ecosystem reads and `.agents/memory/`
-is committed project memory that predates this host, so neither says which
-tool a repository configures. Detection needs one of the six named JSON
-files, a populated `rules/` or `agents/`, or a `plugins/<name>/plugin.json`
-— every one of which skillsaw also attaches, so detection and attachment
-agree.
+The root's *presence* is not what detects the type, and neither is all of
+its content. `.agents/skills/` is the portable Agent Skills convention every
+ecosystem reads and `.agents/memory/` is committed project memory that
+predates this host; `.agents/` itself is a tool-neutral layout, and of 30
+sampled repositories carrying `.agents/rules`, 27 hold no Antigravity file
+at all. So detection asks for one of the six named JSON files or a
+`plugins/<name>/plugin.json` — with one exception: under `.agent/`, the
+documented Windsurf-lineage path no other tool reads, a populated `rules/`
+or `agents/` is evidence too.
+
+Attachment is wider than detection here, deliberately: prose under any dot
+root is linted whether or not the repository is typed `antigravity`, because
+content is content. The two non-dot roots are the exception in the other
+direction — they read the same "declares one of its files" test detection
+uses, so nothing attaches from a source package that merely shares the
+name.
 
 The same directory is where OpenAI Codex publishes a catalog, at
 `.agents/plugins/marketplace.json`, with its plugins declaring themselves in
@@ -638,7 +651,7 @@ visible to rules by default but are never autofixed; see
 [`lint-external-content`](configuration.md#external-content) for the opt-out.
 
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
-— Cursor, Copilot, Cline, OpenCode, Muse Code, Grok Build and Codex all read it, and one well-linted
+— Cursor, Copilot, Cline, OpenCode, Muse Code, Grok Build, Google Antigravity and Codex all read it, and one well-linted
 AGENTS.md beats five per-vendor copies that drift apart. skillsaw does not
 reimplement a per-vendor instruction format on top of it; what it adds is
 coverage of the prose each tool keeps in its own directory, plus structural
@@ -665,7 +678,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Windsurf** | `devin` | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
 | **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `kiro` | `.kiro/steering/*.md` |
-| **Google Antigravity** | `antigravity` | `hooks.json`, `mcp_config.json`, `{agents,plugins,skills,workflows}.json`, a populated `rules/` or `agents/`, or a `plugins/<name>/plugin.json`, inside `.agents/`, `.agent/`, `_agents/` or `_agent/` — see [Google Antigravity](#google-antigravity) |
+| **Google Antigravity** | `antigravity` | `hooks.json`, `mcp_config.json`, `{agents,plugins,skills,workflows}.json` or a `plugins/<name>/plugin.json`, inside `.agents/`, `.agent/`, `_agents/` or `_agent/`; under `.agent/` a populated `rules/` or `agents/` counts too — see [Google Antigravity](#google-antigravity) |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
 | **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
 | **OpenAI Codex** | `codex-project` | `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |

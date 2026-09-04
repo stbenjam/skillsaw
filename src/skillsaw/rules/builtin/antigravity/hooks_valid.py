@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import AbstractSet, Any, Dict, List, Optional, Tuple
 
 from skillsaw.blocks import json_token
-from skillsaw.blocks.json_config import AntigravityHooksBlock
+from skillsaw.blocks.json_config import (
+    AntigravityHooksBlock,
+    _antigravity_entry_declares_a_handler,
+)
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import antigravity
@@ -74,6 +77,14 @@ class AntigravityHooksValidRule(Rule):
         ``pretooluse`` reaches ``PreToolUse``, and reporting it as unknown
         would be a false positive on a file that works.
 
+        ``setdefault``, so a declared spelling never displaces a canonical
+        name: ``extra-events: [pretooluse]`` would otherwise rebind that
+        casefold to itself, and ``_check_event`` decides group-versus-flat
+        by asking whether the canonical name is in
+        :data:`~skillsaw.formats.antigravity.TOOL_HOOK_EVENTS` — so a valid
+        ``PreToolUse`` group would be read as a flat handler and every key
+        in it reported as unknown.
+
         The declared type is not enforced when the config loads, so
         ``extra-events: 42`` arrives here as an int. Iterating it would
         raise ``TypeError`` and cost every finding in every hooks file over
@@ -82,7 +93,9 @@ class AntigravityHooksValidRule(Rule):
         known = dict(antigravity.HOOK_EVENTS_BY_CASEFOLD)
         extra = self.setting("extra-events") or []
         if isinstance(extra, (list, tuple, set, frozenset)):
-            known.update({event.casefold(): event for event in extra if isinstance(event, str)})
+            for event in extra:
+                if isinstance(event, str):
+                    known.setdefault(event.casefold(), event)
         return known
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -163,6 +176,10 @@ class _FileCheck:
                 )
             ]
 
+        foreign = self._foreign_shape(data)
+        if foreign is not None:
+            return [foreign]
+
         for hook_name, hook_spec in data.items():
             self._check_named_hook(hook_name, hook_spec)
 
@@ -170,25 +187,104 @@ class _FileCheck:
         # an ignored key has cost nothing yet.
         return self.fatal or self.advisory
 
+    def _foreign_shape(self, data: Dict[str, Any]) -> Optional[RuleViolation]:
+        """One finding for a file written in the Claude/Codex/Cursor shape.
+
+        Those hosts nest their events under a top-level ``hooks`` object,
+        optionally beside a ``version``. ``.agents/`` is a tool-neutral
+        directory name, so such a file lands here often — 10 of 74 real
+        ``.agents/hooks.json`` files, at least four written for another tool
+        entirely — and walking one as a map of named hooks produces a
+        finding for every event inside. One finding naming the real problem
+        is worth more than a dozen naming its symptoms.
+
+        Two shapes qualify, both measured, and nothing else does:
+
+        * ``version`` beside the ``hooks`` object. ``version`` is not a hook
+          name, and its value fails the whole document (``cannot unmarshal
+          number into Go struct field .version``) — zero hooks load.
+        * An entry under a **flat** event written as ``{hooks: [...]}``.
+          ``agy`` reads that entry as a handler, finds no ``command`` on it,
+          and runs nothing.
+
+        A hook genuinely *called* ``hooks`` is not this: its entries carry
+        their own ``command``. Neither is the same nesting under
+        ``PreToolUse``, where the two hosts' group shapes coincide and the
+        file really does run — reporting it would be a false positive.
+
+        Precedent: :class:`CursorHooksBlock` carries the same note about a
+        shared filename.
+        """
+        nested = data.get("hooks")
+        if not isinstance(nested, dict) or not nested or not set(data) <= {"hooks", "version"}:
+            return None
+        events = {}
+        for key, value in nested.items():
+            if not isinstance(key, str):
+                return None
+            canonical = self.known_events.get(key.casefold())
+            if canonical is None:
+                return None
+            events[canonical] = value
+        if "version" in data:
+            consequence = _FILE_SCOPED
+        elif any(
+            canonical in antigravity.FLAT_HOOK_EVENTS
+            and isinstance(entries, list)
+            and any(
+                isinstance(entry, dict)
+                and isinstance(entry.get("hooks"), list)
+                and not _antigravity_entry_declares_a_handler(entry)
+                for entry in entries
+            )
+            for canonical, entries in events.items()
+        ):
+            consequence = (
+                "Antigravity reads every top-level key as a hook name, so this declares one "
+                "hook called 'hooks' whose entries carry no command"
+            )
+        else:
+            return None
+        return self.rule.violation(
+            f"this hooks.json is written in the Claude/Codex/Cursor nested shape; {consequence}",
+            file_path=self.block.path,
+            # Hardcoded, against the house rule that severity stays
+            # configurable: the shape says the file targets another tool,
+            # and an ERROR would fail CI for a repository that never
+            # configured Antigravity and put this file in a directory name
+            # four ecosystems share.
+            severity=Severity.WARNING,
+            fingerprint_discriminator="foreign-shape",
+        )
+
     def _check_named_hook(self, hook_name: Any, hook_spec: Any) -> None:
         where = f"hook '{safe_display(str(hook_name))}'"
-        if hook_name in antigravity.HOOK_SPEC_NON_EVENT_KEYS:
-            # Every top-level key is a hook *name*, so there is no
-            # file-level switch to write here. The author who wrote one
-            # meant to turn hooks off and instead turned the file off.
-            self._fatal(
-                "hooks.json",
-                f"'{safe_display(str(hook_name))}' at the top level is read as a hook name, "
-                "not a switch; 'enabled' belongs inside a named hook",
-            )
+        if hook_spec is None:
+            # Go decodes a JSON ``null`` as the zero value and reports
+            # nothing, so every ``null`` in this file reads as "the key is
+            # absent". Measured at every placement: the file still loads.
             return
         if not isinstance(hook_spec, dict):
+            if hook_name in antigravity.HOOK_SPEC_NON_EVENT_KEYS:
+                # Every top-level key is a hook *name*, so there is no
+                # file-level switch to write here. The author who wrote one
+                # meant to turn hooks off and instead turned the file off.
+                self._fatal(
+                    "hooks.json",
+                    f"'{safe_display(str(hook_name))}' at the top level is read as a hook name, "
+                    "not a switch; 'enabled' belongs inside a named hook",
+                )
+                return
             self._fatal(where, "a named hook must be a JSON object")
             return
+        # An object value under that name is an ordinary hook and loads:
+        # measured, ``{"enabled": {"Stop": [...]}}`` reads ``loaded 1 named
+        # hooks``. Only the value decides, so it falls through to the
+        # checks every other named hook gets.
 
         for key, value in hook_spec.items():
             if key in antigravity.HOOK_SPEC_NON_EVENT_KEYS:
-                if not isinstance(value, bool):
+                if value is not None and not isinstance(value, bool):
                     self._fatal(where, f"'{safe_display(str(key))}' must be a boolean")
                 continue
             self._check_event(where, key, value)
@@ -206,12 +302,16 @@ class _FileCheck:
         # a ``.skillsaw.yaml`` string reaches terminal, JSON and SARIF
         # output the way a repository-supplied one would.
         event_where = f"{where} {safe_display(canonical)}"
+        if value is None:
+            return
         if not isinstance(value, list):
             self._fatal(event_where, "an event's value must be an array")
             return
         grouped = canonical in antigravity.TOOL_HOOK_EVENTS
         for index, entry in enumerate(value):
             entry_where = f"{event_where}[{index}]"
+            if entry is None:
+                continue
             if not isinstance(entry, dict):
                 self._fatal(
                     entry_where,
@@ -228,7 +328,8 @@ class _FileCheck:
                 self._check_handler(entry_where, entry)
 
     def _check_group(self, where: str, group: Dict[str, Any]) -> None:
-        if "matcher" in group and not isinstance(group["matcher"], str):
+        matcher = group.get("matcher")
+        if matcher is not None and not isinstance(matcher, str):
             self._fatal(where, "'matcher' must be a string")
         self._report_unknown_keys(where, group, antigravity.HOOK_GROUP_KEYS, "group key")
         handlers = group.get("hooks")
@@ -239,6 +340,8 @@ class _FileCheck:
             return
         for index, handler in enumerate(handlers):
             handler_where = f"{where}.hooks[{index}]"
+            if handler is None:
+                continue
             if not isinstance(handler, dict):
                 self._fatal(handler_where, "a handler must be a JSON object")
                 continue
@@ -247,11 +350,11 @@ class _FileCheck:
     def _check_handler(self, where: str, handler: Dict[str, Any]) -> None:
         handler_type, typed = self._handler_type(where, handler)
         for field in ("command", "prompt", "model"):
-            if field in handler and not isinstance(handler[field], str):
+            if handler.get(field) is not None and not isinstance(handler[field], str):
                 self._fatal(where, f"'{field}' must be a string")
                 typed = False
-        if "timeout" in handler:
-            timeout = handler["timeout"]
+        timeout = handler.get("timeout")
+        if timeout is not None:
             if isinstance(timeout, bool) or not isinstance(timeout, int):
                 # An int32 in Go: ``0`` and negatives load, a float or a
                 # string kills the file.
@@ -271,24 +374,25 @@ class _FileCheck:
             return
         if handler_type == "command":
             for forbidden in ("prompt", "model"):
-                if forbidden in handler:
+                if handler.get(forbidden) is not None:
                     self._fatal(where, f"a command hook may not carry '{forbidden}'")
             command = handler.get("command")
             if not (isinstance(command, str) and command.strip()):
                 self._advisory(where, "a command hook with no command runs nothing")
-        elif handler_type == "prompt" and "command" in handler:
+        elif handler_type == "prompt" and handler.get("command") is not None:
             self._fatal(where, "a prompt hook may not carry 'command'")
 
     def _handler_type(self, where: str, handler: Dict[str, Any]) -> Tuple[Optional[str], bool]:
         """The handler's effective type, and whether it was well formed.
 
-        An absent or empty ``type`` is a command hook — the spelling the
-        vendor's own examples use. Any other value fails the file, and the
-        comparison is case-sensitive: ``"COMMAND"`` is rejected.
+        An absent, ``null`` or empty ``type`` is a command hook — the
+        spelling the vendor's own examples use. Any other value fails the
+        file, and the comparison is case-sensitive: ``"COMMAND"`` is
+        rejected.
         """
-        if "type" not in handler:
+        raw = handler.get("type")
+        if raw is None:
             return "command", True
-        raw = handler["type"]
         if not isinstance(raw, str):
             self._fatal(where, "'type' must be a string")
             return None, False

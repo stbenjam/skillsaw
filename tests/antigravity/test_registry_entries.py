@@ -123,6 +123,35 @@ class TestInherits:
         )
         assert RepositoryContext(repo)._antigravity_claim_set() == set()
 
+    def test_a_long_chain_stops_at_the_depth_cap(self, repo: Path) -> None:
+        """A cycle guard alone does not bound a chain of distinct files."""
+        from skillsaw.discovery.antigravity import _MAX_INHERITS_DEPTH
+
+        links = _MAX_INHERITS_DEPTH + 2
+        for index in range(links):
+            target = (
+                "tools/shared/plugins" if index == links - 1 else f"tools/chain-{index + 1}.json"
+            )
+            body = (
+                {"entries": [{"path": target}]}
+                if index == links - 1
+                else {"inherits": [{"path": target}]}
+            )
+            (repo / "tools" / f"chain-{index}.json").write_text(json.dumps(body), encoding="utf-8")
+        (repo / ".agents" / "plugins.json").write_text(
+            json.dumps({"inherits": [{"path": "tools/chain-0.json"}]}), encoding="utf-8"
+        )
+        assert RepositoryContext(repo)._antigravity_claim_set() == set()
+
+    def test_a_chain_within_the_cap_resolves(self, repo: Path) -> None:
+        (repo / "tools" / "chain-0.json").write_text(
+            json.dumps({"entries": [{"path": "tools/shared/plugins"}]}), encoding="utf-8"
+        )
+        (repo / ".agents" / "plugins.json").write_text(
+            json.dumps({"inherits": [{"path": "tools/chain-0.json"}]}), encoding="utf-8"
+        )
+        assert len(RepositoryContext(repo)._antigravity_claim_set()) == 2
+
     def test_a_cycle_terminates(self, repo: Path) -> None:
         (repo / "tools" / "shared" / "plugins.json").write_text(
             json.dumps({"inherits": [{"path": ".agents/plugins.json"}]}), encoding="utf-8"
@@ -170,6 +199,40 @@ class TestSkippedEntries:
         assert context._antigravity_claim_set() == set()
 
 
+class TestContainment:
+    """A container's children are read from the filesystem, so each is contained.
+
+    The entry path arrives contained, but expanding a container calls
+    ``iterdir``, and a symlinked child of a contained directory points
+    wherever it likes. T6: skillsaw never opens a file outside the
+    repository it was pointed at.
+    """
+
+    @pytest.fixture
+    def escape(self, tmp_path: Path) -> Path:
+        return copy_fixture("antigravity/registry-escape", tmp_path) / "repo"
+
+    def test_the_escaping_child_is_not_claimed(self, escape: Path) -> None:
+        claims = RepositoryContext(escape)._antigravity_claim_set()
+        assert sorted(p.name for p in claims) == ["inside"]
+
+    def test_provenance_does_not_claim_it(self, escape: Path) -> None:
+        plugin = escape / "tools" / "shared" / "plugins" / "berth-tools"
+        assert RepositoryContext(escape).provenance(plugin).antigravity is False
+
+    def test_no_node_is_built_over_it(self, escape: Path) -> None:
+        from skillsaw.lint_target import AntigravityPluginConfigNode
+
+        nodes = tree_for(escape).find(AntigravityPluginConfigNode)
+        assert [n.path.parent.name for n in nodes] == ["inside"]
+
+    def test_its_hooks_file_is_never_read(self, escape: Path) -> None:
+        """The escaping plugin ships a ``curl | sh``; nothing must open it."""
+        from skillsaw.rules.builtin.hooks.dangerous import HooksDangerousRule
+
+        assert run_rule(HooksDangerousRule, escape) == []
+
+
 class TestAgentsRegistry:
     """A named directory's ``*.md`` is this repository's agent prose."""
 
@@ -196,6 +259,62 @@ class TestAgentsRegistry:
             if v.file_path is not None and v.file_path.name == "timetable-auditor.md"
         }
         assert "content-broken-internal-reference" in found
+
+
+class TestClaimedPluginSkills:
+    """Skill discovery reads the claim union, not the gated discovery list."""
+
+    SKILL = "tools/shared/plugins/berth-tools/skills/berth-audit/SKILL.md"
+
+    @pytest.mark.parametrize("types", (None, {RepositoryType.MARKETPLACE}))
+    def test_the_skill_is_discovered(self, repo: Path, types) -> None:
+        context = RepositoryContext(repo, repo_types=types)
+        assert [str(p.relative_to(repo)) for p in context.skills] == [str(Path(self.SKILL).parent)]
+
+    @pytest.mark.parametrize("types", (None, {RepositoryType.MARKETPLACE}))
+    def test_the_skill_block_is_in_the_tree(self, repo: Path, types) -> None:
+        from skillsaw.blocks import SkillBlock
+
+        tree = build_lint_tree(RepositoryContext(repo, repo_types=types))
+        assert relative(tree.find(SkillBlock), repo) == [self.SKILL]
+
+    @pytest.mark.parametrize("types", (None, {RepositoryType.MARKETPLACE}))
+    def test_the_skill_rules_read_it(self, repo: Path, types) -> None:
+        """A forced unrelated type must not cost the skill its findings."""
+        from skillsaw.linter import Linter
+
+        found = {
+            v.rule_id
+            for v in Linter(RepositoryContext(repo, repo_types=types)).run()
+            if v.file_path is not None and "berth-audit" in str(v.file_path)
+        }
+        assert "agentskill-unreferenced-files" in found
+
+    def test_excluding_the_plugin_takes_its_skill(self, repo: Path) -> None:
+        """The prune reads the same union, so the two cannot disagree."""
+        context = RepositoryContext(repo, exclude_patterns=["tools/shared/plugins/**"])
+        assert context.skills == []
+
+
+class TestStatistics:
+    """A registry-reached plugin is a plugin the scan has to count."""
+
+    def test_distinct_plugin_dirs_counts_it(self, repo: Path) -> None:
+        counted = RepositoryContext(repo).distinct_plugin_dirs()
+        assert sorted(str(p.relative_to(repo)) for p in counted) == [
+            "tools/shared/plugins/berth-tools",
+            "tools/shared/plugins/tide-charts",
+        ]
+
+    def test_the_json_report_counts_it(self, repo: Path) -> None:
+        from tests.test_integration import run_lint
+
+        report = run_lint(repo)["out"] or {}
+        counted = [Path(p).relative_to(repo) for p in report["stats"]["plugins"]]
+        assert sorted(str(p) for p in counted) == [
+            "tools/shared/plugins/berth-tools",
+            "tools/shared/plugins/tide-charts",
+        ]
 
 
 class TestTypeOverride:

@@ -603,12 +603,27 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # vendored and excluded ones, so this is narrower than "any directory
     # with the right name" — and the sweep must use the same set, or it
     # yields to an owner that never arrives.
+    # Antigravity's two non-dot roots are attached only where the root
+    # declares one of its files, so the sweep has to ask the same question
+    # the attach does. Reading the ungated walk here would make the sweep
+    # yield to an owner that never turns up, and an ``AGENTS.md`` under an
+    # ordinary package's ``_agents/rules/`` would fall out of the tree
+    # entirely rather than attaching as the instruction file it is.
+    antigravity_roots = {
+        resolved
+        for directory in context.antigravity_workspace_roots()
+        if (resolved := safe_resolve(directory)) is not None
+    }
     eligible_tool_dirs = {
-        editor: {
-            resolved
-            for directory in context.agent_tool_dirs(editor)
-            if (resolved := safe_resolve(directory)) is not None
-        }
+        editor: (
+            antigravity_roots
+            if editor in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES
+            else {
+                resolved
+                for directory in context.agent_tool_dirs(editor)
+                if (resolved := safe_resolve(directory)) is not None
+            }
+        )
         for editor in {editor for editor, _sub, _pattern, _cls in _EDITOR_GLOBS}
     }
 

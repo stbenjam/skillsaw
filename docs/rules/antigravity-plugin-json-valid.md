@@ -60,8 +60,13 @@ the plugin still loads, so none of them is reported.
   and cost nothing. A package written to the portable Agent Plugins schema
   and dropped into `.agents/plugins/` is claimed and loaded by Antigravity
   unchanged, and this rule says nothing about it.
-- **A `$schema` value.** No plugin schema is published for this host, so
-  there is nothing to check one against.
+- **A `$schema` value.** The URL the vendor tells authors to write,
+  `https://antigravity.google/schemas/v1/plugin.json`, is 404, so there is
+  nothing to dereference. The schema itself is published inline under
+  "Full JSON Schema" at `https://antigravity.google/docs/cli/plugins/`,
+  and is narrower than what `agy` loads — it lists only `name` and
+  `description`, while `disabled` and `logo` load fine — so this rule
+  follows the loader rather than the schema.
 - **`disabled: true`.** It is the documented way to keep a plugin in the
   tree without loading it.
 

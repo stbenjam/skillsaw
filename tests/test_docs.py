@@ -142,6 +142,30 @@ class TestExtractor:
         assert plugin.rules[0].name == "style"
         assert plugin.rules[0].globs == ["src/**/*.py"]
 
+    def test_hook_entries_publish_no_internal_fields(self, dot_claude_repo):
+        """A cross-host guard, on a Claude fixture.
+
+        ``command_variants`` defaults to ``[]`` rather than ``None``, so
+        before the filter it leaked into every host's published hook entry.
+        ``source_line`` and ``type_line`` are the linter's own bookkeeping
+        and belong in no published document either.
+        """
+        docs = extract_docs(RepositoryContext(dot_claude_repo))
+        published = [
+            handler
+            for plugin in docs.plugins
+            for hook in plugin.hooks
+            for entry in hook.entries
+            for handler in entry.hooks
+        ]
+
+        assert published
+        for handler in published:
+            assert "command_variants" not in handler
+            assert "source_line" not in handler
+            assert "type_line" not in handler
+            assert handler["type"] == "command"
+
     def test_extract_standalone_devin_skills_with_optional_frontmatter(self, temp_dir):
         plain = temp_dir / ".devin" / "skills" / "review"
         plain.mkdir(parents=True)
@@ -649,8 +673,8 @@ class TestAntigravityExtractor:
 
         assert servers[0].server_type == "sse"
 
-    def test_the_portable_key_still_wins(self, temp_dir):
-        """A host listing both spellings keeps ``url``'s established reading."""
+    def test_the_portable_key_still_supplies_the_endpoint(self, temp_dir):
+        """``url`` wins the endpoint; the transport is remote either way."""
         self._plugin(
             temp_dir,
             {
@@ -666,7 +690,8 @@ class TestAntigravityExtractor:
         servers = extract_docs(RepositoryContext(temp_dir)).plugins[0].mcp_servers
 
         assert servers[0].config["url"] == "https://portable.example/mcp"
-        assert servers[0].server_type == "stdio"
+        # Measured: a bare ``url`` loads as ``http`` for this host too.
+        assert servers[0].server_type == "http"
 
 
 # ---------------------------------------------------------------------------

@@ -403,15 +403,26 @@ def tool_types(
     def antigravity_marker() -> bool:
         """Whether any customization root holds something only Antigravity reads.
 
-        Detection agrees with attachment root for root, because both read
-        the same per-root predicate. A dot root takes the wide one — a
-        populated ``rules/`` or ``agents/`` under ``.agents/`` counts,
-        because nothing else claims that name. The two non-dot names are
-        also ordinary source-package names, so they take
-        ``customization_root_declares_a_file``, which is the gate
-        ``build_lint_tree`` applies before attaching their prose; admitting
-        a populated ``rules/`` there would type a repository by the very
-        directory it then declines to read.
+        Which evidence counts depends on how exclusively the root's *name*
+        belongs to this host.
+
+        ``.agent/`` is the documented Windsurf-lineage back-compat path and
+        nothing else reads it, so a populated ``rules/`` or ``agents/``
+        under it is enough — the wide predicate.
+
+        The other three take ``customization_root_declares_a_file``.
+        ``_agents/`` and ``_agent/`` are ordinary source-package names, and
+        ``.agents/`` is the tool-neutral layout: of 30 sampled real
+        repositories carrying ``.agents/rules``, 27 hold no Antigravity file
+        at all — ``rules/`` there says no more about which tool is
+        configured than ``skills/`` does. That is the same test this
+        function's older text wrote to exclude ``skills/``, applied
+        consistently.
+
+        Nothing moves in the lint tree: blocks attach under every dot root
+        regardless of detection, and the two non-dot roots read the same
+        predicate ``build_lint_tree`` gates them on, so detection and
+        attachment agree there too.
         """
         resolved_root = safe_resolve(root)
         if resolved_root is None:
@@ -419,19 +430,18 @@ def tool_types(
         for dirname in antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES:
             marked = (
                 customization_root_is_marked
-                if dirname.startswith(".")
+                if dirname in antigravity.EXCLUSIVE_ROOT_NAMES
                 else customization_root_declares_a_file
             )
             candidates = list(dirs.get(dirname) or ())
             if not candidates:
                 candidates = [root / dirname]
             for base in candidates:
-                resolved_base = safe_resolve(base)
-                if (
-                    is_excluded(base)
-                    or resolved_base is None
-                    or not resolved_base.is_relative_to(resolved_root)
-                ):
+                # ``contained_resolve``, the one containment idiom: it
+                # resolves symlinks before proving containment, where a
+                # hand-rolled ``is_relative_to`` on a resolved path repeats
+                # the check a reader has to verify.
+                if is_excluded(base) or contained_resolve(base, resolved_root) is None:
                     continue
                 if marked(base, is_excluded=is_excluded):
                     return True

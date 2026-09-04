@@ -433,3 +433,36 @@ def test_config_reads_are_declared_in_config_schema():
                 problems.append(f"{rule_id}: reads undeclared config key '{key}'")
 
     assert problems == [], "\n".join(problems)
+
+
+def test_every_surface_rule_is_a_declared_dependency_of_mcp_prohibited():
+    """``mcp-prohibited`` reads ``block.surface_rule`` declaratively.
+
+    ``surface_rule_enabled`` answers from the set the linter builds out of
+    every rule's ``surface_dependencies``, so a rule named on a block but
+    not declared there reads as *off* and the block is skipped silently. A
+    block that also declares a ``shape_deferral`` never reaches that gate —
+    its dialect-neutral half survives being gated off — so only the others
+    have to be listed.
+    """
+    from skillsaw.blocks import McpConfigRole
+    from skillsaw.rules.builtin.mcp.prohibited import McpProhibitedRule
+
+    def subclasses(cls):
+        for sub in cls.__subclasses__():
+            yield sub
+            yield from subclasses(sub)
+
+    declared = set(McpProhibitedRule.surface_dependencies)
+    missing = sorted(
+        {
+            sub.surface_rule
+            for sub in subclasses(McpConfigRole)
+            if sub.surface_rule is not None and sub.shape_deferral is None
+        }
+        - declared
+    )
+    assert missing == [], (
+        "these blocks name a surface_rule with no shape_deferral, so mcp-prohibited "
+        f"gates on it, but it is not in surface_dependencies: {missing}"
+    )

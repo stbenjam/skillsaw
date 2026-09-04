@@ -52,26 +52,14 @@ def _normalize_antigravity_handler_type(handler: "HookHandler") -> None:
         handler.type = "command"
 
 
-def _antigravity_entry_is_group(canonical: Any, entry: Dict[str, Any]) -> bool:
-    """Whether *entry* is a tool-hook group rather than a flat handler.
+def _antigravity_entry_declares_a_handler(entry: Dict[str, Any]) -> bool:
+    """Whether *entry* carries a handler of its own, beside any ``hooks``.
 
-    The **event** decides, not the entry's shape. ``agy`` binds
-    ``PreToolUse`` and ``PostToolUse`` to ``[]ToolHookGroup`` and the other
-    four events to ``[]HookHandler``, so a flat event reads a ``hooks`` key
-    the way it reads any other unrecognised handler key: it ignores it and
-    runs the handler's own ``command``. Deciding on the key's presence
-    instead makes ``{"Stop": [{"command": "…", "hooks": []}]}`` an empty
-    group, and the command ``agy`` runs never reaches ``hooks-dangerous``.
-
-    An event this release does not know — one a project declares through
-    ``antigravity-hooks-valid``'s ``extra-events`` — has no binding to
-    consult, so the shape decides and its handlers still render.
+    A pure group — ``{"matcher": …, "hooks": […]}`` — declares no command
+    at its own level, and rendering an empty handler for it would put a
+    finding-less entry in front of every scanner.
     """
-    if canonical in antigravity.TOOL_HOOK_EVENTS:
-        return True
-    if canonical in antigravity.FLAT_HOOK_EVENTS:
-        return False
-    return isinstance(entry.get("hooks"), list)
+    return any(entry.get(field) is not None for field in antigravity.HOOK_HANDLER_COMMAND_KEYS)
 
 
 def _as_str_list(value: Any) -> Optional[List[str]]:
@@ -882,18 +870,23 @@ class AntigravityHooksBlock(HooksBlock):
     Three deliberate readings, all measured against ``agy`` 1.1.25:
 
     * A top-level ``enabled`` is **not** a kill switch. Every top-level key
-      is a hook *name*, so a boolean there is a hard parse error that drops
-      the whole file — reading it as "hooks off" would hand any repository
-      a one-word way to silence the command scanners.
+      is a hook *name*, so ``{"enabled": {"Stop": [...]}}`` is an ordinary
+      hook that loads, and only a non-object value there is a hard parse
+      error that drops the whole file — reading either as "hooks off" would
+      hand any repository a one-word way to silence the command scanners.
     * A hook-level ``"enabled": false`` still exposes its handlers. The
       command is committed either way, and the one-word commit that arms it
       is not the diff a reviewer should first learn of it from. skillsaw
       reports what a repository ships, not what it currently runs.
-    * Which of the two shapes an entry is read as follows the **event**,
-      never the entry's own keys; see :func:`_antigravity_entry_is_group`.
-      A ``hooks`` key on a flat event is an ignored handler key, so reading
-      it as a group would drop the ``command`` beside it out of every
-      security rule's reach while ``agy`` ran it.
+    * The security rendering shows **both** readings of every entry — the
+      entry's own handler and its nested ``hooks`` — rather than picking
+      one from the event or from the payload. ``agy`` runs one of them, and
+      which one turns on a single key; both commands are committed either
+      way, and a scanner shown only the half this release believes runs
+      misses the other on the next one-word edit. Picking by payload hides
+      the ``command`` in ``{"Stop": [{"command": "…", "hooks": []}]}``;
+      picking by event hides the nested commands 7 of 74 real files write
+      under a flat event.
     """
 
     category: str = "hooks"
@@ -935,16 +928,26 @@ class AntigravityHooksBlock(HooksBlock):
                 for entry in entries:
                     if not isinstance(entry, dict):
                         continue
-                    if _antigravity_entry_is_group(canonical, entry):
-                        nested = HookEventConfig.from_dict(entry)
-                        for handler in nested.handlers:
-                            _normalize_antigravity_handler_type(handler)
-                        if nested.handlers:
-                            configs.append(nested)
-                        continue
-                    handler = HookHandler.from_dict(entry)
-                    _normalize_antigravity_handler_type(handler)
-                    configs.append(HookEventConfig(handlers=[handler]))
+                    # Both readings, always — never one chosen from the
+                    # event or the payload. ``agy`` runs one of them: a
+                    # grouped event runs the nested ``hooks`` and discards a
+                    # stray top-level ``command``, a flat event runs the
+                    # entry's own ``command`` and discards a ``hooks`` key.
+                    # Either way both commands are committed to the
+                    # repository, and a scanner that saw only the half this
+                    # release believes runs would miss the other on the next
+                    # one-word edit. Measured across 74 real files: 7 write a
+                    # flat event in the grouped shape, hiding 17 commands
+                    # from a reading that picks by event.
+                    nested = HookEventConfig.from_dict(entry)
+                    for handler in nested.handlers:
+                        _normalize_antigravity_handler_type(handler)
+                    if nested.handlers:
+                        configs.append(nested)
+                    if _antigravity_entry_declares_a_handler(entry):
+                        handler = HookHandler.from_dict(entry)
+                        _normalize_antigravity_handler_type(handler)
+                        configs.append(HookEventConfig(handlers=[handler]))
                 if configs:
                     result.setdefault(canonical, []).extend(configs)
         return result
@@ -1191,15 +1194,17 @@ class McpConfigRole:
         key keeps exactly the reading it has.
         """
         server = McpServerConfig.from_dict(name, cfg)
-        if server.url is not None:
+        present = next((key for key in self.connection_url_keys if cfg.get(key) is not None), None)
+        if present is None:
             return server
-        for key in self.connection_url_keys:
-            if key == "url" or key not in cfg:
-                continue
-            server.url = cfg[key]
-            if "type" not in cfg:
-                server.type = self.connection_url_types.get(key, server.type)
-            break
+        if server.url is None:
+            server.url = cfg[present]
+        if cfg.get("type") is None:
+            # The transport the *host* infers for a remote server, whichever
+            # of its keys supplied the URL: ``url`` and ``serverUrl`` both
+            # load as ``http`` here, and rendering ``stdio`` would show a
+            # remote server as a process with no command.
+            server.type = self.connection_url_types.get(present, server.type)
         return server
 
     @property
@@ -1587,16 +1592,17 @@ class AntigravityMcpBlock(McpBlock):
     #: ``clientId`` and ``clientSecret`` load at a server's own top level as
     #: well as inside ``oauth``, so the flatter spelling is scanned too.
     credential_fields: ClassVar[Tuple[str, ...]] = antigravity.MCP_CREDENTIAL_FIELDS
-    credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType(
-        dict(antigravity.MCP_CREDENTIAL_KEY_ALIASES)
-    )
+    credential_key_aliases: ClassVar[Mapping[str, str]] = antigravity.MCP_CREDENTIAL_KEY_ALIASES
     #: ``serverUrl`` is Antigravity's spelling and wins over ``command``;
     #: ``url`` is a third accepted form. Both carry a credential when
     #: someone writes one into the authority, so both are scanned.
     connection_url_keys: ClassVar[Tuple[str, ...]] = ("serverUrl", "url")
-    #: Measured: ``{"serverUrl": "https://…/sse"}`` with no ``type`` loads
-    #: as ``http``.
-    connection_url_types: ClassVar[Mapping[str, str]] = MappingProxyType({"serverUrl": "http"})
+    #: Measured: ``{"serverUrl": "https://…/sse"}`` and ``{"url": "https://…"}``
+    #: each load as ``http`` when the server names no ``type``. Both keys, so
+    #: the reading does not turn on which spelling the author chose.
+    connection_url_types: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {"serverUrl": "http", "url": "http"}
+    )
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
         repo_types=frozenset({RepositoryType.ANTIGRAVITY, RepositoryType.ANTIGRAVITY_PLUGIN}),
         syntax_error_rule="antigravity-mcp-valid",

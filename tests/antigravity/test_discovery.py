@@ -60,15 +60,24 @@ class TestCustomizationRoots:
         (rules / "base.md").write_text("# Base\n\nRun `make test`.\n", encoding="utf-8")
         assert RepositoryType.ANTIGRAVITY not in RepositoryContext(repo).repo_types
 
-    @pytest.mark.parametrize("root_name", (".agents", ".agent"))
-    def test_a_dot_root_is_still_detected_by_a_populated_directory(
-        self, tmp_path: Path, root_name: str
+    @pytest.mark.parametrize(
+        "root_name,detected",
+        (
+            # ``.agent/`` is read by nothing else, so its prose is evidence.
+            (".agent", True),
+            # ``.agents/`` is the shared, tool-neutral layout.
+            (".agents", False),
+        ),
+    )
+    def test_a_populated_directory_is_evidence_only_under_the_exclusive_root(
+        self, tmp_path: Path, root_name: str, detected: bool
     ) -> None:
         repo = write_repo(tmp_path / f"dot-{root_name.lstrip('.')}")
         rules = repo / root_name / "rules"
         rules.mkdir(parents=True)
         (rules / "base.md").write_text("# Base\n\nRun `make test`.\n", encoding="utf-8")
-        assert RepositoryType.ANTIGRAVITY in RepositoryContext(repo).repo_types
+        types = RepositoryContext(repo).repo_types
+        assert (RepositoryType.ANTIGRAVITY in types) is detected
 
     def test_repository_root_hooks_file_is_not_a_root(self, tmp_path: Path) -> None:
         repo = write_repo(tmp_path / "root-hooks")
@@ -106,12 +115,46 @@ class TestDetectionMarkers:
         assert RepositoryType.ANTIGRAVITY in RepositoryContext(repo).repo_types
 
     @pytest.mark.parametrize("dirname", ("rules", "agents"))
-    def test_populated_directory_markers(self, tmp_path: Path, dirname: str) -> None:
-        repo = write_repo(tmp_path / dirname)
-        directory = repo / ".agents" / dirname
+    def test_a_populated_directory_marks_the_exclusive_root(
+        self, tmp_path: Path, dirname: str
+    ) -> None:
+        """``.agent/`` is the Windsurf-lineage path and nothing else reads it."""
+        repo = write_repo(tmp_path / f"exclusive-{dirname}")
+        directory = repo / ".agent" / dirname
         directory.mkdir(parents=True)
         (directory / "note.md").write_text("# Note\n\nRun `make test`.\n", encoding="utf-8")
         assert RepositoryType.ANTIGRAVITY in RepositoryContext(repo).repo_types
+
+    @pytest.mark.parametrize("dirname", ("rules", "agents"))
+    def test_a_populated_directory_does_not_mark_the_shared_root(
+        self, tmp_path: Path, dirname: str
+    ) -> None:
+        """``.agents/`` is the tool-neutral layout: 27 of 30 sampled
+        repositories carrying ``.agents/rules`` hold no Antigravity file at
+        all, so ``rules/`` there says no more than ``skills/`` does."""
+        repo = write_repo(tmp_path / f"shared-{dirname}")
+        directory = repo / ".agents" / dirname
+        directory.mkdir(parents=True)
+        (directory / "note.md").write_text("# Note\n\nRun `make test`.\n", encoding="utf-8")
+        assert RepositoryType.ANTIGRAVITY not in RepositoryContext(repo).repo_types
+
+    def test_a_tool_neutral_agents_layout_is_not_this_host(self, tmp_path: Path) -> None:
+        """The shape 27 of 30 sampled real repositories actually have."""
+        repo = write_repo(tmp_path / "tool-neutral")
+        rules = repo / ".agents" / "rules"
+        rules.mkdir(parents=True)
+        (rules / "style.md").write_text(
+            "# Style\n\nA published timetable row is superseded, never edited.\n",
+            encoding="utf-8",
+        )
+        skill = repo / ".agents" / "skills" / "berth-audit"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: berth-audit\ndescription: Use when auditing a berth change.\n---\n\n"
+            "# Berth audit\n\nRun `make test`.\n",
+            encoding="utf-8",
+        )
+        assert RepositoryType.ANTIGRAVITY not in RepositoryContext(repo).repo_types
 
     @pytest.mark.parametrize("dirname", ("rules", "agents", "plugins"))
     def test_empty_directory_is_not_a_marker(self, tmp_path: Path, dirname: str) -> None:
@@ -376,6 +419,57 @@ class TestSkillDiscovery:
     def test_skills_under_each_root(self, tmp_path: Path, root_name: str) -> None:
         repo = write_repo(tmp_path / f"skills-{root_name.lstrip('._')}")
         skill = repo / root_name / "skills" / "gtfs-diff"
+        skill.mkdir(parents=True)
+        skill.joinpath("SKILL.md").write_text(
+            "---\nname: gtfs-diff\ndescription: Use when comparing two GTFS feeds.\n---\n\n"
+            "# GTFS diff\n\nRun `make gtfs-export`.\n",
+            encoding="utf-8",
+        )
+        assert skill in RepositoryContext(repo).skills
+
+    def test_a_plugin_makes_the_repository_an_antigravity_plugin(self, tmp_path: Path) -> None:
+        """Filesystem-derived, not a restatement of the rule's class attribute.
+
+        ``ANTIGRAVITY_PLUGIN`` is in ``SKILL_REPO_TYPES``, which is what
+        turns the whole ``agentskill-*`` set on for a plugin's ``skills/``.
+        """
+        repo = write_repo(tmp_path / "plugin-type")
+        write_plugin(repo, "berth-tools", {"name": "berth-tools"})
+        assert RepositoryType.ANTIGRAVITY_PLUGIN in RepositoryContext(repo).repo_types
+
+    def test_a_plugin_skill_earns_the_agentskill_rules(self, tmp_path: Path) -> None:
+        """End to end: the type is what puts the skill in front of them."""
+        from skillsaw.linter import Linter
+
+        repo = write_repo(tmp_path / "plugin-skill-rules")
+        plugin = write_plugin(repo, "berth-tools", {"name": "berth-tools"})
+        skill = plugin / "skills" / "berth-audit"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: berth-audit\ndescription: Use when auditing a berth change.\n---\n\n"
+            "# Berth audit\n\nRead the allocation diff and report the lost berths.\n",
+            encoding="utf-8",
+        )
+        (skill / "references").mkdir()
+        (skill / "references" / "fields.md").write_text(
+            "# Fields\n\n`route_id` is at most 32 bytes.\n", encoding="utf-8"
+        )
+        found = {
+            v.rule_id
+            for v in Linter(RepositoryContext(repo)).run()
+            if v.file_path is not None and "berth-audit" in str(v.file_path)
+        }
+        assert "agentskill-unreferenced-files" in found
+
+    def test_skills_under_a_nested_package_root(self, tmp_path: Path) -> None:
+        """The only thing ``NESTED_TOOL_SKILL_DIRS`` buys.
+
+        ``CONVENTIONAL_SKILL_DIRS`` is root-anchored, and the generic walk
+        skips hidden directories, so a package's own ``.agents/skills/`` is
+        found only because the four roots are handed over explicitly.
+        """
+        repo = write_repo(tmp_path / "nested-skill")
+        skill = repo / "services" / "schedule" / ".agents" / "skills" / "gtfs-diff"
         skill.mkdir(parents=True)
         skill.joinpath("SKILL.md").write_text(
             "---\nname: gtfs-diff\ndescription: Use when comparing two GTFS feeds.\n---\n\n"

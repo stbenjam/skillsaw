@@ -90,9 +90,12 @@ rules:
       "include_only": ["gtfs-*"]
     }
   ],
-  "inherits": [{ "path": "~/.gemini/config" }]
+  "inherits": [{ "path": "tools/shared/skills.json" }]
 }
 ```
+
+`inherits` names another *registry file*, not a directory: a directory
+there loads nothing.
 
 ## How to fix
 

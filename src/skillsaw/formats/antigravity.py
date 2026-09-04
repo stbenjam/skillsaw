@@ -28,6 +28,13 @@ Sources:
   evidence.
 * https://antigravity.google/docs/mcp/ (read 2026-09-03), which names the
   workspace ``mcp_config.json`` location the embedded copy omits.
+* https://antigravity.google/docs/cli/plugins/ (read 2026-09-04), which
+  publishes the ``plugin.json`` schema inline under "Full JSON Schema":
+  ``name`` required with pattern ``^[a-zA-Z0-9-_]+$``, ``description``
+  optional, ``additionalProperties: false``. Narrower than the loader —
+  ``disabled`` and ``logo`` load and are not in it — so
+  :data:`PLUGIN_MESSAGE_FIELDS` follows the measured protojson message. The
+  ``$schema`` URL the page tells authors to write is itself a 404.
 
 **Failure scopes.** They differ per file and are what makes a defect worth
 reporting:
@@ -70,6 +77,7 @@ including what a ``matcher`` is compiled with.
 from __future__ import annotations
 
 import re
+from types import MappingProxyType
 
 #: The four customization roots, measured: a ``hooks.json`` or an
 #: ``agents/<n>.md`` under each is honoured. Discovery walks **up** from
@@ -78,6 +86,16 @@ import re
 #: required. ``.gemini/`` and ``.antigravity/`` are deliberately absent —
 #: neither is read from a workspace.
 ANTIGRAVITY_CONFIG_DIR_NAMES = (".agents", ".agent", "_agents", "_agent")
+
+#: The roots whose *name* belongs to this host alone. ``.agent/`` is the
+#: documented Windsurf-lineage back-compat path and no other tool reads it,
+#: so a populated ``rules/`` or ``agents/`` under it is evidence of
+#: Antigravity. The other three are shared or ordinary names — ``.agents/``
+#: is the tool-neutral layout (27 of 30 sampled repositories with
+#: ``.agents/rules`` carry no Antigravity file), ``_agents/`` and
+#: ``_agent/`` are names any source package may take — so detection there
+#: asks for a file only this host reads.
+EXCLUSIVE_ROOT_NAMES = frozenset({".agent"})
 
 #: The plugin marker, a direct child of ``<root>/plugins/`` only: a nested
 #: ``plugins/outer/inner/plugin.json`` is not discovered, and a directory
@@ -121,7 +139,6 @@ REGISTRY_FILENAMES = ("agents.json", "plugins.json", "skills.json", "workflows.j
 #: attach content on a guess.
 AGENTS_REGISTRY = "agents.json"
 PLUGINS_REGISTRY = "plugins.json"
-RESOLVED_REGISTRY_FILENAMES = (AGENTS_REGISTRY, PLUGINS_REGISTRY)
 
 #: The four fields ``plugin.json`` carries meaning in. The manifest is a
 #: **protojson** message (errors read ``proto: (line 1:9): invalid value
@@ -164,11 +181,10 @@ HOOK_EVENTS = TOOL_HOOK_EVENTS | FLAT_HOOK_EVENTS
 #: reports ``cannot unmarshal number into Go struct field .n.pretooluse of
 #: type []jsonhook.ToolHookGroup``, so ``pretooluse`` reached ``PreToolUse``.
 #: A rule that flags a lower-cased event name as unknown is a false positive.
-HOOK_EVENTS_BY_CASEFOLD = {name.casefold(): name for name in HOOK_EVENTS}
-
 #: An unknown event key is **silently ignored**: no error, no counter
 #: change, and the hook it holds never runs.
-#:
+HOOK_EVENTS_BY_CASEFOLD = MappingProxyType({name.casefold(): name for name in HOOK_EVENTS})
+
 #: Handler types. ``command`` is the default when ``type`` is absent or
 #: ``""``; ``prompt`` is real (``prompt hook cannot specify 'command'``
 #: proves the branch). Any other value fails the file, and the comparison
@@ -179,6 +195,13 @@ HOOK_HANDLER_TYPES = frozenset({"command", "prompt"})
 #: ``env``, ``cwd``, ``enabled`` — is silently ignored, so a hook written
 #: with one never does what its author expects.
 HOOK_HANDLER_KEYS = frozenset({"type", "command", "prompt", "model", "timeout"})
+
+#: The subset of :data:`HOOK_HANDLER_KEYS` whose presence means the entry
+#: declares a handler *of its own*, as opposed to being a pure
+#: ``{matcher, hooks}`` group. Read by the security rendering, which shows
+#: the scanners both readings of every entry and must not manufacture an
+#: empty handler for a group.
+HOOK_HANDLER_COMMAND_KEYS = ("command", "prompt", "type")
 
 #: ``timeout``'s bounds. It is a Go ``int32``, and the range is the whole
 #: of the check: ``0`` and negatives load, while ``2147483648`` fails the
@@ -200,9 +223,10 @@ HOOK_GROUP_KEYS = frozenset({"matcher", "hooks"})
 
 #: Per-named-hook fields that are not events. ``enabled`` is documented as
 #: the per-hook switch. At the **top level** ``enabled`` is not a switch at
-#: all: every top-level key is a hook *name*, so a boolean there is a hard
-#: parse error (``cannot unmarshal bool into Go struct field .enabled of
-#: type jsonhook.JSONHookSpec``) that kills the file.
+#: all: every top-level key is a hook *name*, so ``{"enabled": {"Stop":
+#: [...]}}`` loads as a hook called ``enabled`` and only a non-object value
+#: is a hard parse error (``cannot unmarshal bool into Go struct field
+#: .enabled of type jsonhook.JSONHookSpec``) that kills the file.
 HOOK_SPEC_NON_EVENT_KEYS = frozenset({"enabled"})
 
 #: The one value ``authProviderType`` parses. The proto enum also spells it
@@ -226,4 +250,6 @@ MCP_CREDENTIAL_FIELDS = ("clientId", "clientSecret")
 #: The ``oauth`` map's keys, renamed to the snake_case spelling the shared
 #: credential-*name* detector knows. Without this ``clientSecret`` reads as
 #: an unremarkable key and a literal secret under it goes unreported.
-MCP_CREDENTIAL_KEY_ALIASES = {"clientId": "client_id", "clientSecret": "client_secret"}
+MCP_CREDENTIAL_KEY_ALIASES = MappingProxyType(
+    {"clientId": "client_id", "clientSecret": "client_secret"}
+)

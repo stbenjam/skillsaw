@@ -33,6 +33,11 @@ class TestAcceptedManifests:
                 {"name": "berth-tools", "description": "d", "disabled": False, "logo": "a.png"},
             ),
             ("name-only", {"name": "berth-tools"}),
+            # Measured with ``agy plugin validate``: protojson takes null as
+            # the field default, so these carry no type error.
+            ("null-disabled", {"name": "berth-tools", "disabled": None}),
+            ("null-description", {"name": "berth-tools", "description": None}),
+            ("null-logo", {"name": "berth-tools", "logo": None}),
             ("underscored", {"name": "berth_tools_2"}),
             ("uppercase", {"name": "BerthTools"}),
             ("disabled", {"name": "berth-tools", "disabled": True}),
@@ -101,22 +106,20 @@ class TestInstallability:
     """What discovery tolerates and ``agy plugin install`` refuses."""
 
     @pytest.mark.parametrize(
-        "name",
+        "case,name",
         (
-            "Berth Tools",
-            "berth/tools",
-            "../escape",
-            ".hidden",
-            "",
+            ("space", "Berth Tools"),
+            ("slash", "berth/tools"),
+            ("traversal", "../escape"),
+            ("hidden", ".hidden"),
+            ("empty", ""),
             # A JSON string can hold a newline, and ``$`` matches before a
             # final one. ``agy plugin install`` refuses this name.
-            "berth-tools\n",
+            ("trailing-newline", "berth-tools\n"),
         ),
     )
-    def test_uninstallable_names(self, tmp_path: Path, name: str) -> None:
-        found = only(
-            check(tmp_path, f"charset-{abs(hash(name))}", {"name": name}), "is not installable"
-        )
+    def test_uninstallable_names(self, tmp_path: Path, case: str, name: str) -> None:
+        found = only(check(tmp_path, f"charset-{case}", {"name": name}), "is not installable")
         assert found.severity == Severity.WARNING
 
     def _dual_claimed(self, tmp_path: Path, name: str, manifest) -> Path:

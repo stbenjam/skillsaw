@@ -312,7 +312,7 @@ def resolve_registry_entries(
     return sorted(found)
 
 
-def registry_plugin_roots(directories: Iterable[Path]) -> List[Path]:
+def registry_plugin_roots(root: Path, directories: Iterable[Path]) -> List[Path]:
     """Plugin roots among the directories a ``plugins.json`` names.
 
     Measured: a named directory carrying its own ``plugin.json`` is that
@@ -320,9 +320,17 @@ def registry_plugin_roots(directories: Iterable[Path]) -> List[Path]:
     each child carrying a manifest loads. Both spellings appear in the
     wild, and ``agy`` accepts either.
 
-    Containment is the caller's: these paths are already resolved inside
-    the repository by :func:`resolve_registry_entries`.
+    Containment first, per candidate, before any manifest is read — the
+    same order :func:`discover_antigravity_plugins` uses. The entry paths
+    arrive contained, but the container expansion below reads the
+    filesystem, and a symlinked child of a contained directory points
+    wherever it likes: without this a ``plugins.json`` naming an ordinary
+    directory would have skillsaw open, claim and node-ify a ``plugin.json``
+    outside the repository.
     """
+    resolved_root = safe_resolve(root)
+    if resolved_root is None:
+        return []
     roots: List[Path] = []
     seen: Set[Path] = set()
     for directory in directories:
@@ -333,11 +341,12 @@ def registry_plugin_roots(directories: Iterable[Path]) -> List[Path]:
             except OSError:
                 continue
         for candidate in candidates:
-            manifest = candidate / PLUGIN_MANIFEST
-            if not safe_is_file(manifest):
-                continue
-            resolved = safe_resolve(candidate)
+            resolved = contained_resolve(candidate, resolved_root)
             if resolved is None or resolved in seen:
+                continue
+            if not safe_is_file(candidate / PLUGIN_MANIFEST):
+                continue
+            if antigravity_marker_escapes(candidate):
                 continue
             seen.add(resolved)
             roots.append(resolved)

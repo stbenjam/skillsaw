@@ -36,9 +36,12 @@ This rule reports both and says which one a finding is.
 Antigravity's dialect is its own — `serverUrl` is a remote form beside
 `url`, and it wins over `command` when both are present, while a server
 with no connection field at all is legal. What it keeps are the
-checks no dialect changes: a file that is not JSON, a connection URL
-carrying user information, and a credential written into `env`, `headers`,
-`oauth`, or a server's own `clientId` / `clientSecret`.
+checks no dialect changes: a connection URL carrying user information, and
+a credential written into `env`, `headers`, `oauth`, or a server's own
+`clientId` / `clientSecret`. It keeps those even when this rule is turned
+off. The parse failure is *this* rule's — one defect, one finding — and
+goes unreported while this rule is off, because a user who pinned a
+`version:` past this release should see the results that release had.
 
 ## Severity
 
@@ -122,8 +125,9 @@ says nothing:
 
 - Wrap the servers in `mcpServers`. Without it Antigravity loads none of
   them.
-- Quote every `env` value and every `args` element — both maps are
-  string-to-string as far as the loader is concerned.
+- Quote every `env` value and every `args` element. `env` is a map and
+  `args` an array, but the loader takes strings in both, and a number in
+  either drops the server.
 - Use `serverUrl` for a remote server, `command` plus `args` for a local
   one. Naming both is allowed; `serverUrl` is what runs.
 - Switch a server off with `"disabled": true`.

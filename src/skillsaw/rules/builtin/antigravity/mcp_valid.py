@@ -180,7 +180,9 @@ class AntigravityMcpValidRule(Rule):
                     self._dropped(block, shown, "every 'args' element must be a string")
                 )
 
-        if "serverUrl" in server and not isinstance(server["serverUrl"], str):
+        # ``is not None`` rather than ``in``: Go decodes ``null`` as the
+        # zero value, so a null field reads as absent and the server loads.
+        if server.get("serverUrl") is not None and not isinstance(server["serverUrl"], str):
             violations.append(self._dropped(block, shown, "'serverUrl' must be a string"))
 
         disabled_tools = server.get("disabledTools")

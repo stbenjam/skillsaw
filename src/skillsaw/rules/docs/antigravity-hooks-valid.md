@@ -27,10 +27,10 @@ inventoried against an allowlist with
 - Invalid JSON, a non-finite number (`NaN`, `Infinity`, `-Infinity`), a
   trailing comma or a comment. The parser is strict JSON.
 - A root that is not an object of named hooks.
-- An `enabled` key at the **top level**. Every top-level key is a hook
-  *name*, so there is no file-level switch to write there.
-- A named hook that is not an object, or an `enabled` inside one that is not
-  a boolean.
+- A named hook that is not an object. An `enabled` key at the **top level**
+  is reported this way too, with its own wording: every top-level key is a
+  hook *name*, so there is no file-level switch to write there.
+- An `enabled` inside a named hook that is not a boolean.
 - An event whose value is not an array; a group or a handler that is not an
   object; a `matcher` that is not a string; a group's `hooks` that is not an
   array.
@@ -65,6 +65,9 @@ loaded, so nothing has been ignored yet.
 - **A hook-level `"enabled": false`.** It is the documented per-hook switch
   and a valid thing to commit. The security rules still read the commands
   under it, because the command ships in the repository either way.
+- **A named hook called `enabled`.** With an object value it is an ordinary
+  hook and loads, so it is checked like any other rather than reported.
+  Only a non-object value there kills the file.
 - **A `prompt` hook with no `prompt` text**, and **an empty group or event
   array**. All load.
 - **A repeated key.** Antigravity reads this file with Go's `encoding/json`,

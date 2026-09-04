@@ -89,8 +89,15 @@ changing a rule here.
   `logo`. Every other key including `$schema`, `version` and `author` is discarded and
   the plugin loads. `name` is optional for discovery (it defaults to the directory
   name) and required by `agy plugin validate` / `install`, which also enforce
-  `[A-Za-z0-9_-]` with no leading dot. A duplicate `name` key is an error. There is **no
-  published plugin schema**: `https://antigravity.google/schemas/v1/plugin.json` is 404.
+  `[A-Za-z0-9_-]` with no leading dot. A duplicate `name` key is an error. The manifest
+  schema **is published**, inline under "Full JSON Schema" at
+  `https://antigravity.google/docs/cli/plugins/` (read 2026-09-04): `name` required
+  with pattern `^[a-zA-Z0-9-_]+$`, `description` optional, `additionalProperties:
+  false`. The `$schema` URL the page tells authors to write —
+  `https://antigravity.google/schemas/v1/plugin.json` — is 404, so nothing can
+  dereference it. The published schema is narrower than the loader: `disabled` and
+  `logo` load and are absent from it, and `additionalProperties: false` is not enforced
+  at load time, so the rule stays on the measured protojson field set.
 - **`agy` claims Agent Plugins manifests.** A `plugin.json` carrying the portable
   `$schema` under `.agents/plugins/` is loaded unchanged, so a directory can belong to
   both ecosystems.

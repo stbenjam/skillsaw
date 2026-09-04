@@ -18,6 +18,7 @@ The server map has two spellings, and each host reads exactly one:
 | `.vscode/mcp.json` | `servers` | Yes |
 | `opencode.json`, `opencode.jsonc` | `mcp`, or `mcp.servers` in 2.0 | Yes |
 | `.github/agents/**/*.md` (cloud or shared) | `mcp-servers` | Yes, in YAML frontmatter |
+| `mcp_config.json` (Google Antigravity) | `mcpServers` | Yes |
 
 A file using the other host's key is reported as such — the servers are
 present but will not load. VS Code's documented siblings `inputs` and
@@ -31,6 +32,7 @@ spelling of `stdio`; both require a non-empty string `command`.
 Ecosystem-specific MCP schemas are validated by their dedicated rules:
 - Agent Plugins `mcp.json` is validated by [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md).
 - OpenCode `opencode.json` configuration is validated by [`opencode-config-valid`](opencode-config-valid.md).
+- Google Antigravity `mcp_config.json` is validated by [`antigravity-mcp-valid`](antigravity-mcp-valid.md), whose dialect spells a remote server `serverUrl` and accepts a server with no connection field at all.
 
 
 A standalone `.mcp.json` accepts a **wrapperless** map as well: a file

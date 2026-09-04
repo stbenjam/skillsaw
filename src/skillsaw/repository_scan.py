@@ -35,6 +35,9 @@ class RepositoryScanMixin:
         codex_plugins: List[Path]
         grok_plugins: List[Path]
         antigravity_plugins: List[Path]
+
+        def antigravity_plugin_roots(self) -> List[Path]: ...
+
         _scan: Optional[RepositoryScan]
 
         def is_path_excluded(self, path: Path) -> bool: ...
@@ -144,7 +147,12 @@ class RepositoryScanMixin:
             ],
             codex_plugins=self.codex_plugins,
             grok_plugins=self.grok_plugins,
-            antigravity_plugins=self.antigravity_plugins,
+            # The claim union, not the gated discovery list: a plugin a
+            # ``plugins.json`` registry names has a container and its hooks
+            # and MCP file either way, and its ``skills/`` must not vanish
+            # because an unrelated ``--type`` switched generic Agent Skills
+            # discovery off. Excluded roots are already dropped.
+            antigravity_plugins=self.antigravity_plugin_roots(),
             # Declaration-invariant roots keep portable skills visible under
             # an unrelated ``--type`` override while still enforcing their
             # fixed immediate-child discovery semantics.

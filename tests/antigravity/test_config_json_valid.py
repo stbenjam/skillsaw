@@ -8,6 +8,7 @@ import pytest
 
 from skillsaw.formats.antigravity import REGISTRY_FILENAMES
 from skillsaw.repository_types import RepositoryType
+from skillsaw.rule import Severity
 from skillsaw.rules.builtin.antigravity.config_json_valid import AntigravityConfigJsonValidRule
 
 from ._helpers import messages, only, run_rule, write_customization, write_repo
@@ -62,6 +63,7 @@ class TestSkippedRegistries:
     def test_file_is_skipped(self, tmp_path: Path, name: str, body: str, needle: str) -> None:
         found = only(check(tmp_path, name, body), needle)
         assert "loads nothing from this registry" in found.message
+        assert found.severity == Severity.ERROR
 
 
 class TestEntryShape:
@@ -69,16 +71,17 @@ class TestEntryShape:
         only(check(tmp_path, "entries-object", '{"entries": {"path": "a"}}'), "must be an array")
 
     @pytest.mark.parametrize(
-        "body",
+        "name,body",
         (
-            '{"entries": ["internal/schedule/agents"]}',
-            '{"entries": [{"paths": ["a"]}]}',
-            '{"entries": [{"path": 5}]}',
+            ("bare-string", '{"entries": ["internal/schedule/agents"]}'),
+            ("plural-key", '{"entries": [{"paths": ["a"]}]}'),
+            ("number-path", '{"entries": [{"path": 5}]}'),
         ),
     )
-    def test_entry_must_carry_a_string_path(self, tmp_path: Path, body: str) -> None:
-        found = only(check(tmp_path, f"entry-{abs(hash(body))}", body), "entries[0]")
+    def test_entry_must_carry_a_string_path(self, tmp_path: Path, name: str, body: str) -> None:
+        found = only(check(tmp_path, f"entry-{name}", body), "entries[0]")
         assert "string 'path'" in found.message
+        assert found.severity == Severity.ERROR
 
     def test_one_finding_names_several_positions(self, tmp_path: Path) -> None:
         body = '{"entries": [1, 2, 3, 4, 5]}'

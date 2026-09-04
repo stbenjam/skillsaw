@@ -26,6 +26,17 @@ class AntigravityPluginJsonValidRule(Rule):
     The manifest is a protojson message with four fields. Every other key,
     ``$schema`` and ``version`` and ``author`` included, is discarded as
     unknown and the plugin still loads, so none of them is reported.
+
+    The vendor publishes a schema for it inline under "Full JSON Schema" at
+    https://antigravity.google/docs/cli/plugins/ — ``name`` required with
+    pattern ``^[a-zA-Z0-9-_]+$``, ``description`` optional,
+    ``additionalProperties: false``. The checks below follow the *loader*
+    rather than that schema, because the two disagree and the loader is
+    what decides whether the directory is a plugin: ``disabled`` and
+    ``logo`` load and are absent from the schema, and a key the schema
+    forbids is discarded rather than refused. The one place the schema
+    still speaks is the message for a missing ``name``, which says the
+    published schema requires it.
     """
 
     since = "0.20.0"
@@ -101,9 +112,13 @@ class AntigravityPluginJsonValidRule(Rule):
 
         violations: List[RuleViolation] = []
         for field, python_type, label in PLUGIN_MESSAGE_FIELDS:
-            if field not in data:
+            value = data.get(field)
+            # Measured: protojson takes ``null`` as the field's default, so
+            # ``{"name": null}`` is "missing name" and ``{"disabled": null}``
+            # validates clean. A null is the key's absence, never a type
+            # error.
+            if value is None:
                 continue
-            value = data[field]
             if python_type is bool:
                 well_typed = isinstance(value, bool)
             else:
@@ -118,10 +133,13 @@ class AntigravityPluginJsonValidRule(Rule):
                 )
 
         name = data.get("name")
-        if "name" not in data:
+        # ``null`` is the default, and the default is the empty name:
+        # measured, ``{"name": null}`` reports ``missing name``.
+        if name is None:
             violations.append(
                 self.violation(
-                    "'name' is absent; discovery falls back to the directory name and "
+                    "'name' is absent; the published manifest schema requires it, "
+                    "discovery falls back to the directory name, and "
                     "'agy plugin install' refuses the plugin",
                     file_path=manifest,
                     severity=Severity.INFO,

@@ -709,7 +709,12 @@ class RepositoryContext(
             self.codex_plugins,
             self.agent_plugins,
             self.grok_plugins,
+            # Both spellings: the direct list keeps its unresolved path for
+            # display, and the claim union adds the plugins a
+            # ``plugins.json`` registry names, which are counted nowhere
+            # else. ``merge_plugin_dirs`` dedupes by resolved path.
             self.antigravity_plugins,
+            self.antigravity_plugin_roots(),
         )
 
     def codex_marketplace_paths(self) -> List[Path]:

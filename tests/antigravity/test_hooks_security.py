@@ -74,15 +74,6 @@ class TestCommandsReachTheScanners:
                 "Stop",
                 {"a": {"Stop": [{"command": PAYLOAD, "hooks": []}]}},
             ),
-            (
-                "pre-invocation-with-a-hooks-key",
-                "PreInvocation",
-                {
-                    "a": {
-                        "PreInvocation": [{"command": PAYLOAD, "hooks": [{"command": "make lint"}]}]
-                    }
-                },
-            ),
             # An event this release does not know has no binding to consult,
             # so the entry's shape decides and its handlers still render.
             (
@@ -98,6 +89,15 @@ class TestCommandsReachTheScanners:
     ) -> None:
         assert messages(dangerous(tmp_path, name, document)) == [
             f"Hook {event}: downloads and executes remote code — command: '{PAYLOAD}'"
+        ]
+
+    def test_a_flat_event_in_the_grouped_shape_is_scanned_both_ways(self, tmp_path: Path) -> None:
+        """The commonest real-world mistake, and both halves are committed."""
+        document = {
+            "a": {"PreInvocation": [{"command": PAYLOAD, "hooks": [{"command": "make lint"}]}]}
+        }
+        assert messages(dangerous(tmp_path, "pre-invocation-both", document)) == [
+            f"Hook PreInvocation: downloads and executes remote code — command: '{PAYLOAD}'"
         ]
 
     @pytest.mark.parametrize("dirname", (".agents", ".agent", "_agents", "_agent"))
@@ -156,10 +156,15 @@ class TestNoRepositoryControlledKillSwitch:
     """Nothing a linted file says stands the security rules down."""
 
     def test_top_level_enabled_is_a_hook_name(self, tmp_path: Path) -> None:
-        """It is a parse error for ``agy``, never a switch — and the file's
-        other hooks are still committed commands."""
+        """A non-object value is a parse error for ``agy``, never a switch —
+        and the file's other hooks are still committed commands."""
         document = {"enabled": False, "audit": {"Stop": [{"command": PAYLOAD}]}}
         assert messages(dangerous(tmp_path, "file-enabled", document))
+
+    def test_a_hook_named_enabled_is_scanned_like_any_other(self, tmp_path: Path) -> None:
+        """Measured: an object value there loads as a hook called ``enabled``."""
+        document = {"enabled": {"Stop": [{"command": PAYLOAD}]}}
+        assert messages(dangerous(tmp_path, "named-enabled", document))
 
     def test_hook_level_enabled_false_is_still_scanned(self, tmp_path: Path) -> None:
         document = {"audit": {"enabled": False, "Stop": [{"command": PAYLOAD}]}}
@@ -205,10 +210,10 @@ class TestEventsRendering:
         events = self._events(tmp_path, "typeless-render", {"a": {"Stop": [{"command": "x"}]}})
         assert [h.type for cfg in events["Stop"] for h in cfg.handlers] == ["command"]
 
-    def test_a_grouped_event_still_renders_its_group_handlers(self, tmp_path: Path) -> None:
-        """``PreToolUse`` binds to groups, and a stray top-level ``command``
-        in one is a key its parser discards — the group's own handlers are
-        what runs, and they still reach the scanners."""
+    def test_a_grouped_event_renders_both_readings(self, tmp_path: Path) -> None:
+        """``PreToolUse`` runs the group's handlers and discards a stray
+        top-level ``command`` — but that command is committed, and one key
+        turns it on, so the scanners see both."""
         document = {
             "a": {
                 "PreToolUse": [
@@ -217,12 +222,26 @@ class TestEventsRendering:
             }
         }
         events = self._events(tmp_path, "grouped-stray-command", document)
-        assert [h.command for cfg in events["PreToolUse"] for h in cfg.handlers] == ["audit"]
+        assert sorted(h.command for cfg in events["PreToolUse"] for h in cfg.handlers) == sorted(
+            ["audit", PAYLOAD]
+        )
 
-    def test_a_flat_event_reads_the_entry_and_ignores_its_hooks_key(self, tmp_path: Path) -> None:
-        document = {"a": {"Stop": [{"command": "audit", "hooks": [{"command": "ignored"}]}]}}
+    def test_a_flat_event_renders_both_readings(self, tmp_path: Path) -> None:
+        """``Stop`` runs the entry's own ``command`` and discards ``hooks``;
+        7 of 74 real files write a flat event in the grouped shape, so the
+        nested commands are shown too."""
+        document = {"a": {"Stop": [{"command": "audit", "hooks": [{"command": "nested"}]}]}}
         events = self._events(tmp_path, "flat-hooks-key", document)
-        assert [h.command for cfg in events["Stop"] for h in cfg.handlers] == ["audit"]
+        assert sorted(h.command for cfg in events["Stop"] for h in cfg.handlers) == [
+            "audit",
+            "nested",
+        ]
+
+    def test_a_pure_group_renders_no_empty_handler(self, tmp_path: Path) -> None:
+        """Only an entry declaring a handler of its own gets a second reading."""
+        document = {"a": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"command": "x"}]}]}}
+        events = self._events(tmp_path, "pure-group", document)
+        assert [h.command for cfg in events["PreToolUse"] for h in cfg.handlers] == ["x"]
 
     def test_unparseable_file_renders_nothing(self, tmp_path: Path) -> None:
         repo = repo_with_hooks(tmp_path, "unparseable", "{not json")

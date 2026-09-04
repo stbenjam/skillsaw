@@ -118,6 +118,39 @@ class TestTheNonDotRootsNeedAMarker:
         prose = self._package_rules(repo, root_name)
         assert [b.path for b in tree_for(repo).find(AntigravityRuleBlock)] == [prose]
 
+    def test_an_instruction_named_file_under_an_unmarked_root_still_attaches(
+        self, tmp_path: Path
+    ) -> None:
+        """The sweep must not yield to an owner the gate will not produce.
+
+        ``AGENTS.md`` under an ordinary package's ``_agents/rules/`` was an
+        ``InstructionBlock`` before Antigravity existed, and it stays one.
+        """
+        from skillsaw.blocks import AgentsMdBlock
+
+        repo = write_repo(tmp_path / "sweep-unmarked")
+        rules = repo / "src" / "_agents" / "rules"
+        rules.mkdir(parents=True)
+        authored = rules / "AGENTS.md"
+        authored.write_text(
+            "# Package rules\n\nNever widen `route_id` past 32 bytes.\n", encoding="utf-8"
+        )
+        tree = tree_for(repo)
+        assert [b.path for b in tree.find(AgentsMdBlock) if b.path == authored] == [authored]
+        assert tree.find(AntigravityRuleBlock) == []
+
+    def test_the_same_file_under_a_marked_root_is_antigravity_prose(self, tmp_path: Path) -> None:
+        repo = write_repo(tmp_path / "sweep-marked")
+        root = repo / "src" / "_agents"
+        rules = root / "rules"
+        rules.mkdir(parents=True)
+        authored = rules / "AGENTS.md"
+        authored.write_text(
+            "# Package rules\n\nNever widen `route_id` past 32 bytes.\n", encoding="utf-8"
+        )
+        (root / "hooks.json").write_text("{}", encoding="utf-8")
+        assert [b.path for b in tree_for(repo).find(AntigravityRuleBlock)] == [authored]
+
 
 class TestDescriptionRoutingActivation:
     """The rule gates on ``repo_types``, so attaching the block is not enough."""

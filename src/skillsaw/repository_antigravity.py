@@ -153,7 +153,7 @@ class RepositoryAntigravityMixin:
         return [
             path
             for path in antigravity_discovery.registry_plugin_roots(
-                self.antigravity_registry_dirs(PLUGINS_REGISTRY)
+                self.root_path, self.antigravity_registry_dirs(PLUGINS_REGISTRY)
             )
             if not self.is_path_excluded(path)
         ]
@@ -200,25 +200,31 @@ class RepositoryAntigravityMixin:
 
     def _reset_antigravity_caches(self, filtering: bool = False) -> None:
         """Drop every cached Antigravity view; re-run discovery when excludes narrowed."""
-        before = {r for r in (safe_resolve(p) for p in self.antigravity_plugins) if r is not None}
+        # The roots union, because that is what skill discovery reads: a
+        # registry-claimed plugin owns skills too, and an exclusion that
+        # drops it has to take them with it.
+        before = set(self.antigravity_plugin_roots())
         self._antigravity_claims = None
         self._antigravity_roots = None
         self._antigravity_workspace_roots = None
-        if filtering and self._antigravity_discovery_enabled:
-            self.antigravity_plugins = self._discover_antigravity_plugins()
+        if filtering:
+            # The discovery list stays gated; the prune does not, for the
+            # same reason the claim set is ``--type``-invariant.
+            if self._antigravity_discovery_enabled:
+                self.antigravity_plugins = self._discover_antigravity_plugins()
             self._prune_skills_of_dropped_antigravity_plugins(before)
 
     def _prune_skills_of_dropped_antigravity_plugins(self, before: Set[Path]) -> None:
         """Drop skills whose only owner left the set, as the Codex arm does.
 
-        A plugin excluded by pattern leaves ``antigravity_plugins`` while
-        its skills were discovered by the shared walk and stay in
+        A plugin excluded by pattern leaves the roots union while its
+        skills were discovered by the shared walk and stay in
         ``self.skills`` — where they attach as standalone nodes and keep
-        linting the very content the exclusion removed.
+        linting the very content the exclusion removed. Compared against
+        the same union ``_discover_skills`` reads, so the two cannot
+        disagree about which plugin owns a skill.
         """
-        dropped = before - {
-            r for r in (safe_resolve(p) for p in self.antigravity_plugins) if r is not None
-        }
+        dropped = before - set(self.antigravity_plugin_roots())
         if not dropped:
             return
         active = {
@@ -228,7 +234,7 @@ class RepositoryAntigravityMixin:
                 *self.codex_plugins,
                 *self.agent_plugins,
                 *self.grok_plugins,
-                *self.antigravity_plugins,
+                *self.antigravity_plugin_roots(),
             )
             if (r := safe_resolve(p)) is not None
         }

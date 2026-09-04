@@ -56,6 +56,32 @@ class TestAcceptedFiles:
             ("session-start", '{"audit": {"SessionStart": [{"command": "make status"}]}}'),
             # A hook-level switch is documented and valid.
             ("hook-disabled", '{"audit": {"enabled": false, "Stop": [{"command": "x"}]}}'),
+            # ``enabled`` with an *object* value is an ordinary hook that
+            # happens to be called that: measured, ``loaded 1 named hooks``.
+            ("named-enabled", '{"enabled": {"Stop": [{"command": "make lint"}]}}'),
+            (
+                "named-enabled-sibling",
+                '{"enabled": {"Stop": [{"command": "make lint"}]},'
+                ' "audit": {"Stop": [{"command": "make test"}]}}',
+            ),
+            # A JSON ``null`` is the key's absence everywhere: Go decodes
+            # it as the zero value, and every placement below was measured
+            # to load. Two real repositories write ``"SessionStart": null``.
+            ("null-event", '{"H": {"Stop": null, "SessionStart": [{"command": "x"}]}}'),
+            (
+                "null-every-event",
+                '{"H": {"Stop": null, "PreToolUse": null, "PreInvocation": null}}',
+            ),
+            ("null-hook", '{"H": null}'),
+            ("null-enabled", '{"H": {"enabled": null, "Stop": [{"command": "x"}]}}'),
+            ("null-timeout", '{"H": {"Stop": [{"command": "x", "timeout": null}]}}'),
+            ("null-type", '{"H": {"Stop": [{"type": null, "command": "x"}]}}'),
+            ("null-entry", '{"H": {"Stop": [null, {"command": "x"}]}}'),
+            (
+                "null-matcher",
+                '{"H": {"PreToolUse": [{"matcher": null, "hooks": [{"command": "x"}]}]}}',
+            ),
+            ("null-nested-handler", '{"H": {"PreToolUse": [{"hooks": [null]}]}}'),
             # ``matcher`` is never compiled at load time.
             ("wildcard-star", '{"a": {"PreToolUse": [{"matcher": "*", "hooks": []}]}}'),
             ("wildcard-empty", '{"a": {"PreToolUse": [{"matcher": "", "hooks": []}]}}'),
@@ -99,6 +125,77 @@ class TestAcceptedFiles:
         """
         assert messages(check(tmp_path, f"dup-{name}", body)) == []
 
+    def test_a_null_command_is_advisory_not_fatal(self, tmp_path: Path) -> None:
+        """The file loads; that one handler simply runs nothing."""
+        violations = check(tmp_path, "null-command", '{"H": {"Stop": [{"command": null}]}}')
+        assert at(violations, Severity.ERROR) == []
+        assert at(violations, Severity.WARNING) == [
+            "hook 'H' Stop[0]: a command hook with no command runs nothing"
+        ]
+
+
+CLAUDE_MATCHER = (
+    '{"hooks": {"PreToolUse": [{"matcher": "Bash",'
+    ' "hooks": [{"type": "command", "command": "make lint"}]}]}}'
+)
+
+
+class TestForeignShape:
+    """``.agents/`` is a shared directory name, so foreign files land here.
+
+    Both shapes are real: 10 of 74 ``.agents/hooks.json`` files sampled on
+    GitHub carry them, at least four written for another tool entirely.
+    """
+
+    CURSOR = '{"version": 1, "hooks": {"Stop": [{"command": "./scripts/audit.sh"}]}}'
+    CLAUDE = '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "make lint"}]}]}}'
+
+    @pytest.mark.parametrize("name", ("CURSOR", "CLAUDE"))
+    def test_one_finding_names_the_shape(self, tmp_path: Path, name: str) -> None:
+        violations = check(tmp_path, f"foreign-{name.lower()}", getattr(self, name))
+        assert len(violations) == 1
+        assert "Claude/Codex/Cursor nested shape" in violations[0].message
+
+    def test_it_is_a_warning_not_an_error(self, tmp_path: Path) -> None:
+        """An ERROR would fail CI for a repository that never configured
+        Antigravity and used a directory name four ecosystems share."""
+        found = only(check(tmp_path, "foreign-severity", self.CLAUDE), "nested shape")
+        assert found.severity == Severity.WARNING
+
+    def test_a_version_key_says_the_file_loads_nothing(self, tmp_path: Path) -> None:
+        """Measured: ``version`` is not a hook name either, and its value
+        fails the whole document."""
+        found = only(check(tmp_path, "foreign-version", self.CURSOR), "nested shape")
+        assert "loads no hook from this file" in found.message
+
+    def test_without_version_it_says_what_the_file_declares(self, tmp_path: Path) -> None:
+        """Measured: it loads, as one hook *named* ``hooks``."""
+        found = only(check(tmp_path, "foreign-noversion", self.CLAUDE), "nested shape")
+        assert "one hook called 'hooks'" in found.message
+
+    @pytest.mark.parametrize(
+        "name,body",
+        [
+            # A hook genuinely called ``hooks`` whose value is a hook spec.
+            ("real-hook-named-hooks", '{"hooks": {"Stop": [{"command": "make lint"}]}}'),
+            # A third top-level key means this is a map of named hooks.
+            (
+                "sibling-hook",
+                '{"hooks": {"Stop": [{"hooks": []}]}, "audit": {"Stop": [{"command": "x"}]}}',
+            ),
+            # ``hooks`` holding something other than event names.
+            ("not-events", '{"hooks": {"berth": [{"command": "x"}]}}'),
+            # Under ``PreToolUse`` the two hosts' group shapes coincide, so
+            # this file really does run and reporting it would be wrong.
+            ("claude-matcher", CLAUDE_MATCHER),
+        ],
+    )
+    def test_an_ordinary_file_is_not_mistaken_for_one(
+        self, tmp_path: Path, name: str, body: str
+    ) -> None:
+        violations = check(tmp_path, name, body)
+        assert not [v for v in violations if "nested shape" in v.message]
+
 
 class TestFileScopedDefects:
     """One defect, and a message that says the whole file stops loading."""
@@ -115,6 +212,11 @@ class TestFileScopedDefects:
                 "not valid JSON",
             ),
             ("file-enabled", '{"enabled": false}', "is read as a hook name, not a switch"),
+            (
+                "file-enabled-string",
+                '{"enabled": "off"}',
+                "is read as a hook name, not a switch",
+            ),
             ("hook-not-object", '{"audit": "make lint"}', "a named hook must be a JSON object"),
             (
                 "enabled-not-bool",
@@ -307,6 +409,22 @@ class TestExtraEvents:
         body = '{"audit": {"sessionend": [{"command": "x"}]}}'
         config = {"extra-events": ["SessionEnd"]}
         assert messages(check(tmp_path, "extra-case", body, config)) == []
+
+    @pytest.mark.parametrize("declared", ("pretooluse", "PRETOOLUSE", "PreToolUse"))
+    def test_a_declared_spelling_never_displaces_a_canonical_name(
+        self, tmp_path: Path, declared: str
+    ) -> None:
+        """Rebinding a built-in casefold would flip a group to a flat handler.
+
+        ``_check_event`` asks whether the *canonical* name is a tool event,
+        so ``pretooluse`` winning that slot would read a valid
+        ``{matcher, hooks}`` group as a handler and call every key in it
+        unknown.
+        """
+        assert (
+            messages(check(tmp_path, f"shadow-{declared}", WORKING, {"extra-events": [declared]}))
+            == []
+        )
 
     @pytest.mark.parametrize("value", ("SessionEnd", 42, {"SessionEnd": True}, [["SessionEnd"]]))
     def test_wrong_type_costs_no_findings(self, tmp_path: Path, value) -> None:

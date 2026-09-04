@@ -52,6 +52,9 @@ class TestAcceptedFiles:
                 ' "authProviderType": "google_credentials"}}}',
             ),
             ("oauth-empty", '{"mcpServers": {"t": {"url": "https://e.example", "oauth": {}}}}'),
+            # Measured with ``agy mcp list``: a null field is the key's
+            # absence and the server still loads.
+            ("null-server-url", '{"mcpServers": {"t": {"command": "x", "serverUrl": null}}}'),
         ],
     )
     def test_no_findings(self, tmp_path: Path, name: str, body: str) -> None:
