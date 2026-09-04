@@ -245,15 +245,10 @@ RULE_GROUPS = [
             "hooks-dangerous",
             "hooks-prohibited",
         ],
-        "Validates hook configuration. The security rules scan every hook a repository "
-        "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
-        "Codex's `.codex/hooks.json`, its `.codex/config.toml` `[hooks]` tables and its "
-        "plugin hooks, Muse Code's `.muse/hooks.json`, "
-        "Grok Build's `.grok/hooks/*.json` and its plugin hooks, Cursor's "
-        "`.cursor/hooks.json`, and skill, "
-        "Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain "
-        "attack patterns (inspired by the "
-        "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
+        "Validates hook configuration files against dangerous execution patterns "
+        "and configurable security baselines. Structural rules for individual "
+        "hosts (such as Claude Code, Codex, Muse Code, and Grok Build) "
+        "auto-enable when their respective hook configurations are detected.",
     ),
     (
         "Instruction Files",
