@@ -36,14 +36,19 @@ Findings distinguish between structural errors and upstream recommendations:
 - Local `source.path` pointing to a directory that does not exist under the
   marketplace root.
 - Local `source.path` that is absolute, contains `..`, or resolves outside the
-  marketplace root.
+  marketplace root, or contains an empty or current-directory component.
+  The root spellings `.` and `./`, trailing or repeated separators, and
+  colon-containing components are not valid catalog paths.
+- A source object's non-null `url` or `path` that is not a string.
 - Remote Git source missing a commit `sha` (unpinned clone).
 - Remote Git source with an invalid `sha` (must be a 40- or 64-character hex
   string).
 
 **Warnings** — catalog format advisories:
 
-- Remote Git source `path` containing backslashes or `..`.
+- Remote Git source `path` that fails the same relative-subdirectory grammar,
+  such as `.` or `plugins/almanac/`. Grok refuses that subdirectory during
+  installation; this check retains its existing warning severity.
 - A `source` object that specifies neither `path` nor `url`.
 
 **Info** — style and upstream compatibility tips:
@@ -55,9 +60,12 @@ Findings distinguish between structural errors and upstream recommendations:
 
 ## What is not reported
 
-- **Source discriminators**: Grok automatically detects whether a source is local
-  or remote by the presence of `path` or `url`, so explicit `type` tags are
-  optional.
+- **Source discriminators**: a non-null `url` selects a remote source. With
+  an absent or null URL, Grok reads the local `path` regardless of `type` or
+  `source` tags. An empty URL remains remote and is reported as unusable.
+- **Path separators**: Grok accepts slash or backslash separators between
+  directory names. It removes one leading `./` before parsing; a leading
+  `.\` is not equivalent.
 - **Top-level catalog name**: optional in marketplace catalogs.
 - **Unknown metadata keys**: custom catalog or entry metadata is preserved.
 
@@ -107,8 +115,14 @@ Findings distinguish between structural errors and upstream recommendations:
 ## How to fix
 
 - Pin remote Git sources with a 40-character lowercase commit hash.
-- Ensure local `source.path` references point to existing directories relative
-  to the marketplace root.
+- Ensure local `source.path` references point to existing subdirectories of
+  the marketplace root, the directory containing `.grok-plugin/`. Use
+  `./packages/almanac` or `packages/almanac`, with no trailing or repeated
+  separator. Place a root plugin in a subdirectory before cataloging it;
+  `.` and `./` are not supported catalog sources.
+- Apply the same path grammar to remote `source.path` values, relative to
+  the cloned repository. Omit the path or use null for the whole clone.
+  Plugin manifest component paths use a separate contract.
 - Ensure every entry has a `name` and resolves to a unique plugin name. For
   local plugins, duplicate checks compare the name declared in each plugin's
   manifest rather than the catalog entry's declared `name`.

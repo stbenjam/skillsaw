@@ -659,8 +659,28 @@ SHA_RE = re.compile(r"\A(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
 UPSTREAM_SHA_LENGTH = 40
 
 
+def grok_marketplace_relative_path(value: Any) -> Optional[str]:
+    """Normalize a catalog path, or return ``None`` for invalid coordinates.
+
+    Grok 1.0.13's ``MarketplaceRelativePath::parse`` strips one leading
+    ``./`` before splitting on either slash. Empty, current-directory,
+    parent and colon-containing components are rejected, including a root
+    source, trailing separator or repeated separator. No whitespace is
+    stripped. Filesystem containment must still be checked after parsing.
+
+    This is the catalog's contract, for local sources and remote subdirs;
+    plugin manifest component paths use a different loader.
+    """
+    if not isinstance(value, str):
+        return None
+    parts = value.removeprefix("./").replace("\\", "/").split("/")
+    if any(part in ("", ".", "..") or ":" in part for part in parts):
+        return None
+    return "/".join(parts)
+
+
 def grok_local_source_path(source: Any) -> Optional[str]:
-    """Relative path of a marketplace entry's local source, or ``None``.
+    """Normalized valid local catalog path, or ``None`` for any other source.
 
     The loader keys on ``path`` alone, verified by installing from six
     catalogs differing only in this field: ``{"type": "local", "path": …}``,
@@ -676,22 +696,21 @@ def grok_local_source_path(source: Any) -> Optional[str]:
     a plugin directory the checkout does not have.
     """
     if isinstance(source, str):
-        return source or None
+        return grok_marketplace_relative_path(source)
     if not isinstance(source, dict) or is_url_source(source):
         return None
-    path = source.get("path")
-    return path if isinstance(path, str) and path else None
+    return grok_marketplace_relative_path(source.get("path"))
 
 
 def is_url_source(source: Any) -> bool:
     """Whether *source* names a remote repository to clone.
 
-    ``{"source": "url", ...}`` is the spelling the official catalog and
-    validator use; a bare ``url`` key is read the same way, since that is
-    what turns the entry's ``path`` into a subdirectory of the clone rather
-    than a directory in this checkout.
+    ``IndexSource::is_remote`` tests whether its optional URL is set.
+    Null or an absent URL leaves a local source, regardless of ``source``
+    or ``type`` discriminators. An empty or mistyped non-null URL must not
+    fall back to claiming a local path; the catalog rule reports it.
     """
-    return isinstance(source, dict) and ("url" in source or source.get("source") == "url")
+    return isinstance(source, dict) and source.get("url") is not None
 
 
 def grok_manifest_path(plugin_dir: Path) -> Optional[Path]:

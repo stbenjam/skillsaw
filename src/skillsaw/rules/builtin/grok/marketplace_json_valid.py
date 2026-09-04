@@ -15,8 +15,6 @@ from skillsaw.formats import grok
 from skillsaw.lint_target import GrokMarketplaceConfigNode
 from skillsaw.paths import (
     contained_resolve,
-    has_parent_traversal,
-    is_absolute_path,
     safe_exists,
     safe_is_dir,
     safe_resolve,
@@ -203,18 +201,37 @@ class GrokMarketplaceJsonValidRule(Rule):
                 False,
             )
 
-        local = grok.grok_local_source_path(source)
+        if isinstance(source, dict):
+            # Check coordinate types before dispatch: a mistyped non-null
+            # URL cannot be interpreted as an absent URL and claim a local
+            # directory. Null is allowed for both optional string fields.
+            malformed = [
+                self.violation(
+                    f"plugins[{index}].source.{field} must be a string or null",
+                    file_path=catalog,
+                )
+                for field in ("url", "path")
+                if source.get(field) is not None and not isinstance(source[field], str)
+            ]
+            if malformed:
+                return malformed, None, False
+        if grok.is_url_source(source):
+            # An unpinned or oddly-cased sha still clones; an invalid path
+            # prevents installation and cannot create an installed-name
+            # collision. Pin policy is checked separately below.
+            path = source.get("path")
+            installs = bool(source["url"]) and (
+                path is None or grok.grok_marketplace_relative_path(path) is not None
+            )
+            return self._check_url(source, index, catalog), None, installs
+        # Keep the original spelling for diagnostics. Discovery and parity
+        # use grok_local_source_path's normalized, valid-only result.
+        local = source if isinstance(source, str) else source.get("path")
         if local is not None:
             violations, target = self._check_local(
                 local, index, catalog, marketplace_root, resolved_root
             )
             return violations, target, target is not None
-        if grok.is_url_source(source):
-            # Every other url defect still installs: an unpinned or
-            # oddly-cased ``sha`` clones, so those entries still collide.
-            url = source.get("url")
-            installs = isinstance(url, str) and bool(url)
-            return self._check_url(source, index, catalog), None, installs
         # An object naming neither a directory here nor a repository to
         # clone. A warning rather than an error: the loader keys on the
         # fields rather than on a type, so a source shape added upstream
@@ -241,8 +258,15 @@ class GrokMarketplaceJsonValidRule(Rule):
     ) -> Tuple[List[RuleViolation], Optional[Path]]:
         if resolved_root is None:
             return [], None
-        reason = escape_reason(value, resolved_root, "marketplace root")
-        if reason:
+        normalized = grok.grok_marketplace_relative_path(value)
+        reason = escape_reason(
+            normalized if normalized is not None else value, resolved_root, "marketplace root"
+        )
+        if normalized is None or reason:
+            reason = reason or (
+                "must name a relative subdirectory without empty, '.', '..' or ':' path "
+                "components; only one leading './' is allowed"
+            )
             return (
                 [
                     self.violation(
@@ -252,7 +276,7 @@ class GrokMarketplaceJsonValidRule(Rule):
                 ],
                 None,
             )
-        target = contained_resolve(marketplace_root / value, resolved_root)
+        target = contained_resolve(marketplace_root / normalized, resolved_root)
         if target is None or not safe_is_dir(target):
             return (
                 [
@@ -286,8 +310,8 @@ class GrokMarketplaceJsonValidRule(Rule):
         violations: List[RuleViolation] = []
         url = source.get("url")
         if not isinstance(url, str) or not url:
-            # ``{"source": "url"}`` and ``{"url": null}`` both select this
-            # branch and name no repository to clone.
+            # A non-null empty URL selects remote handling but names no
+            # repository to clone; it must not fall back to a local path.
             return [
                 self.violation(
                     f"plugins[{index}].source is a url source with no 'url' to clone",
@@ -334,16 +358,16 @@ class GrokMarketplaceJsonValidRule(Rule):
             )
 
         path = source.get("path")
-        if isinstance(path, str) and path:
-            if is_absolute_path(path) or has_parent_traversal(path) or "\\" in path:
-                violations.append(
-                    self.violation(
-                        f"plugins[{index}].source.path '{safe_display(path)}' must be a "
-                        "relative subdirectory of the cloned repository",
-                        file_path=catalog,
-                        severity=Severity.WARNING,
-                    )
+        if path is not None and grok.grok_marketplace_relative_path(path) is None:
+            violations.append(
+                self.violation(
+                    f"plugins[{index}].source.path '{safe_display(path)}' must be a "
+                    "relative subdirectory of the cloned repository without empty, '.', '..' "
+                    "or ':' path components; only one leading './' is allowed",
+                    file_path=catalog,
+                    severity=Severity.WARNING,
                 )
+            )
         return violations
 
     def _resolved_name(self, entry: Dict[str, Any], target: Optional[Path]) -> Optional[str]:

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "plugins": {
+    "almanac": {
+      "components": {
+        "skills": [
+          {
+            "name": "tide-window",
+            "description": "Plan a almanac field survey. Use when preparing observations for a shoreline station."
+          }
+        ]
+      }
+    },
+    "field-notes": {
+      "components": {
+        "skills": [
+          {
+            "name": "log-survey",
+            "description": "Plan a field-notes field survey. Use when preparing observations for a shoreline station."
+          }
+        ]
+      }
+    },
+    "station-check": {
+      "components": {
+        "skills": [
+          {
+            "name": "check-station",
+            "description": "Plan a station-check field survey. Use when preparing observations for a shoreline station."
+          }
+        ]
+      }
+    },
+    "canary": {
+      "components": {
+        "skills": [
+          {
+            "name": "audit-canary",
+            "description": "Plan a canary field survey. Use when preparing observations for a shoreline station."
+          }
+        ]
+      }
+    },
+    "remote-kit": {
+      "sha": "1f9d0c73a86b24e5107cad3f88b90250e6c147da"
+    }
+  }
+}

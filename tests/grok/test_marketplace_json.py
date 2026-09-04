@@ -309,7 +309,7 @@ def test_require_sha_off_drops_only_the_absent_case(temp_dir) -> None:
     assert any("is not a 40 or 64 character" in message for message in found)
 
 
-@pytest.mark.parametrize("path", ["/plugins/almanac", "../almanac", "plugins\\almanac"])
+@pytest.mark.parametrize("path", ["/plugins/almanac", "../almanac"])
 def test_a_url_source_subdirectory_that_is_not_relative_warns(temp_dir, path) -> None:
     repo = catalog_repo(
         temp_dir, f"subdir-{len(path)}", {"plugins": [url_entry("almanac", sha=SHA_A, path=path)]}
@@ -321,11 +321,12 @@ def test_a_url_source_subdirectory_that_is_not_relative_warns(temp_dir, path) ->
     assert "relative subdirectory of the cloned repository" in found[0]
 
 
-def test_a_url_source_subdirectory_reports_nothing(temp_dir) -> None:
+@pytest.mark.parametrize("path", ["plugins/almanac", "plugins\\almanac"])
+def test_a_url_source_subdirectory_reports_nothing(temp_dir, path) -> None:
     repo = catalog_repo(
         temp_dir,
         "subdir-ok",
-        {"plugins": [url_entry("almanac", sha=SHA_A, path="plugins/almanac")]},
+        {"plugins": [url_entry("almanac", sha=SHA_A, path=path)]},
     )
 
     assert check(repo) == []
@@ -413,26 +414,38 @@ def test_a_source_that_is_neither_a_string_nor_an_object_is_an_error(temp_dir, s
 
 
 @pytest.mark.parametrize(
-    "source",
+    "source,severity,message",
     [
-        {"source": "url", "sha": SHA_A},
-        {"url": None, "sha": SHA_A},
-        {"source": "url", "url": "", "sha": SHA_A},
+        (
+            {"source": "url", "sha": SHA_A},
+            Severity.WARNING,
+            "names neither a local 'path' nor a 'url'",
+        ),
+        (
+            {"url": None, "sha": SHA_A},
+            Severity.WARNING,
+            "names neither a local 'path' nor a 'url'",
+        ),
+        (
+            {"source": "url", "url": "", "sha": SHA_A},
+            Severity.ERROR,
+            "is a url source with no 'url' to clone",
+        ),
     ],
     ids=["absent", "null", "empty"],
 )
-def test_a_url_source_with_no_url_is_an_error(temp_dir, source) -> None:
-    """The entry names no repository to clone, and the ``sha`` checks below
-    would otherwise pass it clean."""
+def test_a_source_with_no_location_reports_its_effective_kind(
+    temp_dir, source, severity, message
+) -> None:
+    """Only the non-null URL is remote; the other two lack a local path."""
     repo = catalog_repo(
         temp_dir,
         f"no-url-{len(str(source))}",
         {"plugins": [{"name": "almanac", "description": "Almanac.", "source": source}]},
     )
 
-    assert at(check(repo), Severity.ERROR) == [
-        "plugins[0].source is a url source with no 'url' to clone"
-    ]
+    found = check(repo)
+    assert [(v.severity, v.message) for v in found] == [(severity, f"plugins[0].source {message}")]
 
 
 def test_a_non_finite_number_is_invalid_json(temp_dir) -> None:
