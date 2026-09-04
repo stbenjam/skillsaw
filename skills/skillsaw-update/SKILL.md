@@ -1,7 +1,7 @@
 ---
 name: skillsaw-update
 description: "Update a repository to the newest skillsaw — upgrade the install, report new rules and their findings in your repo, and bump version pins (GitHub Action SHAs and action inputs, Makefile targets, pre-commit hooks, container image tags in Dockerfiles or GitLab CI, PyPI pins). Use when a new skillsaw release is out and you want its latest checks."
-compatibility: "Requires skillsaw already adopted (uvx skillsaw, pip install skillsaw, or container). Network access for version lookup."
+compatibility: "Bootstraps skillsaw when absent (uvx, pip, or a container runtime). Requires git and network access for version lookup."
 license: Apache-2.0
 user-invocable: true
 disable-model-invocation: true
@@ -35,8 +35,9 @@ location.
 
 Replace brace-delimited fields below with facts from the repository or scan;
 never show placeholders to the user, and render singular or plural wording
-naturally. Angle-delimited names (`<installed-prefix>`, `<new-prefix>`) are
-command prefixes the references bind; run them, never show them.
+naturally. Two angle-delimited names, `<installed-prefix>` and `<new-prefix>`,
+are command prefixes the references bind: run them, never show them. Every
+other angle-delimited name is a placeholder to fill in.
 
 When a reference says to stop, end the workflow there and tell the user what
 happened and what was not done; the summary in step 5 belongs to a run that
@@ -53,8 +54,10 @@ version cannot run here, skip to step 5.
 ### 2. Report new rules
 
 Read [new rules](references/02-new-rules.md). It diffs the old and new rule
-lists, explains each added rule, and scans the repository with the new
-version so every new rule is presented with its actual findings here.
+lists, explains each added rule, lifts the `version:` gate in `.skillsaw.yaml`
+with the user's consent so the added rules can run, and scans the repository
+with the new version so every new rule is presented with its actual findings
+here.
 
 ### 3. Update version pins
 
@@ -63,7 +66,7 @@ definitions, Makefile targets, pre-commit hooks, container image tags in
 Dockerfiles, Containerfiles or GitLab CI, PyPI requirement pins):
 
 ```console
-git grep --untracked -lE 'stbenjam/skillsaw|SKILLSAW_VERSION|(^|[^/[:alnum:]._-])skillsaw *(\[[^]]*\])? *(={1,3}|~=|>=?|<=?) *["{$0-9]'
+git grep --untracked -lE 'stbenjam/skillsaw|SKILLSAW_VERSION|(^|[^/[:alnum:]._-])skillsaw *(\[[^]]*\])? *(={1,3}|~=|>=?|<=?|!=|@) *["{$0-9]'
 ```
 
 The first two alternatives take any prefix, so `ghcr.io/stbenjam/skillsaw`
@@ -75,7 +78,8 @@ ask:
 > I found skillsaw pinned in {locations}. Bumping them to {latest} keeps CI
 > and local runs on the version just installed. Should I update those pins?
 
-If yes, read [pins](references/03-pins.md). If no, preserve the locations.
+If yes, read [pins](references/03-pins.md). If no, preserve the locations. If
+the scan listed nothing, say so and continue to step 4.
 
 ### 4. Triage findings from new rules
 

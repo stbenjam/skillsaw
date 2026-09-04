@@ -22,6 +22,27 @@ in one line each: what it checks, its default severity, whether it has an
 autofix, and its most useful option. Prefer the explanation's own words over
 the violation message when describing the rule.
 
+## Lift the config version gate
+
+`.skillsaw.yaml`'s top-level `version:` gates rule activation: a rule whose
+`since` is newer than that value is skipped unless the file names it, and a
+config with no `version` is read as `0.6.0`. Left stale, it switches off
+exactly the rules this upgrade added, and the scan below would report nothing
+for them. Read it:
+
+```console
+git grep -n '^version:' -- .skillsaw.yaml
+```
+
+If the value is below `{latest}`, or the key is absent, ask:
+
+> `.skillsaw.yaml` pins version {old}, which keeps the rules added since then
+> switched off. Set it to {latest} so the new rules run here?
+
+If yes, set (or add) `version: "{latest}"`, keeping the file's quoting, and
+count the file as edited. If no, the added rules stay off: report that, skip
+the scan below, and say so in the summary.
+
 ## Scan the repository with the new version
 
 Run the new version over the repository and keep the machine-readable result:

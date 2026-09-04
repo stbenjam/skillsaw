@@ -30,9 +30,9 @@ runs as a non-root user, so both commands map the invoking user in to keep the
 later `fix` and `baseline` steps able to write; rootless Podman additionally
 needs `--userns=keep-id` for that mapping to reach the host user, and `:Z`
 relabels the mount on SELinux hosts (elsewhere the label is ignored). Verify
-with `<installed-prefix> --version`
-and treat that version as both `{installed}` and the starting prefix. If
-`python3` is unavailable for the PyPI lookup below, use its git fallback.
+with `<installed-prefix> --version` and treat the version it prints as
+`{installed}`. If `python3` is unavailable for the PyPI lookup below, use its
+git fallback.
 
 ## Latest version
 
@@ -77,8 +77,18 @@ Ask before changing the local environment:
 > Installed skillsaw is {installed} and the newest release is {latest}.
 > Should I upgrade the local install?
 
-If yes, follow the method behind the retained prefix:
+If yes, apply the method below that matches the retained prefix; if no, skip
+to "Declining the upgrade".
 
+## Upgrade methods
+
+- **Project dependency**: when the prefix resolves inside the repository's
+  own `.venv`, or a `uv.lock`, `poetry.lock` or `Pipfile.lock` lists
+  skillsaw, upgrade through the project manager, which bumps the manifest
+  and the lockfile together: `uv add --dev "skillsaw=={latest}"`,
+  `poetry add --group dev "skillsaw=={latest}"`, or
+  `pipenv install --dev "skillsaw=={latest}"`. The project's own invocation
+  (`uv run skillsaw`, `poetry run skillsaw`) is `<new-prefix>`.
 - **uvx**: nothing to install. The new prefix is `uvx skillsaw=={latest}`;
   the old one stays usable for comparison.
 - **pip, pipx or uv tool**: identify the manager first; the first line of
@@ -98,7 +108,9 @@ If yes, follow the method behind the retained prefix:
   `{latest}` in the tag. The image carries skillsaw alone; an install that
   relies on rule plugins takes the `uvx --with` form below instead.
 
-If no, do not modify the local installation. Offer an isolated, zero-install
+## Declining the upgrade
+
+Do not modify the local installation. Offer an isolated, zero-install
 command as `<new-prefix>` instead, such as `uvx skillsaw=={latest}` or the
 container run command above, to evaluate the new rules and bump pins. If the
 user agrees, continue below with that prefix. If the user also declines
@@ -119,8 +131,8 @@ their rules as removed.
 If an upgrade or an isolated prefix was accepted, `<new-prefix> --version`
 must report `{latest}` (the output is `skillsaw {latest}`). If it does not,
 the upgrade did not take; report which manager ran and stop. Then, on every
-path, save the new prefix's rules (on the already-current and paused paths
-this repeats the old list, and the comparison comes out empty):
+path, save the new prefix's rules (the already-current path repeats the old
+list, so its comparison comes out empty):
 
 ```console
 <new-prefix> list-rules > /tmp/skillsaw-rules-new.txt

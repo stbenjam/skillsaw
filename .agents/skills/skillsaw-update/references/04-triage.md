@@ -24,9 +24,8 @@ Best for valid findings that are not urgent to fix immediately. Recording
 them with `<new-prefix> baseline` absorbs the new findings into the existing
 baseline file so CI passes while preventing regressions on future changes.
 Only errors and warnings can go here: `<new-prefix> baseline` never records
-info findings. It records every current non-info finding, so before any
-refresh confirm the only unbaselined findings are the ones the user agreed to
-baseline, and report `git diff --stat .skillsaw-baseline.json` in the summary.
+info findings. Apply the guard below before any refresh, and report
+`git diff --stat .skillsaw-baseline.json` in the summary.
 
 A removed rule may leave stale baseline entries behind. Run
 `<new-prefix> lint -v` first: it prints `Baseline: N stale entries` and lists
