@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import List
 
 from skillsaw.blocks import DevinRuleBlock
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -10,15 +10,6 @@ from skillsaw.diagnostics import safe_display
 from skillsaw.formats import devin
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.utils import read_text, yaml_path_line_lookup
-
-
-def _glob_values(value: Any) -> Optional[List[str]]:
-    """Normalize Devin's scalar/list ``globs`` forms, or reject the shape."""
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list) and all(isinstance(item, str) for item in value):
-        return list(value)
-    return None
 
 
 def _absolute_glob(pattern: str) -> bool:
@@ -84,8 +75,13 @@ class DevinRulesValidRule(Rule):
                 )
                 continue
 
+            field_errors = self._check_field_shapes(block)
+            violations.extend(field_errors)
+            if field_errors:
+                continue
+
             trigger_field = block.field("trigger")
-            if trigger_field is None:
+            if trigger_field is None or trigger_field.value is None:
                 violations.extend(self._check_inferred_activation(block))
                 continue
 
@@ -119,17 +115,56 @@ class DevinRulesValidRule(Rule):
 
         return violations
 
+    def _check_field_shapes(self, block: DevinRuleBlock) -> List[RuleViolation]:
+        """The CLI decodes optional fields even when the selected mode ignores them."""
+        violations: List[RuleViolation] = []
+        description = block.field("description")
+        if description is not None and isinstance(description.value, (dict, list, set, tuple)):
+            violations.append(
+                self.violation(
+                    "'description' must be a scalar value or null",
+                    file_path=block.path,
+                    line=description.field_line,
+                    block=block,
+                )
+            )
+        globs = block.field("globs")
+        if globs is not None and globs.value is not None:
+            value = globs.value
+            if isinstance(value, str):
+                message = (
+                    "'globs' must be a YAML list of strings — Devin Desktop may accept a "
+                    "single string, but the Devin CLI fails to load the rule "
+                    '("expected a sequence")'
+                )
+            elif not isinstance(value, list) or any(
+                item is None or isinstance(item, (dict, list, set, tuple)) for item in value
+            ):
+                message = "'globs' must be a YAML list of scalar patterns or null"
+            else:
+                return violations
+            violations.append(
+                self.violation(
+                    message,
+                    file_path=block.path,
+                    line=globs.field_line,
+                    block=block,
+                )
+            )
+        return violations
+
     def _check_inferred_activation(self, block: DevinRuleBlock) -> List[RuleViolation]:
         """A rule without ``trigger`` still activates the way Devin infers it.
 
         Devin reads ``trigger`` as optional and infers the mode the way
         Cursor does: ``globs`` makes the rule glob-activated, a
         ``description`` makes it agent-decidable, and a rule with neither
-        is manual. Only the inferred mode's own field is checked, and a
-        rule that never activates on its own is information, not an error —
+        is manual. Absent, null and empty globs do not select glob mode.
+        A rule that never activates on its own is information, not an error —
         ``@rule`` invocation is a supported way to use it.
         """
-        if block.field("globs") is not None:
+        globs = block.field("globs")
+        if globs is not None and globs.value:
             return self._check_globs(block)
         description = block.field("description")
         if description is not None and isinstance(description.value, str):
@@ -162,45 +197,31 @@ class DevinRulesValidRule(Rule):
 
     def _check_globs(self, block: DevinRuleBlock) -> List[RuleViolation]:
         field = block.field("globs")
-        if field is None:
+        if field is None or field.value is None:
             return [
                 self.violation(
                     "A glob rule requires a non-empty 'globs' pattern",
                     file_path=block.path,
+                    line=field.field_line if field is not None else None,
                     block=block,
                 )
             ]
 
-        patterns = _glob_values(field.value)
-        if patterns is None:
+        # Keep the existing active-glob string contract; unused scalar items
+        # are left to Devin's YAML coercion rather than newly rejected.
+        patterns = field.value
+        if not all(isinstance(pattern, str) for pattern in patterns):
             return [
                 self.violation(
-                    "'globs' must be a string or a list of strings",
+                    "'globs' must be a YAML list of strings",
                     file_path=block.path,
                     line=field.field_line,
                     block=block,
                 )
             ]
         violations: List[RuleViolation] = []
-        if isinstance(field.value, str):
-            # Devin's docs show `globs: "src/**/*.tsx"` and Devin Desktop may
-            # accept it, but the Devin CLI fails to load the rule with
-            # "invalid type: string, expected a sequence" — silently, in
-            # `devin rules list` errors nobody reads. The YAML list is the one
-            # form both hosts read, so the scalar is an error. The pattern
-            # itself is still checked below so a bad glob is reported too.
-            violations.append(
-                self.violation(
-                    "'globs' must be a YAML list of strings — Devin Desktop may accept a "
-                    "single string, but the Devin CLI fails to load the rule "
-                    '("expected a sequence")',
-                    file_path=block.path,
-                    line=field.field_line,
-                    block=block,
-                )
-            )
         if not patterns:
-            return violations + [
+            return [
                 self.violation(
                     "'globs' must contain at least one pattern",
                     file_path=block.path,

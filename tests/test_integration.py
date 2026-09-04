@@ -3336,6 +3336,97 @@ class TestDevin:
         assert by_rule(result).get("devin-rules-valid", []) == []
         assert by_rule(result).get("devin-skill-valid", []) == []
 
+    def test_field_types_are_checked_even_when_activation_ignores_them(self, tmp_path):
+        repo = copy_fixture("devin/field-shapes", tmp_path)
+        result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert {(v["file_path"], v["line"], v["rule_id"]) for v in found} == {
+            (".windsurf/rules/always-scalar.md", 4, "devin-rules-valid"),
+            (".windsurf/rules/model-scalar.md", 4, "devin-rules-valid"),
+            (".devin/rules/manual-description.md", 3, "devin-rules-valid"),
+            (".devin/rules/inferred-description.md", 2, "devin-rules-valid"),
+            (".devin/rules/unused-globs.md", 3, "devin-rules-valid"),
+        }
+        assert len(found) == 5
+        assert all(v["severity"] == "error" for v in found)
+        assert all(
+            "expected a sequence" in v["message"] for v in found if "scalar.md" in v["file_path"]
+        )
+
+        # Correcting only the field shape lets each existing mode load.
+        for name in ("always-scalar", "model-scalar"):
+            path = repo / ".windsurf/rules" / f"{name}.md"
+            content = path.read_text()
+            lines = content.splitlines(keepends=True)
+            lines[3] = "globs: [" + lines[3].split(": ", 1)[1].strip() + "]\n"
+            path.write_text("".join(lines))
+        for name in ("manual-description", "inferred-description"):
+            path = repo / ".devin/rules" / f"{name}.md"
+            path.write_text(
+                path.read_text()
+                .replace("[Release review]", "Release review")
+                .replace("[API compatibility]", "API compatibility")
+            )
+        path = repo / ".devin/rules/unused-globs.md"
+        path.write_text(path.read_text().replace("{src: true}", "[src/**]"))
+        clean = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert clean["rc"] == 0, clean
+        assert "devin-rules-valid" in clean["out"]["stats"]["rules_run"]
+        assert violations(clean) == []
+
+    def test_previously_accepted_yaml_scalars_do_not_gain_errors(self, tmp_path):
+        repo = copy_fixture("devin/scalar-fields", tmp_path)
+        result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        assert "devin-rules-valid" in result["out"]["stats"]["rules_run"]
+        found = violations(result)
+        # Full YAML scalar coercion is a separate decoder correction. Preserve
+        # the old advisory for a numeric inferred description without making
+        # an accepted file fail, and keep unused boolean list items accepted.
+        assert [(v["file_path"], v["severity"]) for v in found] == [
+            (".devin/rules/numeric-description.md", "info")
+        ]
+        assert found[0]["rule_id"] == "devin-rules-valid"
+        assert "never activates on its own" in found[0]["message"]
+
+    def test_null_and_empty_fields_preserve_inferred_activation(self, tmp_path):
+        from skillsaw.blocks import DevinRuleBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("devin/inferred-activation", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(DevinRuleBlock)
+        assert {block.path.name for block in blocks} == {
+            "null-trigger-description.md",
+            "null-trigger-globs.md",
+            "null-trigger-empty-globs.md",
+            "absent-globs.md",
+            "null-globs.md",
+            "empty-globs.md",
+            "unused-list.md",
+        }
+        clean = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert clean["rc"] == 0, clean
+        assert "devin-rules-valid" in clean["out"]["stats"]["rules_run"]
+        assert violations(clean) == []
+
+        path = repo / ".devin/rules/null-trigger-empty-globs.md"
+        path.write_text(path.read_text().replace("trigger: null", "trigger: glob"))
+        explicit = run_lint(
+            repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert explicit["rc"] == 1, explicit
+        assert [
+            (v["rule_id"], v["file_path"], v["line"], v["message"]) for v in violations(explicit)
+        ] == [
+            (
+                "devin-rules-valid",
+                ".devin/rules/null-trigger-empty-globs.md",
+                3,
+                "'globs' must contain at least one pattern",
+            )
+        ]
+
     def test_tree_covers_root_and_nested_devin_inputs(self, tmp_path):
         repo = copy_fixture("devin/valid", tmp_path)
 

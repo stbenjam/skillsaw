@@ -197,7 +197,7 @@ def test_devin_rule_reports_activation_shapes_and_recovers_from_bad_limit(tmp_pa
     assert by_file["glob-missing.md"].line is None
     assert "requires a non-empty 'globs'" in by_file["glob-missing.md"].message
     assert by_file["glob-object.md"].line == 3
-    assert "string or a list of strings" in by_file["glob-object.md"].message
+    assert "YAML list" in by_file["glob-object.md"].message
     assert by_file["glob-empty.md"].line == 3
     assert "at least one pattern" in by_file["glob-empty.md"].message
 

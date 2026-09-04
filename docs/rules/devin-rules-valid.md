@@ -32,7 +32,11 @@ even though strict YAML reserves a leading `*` for aliases. This exception
 applies only to the top-level `globs` value; unrelated malformed YAML is
 still reported. The scalar itself is an error: Devin Desktop may accept a
 single string, but the Devin CLI fails to load the rule ("expected a
-sequence"). A YAML list is the one form both hosts read.
+sequence"). A YAML list is the one form both hosts read. The CLI decodes
+`globs` and `description` even when the selected trigger does not use them:
+collection-valued descriptions and globs given as a single string or mapping
+still prevent loading. Nullable fields and scalar values accepted by Devin's
+YAML decoding remain accepted in unused fields.
 
 ## Severity
 
@@ -40,9 +44,11 @@ Malformed YAML, an unsupported trigger, invalid activation data, and a rule
 over the configured character limit are errors because Devin may ignore the
 rule or be unable to activate it as intended.
 
-`trigger` is optional. Without it Devin infers the mode: `globs` makes the
-rule glob-activated, a `description` makes it agent-decidable, and a rule
-with neither is manual (`@rule`). A rule that never activates on its own is
+`trigger` is optional; null also means unset. Without it Devin infers the
+mode: a non-empty `globs` list makes the rule glob-activated, a `description`
+makes it agent-decidable, and a rule with neither is manual (`@rule`). Absent,
+null and empty inferred globs allow description-based activation. An explicit
+`trigger: glob` still requires at least one pattern. A rule that never activates on its own is
 reported at info level.
 
 ## Examples
