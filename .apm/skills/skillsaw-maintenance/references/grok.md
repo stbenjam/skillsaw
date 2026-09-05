@@ -133,20 +133,21 @@ signal.
 ### What a project file contributes
 
 - **Measured honored**: `[mcp_servers]` and `[permission]`
-  (`PROJECT_CONFIG_TABLES_MEASURED`). **Documented but unmeasured**: `[plugins]` and
-  `[mcp] max_output_bytes` — no observable at *either* scope. `PROJECT_CONFIG_TABLES`
-  holds all four, because a rule must not report a documented table as ignored; the
-  measured subset is what a message may make a claim about.
+  (`PROJECT_CONFIG_TABLES_MEASURED`). `[plugins]` additionally has source-confirmed
+  project support; `[mcp] max_output_bytes` remains documented but unmeasured.
+  `PROJECT_CONFIG_TABLES` holds all four.
 - **Measured refused**: `[hooks]` (the honored path for a project's hooks is
   `.grok/hooks/*.json`, which loads), `[skills].paths` and `[sandbox].profile`, each
   with a positive user-scope control (`PROJECT_CONFIG_TABLES_REFUSED`).
-- **`[plugins]`**: `enabled` and `disabled` are documented and were **not** reproduced
-  at project *or* user scope against a `.grok/plugins/` directory, so nothing may be
-  asserted to work and no rule reports an unrecognized key inside the table. `paths`
-  is user-scope only — three independent runs ignored a project `paths`, relative or
-  absolute, git repository or not, and the user layer's `paths` plugin arrived
-  `scope: "config"` and `enabled: false`. That is the one measured refusal inside an
-  honored table, and `PROJECT_CONFIG_KEYS_REFUSED` is where it lives.
+- **`[plugins]`**: the live session's `resolve_effective_plugins_config()` merges
+  trusted project `paths` and project `disabled`. `inspect` does not call that
+  resolver, so its absent project plugins cannot establish a refusal. The source
+  is `xai-grok-shell/src/config/mod.rs` at
+  `72a61251fcffb464bcc687aeb5a998e5a98ec0c9`; no authenticated session was needed.
+- **User scope**: `GrokConfigBlock.is_user_config` matches the actual configured
+  user file by canonical path, as `xai-grok-workspace/src/project_config.rs` does.
+  Project-only advice skips that file while TOML and MCP validation keep it.
+  A dotfiles checkout elsewhere is not guessed to be user configuration.
 
 ### `[mcp_servers]`
 
@@ -154,21 +155,29 @@ signal.
   field raises an `mcpConfigProblems` *warning* and the server still loads, so it is
   never a reason to call the file broken. `transport` is the plausible misspelling of
   `type` and is not an alias — reported unrecognized, ignored.
-- **Transport derivation** (`mcp_transport()`), exactly Grok's order: a non-empty
-  `command` → `stdio`, winning even beside a `url`; else a `url` with `type = "sse"` →
-  `sse`; else a `url` → `http`; else Grok drops that server, per server and
-  order-independent, leaving its siblings and `[permission]` untouched. `type` is
-  otherwise advisory, and neither field's content is validated — `url = "not a url"`
-  loads as an HTTP server. `enabled = false` omits the server from `inspect`;
-  `GrokConfigBlock` keeps it anyway, because the command is committed and one word
-  turns it back on.
+- **Transport derivation** (`formats/grok_mcp.py`): Grok tries the entire stdio
+  variant first, then HTTP. Fields outside the selected variant are ignored;
+  malformed stdio fields can allow HTTP fallback. Common fields (`enabled`,
+  timeouts, OAuth and setup) decode independently. A selected blank connection is
+  rejected only when enabled. The URL accepts `url`, `urlTemplate` or `url_template`;
+  two URL aliases reject the HTTP variant. HTTP becomes SSE for case-insensitive
+  `type = "sse"` or an exact `/sse` URL suffix. Neither target's content or
+  reachability is validated. `GrokConfigBlock` normalizes the selected variant,
+  including aliases, while retaining disabled and unresolved-setup definitions for
+  diagnostics. Native `inspect` omits those definitions. These decoding controls
+  were verified against Grok 1.0.13 and the pinned config-types MCP source.
 
 ### `[permission]` and the spellings that load nothing
 
 - **`[permission]`**: `allow`/`deny`/`ask` hold compact rule strings and `rules` holds
-  verbose tables. `rules` is discarded **entirely** whenever any of the three list keys
-  is present, in any order, with no diagnostic — a file carrying both loses every
-  verbose rule it wrote. An unparseable entry costs that entry alone, also silently.
+  verbose entries. Any array-valued compact key selects the compact branch,
+  even an empty array; malformed compact keys alone do not suppress verbose rules.
+  Empty verbose lists need no lost-rule warning. The workspace resolver's verbose
+  types are owned by `formats/grok_permissions.py`: action is required, tool defaults
+  to any, pattern is an optional string, and pattern_mode defaults to glob. Wrong
+  enum spellings or known field types discard the entire verbose list. Grok's TOML
+  unit-enum and positional-struct forms are supported. An unparseable compact rule
+  string costs only that entry.
   A **wrong-typed entry** splits by key, measured: a non-string in a list key costs
   that entry (`allow = ["Bash(git *)", 42]` loaded 1), while a non-table in `rules`
   costs the whole array (two valid rules beside a bare integer loaded 0).
@@ -247,10 +256,18 @@ a git repository.
   `sha` degrades to an unpinned `git clone`. The upstream `validate-catalog.py` requires
   lowercase 40-hex, which is stricter than the runtime.
 - **`plugin-index.json`** is the sole source of the pre-install component listing, and
-  it must sit beside its catalog. For a url source it is gated on `sha` equality with
+  it has independent precedence: `.grok-plugin/plugin-index.json`, then
+  `.claude-plugin/plugin-index.json` only when the preferred file is absent. A
+  present broken preferred file blocks fallback; a legal shadowed copy is not a
+  placement defect. For a URL source it is gated on exact `sha` string equality with
   the catalog entry — drift silently blanks the listing. For a local source there is no
   `sha` to gate on, so a stale index is displayed while the plugin on disk disagrees. An
   index entry with no catalog entry, and a malformed index, are both ignored silently.
+  The typed reader requires integer version `1`, defaults omitted `plugins` to
+  an empty map, and requires each entry's component structure. One bad nested
+  field invalidates the whole index. The decoder preserves measured positional
+  JSON struct arrays, unknown fields and map duplicate semantics; recognized
+  struct duplicates and a BOM are rejected.
 - **Plugin hooks are a different loader from the project layer's.** `grok inspect
   --json` reports one opaque entry for a plugin's `hooks/hooks.json` whether the file is
   valid, empty or unparseable, so the failure matrix above is **not** evidence about it.
@@ -298,8 +315,9 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   `description` Grok's loader registers a `.grok/agents/*.md` by. An empty value
   satisfies it; presence is the whole test.
 - Project `config.toml` — `src/skillsaw/rules/builtin/grok/`: `grok-config-valid`
-  (ERROR) reports the parse error that costs the whole file, and at a hardcoded
-  WARNING the per-server and per-key defects that cost one server or one key — a
+  (ERROR) reports the parse error that costs the whole file. Per-server and
+  per-key defects default to WARNING and honor explicit rule severity. These
+  defects cost one server or one key — a
   non-table `mcp_servers`, a server naming neither a `command` nor a `url` (or an
   empty one), a wrong-typed `args`/`env`/`headers`/`url`/`command`, a non-array
   `allow`/`deny`/`ask` or `rules`, and `rules` written beside a list key. It never
@@ -307,12 +325,11 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   `grok-config-project-scope` (WARNING, option `extra-tables`) reports what the
   project layer drops: a top-level table or scalar outside `PROJECT_CONFIG_TABLES`
   (only `hooks` carries a hint — it is the one refusal with somewhere else in the
-  repository to go — and the rest are one consolidated finding), the keys in
-  `PROJECT_CONFIG_KEYS_REFUSED`, and the silent misspellings. It reports no
-  unrecognized key inside `[plugins]` or `[mcp]`: nothing was measured there in
-  either direction, and `extra-tables` reaches top-level names only. Neither rule
-  claims anything for `[plugins] enabled`/`disabled` or `[mcp] max_output_bytes`,
-  which are documented and unmeasured.
+  repository to go — and the rest are one consolidated finding), and the silent
+  misspellings. Unknown keys inside `[plugins]` or `[mcp]` stay open, and
+  `extra-tables` reaches top-level names only. Trusted project plugin paths
+  follow the live resolver described above; the actual user config is exempt
+  from project-only advice.
 - Plugin manifests — `grok-plugin-json-valid` (ERROR): invalid JSON and a `name` that
   is missing, non-string, empty or outside `PLUGIN_NAME_RE`, each of which makes Grok
   skip the whole directory. Component paths that escape or do not exist, and an
@@ -408,7 +425,7 @@ user guide, or re-verify empirically with the canary matrix above:
   *generator* wrote, so it carries the union of both readings and reports drift only
   for a name neither produces.
 - `PROJECT_CONFIG_TABLES` and its `_MEASURED` / `_REFUSED` companions,
-  `PROJECT_CONFIG_KEYS_REFUSED`, `MCP_SERVER_FIELDS` and `mcp_transport()` in
+  `MCP_SERVER_FIELDS` and `mcp_transport()` in
   `formats/grok.py`.
   The split between measured and documented is the thing to preserve: re-measure before
   moving a name across it, and never widen a rule's claim on the reference's word alone.
@@ -420,7 +437,7 @@ user guide, or re-verify empirically with the canary matrix above:
   `MCP_SERVER_FIELDS` came from the `mcp_servers.<name>.*` rows of
   `26-config-reference.md` and was confirmed accepted by watching for
   `mcpConfigProblems`; a field added upstream reads as unknown until it is added here.
-  It is vocabulary only — `grok-config-valid` type-checks the fields it names and
+  The decoder in `formats/grok_mcp.py` owns field types; `grok-config-valid`
   never reports membership, because an unknown field warns and the server still loads.
   `MCP_TYPE_MISSPELLED_FIELD` (`transport`) and `PERMISSION_MISSPELLED_KEY`
   (`defaultMode`) sit beside it: a spelling that would become real upstream must move

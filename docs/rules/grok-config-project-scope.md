@@ -124,6 +124,10 @@ rules:
       - toolset
 ```
 
+For a dotfiles checkout outside its deployed HOME, skillsaw cannot infer user
+scope from the repository name. Use `extra-tables` for its personal tables or a
+per-file rule exclusion in that checkout.
+
 ## Configuration
 
 ```yaml
@@ -139,7 +143,3 @@ rules:
 
 
 *Run `skillsaw explain grok-config-project-scope` to see this documentation and the rule's effective configuration in your terminal.*
-
-For a dotfiles checkout outside its deployed HOME, skillsaw cannot infer user
-scope from the repository name. Use `extra-tables` for its personal tables or a
-per-file rule exclusion in that checkout.

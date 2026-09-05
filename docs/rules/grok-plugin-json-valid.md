@@ -144,6 +144,12 @@ rules:
     check-overrides: false
 ```
 
+Plugin component paths follow canonical containment, independently of the
+marketplace source grammar. Contained paths such as `nested/../skills` remain
+valid, and an empty directory-field path names the plugin root. These paths
+still participate in override coverage; a path outside the plugin or a target
+of the wrong kind remains a warning.
+
 ## Configuration
 
 ```yaml
@@ -160,9 +166,3 @@ rules:
 
 
 *Run `skillsaw explain grok-plugin-json-valid` to see this documentation and the rule's effective configuration in your terminal.*
-
-Plugin component paths follow canonical containment, independently of the
-marketplace source grammar. Contained paths such as `nested/../skills` remain
-valid, and an empty directory-field path names the plugin root. These paths
-still participate in override coverage; a path outside the plugin or a target
-of the wrong kind remains a warning.

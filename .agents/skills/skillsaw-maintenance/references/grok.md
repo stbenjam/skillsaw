@@ -315,9 +315,9 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   `description` Grok's loader registers a `.grok/agents/*.md` by. An empty value
   satisfies it; presence is the whole test.
 - Project `config.toml` — `src/skillsaw/rules/builtin/grok/`: `grok-config-valid`
-  (ERROR) reports the parse error that costs the whole file, and at its
-  configurable secondary severity (WARNING by default) the per-server and
-  per-key defects that cost one server or one key — a
+  (ERROR) reports the parse error that costs the whole file. Per-server and
+  per-key defects default to WARNING and honor explicit rule severity. These
+  defects cost one server or one key — a
   non-table `mcp_servers`, a server naming neither a `command` nor a `url` (or an
   empty one), a wrong-typed `args`/`env`/`headers`/`url`/`command`, a non-array
   `allow`/`deny`/`ask` or `rules`, and `rules` written beside a list key. It never
