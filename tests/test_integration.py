@@ -853,6 +853,31 @@ class TestUnreferencedSkillFiles:
 
     RULE = "agentskill-unreferenced-files"
 
+    @pytest.mark.parametrize("directory_covers", [True, False])
+    def test_covered_subtrees_preserve_transitive_links_and_sibling_boundaries(
+        self, tmp_path, directory_covers
+    ):
+        repo = copy_fixture("unreferenced-covered-subtrees", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n"
+            f"    directory_mention_covers: {str(directory_covers).lower()}\n"
+        )
+        result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning", config=config)
+        assert result["rc"] == 1, result
+        findings = violations(result)
+        expected = {"docs-other/orphan.md"}
+        if not directory_covers:
+            expected |= {
+                "assets/table.csv",
+                "docs/deep/guide.md",
+                "docs/nested/details.md",
+                "docs/nested/history.md",
+            }
+        assert {v["file_path"] for v in findings} == expected
+        assert {v["rule_id"] for v in findings} == {self.RULE}
+        assert {v["severity"] for v in findings} == {"warning"}
+
     def test_unreferenced_files_flagged(self, tmp_path):
         repo = copy_fixture("agentskills/unreferenced-broken", tmp_path)
         r = run_lint(repo)
