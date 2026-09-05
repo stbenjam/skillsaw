@@ -33,7 +33,10 @@ browser metadata. They do not establish whether a source can be installed.
 
 Skillsaw reports parity discrepancies across the index and catalog:
 
-- Plugin names present in one file but missing from the other.
+- Literal catalog entry names present in one file but missing from the other.
+  A local plugin's manifest name controls its listing name, but does not
+  substitute for the catalog entry's index lookup key. An empty catalog entry name
+  uses the empty string key; diagnostics display that key as `""`.
 - Commit `sha` values that differ between the catalog and index (compared
   case-insensitively).
 - Plugin entries in `plugin-index.json` whose values are not objects.
@@ -87,6 +90,9 @@ Additional checks:
 ## How to fix
 
 - Regenerate `plugin-index.json` whenever updating plugins in `marketplace.json`.
+- Key each index entry by the exact corresponding catalog entry `name`, even
+  when the local plugin manifest has a different name. Remove unused alias
+  keys; they do not supply that catalog entry's components.
 - Place `plugin-index.json` in `.grok-plugin/` directly alongside `marketplace.json`.
 - Remove entries from `plugin-index.json` when removing plugins from `marketplace.json`.
 

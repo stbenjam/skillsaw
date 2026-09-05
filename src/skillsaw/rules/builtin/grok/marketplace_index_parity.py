@@ -41,7 +41,7 @@ class _Entry:
     """One catalog entry, reduced to what parity needs."""
 
     display: str
-    names: Set[str]
+    key: str
     sha: Optional[str]
     plugin_dir: Optional[Path]
 
@@ -208,23 +208,20 @@ class GrokMarketplaceIndexParityRule(Rule):
         drift = _Drift()
         claimed: Set[str] = set()
         check_components = self.setting("check-components")
-        # Built once: the intersection below runs per catalog entry, and both
-        # sides are repository-sized.
-        index_keys = set(plugins)
-
         for entry in entries:
-            matched = sorted(entry.names & index_keys)
-            if not matched:
+            # The native scanner looks up the literal catalog name even
+            # when the local manifest supplies a different display name.
+            key = entry.key
+            if key not in plugins:
                 drift.missing_from_index.add(entry.display)
                 continue
-            key = matched[0]
             claimed.add(key)
             listed = plugins.get(key)
             if not isinstance(listed, dict):
                 # A key whose value is not an object: Grok has nothing to
                 # display for it, and it is claimed, so no other branch
                 # would ever name it.
-                drift.malformed_in_index.add(key)
+                drift.malformed_in_index.add(key or '""')
                 continue
             self._compare_sha(entry, listed, drift)
             if check_components and entry.plugin_dir is not None:
@@ -232,7 +229,7 @@ class GrokMarketplaceIndexParityRule(Rule):
 
         for key in plugins:
             if key not in claimed:
-                drift.unknown_in_index.add(key)
+                drift.unknown_in_index.add(key or '""')
 
         return drift
 
@@ -367,8 +364,8 @@ class GrokMarketplaceIndexParityRule(Rule):
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            name = entry.get("name")
-            name = name if isinstance(name, str) and name else None
+            # catalog_type_errors has established a string, including "".
+            name = entry["name"]
             source = entry.get("source")
             plugin_dir = self._local_dir(source, marketplace_root, resolved_root)
             if plugin_dir is None and not self._is_usable_url(source):
@@ -376,18 +373,14 @@ class GrokMarketplaceIndexParityRule(Rule):
                 # The catalog validator names the source problem; there is
                 # no discovered entry whose index metadata can be compared.
                 continue
-            resolved = grok.grok_plugin_name(plugin_dir) if plugin_dir is not None else None
-            names = {value for value in (name, resolved) if value}
-            if not names:
-                continue
             # Only a url source is pinned: Grok reads no ``sha`` on a local
             # one, so carrying it here would report a sha-less index as
             # catalog-only or drifted against a value nothing installs from.
             sha = source.get("sha") if grok.is_url_source(source) else None
             found.append(
                 _Entry(
-                    display=name or resolved or "",
-                    names=names,
+                    display=name or '""',
+                    key=name,
                     sha=sha if isinstance(sha, str) and sha else None,
                     plugin_dir=plugin_dir,
                 )

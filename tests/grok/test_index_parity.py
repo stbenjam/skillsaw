@@ -134,15 +134,23 @@ def test_a_name_only_the_index_carries_is_reported(temp_dir) -> None:
     assert "not in the catalog: retired" in only(check(repo), "disagrees").message
 
 
-def test_the_resolved_manifest_name_also_matches(temp_dir) -> None:
-    """An index generated from the resolved names must not read as drift
-    against a catalog whose entry names differ."""
+def test_the_resolved_manifest_name_is_not_a_display_index_key(temp_dir) -> None:
+    """The listing name and the component lookup key are separate."""
     repo = write_repo(temp_dir / "resolved-match")
-    write_catalog(repo, {"plugins": [{"name": "harbour-almanac", "source": "./plugins/almanac"}]})
-    write_plugin(repo / "plugins" / "almanac", {"name": "almanac"})
-    write_catalog(repo, index({"almanac": {}}), filename="plugin-index.json")
+    write_catalog(
+        repo,
+        {
+            "name": "harbour-plugins",
+            "plugins": [{"name": "harbour-almanac", "source": "./plugins/almanac"}],
+        },
+    )
+    write_plugin(repo / "plugins/almanac", {"name": "almanac"})
+    write_catalog(repo, index({"almanac": {"components": {}}}), filename="plugin-index.json")
 
-    assert check(repo) == []
+    assert messages(check(repo)) == [
+        "plugin-index.json disagrees with marketplace.json: "
+        "not in the index: harbour-almanac; not in the catalog: almanac"
+    ]
 
 
 # ── The pin ──────────────────────────────────────────────────────

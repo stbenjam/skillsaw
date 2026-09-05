@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "plugins": {
+    "catalog-canary": {
+      "components": {
+        "skills": [
+          {
+            "name": "review-catalog",
+            "description": "Review the catalog entries before publishing a new plugin version."
+          }
+        ]
+      }
+    },
+    "published-review": {
+      "components": {
+        "skills": [
+          {
+            "name": "review-migration",
+            "description": "Review schema migration plans before applying them to a database."
+          }
+        ]
+      }
+    }
+  }
+}

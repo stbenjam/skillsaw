@@ -1,0 +1,5 @@
+{
+  "name": "catalog-canary",
+  "version": "1.0.0",
+  "description": "Review the catalog entries before publishing a new plugin version."
+}
