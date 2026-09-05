@@ -485,24 +485,18 @@ class GrokMarketplaceConfigNode(LintTarget):
 
 @dataclass(eq=False)
 class GrokMarketplaceIndexNode(LintTarget):
-    """A ``plugin-index.json`` display catalog (Grok Build).
+    """An optional Grok display index, independent of installability.
 
-    Optional and, per the user guide, "for display only" — but a
-    ``require_sha`` deployment installs from the ``sha`` values it
-    publishes, so drift from the catalog beside it is a supply-chain
-    problem rather than cosmetics.
-
-    :attr:`stray` marks a file at one of the fallback catalog locations,
-    which Grok never reads once ``.grok-plugin/marketplace.json`` has won:
-    the node exists so every file the rules report on is in the tree, and
-    the flag is what tells the parity rule to report the placement rather
-    than compare it.
+    ``stray`` marks an unsupported location. A legal compatibility file may
+    be ``shadowed`` by a present preferred index; it remains in the tree but
+    is not compared or reported as misplaced.
     """
 
     stray: bool = False
+    shadowed: bool = False
 
     def tree_label(self) -> str:
-        suffix = " (not read)" if self.stray else ""
+        suffix = " (not read)" if self.stray or self.shadowed else ""
         return f"{self.path.name}{suffix} [grok]"
 
 

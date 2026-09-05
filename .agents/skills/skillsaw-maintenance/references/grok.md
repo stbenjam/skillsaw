@@ -256,7 +256,10 @@ a git repository.
   `sha` degrades to an unpinned `git clone`. The upstream `validate-catalog.py` requires
   lowercase 40-hex, which is stricter than the runtime.
 - **`plugin-index.json`** is the sole source of the pre-install component listing, and
-  it must sit beside its catalog. For a url source it is gated on `sha` equality with
+  it has independent precedence: `.grok-plugin/plugin-index.json`, then
+  `.claude-plugin/plugin-index.json` only when the preferred file is absent. A
+  present broken preferred file blocks fallback; a legal shadowed copy is not a
+  placement defect. For a URL source it is gated on exact `sha` string equality with
   the catalog entry — drift silently blanks the listing. For a local source there is no
   `sha` to gate on, so a stale index is displayed while the plugin on disk disagrees. An
   index entry with no catalog entry, and a malformed index, are both ignored silently.

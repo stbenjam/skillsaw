@@ -104,7 +104,7 @@ class _Drift:
 
 
 class GrokMarketplaceIndexParityRule(Rule):
-    """Check a Grok Build plugin index against the catalog beside it"""
+    """Check the selected Grok display index against its marketplace catalog"""
 
     since = "0.20.0"
 
@@ -134,7 +134,7 @@ class GrokMarketplaceIndexParityRule(Rule):
 
     @property
     def description(self) -> str:
-        return ".grok-plugin/plugin-index.json must agree with the catalog beside it"
+        return "plugin-index.json must agree with its marketplace catalog"
 
     def default_severity(self) -> Severity:
         # Parity describes the browser's metadata. Installation problems
@@ -150,14 +150,11 @@ class GrokMarketplaceIndexParityRule(Rule):
 
         for catalog_node in context.lint_tree.find(GrokMarketplaceConfigNode):
             index_nodes = catalog_node.find(GrokMarketplaceIndexNode)
-            # The tree marks a file at a fallback catalog location, which
-            # Grok never reads and so has nothing to compare against.
+            # Unsupported locations are distinct from legal shadowed copies.
             violations.extend(
-                self._stray_violation(node.path, catalog_node.path)
-                for node in index_nodes
-                if node.stray
+                self._stray_violation(node.path) for node in index_nodes if node.stray
             )
-            read = [node for node in index_nodes if not node.stray]
+            read = [node for node in index_nodes if not node.stray and not node.shadowed]
             if not read:
                 # An absent index is the documented case, not a defect.
                 continue
@@ -167,11 +164,11 @@ class GrokMarketplaceIndexParityRule(Rule):
 
         return violations
 
-    def _stray_violation(self, index: Path, catalog: Path) -> RuleViolation:
+    def _stray_violation(self, index: Path) -> RuleViolation:
         """A display catalog Grok never reads because it is in the wrong place."""
         return self.violation(
-            f"'{grok.PLUGIN_INDEX_FILENAME}' is not beside "
-            f"'{catalog.parent.name}/{catalog.name}', where Grok reads it",
+            f"'{grok.PLUGIN_INDEX_FILENAME}' must be in .grok-plugin/ or "
+            ".claude-plugin/, where Grok reads display indexes",
             file_path=index,
         )
 

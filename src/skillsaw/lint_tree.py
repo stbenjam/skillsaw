@@ -1316,11 +1316,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         catalog_node = GrokMarketplaceConfigNode(path=grok_marketplace_json)
         marketplace_root = safe_resolve(grok_marketplace_json.parent.parent)
         if marketplace_root is not None:
-            index_locations = [(grok_marketplace_json.parent / grok.PLUGIN_INDEX_FILENAME, False)]
-            # An index at a fallback catalog location is a file Grok never
-            # reads, and the parity rule reports it — so it is a node here
-            # like every other file the rules report on, rather than a probe
-            # of its own from inside the rule.
+            index_locations = [
+                (marketplace_root.joinpath(*parts), False) for parts in grok.PLUGIN_INDEX_PATHS
+            ]
             index_locations.extend(
                 (marketplace_root.joinpath(*parts, grok.PLUGIN_INDEX_FILENAME), True)
                 for parts in grok.UNREAD_INDEX_DIRS
@@ -1330,7 +1328,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # them: a stray location symlinked at the conventional one is
             # one file, and a second node would report it twice.
             index_seen: set[Path] = set()
+            preferred_present = False
             for index_json, stray in index_locations:
+                # Selection precedes our exclusions/containment: an authored
+                # preferred file still shadows the fallback when diagnostics
+                # for that file are excluded or it is outside our boundary.
+                present = safe_exists(index_json)
+                shadowed = not stray and preferred_present
+                if not stray and present:
+                    preferred_present = True
                 # Contained against the marketplace root, the boundary the
                 # catalog's own sources are held to: an index symlinked out
                 # of the marketplace is not this marketplace's display
@@ -1339,10 +1345,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 resolved_index = contained_resolve(index_json, marketplace_root)
                 if resolved_index is None or resolved_index in index_seen:
                     continue
-                if safe_is_file(index_json) and not _is_excluded(index_json):
+                if present and not _is_excluded(index_json):
                     index_seen.add(resolved_index)
                     catalog_node.children.append(
-                        GrokMarketplaceIndexNode(path=index_json, stray=stray)
+                        GrokMarketplaceIndexNode(path=index_json, stray=stray, shadowed=shadowed)
                     )
         root.children.append(catalog_node)
 

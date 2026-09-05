@@ -474,8 +474,8 @@ PLUGIN_DIR_NAME = ".grok-plugin"
 
 #: Filenames inside :data:`PLUGIN_DIR_NAME`. ``plugin.json`` describes one
 #: plugin; ``marketplace.json`` is the catalog Grok reads; ``plugin-index.json``
-#: is the optional display catalog beside it, whose ``sha`` values a
-#: ``require_sha`` deployment installs from.
+#: is the optional display catalog; its SHA gate affects browser details,
+#: independently of the installer's source pin.
 PLUGIN_MANIFEST = "plugin.json"
 MARKETPLACE_FILENAME = "marketplace.json"
 PLUGIN_INDEX_FILENAME = "plugin-index.json"
@@ -501,11 +501,15 @@ CATALOG_PATHS = (
     (MARKETPLACE_FILENAME,),
 )
 
-#: Where a ``plugin-index.json`` is never read: beside either catalog
-#: location Grok falls back to, once ``.grok-plugin/marketplace.json`` has
-#: won. Derived from :data:`CATALOG_PATHS` rather than restated, so a change
-#: to the fallbacks moves this with it.
-UNREAD_INDEX_DIRS = tuple(parts[:-1] for parts in CATALOG_PATHS[1:])
+#: The display index has its own precedence, independent of the selected
+#: marketplace catalog. A present broken preferred index stops fallback.
+PLUGIN_INDEX_PATHS = (
+    (".grok-plugin", PLUGIN_INDEX_FILENAME),
+    (".claude-plugin", PLUGIN_INDEX_FILENAME),
+)
+
+#: A root-level display index is never read.
+UNREAD_INDEX_DIRS = ((),)
 
 #: Where a plugin's manifest may live, in the order Grok resolves them —
 #: verified by building plugins carrying each combination and reading back

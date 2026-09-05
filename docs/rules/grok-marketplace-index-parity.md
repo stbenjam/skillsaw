@@ -3,7 +3,7 @@
 
 # grok-marketplace-index-parity
 
-.grok-plugin/plugin-index.json must agree with the catalog beside it
+plugin-index.json must agree with its marketplace catalog
 
 | | |
 |---|---|
@@ -65,8 +65,11 @@ Additional checks:
 
 - Syntax errors in `plugin-index.json`, or an index where `plugins` is not an
   object.
-- Placement: ensures `plugin-index.json` is located in `.grok-plugin/` alongside
-  `marketplace.json` so Grok can discover it.
+- Placement and selection: Grok prefers `.grok-plugin/plugin-index.json`, then
+  falls back to `.claude-plugin/plugin-index.json` when the preferred file is
+  absent. A present broken preferred file stops fallback. A legal shadowed copy
+  stays in the lint tree without a placement warning. Root-level indexes are
+  unsupported.
 
 ## Examples
 
@@ -110,7 +113,8 @@ Additional checks:
 - Key each index entry by the exact corresponding catalog entry `name`, even
   when the local plugin manifest has a different name. Remove unused alias
   keys; they do not supply that catalog entry's components.
-- Place `plugin-index.json` in `.grok-plugin/` directly alongside `marketplace.json`.
+- Place `plugin-index.json` in `.grok-plugin/`, or use the supported
+  `.claude-plugin/` fallback when the preferred index is absent.
 - Remove entries from `plugin-index.json` when removing plugins from `marketplace.json`.
 
 If your workflow generates index components during a separate packaging or CI

@@ -356,7 +356,7 @@ def test_an_unreadable_catalog_reports_no_parity(temp_dir) -> None:
 # ── An index Grok never reads ────────────────────────────────────
 
 
-@pytest.mark.parametrize("location", ["plugin-index.json", ".claude-plugin/plugin-index.json"])
+@pytest.mark.parametrize("location", ["plugin-index.json"])
 def test_an_index_away_from_its_catalog_is_reported(temp_dir, location) -> None:
     repo = marketplace(temp_dir, f"stray-{len(location)}", {"plugins": []}, None)
     stray = repo / location
@@ -366,12 +366,12 @@ def test_an_index_away_from_its_catalog_is_reported(temp_dir, location) -> None:
     found = check(repo)
 
     assert len(found) == 1
-    assert "is not beside '.grok-plugin/marketplace.json'" in found[0].message
+    assert "must be in .grok-plugin/ or .claude-plugin/" in found[0].message
     assert found[0].file_path == stray
 
 
 def test_a_stray_index_is_a_node_under_its_catalog(temp_dir) -> None:
-    """Every file the rule reports on is in the tree: the fallback locations
+    """Every file the rule reports on is in the tree: unsupported locations
     attach as index nodes marked ``stray``, so nothing is discovered by a
     filesystem probe from inside a rule."""
     repo = marketplace(temp_dir, "stray-node", {"plugins": []}, None)
