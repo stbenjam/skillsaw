@@ -454,6 +454,15 @@ class FileCache:
 # Singleton cache used by all utility functions.
 _file_cache = FileCache()
 
+
+def cached_file_read(func: Callable) -> Callable:
+    """Cache a reader whose first positional argument is its file path.
+
+    Results share the bounded file cache and its per-file invalidation.
+    """
+    return _file_cache.cached(func)
+
+
 _extra_caches: list = []
 
 

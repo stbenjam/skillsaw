@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from skillsaw.utils import has_utf8_bom, read_text
+from skillsaw.utils import cached_file_read, has_utf8_bom, read_text
 
 CATALOG_FIELDS = frozenset({"name", "description", "owner", "plugins"})
 ENTRY_STRINGS = frozenset({"version", "description", "category", "homepage"})
@@ -41,6 +41,12 @@ def _nonfinite(token: str) -> None:
 
 def read_catalog_json(path: Path) -> Tuple[Optional[Any], Optional[str]]:
     """Read the catalog without normalizing its BOM or duplicate members."""
+    # Forward positionally so keyword callers share per-file invalidation.
+    return _read_catalog_json(path)
+
+
+@cached_file_read
+def _read_catalog_json(path: Path) -> Tuple[Optional[Any], Optional[str]]:
     if has_utf8_bom(path):
         return None, "UTF-8 BOM is not accepted by Grok's catalog loader"
     content = read_text(path)
