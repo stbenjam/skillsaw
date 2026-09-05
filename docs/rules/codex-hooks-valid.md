@@ -36,6 +36,11 @@ be a string or null. Group and handler metadata have different rules: Codex
 ignores unknown fields there, so skillsaw reports them as warnings and
 `extra-fields` can allow intentional metadata.
 
+An omitted root `hooks` field defaults to an empty event map; an omitted
+matcher-group `hooks` field defaults to an empty handler list. Both are
+accepted, unlike explicit null or a value of the wrong type. Empty event
+arrays do not count as a second active source for the both-files advisory.
+
 In JSON, `matcher: null` means unset. Command handlers also accept null for
 `commandWindows` (or `command_windows`), `statusMessage`, `timeout`, and
 `additionalContextLimit`; MCP tool handlers accept it for `statusMessage`
@@ -110,11 +115,10 @@ A baseline written under `hooks-json-valid` keeps suppressing a finding from
 this rule only where the message is the same. A hooks file is JSON, which
 carries no line numbers, so the baseline fingerprint hashes the rule name,
 the file path, and the message text — and 0.20.0 rewrote most of these
-messages. Four file-level verdicts kept their wording and carry over:
+messages. Three file-level verdicts kept their wording and carry over:
 
 - `Invalid JSON: <parser error>`
 - `hooks.json must be a JSON object`
-- `hooks.json must contain a 'hooks' key`
 - `'hooks' must be a JSON object`
 
 The per-event and per-handler shape messages were all re-worded, so a

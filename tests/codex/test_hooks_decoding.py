@@ -52,3 +52,32 @@ def test_json_wrapper_refusals_are_reported_without_hiding_commands(tmp_path):
         "unknown/.codex/hooks.json",
         "description-list/.codex/hooks.json",
     }
+
+
+def test_omitted_hook_collections_accept_defaults_and_empty_events_do_not_merge(tmp_path):
+    repo = copy_fixture("codex/hooks-empty-defaults", tmp_path)
+    blocks = RepositoryContext(repo).lint_tree.find(CodexHooksBlock)
+    assert len(blocks) == 4
+    assert [
+        handler.command
+        for block in blocks
+        for entries in block.events.values()
+        for entry in entries
+        for handler in entry.handlers
+    ] == ["printf ready"]
+    result = run_cli(
+        [
+            "lint",
+            str(repo),
+            "--rule",
+            "codex-hooks-valid",
+            "--format",
+            "json",
+            "--no-custom-rules",
+            "--no-plugins",
+            "--no-baseline",
+        ]
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    assert report["violations"] == []

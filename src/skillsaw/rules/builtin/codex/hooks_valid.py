@@ -166,7 +166,10 @@ def _declares_hooks(block: CodexHooksBlock) -> bool:
         return False
     data = block.raw_data
     events = data.get("hooks") if isinstance(data, dict) else None
-    return isinstance(events, dict) and bool(events)
+    return isinstance(events, dict) and any(
+        event in CODEX_HOOK_EVENTS and isinstance(entries, list) and entries
+        for event, entries in events.items()
+    )
 
 
 def _matches_type(value: Any, expected) -> bool:
@@ -341,13 +344,9 @@ class CodexHooksValidRule(Rule):
                     )
                 )
 
-            if "hooks" not in data:
-                violations.append(
-                    self.violation("hooks.json must contain a 'hooks' key", file_path=block.path)
-                )
-                continue
-
-            raw_hooks = data["hooks"]
+            # HooksFile.hooks defaults to an empty event map. Explicit null
+            # remains a type error; absence is a valid disabled file.
+            raw_hooks = data.get("hooks", {})
             if not isinstance(raw_hooks, dict):
                 violations.append(
                     self.violation(
@@ -500,12 +499,9 @@ class CodexHooksValidRule(Rule):
                     )
                 )
 
-        if "hooks" not in entry:
-            return violations + [
-                self.violation(f"Hook {where} is missing 'hooks'", file_path=block.path)
-            ]
-
-        handlers = entry["hooks"]
+        # MatcherGroup.hooks is a defaulted list, so a group may deliberately
+        # contain no handlers. Unknown flattened handler keys still warn above.
+        handlers = entry.get("hooks", [])
         if not isinstance(handlers, list):
             return violations + [
                 self.violation(

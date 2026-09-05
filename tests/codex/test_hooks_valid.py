@@ -271,11 +271,9 @@ class TestStructuralShape:
         "document,fragment",
         [
             ([], "must be a JSON object"),
-            ({"description": "no hooks here"}, "must contain a 'hooks' key"),
             ({"hooks": []}, "'hooks' must be a JSON object"),
             ({"hooks": {"SessionStart": {"type": "command"}}}, "must have an array"),
             ({"hooks": {"SessionStart": ["echo hi"]}}, "Hook SessionStart[0] must be an object"),
-            ({"hooks": {"SessionStart": [{"matcher": ".*"}]}}, "is missing 'hooks'"),
             ({"hooks": {"SessionStart": [{"hooks": {}}]}}, "'hooks' must be an array"),
             ({"hooks": {"SessionStart": [{"hooks": ["echo"]}]}}, "must be an object"),
             ({"hooks": {"SessionStart": [{"hooks": [{}]}]}}, "is missing 'type'"),
