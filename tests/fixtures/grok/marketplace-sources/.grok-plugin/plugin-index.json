@@ -42,7 +42,8 @@
       }
     },
     "remote-kit": {
-      "sha": "1f9d0c73a86b24e5107cad3f88b90250e6c147da"
+      "sha": "1f9d0c73a86b24e5107cad3f88b90250e6c147da",
+      "components": {}
     }
   }
 }

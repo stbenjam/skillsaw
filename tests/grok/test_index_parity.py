@@ -114,7 +114,7 @@ def test_a_name_missing_from_the_index_is_reported(temp_dir) -> None:
         temp_dir,
         "missing-name",
         {"plugins": [url_entry("almanac", SHA_A), url_entry("tides", SHA_B)]},
-        index({"almanac": {"sha": SHA_A}}),
+        index({"almanac": {"sha": SHA_A, "components": {}}}),
     )
 
     found = only(check(repo), "disagrees")
@@ -128,7 +128,12 @@ def test_a_name_only_the_index_carries_is_reported(temp_dir) -> None:
         temp_dir,
         "ghost-name",
         {"plugins": [url_entry("almanac", SHA_A)]},
-        index({"almanac": {"sha": SHA_A}, "retired": {"sha": SHA_B}}),
+        index(
+            {
+                "almanac": {"sha": SHA_A, "components": {}},
+                "retired": {"sha": SHA_B, "components": {}},
+            }
+        ),
     )
 
     assert "not in the catalog: retired" in only(check(repo), "disagrees").message
@@ -161,7 +166,7 @@ def test_a_sha_that_disagrees_is_reported(temp_dir) -> None:
         temp_dir,
         "drifted",
         {"plugins": [url_entry("almanac", SHA_A)]},
-        index({"almanac": {"sha": SHA_B}}),
+        index({"almanac": {"sha": SHA_B, "components": {}}}),
     )
 
     assert "'sha' differs: almanac" in only(check(repo), "disagrees").message
@@ -173,7 +178,7 @@ def test_a_sha_that_differs_only_in_case_is_display_drift(temp_dir) -> None:
         temp_dir,
         "case-only",
         {"plugins": [url_entry("almanac", SHA_A)]},
-        index({"almanac": {"sha": SHA_A.upper()}}),
+        index({"almanac": {"sha": SHA_A.upper(), "components": {}}}),
     )
 
     assert "'sha' differs: almanac" in only(check(repo), "disagrees").message
@@ -182,8 +187,10 @@ def test_a_sha_that_differs_only_in_case_is_display_drift(temp_dir) -> None:
 @pytest.mark.parametrize(
     "catalog_sha,index_entry,expected",
     [
-        pytest.param(SHA_A, {}, "'sha' in the catalog only", id="catalog-only"),
-        pytest.param(None, {"sha": SHA_A}, "'sha' in the index only", id="index-only"),
+        pytest.param(SHA_A, {"components": {}}, "'sha' in the catalog only", id="catalog-only"),
+        pytest.param(
+            None, {"sha": SHA_A, "components": {}}, "'sha' in the index only", id="index-only"
+        ),
     ],
 )
 def test_a_sha_on_one_side_only_is_reported(temp_dir, catalog_sha, index_entry, expected) -> None:
@@ -299,7 +306,7 @@ def test_check_components_off_keeps_the_name_and_sha_checks(temp_dir) -> None:
         index(
             {
                 "almanac": {"components": {"skills": [{"name": "ebb-window"}]}},
-                "retired": {},
+                "retired": {"components": {}},
             }
         ),
         skills=("tide-window",),
@@ -341,13 +348,20 @@ def test_an_index_whose_plugins_is_not_an_object_is_one_finding(temp_dir) -> Non
         temp_dir, "list-index", {"plugins": [url_entry("almanac", SHA_A)]}, index([])
     )
 
-    assert messages(check(repo)) == ["'plugins' must be an object keyed by plugin name"]
+    assert messages(check(repo)) == [
+        "Invalid display index: 'plugins' must be an object keyed by plugin name"
+    ]
 
 
 def test_an_unreadable_catalog_reports_no_parity(temp_dir) -> None:
     """One defect, one finding: grok-marketplace-json-valid names the
     catalog, and comparing against nothing would report every plugin."""
-    repo = marketplace(temp_dir, "bad-catalog", {"plugins": []}, index({"almanac": {"sha": SHA_A}}))
+    repo = marketplace(
+        temp_dir,
+        "bad-catalog",
+        {"plugins": []},
+        index({"almanac": {"sha": SHA_A, "components": {}}}),
+    )
     (repo / ".grok-plugin" / "marketplace.json").write_text('{"plugins": [,]}', encoding="utf-8")
 
     assert check(repo) == []
@@ -407,13 +421,15 @@ def test_an_index_entry_that_is_not_an_object_is_reported(temp_dir) -> None:
         index({"almanac": "garbage"}),
     )
 
-    assert "entries that are not objects: almanac" in only(check(repo), "disagrees").message
+    assert (
+        "plugins['almanac'] must be an object" in only(check(repo), "Invalid display index").message
+    )
 
 
 @pytest.mark.parametrize(
     "listed",
-    [{}, {"components": {}}, {"components": {"skills": "tide-window"}}],
-    ids=["no-components", "no-skills", "skills-not-a-list"],
+    [{"components": {}}, {"components": {"skills": []}}],
+    ids=["no-skills", "empty-skills"],
 )
 def test_an_index_entry_listing_no_usable_skills_reports_what_ships(temp_dir, listed) -> None:
     """The index is the browser's only component source, so an entry with no
@@ -585,7 +601,7 @@ def test_the_severity_override_reaches_the_primary_finding(temp_dir) -> None:
         temp_dir,
         "downgraded",
         {"plugins": [url_entry("almanac", SHA_A), url_entry("tides", SHA_B)]},
-        index({"almanac": {"sha": SHA_A}}),
+        index({"almanac": {"sha": SHA_A, "components": {}}}),
     )
 
     found = check(repo, {"severity": "info"})

@@ -263,6 +263,11 @@ a git repository.
   the catalog entry — drift silently blanks the listing. For a local source there is no
   `sha` to gate on, so a stale index is displayed while the plugin on disk disagrees. An
   index entry with no catalog entry, and a malformed index, are both ignored silently.
+  The typed reader requires integer version `1`, defaults omitted `plugins` to
+  an empty map, and requires each entry's component structure. One bad nested
+  field invalidates the whole index. The decoder preserves measured positional
+  JSON struct arrays, unknown fields and map duplicate semantics; recognized
+  struct duplicates and a BOM are rejected.
 - **Plugin hooks are a different loader from the project layer's.** `grok inspect
   --json` reports one opaque entry for a plugin's `hooks/hooks.json` whether the file is
   valid, empty or unparseable, so the failure matrix above is **not** evidence about it.

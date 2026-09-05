@@ -14,10 +14,11 @@ from typing import Any, Dict, FrozenSet, List, Optional, Set
 from skillsaw.context import RepositoryContext
 from skillsaw.formats import grok
 from skillsaw.formats.grok_catalog import catalog_type_errors, read_catalog_json
+from skillsaw.formats.grok_display_index import read_display_index
 from skillsaw.lint_target import GrokMarketplaceConfigNode, GrokMarketplaceIndexNode
 from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import parse_frontmatter, read_text, strict_json
+from skillsaw.rules.builtin.utils import parse_frontmatter, read_text
 
 from ._helpers import GROK_MARKETPLACE_REPO_TYPES, SAMPLE_LIMIT, sample
 
@@ -51,13 +52,12 @@ class _Drift:
     """Every disagreement found between one catalog and one index."""
 
     # Sets, not lists: ``parts()`` deduplicates and sorts, so nothing
-    # downstream reads order or multiplicity. The six entry-keyed fields are
+    # downstream reads order or multiplicity. The five entry-keyed fields are
     # bounded by the catalog that way; the two skill fields are not, because
     # their keys are ``entry/skill`` pairs and many entries may name one
     # plugin directory. Those two are capped instead — see :meth:`add_skill`.
     missing_from_index: Set[str] = field(default_factory=set)
     unknown_in_index: Set[str] = field(default_factory=set)
-    malformed_in_index: Set[str] = field(default_factory=set)
     sha_catalog_only: Set[str] = field(default_factory=set)
     sha_index_only: Set[str] = field(default_factory=set)
     sha_differs: Set[str] = field(default_factory=set)
@@ -82,7 +82,6 @@ class _Drift:
         labelled = (
             ("not in the index", self.missing_from_index, False),
             ("not in the catalog", self.unknown_in_index, False),
-            ("entries that are not objects", self.malformed_in_index, False),
             ("'sha' in the catalog only", self.sha_catalog_only, False),
             ("'sha' in the index only", self.sha_index_only, False),
             ("'sha' differs", self.sha_differs, False),
@@ -175,21 +174,16 @@ class GrokMarketplaceIndexParityRule(Rule):
     def _check_index(
         self, index: Path, catalog: Path, entries: Optional[List[_Entry]]
     ) -> List[RuleViolation]:
-        # Enforce strict JSON parsing to match Grok's parser behavior.
-        data, error = strict_json(index)
+        plugins, error = read_display_index(index)
         if error:
-            return [self.violation(f"Invalid JSON: {error}", file_path=index)]
-        plugins = data.get("plugins") if isinstance(data, dict) else None
-        if not isinstance(plugins, dict):
-            return [
-                self.violation("'plugins' must be an object keyed by plugin name", file_path=index)
-            ]
+            return [self.violation(error, file_path=index)]
         if entries is None:
             # The catalog itself is unreadable; grok-marketplace-json-valid
             # names that defect, and comparing against nothing would report
             # every plugin as missing.
             return []
 
+        assert plugins is not None
         drift = self._compare(entries, plugins)
         parts = drift.parts()
         if not parts:
@@ -213,13 +207,7 @@ class GrokMarketplaceIndexParityRule(Rule):
                 drift.missing_from_index.add(entry.display)
                 continue
             claimed.add(key)
-            listed = plugins.get(key)
-            if not isinstance(listed, dict):
-                # A key whose value is not an object: Grok has nothing to
-                # display for it, and it is claimed, so no other branch
-                # would ever name it.
-                drift.malformed_in_index.add(key or '""')
-                continue
+            listed = plugins[key]
             self._compare_sha(entry, listed, drift)
             if check_components and entry.plugin_dir is not None:
                 self._compare_skills(entry, listed, drift)
@@ -249,22 +237,12 @@ class GrokMarketplaceIndexParityRule(Rule):
     def _compare_skills(self, entry: _Entry, listed: Dict[str, Any], drift: _Drift) -> None:
         """A local source has no ``sha`` to gate on, so a stale index is shown.
 
-        A ``components`` object that is absent, has no ``skills`` key, or
-        holds a non-list under it displays no skills at all, so each is an
-        empty listing rather than a comparison to skip: the browser shows
-        nothing for a plugin that ships skills.
+        Typed decoding has already established the component shape. An
+        omitted or empty skills list shows nothing for a plugin that ships
+        skills, so that is a real comparison rather than a shape failure.
         """
-        components = listed.get("components")
-        declared = components.get("skills") if isinstance(components, dict) else None
-        index_names = (
-            {
-                item["name"]
-                for item in declared
-                if isinstance(item, dict) and isinstance(item.get("name"), str)
-            }
-            if isinstance(declared, list)
-            else set()
-        )
+        declared = listed["components"]["skills"]
+        index_names = {item["name"] for item in declared}
         disk = self._disk_skills(entry.plugin_dir)
         matched = {name for skill in disk for name in skill.names & index_names}
         for name in sorted(index_names - matched):

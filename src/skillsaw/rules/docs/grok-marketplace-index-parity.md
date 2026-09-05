@@ -41,15 +41,20 @@ Skillsaw reports parity discrepancies across the index and catalog:
   index, including differences in case or whitespace. The display reader compares
   the stored strings exactly; installer normalization is separate. Local display
   lookup ignores an optional index `sha` and still compares the skills.
-- Plugin entries in `plugin-index.json` whose values are not objects.
 - For local plugins: skills listed in the index that do not match the skills
   present in the plugin source on disk. Skills match by either their
   `SKILL.md` frontmatter `name` or their directory name.
 
 Additional checks:
 
-- Syntax errors in `plugin-index.json`, or an index where `plugins` is not an
-  object.
+- Syntax and typed index errors: version must be integer `1`; omitted `plugins`
+  defaults to an empty map. Each entry requires `components`, whose six optional
+  categories are arrays of items with a string `name` and optional string or null
+  `description`. A typed defect discards the whole index, so it produces one
+  index warning before any drift comparison.
+- Grok's accepted positional struct arrays and unknown metadata stay valid.
+  Recognized struct fields cannot repeat; plugin-map duplicates keep the last
+  entry after decoding every value. A UTF-8 BOM is rejected by this reader.
 - Placement and selection: Grok prefers `.grok-plugin/plugin-index.json`, then
   falls back to `.claude-plugin/plugin-index.json` when the preferred file is
   absent. A present broken preferred file stops fallback. A legal shadowed copy

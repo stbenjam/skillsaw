@@ -129,8 +129,8 @@ def test_display_index_keeps_literal_sha_comparison(tmp_path):
     data = {
         "version": 1,
         "plugins": {
-            "remote-review": {"sha": SHA_A},
-            "schema-tools": {"sha": SHA_A},
+            "remote-review": {"sha": SHA_A, "components": {}},
+            "schema-tools": {"sha": SHA_A, "components": {}},
             "local-canary": {"components": {"skills": [{"name": "review-catalog"}]}},
         },
     }
