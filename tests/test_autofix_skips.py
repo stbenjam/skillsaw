@@ -200,6 +200,54 @@ def test_unselected_confidence_does_not_report_skips_or_unusable_suggestions(tmp
     assert len(linter.fix_skips) == 1
 
 
+@pytest.mark.parametrize("linked_source", [False, True], ids=["regular-source", "linked-source"])
+def test_rename_proposal_metadata_tracks_both_endpoints(tmp_path, linked_source):
+    class RenameRule(_AliasRule):
+        def check(self, context):
+            source = context.root_path / "notes.txt"
+            if not source.exists():
+                return []
+            return [
+                self.violation(
+                    "Rename note",
+                    file_path=source,
+                    fixable=True,
+                    fix_confidence=AutofixConfidence.SAFE,
+                )
+            ]
+
+        def fix(self, context, violations):
+            proposal = super().fix(context, violations)[0]
+            proposal.rename_from = context.root_path / (
+                "alias.txt" if linked_source else "notes.txt"
+            )
+            proposal.file_path = context.root_path / "renamed.txt"
+            return [proposal]
+
+    linter = _alias_linter(tmp_path)
+    linter.rules = [RenameRule()]
+    remaining, proposals = linter.fix()
+    assert remaining == [] and len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal.confidence == AutofixConfidence.SAFE
+    assert len(proposal.violations_fixed) == 1
+    violation = proposal.violations_fixed[0]
+    assert violation.file_path == tmp_path / "notes.txt"
+    assert violation.fixable is (not linked_source)
+    assert violation.fix_confidence == (None if linked_source else AutofixConfidence.SAFE)
+    applied, suggested = linter.fix_and_apply()
+    assert suggested == []
+    if linked_source:
+        assert applied == []
+        assert [path for path, _ in linter.fix_skips] == [tmp_path / "alias.txt"]
+        assert (tmp_path / "notes.txt").read_text() == "Original note.\n"
+        assert not (tmp_path / "renamed.txt").exists()
+    else:
+        assert len(applied) == 1 and linter.fix_skips == []
+        assert not (tmp_path / "notes.txt").exists()
+        assert (tmp_path / "renamed.txt").read_text() == "Updated note.\n"
+
+
 def test_write_boundary_reports_symlinked_rename_source(tmp_path):
     linter = _alias_linter(tmp_path)
     _remaining, proposals = linter.fix()

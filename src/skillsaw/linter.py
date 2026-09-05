@@ -1399,6 +1399,11 @@ class Linter:
                                 or not self._is_external_source_path(f.rename_from)
                             )
                         ]
+                        for fix in fixes:
+                            if self._symlink_skip(fix.file_path, fix.rename_from) is not None:
+                                for violation in fix.violations_fixed:
+                                    violation.fixable = False
+                                    violation.fix_confidence = None
                         all_fixes.extend(fixes)
                         fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
                         remaining = [v for v in visible if id(v) not in fixed_violations]
