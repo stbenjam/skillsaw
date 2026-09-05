@@ -10,6 +10,7 @@ import sys
 import sysconfig
 import zipfile
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -45,7 +46,8 @@ def test_feedback_text_output_requires_review_before_sharing(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    result = _run_feedback(repo)
+    note = "Parser note: café & [details]\nSecond line"
+    result = _run_feedback(repo, "--message", note)
 
     assert result.returncode == 0, result.stderr
     bundles = list((repo / ".skillsaw-feedback").glob("*.zip"))
@@ -56,6 +58,27 @@ def test_feedback_text_output_requires_review_before_sharing(tmp_path):
     assert "stephen@bitbin.de" in result.stdout
     assert "https://github.com/stbenjam.gpg" in result.stdout
     assert "Extracts: skillsaw-feedback-" in result.stdout
+    issue_url = next(line.strip() for line in result.stdout.splitlines() if "?template=" in line)
+    # GitHub forms prefill textareas by their schema id, not the Markdown
+    # template's body parameter. Verify the actual CLI output against our form.
+    import yaml
+    from skillsaw.utils import _SAFE_LOADER
+
+    form = yaml.load(
+        (Path(__file__).parents[1] / ".github/ISSUE_TEMPLATE/bug_report.yml").read_text(),
+        Loader=_SAFE_LOADER,
+    )
+    query = parse_qs(urlsplit(issue_url).query)
+    assert query["template"] == ["bug_report.yml"]
+    fields = {field.get("id") for field in form["body"]}
+    prefilled = {key: value for key, value in query.items() if key != "template"}
+    assert prefilled.keys() <= fields
+    assert len(prefilled) == 1
+    text = next(iter(prefilled.values()))[0]
+    assert bundles[0].name in text
+    assert hashlib.sha256(bundles[0].read_bytes()).hexdigest() in text
+    assert "Please attach the generated ZIP" in text
+    assert note in text
 
 
 def test_feedback_rejects_source_files_outside_the_repository(tmp_path):
