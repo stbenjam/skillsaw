@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import AbstractSet, Any, Dict, List, Optional, Tuple
 
-from skillsaw.blocks import json_token
+from skillsaw.blocks.antigravity_hooks import field_items
 from skillsaw.blocks.json_config import (
     AntigravityHooksBlock,
     _antigravity_entry_declares_a_handler,
@@ -101,7 +101,7 @@ class AntigravityHooksValidRule(Rule):
         if isinstance(extra, (list, tuple, set, frozenset)):
             for event in extra:
                 if isinstance(event, str):
-                    known.setdefault(event.casefold(), event)
+                    known.setdefault(antigravity.hook_key_fold(event), event)
         return known
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -113,7 +113,7 @@ class AntigravityHooksValidRule(Rule):
 
 
 class _FileCheck:
-    """One hooks file, walked once."""
+    """A hooks file's retained decode errors and effective configuration."""
 
     def __init__(
         self,
@@ -126,6 +126,7 @@ class _FileCheck:
         self.known_events = known_events
         self.fatal: List[RuleViolation] = []
         self.advisory: List[RuleViolation] = []
+        self.include_history = False
 
     def _fatal(self, where: str, problem: str) -> None:
         self.fatal.append(
@@ -137,6 +138,8 @@ class _FileCheck:
         )
 
     def _advisory(self, where: str, problem: str) -> None:
+        if self.include_history:
+            return
         self.advisory.append(
             self.rule.violation(
                 f"{where}: {problem}",
@@ -160,21 +163,6 @@ class _FileCheck:
                 )
             ]
 
-        # Python's ``json`` accepts the bare tokens ``NaN``, ``Infinity``
-        # and ``-Infinity`` as floats where Go's decoder refuses the
-        # document, so the defect is the file rather than the field.
-        found = self.block.first_non_finite()
-        if found is not None:
-            path, value = found
-            return [
-                self.rule.violation(
-                    f"'{json_token(value)}' at {safe_display(path)} is not valid JSON; "
-                    f"{_FILE_SCOPED}",
-                    file_path=self.block.path,
-                    fingerprint_discriminator="non-finite",
-                )
-            ]
-
         data = self.block.raw_data
         if not isinstance(data, dict):
             return [
@@ -188,6 +176,17 @@ class _FileCheck:
         foreign = self._foreign_shape(data)
         if foreign is not None:
             return [foreign]
+
+        # Go retains decoding failures even in replaced named hooks/events.
+        # Only files with duplicates need the history walk; advisories describe
+        # effective fields, so discarded entries do not create extra warnings.
+        if getattr(data, "has_repeated_fields", False):
+            self.include_history = True
+            for name, _spelling, spec in field_items(data, history=True):
+                self._check_named_hook(name, spec)
+            if self.fatal:
+                return self.fatal
+            self.include_history = False
 
         for hook_name, hook_spec in data.items():
             self._check_named_hook(hook_name, hook_spec)
@@ -221,7 +220,7 @@ class _FileCheck:
         events = {}
         for key, value in nested.items():
             # JSON object keys are always strings, so no type guard here.
-            canonical = self.known_events.get(key.casefold())
+            canonical = self.known_events.get(antigravity.hook_key_fold(key))
             if canonical is None:
                 return None
             events[canonical] = value
@@ -258,9 +257,8 @@ class _FileCheck:
     def _check_named_hook(self, hook_name: Any, hook_spec: Any) -> None:
         where = f"hook '{safe_display(str(hook_name))}'"
         if hook_spec is None:
-            # Go decodes a JSON ``null`` as the zero value and reports
-            # nothing, so every ``null`` in this file reads as "the key is
-            # absent". Measured at every placement: the file still loads.
+            # A null named hook is accepted as an empty hook specification.
+            # Scalar null retention inside a handler is resolved by the block.
             return
         if not isinstance(hook_spec, dict):
             hint = antigravity.HOOK_METADATA_KEY_HINTS.get(hook_name)
@@ -281,15 +279,19 @@ class _FileCheck:
         # hooks``. Only the value decides, so it falls through to the
         # checks every other named hook gets.
 
-        for key, value in hook_spec.items():
+        for key, spelling, value in field_items(hook_spec, history=self.include_history):
             if key in antigravity.HOOK_SPEC_NON_EVENT_KEYS:
                 if value is not None and not isinstance(value, bool):
-                    self._fatal(where, f"'{safe_display(str(key))}' must be a boolean")
+                    self._fatal(where, f"'{safe_display(spelling)}' must be a boolean")
                 continue
             self._check_event(where, key, value)
 
     def _check_event(self, where: str, event: Any, value: Any) -> None:
-        canonical = self.known_events.get(event.casefold()) if isinstance(event, str) else None
+        canonical = (
+            self.known_events.get(antigravity.hook_key_fold(event))
+            if isinstance(event, str)
+            else None
+        )
         if canonical is None:
             self._advisory(
                 where,
@@ -327,45 +329,53 @@ class _FileCheck:
                 self._check_handler(entry_where, entry)
 
     def _check_group(self, where: str, group: Dict[str, Any]) -> None:
-        matcher = group.get("matcher")
-        if matcher is not None and not isinstance(matcher, str):
-            self._fatal(where, "'matcher' must be a string")
+        for spelling, matcher in self._values(group, "matcher"):
+            if matcher is not None and not isinstance(matcher, str):
+                self._fatal(where, f"'{safe_display(spelling)}' must be a string")
         self._report_unknown_keys(where, group, antigravity.HOOK_GROUP_KEYS, "group key")
-        handlers = group.get("hooks")
-        if handlers is None:
-            return
-        if not isinstance(handlers, list):
-            self._fatal(where, "'hooks' must be an array of handlers")
-            return
-        for index, handler in enumerate(handlers):
-            handler_where = f"{where}.hooks[{index}]"
-            if handler is None:
+        for spelling, handlers in self._values(group, "hooks"):
+            if handlers is None:
                 continue
-            if not isinstance(handler, dict):
-                self._fatal(handler_where, "a handler must be a JSON object")
+            if not isinstance(handlers, list):
+                self._fatal(where, f"'{safe_display(spelling)}' must be an array of handlers")
                 continue
-            self._check_handler(handler_where, handler)
+            for index, handler in enumerate(handlers):
+                handler_where = f"{where}.hooks[{index}]"
+                if handler is None:
+                    continue
+                if not isinstance(handler, dict):
+                    self._fatal(handler_where, "a handler must be a JSON object")
+                    continue
+                self._check_handler(handler_where, handler)
+
+    def _values(self, obj: Dict[str, Any], field: str):
+        return (
+            (spelling, value)
+            for key, spelling, value in field_items(obj, history=self.include_history)
+            if key == field
+        )
 
     def _check_handler(self, where: str, handler: Dict[str, Any]) -> None:
         handler_type, typed = self._handler_type(where, handler)
         for field in ("command", "prompt", "model"):
-            if handler.get(field) is not None and not isinstance(handler[field], str):
-                self._fatal(where, f"'{field}' must be a string")
-                typed = False
-        timeout = handler.get("timeout")
-        if timeout is not None:
-            if isinstance(timeout, bool) or not isinstance(timeout, int):
-                # An int32 in Go: ``0`` and negatives load, a float or a
-                # string kills the file.
-                self._fatal(where, "'timeout' must be a whole number of seconds")
-            elif not antigravity.HOOK_TIMEOUT_MIN <= timeout <= antigravity.HOOK_TIMEOUT_MAX:
-                # Measured: an integer past either end of the int32 range
-                # empties the file exactly as a float does.
-                self._fatal(
-                    where,
-                    f"'timeout' must be between {antigravity.HOOK_TIMEOUT_MIN} and "
-                    f"{antigravity.HOOK_TIMEOUT_MAX}",
-                )
+            for spelling, value in self._values(handler, field):
+                if value is not None and not isinstance(value, str):
+                    self._fatal(where, f"'{safe_display(spelling)}' must be a string")
+                    typed = False
+                    break
+        for spelling, timeout in self._values(handler, "timeout"):
+            shown = safe_display(spelling)
+            if timeout is not None:
+                if isinstance(timeout, bool) or not isinstance(timeout, int):
+                    self._fatal(where, f"'{shown}' must be a whole number of seconds")
+                    break
+                if not antigravity.HOOK_TIMEOUT_MIN <= timeout <= antigravity.HOOK_TIMEOUT_MAX:
+                    self._fatal(
+                        where,
+                        f"'{shown}' must be between {antigravity.HOOK_TIMEOUT_MIN} and "
+                        f"{antigravity.HOOK_TIMEOUT_MAX}",
+                    )
+                    break
 
         self._report_unknown_keys(where, handler, antigravity.HOOK_HANDLER_KEYS, "handler key")
 
@@ -393,12 +403,13 @@ class _FileCheck:
         file, and the comparison is case-sensitive: ``"COMMAND"`` is
         rejected.
         """
+        for spelling, value in self._values(handler, "type"):
+            if value is not None and not isinstance(value, str):
+                self._fatal(where, f"'{safe_display(spelling)}' must be a string")
+                return None, False
         raw = handler.get("type")
         if raw is None:
             return "command", True
-        if not isinstance(raw, str):
-            self._fatal(where, "'type' must be a string")
-            return None, False
         if raw == "":
             return "command", True
         if raw not in antigravity.HOOK_HANDLER_TYPES:
@@ -413,7 +424,7 @@ class _FileCheck:
         self, where: str, obj: Dict[str, Any], known: AbstractSet[str], label: str
     ) -> None:
         """One finding per object, listing every key its parser discards."""
-        unknown = sorted(str(key) for key in obj if key not in known)
+        unknown = sorted(spelling for key, spelling, _ in field_items(obj) if key not in known)
         if not unknown:
             return
         rendered = ", ".join(f"'{safe_display(key)}'" for key in unknown)

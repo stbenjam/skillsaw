@@ -13,6 +13,9 @@ CLAUDE.md next to an AGENTS.md should import it so both assistants read one sour
 | **Repo Types** | agents-md, claude-md |
 | **Category** | [Instruction Files](instruction-files.md) |
 
+The generated-file exemption recognizes multiline banners inside a leading HTML
+comment. Set `ignore-generated: false` to review those files explicitly.
+
 ## Why
 
 Claude Code reads `CLAUDE.md`; almost every other agent reads `AGENTS.md`.

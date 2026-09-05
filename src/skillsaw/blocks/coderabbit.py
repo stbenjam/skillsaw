@@ -18,6 +18,7 @@ from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 
 from skillsaw.utils import (
+    invalidate_read_caches,
     read_text,
     yaml_key_line_after as _yaml_key_line_after_util,
     yaml_key_lines as _yaml_key_lines_util,
@@ -84,6 +85,9 @@ class CodeRabbitContentBlock(ContentBlock):
             self.path.write_text(buf.getvalue(), encoding="utf-8")
         except (OSError, UnicodeDecodeError, _RuamelYAMLError):
             return
+        self.body = new_body
+        invalidate_read_caches(self.path)
+        self.invalidate_find_cache()
 
     def tree_label(self) -> str:
         return f"{self.yaml_path} ({self.category})"

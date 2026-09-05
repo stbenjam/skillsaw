@@ -271,11 +271,9 @@ class TestStructuralShape:
         "document,fragment",
         [
             ([], "must be a JSON object"),
-            ({"description": "no hooks here"}, "must contain a 'hooks' key"),
             ({"hooks": []}, "'hooks' must be a JSON object"),
             ({"hooks": {"SessionStart": {"type": "command"}}}, "must have an array"),
             ({"hooks": {"SessionStart": ["echo hi"]}}, "Hook SessionStart[0] must be an object"),
-            ({"hooks": {"SessionStart": [{"matcher": ".*"}]}}, "is missing 'hooks'"),
             ({"hooks": {"SessionStart": [{"hooks": {}}]}}, "'hooks' must be an array"),
             ({"hooks": {"SessionStart": [{"hooks": ["echo"]}]}}, "must be an object"),
             ({"hooks": {"SessionStart": [{"hooks": [{}]}]}}, "is missing 'type'"),
@@ -286,11 +284,11 @@ class TestStructuralShape:
         found = messages(_findings(repo))
         assert any(fragment in m for m in found), found
 
-    @pytest.mark.parametrize("bad", [[], {}, 42, None])
+    @pytest.mark.parametrize("bad", [[], {}, 42])
     def test_a_non_string_matcher_is_reported(self, tmp_path, bad):
         """The block coerces it to the ``.*`` wildcard so the security
         rules still see the commands; reporting keeps the coercion from
-        hiding a hook that now fires on everything."""
+        hiding a value Codex cannot decode."""
         repo = _root_hooks_repo(
             tmp_path,
             {
@@ -436,6 +434,95 @@ class TestStructuralShape:
         found = messages(_findings(repo))
         assert any("Unknown hook event" in m for m in found), found
         assert any("is missing 'command'" in m for m in found), found
+
+
+# ── Nullable JSON fields ───────────────────────────────────────
+
+
+class TestNullableJsonFields:
+    """Codex 0.153.2 accepts null for Option fields, not every defaulted field."""
+
+    @pytest.mark.parametrize("event", ["PreToolUse", "UserPromptSubmit"])
+    def test_a_null_matcher_is_unset_without_an_ignored_matcher_advisory(self, tmp_path, event):
+        document = _one_command_hook(event, {"type": "command", "command": "echo checked"})
+        document["hooks"][event][0]["matcher"] = None
+        repo = _root_hooks_repo(tmp_path, document)
+
+        assert _findings(repo) == []
+
+    @pytest.mark.parametrize(
+        "handler,field",
+        [
+            ({"type": "command", "command": "echo checked"}, "commandWindows"),
+            ({"type": "command", "command": "echo checked"}, "command_windows"),
+            ({"type": "command", "command": "echo checked"}, "statusMessage"),
+            ({"type": "command", "command": "echo checked"}, "timeout"),
+            ({"type": "command", "command": "echo checked"}, "additionalContextLimit"),
+            ({"type": "mcp_tool", "server": "policy", "tool": "check"}, "statusMessage"),
+            ({"type": "mcp_tool", "server": "policy", "tool": "check"}, "timeout"),
+        ],
+    )
+    def test_an_optional_nullable_field_is_accepted(self, tmp_path, handler, field):
+        repo = _root_hooks_repo(tmp_path, _one_command_hook("PreToolUse", {**handler, field: None}))
+
+        assert _findings(repo) == []
+
+    @pytest.mark.parametrize(
+        "handler,field,expected",
+        [
+            ({"type": "command", "command": "echo checked"}, "async", "bool"),
+            ({"type": "mcp_tool", "server": "policy", "tool": "check"}, "input", "dict"),
+            ({"type": "command"}, "command", "str"),
+            ({"type": "mcp_tool", "tool": "check"}, "server", "str"),
+            ({"type": "mcp_tool", "server": "policy"}, "tool", "str"),
+        ],
+    )
+    def test_a_non_nullable_field_still_rejects_null(self, tmp_path, handler, field, expected):
+        repo = _root_hooks_repo(tmp_path, _one_command_hook("PreToolUse", {**handler, field: None}))
+        found = _findings(repo)
+
+        assert messages(found) == [f"Hook PreToolUse[0].hooks[0] '{field}' must be a {expected}"]
+        assert found[0].severity == Severity.ERROR
+
+    @pytest.mark.parametrize(
+        "field", ["commandWindows", "command_windows", "additionalContextLimit"]
+    )
+    def test_null_does_not_make_a_command_field_an_mcp_field(self, tmp_path, field):
+        repo = _root_hooks_repo(
+            tmp_path,
+            _one_command_hook(
+                "PreToolUse", {"type": "mcp_tool", "server": "policy", "tool": "check", field: None}
+            ),
+        )
+        found = _findings(repo)
+
+        assert messages(found) == [
+            f"Hook PreToolUse[0].hooks[0] '{field}' is not a 'mcp_tool' field"
+        ]
+        assert found[0].severity == Severity.WARNING
+
+    @pytest.mark.parametrize(
+        "windows,alias", [(None, None), (None, "echo checked"), ("echo checked", None)]
+    )
+    def test_null_does_not_remove_a_windows_alias_conflict(self, tmp_path, windows, alias):
+        repo = _root_hooks_repo(
+            tmp_path,
+            _one_command_hook(
+                "PreToolUse",
+                {
+                    "type": "command",
+                    "command": "echo checked",
+                    "commandWindows": windows,
+                    "command_windows": alias,
+                },
+            ),
+        )
+        found = _findings(repo)
+
+        assert messages(found) == [
+            "Hook PreToolUse[0].hooks[0] sets both 'commandWindows' and 'command_windows'"
+        ]
+        assert found[0].severity == Severity.ERROR
 
 
 # ── Tokens Python accepts and Codex does not ────────────────────
@@ -821,6 +908,45 @@ class TestCodexHooksThroughTheCli:
 
         assert "Rule codex-hooks-valid              skipped (not applicable)" not in log
         assert [v for v in self._run(repo) if v["rule_id"] == "codex-hooks-valid"] == []
+
+    def test_nullable_matchers_keep_entire_commands_discovered_and_lint_clean(self, tmp_path):
+        """Entire-generated hooks use null matchers on three lifecycle events."""
+        repo = copy_fixture("codex/hooks-nullable", tmp_path)
+        context = RepositoryContext(repo)
+        blocks = context.lint_tree.find(CodexHooksBlock)
+        assert [block.path.relative_to(repo).as_posix() for block in blocks] == [
+            ".codex/hooks.json"
+        ]
+        assert {
+            event: [
+                (entry.matcher, [handler.command for handler in entry.handlers])
+                for entry in entries
+            ]
+            for event, entries in blocks[0].events.items()
+        } == {
+            "SessionStart": [(".*", ["entire hooks codex session-start"])],
+            "Stop": [(".*", ["entire hooks codex stop"])],
+            "UserPromptSubmit": [(".*", ["entire hooks codex user-prompt-submit"])],
+        }
+
+        result = run_cli(
+            [
+                "lint",
+                str(repo),
+                "--rule",
+                "codex-hooks-valid",
+                "--format",
+                "json",
+                "-v",
+                "--no-custom-rules",
+                "--no-plugins",
+            ]
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.loads(result.stdout)
+        assert report["stats"]["repo_types"] == ["codex-project"]
+        assert report["stats"]["rules_run"] == ["codex-hooks-valid"]
+        assert report["violations"] == []
 
     def test_the_clean_fixture_reports_nothing_through_the_cli(self, tmp_path):
         repo = copy_fixture("codex/hooks-clean", tmp_path)

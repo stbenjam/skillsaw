@@ -25,6 +25,12 @@ class TestAcceptedRegistries:
         "name,body",
         [
             ("empty", "{}"),
+            ("null-root", "null"),
+            ("null-entry", '{"entries": [null]}'),
+            ("missing-path", '{"entries": [{}]}'),
+            ("plural-key", '{"entries": [{"paths": ["a"]}]}'),
+            ("null-path", '{"entries": [{"path": null}]}'),
+            ("ignored-overflow", '{"entries": [], "weight": 1e400}'),
             ("entries", '{"entries": [{"path": "internal/schedule/agents"}]}'),
             ("filters", '{"entries": [{"path": "a", "include_only": ["x-*"], "exclude": ["y"]}]}'),
             ("inherits", '{"entries": [], "inherits": [{"path": "~/.gemini/config"}]}'),
@@ -62,7 +68,7 @@ class TestSkippedRegistries:
             ("unparseable", '{"entries": }', "does not parse"),
             ("bom", '\ufeff{"entries": []}', "UTF-8 BOM"),
             ("array-root", "[1, 2]", "must be a JSON object"),
-            ("non-finite", '{"entries": [], "weight": 1e400}', "not valid JSON"),
+            ("non-finite", '{"entries": [], "weight": NaN}', "not valid JSON"),
         ],
     )
     def test_file_is_skipped(self, tmp_path: Path, name: str, body: str, needle: str) -> None:
@@ -79,12 +85,7 @@ class TestEntryShape:
         "name,body",
         (
             ("bare-string", '{"entries": ["internal/schedule/agents"]}'),
-            ("plural-key", '{"entries": [{"paths": ["a"]}]}'),
             ("number-path", '{"entries": [{"path": 5}]}'),
-            # ``null`` is the zero value, so a null ``path`` reads exactly
-            # as an absent one — and an entry naming no directory loads
-            # nothing, which is the defect this reports.
-            ("null-path", '{"entries": [{"path": null}]}'),
         ),
     )
     def test_entry_must_carry_a_string_path(self, tmp_path: Path, name: str, body: str) -> None:

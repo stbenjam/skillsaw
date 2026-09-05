@@ -182,10 +182,11 @@ class RepositoryProvenanceMixin:
           source listing in any Codex catalog.
         * ``agent-plugin`` — a contained package carrying an Agent Plugins
           schema identifier in root ``plugin.json``.
-        * ``grok`` — a contained ``.grok-plugin/plugin.json``, or a local
-          source listing in any Grok catalog.
+        * ``grok`` — a contained ``.grok-plugin/plugin.json``, a local
+          source listing in any Grok catalog, or a contained config path.
         * ``antigravity`` — a contained ``plugin.json`` at
-          ``<customization root>/plugins/<name>``, or membership of the
+          ``<customization root>/plugins/<name>`` or carrying its official
+          schema identifier, or membership of the
           claim set, which folds in the plugin roots a ``plugins.json``
           registry names.
 
@@ -252,7 +253,8 @@ class RepositoryProvenanceMixin:
             resolved is not None
             and resolved in self._antigravity_claim_set()
             # A forced ``--type antigravity-plugin`` claims every direct
-            # child of a ``plugins/`` directory, manifest or not. The marker
+            # child of a ``plugins/`` directory, manifest or not, and an
+            # existing manifest at the requested root. The marker
             # gets the same containment check discovery applies, so a
             # ``plugin.json`` symlinked out of the plugin is not this
             # plugin's and no node is built to read it.

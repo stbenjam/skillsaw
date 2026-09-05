@@ -25,7 +25,7 @@ Severity reflects how much of the hook configuration is affected by an issue:
 - Invalid JSON syntax, non-finite numbers (`NaN`, `Infinity`, `-Infinity`), or
   a file starting with a UTF-8 Byte Order Mark (BOM).
 - Missing top-level `hooks` object, or an object that is not a dictionary.
-- Event values that are not arrays, matcher groups that are not objects, or
+- Recognized event values that are not arrays, matcher groups that are not objects, or
   matcher groups missing their `hooks` array.
 - Handlers missing a `type` field.
 - A `matcher` that is not a string.
@@ -35,7 +35,9 @@ Severity reflects how much of the hook configuration is affected by an issue:
 
 **Warnings** — the file loads, but specific events or handlers may not run:
 
-- Unrecognized hook event names.
+- Unrecognized hook event names. Grok skips their values before decoding
+  groups or handlers, so their descendants do not produce shape errors.
+  Declare a newer event in `extra-events` to enable its strict shape checks.
 - A regex `matcher` that does not compile under Rust's regex engine. Rust's
   regex syntax supports Unicode property classes (`\p{...}`) and set operations
   (`&&`, `--`, `~~`), but does not support lookarounds, backreferences, or
@@ -140,3 +142,21 @@ rules:
     extra-events:
       - PreSomethingNew
 ```
+
+## Matcher check limits
+
+Matcher validation is conservative: it translates Rust inline flags and
+braced hexadecimal escapes only for syntax checking. For example,
+`Bash|(?i)Write`, `(?-u:\w+)`, `(?U).*`, `\x{42}ash`, `\u{42}ash` and
+`\U{42}ash` are accepted.
+Unclosed groups/classes and unsupported look-around/backreferences are still
+reported in the checked subset. Extended-mode (`x`) patterns are left
+unresolved because comments change tokenization. No finding is a complete
+Rust regex validation guarantee.
+
+## Numeric timeouts
+
+Write a timeout as an unsigned integer token, such as `0` or `30`. Grok
+rejects literal `-0`, decimal/exponent forms such as `0.0` and `0e0`, and
+integers above `18446744073709551615`. A wrong timeout type prevents the
+whole hooks file from loading.

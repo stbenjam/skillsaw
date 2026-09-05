@@ -52,6 +52,10 @@ class ContentInconsistentTerminologyRule(Rule):
         ),
     ]
 
+    # Functions and methods name distinct concepts in ordinary technical
+    # prose. Keep the configurable group for teams that explicitly want it.
+    _OPT_IN_GROUPS = frozenset({"function/method"})
+
     MIN_FILES = 2
 
     config_schema = {
@@ -61,7 +65,8 @@ class ContentInconsistentTerminologyRule(Rule):
             "description": (
                 "Per-group overrides keyed by group name (e.g. 'function/method'): "
                 "'off' or false disables the group; a severity ('error', 'warning', "
-                "'info') overrides the rule severity for that group"
+                "'info') overrides the rule severity for that group. The function/method "
+                "group is off by default and a severity enables it"
             ),
         },
     }
@@ -73,12 +78,10 @@ class ContentInconsistentTerminologyRule(Rule):
     def _parse_group_overrides(self) -> Dict[str, Optional[Severity]]:
         """Parse the ``groups`` config into {group name: severity or None}.
 
-        ``None`` means the group is disabled. Groups absent from the map keep
-        the rule-level severity.
+        ``None`` means the group is disabled. Groups absent from the map use
+        their default: opt-in groups are off, others use the rule severity.
         """
-        raw = self.config.get("groups")
-        if raw is None:
-            raw = {}
+        raw = self.setting("groups")
         if not isinstance(raw, dict):
             raise ValueError(
                 f"'groups' for rule '{self.rule_id}' must be a mapping of "
@@ -160,7 +163,8 @@ class ContentInconsistentTerminologyRule(Rule):
 
         violations = []
         for group_name, patterns in self._TERM_GROUPS:
-            group_severity = self._group_overrides.get(group_name, self.severity)
+            default = None if group_name in self._OPT_IN_GROUPS else self.severity
+            group_severity = self._group_overrides.get(group_name, default)
             if group_severity is None:
                 continue
             term_usage: Dict[str, int] = defaultdict(int)

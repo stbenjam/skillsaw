@@ -1648,10 +1648,10 @@ class TestContentInconsistentTerminologyRule:
     def test_disabled_group_accepts_off_spellings(self, temp_dir, setting):
         """YAML 1.1 loaders parse a bare ``off`` as boolean False; quoted
         strings and casing variants must behave the same."""
-        (temp_dir / "CLAUDE.md").write_text("Write a helper function.\n")
-        (temp_dir / "AGENTS.md").write_text("Write a helper method.\n")
+        (temp_dir / "CLAUDE.md").write_text("Use the output directory.\n")
+        (temp_dir / "AGENTS.md").write_text("Use the output folder.\n")
         context = RepositoryContext(temp_dir)
-        rule = ContentInconsistentTerminologyRule({"groups": {"function/method": setting}})
+        rule = ContentInconsistentTerminologyRule({"groups": {"directory/folder": setting}})
         assert rule.check(context) == []
 
     def test_group_severity_is_case_insensitive(self):
@@ -1688,8 +1688,8 @@ class TestContentInconsistentTerminologyRule:
 
     def test_groups_null_treated_as_absent(self, temp_dir):
         """``groups:`` with no value parses as None and must not raise."""
-        (temp_dir / "CLAUDE.md").write_text("Write a helper function.\n")
-        (temp_dir / "AGENTS.md").write_text("Write a helper method.\n")
+        (temp_dir / "CLAUDE.md").write_text("Use the output directory.\n")
+        (temp_dir / "AGENTS.md").write_text("Use the output folder.\n")
         context = RepositoryContext(temp_dir)
         rule = ContentInconsistentTerminologyRule({"groups": None})
         assert rule._group_overrides == {}
@@ -2042,6 +2042,23 @@ scenario touches in the fixture header comment block.
 
 
 class TestContentBrokenInternalReferenceRule:
+    @pytest.mark.skipif(os.name == "nt", reason="Windows disallows '?' in filenames")
+    @pytest.mark.parametrize("target", ["guide.md?variant=notes", "guide.md%3Fvariant%3Dnotes"])
+    def test_literal_question_mark_filename_still_resolves(self, temp_dir, target):
+        (temp_dir / "guide.md?variant=notes").write_text("# Variant notes\n")
+        (temp_dir / "AGENTS.md").write_text(f"Read [the variant notes]({target}).\n")
+        assert ContentBrokenInternalReferenceRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_query_does_not_change_repository_containment(self, temp_dir):
+        repo = temp_dir / "repo"
+        repo.mkdir()
+        (temp_dir / "outside.md").write_text("# Outside\n")
+        (repo / "AGENTS.md").write_text("Read [the notes](../outside.md?plain=1).\n")
+        found = ContentBrokenInternalReferenceRule().check(RepositoryContext(repo))
+        assert len(found) == 1
+        assert "outside repository" in found[0].message
+        assert found[0].fixable is False
+
     def test_rule_metadata(self):
         rule = ContentBrokenInternalReferenceRule()
         assert rule.rule_id == "content-broken-internal-reference"
@@ -2944,6 +2961,26 @@ class TestContentUnlinkedInternalReferenceAutofix:
 
 
 class TestContentBrokenInternalReferenceAutofix:
+    @pytest.mark.parametrize("change", ["diagnostic", "file"])
+    def test_fix_uses_original_destination_evidence(self, temp_dir, change):
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs/setup(v2).md").write_text("# Setup\n")
+        path = temp_dir / "AGENTS.md"
+        path.write_text("Read [the guide](docs/setup(v1).md).\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        found = rule.check(context)
+        assert len(found) == 1 and found[0].fixable
+        if change == "diagnostic":
+            found[0].message = "The user-facing wording can change independently."
+            fixes = rule.fix(context, found)
+            assert len(fixes) == 1
+            assert fixes[0].fixed_content == "Read [the guide](docs/setup%28v2%29.md).\n"
+        else:
+            path.write_text("Read [the guide](docs/new-user-link.md).\n")
+            assert rule.fix(context, found) == []
+            assert path.read_text() == "Read [the guide](docs/new-user-link.md).\n"
+
     def test_suggests_similar_filename(self, temp_dir):
         """Broken link should suggest a similar existing file."""
         (temp_dir / "docs").mkdir()

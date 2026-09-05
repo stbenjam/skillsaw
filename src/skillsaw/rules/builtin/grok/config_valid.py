@@ -6,19 +6,21 @@ Verifies TOML syntax, MCP server entries under ``[mcp_servers]``, and tool
 permissions under ``[permission]``.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from skillsaw.blocks import GrokConfigBlock
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import grok
+from skillsaw.formats.grok_mcp import decode_mcp_server
+from skillsaw.formats.grok_permissions import (
+    permission_fields,
+    rule_fields,
+    verbose_permission_problems,
+)
 from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import sample
-
-#: Server fields whose TOML type Grok's deserializer pins. Read in this
-#: order so a server carrying two defects names them the way the file does.
-_TYPED_SERVER_FIELDS = ("command", "url", "args", "env", "headers")
 
 #: The TOML type each Python type was read as, in the spelling TOML uses.
 #: Hoisted, because ``_type_name`` is called once per defective field.
@@ -101,14 +103,14 @@ class GrokConfigValidRule(Rule):
             if not isinstance(config, dict):
                 violations.append(self._warn(block, f"{where} must be a table"))
                 continue
-            problems = _server_problems(config)
+            problems = decode_mcp_server(config)[1]
             if problems:
                 # One finding per server: the defect is the server Grok
                 # drops, and the problems are the reasons it drops it.
                 violations.append(
                     self._warn(
                         block,
-                        f"{where} {', '.join(problems)}",
+                        f"{where} {sample(problems)}",
                     )
                 )
         return violations
@@ -125,12 +127,19 @@ class GrokConfigValidRule(Rule):
         ``rules`` costs every rule in the array. The findings say which, so
         an author knows whether the rest of the key survived.
 
-        A non-table ``permission`` is deliberately not reported: what it
-        costs was never measured, and a rule may not invent the verdict.
+        Only array-valued compact keys select the compact branch. Otherwise
+        the workspace resolver decodes the complete verbose permission table.
         """
-        table = data.get(grok.PERMISSION_TABLE)
-        if not isinstance(table, dict):
+        if grok.PERMISSION_TABLE not in data:
             return []
+        table = permission_fields(data[grok.PERMISSION_TABLE])
+        if not isinstance(table, dict):
+            return [
+                self._warn(
+                    block,
+                    f"'{grok.PERMISSION_TABLE}' must be a table or a valid field array, got {_type_name(table)}",
+                )
+            ]
 
         violations: List[RuleViolation] = []
         # Document order, so a file with two defects reads top to bottom. No
@@ -161,20 +170,21 @@ class GrokConfigValidRule(Rule):
                 )
 
         rules_key = grok.PERMISSION_RULES_KEY
-        if rules_key not in table:
-            return violations
-        if lists:
-            # Measured: every verbose rule is discarded whenever any of the
-            # three list keys is present, in any order. Its type no longer
-            # matters, so this is the file's one finding about it.
+        compact = [key for key in lists if isinstance(table[key], list)]
+        if compact:
+            if rules_key not in table or table[rules_key] == []:
+                return violations
+            # An array-valued compact key selects the compact branch even
+            # if it is empty. Malformed compact keys do not select it.
             violations.append(
                 self._warn(
                     block,
                     f"[{grok.PERMISSION_TABLE}] '{rules_key}' is discarded because "
-                    f"{_and_list(lists)} also set",
+                    f"{_and_list(compact)} also set",
                 )
             )
-        elif not isinstance(table[rules_key], list):
+            return violations
+        if rules_key in table and not isinstance(table[rules_key], list):
             violations.append(
                 self._warn(
                     block,
@@ -186,77 +196,31 @@ class GrokConfigValidRule(Rule):
             # Measured, and the opposite of the compact keys above: one
             # non-table entry costs the whole array. Two valid rules beside
             # a bare integer loaded nothing, silently.
-            bad = _bad_entries(table[rules_key], dict)
+            bad = _bad_entries([rule_fields(value) for value in table.get(rules_key, [])], dict)
             if bad:
                 violations.append(
                     self._warn(
                         block,
-                        f"[{grok.PERMISSION_TABLE}] '{rules_key}' entries must be tables; "
+                        f"[{grok.PERMISSION_TABLE}] '{rules_key}' entries must be rule tables or field arrays; "
                         f"Grok discards the whole array over {sample(bad)}",
                     )
                 )
+            else:
+                problems = verbose_permission_problems(table)
+                if problems:
+                    violations.append(
+                        self._warn(
+                            block,
+                            f"[{grok.PERMISSION_TABLE}] Grok discards the whole '{rules_key}' array: {sample(problems)}",
+                        )
+                    )
         return violations
 
     def _warn(self, block: GrokConfigBlock, message: str) -> RuleViolation:
         """Report a warning-level violation scoped to an entry or field."""
-        return self.violation(message, file_path=block.path, severity=Severity.WARNING)
-
-
-def _server_problems(config: Dict[str, Any]) -> List[str]:
-    """Why Grok refuses to load one ``[mcp_servers.<name>]`` table.
-
-    The connection comes first and alone: a server with nothing to start is
-    dropped whatever else it declares, and the reason names the field that
-    should have carried it. Only a server Grok does start reaches the field
-    types, where the remaining connection field is checked too — a ``url``
-    beside a working ``command`` is deserialized just the same.
-    """
-    if grok.mcp_transport(config) is None:
-        return [_connection_problem(config)]
-    problems = []
-    for field in _TYPED_SERVER_FIELDS:
-        if field not in config:
-            continue
-        problem = _field_problem(field, config[field])
-        if problem is not None:
-            problems.append(problem)
-    return problems
-
-
-def _connection_problem(config: Dict[str, Any]) -> str:
-    """Which field failed to name something Grok can start."""
-    for field in ("command", "url"):
-        if field not in config:
-            continue
-        value = config[field]
-        if not isinstance(value, str):
-            return f"'{field}' must be a string, got {_type_name(value)}"
-        if not value.strip():
-            return f"'{field}' is empty"
-    return "declares neither 'command' nor 'url'"
-
-
-def _field_problem(field: str, value: Any) -> Optional[str]:
-    """How *value* fails the TOML type Grok reads *field* as, if it does."""
-    if field in ("command", "url"):
-        if isinstance(value, str):
-            return None
-        return f"'{field}' must be a string, got {_type_name(value)}"
-    if field == "args":
-        if not isinstance(value, list):
-            return f"'args' must be an array of strings, got {_type_name(value)}"
-        if any(not isinstance(item, str) for item in value):
-            return "'args' must be an array of strings"
-        return None
-    if not isinstance(value, dict):
-        return f"'{field}' must be a table of strings, got {_type_name(value)}"
-    for key, item in value.items():
-        if not isinstance(item, str):
-            return (
-                f"'{field}' value for '{safe_display(key)}' must be a string, "
-                f"got {_type_name(item)}"
-            )
-    return None
+        return self.violation(
+            message, file_path=block.path, severity=self.scope_severity(Severity.WARNING)
+        )
 
 
 def _type_name(value: Any) -> str:

@@ -108,6 +108,23 @@ class ClaudeMdAgentsImportRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.INFO
 
+    @staticmethod
+    def _is_generated(claude: ClaudeMdBlock, body: str) -> bool:
+        if has_generated_marker(body):
+            return True
+        # Join lines only inside leading AST-recognized comments. Joining
+        # arbitrary prose would mistake discussion of generated files for
+        # a banner, while a fenced example must remain ordinary content.
+        remaining = body.lstrip()
+        for comment in claude.markdown.html_comments():
+            source = f"<!--{comment.text}-->"
+            if not remaining.startswith(source):
+                break
+            if has_generated_marker(" ".join(comment.text.splitlines())):
+                return True
+            remaining = remaining[len(source) :].lstrip()
+        return False
+
     # -- pairing ---------------------------------------------------------
 
     @staticmethod
@@ -284,7 +301,7 @@ class ClaudeMdAgentsImportRule(Rule):
                 # An empty CLAUDE.md is ``instruction-file-valid``'s finding,
                 # and there is no content to move anywhere.
                 continue
-            if ignore_generated and has_generated_marker(body):
+            if ignore_generated and self._is_generated(claude, body):
                 continue
             if self._agents_points_at_claude(agents, claude):
                 continue

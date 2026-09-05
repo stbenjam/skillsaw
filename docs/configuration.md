@@ -177,6 +177,8 @@ rules added in newer skillsaw versions) fail CI instead of accumulating
 silently. When info violations are what failed the run, the text output
 shows them even without `--verbose`. Pair it with a
 [baseline](baseline.md) to adopt the threshold before reaching zero.
+`skillsaw baseline` includes INFO findings with this config setting; when
+using only `lint --fail-on info`, create it with `baseline --include-info`.
 
 ## Custom Rules
 
@@ -396,3 +398,10 @@ plugins:
 `--no-plugins` CLI flag skips all plugins for a single run. Individual
 plugin *rules* are configured in the normal `rules:` section by rule ID,
 exactly like builtin rules.
+
+For primary findings with different default failure scopes, an explicit rule
+severity overrides each scope. For example, `antigravity-mcp-valid` normally
+reports an invalid document as ERROR and a dropped server as WARNING; setting
+its severity to INFO lowers both. An omitted or null severity retains the
+default classifications. Intentionally separate advisory findings keep the
+classification documented by their rule.

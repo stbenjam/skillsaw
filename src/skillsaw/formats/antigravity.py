@@ -34,6 +34,11 @@ EXCLUSIVE_ROOT_NAMES = frozenset({".agent"})
 #: a registry can also name a manifest-bearing directory elsewhere.
 PLUGIN_MANIFEST = "plugin.json"
 
+#: The official schema identifier also identifies a standalone package at
+#: the requested lint root. The loader ignores the field; discovery uses
+#: the author's exact declaration without fetching the schema.
+PLUGIN_SCHEMA_ID = "https://antigravity.google/schemas/v1/plugin.json"
+
 #: Lifecycle hooks, one file per customization root and one per plugin.
 HOOKS_FILENAME = "hooks.json"
 
@@ -61,6 +66,10 @@ PLUGINS_DIR_NAME = "plugins"
 #: ``rules.json`` literal exists in the binary but no loader was reached
 #: for it, so it is deliberately not here.
 REGISTRY_FILENAMES = ("agents.json", "plugins.json", "skills.json", "workflows.json")
+
+#: JSONConfig and PathEntry fields use Go case-insensitive matching.
+REGISTRY_FIELDS = frozenset({"entries", "inherits"})
+REGISTRY_ENTRY_FIELDS = frozenset({"path", "include_only", "exclude"})
 
 #: The two registries whose ``entries`` the lint tree resolves. Both are
 #: measured end to end — a ``plugins.json`` naming a container loads every
@@ -161,6 +170,25 @@ HOOK_GROUP_KEYS = frozenset({"matcher", "hooks"})
 #: .enabled of type jsonhook.JSONHookSpec``) that kills the file.
 HOOK_SPEC_NON_EVENT_KEYS = frozenset({"enabled"})
 
+#: Hook structs match ASCII field names using Go's simple Unicode fold.
+HOOK_SPEC_FIELD_NAMES = MappingProxyType(
+    {key.lower(): key for key in HOOK_EVENTS | HOOK_SPEC_NON_EVENT_KEYS}
+)
+HOOK_ENTRY_FIELD_NAMES = MappingProxyType(
+    {key.lower(): key for key in HOOK_HANDLER_KEYS | HOOK_GROUP_KEYS}
+)
+
+
+def hook_key_fold(key: str) -> str:
+    """Fold known Go fields without expanding sharp s into two letters."""
+    return key.lower().replace("ſ", "s")
+
+
+def hook_field_name(key: str, *, entry: bool = False) -> str:
+    names = HOOK_ENTRY_FIELD_NAMES if entry else HOOK_SPEC_FIELD_NAMES
+    return names.get(hook_key_fold(key), key)
+
+
 #: Top-level keys an author writes meaning file-level metadata, which this
 #: host reads as hook *names*. Each gets its own message saying so, because
 #: "a named hook must be a JSON object" tells the author nothing about why
@@ -185,15 +213,40 @@ MCP_AUTH_PROVIDER_TYPES = frozenset({"google_credentials"})
 #: absent: a non-string there is tolerated and the server still loads.
 MCP_STRING_FIELDS = ("command", "url", "serverUrl", "cwd")
 
+#: These server fields are decoded into Go struct fields. The wrapper and
+#: env/header member names remain exact; unknown server properties are ignored.
+MCP_SERVER_FIELDS = MCP_STRING_FIELDS + (
+    "args",
+    "env",
+    "headers",
+    "oauth",
+    "disabled",
+    "disabledTools",
+    "authProviderType",
+)
+MCP_SERVER_FIELD_NAMES = MappingProxyType({key.lower(): key for key in MCP_SERVER_FIELDS})
+MCP_OAUTH_FIELD_NAMES = MappingProxyType({"clientid": "clientId", "clientsecret": "clientSecret"})
+
+
+def mcp_field_name(key: str, *, oauth: bool = False) -> str:
+    """Go's case-insensitive struct matching, restricted to known MCP fields.
+
+    Long s and Kelvin sign also fold to ASCII in Go. ``lower`` handles the
+    latter; full Unicode ``casefold`` would wrongly expand sharp s to ``ss``.
+    """
+    names = MCP_OAUTH_FIELD_NAMES if oauth else MCP_SERVER_FIELD_NAMES
+    return names.get(key.lower().replace("ſ", "s"), key)
+
+
 #: Per-server maps in ``mcp_config.json`` whose values may hold a committed
 #: credential, as ``(key, is_http_header)``. All three are measured to
 #: load: ``env``, ``headers``, and ``oauth`` carrying ``clientId`` /
 #: ``clientSecret``.
 MCP_CREDENTIAL_MAPS = (("env", False), ("headers", True), ("oauth", False))
 
-#: The same two keys spelled at a server's own top level, where they are
-#: scalars rather than a map. Measured to load there too, so a secret
-#: written this way ships and runs exactly like one inside ``oauth``.
+#: Tolerated server-level properties kept in committed-credential scans.
+#: The MCP decoder only consumes these credentials inside ``oauth``;
+#: top-level values are ignored and have no host type requirement.
 MCP_CREDENTIAL_FIELDS = ("clientId", "clientSecret")
 
 #: The ``oauth`` map's keys, renamed to the snake_case spelling the shared

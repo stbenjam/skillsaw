@@ -1,0 +1,4 @@
+{
+  "prompt-review": {"Stop": [{"type": "prompt", "TYPE": null, "prompt": "Check formatting."}]},
+  "command-review": {"Stop": [{"command": "/audit/retained-command", "command": null}]}
+}

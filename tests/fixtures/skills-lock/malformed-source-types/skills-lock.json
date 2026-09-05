@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "skills": {
+    "array-source": {
+      "source": "example/skills",
+      "sourceType": [],
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "object-source": {
+      "source": "example/skills",
+      "sourceType": {},
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "null-source": {
+      "source": "example/skills",
+      "sourceType": null,
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "empty-source": {
+      "source": "example/skills",
+      "sourceType": "",
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "future-source": {
+      "source": "example/skills",
+      "sourceType": "future-registry",
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "valid-source": {
+      "source": "example/skills",
+      "sourceType": "github",
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "broken-hash": {
+      "source": "example/skills",
+      "sourceType": "github",
+      "computedHash": "invalid"
+    }
+  }
+}

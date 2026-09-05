@@ -285,12 +285,19 @@ class TestDualManifestBackwardCompat:
             json.dumps({"name": "Tide_Charts", "version": "2.0.0", "description": "x"}),
             encoding="utf-8",
         )
-        # The catalog sits at the repository root and claims it: a source
-        # is contained against its own marketplace root, so a catalog in a
-        # subdirectory could not reach back up to claim its parent.
-        write_catalog(repo, local_catalog("./"))
+        # A catalog can claim a child directory through the Claude
+        # fallback manifest, but Grok rejects a source naming the root.
+        marketplace = tmp_path / "marketplace"
+        plugin = marketplace / "packages" / "tide-charts"
+        plugin.parent.mkdir(parents=True)
+        shutil.move(str(repo), plugin)
+        write_catalog(
+            marketplace, {"name": "harbour-marketplace", **local_catalog("./packages/tide-charts")}
+        )
+        context = RepositoryContext(marketplace)
+        assert "grok" in context.provenance(plugin).ecosystems
 
-        found = messages(GrokPluginJsonValidRule().check(RepositoryContext(repo)))
+        found = messages(GrokPluginJsonValidRule().check(context))
 
         assert any("Tide_Charts" in message for message in found), found
 

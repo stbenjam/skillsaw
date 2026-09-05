@@ -1,0 +1,5 @@
+{
+  "name": "local-canary",
+  "version": "1.0.0",
+  "description": "Review catalog changes before publishing them."
+}

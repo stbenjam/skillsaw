@@ -28,7 +28,12 @@ from typing import (
 )
 
 from skillsaw.formats import antigravity
+from skillsaw.formats.grok_hooks import read_hooks_json
+from skillsaw.formats.antigravity_registry import read_registry
+from skillsaw.blocks.antigravity_mcp import read_mcp_config
+from skillsaw.blocks.antigravity_hooks import read_hooks_config
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
+from skillsaw.formats.vscode import VSCODE_HOOK_COMMAND_FIELDS
 from skillsaw.lint_target import LintTarget
 from skillsaw.repository_types import RepositoryType
 from skillsaw.utils import (
@@ -78,10 +83,6 @@ def _as_str_list(value: Any) -> Optional[List[str]]:
         return None
     return [v for v in value if isinstance(v, str)]
 
-
-#: VS Code's per-platform command keys, which ``copilot-agent-valid``
-#: enforces as that host's vocabulary — one host's spelling, not the union.
-VSCODE_HOOK_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
 
 #: Every key any host may carry an executable command string under. Each one
 #: is a command something will run, so ``hooks-dangerous`` and
@@ -158,7 +159,9 @@ class HookHandler:
                 yield " ".join([command, *self.args]), source_line
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookHandler":
+    def from_dict(
+        cls, d: Dict[str, Any], *, line_offset: int = 0, default_type: str = ""
+    ) -> "HookHandler":
         """Build a handler from raw JSON, dropping values of the wrong type.
 
         The annotations here are a contract the JSON cannot be trusted to
@@ -183,7 +186,7 @@ class HookHandler:
                 (value, variant_line + line_offset if variant_line is not None else None)
             )
         return cls(
-            type=_as_str(d.get("type")) or "",
+            type=_as_str(d.get("type", default_type)) or "",
             command=_as_str(d.get("command")),
             command_variants=command_variants,
             args=_as_str_list(d.get("args")),
@@ -215,13 +218,17 @@ class HookEventConfig:
     handlers: List[HookHandler] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookEventConfig":
+    def from_dict(
+        cls, d: Dict[str, Any], *, line_offset: int = 0, default_type: str = ""
+    ) -> "HookEventConfig":
         handlers: List[HookHandler] = []
         raw_hooks = d.get("hooks", [])
         if isinstance(raw_hooks, list):
             for h in raw_hooks:
                 if isinstance(h, dict):
-                    handlers.append(HookHandler.from_dict(h, line_offset=line_offset))
+                    handlers.append(
+                        HookHandler.from_dict(h, line_offset=line_offset, default_type=default_type)
+                    )
         return cls(
             # Coerced like the handler fields: a list-valued matcher reaches
             # every consumer annotated ``str``, and the generated docs page
@@ -234,7 +241,9 @@ class HookEventConfig:
         )
 
 
-def parse_hooks_events(hooks_obj: Any, *, line_offset: int = 0) -> Dict[str, List[HookEventConfig]]:
+def parse_hooks_events(
+    hooks_obj: Any, *, line_offset: int = 0, default_type: str = ""
+) -> Dict[str, List[HookEventConfig]]:
     """Parse a ``hooks`` object into event configs.
 
     Supports both the nested (hooks.json / settings.json) format
@@ -253,9 +262,15 @@ def parse_hooks_events(hooks_obj: Any, *, line_offset: int = 0) -> Dict[str, Lis
             if not isinstance(cfg, dict):
                 continue
             if "hooks" in cfg:
-                entries.append(HookEventConfig.from_dict(cfg, line_offset=line_offset))
-            elif "type" in cfg:
-                handler = HookHandler.from_dict(cfg, line_offset=line_offset)
+                entries.append(
+                    HookEventConfig.from_dict(
+                        cfg, line_offset=line_offset, default_type=default_type
+                    )
+                )
+            elif "type" in cfg or default_type:
+                handler = HookHandler.from_dict(
+                    cfg, line_offset=line_offset, default_type=default_type
+                )
                 matcher = _as_str(cfg.get("matcher")) or ".*"
                 entries.append(HookEventConfig(matcher=matcher, handlers=[handler]))
         if entries:
@@ -285,7 +300,7 @@ def _parse_json_file(
     if jsonc:
         # JSONC is always strict about the non-finite tokens; the locations
         # that opt into it are new surfaces with no shipped results.
-        return read_jsonc(path)
+        return read_jsonc(path, allow_duplicate_keys=not duplicate_keys_fatal)
     if not strict:
         return read_json(path)
     return read_json_strict(
@@ -321,14 +336,14 @@ class JsonConfigBlock(LintTarget):
     #: as a parse error. Implies :attr:`strict_json`, which is why the
     #: locations setting this leave that one at its default.
     jsonc: ClassVar[bool] = False
-    #: Whether a repeated object key kills the file, asked only where
-    #: :attr:`strict_json` is set. On by default, which is what every host
+    #: Whether a repeated object key kills the file, asked where
+    #: :attr:`strict_json` or :attr:`jsonc` is set. On by default, which is what every host
     #: measured before Antigravity does. Google's ``agy`` reads its
     #: ``hooks.json``, ``mcp_config.json`` and registries with Go's
     #: ``encoding/json``: the last value wins and the file loads, measured
     #: at all three nesting depths against 1.1.25, so the blocks it reads
-    #: turn this off and keep the non-finite half. Not consulted on the
-    #: JSONC path, where no host accepts a duplicate.
+    #: turn this off and keep the non-finite half, including registries
+    #: written with JSONC comments and trailing commas.
     duplicate_keys_fatal: ClassVar[bool] = True
     merge_duplicate_fields: ClassVar[Tuple[Tuple[str, ...], ...]] = ()
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
@@ -571,6 +586,10 @@ class GrokHooksBlock(HooksBlock):
     ``serde_json``, which takes the last of two duplicate keys and runs it,
     and both security rules skip a block carrying a ``parse_error``.
     """
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = read_hooks_json(self.path)
 
     def tree_label(self) -> str:
         return f"{self.path.name} (grok hooks)"
@@ -938,10 +957,13 @@ class AntigravityHooksBlock(HooksBlock):
     #: hooks.json … invalid character``, and the run loads zero named
     #: hooks.
     strict_json: ClassVar[bool] = True
-    #: Measured: a repeated hook name, a repeated event key inside one
-    #: hook, and a repeated key inside one handler all load, last value
-    #: winning, with the same named-hook count as the file without them.
+    #: Repeated names/events replace earlier values, while handler strings
+    #: retain their prior value on null. Earlier type errors still fail the file.
     duplicate_keys_fatal: ClassVar[bool] = False
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = read_hooks_config(self.path)
 
     def tree_label(self) -> str:
         return f"{self.path.name} (antigravity hooks)"
@@ -992,7 +1014,7 @@ class AntigravityHooksBlock(HooksBlock):
                 # own spelling is normalized to the canonical name and two
                 # spellings of one event land in the same bucket.
                 canonical = antigravity.HOOK_EVENTS_BY_CASEFOLD.get(
-                    event_type.casefold() if isinstance(event_type, str) else "",
+                    antigravity.hook_key_fold(event_type) if isinstance(event_type, str) else "",
                     event_type,
                 )
                 configs: List[HookEventConfig] = []
@@ -1343,35 +1365,21 @@ class VsCodeMcpBlock(McpBlock):
         return "mcp.json (VS Code MCP)"
 
 
-#: Connection fields that identify one OpenCode server, paired with the type
-#: the field has on a server. The *value* type is what does the work: a
-#: server may legitimately be *named* ``command`` or ``type``, and matching
-#: on names alone would read the map holding it as a single server.
-_OPENCODE_CONNECTION_FIELDS = (
-    ("type", str),
-    ("command", list),
-    ("url", str),
-)
-
-
 def _is_opencode_server(value: Any) -> bool:
-    """Whether *value* is one OpenCode MCP server rather than a map of them.
+    """Distinguish a direct MCP server from a map of named servers.
 
-    Answers the same ambiguity upstream's ``isDirectServer`` does, though
-    not identically — it keys on ``type``/``enabled`` holding a non-object,
-    this keys on a connection field of the right type, and the two differ on
-    a bare ``{"enabled": true}``. A server carries a connection field; a map
-    of servers carries server objects. Testing the value and not just the
-    key is what keeps a server named ``command`` — whose ``command`` entry
-    is a nested object, not an argv array — from being mistaken for the
-    server itself. The discriminator is binary, so a ``servers`` map that
-    itself looks like a server is read as one: rare, and it needs a
-    malformed ``servers`` to trigger, but it hides the entries underneath
-    rather than merely misfiling them.
+    Match OpenCode's ``isDirectServer`` compatibility discriminator: a
+    present ``type`` or ``enabled`` whose value is not an object identifies
+    a direct entry, including a bare v1 enabled toggle. Invalid scalar or
+    array values still identify that entry so the shape rule reports the
+    right server. Object-valued fields can instead be nested servers named
+    ``type`` or ``enabled``.
     """
     if not isinstance(value, dict):
         return False
-    return any(isinstance(value.get(field), kind) for field, kind in _OPENCODE_CONNECTION_FIELDS)
+    return any(
+        field in value and not isinstance(value[field], dict) for field in ("type", "enabled")
+    )
 
 
 @dataclass(eq=False)
@@ -1484,10 +1492,9 @@ class OpenCodeMcpBlock(McpBlock):
         for name, cfg in section.items():
             if wrapper and name == "servers":
                 continue
-            # v2 carries a global ``timeout`` beside ``servers``. It is a
-            # setting, not a server, and upstream skips it by name for
-            # exactly this reason. A v1 server genuinely called ``timeout``
-            # carries a connection field, so it survives the test.
+            # v2 carries a global ``timeout`` beside ``servers``. A direct
+            # server field, including an enabled toggle, identifies a v1
+            # server genuinely called ``timeout`` rather than that setting.
             if name == "timeout" and not _is_opencode_server(cfg):
                 continue
             entries.append((name, cfg))
@@ -1608,21 +1615,13 @@ class AntigravityMcpBlock(McpBlock):
     require_usable_connection: ClassVar[bool] = False
     #: Measured: a comment or a trailing comma is exit 1, not a warning.
     strict_json: ClassVar[bool] = True
-    #: Measured with ``agy mcp list``: a repeated ``mcpServers`` wrapper, a
-    #: repeated server name and a repeated key inside one server all load,
-    #: the last value winning, with no diagnostic.
+    #: Go accepts duplicate keys. Server fields also match without regard
+    #: to case; the host-specific reader preserves their encounter order.
     duplicate_keys_fatal: ClassVar[bool] = False
-    # agy merges these typed maps, but replaces repeated server names and
-    # mcpServers wrappers. Null clears a map. Verified with agy 1.1.26.
-    merge_duplicate_fields: ClassVar[Tuple[Tuple[str, ...], ...]] = (
-        ("mcpServers", "*", "env"),
-        ("mcpServers", "*", "headers"),
-        ("mcpServers", "*", "oauth"),
-    )
     surface_rule: ClassVar[Optional[str]] = "antigravity-mcp-valid"
     credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = antigravity.MCP_CREDENTIAL_MAPS
-    #: ``clientId`` and ``clientSecret`` load at a server's own top level as
-    #: well as inside ``oauth``, so the flatter spelling is scanned too.
+    #: Keep scanning tolerated top-level credential properties, although
+    #: the host consumes those credentials only inside ``oauth``.
     credential_fields: ClassVar[Tuple[str, ...]] = antigravity.MCP_CREDENTIAL_FIELDS
     credential_key_aliases: ClassVar[Mapping[str, str]] = antigravity.MCP_CREDENTIAL_KEY_ALIASES
     #: ``serverUrl`` is Antigravity's spelling and wins over ``command``;
@@ -1634,6 +1633,10 @@ class AntigravityMcpBlock(McpBlock):
         syntax_error_rule="antigravity-mcp-valid",
         keeps_dialect_neutral_checks=True,
     )
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = read_mcp_config(self.path)
 
     def _server_config(self, name: str, cfg: Dict[str, Any]) -> McpServerConfig:
         """Apply Antigravity's endpoint precedence without changing other hosts."""
@@ -1663,11 +1666,14 @@ class AntigravityConfigBlock(JsonConfigBlock):
     """
 
     category: str = "antigravity config"
-    strict_json: ClassVar[bool] = True
-    #: Measured against a functional ``agents.json``: a repeated
-    #: ``entries`` key and a repeated ``path`` inside one entry both load
-    #: the last value's directory, with no diagnostic.
+    jsonc: ClassVar[bool] = True
+    #: Ordered decoding retains prior path strings on null and reuses
+    #: corresponding entries across nonempty repeated arrays.
     duplicate_keys_fatal: ClassVar[bool] = False
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = read_registry(self.path)
 
     def tree_label(self) -> str:
         return f"{self.path.name} (antigravity config)"

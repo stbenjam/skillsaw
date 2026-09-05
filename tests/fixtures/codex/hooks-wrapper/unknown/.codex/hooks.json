@@ -1,0 +1,16 @@
+{
+  "$schema_note": "Installer metadata",
+  "$note": "Local policy",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf ready"
+          }
+        ]
+      }
+    ]
+  }
+}

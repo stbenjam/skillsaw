@@ -1,7 +1,9 @@
 """State-free discovery of Antigravity plugins.
 
 Antigravity plugins are the direct children of ``plugins/`` under a
-customization root, each declaring itself with a ``plugin.json``. Measured
+customization root, each declaring itself with a ``plugin.json``. A standalone
+package at the lint root declares the official schema or is selected with
+``--type antigravity-plugin`` while carrying a manifest. Measured
 against ``agy`` 1.1.25: a nested ``plugins/outer/inner/plugin.json`` is not
 a plugin, a directory named by a sibling catalog but carrying no manifest
 is not a plugin, and a manifest whose ``$schema`` is the Agent Plugins one
@@ -27,6 +29,7 @@ from skillsaw.formats.antigravity import (
     HOOKS_FILENAME,
     MCP_CONFIG_FILENAME,
     PLUGIN_MANIFEST,
+    PLUGIN_SCHEMA_ID,
     PLUGINS_DIR_NAME,
     REGISTRY_FILENAMES,
     RULES_DIR_NAME,
@@ -38,15 +41,15 @@ from skillsaw.paths import (
     safe_resolve,
 )
 from skillsaw.utils import read_json_strict
+from skillsaw.formats.antigravity_registry import read_registry
 
 
 def is_antigravity_plugin_location(plugin_dir: Path) -> bool:
     """Whether *plugin_dir* sits where Antigravity installs a plugin.
 
     ``<customization root>/plugins/<name>`` and nothing else. Asked of the
-    path rather than of the filesystem, because the answer is what keeps a
-    root ``plugin.json`` — the Agent Plugins marker — from reading as an
-    Antigravity declaration.
+    path rather than of the filesystem: outside this install location,
+    a manifest needs explicit schema evidence to declare Antigravity.
     """
     parent = plugin_dir.parent
     return parent.name == PLUGINS_DIR_NAME and parent.parent.name in ANTIGRAVITY_CONFIG_DIR_NAMES
@@ -148,9 +151,10 @@ def antigravity_manifest_is_contained(plugin_dir: Path) -> bool:
     Authorship evidence is read directly from the filesystem, independently
     of the requested ``--type``.
 
-    Existence, not parseability: a manifest that does not parse means
-    ``agy`` skips the directory, and reporting that is
-    ``antigravity-plugin-json-valid``'s job, which needs the node to exist.
+    At the install location, existence is enough: a manifest that does
+    not parse still needs a validation node. Elsewhere, the exact official
+    schema identifies the author-declared ecosystem; an arbitrary root
+    ``plugin.json`` is shared by unrelated formats.
 
     Containment here is against *plugin_dir*, so a ``plugin.json``
     symlinked out of the plugin is not this plugin's manifest. That is
@@ -159,16 +163,17 @@ def antigravity_manifest_is_contained(plugin_dir: Path) -> bool:
     first**, which ``discover_antigravity_plugins`` and
     ``registry_plugin_roots`` both do before calling in.
     """
-    if not is_antigravity_plugin_location(plugin_dir):
-        return False
     root = safe_resolve(plugin_dir)
     if root is None:
         return False
     manifest = plugin_dir / PLUGIN_MANIFEST
     resolved_manifest = contained_resolve(manifest, root)
-    if resolved_manifest is None:
+    if resolved_manifest is None or not safe_is_file(resolved_manifest):
         return False
-    return safe_is_file(resolved_manifest)
+    if is_antigravity_plugin_location(plugin_dir):
+        return True
+    data, error = read_json_strict(resolved_manifest, allow_duplicate_keys=True)
+    return not error and isinstance(data, dict) and data.get("$schema") == PLUGIN_SCHEMA_ID
 
 
 def antigravity_marker_escapes(plugin_dir: Path) -> bool:
@@ -199,11 +204,11 @@ def discover_antigravity_plugins(
     way the repository root's does — ``agy`` walks up from the entry
     directory and unions every root on the way.
 
-    *forced* is ``--type antigravity-plugin``: it takes every direct child
-    of a ``plugins/`` directory, manifest or not, so the manifest rule has
-    a node to report against. It seeds no repository root, unlike the Codex
-    and Grok arms: an Antigravity plugin is never the repository root, so a
-    seed there would build a node over a directory ``agy`` cannot install.
+    The requested root joins when its manifest declares Antigravity.
+    *forced* is ``--type antigravity-plugin``: it also selects an existing
+    root manifest whose contents cannot identify the format, and every
+    direct child of an installed ``plugins/`` directory, manifest or not.
+    A collection with no root manifest gets no extra root validation node.
     """
     resolved_root = safe_resolve(root)
     if resolved_root is None:
@@ -211,6 +216,11 @@ def discover_antigravity_plugins(
 
     plugins: List[Path] = []
     seen: Set[Path] = set()
+    if antigravity_manifest_is_contained(root) or (
+        forced and not antigravity_marker_escapes(root) and safe_is_file(root / PLUGIN_MANIFEST)
+    ):
+        plugins.append(root)
+        seen.add(resolved_root)
 
     for customization_dir in customization_dirs:
         plugins_dir = customization_dir / PLUGINS_DIR_NAME
@@ -284,7 +294,7 @@ def iter_registries(
         visited.add(resolved)
         if not safe_is_file(resolved):
             continue
-        data, error = read_json_strict(resolved, allow_duplicate_keys=True)
+        data, error = read_registry(resolved)
         if error or not isinstance(data, dict):
             yield path, None
             continue

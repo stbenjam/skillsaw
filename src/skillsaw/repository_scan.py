@@ -33,7 +33,9 @@ class RepositoryScanMixin:
         repo_types: Set[RepositoryType]
         plugins: List[Path]
         codex_plugins: List[Path]
-        grok_plugins: List[Path]
+
+        def grok_plugin_roots(self) -> List[Path]: ...
+
         antigravity_plugins: List[Path]
 
         def antigravity_plugin_roots(self) -> List[Path]: ...
@@ -146,7 +148,9 @@ class RepositoryScanMixin:
                 if not self.provenance(plugin).agent_plugin or self.provenance(plugin).claude
             ],
             codex_plugins=self.codex_plugins,
-            grok_plugins=self.grok_plugins,
+            # Config and catalog declarations retain custom skill paths
+            # under unrelated --type overrides, just like their tree nodes.
+            grok_plugins=self.grok_plugin_roots(),
             # The claim union, not the gated discovery list: a plugin a
             # ``plugins.json`` registry names has a container and its hooks
             # and MCP file either way, and its ``skills/`` must not vanish

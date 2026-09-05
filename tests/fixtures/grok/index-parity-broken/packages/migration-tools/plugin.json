@@ -1,0 +1,5 @@
+{
+  "name": "migration-tools",
+  "version": "1.0.0",
+  "description": "Review schema migration plans before applying them to a database."
+}

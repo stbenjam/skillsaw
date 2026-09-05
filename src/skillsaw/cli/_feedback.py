@@ -838,7 +838,7 @@ def _issue_url(bundle_name: str, bundle_sha256: str, message: str) -> str:
     )
     if message:
         body += f"\n### Reporter note\n\n{message}\n"
-    return f"{_ISSUE_URL}?{urlencode({'template': 'bug_report.yml', 'body': body})}"
+    return f"{_ISSUE_URL}?{urlencode({'template': 'bug_report.yml', 'diagnostic_bundle': body})}"
 
 
 def _run_feedback(args) -> None:

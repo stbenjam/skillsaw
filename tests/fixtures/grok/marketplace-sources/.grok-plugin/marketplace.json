@@ -1,0 +1,39 @@
+{
+  "name": "field-survey-tools",
+  "plugins": [
+    {
+      "name": "almanac",
+      "description": "Plan a almanac field survey. Use when preparing observations for a shoreline station.",
+      "source": {
+        "url": null,
+        "path": "./packages/almanac"
+      }
+    },
+    {
+      "name": "field-notes",
+      "description": "Plan a field-notes field survey. Use when preparing observations for a shoreline station.",
+      "source": {
+        "source": "url",
+        "path": "./packages/field-notes"
+      }
+    },
+    {
+      "name": "station-check",
+      "description": "Plan a station-check field survey. Use when preparing observations for a shoreline station.",
+      "source": "packages\\station-check"
+    },
+    {
+      "name": "canary",
+      "description": "Plan a canary field survey. Use when preparing observations for a shoreline station.",
+      "source": "./packages/canary"
+    },
+    {
+      "name": "remote-kit",
+      "description": "Additional field survey tools.",
+      "source": {
+        "url": "https://example.invalid/remote-kit.git",
+        "sha": "1f9d0c73a86b24e5107cad3f88b90250e6c147da"
+      }
+    }
+  ]
+}

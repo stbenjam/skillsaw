@@ -47,8 +47,9 @@ that matrix before changing a rule here.
     --json` loaded zero hooks from an otherwise-correct file with a leading BOM;
     skillsaw reads with `utf-8-sig` and would see a valid document, so this is
     checked before anything else); malformed JSON; a bare `NaN`/`Infinity`/`-Infinity`;
-    no top-level `hooks` object, or one that is not an object; an event whose value is
-    not an array; a matcher group that is not an object; a group with no `hooks` key or
+    no top-level `hooks` object, or one that is not an object; a recognized event
+    whose value is not an array; a matcher group that is not an object; a group with
+    no `hooks` key or
     a non-array one; a `matcher` that is not a string, which never reaches the regex
     compiler; a handler that is not an object; a handler with no `type`, or a `null`
     one; any known handler field carrying the wrong JSON type — including a `timeout`
@@ -57,7 +58,8 @@ that matrix before changing a rule here.
     is not one of those wrong types: Grok reads it as the key being absent, so `type`
     is the only field whose `null` costs the file.
   - *That group*: a `matcher` string that does not compile.
-  - *That event's entries*: a name outside the events and aliases below.
+  - *That event's entries*: a name outside the events and aliases below. Unknown
+    events are skipped before their values, groups or handlers are decoded.
   - *That handler*: a `command` handler with no `command` or a `null` one, an `http`
     handler with no `url` or a `null` one, a `type` outside `command`/`http`.
   - *Tolerated*: a `null` `timeout`, `env` or `matcher`, and a `null` in any field the
@@ -101,7 +103,9 @@ that matrix before changing a rule here.
 - **Subagent frontmatter**: `.grok/agents/*.md` needs `name` and `description` in
   frontmatter or Grok's loader drops the subagent and reports nothing — it is on
   disk and simply absent from the agent list. An empty value for either key still
-  registers; the loader checks presence, not content. Extra keys are tolerated.
+  registers; scalars, including numbers, booleans and null, are coerced to strings,
+  but collections are rejected. Leading whitespace and delimiter-line suffixes are
+  accepted. Extra keys are tolerated.
   `.grok/commands/*.md` is deliberately not held to the same demand — Grok loads a
   frontmatter-less command file, naming it from the filename, so the same check
   there would be a false positive on a file that works.
@@ -133,20 +137,31 @@ signal.
 ### What a project file contributes
 
 - **Measured honored**: `[mcp_servers]` and `[permission]`
-  (`PROJECT_CONFIG_TABLES_MEASURED`). **Documented but unmeasured**: `[plugins]` and
-  `[mcp] max_output_bytes` — no observable at *either* scope. `PROJECT_CONFIG_TABLES`
-  holds all four, because a rule must not report a documented table as ignored; the
-  measured subset is what a message may make a claim about.
+  (`PROJECT_CONFIG_TABLES_MEASURED`). `[plugins]` additionally has source-confirmed
+  project support; `[mcp] max_output_bytes` remains documented but unmeasured.
+  `PROJECT_CONFIG_TABLES` holds all four.
 - **Measured refused**: `[hooks]` (the honored path for a project's hooks is
   `.grok/hooks/*.json`, which loads), `[skills].paths` and `[sandbox].profile`, each
   with a positive user-scope control (`PROJECT_CONFIG_TABLES_REFUSED`).
-- **`[plugins]`**: `enabled` and `disabled` are documented and were **not** reproduced
-  at project *or* user scope against a `.grok/plugins/` directory, so nothing may be
-  asserted to work and no rule reports an unrecognized key inside the table. `paths`
-  is user-scope only — three independent runs ignored a project `paths`, relative or
-  absolute, git repository or not, and the user layer's `paths` plugin arrived
-  `scope: "config"` and `enabled: false`. That is the one measured refusal inside an
-  honored table, and `PROJECT_CONFIG_KEYS_REFUSED` is where it lives.
+- **`[plugins]`**: the live session's `resolve_effective_plugins_config()` merges
+  trusted project `paths` and project `disabled`. `inspect` does not call that
+  resolver, so its absent project plugins cannot establish a refusal. The source
+  is `xai-grok-shell/src/config/mod.rs` at
+  `72a61251fcffb464bcc687aeb5a998e5a98ec0c9`; no authenticated session was needed.
+  Config paths name individual plugins with separate component trust; they skip
+  installer child-bundle search. User-scope `inspect` confirms root `plugin.json`,
+  custom skill paths, absolute paths and `.`; empty strings are skipped.
+  Native strings are session-cwd-relative. Static discovery
+  assumes a session launched beside each declaring `.grok/`, including nested
+  project roots, and contains targets within the lint checkout. It does not expand
+  environment variables or `~`, inspect external user configuration, or infer trust.
+  These declarations feed the shared provenance and skill-discovery claim set even
+  under unrelated `--type` overrides. Installer-only structure advice skips paths
+  declared solely for direct loading; catalog-addressed paths retain that check.
+- **User scope**: `GrokConfigBlock.is_user_config` matches the actual configured
+  user file by canonical path, as `xai-grok-workspace/src/project_config.rs` does.
+  Project-only advice skips that file while TOML and MCP validation keep it.
+  A dotfiles checkout elsewhere is not guessed to be user configuration.
 
 ### `[mcp_servers]`
 
@@ -154,21 +169,29 @@ signal.
   field raises an `mcpConfigProblems` *warning* and the server still loads, so it is
   never a reason to call the file broken. `transport` is the plausible misspelling of
   `type` and is not an alias — reported unrecognized, ignored.
-- **Transport derivation** (`mcp_transport()`), exactly Grok's order: a non-empty
-  `command` → `stdio`, winning even beside a `url`; else a `url` with `type = "sse"` →
-  `sse`; else a `url` → `http`; else Grok drops that server, per server and
-  order-independent, leaving its siblings and `[permission]` untouched. `type` is
-  otherwise advisory, and neither field's content is validated — `url = "not a url"`
-  loads as an HTTP server. `enabled = false` omits the server from `inspect`;
-  `GrokConfigBlock` keeps it anyway, because the command is committed and one word
-  turns it back on.
+- **Transport derivation** (`formats/grok_mcp.py`): Grok tries the entire stdio
+  variant first, then HTTP. Fields outside the selected variant are ignored;
+  malformed stdio fields can allow HTTP fallback. Common fields (`enabled`,
+  timeouts, OAuth and setup) decode independently. A selected blank connection is
+  rejected only when enabled. The URL accepts `url`, `urlTemplate` or `url_template`;
+  two URL aliases reject the HTTP variant. HTTP becomes SSE for case-insensitive
+  `type = "sse"` or an exact `/sse` URL suffix. Neither target's content or
+  reachability is validated. `GrokConfigBlock` normalizes the selected variant,
+  including aliases, while retaining disabled and unresolved-setup definitions for
+  diagnostics. Native `inspect` omits those definitions. These decoding controls
+  were verified against Grok 1.0.13 and the pinned config-types MCP source.
 
 ### `[permission]` and the spellings that load nothing
 
 - **`[permission]`**: `allow`/`deny`/`ask` hold compact rule strings and `rules` holds
-  verbose tables. `rules` is discarded **entirely** whenever any of the three list keys
-  is present, in any order, with no diagnostic — a file carrying both loses every
-  verbose rule it wrote. An unparseable entry costs that entry alone, also silently.
+  verbose entries. Any array-valued compact key selects the compact branch,
+  even an empty array; malformed compact keys alone do not suppress verbose rules.
+  Empty verbose lists need no lost-rule warning. The workspace resolver's verbose
+  types are owned by `formats/grok_permissions.py`: action is required, tool defaults
+  to any, pattern is an optional string, and pattern_mode defaults to glob. Wrong
+  enum spellings or known field types discard the entire verbose list. Grok's TOML
+  unit-enum and positional-struct forms are supported. An unparseable compact rule
+  string costs only that entry.
   A **wrong-typed entry** splits by key, measured: a non-string in a list key costs
   that entry (`allow = ["Bash(git *)", 42]` loaded 1), while a non-table in `rules`
   costs the whole array (two valid rules beside a bare integer loaded 0).
@@ -212,45 +235,72 @@ a git repository.
 - **skillsaw claims only the `.grok-plugin/` spelling of either.** The others are
   another ecosystem's declaration, and adopting them would put every Claude plugin and
   every portable package under Grok's format rules too.
-- **A manifest is optional.** A directory holding `skills/`, `agents/`,
+- **A manifest is optional.** A source root holding `skills/`, `agents/`,
   `hooks/hooks.json` or `.mcp.json` installs without one, under a synthesized
-  `<dir>-<hash>` name. `commands/` alone and `.lsp.json` alone are discovered but
-  refused by `grok plugin install`. So skillsaw claims a manifest-less directory only
-  when a catalog lists it as a local source.
-- **Manifest failure scope**: unparseable JSON, or a `name` that is missing, non-string
-  or outside `\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\Z`, makes discovery **skip the whole
-  plugin directory** — `skills/` does not rescue it, `grok plugin install` still prints
-  success, and `grok inspect` then shows `plugins: []`. A declared path that escapes the
-  plugin root or does not exist costs that component list only, and an override
-  *replaces* the conventional directory rather than extending it. A name disagreeing
-  with the directory name, a non-semver `version`, an unknown key and a bare string
-  where an array is allowed all cost nothing.
-- **`hooks` and `mcpServers` are `path | inline`**, not `path | array`. So
+  `<dir>-<hash>` name. Directory presence is sufficient. Otherwise the installer
+  checks immediate non-symlink child directories for manifests or those conventions;
+  an accepted child bundle does not use the parent/hash name. `commands/` alone and
+  `.lsp.json` alone are refused. Skillsaw claims a manifest-less directory only when
+  a catalog lists it as a local source.
+- **Manifest failure scope**: unparseable JSON, a rejected known field type, or a
+  `name` that is missing, non-string or outside
+  `\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\Z` makes **runtime registration** skip the
+  plugin directory. Installation is a separate consumer: `try_load_plugin` falls
+  back to conventional components after a manifest error, so `skills/` can make
+  installation succeed even though runtime registration rejects the manifest.
+  A declared path that escapes the plugin root after canonical resolution, does not
+  exist or has the wrong target kind costs that component only. Contained parent,
+  absolute and empty-root directory paths are valid. An override *replaces* the
+  conventional directory rather than extending it. A name disagreeing with the
+  directory name, a non-semver string `version`, an unknown key and a bare string
+  where an array is allowed all cost nothing. Recognized struct duplicates reject;
+  ignored metadata and inline object duplicates keep their accepted map behavior.
+- **`hooks` and `mcpServers` are `path | inline JSON`**. An array is decoded as an
+  inline value, not a list of file paths. So
   `"hooks": "not-an-object"` is read as a path, found missing, and dropped silently — it
   is not a type error. A malformed inline `hooks` costs the hooks only; the sibling
   `mcpServers`, the skills and the plugin survive.
-- **Catalog entry scope**: a missing `name`, a missing `source`, a `path` that does not
-  resolve, and a `path` escaping the marketplace root each drop that one entry silently.
-  A catalog that fails to parse, or whose `plugins` is not an array, discards the whole
-  catalog — and discovery then falls back to scanning `plugins/` only, so a repository
-  keeping third-party plugins under `external_plugins/` loses exactly those with no
-  diagnostic. **Two entries resolving to one manifest name** are not deduplicated:
+- **Catalog failure scope**: the catalog and every entry require a string `name`;
+  empty strings are accepted. A missing/non-string name, invalid known field type,
+  parse error or present non-array `plugins` discards the whole catalog. Omitted
+  `plugins` defaults to an empty array. A missing/null `source`, a local `path` that
+  does not resolve, or a path rejected by the source grammar drops only that entry.
+  When the whole catalog fails, native discovery falls back to scanning `plugins/`
+  only, so a repository keeping third-party plugins under `external_plugins/` loses
+  exactly those with no diagnostic. **Two entries resolving to one manifest name** are not deduplicated:
   install fails with `Multiple marketplaces provide a plugin named "canary"` and both
   suggested qualifiers are identical, so the plugin is uninstallable by name.
 - **Local sources are keyed on `path` alone.** `{"type": "local", "path": …}`,
   `{"source": "local", …}`, a bare string, an object with **no** discriminator, and one
   with a **bogus** `type` all install identically. Requiring a discriminator is a false
-  positive. A `url` is what makes an entry remote, and its own `path` then names a
-  subdirectory of the clone.
-- **`sha`**: nothing is validated at add or list time. The installer accepts 40 or 64
-  hex, **case-insensitively**; a short ref or a branch name is refused, and an absent
-  `sha` degrades to an unpinned `git clone`. The upstream `validate-catalog.py` requires
-  lowercase 40-hex, which is stricter than the runtime.
+  positive. A non-null `url`, including an empty string, selects remote handling;
+  an absent/null URL leaves `path` local regardless of the discriminator. A remote
+  `path` names a subdirectory of the clone. Catalog paths normalize backslashes,
+  allow one leading `./`, and reject root, empty, dot, parent and colon-containing
+  components. Plugin manifest component paths use the separate canonical contract.
+- **Install pins**: catalog decoding checks `sha`/`ref` types, but pin shape is checked
+  at installation. An explicit non-null `sha` takes precedence even when empty or
+  invalid. With absent/null `sha`, a full 40- or 64-hex `ref` becomes the pin; other
+  refs remain unpinned. Pin matching trims Rust whitespace and accepts either case.
+  With no explicit SHA and no full-commit ref, the clone remains unpinned; an invalid
+  explicit SHA is refused. The upstream `validate-catalog.py` requires lowercase
+  40-hex, stricter than the installer.
 - **`plugin-index.json`** is the sole source of the pre-install component listing, and
-  it must sit beside its catalog. For a url source it is gated on `sha` equality with
-  the catalog entry — drift silently blanks the listing. For a local source there is no
-  `sha` to gate on, so a stale index is displayed while the plugin on disk disagrees. An
-  index entry with no catalog entry, and a malformed index, are both ignored silently.
+  it has independent precedence: `.grok-plugin/plugin-index.json`, then
+  `.claude-plugin/plugin-index.json` only when the preferred file is absent. A
+  present broken preferred file blocks fallback; a legal shadowed copy is not a
+  placement defect. For a URL source it is gated on exact `sha` string equality with
+  the catalog entry — drift silently blanks the listing, and an absent catalog SHA
+  supplies no remote components even when `ref` pins installation. Index keys use
+  literal catalog entry names, including empty strings, rather than resolved manifest
+  names. Local sources ignore index SHA, so a stale index can be displayed while the
+  plugin on disk disagrees. An index entry with no catalog entry, and a malformed
+  index, are both ignored silently.
+  The typed reader requires integer version `1`, defaults omitted `plugins` to
+  an empty map, and requires each entry's component structure. One bad nested
+  field invalidates the whole index. The decoder preserves measured positional
+  JSON struct arrays, unknown fields and map duplicate semantics; recognized
+  struct duplicates and a BOM are rejected.
 - **Plugin hooks are a different loader from the project layer's.** `grok inspect
   --json` reports one opaque entry for a plugin's `hooks/hooks.json` whether the file is
   valid, empty or unparseable, so the failure matrix above is **not** evidence about it.
@@ -295,45 +345,52 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
 ## skillsaw rules that map
 - Hooks — `src/skillsaw/rules/builtin/grok/`: `grok-hooks-valid`.
 - Subagents — `src/skillsaw/rules/builtin/grok/`: `grok-agent-valid`, the `name` and
-  `description` Grok's loader registers a `.grok/agents/*.md` by. An empty value
-  satisfies it; presence is the whole test.
+  `description` Grok's loader registers a `.grok/agents/*.md` by. Both must be
+  present and scalar; empty and null values register, collections do not.
 - Project `config.toml` — `src/skillsaw/rules/builtin/grok/`: `grok-config-valid`
-  (ERROR) reports the parse error that costs the whole file, and at a hardcoded
-  WARNING the per-server and per-key defects that cost one server or one key — a
-  non-table `mcp_servers`, a server naming neither a `command` nor a `url` (or an
-  empty one), a wrong-typed `args`/`env`/`headers`/`url`/`command`, a non-array
-  `allow`/`deny`/`ask` or `rules`, and `rules` written beside a list key. It never
+  (ERROR) reports the parse error that costs the whole file. Per-server and
+  per-key defects default to WARNING and honor explicit rule severity. These
+  defects cost a server, key or verbose rule list. Server checks follow the ordered
+  transport decoder, including aliases, fallback and disabled-server blank values.
+  Permission checks follow compact-array precedence and whole verbose-list typing;
+  non-array compact keys do not suppress verbose rules. It never
   reports an unknown server field or an unknown permission key, both of which load.
   `grok-config-project-scope` (WARNING, option `extra-tables`) reports what the
   project layer drops: a top-level table or scalar outside `PROJECT_CONFIG_TABLES`
   (only `hooks` carries a hint — it is the one refusal with somewhere else in the
-  repository to go — and the rest are one consolidated finding), the keys in
-  `PROJECT_CONFIG_KEYS_REFUSED`, and the silent misspellings. It reports no
-  unrecognized key inside `[plugins]` or `[mcp]`: nothing was measured there in
-  either direction, and `extra-tables` reaches top-level names only. Neither rule
-  claims anything for `[plugins] enabled`/`disabled` or `[mcp] max_output_bytes`,
-  which are documented and unmeasured.
-- Plugin manifests — `grok-plugin-json-valid` (ERROR): invalid JSON and a `name` that
-  is missing, non-string, empty or outside `PLUGIN_NAME_RE`, each of which makes Grok
-  skip the whole directory. Component paths that escape or do not exist, and an
+  repository to go — and the rest are one consolidated finding), and the silent
+  misspellings. Unknown keys inside `[plugins]` or `[mcp]` stay open, and
+  `extra-tables` reaches top-level names only. Trusted project plugin paths
+  follow the live resolver described above; the actual user config is exempt
+  from project-only advice.
+- Plugin manifests — `grok-plugin-json-valid` (ERROR): invalid JSON/BOM, rejected
+  typed fields or recognized duplicates, and a `name` that is missing, non-string,
+  empty or outside `PLUGIN_NAME_RE`, each preventing runtime registration.
+  Installation's convention fallback is separate. Component paths that escape after
+  canonical resolution, do not exist or have the wrong target kind, and an
   override replacing the conventional directory, are WARNING; a non-semver `version`
   and an absent `description` are INFO. It reports no unknown key, no name/directory
   disagreement, and no bare string where an array is allowed.
 - Plugin directories — `grok-plugin-structure` (WARNING): no manifest and none of
-  `skills/<n>/SKILL.md`, `agents/*.md`, `hooks/hooks.json` or `.mcp.json`, which is
-  what `grok plugin install` refuses. One INFO for a manifest-less directory a catalog
-  addresses by name, since it installs as `<dir>-<hash>`.
-- Catalogs — `grok-marketplace-json-valid` (ERROR): the whole-catalog defects (invalid
-  JSON, a non-object root, a missing or non-array `plugins`) and the entry defects that
-  drop a plugin silently, plus the `sha` contract. The url `path` shape and a source
-  object naming neither a `path` nor a `url` are WARNING, and a `sha` the installer
-  takes but the upstream validator refuses — 64 hex, or any casing but lowercase — is
-  one INFO.
-  It never requires a source discriminator or a top-level catalog `name`.
+  `skills/`, `agents/`, `hooks/hooks.json` or `.mcp.json` at the source root or
+  an immediate child plugin. Directory existence is sufficient for installation;
+  nested content and placeholders do not make it uninstallable. One INFO for a
+  convention-based source root a catalog addresses by name, since it installs as
+  `<dir>-<hash>`; child bundles do not receive that parent-name advice.
+- Catalogs — `grok-marketplace-json-valid` (ERROR): whole-catalog parse/BOM,
+  recognized duplicate and typed-field defects, including a non-object root,
+  missing/non-string catalog or entry `name`, and present non-array `plugins`.
+  Omitted `plugins` defaults to empty, and empty names are accepted. Entry-local
+  source failures and the configured full-pin policy are checked after decoding.
+  Remote `path` shape and a source object naming neither `path` nor `url` are
+  WARNING; a pin the installer accepts but the upstream validator refuses — 64 hex
+  or uppercase — is INFO. No source discriminator is required.
 - Index parity — `grok-marketplace-index-parity` (WARNING): one consolidated finding
-  per `plugin-index.json` for name, `sha` and (local sources only) skill drift, one for
-  a malformed index, and one for an index Grok never reads because it is not beside its
-  catalog. Silent when there is no index.
+  per selected `plugin-index.json` for literal catalog-name keys, exact remote `sha`
+  and local skill drift; one for a malformed selected index; and one for an unsupported
+  index placement. Selection uses the independent `.grok-plugin` then `.claude-plugin`
+  fallback order above, not the catalog's directory. Legal shadowed copies and absent
+  indexes are silent.
 - Vocabulary (events, aliases, handler fields, reserved env, failure scopes) — one
   module, `src/skillsaw/formats/grok.py`, so a behavior change is an edit there rather
   than a hunt through rule code.
@@ -371,7 +428,8 @@ user guide, or re-verify empirically with the canary matrix above:
 - `MATCHER_IGNORED_EVENTS` = `{"Stop", "UserPromptSubmit"}`.
 - `WILDCARD_MATCHERS` = `{"", "*"}` — `*` is special-cased by Grok, not compiled.
 - `REQUIRED_FIELDS` = `("name", "description")` in `rules/builtin/grok/agent_valid.py` —
-  the keys Grok's subagent loader requires; an empty value still registers.
+  the keys Grok's subagent loader requires; scalars, including empty/null values,
+  register, while collections are rejected.
 - `TIMEOUT_MAX` = `2**64 - 1` in `formats/grok.py`, the `u64` ceiling `timeout`
   deserializes into. It has to track Grok's timeout type: widen or narrow the field
   upstream and the boundary this reports moves with it.
@@ -381,22 +439,25 @@ user guide, or re-verify empirically with the canary matrix above:
   `-lead`, `trail-`, `UPPER`, `under_score`, `dot.name`, `""` and 65 characters are
   rejected; `123`, `a`, `a--b` and 64 characters are accepted. The loader's own message
   is what `grok-plugin-json-valid` quotes.
-- `SHA_RE` and `SHA_LENGTHS` = `{40, 64}` in `formats/grok.py`. The catalog loader
-  validates nothing at add or list time; rejection happens at install and is
-  **case-insensitive**, so 40 lowercase is the upstream validator's rule and gets its
-  own INFO. An absent `sha` degrades to an unpinned `git clone`.
+- `SHA_RE` and `SHA_LENGTHS` = `{40, 64}` in `formats/grok.py` and
+  `effective_install_pin` in `formats/grok_install.py`: typed catalog fields are
+  checked at load; install pins are trimmed and matched case-insensitively. Explicit
+  non-null `sha` wins, otherwise a full-commit `ref` supplies the pin. Ordinary refs
+  stay unpinned. The upstream validator's narrower lowercase 40-hex policy gets INFO;
+  display-index SHA comparison remains exact and does not use this normalization.
 - **Duplicate resolved names are an install failure**, which is what makes the
   duplicate check in `grok-marketplace-json-valid` an ERROR. Re-verify by installing
   from a catalog with two entries resolving to one manifest name; the measured message
   is `Multiple marketplaces provide a plugin named "canary"`.
 - `SINGLE_PATH_FIELDS` = `{"hooks", "mcpServers"}` in `formats/grok.py`: each takes one
-  path or one inline object. Measured, `"hooks": ["hooks/hooks.json"]` loaded as an
+  path or one inline JSON value. Measured, `"hooks": ["hooks/hooks.json"]` loaded as an
   empty inline document (`hookType: "inline"`, no target) where the bare string loaded
   the file, and `"mcpServers": ["servers.json"]` loaded no servers. Re-verify with
   `grok inspect --json` if the manifest type changes upstream.
 - The component set that makes a manifest-less directory installable —
-  `skills/<n>/SKILL.md`, `agents/*.md`, `hooks/hooks.json`, `.mcp.json` — in
-  `_installable` in `rules/builtin/grok/plugin_structure.py`. `commands/` alone and
+  `skills/`, `agents/`, `hooks/hooks.json`, `.mcp.json` — in `_installable` in
+  `rules/builtin/grok/plugin_structure.py`. `_has_child_plugin` mirrors the
+  installer's single-level fallback without following child symlinks. `commands/` alone and
   `.lsp.json` alone are discovered and then refused by `grok plugin install`, which is
   the asymmetry to re-verify if the installer changes.
 - **Replace, not extend.** A manifest `skills`/`commands`/`agents` path replaces the
@@ -408,7 +469,7 @@ user guide, or re-verify empirically with the canary matrix above:
   *generator* wrote, so it carries the union of both readings and reports drift only
   for a name neither produces.
 - `PROJECT_CONFIG_TABLES` and its `_MEASURED` / `_REFUSED` companions,
-  `PROJECT_CONFIG_KEYS_REFUSED`, `MCP_SERVER_FIELDS` and `mcp_transport()` in
+  `MCP_SERVER_FIELDS` and `mcp_transport()` in
   `formats/grok.py`.
   The split between measured and documented is the thing to preserve: re-measure before
   moving a name across it, and never widen a rule's claim on the reference's word alone.
@@ -420,7 +481,7 @@ user guide, or re-verify empirically with the canary matrix above:
   `MCP_SERVER_FIELDS` came from the `mcp_servers.<name>.*` rows of
   `26-config-reference.md` and was confirmed accepted by watching for
   `mcpConfigProblems`; a field added upstream reads as unknown until it is added here.
-  It is vocabulary only — `grok-config-valid` type-checks the fields it names and
+  The decoder in `formats/grok_mcp.py` owns field types; `grok-config-valid`
   never reports membership, because an unknown field warns and the server still loads.
   `MCP_TYPE_MISSPELLED_FIELD` (`transport`) and `PERMISSION_MISSPELLED_KEY`
   (`defaultMode`) sit beside it: a spelling that would become real upstream must move

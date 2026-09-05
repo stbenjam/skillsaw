@@ -129,6 +129,7 @@ Generate or update the baseline file from current violations
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
+| `--include-info` | Include INFO findings (automatic with fail-on: info in config) |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories) |  |
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 

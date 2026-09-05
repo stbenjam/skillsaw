@@ -1,0 +1,15 @@
+{
+  "description": [],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf ready"
+          }
+        ]
+      }
+    ]
+  }
+}

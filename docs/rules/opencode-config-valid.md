@@ -32,6 +32,11 @@ Different names may appear in both sections; only conflicting definitions of
 the same name are reported. One-to-one renamed settings still accept either
 spelling but report when both are present.
 
+MCP servers may be named `servers` or `timeout`, including a bare 1.x
+`{"enabled": false}` toggle. The value shape distinguishes these entries from
+the 2.0 server map and global timeout. Nested servers named `type`, `command`
+or `enabled` retain their own entries.
+
 The MCP servers declared in OpenCode configuration are also evaluated by policy
 rules such as [`mcp-prohibited`](mcp-prohibited.md).
 
@@ -43,7 +48,7 @@ these, so `opencode` exits before it starts:
 - The top-level document is not an object, or the file has syntax errors
   (comments and trailing commas in `.jsonc` are supported).
 - An agent or command section that is not an object, an entry that is not
-  an object, a `template` that is not a non-empty string, or an entry field
+  an object, a missing or non-string `template`, or an entry field
   of the wrong type.
 - An MCP server with a missing or unknown `type`, a `command` that is not a
   non-empty array of strings, a non-string or empty `url`, an `environment`,
@@ -154,7 +159,10 @@ once `type` is fixed and the file is linted again.
 
 - Give every MCP server a `type` of `local` or `remote`. A `local` server
   needs `command` as a non-empty array of strings; a `remote` server needs a
-  `url`.
+  `url`. The first command element must name an executable; later arguments
+  may be empty or whitespace strings and are passed through unchanged.
+- A command entry must include a string `template`. An empty template is
+  valid, including commands whose prompt is supplied by a plugin.
 - Entries with different names may be split between `agent`/`agents` or
   `command`/`commands`; OpenCode merges them. Keep only one definition when
   the same name occurs in both sections. For one-to-one settings, keep one

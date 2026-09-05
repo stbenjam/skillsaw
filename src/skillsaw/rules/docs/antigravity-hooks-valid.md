@@ -8,7 +8,7 @@ file is committed, so the hooks are the team's, not one developer's. A
 plugin under `plugins/<name>/` carries its own `hooks.json` alongside its
 manifest.
 
-Antigravity tells nobody when it refuses one. Measured against `agy` 1.1.25:
+Antigravity tells nobody when it refuses one. Measured against `agy` 1.1.26:
 every load-time rejection drops the **whole file**, logs a single
 `failed to parse hooks.json at <path>` line to the debug log, and exits 0 —
 so a sibling hook that was working stops running and CI stays green. A key
@@ -27,7 +27,7 @@ inventoried against an allowlist with
 - Invalid JSON, a non-finite number (`NaN`, `Infinity`, `-Infinity`), a
   trailing comma or a comment. The parser is strict JSON.
 - A UTF-8 byte-order mark (BOM). Remove it; the loader does not strip it.
-- A root that is not an object of named hooks.
+- A non-null root that is not an object of named hooks.
 - A named hook that is not an object. An `enabled` key at the **top level**
   is reported this way too, with its own wording: every top-level key is a
   hook *name*, so there is no file-level switch to write there.
@@ -74,6 +74,12 @@ inventoried against an allowlist with
 While an error stands, the warnings are held back: nothing in the file has
 loaded, so nothing has been ignored yet.
 
+Struct field names match without regard to case: `Enabled`, `Matcher`,
+`Hooks`, `Command`, `Type`, `Prompt`, `Model` and `Timeout` use the same
+contracts as their canonical spellings. Hook names remain case-sensitive,
+and handler type *values* still accept only lowercase `command` and `prompt`.
+Command scans and generated documentation read the same decoded fields.
+
 ## What is not reported
 
 - **The `matcher` pattern.** Antigravity never compiles it at load time — an
@@ -88,10 +94,18 @@ loaded, so nothing has been ignored yet.
   Only a non-object value there kills the file.
 - **A `prompt` hook with no `prompt` text**, and **an empty group or event
   array**. All load.
-- **A repeated key.** Antigravity reads this file with Go's `encoding/json`,
-  which takes the last value. A hook name, an event key or a handler key
-  written twice loads with the second one in force, so the file is
-  confusing rather than broken.
+- **Valid repeated keys.** Repeated hook names and events replace their
+  earlier values, including differently capitalized event keys. Handler
+  string fields apply in encounter order, but a later null retains their
+  previous string value. A null event or `hooks` list clears that array.
+  An earlier invalid type still rejects the file, even when the containing
+  event or named hook is replaced. Handler type and command/prompt conflicts
+  are checked after that handler's fields have been decoded, so replacing
+  an unsupported type string with a supported one is accepted.
+- **A null root.** It is an explicit empty configuration, like `{}`.
+- **Finite numbers outside Python float range in ignored fields.**
+  `metadata: 1e400` is valid JSON and receives only the ignored-key warning.
+  The same value in `timeout` still fails its integer type check.
 - **Null fields and empty strings are not type errors for string fields.**
   Null events and entries, an empty hook name, and empty `type`, `prompt`,
   `model` or `matcher` values are accepted. A missing, null or empty

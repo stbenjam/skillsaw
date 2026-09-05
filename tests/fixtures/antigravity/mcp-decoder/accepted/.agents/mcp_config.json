@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "timetable": {
+      "command": "",
+      "serverURL": "https://feeds.example.invalid/mcp",
+      "Headers": {"X-Region": "north", "X-Optional": null},
+      "OAuth": {"ClientId": "ferrymark", "ClientSecret": "${FERRY_SECRET}", "metadata": {"revision": 2}},
+      "DisabledTools": ["write_timetable", null],
+      "AuthProviderType": "google_credentials"
+    },
+    "local": {
+      "command": "",
+      "Command": "/audit/not-an-executable",
+      "Args": ["--read-only", null],
+      "ENV": {"Mode": "ferry"},
+      "env": {"MODE": "read"},
+      "Cwd": "/audit",
+      "Disabled": false,
+      "timeout": 1e400
+    },
+    "empty": null
+  }
+}

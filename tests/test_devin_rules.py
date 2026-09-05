@@ -197,7 +197,7 @@ def test_devin_rule_reports_activation_shapes_and_recovers_from_bad_limit(tmp_pa
     assert by_file["glob-missing.md"].line is None
     assert "requires a non-empty 'globs'" in by_file["glob-missing.md"].message
     assert by_file["glob-object.md"].line == 3
-    assert "string or a list of strings" in by_file["glob-object.md"].message
+    assert "YAML list" in by_file["glob-object.md"].message
     assert by_file["glob-empty.md"].line == 3
     assert "at least one pattern" in by_file["glob-empty.md"].message
 
@@ -242,6 +242,7 @@ Run the requested workflow.
         "Read Bash",
         "Bash(openspec:*)",
         "mcp__github__get_issue",
+        "yes",
     ],
 )
 def test_native_skill_accepts_scalar_allowed_tools(tmp_path, allowed_tools):
@@ -254,7 +255,7 @@ def test_native_skill_accepts_scalar_allowed_tools(tmp_path, allowed_tools):
     assert DevinSkillValidRule().check(RepositoryContext(tmp_path)) == []
 
 
-@pytest.mark.parametrize("allowed_tools", ["42", "{}"])
+@pytest.mark.parametrize("allowed_tools", ["42", "false", "{}"])
 def test_native_skill_rejects_non_string_allowed_tools_scalar(tmp_path, allowed_tools):
     skill = _native_skill(
         tmp_path,
@@ -295,18 +296,18 @@ def test_invalid_native_skill_fields_have_nested_yaml_lines(tmp_path):
         "broken",
         """---
 argument-hint: []
-model: false
+model: {}
 subagent: maybe
 agent: [reviewer]
 allowed-tools:
   - read
-  - 4
+  - {}
 permissions:
   allow: read
   deny:
     - exec
   ask:
-    - false
+    - []
 triggers:
   - user
   - autonomous
@@ -372,8 +373,10 @@ def test_native_skill_bad_triggers_is_one_finding_naming_the_values(tmp_path):
 
     assert len(found) == 1
     assert found[0].line == 3
+    assert found[0].severity is Severity.WARNING
     assert found[0].message == (
-        "'triggers' must list only 'user' and/or 'model'; got 'deploy the app', 'ship it', 'release'"
+        "Devin ignores unknown 'triggers' values 'deploy the app', 'ship it', 'release'; "
+        "use 'user' and/or 'model'"
     )
 
 

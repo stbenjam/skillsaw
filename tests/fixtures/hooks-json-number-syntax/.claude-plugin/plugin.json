@@ -1,0 +1,8 @@
+{
+  "name": "json-number-syntax",
+  "description": "Hook configuration with ignored numeric extension metadata",
+  "version": "1.0.0",
+  "author": {
+    "name": "Platform Team"
+  }
+}

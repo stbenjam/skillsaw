@@ -91,7 +91,7 @@ skillsaw includes **101** built-in rules organized into the following categories
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
-| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must parse as an object whose 'entries' are objects with a string 'path' | error (disabled) | - | Google Antigravity |
+| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must decode their paths and filters correctly | error (disabled) | - | Google Antigravity |
 | [`antigravity-hooks-valid`](antigravity-hooks-valid.md) | hooks.json must use Antigravity's hook events, handler types and fields | error (auto) | - | Google Antigravity |
 | [`antigravity-mcp-valid`](antigravity-mcp-valid.md) | mcp_config.json must parse and declare servers Antigravity can load | error (auto) | - | Google Antigravity |
 | [`antigravity-plugin-json-valid`](antigravity-plugin-json-valid.md) | plugin.json must parse as an Antigravity manifest with correctly typed fields | error (auto) | - | Google Antigravity |
@@ -99,7 +99,7 @@ skillsaw includes **101** built-in rules organized into the following categories
 | [`grok-config-project-scope`](grok-config-project-scope.md) | .grok/config.toml must only carry settings a project file contributes | warning (auto) | - | Grok Build |
 | [`grok-config-valid`](grok-config-valid.md) | .grok/config.toml must parse, and its servers and permissions must load | error (auto) | - | Grok Build |
 | [`grok-hooks-valid`](grok-hooks-valid.md) | .grok/hooks/*.json must use Grok's hook events, handler types and fields | error (auto) | - | Grok Build |
-| [`grok-marketplace-index-parity`](grok-marketplace-index-parity.md) | .grok-plugin/plugin-index.json must agree with the catalog beside it | warning (auto) | - | Grok Build |
+| [`grok-marketplace-index-parity`](grok-marketplace-index-parity.md) | plugin-index.json must agree with its marketplace catalog | warning (auto) | - | Grok Build |
 | [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md) | .grok-plugin/marketplace.json must be valid JSON with installable entries | error (auto) | - | Grok Build |
 | [`grok-plugin-json-valid`](grok-plugin-json-valid.md) | .grok-plugin/plugin.json must be valid JSON with a name Grok's loader accepts | error (auto) | - | Grok Build |
 | [`grok-plugin-structure`](grok-plugin-structure.md) | A Grok plugin directory needs a manifest or a component Grok installs | warning (auto) | - | Grok Build |
@@ -114,7 +114,7 @@ skillsaw includes **101** built-in rules organized into the following categories
 | [`mcp-registry-server-json-valid`](mcp-registry-server-json-valid.md) | MCP Registry server.json must conform to a supported schema and its enums | error (auto) | - | MCP (Model Context Protocol) |
 | [`mcp-registry-version-semver`](mcp-registry-version-semver.md) | MCP Registry server versions should use strict Semantic Versioning 2.0.0 | warning (auto) | - | MCP (Model Context Protocol) |
 | [`mcp-registry-npm-name-match`](mcp-registry-npm-name-match.md) | Local npm package.json mcpName must match MCP Registry server.json name | error (auto) | - | MCP (Model Context Protocol) |
-| [`muse-hooks-valid`](muse-hooks-valid.md) | .muse/hooks.json must use Muse's events, matcher groups and handler fields | error (auto) | - | Muse Code |
+| [`muse-hooks-valid`](muse-hooks-valid.md) | .muse/hooks.json must use Muse's events, matcher groups and handler fields | error (disabled) | - | Muse Code |
 | [`codex-hooks-valid`](codex-hooks-valid.md) | Codex hooks files must use Codex's hook events, handler types, and fields | error (auto) | - | OpenAI Codex |
 | [`codex-openai-metadata`](codex-openai-metadata.md) | Validate skill openai.yaml and catalog-compatible plugin metadata | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-json-valid`](codex-plugin-json-valid.md) | .codex-plugin/plugin.json must be valid JSON with required fields | error (auto) | - | OpenAI Codex |

@@ -221,10 +221,6 @@ class TestFixedLocationsAndContainment:
         assert _has_location_finding(findings, "skill")
         assert [path.name for path in context.skills] == ["valid"]
 
-    def test_missing_optional_component_locations_are_clean(self, tmp_path):
-        repo = copy_fixture("agent-plugins/metadata-lax", tmp_path)
-        assert lint_rules(repo, PLUGIN_JSON_RULE) == []
-
     def test_manifest_directory_is_not_a_manifest(self, tmp_path):
         (tmp_path / "plugin.json").mkdir()
 

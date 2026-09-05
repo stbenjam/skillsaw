@@ -97,6 +97,11 @@ _RUST_CLASS_SET_OPERATOR = re.compile(r"&&|--|~~")
 #: group name and passes.
 _RUST_NAMED_GROUP = re.compile(r"\(\?<(?![=!])")
 
+#: Flags affect matching, while only x changes tokenization. The syntax check
+#: neutralizes the others and withholds a verdict for extended-mode patterns.
+_RUST_INLINE_FLAGS = re.compile(r"\(\?([imsRUux]*)(?:-([imsRUux]+))?([):])")
+_RUST_BRACED_HEX = re.compile(r"\\[xuU]\{([0-9a-fA-F]+)\}")
+
 #: The constructs the compile check alone cannot see: Python's ``re``
 #: accepts them and Rust's ``regex`` crate — a finite-automaton engine —
 #: refuses them, so the host drops the matcher group while ``re.compile``
@@ -144,10 +149,11 @@ def _to_python_regex(pattern: str) -> str:
     Muse Code and Grok Build both compile a hook matcher with the Rust
     ``regex`` crate, whose dialect is not Python's: it has no look-around and
     no backreferences (:func:`_rust_unsupported` owns that direction), and it
-    has four constructs a hooks file plausibly reaches that Python spells
+    has constructs a hooks file plausibly reaches that Python spells
     differently, not at all, or only on newer interpreters — Unicode
     character classes, the character-class set operators, the
-    ``(?<name>...)`` capture group, and the ``\\z`` end-of-string anchor.
+    ``(?<name>...)`` capture group, inline flags, braced hexadecimal escapes,
+    and the ``\\z`` end-of-string anchor.
     Python raises on each unrewritten (``\\z`` on every Python before
     3.14), so compiling the pattern as written would call a working matcher
     broken. Skipping such a pattern instead would drop every other defect in
@@ -165,7 +171,7 @@ def _to_python_regex(pattern: str) -> str:
     substituted = _RUST_UNICODE_CLASS.sub(r"\\w", pattern)
     if "(?<" in substituted:
         substituted = _RUST_NAMED_GROUP.sub("(?P<", substituted)
-    if "[" not in substituted and "\\z" not in substituted:
+    if not any(token in substituted for token in ("[", "\\z", "(?", "\\x{", "\\u{", "\\U{")):
         return substituted
 
     # The set operators only mean anything inside a character class: ``a--b``
@@ -182,6 +188,13 @@ def _to_python_regex(pattern: str) -> str:
     while index < end:
         char = substituted[index]
         if char == "\\":
+            atom = _RUST_BRACED_HEX.match(substituted, index)
+            if atom is not None:
+                value = int(atom[1], 16)
+                if value <= 0x10FFFF and not 0xD800 <= value <= 0xDFFF:
+                    out.append(f"\\U{value:08x}")
+                    index = atom.end()
+                    continue
             following = substituted[index + 1 : index + 2]
             if not depth and following == "z":
                 out.append("\\Z")
@@ -193,6 +206,12 @@ def _to_python_regex(pattern: str) -> str:
             operator = _RUST_CLASS_SET_OPERATOR.match(substituted, index)
             if operator is not None:
                 index = operator.end()
+                continue
+        if char == "(" and not depth:
+            flags = _RUST_INLINE_FLAGS.match(substituted, index)
+            if flags is not None and (flags[1] or flags[2]):
+                out.append("(?:" if flags[3] == ":" else "")
+                index = flags.end()
                 continue
         if char == "[":
             depth += 1
@@ -262,12 +281,34 @@ def _rust_unsupported(pattern: str) -> Optional[str]:
     return None
 
 
+def _has_extended_mode_flag(pattern: str) -> bool:
+    """Find x flags outside escaped text and character classes."""
+    depth = 0
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "[":
+            depth += 1
+        elif char == "]" and depth:
+            depth -= 1
+        elif char == "(" and not depth:
+            flags = _RUST_INLINE_FLAGS.match(pattern, index)
+            if flags is not None and "x" in (flags[1] + (flags[2] or "")):
+                return True
+        index += 1
+    return False
+
+
 def rust_matcher_error(matcher: str) -> Optional[str]:
     """Why *matcher* fails to compile as a Rust regex, if it does.
 
     ``None`` when the pattern compiles, when it is longer than
     :data:`RUST_MATCHER_MAX_LENGTH`, or when what fails is a construct Rust
-    accepts and Python does not. A host that compiles hook matchers with the
+    accepts and Python does not. Extended-mode patterns are also unresolved.
+    A host that compiles hook matchers with the
     Rust ``regex`` crate — Muse Code, Grok Build — drops the matcher group
     when this returns a string, and nothing else in the file.
 
@@ -278,6 +319,10 @@ def rust_matcher_error(matcher: str) -> Optional[str]:
     :func:`_rust_unsupported` runs first.
     """
     if len(matcher) > RUST_MATCHER_MAX_LENGTH:
+        return None
+    if "x" in matcher and "(?" in matcher and _has_extended_mode_flag(matcher):
+        # Extended-mode comments can contain apparent groups or escapes.
+        # Python and our small scanner cannot prove a Rust syntax failure.
         return None
     unsupported = _rust_unsupported(matcher)
     if unsupported is not None:

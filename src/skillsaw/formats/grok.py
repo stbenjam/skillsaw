@@ -87,6 +87,7 @@ from typing import Any, Dict, List, Mapping, Optional, Set
 # inherited. It lives beside the reader that needed it first rather than
 # being copied here, so one fix covers both ecosystems.
 from skillsaw.formats.codex import inline_documents
+from skillsaw.formats.grok_mcp import decode_mcp_server
 from skillsaw.paths import (
     contained_resolve,
     safe_exists,
@@ -333,56 +334,26 @@ def normalize_event(event: str) -> str:
 # ``[permission]``, and ``[mcp] max_output_bytes``"
 # (``26-config-reference.md``, restated under ``## config.toml``).
 #
-# Measured against 1.0.13, the documented four are not equally real. A
-# project file's ``[mcp_servers]`` and ``[permission]`` load and are
-# observable; ``[plugins]`` and ``[mcp] max_output_bytes`` produce no
-# observable at *either* scope, and the user layer even calls ``mcp`` an
-# unrecognized table. Everything else an author writes is dropped, and
-# dropped **silently**: ``configWarnings`` is a user-layer diagnostic, so a
-# typo'd table or key in a project file is invisible in every observable
-# Grok offers. The one exception is ``mcpConfigProblems``, which *is*
-# produced for project-scope ``[mcp_servers]`` entries — so a rule adds the
-# most signal on the permission and scope defects, where the runtime says
-# nothing at all.
-#
-# A malformed file costs the whole file, including tables above the error,
-# and Grok exits 0 with an empty stderr; the sole signal is a
-# ``configSources[].note`` of ``"parse error"`` inside ``grok inspect``.
+# ``inspect`` exposes project MCP servers and permissions, but does not call
+# the live session's project plugin resolver. Its missing plugin output is
+# not evidence that project paths are ignored. The pinned resolver extends
+# trusted project ``plugins.paths`` and project ``plugins.disabled``:
+# xai-grok-shell/src/config/mod.rs, resolve_effective_plugins_config(),
+# grok-build 72a61251fcffb464bcc687aeb5a998e5a98ec0c9.
 
-#: The top-level tables a project ``.grok/config.toml`` contributes. Names
-#: only: what a rule may report is a name outside this set, never a key
-#: inside one of them — see :data:`PROJECT_CONFIG_KEYS_REFUSED` for the one
-#: exception, which is measured.
-#:
-#: Only ``mcp_servers`` and ``permission`` are measured — see
-#: :data:`PROJECT_CONFIG_TABLES_MEASURED`. The other two are here on the
-#: reference's word, and a rule must not report against a table this set
-#: lists, whichever half it comes from: reporting a *documented* table as
-#: ignored would be a false positive on a file the docs endorse.
+#: The documented top-level tables a project config contributes. Unknown
+#: keys inside these tables stay open; no project plugin-path refusal is
+#: inferred from the more limited ``inspect`` consumer.
 PROJECT_CONFIG_TABLES = frozenset({"mcp_servers", "permission", "plugins", "mcp"})
 
-#: Keys a project file was measured to drop from inside a table it
-#: otherwise honors. ``[plugins].paths`` is the only one: three
-#: independent runs ignored a project ``paths`` — relative, absolute, git
-#: repository or not — while the user layer's ``paths`` loaded a plugin.
-#:
-#: Deliberately a refusal list rather than an allow-list. The reference's
-#: other keys here — ``[plugins]`` ``enabled``/``disabled`` and ``[mcp]``
-#: ``max_output_bytes`` — produced no observable at either scope, in either
-#: direction, so an unknown-key finding inside these tables would rest on
-#: nothing and would fire on a working config the first time Grok adds a
-#: key. Top-level names are different: a table Grok does not read is
-#: measurably inert, and ``extra-tables`` is there for the release that
-#: adds one.
-PROJECT_CONFIG_KEYS_REFUSED: Mapping[str, frozenset] = {
-    "plugins": frozenset({"paths"}),
-}
-
-#: The half of :data:`PROJECT_CONFIG_TABLES` a project file was seen to
-#: load. Split out because the two halves support different sentences: a
-#: message may say a measured table is honored, and must not claim as much
-#: for ``[plugins]`` or ``[mcp]``.
+#: The tables directly observable in ``inspect``. Plugin project support
+#: additionally follows the live resolver above; ``mcp.max_output_bytes``
+#: remains documented but unmeasured.
 PROJECT_CONFIG_TABLES_MEASURED = frozenset({"mcp_servers", "permission"})
+
+#: PluginsConfig's defaulted Vec<String> fields. A mistyped field refuses
+#: the whole plugin table before project paths join the live configuration.
+PLUGIN_CONFIG_LIST_FIELDS = frozenset({"paths", "disabled", "enabled"})
 
 #: Tables a project file was measured to *not* contribute, each with a
 #: positive user-scope control so "nothing happened" is a refusal rather
@@ -417,6 +388,8 @@ MCP_SERVER_FIELDS = frozenset(
         "tool_timeouts",
         "type",
         "url",
+        "urlTemplate",
+        "url_template",
     }
 )
 
@@ -438,29 +411,13 @@ MCP_SSE_TYPE = "sse"
 
 
 def mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
-    """The transport Grok derives for one ``[mcp_servers.<name>]`` table.
-
-    Exactly Grok's own order, measured: a non-empty ``command`` wins even
-    when ``url`` is also set; otherwise a ``url`` is SSE when ``type`` says
-    so and HTTP when it does not. ``None`` means Grok drops that server —
-    per server and order-independent, so its siblings and ``[permission]``
-    are untouched.
-
-    Neither field's *content* is validated. ``url = "not a url"`` loads as
-    an HTTP server.
-    """
-    command = server.get("command")
-    if isinstance(command, str) and command.strip():
-        return "stdio"
-    url = server.get("url")
-    if isinstance(url, str) and url.strip():
-        return MCP_SSE_TYPE if server.get("type") == MCP_SSE_TYPE else "http"
-    return None
+    """Derive the transport using Grok's complete, ordered variant decoder."""
+    return decode_mcp_server(server)[0]
 
 
 #: The ``[permission]`` keys that hold compact rule strings, and the verbose
 #: table array beside them. Measured: ``rules`` is discarded **entirely**
-#: whenever any of the three list keys is present, in any order, with no
+#: whenever any of the three compact keys holds an array, in any order, with no
 #: diagnostic — which is the defect worth reporting, since a file carrying
 #: both loses every verbose rule it wrote.
 #:
@@ -521,8 +478,8 @@ PLUGIN_DIR_NAME = ".grok-plugin"
 
 #: Filenames inside :data:`PLUGIN_DIR_NAME`. ``plugin.json`` describes one
 #: plugin; ``marketplace.json`` is the catalog Grok reads; ``plugin-index.json``
-#: is the optional display catalog beside it, whose ``sha`` values a
-#: ``require_sha`` deployment installs from.
+#: is the optional display catalog; its SHA gate affects browser details,
+#: independently of the installer's source pin.
 PLUGIN_MANIFEST = "plugin.json"
 MARKETPLACE_FILENAME = "marketplace.json"
 PLUGIN_INDEX_FILENAME = "plugin-index.json"
@@ -548,11 +505,15 @@ CATALOG_PATHS = (
     (MARKETPLACE_FILENAME,),
 )
 
-#: Where a ``plugin-index.json`` is never read: beside either catalog
-#: location Grok falls back to, once ``.grok-plugin/marketplace.json`` has
-#: won. Derived from :data:`CATALOG_PATHS` rather than restated, so a change
-#: to the fallbacks moves this with it.
-UNREAD_INDEX_DIRS = tuple(parts[:-1] for parts in CATALOG_PATHS[1:])
+#: The display index has its own precedence, independent of the selected
+#: marketplace catalog. A present broken preferred index stops fallback.
+PLUGIN_INDEX_PATHS = (
+    (".grok-plugin", PLUGIN_INDEX_FILENAME),
+    (".claude-plugin", PLUGIN_INDEX_FILENAME),
+)
+
+#: A root-level display index is never read.
+UNREAD_INDEX_DIRS = ((),)
 
 #: Where a plugin's manifest may live, in the order Grok resolves them —
 #: verified by building plugins carrying each combination and reading back
@@ -659,8 +620,28 @@ SHA_RE = re.compile(r"\A(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
 UPSTREAM_SHA_LENGTH = 40
 
 
+def grok_marketplace_relative_path(value: Any) -> Optional[str]:
+    """Normalize a catalog path, or return ``None`` for invalid coordinates.
+
+    Grok 1.0.13's ``MarketplaceRelativePath::parse`` strips one leading
+    ``./`` before splitting on either slash. Empty, current-directory,
+    parent and colon-containing components are rejected, including a root
+    source, trailing separator or repeated separator. No whitespace is
+    stripped. Filesystem containment must still be checked after parsing.
+
+    This is the catalog's contract, for local sources and remote subdirs;
+    plugin manifest component paths use a different loader.
+    """
+    if not isinstance(value, str):
+        return None
+    parts = value.removeprefix("./").replace("\\", "/").split("/")
+    if any(part in ("", ".", "..") or ":" in part for part in parts):
+        return None
+    return "/".join(parts)
+
+
 def grok_local_source_path(source: Any) -> Optional[str]:
-    """Relative path of a marketplace entry's local source, or ``None``.
+    """Normalized valid local catalog path, or ``None`` for any other source.
 
     The loader keys on ``path`` alone, verified by installing from six
     catalogs differing only in this field: ``{"type": "local", "path": …}``,
@@ -676,22 +657,21 @@ def grok_local_source_path(source: Any) -> Optional[str]:
     a plugin directory the checkout does not have.
     """
     if isinstance(source, str):
-        return source or None
+        return grok_marketplace_relative_path(source)
     if not isinstance(source, dict) or is_url_source(source):
         return None
-    path = source.get("path")
-    return path if isinstance(path, str) and path else None
+    return grok_marketplace_relative_path(source.get("path"))
 
 
 def is_url_source(source: Any) -> bool:
     """Whether *source* names a remote repository to clone.
 
-    ``{"source": "url", ...}`` is the spelling the official catalog and
-    validator use; a bare ``url`` key is read the same way, since that is
-    what turns the entry's ``path`` into a subdirectory of the clone rather
-    than a directory in this checkout.
+    ``IndexSource::is_remote`` tests whether its optional URL is set.
+    Null or an absent URL leaves a local source, regardless of ``source``
+    or ``type`` discriminators. An empty or mistyped non-null URL must not
+    fall back to claiming a local path; the catalog rule reports it.
     """
-    return isinstance(source, dict) and ("url" in source or source.get("source") == "url")
+    return isinstance(source, dict) and source.get("url") is not None
 
 
 def grok_manifest_path(plugin_dir: Path) -> Optional[Path]:
@@ -752,8 +732,10 @@ def grok_declared_paths(plugin_dir: Path, field: str, want_dir: bool) -> List[Pa
     found: List[Path] = []
     seen: Set[Path] = set()
     for item in candidates:
-        if not isinstance(item, str) or not item:
+        if not isinstance(item, str):
             continue
+        # An empty directory path names the plugin root. File fields still
+        # require a regular file below it.
         candidate = contained_resolve(plugin_dir / item, root)
         if candidate is None or candidate in seen:
             # Two spellings of one path are one component list, and every

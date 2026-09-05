@@ -244,6 +244,7 @@ class Linter:
         enabled_surfaces = self._enabled_builtin_surfaces()
         for rule in self.rules:
             rule._enabled_surface_rule_ids = enabled_surfaces
+            rule._explicit_severity = self.config.has_explicit_rule_severity(rule.rule_id)
 
         if self._rule_ids:
             unknown = self._rule_ids - self._known_rule_ids
@@ -1495,9 +1496,11 @@ class Linter:
             # manifest) can unlock new violations for other rules, so a
             # further pass is needed even without file-level conflicts.
             state_changed = any(f.on_apply is not None for f in applied)
-            if not applied or not (has_conflicts or state_changed):
+            if not applied:
                 break
 
+            # Successful writes must be visible even on the final pass, or
+            # when max_passes prevents another pass through this loop.
             invalidate_read_caches()
             self.context.rebuild_lint_tree()
             if hasattr(self, "_suppression_cache"):
@@ -1505,6 +1508,9 @@ class Linter:
             if hasattr(self, "_external_source_root_cache"):
                 del self._external_source_root_cache
             self._external_source_path_cache.clear()
+
+            if not (has_conflicts or state_changed):
+                break
 
         return all_applied, all_suggested
 

@@ -31,14 +31,18 @@ from skillsaw.formats.codex import (
     CODEX_HOOK_EVENTS,
     CODEX_HOOKS_FILENAME,
     CODEX_HOOK_FIELD_ALIASES,
+    CODEX_HOOK_FILE_FIELDS,
     CODEX_HOOK_HANDLER_TYPES,
     CODEX_HOOK_MATCHER_EVENTS,
+    CODEX_HOOK_MATCHER_TYPES,
     CODEX_HOOK_NO_MCP_TOOL_EVENTS,
+    CODEX_HOOK_NULLABLE_FIELDS,
     CODEX_HOOK_OPTIONAL_FIELDS,
     CODEX_HOOK_REQUIRED_FIELDS,
     CODEX_HOOK_SHORT_TIMEOUT_EVENTS,
     CODEX_HOOK_SHORT_TIMEOUT_MAX_SECONDS,
     CODEX_HOOK_SKIPPED_HANDLER_TYPES,
+    codex_mcp_input_problem,
 )
 from skillsaw.paths import safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -163,7 +167,10 @@ def _declares_hooks(block: CodexHooksBlock) -> bool:
         return False
     data = block.raw_data
     events = data.get("hooks") if isinstance(data, dict) else None
-    return isinstance(events, dict) and bool(events)
+    return isinstance(events, dict) and any(
+        event in CODEX_HOOK_EVENTS and isinstance(entries, list) and entries
+        for event, entries in events.items()
+    )
 
 
 def _matches_type(value: Any, expected) -> bool:
@@ -318,13 +325,29 @@ class CodexHooksValidRule(Rule):
                 )
                 continue
 
-            if "hooks" not in data:
+            # The TOML block supplies only its rendered hooks table here,
+            # never the enclosing config.toml. JSON's root is stricter than
+            # groups and handlers, whose unknown metadata Codex ignores.
+            unknown = [key for key in data if key not in CODEX_HOOK_FILE_FIELDS]
+            if unknown:
                 violations.append(
-                    self.violation("hooks.json must contain a 'hooks' key", file_path=block.path)
+                    self.violation(
+                        f"Unknown hooks file fields {_sample(unknown)}; Codex refuses "
+                        "the file. Keep only 'description' and 'hooks' at the root",
+                        file_path=block.path,
+                    )
                 )
-                continue
+            if not isinstance(data.get("description"), (str, type(None))):
+                violations.append(
+                    self.violation(
+                        "Hooks file 'description' must be a string or null",
+                        file_path=block.path,
+                    )
+                )
 
-            raw_hooks = data["hooks"]
+            # HooksFile.hooks defaults to an empty event map. Explicit null
+            # remains a type error; absence is a valid disabled file.
+            raw_hooks = data.get("hooks", {})
             if not isinstance(raw_hooks, dict):
                 violations.append(
                     self.violation(
@@ -457,11 +480,10 @@ class CodexHooksValidRule(Rule):
 
         if "matcher" in entry:
             matcher = entry["matcher"]
-            if not isinstance(matcher, str):
-                # The block boundary coerces a non-string matcher so nothing
-                # crashes; reporting here keeps the coercion from hiding the
-                # defect — Codex matches tool names against the pattern, and
-                # a non-string value disables the hook without an error.
+            if not isinstance(matcher, CODEX_HOOK_MATCHER_TYPES):
+                # The block boundary coerces an invalid matcher so consumers
+                # still see its commands. Codex accepts null as unset, but
+                # cannot decode other non-string values.
                 violations.append(
                     self.violation(
                         f"Hook {where} 'matcher' must be a string, got "
@@ -469,7 +491,7 @@ class CodexHooksValidRule(Rule):
                         file_path=block.path,
                     )
                 )
-            elif builtin and event not in CODEX_HOOK_MATCHER_EVENTS:
+            elif matcher is not None and builtin and event not in CODEX_HOOK_MATCHER_EVENTS:
                 violations.append(
                     self.violation(
                         f"Hook {where}.matcher has no effect on {name}",
@@ -478,12 +500,9 @@ class CodexHooksValidRule(Rule):
                     )
                 )
 
-        if "hooks" not in entry:
-            return violations + [
-                self.violation(f"Hook {where} is missing 'hooks'", file_path=block.path)
-            ]
-
-        handlers = entry["hooks"]
+        # MatcherGroup.hooks is a defaulted list, so a group may deliberately
+        # contain no handlers. Unknown flattened handler keys still warn above.
+        handlers = entry.get("hooks", [])
         if not isinstance(handlers, list):
             return violations + [
                 self.violation(
@@ -614,6 +633,8 @@ class CodexHooksValidRule(Rule):
                 if spelling not in handler:
                     continue
                 value = handler[spelling]
+                if value is None and field in CODEX_HOOK_NULLABLE_FIELDS.get(handler_type, ()):
+                    continue
                 if not _matches_type(value, expected):
                     violations.append(
                         self.violation(
@@ -629,6 +650,18 @@ class CodexHooksValidRule(Rule):
                             file_path=block.path,
                         )
                     )
+
+        input_value = handler.get("input")
+        if handler_type == "mcp_tool" and isinstance(input_value, dict):
+            problem = codex_mcp_input_problem(input_value)
+            if problem is not None:
+                violations.append(
+                    self.violation(
+                        f"Hook {where} 'input' contains {problem}; Codex requires values "
+                        "representable as TOML. Omit unset values or encode large IDs as strings",
+                        file_path=block.path,
+                    )
+                )
 
         violations.extend(self._check_alias_conflicts(where, handler_type, handler, block))
 
@@ -728,6 +761,8 @@ class CodexHooksValidRule(Rule):
         if _TIMEOUT not in handler:
             return []
         timeout = handler[_TIMEOUT]
+        if timeout is None and _TIMEOUT in CODEX_HOOK_NULLABLE_FIELDS.get(handler["type"], ()):
+            return []
         whole_only = _TIMEOUT in block.whole_number_fields
         # The type first, then the range: a wrong type is named by its type
         # and a wrong value by its value, so the message says which it is.

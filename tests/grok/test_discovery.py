@@ -10,6 +10,7 @@ linter exists to catch.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -284,14 +285,15 @@ def test_an_unreadable_hooks_directory_is_recorded_rather_than_dropped(
     rules = repo / ".grok" / "rules"
     rules.mkdir()
     (rules / "style.md").write_text("# House style\n\nUse tabs in Makefiles.\n")
-    real_glob = Path.glob
+    real_scandir = os.scandir
+    hooks = repo / ".grok" / "hooks"
 
-    def refuse_the_hooks_directory(self, pattern, *args, **kwargs):
-        if self.name == "hooks":
-            raise OSError(13, "Permission denied")
-        return real_glob(self, pattern, *args, **kwargs)
+    def refuse_the_hooks_directory(path):
+        if Path(path) == hooks:
+            raise PermissionError(13, "Permission denied", str(hooks))
+        return real_scandir(path)
 
-    monkeypatch.setattr(Path, "glob", refuse_the_hooks_directory)
+    monkeypatch.setattr(os, "scandir", refuse_the_hooks_directory)
     context = RepositoryContext(repo)
 
     assert context.lint_tree.find(GrokHooksBlock) == []

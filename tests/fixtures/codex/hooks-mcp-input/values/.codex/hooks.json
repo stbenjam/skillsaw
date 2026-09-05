@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "reference",
+            "tool": "lookup",
+            "input": {
+              "text": "query",
+              "enabled": true,
+              "count": 3,
+              "ratio": 0.5,
+              "empty": {},
+              "items": [
+                1,
+                "two",
+                false,
+                []
+              ],
+              "numeric_boundaries": [
+                9223372036854775807,
+                18446744073709551616,
+                -9223372036854775808,
+                -9223372036854775809,
+                9.223372036854776e+18,
+                "9223372036854775808"
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -10,9 +10,9 @@ inputs:
     required: false
     default: '.'
   version:
-    description: 'skillsaw version to install (e.g. "0.12.1"). Defaults to the version this action was released with.'
+    description: 'PyPI version of skillsaw to install (e.g. "0.19.0"). Leave empty to install the action checkout.'
     required: false
-    default: '0.20.0'
+    default: ''
   strict:
     description: 'Treat warnings as errors'
     required: false
@@ -63,10 +63,13 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         SKILLSAW_PLUGINS: ${{ inputs.plugins }}
       run: |
-        if [ -f "$ACTION_PATH/pyproject.toml" ]; then
+        if [ -n "$SKILLSAW_VERSION" ]; then
+          pip install -q "skillsaw==$SKILLSAW_VERSION"
+        elif [ -f "$ACTION_PATH/pyproject.toml" ]; then
           pip install -q "$ACTION_PATH"
         else
-          pip install -q "skillsaw==$SKILLSAW_VERSION"
+          echo "Action checkout is missing pyproject.toml; set version to install a PyPI release." >&2
+          exit 1
         fi
         if [ -n "$SKILLSAW_PLUGINS" ]; then
           reqs=$(mktemp)

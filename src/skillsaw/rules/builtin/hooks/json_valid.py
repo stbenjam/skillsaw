@@ -17,8 +17,8 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
-from skillsaw.blocks import json_token
 from skillsaw.diagnostics import safe_display
+from skillsaw.utils import read_json_strict, read_text
 from skillsaw.rules.builtin.content_analysis import ClaudeHooksBlock
 
 # Valid hook event types
@@ -51,6 +51,8 @@ _VALID_HOOK_EVENTS = {
     "WorktreeRemove",
     "PreCompact",
     "PostCompact",
+    "PreModelSwitch",
+    "PostModelSwitch",
     "Elicitation",
     "ElicitationResult",
     "SessionEnd",
@@ -157,22 +159,22 @@ class ClaudeHooksValidRule(Rule):
                 )
                 continue
 
-            # The block parses leniently so a duplicate key cannot hide a
-            # command from the security rules, which also admits the bare
-            # tokens NaN and Infinity that Claude Code's JSON parser rejects
-            # — the defect is the file, not the field, and one finding says so.
-            found = block.first_non_finite()
-            if found is not None:
-                path, value = found
-                violations.append(
-                    self.violation(
-                        f"'{json_token(value)}' at {safe_display(path)} is not valid JSON "
-                        "— NaN and Infinity are not JSON tokens, and Claude Code rejects "
-                        "the whole file, so it loads no hooks",
-                        file_path=block.path,
+            # Keep the block lenient for shared command discovery. Claude's
+            # parser rejects bare constants, but accepts numeric syntax such
+            # as 1e400 that merely overflows Python's float. Inspect the source
+            # tokens only; quoted mentions and duplicate keys remain valid.
+            content = read_text(block.path) or ""
+            if "NaN" in content or "Infinity" in content:
+                _, token_error = read_json_strict(block.path, allow_duplicate_keys=True)
+                if token_error:
+                    violations.append(
+                        self.violation(
+                            f"Invalid JSON: {token_error} — Claude Code rejects the whole file, "
+                            "so it loads no hooks",
+                            file_path=block.path,
+                        )
                     )
-                )
-                continue
+                    continue
 
             if "hooks" not in data:
                 violations.append(

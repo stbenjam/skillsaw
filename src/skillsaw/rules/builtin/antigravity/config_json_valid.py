@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import List
 
-from skillsaw.blocks import json_token
 from skillsaw.blocks.json_config import AntigravityConfigBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
@@ -20,17 +19,17 @@ class AntigravityConfigJsonValidRule(Rule):
     ``agents.json``, ``plugins.json``, ``skills.json`` and
     ``workflows.json`` each name *where else* to load that kind of
     customization from: ``{"entries": [{"path", "include_only",
-    "exclude"}], "inherits": [...]}``. A non-object root logs one
+    "exclude"}], "inherits": [...]}``. A non-null, non-object root logs one
     ``Failed to load JSON config file`` line and the file is skipped;
     ``agy`` still exits 0.
 
     Opt-in, because only two of the four registries were reachable
     offline: ``agy agents`` queries the agents and plugins kinds and no
     subcommand exercises the others, so the checks below stop at what a
-    measurement covers — the document parses, its root is an object, and
-    ``entries`` holds objects with a string ``path``. Whether a listed path
-    resolves is deliberately not asked: a registry may name a directory
-    that exists only on a developer's machine, and this rule is opt-in
+    measurement covers — the document parses, its root is an object or null,
+    and ``entries`` / ``inherits`` contain correctly typed paths and filters.
+    Whether a listed path resolves is deliberately not asked: a registry may
+    name a directory that exists only on a developer's machine, and this rule is opt-in
     while the lint tree is not.
 
     The *tree* does resolve them, for the two registries measured to load
@@ -50,10 +49,7 @@ class AntigravityConfigJsonValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return (
-            "Antigravity registry files must parse as an object whose 'entries' "
-            "are objects with a string 'path'"
-        )
+        return "Antigravity registry files must decode their paths and filters correctly"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -82,16 +78,6 @@ class AntigravityConfigJsonValidRule(Rule):
                     fingerprint_discriminator="parse-error",
                 )
             ]
-        found = block.first_non_finite()
-        if found is not None:
-            path, value = found
-            return [
-                self.violation(
-                    f"'{json_token(value)}' at {safe_display(path)} is not valid JSON; {_SKIPPED}",
-                    file_path=block.path,
-                    fingerprint_discriminator="non-finite",
-                )
-            ]
         data = block.raw_data
         if not isinstance(data, dict):
             return [
@@ -102,42 +88,23 @@ class AntigravityConfigJsonValidRule(Rule):
                 )
             ]
 
-        entries = data.get("entries")
-        if entries is None:
-            return []
-        if not isinstance(entries, list):
+        errors = getattr(data, "decode_errors", [])
+        if errors:
+            grouped = {}
+            for where, problem in errors:
+                grouped.setdefault(problem, []).append(where)
+            details = []
+            for problem, positions in grouped.items():
+                positions = list(dict.fromkeys(positions))
+                shown = ", ".join(positions[:3])
+                more = f" and {len(positions) - 3} more" if len(positions) > 3 else ""
+                details.append(f"{shown}{more} {problem}")
             return [
                 self.violation(
-                    f"{name}: 'entries' must be an array",
+                    f"{name}: {safe_display('; '.join(details))}; {_SKIPPED}",
                     file_path=block.path,
-                    fingerprint_discriminator="entries-not-array",
+                    fingerprint_discriminator="field-type",
                 )
             ]
-        return self._check_entries(block, name, entries)
 
-    def _check_entries(
-        self, block: AntigravityConfigBlock, name: str, entries: List[Any]
-    ) -> List[RuleViolation]:
-        """One finding for the whole file, naming the first few positions.
-
-        A registry written to the wrong shape is wrong in every entry, and
-        a finding per entry would bury the one thing an author has to
-        change.
-        """
-        bad = [
-            index
-            for index, entry in enumerate(entries)
-            if not (isinstance(entry, dict) and isinstance(entry.get("path"), str))
-        ]
-        if not bad:
-            return []
-        shown = ", ".join(f"entries[{index}]" for index in bad[:3])
-        more = f" and {len(bad) - 3} more" if len(bad) > 3 else ""
-        return [
-            self.violation(
-                f"{name}: {shown}{more} must be an object with a string 'path' naming the "
-                "directory of items to load",
-                file_path=block.path,
-                fingerprint_discriminator="entry-shape",
-            )
-        ]
+        return []

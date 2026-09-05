@@ -269,7 +269,10 @@ def test_synthetic_fail_closed_violations_are_not_baselined(tmp_path, rule_id):
     assert baseline.violations == []
 
 
-def test_baseline_command_preserves_existing_file_after_tree_failure(tmp_path, monkeypatch):
+@pytest.mark.parametrize("include_info", [False, True])
+def test_baseline_command_preserves_existing_file_after_tree_failure(
+    tmp_path, monkeypatch, include_info
+):
     from skillsaw.cli._baseline import _run_baseline
     from skillsaw.linter import Linter
 
@@ -288,6 +291,7 @@ def test_baseline_command_preserves_existing_file_after_tree_failure(tmp_path, m
         config=None,
         no_custom_rules=True,
         no_plugins=True,
+        include_info=include_info,
     )
 
     with pytest.raises(SystemExit) as exc_info:

@@ -6,7 +6,7 @@ catalog alongside `marketplace.json`. When users run `grok plugin list
 commands, and version info.
 
 Keeping `plugin-index.json` in sync with `marketplace.json` ensures that what
-users see in the marketplace browser accurately reflects what gets installed:
+users see in the marketplace browser reflects the declared plugins:
 
 - For remote Git repository plugins, Grok matches the `sha` between
   `marketplace.json` and `plugin-index.json` to verify component details. If
@@ -18,30 +18,48 @@ This rule checks that `plugin-index.json` accurately reflects the contents of
 `marketplace.json`. If a repository does not include `plugin-index.json`, this
 rule simply stands down, as the index file is optional.
 
+Display parity is separate from installation validation. Grok still displays a
+remote plugin and its matching index metadata when its source `path` contains
+an invalid subdirectory. Keep that entry in the index and correct the source
+path using the [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md)
+finding; removing the index entry would omit metadata for a visible plugin.
+
 ## Severity
 
-Findings carry **Warning** severity. The marketplace catalog remains
-functional, and plugins can still be installed; keeping parity ensures a smooth
-and accurate browsing experience for users.
+Findings carry **Warning** severity because they describe missing or inaccurate
+browser metadata. They do not establish whether a source can be installed.
 
 ## What it checks
 
 Skillsaw reports parity discrepancies across the index and catalog:
 
-- Plugin names present in one file but missing from the other.
-- Commit `sha` values that differ between the catalog and index (compared
-  case-insensitively).
-- Plugin entries in `plugin-index.json` whose values are not objects.
+- Literal catalog entry names present in one file but missing from the other.
+  A local plugin's manifest name controls its listing name, but does not
+  substitute for the catalog entry's index lookup key. An empty catalog entry name
+  uses the empty string key; diagnostics display that key as `""`.
+- For remote sources, commit `sha` strings that differ between the catalog and
+  index, including differences in case or whitespace. The display reader compares
+  the stored strings exactly; installer normalization is separate. Local display
+  lookup ignores an optional index `sha` and still compares the skills.
 - For local plugins: skills listed in the index that do not match the skills
   present in the plugin source on disk. Skills match by either their
   `SKILL.md` frontmatter `name` or their directory name.
 
 Additional checks:
 
-- Syntax errors in `plugin-index.json`, or an index where `plugins` is not an
-  object.
-- Placement: ensures `plugin-index.json` is located in `.grok-plugin/` alongside
-  `marketplace.json` so Grok can discover it.
+- Syntax and typed index errors: version must be integer `1`; omitted `plugins`
+  defaults to an empty map. Each entry requires `components`, whose six optional
+  categories are arrays of items with a string `name` and optional string or null
+  `description`. A typed defect discards the whole index, so it produces one
+  index warning before any drift comparison.
+- Grok's accepted positional struct arrays and unknown metadata stay valid.
+  Recognized struct fields cannot repeat; plugin-map duplicates keep the last
+  entry after decoding every value. A UTF-8 BOM is rejected by this reader.
+- Placement and selection: Grok prefers `.grok-plugin/plugin-index.json`, then
+  falls back to `.claude-plugin/plugin-index.json` when the preferred file is
+  absent. A present broken preferred file stops fallback. A legal shadowed copy
+  stays in the lint tree without a placement warning. Root-level indexes are
+  unsupported.
 
 ## Examples
 
@@ -82,7 +100,11 @@ Additional checks:
 ## How to fix
 
 - Regenerate `plugin-index.json` whenever updating plugins in `marketplace.json`.
-- Place `plugin-index.json` in `.grok-plugin/` directly alongside `marketplace.json`.
+- Key each index entry by the exact corresponding catalog entry `name`, even
+  when the local plugin manifest has a different name. Remove unused alias
+  keys; they do not supply that catalog entry's components.
+- Place `plugin-index.json` in `.grok-plugin/`, or use the supported
+  `.claude-plugin/` fallback when the preferred index is absent.
 - Remove entries from `plugin-index.json` when removing plugins from `marketplace.json`.
 
 If your workflow generates index components during a separate packaging or CI

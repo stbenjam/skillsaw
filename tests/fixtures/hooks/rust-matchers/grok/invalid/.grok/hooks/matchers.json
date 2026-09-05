@@ -1,0 +1,114 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash(",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "(?=Bash)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "(?U)(Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "(?-u:[a-z)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\x{110000}",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\x{d800}",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\x{}",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\x{42}(",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\u{110000}",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\U{42}(",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "[(?x)](?=foo)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\(?x)(?=foo)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      }
+    ]
+  }
+}

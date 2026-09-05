@@ -1,0 +1,9 @@
+[mcp_servers.canary]
+command = "catalog-review-mcp"
+args = ["--read-only"]
+
+[permission]
+rules = [
+  { action = "allow", tool = "read", pattern = "docs/**" },
+  { action = "ask", tool = "edit", pattern = "src/**", pattern_mode = "glob" },
+]

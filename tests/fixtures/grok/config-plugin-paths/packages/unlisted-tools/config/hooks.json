@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf 'Unlisted review\\n'"
+          }
+        ]
+      }
+    ]
+  }
+}

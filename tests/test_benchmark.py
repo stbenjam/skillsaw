@@ -123,3 +123,67 @@ class TestCli:
             ]
         )
         assert rc == 0
+
+
+@pytest.mark.parametrize("gc_enabled", [True, False])
+def test_benchmark_uses_production_gc_policy_and_results(tiny_repo, monkeypatch, gc_enabled):
+    import gc
+
+    from skillsaw.context import RepositoryContext
+    from skillsaw.linter import Linter
+    import skillsaw.lint_tree as tree_module
+    from skillsaw.rules.builtin.agentskills import AgentSkillDescriptionRule
+    from skillsaw.config import LinterConfig
+
+    previous = gc.isenabled()
+    observed = []
+    tree_observed = []
+    findings = []
+    original_check = AgentSkillDescriptionRule.check
+    original_run = Linter.run
+    original_build = tree_module.build_lint_tree_safe
+
+    def build(context):
+        tree_observed.append(gc.isenabled())
+        return original_build(context)
+
+    def check(rule, context):
+        observed.append(gc.isenabled())
+        return original_check(rule, context)
+
+    def run(linter, *args, **kwargs):
+        result = original_run(linter, *args, **kwargs)
+        findings.append([(v.rule_id, v.file_path, v.file_line, v.message) for v in result])
+        return result
+
+    monkeypatch.setattr(AgentSkillDescriptionRule, "check", check)
+    monkeypatch.setattr(tree_module, "build_lint_tree_safe", build)
+    monkeypatch.setattr(Linter, "run", run)
+    try:
+        gc.enable() if gc_enabled else gc.disable()
+        _, per_rule, count, _ = bench._fresh_lint(tiny_repo)
+        assert gc.isenabled() == gc_enabled
+        Linter(RepositoryContext(tiny_repo), LinterConfig.default()).run()
+        assert gc.isenabled() == gc_enabled
+        assert observed == [False, False]
+        assert tree_observed == [False, False]
+        assert "agentskill-description" in per_rule
+        assert len(findings) == 2 and findings[0] == findings[1]
+        assert count == len(findings[0])
+    finally:
+        gc.enable() if previous else gc.disable()
+
+
+def test_benchmark_rejects_caught_rule_failures_and_restores_gc(tiny_repo, monkeypatch):
+    import gc
+
+    from skillsaw.rules.builtin.agentskills import AgentSkillDescriptionRule
+
+    def broken(rule, context):
+        raise RuntimeError("benchmark canary failure")
+
+    monkeypatch.setattr(AgentSkillDescriptionRule, "check", broken)
+    previous = gc.isenabled()
+    with pytest.raises(RuntimeError, match="Benchmark lint failed:.*benchmark canary failure"):
+        bench._fresh_lint(tiny_repo)
+    assert gc.isenabled() == previous

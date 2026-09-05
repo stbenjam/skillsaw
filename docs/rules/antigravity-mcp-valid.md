@@ -21,9 +21,10 @@ servers the agent can call. Each one is a process Antigravity spawns or an
 endpoint it connects to, so what the file says is what the agent can reach.
 
 Its two failure modes are far apart, and neither is visible from the file.
-Measured against `agy` 1.1.25:
+Measured against `agy` 1.1.26:
 
-- A **JSON syntax error or a root that is not an object** is startup-fatal.
+- A **JSON syntax error, a non-null root that is not an object, or a
+  non-null `mcpServers` value that is not an object** is startup-fatal.
   `agy` prints one message naming the file and exits 1; no session starts.
 - A **per-server shape problem drops that server, silently**. There is no
   diagnostic and no exit code. The tools that server was meant to provide
@@ -50,15 +51,19 @@ goes unreported while this rule is off, because a user who pinned a
 - Invalid JSON: a syntax error, a comment, a trailing comma, or a non-finite
   number (`NaN`, `Infinity`, `-Infinity`). The parser is strict JSON.
 - A UTF-8 byte-order mark (BOM) before the JSON document.
-- A root that is not an object.
+- A non-null root or `mcpServers` value that is not an object.
 
 **Warnings** — a missing server, a dropped server, or an empty command:
 
-- No `mcpServers` object. A bare map of servers is the shape several other
+- An absent or null `mcpServers` object, including a null document. A bare map of servers is the shape several other
   hosts accept; here it is read as an ordinary document with no servers in
   it, so the file is inert rather than broken.
-- A server that is not an object.
-- Non-null `env` that is not an object, or a value that is neither a string nor null.
+- A non-null server that is not an object.
+- Non-null `env` or `headers` that is not an object, or a value that is
+  neither a string nor null.
+- Non-null `oauth` that is not an object, or a `clientId` / `clientSecret`
+  member that is neither a string nor null. Unknown OAuth members are ignored.
+- Non-null `disabled` that is not a boolean.
 - Non-null `args` that is not an array, or an element that is neither a string nor null.
 - Non-null `command`, `url`, `serverUrl` or `cwd` that is not a string.
 - Non-null `disabledTools` that is not an array of strings or null elements.
@@ -68,6 +73,13 @@ goes unreported while this rule is off, because a user who pinned a
   another string, a number, an array or an object alike. The proto enum's
   `MCP_AUTH_PROVIDER_TYPE_GOOGLE_CREDENTIALS` spelling drops the server;
   only the lowercase JSON alias parses.
+
+Server field names match without regard to case: `Command`, `serverURL`
+and `DisabledTools` use the same types as their canonical spellings.
+OAuth's `clientId` and `clientSecret` also match this way. The top-level
+`mcpServers` wrapper, server names, and environment/header member names
+remain case-sensitive. Command and credential scans read the same normalized
+view, even when this shape rule is disabled.
 
 ## What is not reported
 
@@ -83,10 +95,16 @@ goes unreported while this rule is off, because a user who pinned a
   this host.
 - **A `type` that is not a string.** Measured: unlike every other scalar
   field on a server, a mistyped `type` is tolerated and the server loads.
-- **A repeated key.** A repeated `mcpServers` wrapper, server name or scalar
-  field takes the last value. Repeated `env`, `headers` and `oauth` objects
-  merge their members; null clears the map. The credential checks read
-  those merged maps too.
+- **Valid repeated keys.** A repeated `mcpServers` wrapper or server name
+  replaces its earlier value. Within a server, fields apply in encounter
+  order, including different capitalization of the same field. Repeated
+  `env`, `headers` and `oauth` objects merge their members; null clears the
+  map. The credential checks read those merged maps too. A type error in
+  an earlier field still drops that server, even if a later field replaces
+  the bad value; replacing the whole server or wrapper discards it.
+- **A null server.** It loads like an empty server object.
+- **A finite JSON number outside Python float range in an ignored field.**
+  For example, `timeout: 1e400` is valid JSON; literal `Infinity` is not.
 - **Null optional fields and null string-collection members.** A null
   `env` value or an `args` or `disabledTools` element is accepted as an
   empty string. A null or empty `serverUrl` is treated as absent, preserving
@@ -160,6 +178,10 @@ rules:
     extra-auth-provider-types:
       - workspace_credentials
 ```
+
+An explicit rule `severity` applies to primary file, server and field findings,
+including those whose normal failure scope is WARNING. With no override (or
+`severity: null`), each failure scope retains its documented default.
 
 ## Configuration
 

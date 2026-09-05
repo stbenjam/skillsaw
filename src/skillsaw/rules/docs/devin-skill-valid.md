@@ -10,9 +10,18 @@ This rule validates Devin's documented fields while tolerating unknown keys
 for forward compatibility. The skill body still receives skillsaw's shared
 content-quality and security checks.
 
+A known field may appear only once, even when its value is null. This also
+applies to `permissions.allow`, `permissions.deny`, and `permissions.ask`.
+Duplicate unknown extension keys remain accepted. The finding points to the
+repeated key; remove the duplicate and keep the intended value.
+
 ## Severity
 
-Malformed YAML and invalid field types are errors. Setting both a named
+Malformed YAML and invalid field types are errors. Empty trigger lists and lists
+with no recognized trigger are activation-policy errors: the skill may load,
+but no supported invocation route is declared. Unknown strings alongside `user`
+or `model` are warnings because the recognized route still works. An explicit
+rule severity overrides these primary findings. Setting both a named
 `agent` and `subagent: true` is informational: Devin uses the named agent, so
 the finding explains the precedence without treating a documented
 combination as invalid.
@@ -49,7 +58,21 @@ triggers:
 Review the selected path and report actionable findings.
 ```
 
-A native skill with no frontmatter is also valid.
+A native skill with no frontmatter, an empty header, or a comment-only
+header is also valid. An explicit `null` document between the delimiters
+is invalid. Optional string fields,
+`allowed-tools`, `permissions`, and `triggers` may be omitted or null to use
+Devin's defaults. The nested `permissions.allow`, `permissions.deny`, and
+`permissions.ask` lists may also be null. `subagent` still requires a boolean
+when present; `subagent: null` prevents the skill from loading.
+
+Native string fields retain scalar text such as `yes`, dates, and numbers.
+String lists also accept scalar items, including `null` as the literal pattern
+`null`. A scalar `allowed-tools` value still must be a string: numbers and
+booleans only work as list items. Use `true` or `false` for `subagent`; YAML 1.1
+spellings such as `yes`, `no`, `on`, and `off` do not load, nor does a quoted
+`"true"`. These decoding rules apply only to Devin-native frontmatter. Devin ignores
+YAML merge keys (`<<`); declare native fields explicitly instead.
 
 ## How to fix
 

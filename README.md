@@ -63,6 +63,9 @@ uvx skillsaw fix       # Apply safe, deterministic fixes
 uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 ```
 
+For `lint --fail-on info`, use `baseline --include-info` to accept existing
+INFO findings too. A configured `fail-on: info` includes them automatically.
+
 ## What it catches
 
 - **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (project config, plugins & marketplaces), Grok Build (project config, plugins & marketplaces), Google Antigravity (configuration in any customization root — `.agents/`, `.agent/`, `_agents/`, `_agent/` — its `rules/` and `agents/` prose, plugins, hooks, MCP servers and registries), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, APM packages, MCP server maps, and MCP Registry metadata.

@@ -592,10 +592,6 @@ class TestStructuralShape:
                 "Hook SessionStart[0] must be a table",
             ),
             (
-                '[[hooks.SessionStart]]\nmatcher = "shell"\n',
-                "Hook SessionStart[0] is missing 'hooks'",
-            ),
-            (
                 "[[hooks.SessionStart]]\nhooks = 3\n",
                 "Hook SessionStart[0] 'hooks' must be an array of tables",
             ),

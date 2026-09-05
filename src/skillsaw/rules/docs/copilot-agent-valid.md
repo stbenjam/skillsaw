@@ -23,8 +23,13 @@ template variables (`${{ secrets.NAME }}` and `${{ vars.NAME }}`) are recognized
 as valid placeholders.
 
 GitHub's `local` MCP transport is accepted as the cloud spelling of `stdio`.
-VS Code command hooks may use `command`, `windows`, `linux`, and `osx`; every
-provided command is security-scanned. Hooks on cloud-only agents are ignored.
+VS Code hooks use command handlers; an omitted `type` defaults to `command`.
+They may use `command`, `windows`, `linux`, `osx`, `bash`, and `powershell`;
+empty alternatives are ignored when another command string is present, and
+every provided command is security-scanned. A handler with only empty commands
+has no command to run. Additional hook metadata is
+tolerated, but separate Claude `args` do not change the command VS Code runs.
+Hooks on cloud-only agents are ignored.
 
 ## Severity
 
@@ -34,8 +39,8 @@ oversized cloud prompt are errors.
 
 Compatibility findings are warnings because the file remains usable in its
 selected environment: VS Code-only fields on `target: github-copilot`, cloud
-MCP/metadata on `target: vscode`, a cloud-only tools string in VS Code, and a
-VS Code model array in cloud. The retired `infer` field is also a warning;
+MCP/metadata on `target: vscode`, and a VS Code model array in cloud. The retired
+`infer` field is also a warning;
 `disable-model-invocation` takes precedence when both are present.
 
 Unknown top-level fields are accepted by default because the format evolves
@@ -71,6 +76,7 @@ model: [Claude Sonnet 4.5, GPT-5.2]
 handoffs:
   - label: Start Implementation
     agent: Implementer
+    prompt: Implement the approved plan.
     send: false
     model: GPT-5.2 (copilot)
 ---
@@ -82,12 +88,14 @@ Create a detailed implementation plan.
 
 - Use `target: vscode`, `target: github-copilot`, or omit `target` for a
   shared agent.
-- Keep VS Code `tools` as a YAML list. Add `agent`, `custom-agent`, or `Task`
-  when a non-empty `agents` list is paired with an explicit tools restriction.
+- Write `tools` as a YAML list or comma-separated string in either environment.
+  Add `agent`, `custom-agent`, or `Task` when a non-empty `agents` list is paired
+  with an explicit tools restriction.
 - Replace quoted booleans with `true` or `false`; replace retired `infer` with
   `user-invocable` and `disable-model-invocation`.
-- Keep handoff `label`, `agent`, optional `prompt`, and optional qualified
-  `model` values as non-empty strings; keep `send` as a boolean.
+- Keep handoff `label`, `agent`, and optional qualified `model` values as
+  non-empty strings. Include `prompt`, which may be empty for a handoff that
+  only changes agents; keep `send` as a boolean.
 - Move a field to the environment that consumes it, or remove the explicit
   target when the file is intentionally shared.
 

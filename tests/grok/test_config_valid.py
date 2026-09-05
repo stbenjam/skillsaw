@@ -353,29 +353,30 @@ def test_a_server_grok_drops_is_one_finding_naming_the_reason(tmp_path, table, r
 def test_a_wrong_typed_server_field_costs_that_server(tmp_path, table, reason) -> None:
     """Grok's deserializer refuses the transport and drops the server;
     ``mcpConfigProblems`` calls it an invalid transport."""
-    repo = config(tmp_path, CANARY + '\n[mcp_servers.quayside]\ncommand = "bin/quayside"\n' + table)
+    connection = (
+        'url = "https://quayside.example/mcp"\n'
+        if table.startswith("headers")
+        else 'command = "bin/quayside"\n'
+    )
+    repo = config(tmp_path, CANARY + "\n[mcp_servers.quayside]\n" + connection + table)
 
     violations = check(repo)
 
     assert messages(violations) == [f"[mcp_servers.quayside] {reason}"]
 
 
-def test_the_other_connection_field_is_typed_too(tmp_path) -> None:
-    """A ``command`` wins the transport, and the ``url`` beside it is still
-    deserialized."""
+def test_stdio_ignores_the_http_connection_field(tmp_path) -> None:
+    """A valid stdio variant wins without decoding HTTP-only fields."""
     repo = config(tmp_path, '[mcp_servers.quayside]\ncommand = "bin/quayside"\nurl = 8080\n')
 
-    assert messages(check(repo)) == ["[mcp_servers.quayside] 'url' must be a string, got integer"]
+    assert check(repo) == []
 
 
-def test_a_url_server_types_its_command_too(tmp_path) -> None:
-    """The mirror: a ``url`` carries the transport, and the ``command``
-    beside it is still deserialized — a non-string one drops the server."""
+def test_http_accepts_a_rejected_stdio_connection_field(tmp_path) -> None:
+    """A numeric command rejects stdio, then the valid HTTP variant loads."""
     repo = config(tmp_path, '[mcp_servers.quayside]\nurl = "https://q.example/mcp"\ncommand = 42\n')
 
-    assert messages(check(repo)) == [
-        "[mcp_servers.quayside] 'command' must be a string, got integer"
-    ]
+    assert check(repo) == []
 
 
 def test_two_defects_in_one_server_are_one_finding(tmp_path) -> None:
@@ -515,7 +516,7 @@ def test_a_non_table_rules_entry_costs_the_whole_array(tmp_path) -> None:
     violations = check(repo)
 
     assert messages(violations) == [
-        "[permission] 'rules' entries must be tables; "
+        "[permission] 'rules' entries must be rule tables or field arrays; "
         "Grok discards the whole array over entry 3 (integer)"
     ]
     assert violations[0].severity == Severity.WARNING
@@ -527,7 +528,7 @@ def test_an_array_of_rule_strings_is_not_a_rules_array(tmp_path) -> None:
     repo = config(tmp_path, '[permission]\nrules = ["deny Bash"]\n')
 
     assert messages(check(repo)) == [
-        "[permission] 'rules' entries must be tables; "
+        "[permission] 'rules' entries must be rule tables or field arrays; "
         "Grok discards the whole array over entry 1 (string)"
     ]
 
@@ -565,9 +566,8 @@ def test_an_unknown_server_field_is_not_a_defect(tmp_path) -> None:
     assert check(repo) == []
 
 
-def test_a_known_but_unchecked_server_field_is_left_alone(tmp_path) -> None:
-    """Every field in ``MCP_SERVER_FIELDS`` this rule does not type-check is
-    vocabulary, not a shape to enforce."""
+def test_valid_common_and_variant_fields_are_accepted(tmp_path) -> None:
+    """Common fields decode, while HTTP-only OAuth scopes are ignored here."""
     repo = config(
         tmp_path,
         '[mcp_servers.berths]\ncommand = "bin/harbourmaster"\ncwd = "services/berths"\n'
@@ -609,12 +609,13 @@ def test_an_ignored_table_is_not_this_rule(tmp_path) -> None:
     assert check(repo) == []
 
 
-def test_a_non_table_permission_is_not_reported(tmp_path) -> None:
-    """What it costs was never measured, and a rule may not invent a verdict
-    to fill the gap."""
+def test_a_non_table_permission_is_rejected(tmp_path) -> None:
+    """The workspace resolver cannot decode a scalar permission section."""
     repo = config(tmp_path, 'permission = "allow-all"\n')
 
-    assert check(repo) == []
+    assert messages(check(repo)) == [
+        "'permission' must be a table or a valid field array, got string"
+    ]
 
 
 def test_an_empty_config_is_not_a_defect(tmp_path) -> None:
@@ -627,10 +628,8 @@ def test_an_empty_config_is_not_a_defect(tmp_path) -> None:
 # ── Configured severity ──────────────────────────────────────────
 
 
-def test_a_configured_severity_moves_the_file_scoped_findings_only(tmp_path) -> None:
-    """The ERRORs follow the user's override; the per-server and per-key
-    WARNINGs are the rule's verdict on blast radius, not its severity, and
-    stay put whatever the user configures."""
+def test_a_configured_severity_moves_all_primary_findings(tmp_path) -> None:
+    """The configured severity reaches whole-file and dropped-entry defects."""
     repo = copy_fixture("grok/config-broken", tmp_path)
     (repo / ".skillsaw.yaml").write_text(
         'version: "99.0.0"\nrules:\n  grok-config-valid:\n    severity: info\n'
@@ -638,9 +637,8 @@ def test_a_configured_severity_moves_the_file_scoped_findings_only(tmp_path) -> 
 
     found = violations_for(lint_json(repo, returncode=0), "grok-config-valid")
 
-    assert {v["severity"] for v in found} == {"info", "warning"}
-    assert len([v for v in found if v["severity"] == "info"]) == 2
-    assert len([v for v in found if v["severity"] == "warning"]) == 3
+    assert len(found) == 5
+    assert {v["severity"] for v in found} == {"info"}
 
 
 def test_the_rule_can_be_turned_off(tmp_path) -> None:

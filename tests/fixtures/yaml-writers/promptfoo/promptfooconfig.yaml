@@ -1,0 +1,12 @@
+description: "Local release review"
+providers:
+  - "openai:gpt-4.1-mini"
+prompts:
+  - |-
+    Try to review the release checklist.
+  # Keep this sibling prompt and the evaluation settings.
+  - |-
+    Keep the release checklist concise.
+tests:
+  - vars:
+      language: "Python"

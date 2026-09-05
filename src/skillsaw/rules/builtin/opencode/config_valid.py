@@ -115,7 +115,7 @@ def _lower_native_command(entry: Any) -> Dict[str, Any] | None:
     if not isinstance(entry, dict):
         return None
     template = entry.get("template")
-    if not isinstance(template, str) or not template.strip():
+    if not isinstance(template, str):
         return None
 
     lowered: Dict[str, Any] = {"template": template}
@@ -475,10 +475,10 @@ class OpenCodeConfigValidRule(Rule):
             # supply it the way a ``.opencode/commands/*.md`` file does, and
             # OpenCode refuses to load a project configuration that omits it.
             template = entry.get("template")
-            if not isinstance(template, str) or not template.strip():
+            if not isinstance(template, str):
                 violations.append(
                     self.violation(
-                        f"'{where}.template' must be a non-empty string — it is the "
+                        f"'{where}.template' must be a string — it is the "
                         "prompt the command runs, and OpenCode refuses to load a "
                         "configuration whose command has none",
                         file_path=path,
@@ -673,12 +673,13 @@ class OpenCodeConfigValidRule(Rule):
             if (
                 not isinstance(value, list)
                 or not value
-                or not all(isinstance(part, str) and part.strip() for part in value)
+                or not all(isinstance(part, str) for part in value)
+                or not value[0].strip()
             ):
                 violations.append(
                     self.violation(
                         f"MCP server '{shown}' 'command' must be a non-empty array of "
-                        'strings, e.g. ["npx", "-y", "pkg"]',
+                        'strings with a non-blank executable, e.g. ["npx", "-y", "pkg"]',
                         file_path=path,
                         severity=shape_severity,
                     )

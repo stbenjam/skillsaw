@@ -1,0 +1,6 @@
+version: "0.20.0"
+fail-on: info
+rules:
+  content-weak-language:
+    enabled: true
+    severity: info

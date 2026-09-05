@@ -68,7 +68,7 @@ def marketplace(temp_dir, name: str, catalog, index_doc, skills=(), manifest=Non
     ``(directory, frontmatter name)`` pair when the two differ.
     """
     repo = write_repo(temp_dir / name)
-    write_catalog(repo, catalog)
+    write_catalog(repo, {"name": "harbour-plugins", **catalog})
     if index_doc is not None:
         write_catalog(repo, index_doc, filename="plugin-index.json")
     if skills or manifest:
@@ -87,7 +87,14 @@ def check(repo, config=None):
 
 @pytest.fixture
 def broken(tmp_path):
-    return copy_fixture("grok/marketplace-broken", tmp_path)
+    repo = copy_fixture("grok/marketplace-broken", tmp_path)
+    # Exercise parity only after the whole catalog passes typed decoding.
+    path = repo / ".grok-plugin/marketplace.json"
+    data = json.loads(path.read_text())
+    data["plugins"][7]["source"]["sha"] = SHA_A
+    data["plugins"][10]["name"] = "wind-fetch"
+    path.write_text(json.dumps(data))
+    return repo
 
 
 # ── No index at all ──────────────────────────────────────────────
@@ -107,7 +114,7 @@ def test_a_name_missing_from_the_index_is_reported(temp_dir) -> None:
         temp_dir,
         "missing-name",
         {"plugins": [url_entry("almanac", SHA_A), url_entry("tides", SHA_B)]},
-        index({"almanac": {"sha": SHA_A}}),
+        index({"almanac": {"sha": SHA_A, "components": {}}}),
     )
 
     found = only(check(repo), "disagrees")
@@ -121,21 +128,34 @@ def test_a_name_only_the_index_carries_is_reported(temp_dir) -> None:
         temp_dir,
         "ghost-name",
         {"plugins": [url_entry("almanac", SHA_A)]},
-        index({"almanac": {"sha": SHA_A}, "retired": {"sha": SHA_B}}),
+        index(
+            {
+                "almanac": {"sha": SHA_A, "components": {}},
+                "retired": {"sha": SHA_B, "components": {}},
+            }
+        ),
     )
 
     assert "not in the catalog: retired" in only(check(repo), "disagrees").message
 
 
-def test_the_resolved_manifest_name_also_matches(temp_dir) -> None:
-    """An index generated from the resolved names must not read as drift
-    against a catalog whose entry names differ."""
+def test_the_resolved_manifest_name_is_not_a_display_index_key(temp_dir) -> None:
+    """The listing name and the component lookup key are separate."""
     repo = write_repo(temp_dir / "resolved-match")
-    write_catalog(repo, {"plugins": [{"name": "harbour-almanac", "source": "./plugins/almanac"}]})
-    write_plugin(repo / "plugins" / "almanac", {"name": "almanac"})
-    write_catalog(repo, index({"almanac": {}}), filename="plugin-index.json")
+    write_catalog(
+        repo,
+        {
+            "name": "harbour-plugins",
+            "plugins": [{"name": "harbour-almanac", "source": "./plugins/almanac"}],
+        },
+    )
+    write_plugin(repo / "plugins/almanac", {"name": "almanac"})
+    write_catalog(repo, index({"almanac": {"components": {}}}), filename="plugin-index.json")
 
-    assert check(repo) == []
+    assert messages(check(repo)) == [
+        "plugin-index.json disagrees with marketplace.json: "
+        "not in the index: harbour-almanac; not in the catalog: almanac"
+    ]
 
 
 # ── The pin ──────────────────────────────────────────────────────
@@ -146,30 +166,31 @@ def test_a_sha_that_disagrees_is_reported(temp_dir) -> None:
         temp_dir,
         "drifted",
         {"plugins": [url_entry("almanac", SHA_A)]},
-        index({"almanac": {"sha": SHA_B}}),
+        index({"almanac": {"sha": SHA_B, "components": {}}}),
     )
 
     assert "'sha' differs: almanac" in only(check(repo), "disagrees").message
 
 
-def test_a_sha_that_differs_only_in_case_is_not_drift(temp_dir) -> None:
-    """The installer treats a commit id case-insensitively, and the casing
-    is grok-marketplace-json-valid's finding, not a second one here."""
+def test_a_sha_that_differs_only_in_case_is_display_drift(temp_dir) -> None:
+    """Display lookup compares stored strings, independently of installation."""
     repo = marketplace(
         temp_dir,
         "case-only",
         {"plugins": [url_entry("almanac", SHA_A)]},
-        index({"almanac": {"sha": SHA_A.upper()}}),
+        index({"almanac": {"sha": SHA_A.upper(), "components": {}}}),
     )
 
-    assert check(repo) == []
+    assert "'sha' differs: almanac" in only(check(repo), "disagrees").message
 
 
 @pytest.mark.parametrize(
     "catalog_sha,index_entry,expected",
     [
-        pytest.param(SHA_A, {}, "'sha' in the catalog only", id="catalog-only"),
-        pytest.param(None, {"sha": SHA_A}, "'sha' in the index only", id="index-only"),
+        pytest.param(SHA_A, {"components": {}}, "'sha' in the catalog only", id="catalog-only"),
+        pytest.param(
+            None, {"sha": SHA_A, "components": {}}, "'sha' in the index only", id="index-only"
+        ),
     ],
 )
 def test_a_sha_on_one_side_only_is_reported(temp_dir, catalog_sha, index_entry, expected) -> None:
@@ -285,7 +306,7 @@ def test_check_components_off_keeps_the_name_and_sha_checks(temp_dir) -> None:
         index(
             {
                 "almanac": {"components": {"skills": [{"name": "ebb-window"}]}},
-                "retired": {},
+                "retired": {"components": {}},
             }
         ),
         skills=("tide-window",),
@@ -327,13 +348,20 @@ def test_an_index_whose_plugins_is_not_an_object_is_one_finding(temp_dir) -> Non
         temp_dir, "list-index", {"plugins": [url_entry("almanac", SHA_A)]}, index([])
     )
 
-    assert messages(check(repo)) == ["'plugins' must be an object keyed by plugin name"]
+    assert messages(check(repo)) == [
+        "Invalid display index: 'plugins' must be an object keyed by plugin name"
+    ]
 
 
 def test_an_unreadable_catalog_reports_no_parity(temp_dir) -> None:
     """One defect, one finding: grok-marketplace-json-valid names the
     catalog, and comparing against nothing would report every plugin."""
-    repo = marketplace(temp_dir, "bad-catalog", {"plugins": []}, index({"almanac": {"sha": SHA_A}}))
+    repo = marketplace(
+        temp_dir,
+        "bad-catalog",
+        {"plugins": []},
+        index({"almanac": {"sha": SHA_A, "components": {}}}),
+    )
     (repo / ".grok-plugin" / "marketplace.json").write_text('{"plugins": [,]}', encoding="utf-8")
 
     assert check(repo) == []
@@ -342,7 +370,7 @@ def test_an_unreadable_catalog_reports_no_parity(temp_dir) -> None:
 # ── An index Grok never reads ────────────────────────────────────
 
 
-@pytest.mark.parametrize("location", ["plugin-index.json", ".claude-plugin/plugin-index.json"])
+@pytest.mark.parametrize("location", ["plugin-index.json"])
 def test_an_index_away_from_its_catalog_is_reported(temp_dir, location) -> None:
     repo = marketplace(temp_dir, f"stray-{len(location)}", {"plugins": []}, None)
     stray = repo / location
@@ -352,12 +380,12 @@ def test_an_index_away_from_its_catalog_is_reported(temp_dir, location) -> None:
     found = check(repo)
 
     assert len(found) == 1
-    assert "is not beside '.grok-plugin/marketplace.json'" in found[0].message
+    assert "must be in .grok-plugin/ or .claude-plugin/" in found[0].message
     assert found[0].file_path == stray
 
 
 def test_a_stray_index_is_a_node_under_its_catalog(temp_dir) -> None:
-    """Every file the rule reports on is in the tree: the fallback locations
+    """Every file the rule reports on is in the tree: unsupported locations
     attach as index nodes marked ``stray``, so nothing is discovered by a
     filesystem probe from inside a rule."""
     repo = marketplace(temp_dir, "stray-node", {"plugins": []}, None)
@@ -393,13 +421,15 @@ def test_an_index_entry_that_is_not_an_object_is_reported(temp_dir) -> None:
         index({"almanac": "garbage"}),
     )
 
-    assert "entries that are not objects: almanac" in only(check(repo), "disagrees").message
+    assert (
+        "plugins['almanac'] must be an object" in only(check(repo), "Invalid display index").message
+    )
 
 
 @pytest.mark.parametrize(
     "listed",
-    [{}, {"components": {}}, {"components": {"skills": "tide-window"}}],
-    ids=["no-components", "no-skills", "skills-not-a-list"],
+    [{"components": {}}, {"components": {"skills": []}}],
+    ids=["no-skills", "empty-skills"],
 )
 def test_an_index_entry_listing_no_usable_skills_reports_what_ships(temp_dir, listed) -> None:
     """The index is the browser's only component source, so an entry with no
@@ -496,9 +526,9 @@ def test_the_broken_fixture_is_one_consolidated_finding(broken) -> None:
     message = found[0].message
     # The exact clause, so the bound on the sample and the deduplication
     # behind it are pinned rather than merely executed: the fixture drifts
-    # five names, one of them the duplicated ``escaping`` — and ``moved``,
+    # six names, one of them the duplicated ``escaping`` — and ``moved``,
     # whose local path resolves nowhere, is not one of them.
-    assert "not in the index: abbreviated, berth-notes, counted, and 2 more" in message
+    assert "not in the index: abbreviated, berth-notes, counted, and 3 more" in message
     assert "moved" not in message
     assert "not in the catalog: retired" in message
     assert "'sha' differs: drifted" in message
@@ -571,7 +601,7 @@ def test_the_severity_override_reaches_the_primary_finding(temp_dir) -> None:
         temp_dir,
         "downgraded",
         {"plugins": [url_entry("almanac", SHA_A), url_entry("tides", SHA_B)]},
-        index({"almanac": {"sha": SHA_A}}),
+        index({"almanac": {"sha": SHA_A, "components": {}}}),
     )
 
     found = check(repo, {"severity": "info"})

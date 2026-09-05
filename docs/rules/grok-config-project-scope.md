@@ -46,8 +46,6 @@ Findings carry the rule's configured severity (**warning** by default):
   `disable_web_search` belong in your personal `~/.grok/config.toml`.
 - `[hooks]` defined in `config.toml`: project hooks belong in
   `.grok/hooks/*.json`.
-- `[plugins] paths`: local plugin development paths belong in your personal
-  `~/.grok/config.toml`.
 
 **Common table naming mismatches**
 
@@ -60,8 +58,11 @@ Findings carry the rule's configured severity (**warning** by default):
 
 ## What is not reported
 
-- `[plugins] enabled` and `[plugins] disabled`, which are documented plugin
-  switches.
+- `[plugins] paths`, which the live session loads from trusted project folders,
+  and the documented plugin switches `enabled` and `disabled`.
+- The actual user config at `$GROK_HOME/config.toml` (default
+  `~/.grok/config.toml`), including a Git repository rooted at HOME. Other
+  applicable config checks still run.
 - `[mcp] max_output_bytes`, which configures MCP message buffer limits.
 
 ## Examples
@@ -90,8 +91,9 @@ command = "bin/gateway"
 allow = ["Bash(make test)"]
 ```
 
+In `.grok/hooks/deps.json`:
+
 ```json
-// .grok/hooks/deps.json
 {
   "hooks": {
     "SessionStart": [
@@ -103,8 +105,8 @@ allow = ["Bash(make test)"]
 
 ## How to fix
 
-- Move personal preferences (such as default model, UI themes, and local plugin
-  paths) into your personal `~/.grok/config.toml`.
+- Move personal preferences (such as default model and UI themes) into your
+  personal `~/.grok/config.toml`.
 - Configure project automation in `.grok/hooks/*.json` files and validate
   them with [`grok-hooks-valid`](grok-hooks-valid.md).
 - Use `[mcp_servers.<name>]` for MCP servers and `[permission]` for tool
@@ -121,6 +123,10 @@ rules:
     extra-tables:
       - toolset
 ```
+
+For a dotfiles checkout outside its deployed HOME, skillsaw cannot infer user
+scope from the repository name. Use `extra-tables` for its personal tables or a
+per-file rule exclusion in that checkout.
 
 ## Configuration
 

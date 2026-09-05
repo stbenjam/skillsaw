@@ -246,8 +246,10 @@ class TestDiagnosticSafety:
         (plugin / "plugin.json").write_text(
             json.dumps({"name": "berth\ud800tools"}), encoding="utf-8"
         )
-        rendered = messages(run_rule(AntigravityPluginJsonValidRule, repo))
-        assert rendered
+        findings = run_rule(AntigravityPluginJsonValidRule, repo)
+        assert len(findings) == 1 and findings[0].severity == Severity.ERROR
+        rendered = messages(findings)
+        assert "invalid Unicode surrogate" in rendered[0]
         for message in rendered:
             message.encode("utf-8")
 

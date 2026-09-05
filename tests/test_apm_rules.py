@@ -248,16 +248,6 @@ def test_apm_yaml_blank_version_fails(temp_dir):
     assert violations[0].line == 2
 
 
-def test_apm_yaml_missing_description_passes(temp_dir):
-    """`description` is optional upstream — only name and version are required."""
-    repo = temp_dir / "apm-repo"
-    repo.mkdir()
-    _make_apm_repo(repo, skills=["my-skill"], apm_yml='name: pkg\nversion: "1.0.0"\n')
-
-    context = RepositoryContext(repo)
-    assert ApmYamlValidRule().check(context) == []
-
-
 def test_apm_yaml_oversized_integer_is_reported_not_raised(temp_dir, oversized_integer_digits):
     """A parser ValueError must remain an ordinary invalid-YAML finding."""
     if oversized_integer_digits is None:

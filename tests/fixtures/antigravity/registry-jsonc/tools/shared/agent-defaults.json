@@ -1,0 +1,4 @@
+{
+  /* These reviewers are maintained with the shared scheduling tools. */
+  "entries": [{"path": "tools/shared/agents"},],
+}

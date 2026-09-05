@@ -1,0 +1,6 @@
+{
+  "command-review": {"Stop": [{"Command": 42}]},
+  "timeout-review": {"Stop": [{"command": "/audit/not-an-executable", "Timeout": "5", "timeout": 5}]},
+  "enabled-review": {"Enabled": "false", "Stop": []},
+  "type-review": {"Stop": [{"Type": "unknown", "Command": "/audit/not-an-executable"}]}
+}

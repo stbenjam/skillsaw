@@ -28,3 +28,5 @@ rules:
     enabled: true
   antigravity-config-json-valid:
     enabled: true
+  muse-hooks-valid:
+    enabled: true

@@ -1,0 +1,14 @@
+{
+  "name": "published-review-tools",
+  "description": "Database review guidance for the platform team.",
+  "plugins": [
+    {
+      "name": "published-review",
+      "source": "./packages/migration-tools"
+    },
+    {
+      "name": "catalog-canary",
+      "source": "./packages/catalog-canary"
+    }
+  ]
+}

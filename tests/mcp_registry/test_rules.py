@@ -1547,8 +1547,11 @@ class TestMcpRegistryNpmNameRule:
         assert findings[0].file_path == package_path
         assert "mcpname" in findings[0].message.lower()
 
+    @pytest.mark.parametrize(
+        "workspaces", [["packages/*"], ["./packages/*"], {"packages": ["./packages/*"]}]
+    )
     def test_workspace_container_with_the_published_coordinates_defers_to_its_member(
-        self, tmp_path
+        self, tmp_path, workspaces
     ):
         """pulsemcp/mcp-servers: `experimental/tailscale/package.json` is an
         npm-workspaces container sharing the published name and version
@@ -1557,7 +1560,7 @@ class TestMcpRegistryNpmNameRule:
         container = {
             "name": "@example/weather-mcp",
             "version": "1.2.3",
-            "workspaces": ["packages/*"],
+            "workspaces": workspaces,
         }
 
         missing = copy_fixture("mcp-registry/root-server-nested-package", tmp_path / "missing")
@@ -1632,6 +1635,25 @@ class TestMcpRegistryNpmNameRule:
         findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
 
         assert [finding.file_path for finding in findings] == [repo / "package.json"]
+
+    def test_explicit_package_directory_still_resolves_complex_workspaces(self, tmp_path):
+        repo = copy_fixture("mcp-registry/workspace-container", tmp_path)
+        container_path = repo / "package.json"
+        container = json.loads(container_path.read_text(encoding="utf-8"))
+        container["workspaces"] = ["{local,other}"]
+        container_path.write_text(json.dumps(container), encoding="utf-8")
+        member_path = repo / "local" / "package.json"
+        member = json.loads(member_path.read_text(encoding="utf-8"))
+        member.pop("mcpName")
+        member["repository"] = {
+            "url": "https://github.com/example/weather",
+            "directory": "local",
+        }
+        member_path.write_text(json.dumps(member), encoding="utf-8")
+
+        findings = _for_rule(lint_rules(repo, NPM_NAME_RULE), NPM_NAME_RULE)
+
+        assert [finding.file_path for finding in findings] == [member_path]
 
     def test_non_private_workspace_root_does_not_block_the_check(self, tmp_path):
         """FusionAuth/fusionauth-mcp-api: a workspaces root without

@@ -7,11 +7,25 @@
 
 | | |
 |---|---|
-| **Severity** | error (auto) |
+| **Severity** | error (disabled) |
 | **Autofix** | - |
 | **Since** | v0.20.0 |
 | **Repo Types** | muse |
 | **Category** | [Muse Code](muse.md) |
+
+## Activation
+
+This rule is opt-in while Muse loader compatibility and public repository
+coverage are still limited. Enable it with `--rule muse-hooks-valid` or:
+
+```yaml
+rules:
+  muse-hooks-valid:
+    enabled: true
+```
+
+Hook discovery and the shared `hooks-dangerous` and `hooks-prohibited` rules
+keep their existing activation settings independently of this shape rule.
 
 ## Why
 
@@ -154,6 +168,7 @@ directly in your `.skillsaw.yaml` configuration without disabling the rule:
 ```yaml
 rules:
   muse-hooks-valid:
+    enabled: true
     # Additional event names dispatched by newer Muse releases:
     extra-events:
       - PreSomethingNew
@@ -165,12 +180,23 @@ rules:
       - priority
 ```
 
+## Matcher check limits
+
+Matcher validation is conservative: it translates Rust inline flags and
+braced hexadecimal escapes only for syntax checking. For example,
+`Bash|(?i)Write`, `(?-u:\w+)`, `(?U).*`, `\x{42}ash`, `\u{42}ash` and
+`\U{42}ash` are accepted.
+Unclosed groups/classes and unsupported look-around/backreferences are still
+reported in the checked subset. Extended-mode (`x`) patterns are left
+unresolved because comments change tokenization. No finding is a complete
+Rust regex validation guarantee.
+
 ## Configuration
 
 ```yaml
 rules:
   muse-hooks-valid:
-    enabled: auto  # true | false | auto
+    enabled: false  # true | false | auto
     severity: error
 ```
 

@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "PreToolUse": [{"hooks": [
+      {"type": "command", "command": "/audit/inspect-only", "timeout": 0}
+    ]}]
+  }
+}

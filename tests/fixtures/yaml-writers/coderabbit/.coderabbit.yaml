@@ -1,0 +1,12 @@
+language: en-US
+reviews:
+  path_instructions:
+    - path: "src/**/*.py"
+      instructions: |-
+        Try to review the release checklist.
+    # Keep this sibling instruction and its glob.
+    - path: "tests/**"
+      instructions: |-
+        Keep the release checklist concise.
+chat:
+  auto_reply: true

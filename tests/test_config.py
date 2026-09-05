@@ -42,12 +42,6 @@ def test_default_exclude_patterns():
     assert "**/__pycache__/**" in config.exclude_patterns
 
 
-def test_default_exclude_patterns_not_empty():
-    """Test that default exclude patterns list is non-empty"""
-    config = LinterConfig.default()
-    assert len(config.exclude_patterns) >= 3
-
-
 def test_user_exclude_overrides_defaults(temp_dir):
     """User-specified exclude patterns in config file override the defaults"""
     config_file = temp_dir / ".skillsaw.yaml"

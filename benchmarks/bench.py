@@ -39,6 +39,24 @@ from genrepo import SCALES, generate_repo
 PHASES = ("context", "linter_init", "lint_tree", "rules_run", "total")
 
 
+class _TimedRule:
+    """Time a rule without duplicating the linter's execution pipeline."""
+
+    def __init__(self, rule, timings):
+        self._rule = rule
+        self._timings = timings
+
+    def __getattr__(self, name):
+        return getattr(self._rule, name)
+
+    def check(self, context):
+        start = time.perf_counter()
+        try:
+            return self._rule.check(context)
+        finally:
+            self._timings[self.rule_id] = time.perf_counter() - start
+
+
 def _fresh_lint(repo_path: Path):
     """Run one full lint with cold caches, timing each phase.
 
@@ -46,7 +64,7 @@ def _fresh_lint(repo_path: Path):
     """
     from skillsaw.config import LinterConfig
     from skillsaw.context import RepositoryContext
-    from skillsaw.linter import Linter
+    from skillsaw.linter import Linter, _cyclic_gc_paused
     from skillsaw.rules.builtin.utils import invalidate_read_caches
 
     invalidate_read_caches()
@@ -62,21 +80,24 @@ def _fresh_lint(repo_path: Path):
     t2 = time.perf_counter()
     phases["linter_init"] = t2 - t1
 
-    node_count = sum(1 for _ in context.lint_tree.walk())
+    # Production builds the tree lazily while cyclic GC is paused. Time
+    # that phase separately under the same policy, restoring caller state.
+    with _cyclic_gc_paused():
+        node_count = sum(1 for _ in context.lint_tree.walk())
     t3 = time.perf_counter()
     phases["lint_tree"] = t3 - t2
 
-    # Mirror Linter.run() but attribute time to each rule.  Rule crashes
-    # propagate — a baseline recorded through a crashing rule (which takes
-    # ~0ms) would corrupt every later comparison.
     per_rule: Dict[str, float] = {}
-    violations = linter._validate_config()
-    for rule in linter.rules:
-        r0 = time.perf_counter()
-        rule_violations = rule.check(context)
-        per_rule[rule.rule_id] = time.perf_counter() - r0
-        violations.extend(rule_violations)
-    violations = linter._filter_violations(violations)
+    linter.rules = [_TimedRule(rule, per_rule) for rule in linter.rules]
+    violations = linter.run()
+    failures = [
+        v for v in violations
+        if v.rule_id in {"rule-execution-error", "repository-path-error", "plugin-load-error"}
+    ]
+    if failures:
+        # Linter.run reports infrastructure failures instead of raising.
+        # Refuse to save a deceptively fast baseline after skipped work.
+        raise RuntimeError("Benchmark lint failed: " + failures[0].message)
     t4 = time.perf_counter()
     phases["rules_run"] = t4 - t3
     phases["total"] = t4 - t0

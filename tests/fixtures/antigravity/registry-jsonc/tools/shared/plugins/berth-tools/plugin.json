@@ -1,0 +1,5 @@
+{
+  "name": "berth-tools",
+  "description": "Review ferry berth assignments and explain scheduling conflicts.",
+  "disabled": false
+}

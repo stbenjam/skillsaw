@@ -52,18 +52,27 @@ body) and inline code spans (e.g. a path like `` `.planning/codebase/foo.md` ``)
 are excluded, since they're a different register than the prose choice
 this rule is checking.
 
-If a group doesn't apply to your repository — for example, a polyglot
-repo that legitimately documents both Go *functions* and Java *methods* —
-disable just that group (or override its severity) while keeping the
-rest enforced:
+The `function/method` group is off by default: Python functions, Go methods,
+HTTP methods and research methods name different concepts. Enable it only
+when your project's vocabulary treats these terms as interchangeable:
+
+```yaml
+rules:
+  content-inconsistent-terminology:
+    groups:
+      function/method: info  # opt in to this group
+```
+
+Other groups use the rule's severity unless overridden. Disable a group
+with `off` or `false`, or choose its severity independently:
 
 ```yaml
 rules:
   content-inconsistent-terminology:
     severity: error
     groups:
-      function/method: off      # disable this group only
-      PR/pull request/merge request: warning  # downgrade this group
+      directory/folder: off
+      PR/pull request/merge request: warning
 ```
 
 Valid group names: `directory/folder`, `repo/repository/codebase`,
@@ -81,7 +90,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `groups` | Per-group overrides keyed by group name (e.g. 'function/method'): 'off' or false disables the group; a severity ('error', 'warning', 'info') overrides the rule severity for that group | `{}` |
+| `groups` | Per-group overrides keyed by group name (e.g. 'function/method'): 'off' or false disables the group; a severity ('error', 'warning', 'info') overrides the rule severity for that group. The function/method group is off by default and a severity enables it | `{}` |
 
 ## Research Basis
 

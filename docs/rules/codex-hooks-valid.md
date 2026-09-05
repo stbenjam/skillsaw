@@ -30,6 +30,30 @@ document. `[hooks.state]` is the one table the TOML file has that the JSON one
 does not: Codex writes per-hook enablement and trust there, ignores a
 project layer's copy, and it is not an event.
 
+The JSON file's root accepts only `description` and `hooks`. Unknown root
+fields, including `$schema`, make Codex refuse the file. `description` must
+be a string or null. Group and handler metadata have different rules: Codex
+ignores unknown fields there, so skillsaw reports them as warnings and
+`extra-fields` can allow intentional metadata.
+
+An omitted root `hooks` field defaults to an empty event map; an omitted
+matcher-group `hooks` field defaults to an empty handler list. Both are
+accepted, unlike explicit null or a value of the wrong type. Empty event
+arrays do not count as a second active source for the both-files advisory.
+
+In JSON, `matcher: null` means unset. Command handlers also accept null for
+`commandWindows` (or `command_windows`), `statusMessage`, `timeout`, and
+`additionalContextLimit`; MCP tool handlers accept it for `statusMessage`
+and `timeout`. These are optional fields in Codex's released configuration
+deserializer. A default does not imply nullability: command `async` must
+still be a boolean, and MCP `input` must still be an object. Null does not
+make a field valid on another handler type or resolve a Windows alias
+conflict. MCP `input` also cannot contain null inside an object or array:
+Codex converts these arguments to TOML for trust hashing and refuses values
+TOML cannot represent. Omit unset entries instead; empty objects and arrays
+are accepted. Unsigned integers from `2^63` through `2^64 - 1` also cannot
+be represented for trust hashing; encode such identifiers as strings.
+
 **A shape defect in `config.toml` is worse than the same defect in
 `hooks.json`.** The refusals were measured against codex-cli 0.153.2: a TOML
 syntax error, an event whose value is not an array of tables, a handler with
@@ -95,11 +119,10 @@ A baseline written under `hooks-json-valid` keeps suppressing a finding from
 this rule only where the message is the same. A hooks file is JSON, which
 carries no line numbers, so the baseline fingerprint hashes the rule name,
 the file path, and the message text — and 0.20.0 rewrote most of these
-messages. Four file-level verdicts kept their wording and carry over:
+messages. Three file-level verdicts kept their wording and carry over:
 
 - `Invalid JSON: <parser error>`
 - `hooks.json must be a JSON object`
-- `hooks.json must contain a 'hooks' key`
 - `'hooks' must be a JSON object`
 
 The per-event and per-handler shape messages were all re-worded, so a
@@ -123,10 +146,11 @@ the measured refusals cost the whole CLI rather than the file.
   or a handler missing a required field (`command` for command handlers,
   `server` and `tool` for MCP tool handlers).
 - *A field is the wrong type*: a non-string `command`, a `statusMessage` that
-  is not a string, or a `timeout` that is not a number. In a `config.toml`
-  `timeout` and `additionalContextLimit` must also be non-negative whole
-  numbers. Both files deserialize them as unsigned integers; the JSON path
-  keeps the looser check deliberately, so an upgrade does not surface a
+  is neither a string nor null, or a `timeout` that is neither a number nor
+  null. In a `config.toml`, `timeout` and `additionalContextLimit` must also
+  be non-negative whole numbers. Both files deserialize them as unsigned
+  integers; the JSON path keeps the looser check deliberately, so an upgrade
+  does not surface a
   finding on a file that already worked.
 - *One field written twice*: a handler carrying both `commandWindows` and
   `command_windows`. They are one field, and Codex refuses the document over
@@ -152,8 +176,8 @@ event-group key — under any flag: `--strict-config` never descends into
 
 **Info** — the file loads and does what it says, and something is worth a look.
 
-- A `matcher` on an event that does not filter on tool names. Codex accepts
-  it and ignores it.
+- A non-null `matcher` on an event that does not filter on tool names.
+  Codex accepts it and ignores it.
 - A `.codex/` layer declaring hooks in both `hooks.json` and `config.toml`.
   Both load and every handler runs; Codex names both paths on startup and
   asks for a single representation per layer. Keep the hooks in one of them,

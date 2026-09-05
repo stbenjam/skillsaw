@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "enabled": false
+    },
+    "timeout": {
+      "enabled": true
+    },
+    "reference": {
+      "type": "remote",
+      "url": "https://mcp.example.com/reference"
+    }
+  }
+}

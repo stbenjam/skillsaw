@@ -84,8 +84,18 @@ def _fix_widened(repo, *extra_args):
     return _run_fix(repo, *extra_args)
 
 
+def _report(r):
+    output = r["out"]
+    assert (
+        isinstance(output, dict)
+        and isinstance(output.get("violations"), list)
+        and isinstance(output.get("summary"), dict)
+    ), f"Expected JSON lint report, got {r!r}"
+    return output
+
+
 def violations(r):
-    return r["out"]["violations"] if r["out"] else []
+    return _report(r)["violations"]
 
 
 def by_rule(r):
@@ -100,7 +110,34 @@ def rule_ids(r):
 
 
 def summary(r):
-    return r["out"]["summary"] if r["out"] else {}
+    return _report(r)["summary"]
+
+
+class TestReportHelpers:
+    @pytest.mark.parametrize("extract", [violations, summary], ids=["violations", "summary"])
+    @pytest.mark.parametrize(
+        "output",
+        [None, [], {}, {"violations": None, "summary": {}}, {"violations": [], "summary": None}],
+    )
+    def test_missing_or_invalid_report_is_rejected(self, extract, output):
+        result = {"rc": 1, "out": output, "stdout": "", "stderr": "CLI failed"}
+
+        with pytest.raises(AssertionError, match="Expected JSON lint report"):
+            extract(result)
+
+    def test_cli_crash_is_not_a_clean_report(self, tmp_path, monkeypatch):
+        def crash():
+            raise RuntimeError("seeded CLI failure")
+
+        monkeypatch.setattr("skillsaw.cli.main", crash)
+        result = run_lint(tmp_path)
+
+        assert result["rc"] == 1
+        assert result["out"] is None
+        assert "RuntimeError: seeded CLI failure" in result["stderr"]
+        for extract in (violations, summary):
+            with pytest.raises(AssertionError, match="Expected JSON lint report"):
+                extract(result)
 
 
 def copy_fixture(name, tmp_path):
@@ -312,6 +349,60 @@ class TestHooksJson:
         assert r["rc"] == 0
         assert "claude-hooks-valid" not in rule_ids(r)
 
+    @pytest.mark.parametrize("rule_id", ["claude-hooks-valid", "hooks-json-valid"])
+    def test_model_switch_events_are_accepted(self, tmp_path, rule_id):
+        # Claude 2.1.261 plugin validation accepts both events; its 2.1.251
+        # changelog introduced them. The fixture contains inert commands.
+        repo = copy_fixture("hooks-model-switch", tmp_path)
+        result = run_lint(repo, "--rule", rule_id)
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+        assert "claude-hooks-valid" in result["out"]["stats"]["rules_run"]
+
+    def test_unknown_model_switch_event_remains_a_diagnostic(self, tmp_path):
+        repo = copy_fixture("hooks-model-switch", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["NotAClaudeEvent"] = data["hooks"].pop("PreModelSwitch")
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["rule_id"] == "claude-hooks-valid"
+        assert found[0]["file_path"] == "hooks/hooks.json"
+        assert "Unknown event type 'NotAClaudeEvent'" in found[0]["message"]
+
+    @pytest.mark.parametrize(
+        "source_value,valid",
+        [
+            ("1e400", True),
+            ("-1e400", True),
+            ('"NaN and Infinity"', True),
+            ("NaN", False),
+            ("Infinity", False),
+            ("-Infinity", False),
+            ('NaN, "revisionWeight": 1', False),
+        ],
+    )
+    def test_json_number_syntax_matches_claude_parser(self, tmp_path, source_value, valid):
+        repo = copy_fixture("hooks-json-number-syntax", tmp_path)
+        path = repo / "hooks/hooks.json"
+        path.write_text(path.read_text().replace("1e400", source_value))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert "claude-hooks-valid" in result["out"]["stats"]["rules_run"]
+        found = violations(result)
+        assert result["rc"] == (0 if valid else 1), result
+        if valid:
+            assert found == []
+        else:
+            assert len(found) == 1, found
+            assert found[0]["rule_id"] == "claude-hooks-valid"
+            assert found[0]["file_path"] == "hooks/hooks.json"
+            token = source_value.split(",")[0]
+            assert f"Invalid JSON: {token} is not valid JSON" in found[0]["message"]
+            assert "Claude Code rejects the whole file" in found[0]["message"]
+
 
 # ── Supply Chain Hooks ──────────────────────────────────────────
 
@@ -389,6 +480,73 @@ class TestMcpRegistry:
         assert "mcp-registry-version-semver" not in rule_ids(r)
         assert "mcp-registry-npm-name-match" not in rule_ids(r)
 
+    @pytest.mark.parametrize("workspaces", [["local"], ["./local"], {"packages": ["./local"]}])
+    def test_workspace_spelling_selects_the_published_member(self, tmp_path, workspaces):
+        repo = copy_fixture("mcp-registry/workspace-container", tmp_path)
+        container_path = repo / "package.json"
+        container = json.loads(container_path.read_text())
+        container["workspaces"] = workspaces
+        container_path.write_text(json.dumps(container))
+        rule = "mcp-registry-npm-name-match"
+
+        clean = run_lint(repo, "--rule", rule)
+        assert clean["rc"] == 0, clean["stderr"]
+        assert clean["out"] is not None
+        assert rule in clean["out"]["stats"]["rules_run"]
+        assert clean["out"]["violations"] == []
+
+        member_path = repo / "local" / "package.json"
+        member = json.loads(member_path.read_text())
+        member.pop("mcpName")
+        member_path.write_text(json.dumps(member))
+        broken = run_lint(repo, "--rule", rule)
+        assert broken["rc"] == 1, broken["stderr"]
+        assert broken["out"] is not None
+        assert [(v["rule_id"], v["file_path"]) for v in broken["out"]["violations"]] == [
+            (rule, "local/package.json")
+        ]
+        assert "io.github.example/weather" in broken["out"]["violations"][0]["message"]
+
+    @pytest.mark.parametrize(
+        "patterns",
+        [
+            ["{local,other}"],
+            ["[l]ocal"],
+            ["@(local|other)"],
+            ["*", "!local"],
+            ["*", "!local", "local"],
+            ["./local", "!other"],
+        ],
+    )
+    def test_unsupported_workspace_membership_stays_unresolved(self, tmp_path, patterns):
+        repo = copy_fixture("mcp-registry/workspace-container", tmp_path)
+        member_path = repo / "local" / "package.json"
+        member = json.loads(member_path.read_text())
+        member.pop("mcpName")
+        member_path.write_text(json.dumps(member))
+        container_path = repo / "package.json"
+        container = json.loads(container_path.read_text())
+        container["workspaces"] = patterns
+        container_path.write_text(json.dumps(container))
+        rule = "mcp-registry-npm-name-match"
+
+        unresolved = run_lint(repo, "--rule", rule)
+        assert unresolved["rc"] == 0, unresolved["stderr"]
+        assert unresolved["out"] is not None
+        assert rule in unresolved["out"]["stats"]["rules_run"]
+        assert unresolved["out"]["violations"] == []
+
+        # The same manifest is found and checked once supported membership
+        # evidence identifies it; silence above must not mask missing targets.
+        container["workspaces"] = ["./local"]
+        container_path.write_text(json.dumps(container))
+        resolved = run_lint(repo, "--rule", rule)
+        assert resolved["rc"] == 1, resolved["stderr"]
+        assert resolved["out"] is not None
+        assert [(v["rule_id"], v["file_path"]) for v in resolved["out"]["violations"]] == [
+            (rule, "local/package.json")
+        ]
+
     def test_unrelated_same_coordinate_package_is_not_cross_matched(self, tmp_path):
         repo = copy_fixture("mcp-registry/locality", tmp_path)
         r = run_lint(repo)
@@ -450,6 +608,48 @@ class TestMcpRegistry:
             "mcp-registry-version-semver",
             "mcp-registry-npm-name-match",
         } & rule_ids(r)
+
+
+# ── Skills lock ──────────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestSkillsLock:
+    def test_malformed_source_types_preserve_field_and_sibling_diagnostics(self, tmp_path):
+        repo = copy_fixture("skills-lock/malformed-source-types", tmp_path)
+
+        result = run_lint(repo, "--rule", "skills-lock-valid", "--no-custom-rules", "--no-plugins")
+
+        assert result["rc"] == 1
+        assert result["out"] is not None
+        found = violations(result)
+        assert {v["rule_id"] for v in found} == {"skills-lock-valid"}
+        assert {v["file_path"] for v in found} == {"skills-lock.json"}
+        assert all(v["line"] is None for v in found)
+        messages = {v["message"] for v in found}
+        assert messages == {
+            f"Skill '{name}-source' field 'sourceType' must be a non-empty string"
+            for name in ("array", "object", "null", "empty")
+        } | {
+            "Skill 'future-source' uses unrecognized sourceType 'future-registry'. "
+            "If it was added after this skillsaw release, list it under "
+            "skills-lock-valid 'extra-source-types'.",
+            "Skill 'broken-hash' field 'computedHash' must be a lowercase "
+            "64-character SHA-256 hex digest",
+        }
+        assert summary(result)["errors"] == 5
+        assert summary(result)["info"] == 1
+
+    def test_valid_root_and_nested_lockfiles_are_clean(self, tmp_path):
+        repo = copy_fixture("skills-lock/valid", tmp_path)
+
+        result = run_lint(repo, "--rule", "skills-lock-valid", "--no-custom-rules", "--no-plugins")
+
+        assert result["rc"] == 0
+        assert result["out"] is not None
+        assert "skills-lock" in result["out"]["stats"]["repo_types"]
+        assert result["out"]["stats"]["rules_run"] == ["skills-lock-valid"]
+        assert violations(result) == []
 
 
 # ── Agent Plugins v1 ─────────────────────────────────────────────
@@ -707,6 +907,31 @@ class TestUnreferencedSkillFiles:
 
     RULE = "agentskill-unreferenced-files"
 
+    @pytest.mark.parametrize("directory_covers", [True, False])
+    def test_covered_subtrees_preserve_transitive_links_and_sibling_boundaries(
+        self, tmp_path, directory_covers
+    ):
+        repo = copy_fixture("unreferenced-covered-subtrees", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  agentskill-unreferenced-files:\n"
+            f"    directory_mention_covers: {str(directory_covers).lower()}\n"
+        )
+        result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning", config=config)
+        assert result["rc"] == 1, result
+        findings = violations(result)
+        expected = {"docs-other/orphan.md"}
+        if not directory_covers:
+            expected |= {
+                "assets/table.csv",
+                "docs/deep/guide.md",
+                "docs/nested/details.md",
+                "docs/nested/history.md",
+            }
+        assert {v["file_path"] for v in findings} == expected
+        assert {v["rule_id"] for v in findings} == {self.RULE}
+        assert {v["severity"] for v in findings} == {"warning"}
+
     def test_unreferenced_files_flagged(self, tmp_path):
         repo = copy_fixture("agentskills/unreferenced-broken", tmp_path)
         r = run_lint(repo)
@@ -782,6 +1007,9 @@ class TestUnreferencedSkillFiles:
         """SKILL.md links references/guide.md, which mentions release-weeks.md."""
         repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "report-builder")]
         flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
         assert "report-builder/references/release-weeks.md" not in flagged
 
@@ -789,6 +1017,9 @@ class TestUnreferencedSkillFiles:
         """assets/theme.css is only covered by the `assets/` directory mention."""
         repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "report-builder")]
         assert self.RULE not in rule_ids(r)
 
     def test_directory_mention_covers_disabled(self, tmp_path):
@@ -814,7 +1045,11 @@ class TestUnreferencedSkillFiles:
             "rules:\n" "  agentskill-unreferenced-files:\n" "    directory_mention_covers: false\n"
         )
         r = run_lint(repo, config=config)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "report-builder")]
         flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert "report-builder/assets/theme.css" in flagged
         assert "report-builder/assets/shell.html" not in flagged
 
     def test_default_exclusions_never_flagged(self, tmp_path):
@@ -827,6 +1062,9 @@ class TestUnreferencedSkillFiles:
         assert (skill / "tests" / "evals.json").is_file()
         assert (skill / "assets" / ".gitkeep").is_file()
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "report-builder")]
         assert self.RULE not in rule_ids(r)
 
     def test_exclude_glob_suppresses_violation(self, tmp_path):
@@ -839,7 +1077,16 @@ class TestUnreferencedSkillFiles:
             '      - "scripts/upload.py"\n'
             '      - "references/*.md"\n'
         )
+        unfiltered = run_lint(repo)
+        assert unfiltered["rc"] == 0
+        assert {v["file_path"] for v in by_rule(unfiltered)[self.RULE]} == {
+            "log-analyzer/scripts/upload.py",
+            "log-analyzer/references/unused-notes.md",
+        }
         r = run_lint(repo, config=config)
+        assert r["rc"] == 0
+        assert self.RULE in r["out"]["stats"]["rules_run"]
+        assert r["out"]["stats"]["skills"] == [str(repo / "log-analyzer")]
         assert self.RULE not in rule_ids(r)
 
     def test_fully_referenced_skill_passes(self, tmp_path):
@@ -1229,6 +1476,7 @@ class TestDirectManifestInputs:
         before = command.read_bytes()
 
         r = run_lint(manifest)
+        assert r["rc"] == 0
         assert all(
             not str(v.get("file_path", "")).endswith("capture.md") for v in violations(r)
         ), violations(r)
@@ -1247,6 +1495,7 @@ class TestDirectManifestInputs:
         before = command.read_bytes()
 
         r = run_lint(repo / ".claude-plugin" / "plugin.json")
+        assert r["rc"] == 0
         assert all(
             not str(v.get("file_path", "")).endswith("deploy.md") for v in violations(r)
         ), violations(r)
@@ -1489,6 +1738,10 @@ class TestMultiplePaths:
         broken_file = repo_broken / "Bad_Formatter" / "SKILL.md"
         r = run_lint(broken_file, str(repo_clean))
         assert r["rc"] == 1
+        assert any(
+            v["file_path"] == str(broken_file.relative_to(tmp_path))
+            for v in by_rule(r)["agentskill-name"]
+        )
 
     def test_lint_clean_dir_and_broken_file(self, tmp_path):
         """A clean dir and a broken file should exit 1."""
@@ -1497,6 +1750,10 @@ class TestMultiplePaths:
         broken_file = repo_broken / "Bad_Formatter" / "SKILL.md"
         r = run_lint(repo_clean, str(broken_file))
         assert r["rc"] == 1
+        assert any(
+            v["file_path"] == str(broken_file.relative_to(tmp_path))
+            for v in by_rule(r)["agentskill-name"]
+        )
 
     def test_lint_valid_dir_and_nonexistent_dir(self, tmp_path):
         """valid dir, nonexistent dir should warn, lint valid, exit 1."""
@@ -1683,6 +1940,164 @@ class TestFixMultiplePaths:
 
 @pytest.mark.integration
 class TestCopilotAgentValidation:
+
+    def test_vscode_hook_vocabulary_keeps_commands_and_lines(self, tmp_path):
+        from skillsaw.blocks import CopilotAgentBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("copilot-hook-vocabulary", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(CopilotAgentBlock)
+        commands = {
+            (block.path.name, command, line)
+            for block in blocks
+            for entries in block.hooks_events.values()
+            for entry in entries
+            for handler in entry.handlers
+            for command, line in handler.iter_effective_commands()
+        }
+        assert commands == {
+            ("shells.agent.md", "printf shell-ready", 7),
+            ("shells.agent.md", "Write-Output shell-ready", 8),
+            ("defaults.agent.md", "printf direct-ready", 6),
+            ("defaults.agent.md", "printf nested-ready", 9),
+            ("defaults.agent.md", "printf error-recorded", 12),
+        }
+        result = run_lint(repo, "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        assert result["out"] is not None
+        assert "copilot-agent-valid" in result["out"]["stats"]["rules_run"]
+        assert result["out"]["violations"] == []
+
+        policy = run_lint(repo, "--rule", "hooks-prohibited", "--no-custom-rules", "--no-plugins")
+        assert policy["rc"] == 1, policy
+        assert policy["out"] is not None
+        findings = policy["out"]["violations"]
+        assert len(findings) == 5
+        assert {v["rule_id"] for v in findings} == {"hooks-prohibited"}
+        assert {
+            (Path(v["file_path"]).name, v["message"].split(" — ", 1)[1], v["line"])
+            for v in findings
+        } == {(name, repr(command), line) for name, command, line in commands}
+
+    @pytest.mark.parametrize("hook_type", ["prompt", "http", "mcp_tool", "agent"])
+    def test_unsupported_vscode_hook_types_retain_diagnostics(self, tmp_path, hook_type):
+        repo = copy_fixture("copilot-hook-vocabulary", tmp_path)
+        path = repo / ".github/agents/shells.agent.md"
+        path.write_text(path.read_text().replace("type: command", f"type: {hook_type}"))
+        result = run_lint(
+            repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert result["rc"] == 1, result
+        assert result["out"] is not None
+        assert [(v["file_path"], v["line"], v["message"]) for v in result["out"]["violations"]] == [
+            (
+                ".github/agents/shells.agent.md",
+                6,
+                f"Hook 'PostToolUse[0].hooks[0]' has invalid type '{hook_type}'",
+            )
+        ]
+
+    def test_unrecognized_event_is_reported_and_cloud_hooks_stay_ignored(self, tmp_path):
+        repo = copy_fixture("copilot-hook-vocabulary", tmp_path)
+        path = repo / ".github/agents/shells.agent.md"
+        path.write_text(path.read_text().replace("PostToolUse:", "Setup:"))
+        result = run_lint(
+            repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert result["rc"] == 1, result
+        assert result["out"] is not None
+        assert [(v["file_path"], v["line"], v["message"]) for v in result["out"]["violations"]] == [
+            (".github/agents/shells.agent.md", 5, "Unknown hook event 'Setup'")
+        ]
+        path.write_text(path.read_text().replace("target: vscode", "target: github-copilot"))
+        cloud = run_lint(repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins")
+        assert cloud["rc"] == 0, cloud
+        assert cloud["out"] is not None
+        assert [
+            (v["file_path"], v["line"], v["severity"], v["message"])
+            for v in cloud["out"]["violations"]
+        ] == [
+            (
+                ".github/agents/shells.agent.md",
+                4,
+                "warning",
+                "'hooks' is ignored by GitHub Copilot cloud",
+            )
+        ]
+
+    def test_handoff_prompts_require_presence_and_accept_empty_text(self, tmp_path):
+        from skillsaw.blocks import CopilotAgentBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("copilot-handoff-prompts", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(CopilotAgentBlock)
+        assert {block.path.name for block in blocks} == {
+            "empty.agent.md",
+            "missing.agent.md",
+            "mapping.agent.md",
+            "array.agent.md",
+            "cloud.agent.md",
+        }
+        result = run_lint(
+            repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert result["rc"] == 1, result
+        assert result["out"] is not None
+        assert sorted(
+            (Path(v["file_path"]).name, v["line"], v["severity"], v["message"])
+            for v in result["out"]["violations"]
+        ) == [
+            ("array.agent.md", 7, "error", "'handoffs[0].prompt' must be a string"),
+            ("cloud.agent.md", 4, "warning", "'handoffs' is ignored by GitHub Copilot cloud"),
+            ("mapping.agent.md", 7, "error", "'handoffs[0].prompt' must be a string"),
+            (
+                "missing.agent.md",
+                5,
+                "error",
+                "'handoffs[0]' requires a 'prompt' string (which may be empty)",
+            ),
+        ]
+
+    def test_vscode_and_legacy_string_tools_pass_warning_threshold(self, tmp_path):
+        from skillsaw.blocks import CopilotAgentBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("copilot-string-tools", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(CopilotAgentBlock)
+        assert {
+            (block.path.name, block.effective_target, block.field_value("tools"))
+            for block in blocks
+        } == {
+            ("reviewer.agent.md", "vscode", "read, search"),
+            ("reviewer.chatmode.md", "vscode", "read, search"),
+        }
+        result = run_lint(repo, "--fail-on", "warning", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        assert result["out"] is not None
+        assert "copilot-agent-valid" in result["out"]["stats"]["rules_run"]
+        assert result["out"]["violations"] == []
+
+    def test_string_tools_keep_subagent_access_validation(self, tmp_path):
+        repo = copy_fixture("copilot-string-tools", tmp_path)
+        path = repo / ".github/agents/reviewer.agent.md"
+        path.write_text(
+            path.read_text().replace(
+                "tools: read, search", "tools: read, search\nagents: [Reviewer]"
+            )
+        )
+        result = run_lint(
+            repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert result["rc"] == 1, result
+        assert result["out"] is not None
+        findings = result["out"]["violations"]
+        assert len(findings) == 1
+        assert (findings[0]["file_path"], findings[0]["line"], findings[0]["rule_id"]) == (
+            ".github/agents/reviewer.agent.md",
+            5,
+            "copilot-agent-valid",
+        )
+        assert "requires the 'agent' tool" in findings[0]["message"]
 
     def test_official_style_examples_and_legacy_chatmode_are_clean(self, tmp_path):
         repo = copy_fixture("copilot-agents-clean", tmp_path)
@@ -1975,7 +2390,11 @@ class TestCursorRules:
         """
         repo = self._lenient_repo(tmp_path, "validcomment", "alwaysApply: true # applies globally")
 
-        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "cursor" in r["out"]["stats"]["repo_types"]
+        assert "cursor-rules-valid" in r["out"]["stats"]["rules_run"]
+        assert by_rule(r).get("cursor-rules-valid", []) == []
 
     def test_a_hash_inside_a_quoted_value_is_data(self, tmp_path):
         repo = self._lenient_repo(
@@ -2012,7 +2431,11 @@ class TestCursorRules:
     def test_a_flow_style_globs_list_of_relative_patterns_passes(self, tmp_path):
         repo = self._lenient_repo(tmp_path, "flowok", "globs: [src/**, tests/**]")
 
-        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "cursor" in r["out"]["stats"]["repo_types"]
+        assert "cursor-rules-valid" in r["out"]["stats"]["rules_run"]
+        assert by_rule(r).get("cursor-rules-valid", []) == []
 
     def test_lenient_mdc_frontmatter_with_a_list_does_not_crash(self, tmp_path):
         """A bare `key:` opening a list must not be appended to as if it were one."""
@@ -2429,6 +2852,8 @@ class TestCursorRules:
         """Cursor's flatter shape must not be judged against the Claude schema."""
         repo = copy_fixture("cursor-rules/broken-hooks", tmp_path)
         r = run_lint(repo)
+        assert r["rc"] == 1
+        assert {v["file_path"] for v in by_rule(r)["cursor-hooks-valid"]} == {".cursor/hooks.json"}
 
         assert not [
             v for v in violations(r) if v["rule_id"] == "claude-hooks-valid"
@@ -3148,6 +3573,142 @@ class TestDevin:
         assert by_rule(result).get("devin-rules-valid", []) == []
         assert by_rule(result).get("devin-skill-valid", []) == []
 
+    def test_field_types_are_checked_even_when_activation_ignores_them(self, tmp_path):
+        repo = copy_fixture("devin/field-shapes", tmp_path)
+        result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert {(v["file_path"], v["line"], v["rule_id"]) for v in found} == {
+            (".windsurf/rules/always-scalar.md", 4, "devin-rules-valid"),
+            (".windsurf/rules/model-scalar.md", 4, "devin-rules-valid"),
+            (".devin/rules/manual-description.md", 3, "devin-rules-valid"),
+            (".devin/rules/inferred-description.md", 2, "devin-rules-valid"),
+            (".devin/rules/unused-globs.md", 3, "devin-rules-valid"),
+        }
+        assert len(found) == 5
+        assert all(v["severity"] == "error" for v in found)
+        assert all(
+            "expected a sequence" in v["message"] for v in found if "scalar.md" in v["file_path"]
+        )
+
+        # Correcting only the field shape lets each existing mode load.
+        for name in ("always-scalar", "model-scalar"):
+            path = repo / ".windsurf/rules" / f"{name}.md"
+            content = path.read_text()
+            lines = content.splitlines(keepends=True)
+            lines[3] = "globs: [" + lines[3].split(": ", 1)[1].strip() + "]\n"
+            path.write_text("".join(lines))
+        for name in ("manual-description", "inferred-description"):
+            path = repo / ".devin/rules" / f"{name}.md"
+            path.write_text(
+                path.read_text()
+                .replace("[Release review]", "Release review")
+                .replace("[API compatibility]", "API compatibility")
+            )
+        path = repo / ".devin/rules/unused-globs.md"
+        path.write_text(path.read_text().replace("{src: true}", "[src/**]"))
+        clean = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert clean["rc"] == 0, clean
+        assert "devin-rules-valid" in clean["out"]["stats"]["rules_run"]
+        assert violations(clean) == []
+
+    @pytest.mark.parametrize("trigger", ["sometimes", 123, []])
+    def test_invalid_optional_fields_do_not_hide_an_invalid_trigger(self, tmp_path, trigger):
+        repo = copy_fixture("devin/inferred-activation", tmp_path)
+        path = repo / ".devin/rules/null-trigger-description.md"
+        original = path.read_text()
+        invalid_trigger = "trigger: " + json.dumps(trigger)
+        invalid_fields = original.replace(
+            "description: Apply when reviewing API changes.", "description: []\nglobs: {}"
+        )
+        path.write_text(invalid_fields.replace("trigger: null", invalid_trigger))
+
+        result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert len(found) == 3
+        assert {(v["rule_id"], v["file_path"], v["line"], v["severity"]) for v in found} == {
+            ("devin-rules-valid", ".devin/rules/null-trigger-description.md", line, "error")
+            for line in (2, 3, 4)
+        }
+        assert "trigger" in next(v["message"] for v in found if v["line"] == 2)
+
+        # Repairing only the optional fields leaves the independent trigger error.
+        path.write_text(original.replace("trigger: null", invalid_trigger))
+        trigger_only = run_lint(
+            repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert trigger_only["rc"] == 1, trigger_only
+        assert [(v["line"], v["message"]) for v in violations(trigger_only)] == [
+            (2, next(v["message"] for v in found if v["line"] == 2))
+        ]
+        path.write_text(original)
+        clean = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert clean["rc"] == 0, clean
+        assert "devin-rules-valid" in clean["out"]["stats"]["rules_run"]
+        assert violations(clean) == []
+
+    @pytest.mark.parametrize("trigger", [None, "glob", "model_decision", "manual"])
+    def test_invalid_optional_fields_do_not_add_activation_noise(self, tmp_path, trigger):
+        repo = copy_fixture("devin/inferred-activation", tmp_path)
+        path = repo / ".devin/rules/null-trigger-description.md"
+        path.write_text(
+            path.read_text()
+            .replace("trigger: null", "trigger: " + json.dumps(trigger))
+            .replace("description: Apply when reviewing API changes.", "description: []")
+        )
+        result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        assert [(v["rule_id"], v["line"], v["message"]) for v in violations(result)] == [
+            ("devin-rules-valid", 3, "'description' must be a scalar value or null")
+        ]
+
+    def test_previously_accepted_yaml_scalars_do_not_gain_errors(self, tmp_path):
+        repo = copy_fixture("devin/scalar-fields", tmp_path)
+        result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        assert "devin-rules-valid" in result["out"]["stats"]["rules_run"]
+        # Native scalar decoding also makes the numeric description available
+        # to inference, so this accepted rule is no longer misreported as manual.
+        assert violations(result) == []
+
+    def test_null_and_empty_fields_preserve_inferred_activation(self, tmp_path):
+        from skillsaw.blocks import DevinRuleBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("devin/inferred-activation", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(DevinRuleBlock)
+        assert {block.path.name for block in blocks} == {
+            "null-trigger-description.md",
+            "null-trigger-globs.md",
+            "null-trigger-empty-globs.md",
+            "absent-globs.md",
+            "null-globs.md",
+            "empty-globs.md",
+            "unused-list.md",
+        }
+        clean = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert clean["rc"] == 0, clean
+        assert "devin-rules-valid" in clean["out"]["stats"]["rules_run"]
+        assert violations(clean) == []
+
+        path = repo / ".devin/rules/null-trigger-empty-globs.md"
+        path.write_text(path.read_text().replace("trigger: null", "trigger: glob"))
+        explicit = run_lint(
+            repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert explicit["rc"] == 1, explicit
+        assert [
+            (v["rule_id"], v["file_path"], v["line"], v["message"]) for v in violations(explicit)
+        ] == [
+            (
+                "devin-rules-valid",
+                ".devin/rules/null-trigger-empty-globs.md",
+                3,
+                "'globs' must contain at least one pattern",
+            )
+        ]
+
     def test_tree_covers_root_and_nested_devin_inputs(self, tmp_path):
         repo = copy_fixture("devin/valid", tmp_path)
 
@@ -3196,6 +3757,204 @@ class TestDevin:
         assert {v["file_path"] for v in grouped["security-hidden-instructions"]} >= {
             ".devin/skills/plain/SKILL.md"
         }
+
+    @pytest.mark.parametrize("fields", ["omitted", "null", "empty", "configured"])
+    def test_native_skill_optional_nulls_use_defaults(self, tmp_path, fields):
+        repo = copy_fixture("devin/nullable-skills", tmp_path)
+        paths = sorted((repo / ".devin/skills").glob("*/SKILL.md"))
+        assert len(paths) == 2
+        if fields == "omitted":
+            for path in paths:
+                body = path.read_text().split("---\n", 2)[2]
+                path.write_text("---\nsubagent: false\n---\n" + body)
+        elif fields == "empty":
+            for path in paths:
+                path.write_text(path.read_text().replace(": null", ":"))
+        elif fields == "configured":
+            optional = repo / ".devin/skills/optional-review/SKILL.md"
+            content = optional.read_text()
+            for key, value in {
+                "name": "optional-review",
+                "description": "Review local metadata on request.",
+                "argument-hint": "'[path]'",
+                "model": "sonnet",
+                "agent": "reviewer",
+                "allowed-tools": "[Read]",
+                "permissions": "{allow: [Read(src/**)]}",
+                "triggers": "[user, model]",
+            }.items():
+                content = content.replace(f"{key}: null", f"{key}: {value}")
+            optional.write_text(content)
+            permissions = repo / ".devin/skills/permission-review/SKILL.md"
+            permissions.write_text(permissions.read_text().replace(": null", ": []"))
+        result = run_lint(repo, "--rule", "devin-skill-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+        assert "devin-skill-valid" in result["out"]["stats"]["rules_run"]
+
+    @pytest.mark.parametrize(
+        "before,after,line,message",
+        [
+            ("subagent: false", "subagent: null", 10, "'subagent' must be a boolean"),
+            ("name: null", "name: []", 2, "'name' must be a string"),
+            (
+                "allowed-tools: null",
+                "allowed-tools: {}",
+                7,
+                "'allowed-tools' must be a string or a list",
+            ),
+            ("permissions: null", "permissions: []", 8, "'permissions' must be an object"),
+            ("triggers: null", "triggers: {}", 9, "'triggers' must be a non-empty list"),
+            (
+                "permissions: null",
+                "permissions: {allow: [[]]}",
+                8,
+                "'permissions.allow[0]' must be a string",
+            ),
+        ],
+    )
+    def test_nullable_skill_fields_retain_invalid_shapes(
+        self, tmp_path, before, after, line, message
+    ):
+        repo = copy_fixture("devin/nullable-skills", tmp_path)
+        path = repo / ".devin/skills/optional-review/SKILL.md"
+        path.write_text(path.read_text().replace(before, after))
+        result = run_lint(repo, "--rule", "devin-skill-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["rule_id"] == "devin-skill-valid"
+        assert found[0]["file_path"] == ".devin/skills/optional-review/SKILL.md"
+        assert found[0]["severity"] == "error"
+        assert found[0]["line"] == line
+        assert message in found[0]["message"]
+
+    def test_native_duplicate_fields_report_and_clear_independently(self, tmp_path):
+        repo = copy_fixture("devin/duplicate-fields", tmp_path)
+        result = run_lint(
+            repo,
+            "--rule",
+            "devin-rules-valid",
+            "--rule",
+            "devin-skill-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert result["rc"] == 1, result
+        assert {"devin-rules-valid", "devin-skill-valid"} <= set(
+            result["out"]["stats"]["rules_run"]
+        )
+        assert {(v["file_path"], v["line"], v["message"]) for v in violations(result)} == {
+            (".devin/skills/duplicate-name/SKILL.md", 3, "Duplicate frontmatter field 'name'"),
+            (
+                ".devin/skills/duplicate-permissions/SKILL.md",
+                4,
+                "Duplicate frontmatter field 'permissions.allow'",
+            ),
+            (".devin/rules/duplicate-trigger.md", 3, "Duplicate frontmatter field 'trigger'"),
+            (".windsurf/rules/duplicate-globs.md", 3, "Duplicate frontmatter field 'globs'"),
+        }
+        assert all(v["severity"] == "error" for v in violations(result))
+        for relative, line in {
+            ".devin/skills/duplicate-name/SKILL.md": 3,
+            ".devin/skills/duplicate-permissions/SKILL.md": 4,
+            ".devin/rules/duplicate-trigger.md": 3,
+            ".windsurf/rules/duplicate-globs.md": 3,
+        }.items():
+            path = repo / relative
+            lines = path.read_text().splitlines(keepends=True)
+            del lines[line - 1]
+            path.write_text("".join(lines))
+        clean = run_lint(
+            repo,
+            "--rule",
+            "devin-rules-valid",
+            "--rule",
+            "devin-skill-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert clean["rc"] == 0, clean
+        assert violations(clean) == []
+
+    def test_native_scalar_decoding_matches_consumer_values(self, tmp_path):
+        repo = copy_fixture("devin/scalar-decoding", tmp_path)
+        result = run_lint(
+            repo,
+            "--rule",
+            "devin-rules-valid",
+            "--rule",
+            "devin-skill-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert result["rc"] == 0, result
+        assert {"devin-rules-valid", "devin-skill-valid"} <= set(
+            result["out"]["stats"]["rules_run"]
+        )
+        assert violations(result) == []
+
+    @pytest.mark.parametrize(
+        "value,accepted",
+        [
+            ("true", True),
+            ("false", True),
+            ("False", True),
+            ("yes", False),
+            ("no", False),
+            ("on", False),
+            ("off", False),
+            ('"true"', False),
+        ],
+    )
+    def test_native_subagent_boolean_spellings(self, tmp_path, value, accepted):
+        repo = copy_fixture("devin/scalar-decoding", tmp_path)
+        path = repo / ".devin/skills/scalar-review/SKILL.md"
+        path.write_text(path.read_text().replace("subagent: false", f"subagent: {value}"))
+        result = run_lint(repo, "--rule", "devin-skill-valid", "--no-custom-rules", "--no-plugins")
+        assert "devin-skill-valid" in result["out"]["stats"]["rules_run"]
+        assert result["rc"] == (0 if accepted else 1), result
+        found = violations(result)
+        if accepted:
+            assert found == []
+        else:
+            assert [(v["rule_id"], v["line"], v["severity"]) for v in found] == [
+                ("devin-skill-valid", 5, "error")
+            ]
+            assert found[0]["file_path"] == ".devin/skills/scalar-review/SKILL.md"
+            assert "'subagent' must be a boolean" in found[0]["message"]
+
+    def test_native_empty_headers_keep_manual_rules_and_skill_content(self, tmp_path):
+        from skillsaw.blocks import DevinRuleBlock, DevinSkillBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("devin/empty-headers", tmp_path)
+        result = run_lint(
+            repo,
+            "--rule",
+            "devin-rules-valid",
+            "--rule",
+            "devin-skill-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert result["rc"] == 0, result
+        assert {"devin-rules-valid", "devin-skill-valid"} <= set(
+            result["out"]["stats"]["rules_run"]
+        )
+        assert [(v["rule_id"], v["severity"], v["file_path"]) for v in violations(result)] == [
+            ("devin-rules-valid", "info", ".devin/rules/manual.md"),
+            ("devin-rules-valid", "info", ".windsurf/rules/manual.md"),
+        ]
+        assert all("manually with @manual" in v["message"] for v in violations(result))
+        tree = RepositoryContext(repo).lint_tree
+        blocks = tree.find(DevinRuleBlock) + tree.find(DevinSkillBlock)
+        assert len(blocks) == 3
+        for block in blocks:
+            assert block.frontmatter_error is None
+            assert block.has_frontmatter
+            assert block.body_text.startswith("# ")
+            assert "Optional" not in block.body_text
 
 
 @pytest.mark.integration
@@ -3456,7 +4215,7 @@ class TestOpenCode:
         assert any("'command' must be a non-empty array of strings" in m for m in messages)
         assert any("MCP server 'typo' is missing 'type'" in m for m in messages)
         assert any("'agents.planner.disabled' must be a boolean" in m for m in messages)
-        assert any("'command.changelog.template' must be a non-empty string" in m for m in messages)
+        assert not any("command.changelog.template" in m for m in messages)
         assert any("names the TUI schema" in m for m in messages)
         # Unknown top-level keys never rise above info: the schema moves
         # faster than skillsaw releases.
@@ -3467,6 +4226,151 @@ class TestOpenCode:
         ]
         assert [v["severity"] for v in unknown] == ["info"]
         assert "'modle'" in unknown[0]["message"]
+
+    def test_mcp_server_names_do_not_change_their_layout(self, tmp_path):
+        from skillsaw.blocks import OpenCodeMcpBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("opencode/mcp-server-names", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(OpenCodeMcpBlock)
+        assert {str(block.path.relative_to(repo)): block.server_names for block in blocks} == {
+            "opencode.json": {"servers", "timeout", "reference"},
+            ".opencode/opencode.json": {"type", "command", "enabled", "flat-reference"},
+        }
+        result = run_lint(repo, "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        report = result["out"]
+        assert report is not None
+        assert {"opencode-config-valid", "mcp-valid-json"} <= set(report["stats"]["rules_run"])
+        assert report["violations"] == []
+
+    def test_mcp_policy_sees_direct_toggles_and_nested_field_names(self, tmp_path):
+        repo = copy_fixture("opencode/mcp-server-names", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  mcp-prohibited:\n    enabled: true\n"
+            "    allowlist: [reference, flat-reference]\n"
+        )
+        result = run_lint(repo, "--no-custom-rules", "--no-plugins", config=config)
+        assert result["rc"] == 1, result
+        report = result["out"]
+        assert report is not None
+        assert sorted(
+            (v["rule_id"], v["file_path"], v["message"]) for v in report["violations"]
+        ) == [
+            (
+                "mcp-prohibited",
+                ".opencode/opencode.json",
+                "non-allowlisted MCP servers defined: command, enabled, type",
+            ),
+            (
+                "mcp-prohibited",
+                "opencode.json",
+                "non-allowlisted MCP servers defined: servers, timeout",
+            ),
+        ]
+
+    @pytest.mark.parametrize("name", ["servers", "timeout"])
+    @pytest.mark.parametrize("enabled", [None, "false", 0, []])
+    def test_invalid_named_toggles_report_the_original_server(self, tmp_path, name, enabled):
+        repo = copy_fixture("opencode/mcp-server-names", tmp_path)
+        path = repo / "opencode.json"
+        data = json.loads(path.read_text())
+        data["mcp"][name]["enabled"] = enabled
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        report = result["out"]
+        assert report is not None
+        assert [(v["rule_id"], v["file_path"], v["message"]) for v in report["violations"]] == [
+            (
+                "opencode-config-valid",
+                "opencode.json",
+                f"MCP server '{name}' 'enabled' must be a boolean",
+            )
+        ]
+
+    def test_empty_templates_and_argument_values_are_valid(self, tmp_path):
+        from skillsaw.blocks import OpenCodeMcpBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("opencode/string-values", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(OpenCodeMcpBlock)
+        assert [block.path for block in blocks] == [repo / "opencode.json"]
+        assert {name: server["command"] for name, server in blocks[0].server_entries()} == {
+            "local-tools": ["node", "tools/mcp.js", "--prefix", "", "--separator", " "],
+            "native-tools": ["node", "tools/native.js", "", " "],
+        }
+        r = run_lint(repo, "--rule", "opencode-config-valid", "--no-custom-rules", "--no-plugins")
+        assert r["rc"] == 0, r
+        assert r["out"] is not None
+        assert "opencode" in r["out"]["stats"]["repo_types"]
+        assert "opencode-config-valid" in r["out"]["stats"]["rules_run"]
+        assert violations(r) == []
+
+        # Empty native templates still participate in model lowering and
+        # overlap checks; accepting them must not hide conflicting entries.
+        path = repo / "opencode.json"
+        data = json.loads(path.read_text())
+        data["command"]["ctx"]["model"] = "anthropic/claude-opus"
+        path.write_text(json.dumps(data))
+        conflict = run_lint(
+            repo,
+            "--rule",
+            "opencode-config-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+            "--fail-on",
+            "warning",
+        )
+        assert conflict["rc"] == 1, conflict
+        assert conflict["out"] is not None
+        found = violations(conflict)
+        assert [(v["rule_id"], v["file_path"], v["severity"]) for v in found] == [
+            ("opencode-config-valid", "opencode.json", "warning")
+        ]
+        assert found[0]["message"].startswith(
+            "'command.ctx' and 'commands.ctx' define the same entry differently"
+        )
+
+    @pytest.mark.parametrize("section", ["command", "commands"])
+    @pytest.mark.parametrize("entry", [{}, {"template": None}, {"template": []}])
+    def test_template_remains_required_and_string_typed(self, tmp_path, section, entry):
+        repo = copy_fixture("opencode/string-values", tmp_path)
+        path = repo / "opencode.json"
+        data = json.loads(path.read_text())
+        data[section]["invalid"] = entry
+        path.write_text(json.dumps(data))
+
+        r = run_lint(repo, "--rule", "opencode-config-valid", "--no-custom-rules", "--no-plugins")
+        assert r["rc"] == 1, r
+        assert r["out"] is not None
+        found = violations(r)
+        assert [(v["rule_id"], v["file_path"], v["severity"]) for v in found] == [
+            ("opencode-config-valid", "opencode.json", "error")
+        ]
+        assert found[0]["message"].startswith(f"'{section}.invalid.template' must be a string")
+
+    @pytest.mark.parametrize("layout", ["flat", "nested"])
+    @pytest.mark.parametrize("command", [[], [""], [" "], [None], ["node", 42]])
+    def test_argv_requires_an_executable_and_string_arguments(self, tmp_path, layout, command):
+        repo = copy_fixture("opencode/string-values", tmp_path)
+        path = repo / "opencode.json"
+        data = json.loads(path.read_text())
+        entries = data["mcp"] if layout == "flat" else data["mcp"]["servers"]
+        entries["invalid"] = {"type": "local", "command": command}
+        path.write_text(json.dumps(data))
+
+        r = run_lint(repo, "--rule", "opencode-config-valid", "--no-custom-rules", "--no-plugins")
+        assert r["rc"] == 1, r
+        assert r["out"] is not None
+        found = violations(r)
+        assert [(v["rule_id"], v["file_path"], v["severity"]) for v in found] == [
+            ("opencode-config-valid", "opencode.json", "error")
+        ]
+        assert found[0]["message"].startswith(
+            "MCP server 'invalid' 'command' must be a non-empty array"
+        )
 
     def test_only_conflicting_spellings_are_reported(self, tmp_path):
         """Disjoint collection sections merge; one-to-one field aliases do not."""
@@ -3573,7 +4477,10 @@ class TestOpenCode:
         }
         repo = self._opencode_repo(tmp_path, "merged-collections", json.dumps(config))
 
-        grouped = by_rule(run_lint(repo))
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "opencode-config-valid" in r["out"]["stats"]["rules_run"]
+        grouped = by_rule(r)
         messages = [violation["message"] for violation in grouped.get("opencode-config-valid", [])]
 
         assert grouped.get("rule-execution-error", []) == []
@@ -3820,7 +4727,11 @@ class TestOpenCode:
         repo = copy_fixture("opencode/native-v1", tmp_path)
         assert "{env:SENTRY_MCP_TOKEN}" in (repo / "opencode.json").read_text()
 
-        messages = [v["message"] for v in violations(run_lint(repo))]
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "opencode" in r["out"]["stats"]["repo_types"]
+        assert "mcp-valid-json" in r["out"]["stats"]["rules_run"]
+        messages = [v["message"] for v in violations(r)]
         assert not any("embeds" in m for m in messages)
 
     def test_mcp_valid_json_stands_aside_for_the_opencode_dialect(self, tmp_path):
@@ -3927,7 +4838,19 @@ class TestOpenCode:
         source = (repo / ".opencode/command/conventions.md").read_text()
         assert "should probably" in source, "the fixture must carry a content defect"
 
+        from skillsaw.blocks import OpenCodeCommandBlock
+        from skillsaw.context import RepositoryContext
+        from skillsaw.lint_target import ApmNode
+
+        tree = RepositoryContext(repo).lint_tree
+        assert [node.path for node in tree.find(ApmNode)] == [repo / ".apm"]
+        assert [node.path for node in tree.find(OpenCodeCommandBlock)] == [
+            repo / ".opencode/command/conventions.md"
+        ]
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "apm" in r["out"]["stats"]["repo_types"]
+        assert "content-weak-language" in r["out"]["stats"]["rules_run"]
         assert not [
             v for v in violations(r) if v["file_path"].startswith(".opencode/")
         ], "APM-compiled OpenCode output must not report content findings"
@@ -4015,9 +4938,7 @@ class TestOpenCode:
         assert any("'agents.not-an-object' must be an object" in m for m in messages)
         # `template` is the only required key on a command entry, and a JSON
         # entry has no body to supply it.
-        assert any(
-            "'commands.no-template.template' must be a non-empty string" in m for m in messages
-        )
+        assert any("'commands.no-template.template' must be a string" in m for m in messages)
         # An OAuth client secret is as committed as one in a header. It is
         # reported by the rule that owns the credential scan for a deferred
         # block, with the 1.x camelCase spelling normalized first.
@@ -4078,7 +4999,10 @@ class TestOpenCode:
         config = (repo / ".opencode/opencode.jsonc").read_text()
         assert '"startup"' in config and '"codemode"' in config
 
-        assert by_rule(run_lint(repo)).get("opencode-config-valid", []) == []
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "opencode-config-valid" in r["out"]["stats"]["rules_run"]
+        assert by_rule(r).get("opencode-config-valid", []) == []
 
     @staticmethod
     def _opencode_repo(tmp_path, name, config_text):
@@ -4369,7 +5293,15 @@ class TestPromptfoo:
 
     def test_nested_promptfoo_config_validates(self, tmp_path):
         repo = copy_fixture("promptfoo/nested-config", tmp_path)
+        from skillsaw.context import RepositoryContext
+        from skillsaw.lint_target import PromptfooConfigNode
+
+        assert [
+            node.path for node in RepositoryContext(repo).lint_tree.find(PromptfooConfigNode)
+        ] == [repo / "ai/evals/promptfoo/promptfooconfig.yaml"]
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "promptfoo-valid" in r["out"]["stats"]["rules_run"]
         promptfoo_violations = [v for v in violations(r) if v["rule_id"].startswith("promptfoo-")]
         assert len(promptfoo_violations) == 0
 
@@ -4973,6 +5905,7 @@ BROKEN_FIXTURES = [
     "grok/config-broken",
     "grok/plugin-broken",
     "grok/marketplace-broken",
+    "grok/index-parity-broken",
     "skills-lock/invalid",
     "antigravity/workspace-broken",
 ]
@@ -5029,6 +5962,7 @@ OPT_IN_RULES = {
     "content-missing-stop-condition",
     "content-inline-tool-examples",
     "antigravity-config-json-valid",
+    "muse-hooks-valid",
 }
 
 
@@ -5237,7 +6171,35 @@ class TestTerminologyGroupsConfig:
         assert all("function/method" not in v["message"] for v in vs)
         assert all(v["severity"] == "error" for v in vs)
 
-    def test_without_groups_config_all_groups_fire(self, tmp_path):
+    @pytest.mark.parametrize("group_setting", [None, "warning"])
+    def test_distinct_technical_concepts_require_explicit_opt_in(self, tmp_path, group_setting):
+        repo = copy_fixture("content/terminology-distinct-concepts", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        if group_setting is not None:
+            config.write_text(
+                "rules:\n  content-inconsistent-terminology:\n"
+                f"    groups:\n      function/method: {group_setting}\n"
+            )
+        result = run_lint(
+            repo,
+            "--rule",
+            "content-inconsistent-terminology",
+            "--fail-on",
+            "info",
+            config=config if group_setting is not None else None,
+        )
+        findings = violations(result)
+        if group_setting is None:
+            assert result["rc"] == 0, result
+            assert findings == []
+        else:
+            assert result["rc"] == 1, result
+            assert len(findings) == 1, findings
+            assert findings[0]["rule_id"] == "content-inconsistent-terminology"
+            assert findings[0]["severity"] == "warning"
+            assert "function/method" in findings[0]["message"]
+
+    def test_without_groups_config_only_default_groups_fire(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         (repo / ".skillsaw.yaml").write_text(
             'version: "99.0.0"\n'
@@ -5248,7 +6210,7 @@ class TestTerminologyGroupsConfig:
         r = run_lint(repo, config=repo / ".skillsaw.yaml")
         assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         messages = [v["message"] for v in self._rule_violations(r)]
-        assert any("function/method" in m for m in messages)
+        assert not any("function/method" in m for m in messages)
         assert any("directory/folder" in m for m in messages)
 
 
@@ -6338,6 +7300,26 @@ class TestContentMcpToolNameSuggestGate:
         _run_fix(repo, "--suggest")
         assert _snapshot_contents(repo) == first
 
+    def test_ambiguous_short_name_is_diagnostic_only_across_suggest_runs(self, tmp_path):
+        repo = copy_fixture("content/mcp-tool-name-ambiguous", tmp_path)
+        path = repo / "CLAUDE.md"
+        before = path.read_text()
+        args = ("--rule", "content-mcp-tool-name")
+        initial = run_lint(repo, *args)
+        ours = violations(initial)
+        assert initial["rc"] == 1
+        assert [(item["line"], item["fixable"]) for item in ours] == [(3, False), (4, True)]
+
+        _run_fix(repo, "--suggest", *args)
+        expected = before.replace("mcp__internal__report__generate", "report__generate")
+        assert path.read_text() == expected
+        assert expected.count("\n") == before.count("\n")
+        remaining = run_lint(repo, *args)
+        assert [(item["line"], item["fixable"]) for item in violations(remaining)] == [(3, False)]
+        assert remaining["rc"] == 1
+        _run_fix(repo, "--suggest", *args)
+        assert path.read_text() == expected
+
 
 @pytest.mark.integration
 class TestClaudeMdAgentsImport:
@@ -6443,6 +7425,58 @@ class TestClaudeMdAgentsImport:
         before = _snapshot_contents(repo)
         _run_fix(repo, "--suggest")
         assert _snapshot_contents(repo) == before
+
+    @pytest.mark.parametrize("ignore_generated", [True, False])
+    def test_multiline_generated_banner_respects_explicit_override(
+        self, tmp_path, ignore_generated
+    ):
+        repo = copy_fixture(f"{self.FIXTURES}/generated-pair", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            'version: "99.0.0"\nfail-on: info\nrules:\n'
+            "  claude-md-agents-import:\n"
+            f"    ignore-generated: {str(ignore_generated).lower()}\n"
+        )
+        before = {name: (repo / name).read_bytes() for name in ("CLAUDE.md", "AGENTS.md")}
+        result = run_lint(repo, "--rule", "claude-md-agents-import")
+        found = violations(result)
+        assert result["rc"] == (0 if ignore_generated else 1), result
+        if ignore_generated:
+            assert found == []
+        else:
+            assert len(found) == 1 and found[0]["fixable"] is True
+            assert found[0]["file_path"] == "CLAUDE.md"
+            assert found[0]["line"] == 3
+        _run_fix(repo, "--suggest", "--rule", "claude-md-agents-import")
+        assert (repo / "AGENTS.md").read_bytes() == before["AGENTS.md"]
+        assert (repo / "CLAUDE.md").read_bytes() == (
+            before["CLAUDE.md"] if ignore_generated else b"@AGENTS.md\n"
+        )
+        first = _snapshot_contents(repo)
+        _run_fix(repo, "--suggest", "--rule", "claude-md-agents-import")
+        assert _snapshot_contents(repo) == first
+        after = run_lint(repo, "--rule", "claude-md-agents-import")
+        assert after["rc"] == 0 and violations(after) == []
+
+    @pytest.mark.parametrize("wrapper", ["prose", "fence", "separate-comments"])
+    def test_generated_words_outside_one_banner_do_not_create_an_exemption(self, tmp_path, wrapper):
+        repo = copy_fixture(f"{self.FIXTURES}/generated-pair", tmp_path)
+        body = (repo / "CLAUDE.md").read_text()
+        comment, rest = body.split("-->\n", 1)
+        words = comment.removeprefix("<!-- ")
+        if wrapper == "fence":
+            prefix = "```markdown\n" + comment + "-->\n```\n"
+        elif wrapper == "separate-comments":
+            prefix = "<!-- This file is auto-generated. -->\n<!-- Do not edit. -->\n"
+        else:
+            prefix = words + "\n"
+        for name in ("CLAUDE.md", "AGENTS.md"):
+            (repo / name).write_text(prefix + rest)
+        result = run_lint(repo, "--rule", "claude-md-agents-import")
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["file_path"] == "CLAUDE.md"
+        assert found[0]["fixable"] is True
 
 
 # ── SAFE Autofix Idempotency Suite ──────────────────────────────
@@ -6875,6 +7909,39 @@ class TestSafeAutofixIdempotency:
             assert (
                 name_val == skill_dir.name
             ), f"SKILL.md name '{name_val}' does not match dir '{skill_dir.name}'"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "fixture,filename",
+    [
+        ("autofix/info-hidden", "SKILL.md"),
+        ("autofix/unlinked-ref-already-linked", "CLAUDE.md"),
+    ],
+)
+def test_cli_fix_converges_on_static_fixture(tmp_path, fixture, filename):
+    rule = "content-unlinked-internal-reference"
+    repo = copy_fixture(fixture, tmp_path)
+    path = repo / filename
+    before = path.read_bytes()
+    options = [str(repo), "--rule", rule, "--no-custom-rules", "--no-plugins"]
+    lint_args = ["lint", *options, "--format", "json", "--fail-on", "info"]
+    first = run_cli(lint_args)
+    report = json.loads(first.stdout)
+    assert first.returncode == 1
+    assert [(v["rule_id"], v["file_path"]) for v in report["violations"]] == [(rule, filename)]
+
+    fixed = run_cli(["fix", *options])
+    assert fixed.returncode == 0, fixed.stderr
+    after = path.read_bytes()
+    assert len(after.splitlines()) == len(before.splitlines())
+    assert sum(a != b for a, b in zip(before.splitlines(), after.splitlines())) == 1
+    clean = run_cli(lint_args)
+    assert clean.returncode == 0, clean.stderr
+    assert json.loads(clean.stdout)["violations"] == []
+    repeated = run_cli(["fix", *options])
+    assert repeated.returncode == 0, repeated.stderr
+    assert path.read_bytes() == after
 
 
 @pytest.mark.integration
@@ -7540,6 +8607,124 @@ class TestBaseline:
         assert summary(r)["warnings"] > 0
 
 
+@pytest.mark.integration
+class TestBaselineInfo:
+    FIXTURE = "config/baseline-info"
+
+    @pytest.mark.parametrize(
+        "settings,baseline_args,lint_args",
+        [
+            ("fail-on: info\n", [], []),
+            ("fail-on: info\nstrict: true\n", [], []),
+            ("", ["--include-info"], ["--fail-on", "info"]),
+        ],
+    )
+    def test_info_threshold_adoption(self, tmp_path, settings, baseline_args, lint_args):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(config.read_text().replace("fail-on: info\n", settings))
+        lint_args = [*lint_args, "--no-custom-rules", "--no-plugins"]
+
+        before = run_lint(repo, *lint_args)
+        assert before["rc"] == 1, before
+        assert len(violations(before)) == 1
+        assert violations(before)[0]["rule_id"] == "content-weak-language"
+        assert violations(before)[0]["severity"] == "info"
+
+        result = run_cli(["baseline", repo, "--no-custom-rules", "--no-plugins", *baseline_args])
+        assert result.returncode == 0, result.stderr
+        data = json.loads((repo / ".skillsaw-baseline.json").read_text())
+        assert len(data["violations"]) == 1
+        saved = data["violations"][0]
+        assert (saved["rule_id"], saved["severity"], saved["file_path"], saved["line"]) == (
+            "content-weak-language",
+            "info",
+            "CLAUDE.md",
+            3,
+        )
+        assert saved["fingerprint"]
+
+        after = run_lint(repo, *lint_args)
+        assert after["rc"] == 0, after
+        assert violations(after) == []
+        assert summary(after)["baseline_suppressed"] == 1
+
+        path = repo / "CLAUDE.md"
+        path.write_text(
+            path.read_text() + "\nTry to update the API reference after interface changes.\n"
+        )
+        changed = run_lint(repo, *lint_args)
+        assert changed["rc"] == 1, changed
+        assert len(violations(changed)) == 1
+        assert "Try to" in violations(changed)[0]["message"]
+        assert violations(changed)[0]["line"] == 6
+        assert summary(changed)["baseline_suppressed"] == 1
+
+    @pytest.mark.parametrize(
+        "severity,threshold,saved_count",
+        [
+            ("info", None, 0),
+            ("info", "warning", 0),
+            ("warning", "error", 1),
+            ("error", "error", 1),
+        ],
+    )
+    def test_default_policy_keeps_warning_and_error_only(
+        self, tmp_path, severity, threshold, saved_count
+    ):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            config.read_text()
+            .replace("fail-on: info\n", f"fail-on: {threshold}\n" if threshold else "")
+            .replace("severity: info", f"severity: {severity}")
+        )
+        before = run_lint(repo, "--fail-on", "info", "--no-custom-rules", "--no-plugins")
+        assert before["rc"] == 1, before
+        assert len(violations(before)) == 1
+        assert violations(before)[0]["severity"] == severity
+
+        result = run_cli(["baseline", repo, "--no-custom-rules", "--no-plugins"])
+        assert result.returncode == 0, result.stderr
+        data = json.loads((repo / ".skillsaw-baseline.json").read_text())
+        assert len(data["violations"]) == saved_count
+        if saved_count:
+            assert data["violations"][0]["severity"] == severity
+
+        after = run_lint(repo, "--fail-on", "info", "--no-custom-rules", "--no-plugins")
+        assert after["rc"] == (0 if saved_count else 1), after
+        assert len(violations(after)) == 1 - saved_count
+        assert summary(after)["baseline_suppressed"] == saved_count
+
+    def test_info_capture_still_excludes_infrastructure_and_deprecation(
+        self, tmp_path, monkeypatch
+    ):
+        from skillsaw.linter import Linter
+        from skillsaw.rule import RuleViolation, Severity
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        original_run = Linter.run
+
+        def run_with_infrastructure(self):
+            return original_run(self) + [
+                RuleViolation(rule_id=rule_id, severity=severity, message="Synthetic notice")
+                for rule_id, severity in [
+                    ("repository-path-error", Severity.ERROR),
+                    ("rule-execution-error", Severity.ERROR),
+                    ("plugin-load-error", Severity.ERROR),
+                    ("deprecated-rule", Severity.INFO),
+                ]
+            ]
+
+        monkeypatch.setattr(Linter, "run", run_with_infrastructure)
+        result = run_cli(["baseline", repo, "--include-info", "--no-custom-rules", "--no-plugins"])
+        assert result.returncode == 0, result.stderr
+        data = json.loads((repo / ".skillsaw-baseline.json").read_text())
+        assert [(v["rule_id"], v["severity"]) for v in data["violations"]] == [
+            ("content-weak-language", "info")
+        ]
+
+
 # ── Rule crash handling (GH-263) ─────────────────────────────────
 
 
@@ -7593,6 +8778,45 @@ class TestMarkdownAstRegressions:
         assert len(broken) == 1
         assert "docs/nope.md" in broken[0]["message"]
         assert broken[0]["line"] == 5
+
+    def test_broken_link_fix_handles_parentheses_and_multiple_destinations(self, tmp_path):
+        repo = copy_fixture("regression/broken-ref-parentheses", tmp_path)
+        result = run_lint(repo, "--rule", "content-broken-internal-reference")
+        found = violations(result)
+        assert len(found) == 3 and all(v["fixable"] for v in found)
+        assert all("fix_data" not in v for v in found)
+        path = repo / "AGENTS.md"
+        before = path.read_text()
+        _run_fix(repo, "--suggest", "--rule", "content-broken-internal-reference")
+        fixed = path.read_text()
+        assert '[the upgrade](docs/setup%28v2%29.md "Upgrade guide")' in fixed
+        assert "[the rollback](docs/rollback%28v2%29.md)" in fixed
+        assert "[the escaped destination](docs/setup%28v2%29.md)" in fixed
+        assert "[the supported guide](docs/setup(v2).md)" in fixed
+        assert len(fixed.splitlines()) == len(before.splitlines())
+        _run_fix(repo, "--suggest", "--rule", "content-broken-internal-reference")
+        assert path.read_text() == fixed
+        after = run_lint(repo, "--rule", "content-broken-internal-reference")
+        assert after["rc"] == 0 and violations(after) == []
+
+    def test_internal_link_queries_resolve_and_survive_suggested_fix(self, tmp_path):
+        repo = copy_fixture("regression/broken-ref-query", tmp_path)
+        result = run_lint(repo, "--rule", "content-broken-internal-reference")
+        found = violations(result)
+        assert len(found) == 1 and found[0]["fixable"] is True
+        assert "docs/setpu.md?plain=1#install" in found[0]["message"]
+        path = repo / "AGENTS.md"
+        before = path.read_text()
+        _run_fix(repo, "--suggest", "--rule", "content-broken-internal-reference")
+        fixed = path.read_text()
+        assert fixed == before.replace(
+            "docs/setpu.md?plain=1#install", "docs/setup.md?plain=1#install"
+        )
+        assert len(fixed.splitlines()) == len(before.splitlines())
+        _run_fix(repo, "--suggest", "--rule", "content-broken-internal-reference")
+        assert path.read_text() == fixed
+        after = run_lint(repo, "--rule", "content-broken-internal-reference")
+        assert after["rc"] == 0 and violations(after) == []
 
     def test_broken_link_fix_preserves_anchor(self, tmp_path):
         """Fixing [x](docs/gone.md#sec) must keep the #sec anchor."""
@@ -8095,20 +9319,31 @@ class TestUnrecognizedRepositoryWarning:
 
     def test_editor_only_repositories_are_not_warned_about(self, tmp_path):
         cursor = copy_fixture("cursor-rules/clean", tmp_path)
-        assert self.WARNING not in run_lint(cursor)["stderr"]
+        cursor_result = run_lint(cursor)
+        assert cursor_result["rc"] == 0
+        assert "cursor" in _report(cursor_result)["stats"]["repo_types"]
+        assert "cursor-rules-valid" in cursor_result["out"]["stats"]["rules_run"]
+        assert self.WARNING not in cursor_result["stderr"]
 
         cline = tmp_path / "cline"
         (cline / ".clinerules").mkdir(parents=True)
         (cline / ".clinerules" / "style.md").write_text(
             "# Style\n\nPrefer small, focused pull requests with a clear description.\n"
         )
-        assert self.WARNING not in run_lint(cline)["stderr"]
+        cline_result = run_lint(cline)
+        assert cline_result["rc"] == 0
+        assert "cline" in _report(cline_result)["stats"]["repo_types"]
+        assert self.WARNING not in cline_result["stderr"]
 
     def test_root_agents_md_is_a_recognized_repository(self, tmp_path):
         repo = tmp_path / "agents-only"
         repo.mkdir()
         (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test` before opening a PR.\n")
-        assert self.WARNING not in run_lint(repo)["stderr"]
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "agents-md" in _report(r)["stats"]["repo_types"]
+        assert "instruction-file-valid" in r["out"]["stats"]["rules_run"]
+        assert self.WARNING not in r["stderr"]
 
     def test_empty_directory_is_still_warned_about(self, tmp_path):
         empty = tmp_path / "empty"
@@ -8184,3 +9419,154 @@ class TestTopRulesBlock:
         for fmt in ("json", "sarif", "html", "code-climate", "gitlab"):
             r = run_lint(repo, fmt=fmt, verbose=False)
             assert "Top rules" not in r["stdout"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("lint_external", [True, False])
+def test_self_installed_skills_keep_authorship_in_a_linked_worktree(tmp_path, lint_external):
+    from skillsaw.context import RepositoryContext
+    from skillsaw.lint_target import SkillNode
+
+    primary = copy_fixture("skills-lock/external", tmp_path)
+    lock = primary / "skills-lock.json"
+    data = json.loads(lock.read_text())
+    data["skills"]["authored-skill"] = {
+        "source": "example/owned-skills",
+        "sourceType": "github",
+        "computedHash": "0123456789abcdef" * 4,
+    }
+    lock.write_text(json.dumps(data))
+    (primary / ".skillsaw.yaml").write_text(
+        json.dumps({"lint-external-content": lint_external, "plugins": False})
+    )
+    git_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    git_env.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull})
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(primary), *args],
+            env=git_env,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=10,
+        )
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture Author")
+    git("config", "user.email", "fixture@example.invalid")
+    git("remote", "add", "origin", "https://github.com/example/owned-skills.git")
+    git("add", ".")
+    git("commit", "-qm", "Fixture content")
+    linked = tmp_path / "linked"
+    git("worktree", "add", "--detach", str(linked), "HEAD")
+    assert (primary / ".git").is_dir()
+    assert (linked / ".git").is_file()
+
+    reports = []
+    for repo in (primary, linked):
+        context = RepositoryContext(repo, lint_external_content=lint_external)
+        nodes = {node.path.name: node for node in context.lint_tree.find(SkillNode)}
+        assert not nodes["authored-skill"].externally_sourced
+        assert not context.is_externally_sourced(repo / "skills/authored-skill/SKILL.md")
+        external = repo / ".agents/skills/external-dep/SKILL.md"
+        assert context.is_externally_sourced(external)
+        if lint_external:
+            assert nodes["external-dep"].externally_sourced
+        else:
+            assert "external-dep" not in nodes
+
+        result = run_lint(repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1
+        found = {v["file_path"]: v for v in violations(result)}
+        assert found["skills/authored-skill/SKILL.md"]["fixable"] is True
+        if lint_external:
+            assert found[".agents/skills/external-dep/SKILL.md"]["fixable"] is False
+        else:
+            assert ".agents/skills/external-dep/SKILL.md" not in found
+        reports.append([(v["rule_id"], v["file_path"], v["fixable"]) for v in violations(result)])
+        external_before = external.read_bytes()
+        fixed = run_cli(
+            ["fix", repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins"]
+        )
+        assert fixed.returncode == 0, fixed.stderr
+        assert "name: authored-skill" in (repo / "skills/authored-skill/SKILL.md").read_text()
+        assert external.read_bytes() == external_before
+        clean = run_lint(repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins")
+        assert all(v["file_path"] != "skills/authored-skill/SKILL.md" for v in violations(clean))
+    assert reports[0] == reports[1]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("lint_external", [True, False])
+def test_nested_local_source_and_install_both_remain_fixable(tmp_path, lint_external):
+    repo = copy_fixture("skills-lock/nested-local-source", tmp_path)
+    (repo / ".skillsaw.yaml").write_text(json.dumps({"lint-external-content": lint_external}))
+    paths = ["skills/local-dep/SKILL.md", "packages/web/agent/skills/local-dep/SKILL.md"]
+    before = {path: (repo / path).read_text() for path in paths}
+    options = ["--rule", "agentskill-name", "--no-custom-rules", "--no-plugins"]
+    result = run_lint(repo, *options)
+    assert result["rc"] == 1
+    assert {v["file_path"]: v["fixable"] for v in violations(result)} == {
+        path: True for path in paths
+    }
+
+    fixed = run_cli(["fix", repo, *options])
+    assert fixed.returncode == 0, fixed.stderr
+    after = {path: (repo / path).read_text() for path in paths}
+    for path in paths:
+        assert "name: local-dep\n" in after[path]
+        assert len(before[path].splitlines()) == len(after[path].splitlines())
+        assert sum(a != b for a, b in zip(before[path].splitlines(), after[path].splitlines())) == 1
+    clean = run_lint(repo, *options)
+    assert clean["rc"] == 0
+    assert violations(clean) == []
+    repeated = run_cli(["fix", repo, *options])
+    assert repeated.returncode == 0, repeated.stderr
+    assert {path: (repo / path).read_text() for path in paths} == after
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("scope", ["packages/web", "packages/web/agent/skills/local-dep"])
+def test_targeting_a_nested_local_install_keeps_its_external_guard(tmp_path, scope):
+    repo = copy_fixture("skills-lock/nested-local-source", tmp_path)
+    target = repo / scope
+    installed = repo / "packages/web/agent/skills/local-dep/SKILL.md"
+    before = installed.read_bytes()
+    options = ["--rule", "agentskill-name", "--no-custom-rules", "--no-plugins"]
+    linted = run_lint(target, *options)
+    assert linted["rc"] == 1
+    assert len(violations(linted)) == 1
+    assert violations(linted)[0]["fixable"] is False
+    fixed = run_cli(["fix", target, *options])
+    assert fixed.returncode == 0, fixed.stderr
+    assert installed.read_bytes() == before
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("rule_id", ["antigravity-mcp-valid", "grok-config-valid"])
+@pytest.mark.parametrize(
+    "setting,expected",
+    [
+        ("", "warning"),
+        ("null", "warning"),
+        ("info", "info"),
+        ("warning", "warning"),
+        ("error", "error"),
+    ],
+)
+def test_cli_scope_severity_uses_explicit_config_and_exit_threshold(
+    tmp_path, rule_id, setting, expected
+):
+    repo = copy_fixture("config/scope-severity", tmp_path)
+    if setting:
+        (repo / ".skillsaw.yaml").write_text(
+            f'version: "99.0.0"\nrules:\n  {rule_id}:\n    severity: {setting}\n'
+        )
+    result = run_lint(
+        repo, "--rule", rule_id, "--fail-on", "warning", "--no-custom-rules", "--no-plugins"
+    )
+    found = violations(result)
+    assert len(found) == 1 and found[0]["rule_id"] == rule_id
+    assert found[0]["severity"] == expected
+    assert result["rc"] == (0 if expected == "info" else 1), result

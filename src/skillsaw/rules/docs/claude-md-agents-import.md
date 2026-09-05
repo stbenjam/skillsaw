@@ -1,3 +1,6 @@
+The generated-file exemption recognizes multiline banners inside a leading HTML
+comment. Set `ignore-generated: false` to review those files explicitly.
+
 ## Why
 
 Claude Code reads `CLAUDE.md`; almost every other agent reads `AGENTS.md`.

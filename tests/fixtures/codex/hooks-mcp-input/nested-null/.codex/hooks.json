@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "reference",
+            "tool": "lookup",
+            "input": {
+              "optional": null,
+              "items": [
+                1,
+                null
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

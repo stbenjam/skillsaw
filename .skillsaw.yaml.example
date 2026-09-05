@@ -73,7 +73,7 @@ rules:
     # required-fields: []
     # required-metadata: []
 
-  # Antigravity registry files must parse as an object whose 'entries' are objects with a string 'path'
+  # Antigravity registry files must decode their paths and filters correctly
   antigravity-config-json-valid:
     enabled: false
     severity: error
@@ -492,7 +492,7 @@ rules:
     severity: error
     # extra-events: []
 
-  # .grok-plugin/plugin-index.json must agree with the catalog beside it
+  # plugin-index.json must agree with its marketplace catalog
   grok-marketplace-index-parity:
     enabled: auto
     severity: warning
@@ -569,7 +569,7 @@ rules:
 
   # .muse/hooks.json must use Muse's events, matcher groups and handler fields
   muse-hooks-valid:
-    enabled: auto
+    enabled: false
     severity: error
     # extra-events: []
     # extra-handler-fields: []

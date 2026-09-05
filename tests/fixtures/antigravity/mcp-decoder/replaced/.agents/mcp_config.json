@@ -1,0 +1,7 @@
+{
+  "mcpServers": 42,
+  "mcpServers": {
+    "timetable": {"Command": 42},
+    "timetable": {"serverURL": "https://feeds.example.invalid/mcp"}
+  }
+}

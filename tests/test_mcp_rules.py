@@ -1273,7 +1273,7 @@ class TestOpenCodeMcpBlock:
         )
         assert block.server_names == {"servers"}
 
-    @pytest.mark.parametrize("server_name", ["command", "type", "url"])
+    @pytest.mark.parametrize("server_name", ["command", "type", "url", "enabled"])
     def test_a_v2_server_named_after_a_connection_field_is_still_found(self, temp_dir, server_name):
         """The wrapper test reads value shapes, not key names.
 
@@ -1286,6 +1286,13 @@ class TestOpenCodeMcpBlock:
             {"mcp": {"servers": {server_name: {"type": "local", "command": ["npx", "mcp"]}}}},
         )
         assert block.server_names == {server_name}
+
+    @pytest.mark.parametrize("name", ["servers", "timeout"])
+    @pytest.mark.parametrize("enabled", [False, True])
+    def test_a_named_v1_toggle_is_kept_as_one_server(self, temp_dir, name, enabled):
+        block = self._block(temp_dir, {"mcp": {name: {"enabled": enabled}}})
+        assert block.server_entries() == [(name, {"enabled": enabled})]
+        assert block.server_names == {name}
 
     def test_a_v1_server_named_servers_is_still_told_apart(self, temp_dir):
         """The other direction of the same test: a real server keeps its reading."""

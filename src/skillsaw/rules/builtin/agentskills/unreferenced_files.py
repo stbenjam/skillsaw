@@ -673,7 +673,15 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 for rel_dir in sorted(newly_covered):
                     if rel_dir in covered_dirs:
                         continue
-                    covered_dirs.add(rel_dir)
+                    # The directory index includes every descendant file.
+                    # No later source can add reachability by mentioning a
+                    # covered subtree again. Keep sibling prefix boundaries.
+                    prefix = rel_dir + "/"
+                    covered_dirs.update(
+                        directory
+                        for directory in all_dirs
+                        if directory == rel_dir or directory.startswith(prefix)
+                    )
                     for candidate in files_by_dir.get(rel_dir, ()):
                         if candidate in referenced:
                             continue

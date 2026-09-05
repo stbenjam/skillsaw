@@ -72,7 +72,7 @@ class _PackageCandidates:
 
 
 def _workspace_glob_regex(pattern: str) -> "re.Pattern[str]":
-    """Translate one npm workspace glob to a regex over a posix directory path."""
+    """Translate a supported simple workspace glob over a posix directory path."""
     parts: List[str] = []
     index = 0
     while index < len(pattern):
@@ -252,7 +252,17 @@ class McpRegistryNpmNameMatchRule(Rule):
             # declaring `workspaces: ["local"]` beside `local/package.json`,
             # which is what npm publishes and what carries `mcpName`). The
             # container is never published; the member is the package.
-            member = self._unique_workspace_member(root, nearest_boundary, exact)
+            patterns = (
+                self._workspace_patterns(nearest_boundary)
+                if self._declares_workspaces(nearest_boundary)
+                else []
+            )
+            if patterns is None:
+                # Unsupported membership is not evidence that the container
+                # is the published package. In particular, an unhandled
+                # exclusion can invalidate an otherwise matching member.
+                return None
+            member = self._unique_workspace_member(root, nearest_boundary, exact, patterns)
             if member is not None:
                 # The member must corroborate the server's repository the same
                 # way the nearest boundary would have to; a member pointing at
@@ -306,6 +316,7 @@ class McpRegistryNpmNameMatchRule(Rule):
         root: Path,
         container: McpRegistryNpmPackageBlock,
         exact: List[McpRegistryNpmPackageBlock],
+        patterns: List["re.Pattern[str]"],
     ) -> Optional[McpRegistryNpmPackageBlock]:
         """The one manifest below a workspaces container with the same coordinates."""
         if not cls._declares_workspaces(container):
@@ -313,7 +324,6 @@ class McpRegistryNpmNameMatchRule(Rule):
         container_dir = safe_resolve(container.path.parent)
         if container_dir is None:
             return None
-        patterns = cls._workspace_patterns(container)
         members = []
         for manifest in exact:
             if manifest is container:
@@ -333,25 +343,41 @@ class McpRegistryNpmNameMatchRule(Rule):
         return members[0] if len(members) == 1 else None
 
     @staticmethod
-    def _workspace_patterns(container: McpRegistryNpmPackageBlock) -> List["re.Pattern[str]"]:
-        """The directory globs a ``workspaces`` field declares, in either shape.
+    def _workspace_patterns(
+        container: McpRegistryNpmPackageBlock,
+    ) -> Optional[List["re.Pattern[str]"]]:
+        """Compile simple workspace globs, or leave membership unresolved.
 
-        Compiled with npm's path-aware semantics (`@npmcli/map-workspaces`
-        expands them with `glob`): `*` and `?` never cross a `/`, and only
-        `**` spans directories — `packages/*` names `packages/foo`, not
-        `packages/foo/examples/demo`. `fnmatch` would let `*` cross `/`.
+        npm removes a leading ``./`` (or ``/``) before matching. The supported
+        positive patterns use literal paths, ``*``, ``?`` and whole-segment
+        ``**``; a single star never crosses a directory boundary. More complex
+        patterns, including ordered exclusions, require npm's glob resolver.
+        Return None for the whole declaration rather than treating an ignored
+        pattern as proof that no workspace member exists.
         """
         data = container.raw_data
         value = data.get("workspaces") if isinstance(data, dict) else None
         if isinstance(value, dict):
             value = value.get("packages")
         if not isinstance(value, list):
-            return []
-        return [
-            _workspace_glob_regex(pattern.strip().strip("/"))
-            for pattern in value
-            if isinstance(pattern, str) and pattern.strip()
-        ]
+            return None
+        patterns = []
+        for pattern in value:
+            if not isinstance(pattern, str):
+                return None
+            if pattern.startswith("./"):
+                pattern = pattern[1:]
+            pattern = pattern.strip("/")
+            if not pattern or pattern.startswith("#") or any(c in pattern for c in "![]{}()\\"):
+                return None
+            segments = pattern.split("/")
+            if any(
+                segment in {"", ".", ".."} or ("**" in segment and segment != "**")
+                for segment in segments
+            ):
+                return None
+            patterns.append(_workspace_glob_regex(pattern))
+        return patterns
 
     @staticmethod
     def _is_private_root_container(

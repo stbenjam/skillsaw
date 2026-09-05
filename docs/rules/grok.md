@@ -15,7 +15,7 @@ Project rules enable automatically when a `.grok/` directory is present; plugin 
 | [`grok-config-project-scope`](grok-config-project-scope.md) | .grok/config.toml must only carry settings a project file contributes | warning (auto) | - |
 | [`grok-config-valid`](grok-config-valid.md) | .grok/config.toml must parse, and its servers and permissions must load | error (auto) | - |
 | [`grok-hooks-valid`](grok-hooks-valid.md) | .grok/hooks/*.json must use Grok's hook events, handler types and fields | error (auto) | - |
-| [`grok-marketplace-index-parity`](grok-marketplace-index-parity.md) | .grok-plugin/plugin-index.json must agree with the catalog beside it | warning (auto) | - |
+| [`grok-marketplace-index-parity`](grok-marketplace-index-parity.md) | plugin-index.json must agree with its marketplace catalog | warning (auto) | - |
 | [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md) | .grok-plugin/marketplace.json must be valid JSON with installable entries | error (auto) | - |
 | [`grok-plugin-json-valid`](grok-plugin-json-valid.md) | .grok-plugin/plugin.json must be valid JSON with a name Grok's loader accepts | error (auto) | - |
 | [`grok-plugin-structure`](grok-plugin-structure.md) | A Grok plugin directory needs a manifest or a component Grok installs | warning (auto) | - |

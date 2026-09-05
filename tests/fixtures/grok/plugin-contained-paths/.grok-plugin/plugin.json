@@ -1,0 +1,6 @@
+{
+  "name": "migration-tools",
+  "description": "Review migration plans before updating application schemas.",
+  "version": "1.0.0",
+  "skills": "nested/../skills"
+}

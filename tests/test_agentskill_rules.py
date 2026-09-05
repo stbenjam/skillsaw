@@ -2352,3 +2352,24 @@ def test_whitespace_only_fence_info_does_not_crash(temp_dir):
     (core / "frames.py").write_text("def compose():\n    pass\n")
 
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_covered_subtrees_are_not_scanned_again(temp_dir, monkeypatch):
+    from collections import Counter
+
+    repo = copy_fixture("unreferenced-covered-subtrees", temp_dir)
+    rule = AgentSkillUnreferencedFilesRule()
+    calls = Counter()
+    original = rule._dir_mentioned
+
+    def record(text, spec, directory, source):
+        calls[directory] += 1
+        return original(text, spec, directory, source)
+
+    monkeypatch.setattr(rule, "_dir_mentioned", record)
+    findings = rule.check(RepositoryContext(repo))
+    assert [v.file_path.relative_to(repo).as_posix() for v in findings] == ["docs-other/orphan.md"]
+    # The root source covers docs/; subsequent reachable sources can still
+    # lead to assets/, but repeating descendant directory searches adds no work.
+    assert calls["docs/deep"] == 1
+    assert calls["docs-other"] > 1

@@ -1,0 +1,6 @@
+{
+  "disabled-review": {
+    "Enabled": false,
+    "Stop": [{"Command": "/audit/flat", "Hooks": [{"Command": "/audit/nested"}]}]
+  }
+}

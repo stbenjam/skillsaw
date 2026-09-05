@@ -32,6 +32,7 @@ class MuseHooksValidRule(Rule):
     """Validate the structure of .muse/hooks.json"""
 
     since = "0.20.0"
+    default_enabled = False
 
     repo_types = frozenset({RepositoryType.MUSE})
 

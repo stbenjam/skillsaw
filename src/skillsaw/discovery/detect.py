@@ -107,6 +107,7 @@ class RepositoryScan:
     skills_lock_files: Tuple[Path, ...]
     promptfoo_named_files: Tuple[Path, ...]
     promptfoo_eval_files: Dict[Path, Tuple[Path, ...]]
+    walk_errors: Tuple[OSError, ...] = ()
 
 
 #: Pre-directory instruction files, read from the nearest enclosing directory
@@ -128,8 +129,9 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     skills_locks: List[Path] = []
     promptfoo_named: List[Path] = []
     promptfoo_evals: Dict[Path, List[Path]] = {}
+    walk_errors: List[OSError] = []
     root_str = str(root)
-    for dirpath, dirnames, filenames in os.walk(root_str):
+    for dirpath, dirnames, filenames in os.walk(root_str, onerror=walk_errors.append):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
         # ``os.path.basename`` rather than ``here.name``: this runs once per
@@ -179,6 +181,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
             if name in SCANNED_DIR_NAMES and not vendored:
                 tool_dirs[name].append(here / name)
     return RepositoryScan(
+        walk_errors=tuple(walk_errors),
         instruction_files=tuple(sorted(found)),
         tool_dirs={name: tuple(sorted(paths)) for name, paths in tool_dirs.items()},
         legacy_editor_files={name: tuple(sorted(paths)) for name, paths in legacy_editor.items()},

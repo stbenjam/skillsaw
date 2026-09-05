@@ -113,6 +113,11 @@ A violation in a body decoded out of a non-markdown host — a JSON hook
 prompt, a folded (`>`) YAML scalar — is reported without an automatic fix;
 apply the same rewrites by hand.
 
+A short name that itself looks fully qualified, such as
+`mcp__gateway__mcp__jira__getIssue`, is also diagnostic-only: repeated automatic
+shortening could remove part of the actual tool name. Rewrite the prose manually
+or put the full identifier in `allow` when the spelling is intentional.
+
 ## Configuration
 
 ```yaml

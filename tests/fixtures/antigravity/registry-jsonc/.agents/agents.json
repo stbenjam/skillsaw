@@ -1,0 +1,4 @@
+{
+  // Shared scheduling reviewers live outside the customization root.
+  "inherits": [{"path": "tools/shared/agent-defaults.json"}],
+}

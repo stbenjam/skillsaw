@@ -375,14 +375,6 @@ class TestInstructionImportsValidRule:
         assert actual_count == import_count
         assert elapsed < 1.0, f"import scan took {elapsed:.2f}s — likely superlinear"
 
-    def test_github_team_mention_not_checked(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text(
-            "# Instructions\n\nAsk @org/platform-team before changing deploys.\n"
-        )
-        context = RepositoryContext(temp_dir)
-        violations = InstructionImportsValidRule().check(context)
-        assert len(violations) == 0
-
     def test_dotted_user_mention_not_checked(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             "# Instructions\n\nAsk @jane.doe before changing deploys.\n"

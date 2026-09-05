@@ -13,6 +13,16 @@ Generate a `.skillsaw-baseline.json` from the current violations:
 skillsaw baseline
 ```
 
+By default, the baseline captures warnings and errors. A configured
+`fail-on: info` also includes INFO findings, so the baseline accepts the
+findings that fail that threshold. If you set the threshold only on the
+lint command line, opt in when creating or refreshing the baseline:
+
+```bash
+skillsaw baseline --include-info
+skillsaw lint --fail-on info
+```
+
 The baseline file should be committed to your repository so that all
 contributors share the same accepted set of violations.
 

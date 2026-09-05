@@ -1,0 +1,25 @@
+{
+  "description": "Model-change notices for an interactive session",
+  "hooks": {
+    "PreModelSwitch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf \"Changing the session model\\n\""
+          }
+        ]
+      }
+    ],
+    "PostModelSwitch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf \"Session model updated\\n\""
+          }
+        ]
+      }
+    ]
+  }
+}

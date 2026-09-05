@@ -151,7 +151,7 @@ class TestStartupFatal:
             ("trailing-comma", '{"mcpServers": {"t": {"command": "x",}}}', "Invalid JSON"),
             ("comment", '{"mcpServers": {} /* none yet */}', "Invalid JSON"),
             ("array-root", "[]", "must be a JSON object"),
-            ("non-finite", '{"mcpServers": {"t": {"timeout": 1e400}}}', "not valid JSON"),
+            ("non-finite", '{"mcpServers": {"t": {"timeout": Infinity}}}', "not valid JSON"),
         ],
     )
     def test_reported_at_error(self, tmp_path: Path, name: str, body: str, needle: str) -> None:
@@ -335,7 +335,7 @@ class TestSharedRuleStandsDown:
         assert any("clientSecret" in m for m in messages(run_rule(McpValidJsonRule, repo)))
 
     def test_credentials_in_a_server_level_field_are_scanned(self, tmp_path: Path) -> None:
-        """``clientSecret`` loads as a scalar on the server, not only in ``oauth``."""
+        """An ignored top-level property can still commit a credential."""
         secret = "sk-live-" + "9f2c41a8" + "b7de4c6390af"  # assembled: no literal token in the tree
         body = (
             '{"mcpServers": {"t": {"url": "https://e.example",'

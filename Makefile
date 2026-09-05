@@ -50,11 +50,15 @@ test-coverage: venv
 
 # Generate example config in a temp dir to avoid clobbering .skillsaw.yaml
 generate-example: $(VENV_EXTRAS_STAMP)
-	rm -f .skillsaw.yaml.example
-	$(eval TMPDIR := $(shell mktemp -d))
-	$(VENV)/bin/skillsaw init $(TMPDIR)
-	mv $(TMPDIR)/.skillsaw.yaml .skillsaw.yaml.example
-	rm -rf $(TMPDIR)
+	@set -eu; \
+	example_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$example_dir"' 0 HUP INT TERM; \
+	"$(VENV)/bin/skillsaw" init "$$example_dir"; \
+	if [ -d .skillsaw.yaml.example ]; then \
+		printf '%s\n' "Cannot generate example: .skillsaw.yaml.example is a directory" >&2; \
+		exit 1; \
+	fi; \
+	mv "$$example_dir/.skillsaw.yaml" .skillsaw.yaml.example
 
 generate-docs: $(VENV_EXTRAS_STAMP)
 	$(PYTHON) scripts/generate-docs.py

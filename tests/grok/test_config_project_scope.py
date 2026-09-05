@@ -2,9 +2,9 @@
 
 Grok reads one ``config.toml`` at four layers and a checkout's file is the
 narrow one: ``[mcp_servers]``, ``[permission]``, ``[plugins]`` and ``[mcp]
-max_output_bytes``, and nothing else. Everything below was measured against
-Grok Build 1.0.13 with a positive user-scope control for each refusal, so
-"nothing happened" is a refusal rather than a mis-run.
+max_output_bytes``, and nothing else. Refusals were measured against Grok Build 1.0.13 with positive user-scope
+controls. Project plugin paths follow the pinned live-session resolver;
+inspect does not expose that merge.
 
 The silence is the point. ``configWarnings`` is a user-layer diagnostic, so
 no observable Grok offers mentions an ignored table, an ignored key, or a
@@ -127,10 +127,6 @@ def broken(tmp_path):
             "project hooks live in .grok/hooks/*.json",
         ),
         (
-            "packages/pilotage/.grok/config.toml",
-            "[plugins] 'paths' is ignored in a project config.toml",
-        ),
-        (
             "packages/reefer/.grok/config.toml",
             "[mcp_servers.reefer] sets 'transport', which Grok ignores; the field is 'type'",
         ),
@@ -149,7 +145,7 @@ def test_the_broken_fixture_reports_nothing_else(broken) -> None:
     """The count is a noise gate: a new check must land in this fixture."""
     _, violations = broken
 
-    assert len(violations) == 7, messages(violations)
+    assert len(violations) == 6, messages(violations)
 
 
 # ── Ignored top-level tables and scalars ─────────────────────────
@@ -244,12 +240,23 @@ def test_every_hint_belongs_to_a_measured_refusal() -> None:
 # ── Keys inside an honored table ────────────────────────────────
 
 
-def test_the_one_measured_refusal_inside_an_honored_table(tmp_path) -> None:
-    """Three independent runs ignored a project ``paths``, relative or
-    absolute, in a git repository or not."""
-    repo = scope(tmp_path, '[plugins]\npaths = ["./.grok/plugins/pilot-charts"]\n')
-
-    assert messages(check(repo)) == ["[plugins] 'paths' is ignored in a project config.toml"]
+def test_trusted_project_plugin_paths_are_supported(tmp_path) -> None:
+    """The live session resolver merges these, unlike the inspect consumer."""
+    repo = copy_fixture("grok/config-project-plugins", tmp_path)
+    blocks = RepositoryContext(repo).lint_tree.find(GrokConfigBlock)
+    assert len(blocks) == 1
+    assert blocks[0].raw_data["plugins"]["paths"] == ["./plugins/soleur"]
+    assert [server.name for server in blocks[0].servers] == ["canary"]
+    assert check(repo) == []
+    report = lint_json(
+        repo,
+        "--rule",
+        "grok-config-project-scope",
+        "--no-custom-rules",
+        "--no-plugins",
+        "--no-baseline",
+    )
+    assert violations_for(report, "grok-config-project-scope") == []
 
 
 @pytest.mark.parametrize(
@@ -264,13 +271,6 @@ def test_an_unmeasured_key_inside_an_honored_table_is_not_reported(tmp_path, bod
     ``extra-tables`` reaches top-level names only — so a Grok release adding
     a key would leave a working config carrying a finding it cannot answer."""
     assert check(scope(tmp_path, body)) == []
-
-
-def test_a_refused_key_is_measured_and_carries_no_others() -> None:
-    """The mapping is a refusal list, so a name landing in it has a run
-    behind it."""
-    assert grok.PROJECT_CONFIG_KEYS_REFUSED == {"plugins": frozenset({"paths"})}
-    assert set(grok.PROJECT_CONFIG_KEYS_REFUSED) <= grok.PROJECT_CONFIG_TABLES
 
 
 # ── Spellings that load nothing ──────────────────────────────────
@@ -442,5 +442,5 @@ def test_a_configured_severity_moves_every_finding(tmp_path) -> None:
 
     found = violations_for(lint_json(repo, returncode=1), "grok-config-project-scope")
 
-    assert len(found) == 7
+    assert len(found) == 6
     assert {v["severity"] for v in found} == {"info"}

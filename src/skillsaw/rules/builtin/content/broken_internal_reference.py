@@ -78,8 +78,16 @@ class ContentBrokenInternalReferenceRule(Rule):
                     continue
                 if _URI_SCHEME.match(target):
                     continue
-                # Strip anchor from path (e.g., "file.md#section")
-                target_path = target.split("#")[0]
+                # URI queries and fragments are not filesystem path text.
+                # Retain exact existing filenames containing '?' on hosts
+                # that permit them, just like the literal %XX fallback below.
+                with_query = target.split("#", 1)[0]
+                target_path = with_query.split("?", 1)[0]
+                if target_path != with_query and (
+                    self._exists_in_repo(root, link_dir, with_query)
+                    or self._exists_in_repo(root, link_dir, unquote(with_query))
+                ):
+                    continue
                 if not target_path:
                     continue
                 # Decode percent-escapes (%20 etc.) for the filesystem
@@ -125,14 +133,19 @@ class ContentBrokenInternalReferenceRule(Rule):
                         msg += f" (did you mean '{suggestion}'?)"
                     elif not link.has_dest_span:
                         msg += " (reference-style link — fix the definition manually)"
-                    # fix() only rewrites links that have a fuzzy-match
-                    # suggestion and an inline destination span.
+                    # Keep fix inputs separate from the human message.
+                    fix_data = (
+                        {"target": target, "suggestion": suggestion}
+                        if suggestion is not None and link.has_dest_span
+                        else None
+                    )
                     violations.append(
                         self.violation(
                             msg,
                             block=cf,
                             line=link.body_line,
-                            fixable=suggestion is not None and link.has_dest_span,
+                            fixable=fix_data is not None,
+                            fix_data=fix_data,
                         )
                     )
         return violations
@@ -235,10 +248,12 @@ class ContentBrokenInternalReferenceRule(Rule):
     ) -> List[AutofixResult]:
         fixes_by_file: Dict[Path, List[tuple]] = defaultdict(list)
         for v in violations:
-            if not v.file_path or "did you mean" not in v.message:
+            if not v.file_path or not v.fix_data:
                 continue
-            suggestion = v.message.split("did you mean '")[1].rstrip("'?)")
-            old_target = v.message.split("](")[1].split(")")[0]
+            old_target = v.fix_data.get("target")
+            suggestion = v.fix_data.get("suggestion")
+            if not isinstance(old_target, str) or not isinstance(suggestion, str):
+                continue
             fixes_by_file[v.file_path].append((old_target, suggestion, v))
 
         results: List[AutofixResult] = []
@@ -253,8 +268,10 @@ class ContentBrokenInternalReferenceRule(Rule):
             for old_target, suggestion, v in replacements:
                 if v.block is None or v.file_line is None:
                     continue
-                # Preserve any anchor from the original target.
-                anchor = "#" + old_target.split("#", 1)[1] if "#" in old_target else ""
+                # Preserve the exact query and fragment, including empty
+                # delimiters, while replacing only the URI path.
+                old_path = old_target.split("#", 1)[0].split("?", 1)[0]
+                suffix = old_target[len(old_path) :]
                 doc = v.block.markdown
                 for link in doc.links():
                     if (
@@ -283,7 +300,7 @@ class ContentBrokenInternalReferenceRule(Rule):
                     # silently destroyed. Paths without special characters
                     # pass through unchanged.
                     dest = quote(suggestion, safe="/")
-                    edits.append((link.dest_file_line, span[0], span[1], dest + anchor))
+                    edits.append((link.dest_file_line, span[0], span[1], dest + suffix))
                     violations_fixed.append(v)
                     break
             fixed = splice(content, edits)

@@ -12,10 +12,10 @@ from typing import Any, Dict, List, Optional, Set
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import grok
+from skillsaw.formats.grok_manifest import manifest_type_errors, read_manifest_json
 from skillsaw.lint_target import GrokPluginConfigNode
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import strict_json
 
 from ._helpers import GROK_PLUGIN_REPO_TYPES, escape_reason, is_semver
 
@@ -80,7 +80,7 @@ class GrokPluginJsonValidRule(Rule):
                 # skills/, agents/, hooks/hooks.json or .mcp.json installs
                 # without one. What that costs is grok-plugin-structure's.
                 continue
-            data, error = strict_json(manifest)
+            data, error = read_manifest_json(manifest)
             if error:
                 violations.append(self.violation(f"Invalid JSON: {error}", file_path=manifest))
                 continue
@@ -91,6 +91,14 @@ class GrokPluginJsonValidRule(Rule):
                 continue
 
             violations.extend(self._check_name(data, manifest))
+            type_errors = manifest_type_errors(data)
+            if type_errors:
+                violations.extend(
+                    self.violation(message, file_path=manifest) for message in type_errors
+                )
+                # A typed-member error rejects the whole manifest; path-loss
+                # and metadata advice would describe a plugin that cannot load.
+                continue
             violations.extend(
                 self._check_components(
                     data, manifest, node.plugin_dir, check_paths_exist, check_overrides
@@ -166,17 +174,10 @@ class GrokPluginJsonValidRule(Rule):
             want_dir = grok.COMPONENT_PATHS[field][1]
             resolved: List[Path] = []
             for raw in declared:
-                if not raw:
-                    violations.append(
-                        self.violation(
-                            f"'{field}' declares an empty path",
-                            file_path=manifest,
-                            severity=Severity.WARNING,
-                        )
-                    )
-                    continue
-                reason = escape_reason(raw, root, "plugin root")
-                if reason:
+                target = plugin_dir / raw
+                contained = contained_resolve(target, root)
+                if contained is None:
+                    reason = escape_reason(raw, root, "plugin root")
                     violations.append(
                         self.violation(
                             f"'{field}': '{safe_display(raw)}' {reason}",
@@ -185,7 +186,6 @@ class GrokPluginJsonValidRule(Rule):
                         )
                     )
                     continue
-                target = plugin_dir / raw
                 if not safe_exists(target):
                     if check_paths_exist:
                         violations.append(
@@ -210,9 +210,7 @@ class GrokPluginJsonValidRule(Rule):
                         )
                     )
                     continue
-                contained = contained_resolve(target, root)
-                if contained is not None:
-                    resolved.append(contained)
+                resolved.append(contained)
 
             if check_overrides:
                 violations.extend(
@@ -227,9 +225,9 @@ class GrokPluginJsonValidRule(Rule):
         """The paths *value* declares, or ``None`` when it is the inline form.
 
         A bare string is as valid as an array — Grok's field is an untagged
-        ``PathOrPaths`` — so neither is a finding. A non-string element is
-        left alone: nothing measured says what the loader does with one, and
-        guessing would report a defect that may not exist.
+        ``PathOrPaths`` — so neither is a finding. Directory fields have
+        already passed typed validation; inline fields may hold any JSON
+        value and are interpreted by their component's own consumer.
         """
         if isinstance(value, str):
             return [value]

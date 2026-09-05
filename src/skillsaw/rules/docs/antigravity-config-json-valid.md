@@ -3,13 +3,15 @@
 A customization root can carry registry files — `agents.json`,
 `plugins.json`, `skills.json`, `workflows.json` — that name *where else* to
 load that kind of customization from. They hold no customizations
-themselves:
+themselves. These files accept JSONC: line and block comments and trailing
+commas. Registry discovery and this opt-in validator use the same syntax:
 
 ```json
 { "entries": [{ "path": "internal/schedule/agents" }] }
 ```
 
-Measured against `agy` 1.1.25: a registry whose root is not an object logs
+Measured against `agy` 1.1.25 and 1.1.26: a registry whose root is neither
+an object nor `null` logs
 one `Failed to load JSON config file` line and is skipped, and `agy` exits
 0. Nothing else reports it, so a mistyped registry looks exactly like a
 project that has none — the agents or skills it was meant to add are simply
@@ -32,13 +34,18 @@ rules:
 
 **Errors** — the registry is skipped and loads nothing:
 
-- Invalid JSON, or a non-finite number (`NaN`, `Infinity`, `-Infinity`).
+- Invalid JSONC, including single-quoted strings or unquoted keys, or a
+  non-finite number (`NaN`, `Infinity`, `-Infinity`).
 - A UTF-8 byte-order mark (BOM). Remove it; the loader does not strip it.
-- A root that is not a JSON object.
-- Non-null `entries` that is not an array.
-- An `entries` element that is not an object, or that has no string `path`.
-  One finding names the first few positions rather than one per entry: a
-  registry written to the wrong shape is wrong in every entry.
+- A non-null root that is not a JSON object.
+- Non-null `entries` or `inherits` that is not an array.
+- A non-null element of either array that is not an object, or a non-null
+  `path` that is not a string.
+- Non-null `include_only` or `exclude` that is not a string array, or a
+  non-null array element that is not a string.
+
+One finding groups field type errors and names the first few positions.
+A type error remains fatal even if a later duplicate replaces the field.
 
 ## What is not reported
 
@@ -52,15 +59,22 @@ rules:
   independently of this rule, which is opt-in. `include_only` and `exclude`
   are ignored when deciding what to lint: skillsaw reports what a
   repository ships, not what it currently loads.
-- **`include_only` and `exclude` shapes.** Neither was reachable offline.
 - **Unknown keys.** Antigravity reads these files with a tolerant JSON
   decoder that discards them.
-- **A repeated key.** The same decoder takes the last value: an `entries`
-  key or a `path` written twice loads the second one's directory.
-- **`entries: null`.** It declares no entries and is accepted.
-- **An empty string `path`.** This rule checks its type, not whether it
-  names a directory. A missing or null `path` is reported because it is
-  not a string.
+- **Field casing.** Known fields match case-insensitively: `Entries`,
+  `Inherits`, `Path`, `Include_Only` and `EXCLUDE` are accepted. Underscores
+  remain significant; `IncludeOnly` is an ignored unknown field.
+- **Repeated fields.** Later path strings replace earlier strings; `null`
+  retains a prior string. Repeated nonempty `entries` / `inherits` arrays
+  reuse corresponding path-entry fields, including after shortening and
+  regrowing the array. An empty array or `null` resets those entries.
+  Discovery follows the resulting paths, using this same decoded view.
+- **Null defaults.** A `null` root, null arrays, null entries and missing
+  or null paths are accepted. An entry without a path contributes nothing;
+  valid siblings still load. Null filter elements are accepted too.
+- **An empty string `path`.** It contributes no directory.
+- **A large finite JSON number in an unknown field.** The loader ignores
+  that field; the lexical tokens `NaN` and `Infinity` remain invalid.
 
 ## Examples
 

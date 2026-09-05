@@ -57,11 +57,22 @@ class GrokAgentValidRule(Rule):
                 )
                 continue
             for key in REQUIRED_FIELDS:
-                if block.field(key) is None:
+                field = block.field(key)
+                if field is None:
                     violations.append(
                         self.violation(
                             f"Agent {name} is missing '{key}'",
                             block=block,
+                        )
+                    )
+                elif isinstance(field.value, (dict, list, set)):
+                    # Serde accepts YAML scalars (including null, booleans and
+                    # numbers) as strings here, but rejects collections.
+                    violations.append(
+                        self.violation(
+                            f"Agent {name} '{key}' must be a scalar value, not a collection",
+                            block=block,
+                            line=field.field_line,
                         )
                     )
 

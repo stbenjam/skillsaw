@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, FrozenSet, List
+from typing import Any, FrozenSet, List, Optional, Tuple
 
-from skillsaw.blocks import json_token
+from skillsaw.blocks.antigravity_mcp import field_occurrences
 from skillsaw.blocks.json_config import AntigravityMcpBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
@@ -21,9 +21,9 @@ _SERVER_DROPPED = "Antigravity drops the server silently and loads the rest of t
 class AntigravityMcpValidRule(Rule):
     """Validate an Antigravity ``mcp_config.json``.
 
-    Two failure scopes, both measured against ``agy`` 1.1.25:
+    Two failure scopes, both measured against ``agy`` 1.1.26:
 
-    * A JSON syntax error or a root that is not an object is
+    * A JSON syntax error, or a non-null root/wrapper that is not an object, is
       **startup-fatal** — ``agy`` exits 1 with one message naming the file,
       and no session starts. That is the ERROR half.
     * A per-server shape problem drops **that server only, silently**.
@@ -115,17 +115,6 @@ class AntigravityMcpValidRule(Rule):
                     fingerprint_discriminator="parse-error",
                 )
             ]
-        found = block.first_non_finite()
-        if found is not None:
-            path, value = found
-            return [
-                self.violation(
-                    f"'{json_token(value)}' at {safe_display(path)} is not valid JSON; "
-                    "Antigravity exits 1 and no session starts",
-                    file_path=block.path,
-                    fingerprint_discriminator="non-finite",
-                )
-            ]
         data = block.raw_data
         if not isinstance(data, dict):
             return [
@@ -138,6 +127,15 @@ class AntigravityMcpValidRule(Rule):
             ]
 
         servers = data.get(block.servers_key)
+        if servers is not None and not isinstance(servers, dict):
+            return [
+                self.violation(
+                    "'mcpServers' must be a JSON object or null; Antigravity exits 1 "
+                    "at startup and no session starts",
+                    file_path=block.path,
+                    fingerprint_discriminator="mcpservers-not-object",
+                )
+            ]
         if not isinstance(servers, dict):
             # A bare server map — the shape several other hosts accept — is
             # not an error here. ``agy`` reads no wrapper, finds no servers,
@@ -147,7 +145,7 @@ class AntigravityMcpValidRule(Rule):
                     f"no '{block.servers_key}' object, so Antigravity loads no server "
                     "from this file",
                     file_path=block.path,
-                    severity=Severity.WARNING,
+                    severity=self.scope_severity(Severity.WARNING),
                     fingerprint_discriminator="no-mcpservers",
                 )
             ]
@@ -167,7 +165,7 @@ class AntigravityMcpValidRule(Rule):
         return self.violation(
             f"MCP server '{name}': {problem}; Antigravity loads the server and it starts nothing",
             file_path=block.path,
-            severity=Severity.WARNING,
+            severity=self.scope_severity(Severity.WARNING),
             fingerprint_discriminator=f"{name}:{problem}",
         )
 
@@ -175,7 +173,7 @@ class AntigravityMcpValidRule(Rule):
         return self.violation(
             f"MCP server '{name}': {problem}; {_SERVER_DROPPED}",
             file_path=block.path,
-            severity=Severity.WARNING,
+            severity=self.scope_severity(Severity.WARNING),
             fingerprint_discriminator=f"{name}:{problem}",
         )
 
@@ -187,59 +185,14 @@ class AntigravityMcpValidRule(Rule):
             return [self._dropped(block, shown, "a server must be a JSON object")]
 
         violations: List[RuleViolation] = []
-        # ``None`` members are not defects: Go decodes a JSON ``null`` as the
-        # zero value, so a null ``env`` value and a null ``args`` element are
-        # the empty string to the host and the server loads with them
-        # (measured). Any other non-string member still drops it.
-        env = server.get("env")
-        if env is not None:
-            if not isinstance(env, dict):
-                violations.append(self._dropped(block, shown, "'env' must be an object"))
-            elif not all(value is None or isinstance(value, str) for value in env.values()):
-                violations.append(self._dropped(block, shown, "every 'env' value must be a string"))
+        seen = set()
+        for spelling, value in field_occurrences(server):
+            key = antigravity.mcp_field_name(spelling)
+            problem = self._field_problem(key, spelling, value, accepted)
+            if problem is not None and (key, problem[0]) not in seen:
+                seen.add((key, problem[0]))
+                violations.append(self._dropped(block, shown, problem[1]))
 
-        args = server.get("args")
-        if args is not None:
-            if not isinstance(args, list):
-                violations.append(self._dropped(block, shown, "'args' must be an array"))
-            elif not all(arg is None or isinstance(arg, str) for arg in args):
-                violations.append(
-                    self._dropped(block, shown, "every 'args' element must be a string")
-                )
-
-        # ``is not None`` rather than ``in``: Go decodes ``null`` as the
-        # zero value, so a null field reads as absent and the server loads.
-        # Measured with ``agy mcp list``, one clean sibling per run: a
-        # non-string ``command``, ``url``, ``serverUrl`` or ``cwd`` drops
-        # that server while the sibling stays. ``type`` is the exception —
-        # a non-string there is tolerated and the server loads — so it is
-        # not checked; see the rule doc.
-        for field in antigravity.MCP_STRING_FIELDS:
-            if server.get(field) is not None and not isinstance(server[field], str):
-                violations.append(self._dropped(block, shown, f"'{field}' must be a string"))
-
-        disabled_tools = server.get("disabledTools")
-        if disabled_tools is not None and not (
-            isinstance(disabled_tools, list)
-            and all(tool is None or isinstance(tool, str) for tool in disabled_tools)
-        ):
-            violations.append(
-                self._dropped(block, shown, "'disabledTools' must be an array of strings")
-            )
-
-        auth = server.get("authProviderType")
-        # ``isinstance`` first: an array or an object is unhashable, and
-        # testing set membership on one raises rather than reporting the
-        # server ``agy`` drops for exactly that reason.
-        if auth is not None and (not isinstance(auth, str) or auth not in accepted):
-            rendered = ", ".join(f"'{safe_display(value)}'" for value in sorted(accepted))
-            violations.append(
-                self._dropped(
-                    block,
-                    shown,
-                    f"'authProviderType' must be {rendered}",
-                )
-            )
         if (
             not violations
             and server.get("command") == ""
@@ -248,3 +201,47 @@ class AntigravityMcpValidRule(Rule):
         ):
             violations.append(self._inert(block, shown, "'command' is empty"))
         return violations
+
+    def _field_problem(
+        self, key: str, spelling: str, value: Any, accepted: FrozenSet[str]
+    ) -> Optional[Tuple[str, str]]:
+        """Validate each occurrence before a later duplicate can erase its error."""
+        if value is None:
+            return None
+        shown = safe_display(spelling)
+        if key in ("env", "headers", "oauth"):
+            if not isinstance(value, dict):
+                return f"{key}-not-object", f"'{shown}' must be an object"
+            if key == "oauth":
+                for member, item in field_occurrences(value):
+                    if (
+                        antigravity.mcp_field_name(member, oauth=True)
+                        in antigravity.MCP_CREDENTIAL_FIELDS
+                        and item is not None
+                        and not isinstance(item, str)
+                    ):
+                        return "oauth-value-type", (
+                            f"'{shown}.{safe_display(member)}' must be a string or null"
+                        )
+            elif any(v is not None and not isinstance(v, str) for _, v in field_occurrences(value)):
+                return f"{key}-value-type", f"every '{shown}' value must be a string"
+        elif key in ("args", "disabledTools"):
+            if key == "args" and not isinstance(value, list):
+                return "args-not-array", f"'{shown}' must be an array"
+            if not isinstance(value, list) or any(
+                v is not None and not isinstance(v, str) for v in value
+            ):
+                if key == "args":
+                    return "args-element-type", f"every '{shown}' element must be a string"
+                return (
+                    "disabled-tools-type",
+                    f"'{shown}' must be an array of strings",
+                )
+        elif key in antigravity.MCP_STRING_FIELDS and not isinstance(value, str):
+            return f"{key}-type", f"'{shown}' must be a string"
+        elif key == "disabled" and not isinstance(value, bool):
+            return "disabled-type", f"'{shown}' must be a boolean or null"
+        elif key == "authProviderType" and (not isinstance(value, str) or value not in accepted):
+            allowed = ", ".join(f"'{safe_display(v)}'" for v in sorted(accepted))
+            return "auth-provider", f"'{shown}' must be {allowed}"
+        return None

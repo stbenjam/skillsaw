@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "local-dep": {
+      "source": "../../skills/local-dep",
+      "sourceType": "local",
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  }
+}
