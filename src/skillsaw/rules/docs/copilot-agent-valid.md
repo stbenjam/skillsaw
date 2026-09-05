@@ -74,6 +74,7 @@ model: [Claude Sonnet 4.5, GPT-5.2]
 handoffs:
   - label: Start Implementation
     agent: Implementer
+    prompt: Implement the approved plan.
     send: false
     model: GPT-5.2 (copilot)
 ---
@@ -89,8 +90,9 @@ Create a detailed implementation plan.
   when a non-empty `agents` list is paired with an explicit tools restriction.
 - Replace quoted booleans with `true` or `false`; replace retired `infer` with
   `user-invocable` and `disable-model-invocation`.
-- Keep handoff `label`, `agent`, optional `prompt`, and optional qualified
-  `model` values as non-empty strings; keep `send` as a boolean.
+- Keep handoff `label`, `agent`, and optional qualified `model` values as
+  non-empty strings. Include `prompt`, which may be empty for a handoff that
+  only changes agents; keep `send` as a boolean.
 - Move a field to the environment that consumes it, or remove the explicit
   target when the file is intentionally shared.
 

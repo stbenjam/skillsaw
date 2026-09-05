@@ -232,6 +232,17 @@ def test_collection_items_and_handoffs_report_their_own_lines(tmp_path):
     assert lines["'handoffs[0].model' must be qualified as 'Model Name (vendor)'"] == 13
 
 
+@pytest.mark.parametrize("prompt", ["''", "'Continue reviewing'", "' '"])
+def test_handoff_prompt_accepts_empty_and_populated_strings(tmp_path, prompt):
+    _write_agent(
+        tmp_path,
+        "description: Offers a review handoff\ntarget: vscode\n"
+        "handoffs:\n  - label: Continue\n    agent: agent\n"
+        f"    prompt: {prompt}\n    send: false",
+    )
+    assert _check(tmp_path) == []
+
+
 @pytest.mark.parametrize(
     "alias",
     ["agent", "custom-agent", "Task", "runSubagent", "agent/runSubagent", "agent/customTool"],

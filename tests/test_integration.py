@@ -1971,6 +1971,39 @@ class TestCopilotAgentValidation:
             )
         ]
 
+    def test_handoff_prompts_require_presence_and_accept_empty_text(self, tmp_path):
+        from skillsaw.blocks import CopilotAgentBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("copilot-handoff-prompts", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(CopilotAgentBlock)
+        assert {block.path.name for block in blocks} == {
+            "empty.agent.md",
+            "missing.agent.md",
+            "mapping.agent.md",
+            "array.agent.md",
+            "cloud.agent.md",
+        }
+        result = run_lint(
+            repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert result["rc"] == 1, result
+        assert result["out"] is not None
+        assert sorted(
+            (Path(v["file_path"]).name, v["line"], v["severity"], v["message"])
+            for v in result["out"]["violations"]
+        ) == [
+            ("array.agent.md", 7, "error", "'handoffs[0].prompt' must be a string"),
+            ("cloud.agent.md", 4, "warning", "'handoffs' is ignored by GitHub Copilot cloud"),
+            ("mapping.agent.md", 7, "error", "'handoffs[0].prompt' must be a string"),
+            (
+                "missing.agent.md",
+                5,
+                "error",
+                "'handoffs[0]' requires a 'prompt' string (which may be empty)",
+            ),
+        ]
+
     def test_official_style_examples_and_legacy_chatmode_are_clean(self, tmp_path):
         repo = copy_fixture("copilot-agents-clean", tmp_path)
 

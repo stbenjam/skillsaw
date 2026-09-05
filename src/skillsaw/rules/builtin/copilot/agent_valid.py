@@ -515,7 +515,7 @@ class CopilotAgentValidRule(Rule):
     def _check_handoffs(
         self, block: CopilotAgentBlock, data: dict, violations: List[RuleViolation]
     ) -> bool:
-        if "handoffs" not in data:
+        if "handoffs" not in data or not block.supports_vscode:
             return True
         handoffs = data["handoffs"]
         if not isinstance(handoffs, list):
@@ -563,17 +563,38 @@ class CopilotAgentValidRule(Rule):
                         )
                     )
                     valid = False
-            for key in ("prompt", "model"):
-                if key in handoff and not _nonempty_string(handoff[key]):
-                    violations.append(
-                        self._finding(
-                            block,
-                            f"'handoffs[{index}].{key}' must be a non-empty string",
-                            line=_key_line(handoff, key) or item_line,
-                            discriminator=f"handoffs:{index}:{key}:type",
-                        )
+            # The released handoff getter requires presence, but permits
+            # an empty prefill when the button only changes agents.
+            if "prompt" not in handoff:
+                violations.append(
+                    self._finding(
+                        block,
+                        f"'handoffs[{index}]' requires a 'prompt' string (which may be empty)",
+                        line=item_line,
+                        discriminator=f"handoffs:{index}:prompt:missing",
                     )
-                    valid = False
+                )
+                valid = False
+            elif not isinstance(handoff["prompt"], str):
+                violations.append(
+                    self._finding(
+                        block,
+                        f"'handoffs[{index}].prompt' must be a string",
+                        line=_key_line(handoff, "prompt") or item_line,
+                        discriminator=f"handoffs:{index}:prompt:type",
+                    )
+                )
+                valid = False
+            if "model" in handoff and not _nonempty_string(handoff["model"]):
+                violations.append(
+                    self._finding(
+                        block,
+                        f"'handoffs[{index}].model' must be a non-empty string",
+                        line=_key_line(handoff, "model") or item_line,
+                        discriminator=f"handoffs:{index}:model:type",
+                    )
+                )
+                valid = False
             if (
                 "model" in handoff
                 and _nonempty_string(handoff["model"])
