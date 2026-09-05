@@ -14,6 +14,9 @@ Claude Code hooks.json must be valid JSON with proper hook configuration structu
 | **Since** | v0.1.0 |
 | **Category** | [Hooks](hooks.md) |
 
+Claude Code model-change hooks `PreModelSwitch` and `PostModelSwitch` are
+recognized alongside the existing events (available since Claude Code 2.1.251).
+
 ## Why
 
 A Claude Code `hooks.json` configures commands that run automatically on

@@ -349,6 +349,30 @@ class TestHooksJson:
         assert r["rc"] == 0
         assert "claude-hooks-valid" not in rule_ids(r)
 
+    @pytest.mark.parametrize("rule_id", ["claude-hooks-valid", "hooks-json-valid"])
+    def test_model_switch_events_are_accepted(self, tmp_path, rule_id):
+        # Claude 2.1.261 plugin validation accepts both events; its 2.1.251
+        # changelog introduced them. The fixture contains inert commands.
+        repo = copy_fixture("hooks-model-switch", tmp_path)
+        result = run_lint(repo, "--rule", rule_id)
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+        assert "claude-hooks-valid" in result["out"]["stats"]["rules_run"]
+
+    def test_unknown_model_switch_event_remains_a_diagnostic(self, tmp_path):
+        repo = copy_fixture("hooks-model-switch", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["NotAClaudeEvent"] = data["hooks"].pop("PreModelSwitch")
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["rule_id"] == "claude-hooks-valid"
+        assert found[0]["file_path"] == "hooks/hooks.json"
+        assert "Unknown event type 'NotAClaudeEvent'" in found[0]["message"]
+
 
 # ── Supply Chain Hooks ──────────────────────────────────────────
 

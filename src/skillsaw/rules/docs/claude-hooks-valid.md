@@ -1,3 +1,6 @@
+Claude Code model-change hooks `PreModelSwitch` and `PostModelSwitch` are
+recognized alongside the existing events (available since Claude Code 2.1.251).
+
 ## Why
 
 A Claude Code `hooks.json` configures commands that run automatically on

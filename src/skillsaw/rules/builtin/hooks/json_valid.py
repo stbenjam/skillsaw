@@ -51,6 +51,8 @@ _VALID_HOOK_EVENTS = {
     "WorktreeRemove",
     "PreCompact",
     "PostCompact",
+    "PreModelSwitch",
+    "PostModelSwitch",
     "Elicitation",
     "ElicitationResult",
     "SessionEnd",

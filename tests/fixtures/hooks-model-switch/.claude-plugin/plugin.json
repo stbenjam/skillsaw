@@ -1,0 +1,8 @@
+{
+  "name": "model-switch-notices",
+  "description": "Show a notice when a session changes models",
+  "version": "1.0.0",
+  "author": {
+    "name": "Platform Team"
+  }
+}
