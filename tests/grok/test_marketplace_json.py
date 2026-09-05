@@ -465,16 +465,12 @@ def test_a_non_finite_number_is_invalid_json(temp_dir) -> None:
     assert at(check(repo), Severity.ERROR) == ["Invalid JSON: non-finite JSON number: NaN"]
 
 
-def test_a_sha_with_a_trailing_newline_is_an_error(temp_dir) -> None:
-    """``$`` matches before a final newline and ``\\A``/``\\Z`` do not; the
-    installer refuses the value either way."""
+def test_a_sha_with_a_trailing_newline_is_trimmed_for_install(temp_dir) -> None:
+    """The released install decoder trims the SHA before validating it."""
     repo = catalog_repo(
         temp_dir, "trailing-newline", {"plugins": [url_entry("almanac", sha=SHA_A + "\n")]}
     )
-
-    assert any(
-        "is not a 40 or 64 character" in message for message in at(check(repo), Severity.ERROR)
-    )
+    assert check(repo) == []
 
 
 def test_a_local_source_symlinked_out_of_the_marketplace_is_an_error(temp_dir) -> None:

@@ -13,6 +13,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import grok
 from skillsaw.formats.grok_catalog import catalog_type_errors, read_catalog_json
+from skillsaw.formats.grok_install import effective_install_pin
 from skillsaw.lint_target import GrokMarketplaceConfigNode
 from skillsaw.paths import (
     contained_resolve,
@@ -37,8 +38,8 @@ class GrokMarketplaceJsonValidRule(Rule):
             "type": "bool",
             "default": True,
             "description": (
-                "Report a url source with no 'sha', which Grok installs with an "
-                "unpinned git clone"
+                "Report a url source with no full commit pin in 'sha' or 'ref', "
+                "which Grok installs with an unpinned git clone"
             ),
         },
     }
@@ -247,7 +248,7 @@ class GrokMarketplaceJsonValidRule(Rule):
         return [], target
 
     def _check_url(self, source: Dict[str, Any], index: int, catalog: Path) -> List[RuleViolation]:
-        """A url source is cloned at install; the ``sha`` is what pins it."""
+        """Check the effective install pin without changing display-index SHA semantics."""
         violations: List[RuleViolation] = []
         url = source.get("url")
         if not isinstance(url, str) or not url:
@@ -259,27 +260,20 @@ class GrokMarketplaceJsonValidRule(Rule):
                     file_path=catalog,
                 )
             ]
-        sha = source.get("sha")
+        pin_field, sha = effective_install_pin(source.get("ref"), source.get("sha"))
         if sha is None:
             if self.setting("require-sha"):
                 violations.append(
                     self.violation(
-                        f"plugins[{index}].source has no 'sha'",
+                        f"plugins[{index}].source has no 'sha' or full-commit 'ref' pin",
                         file_path=catalog,
                     )
                 )
-        elif not isinstance(sha, str):
-            violations.append(
-                self.violation(
-                    f"plugins[{index}].source.sha must be a string, got '{safe_display(sha)}'",
-                    file_path=catalog,
-                )
-            )
         elif not grok.SHA_RE.fullmatch(sha):
             lengths = " or ".join(str(length) for length in sorted(grok.SHA_LENGTHS))
             violations.append(
                 self.violation(
-                    f"plugins[{index}].source.sha '{safe_display(sha)}' is not a "
+                    f"plugins[{index}].source.{pin_field} '{safe_display(sha)}' is not a "
                     f"{lengths} character hex commit id",
                     file_path=catalog,
                 )
@@ -290,7 +284,7 @@ class GrokMarketplaceJsonValidRule(Rule):
             # xai-org/plugin-marketplace refuses it.
             violations.append(
                 self.violation(
-                    f"plugins[{index}].source.sha '{safe_display(sha)}' is not "
+                    f"plugins[{index}].source.{pin_field} '{safe_display(sha)}' is not "
                     f"{grok.UPSTREAM_SHA_LENGTH} lowercase hex characters, which the "
                     "upstream marketplace validator requires",
                     file_path=catalog,

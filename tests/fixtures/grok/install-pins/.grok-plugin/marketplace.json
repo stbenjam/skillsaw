@@ -1,0 +1,24 @@
+{
+  "name": "data-platform-pins",
+  "description": "Pinned review tools used by the data platform team.",
+  "plugins": [
+    {
+      "name": "remote-review",
+      "source": {
+        "url": "https://example.invalid/remote-review.git",
+        "ref": "1f9d0c73a86b24e5107cad3f88b90250e6c147da"
+      }
+    },
+    {
+      "name": "schema-tools",
+      "source": {
+        "url": "https://example.invalid/schema-tools.git",
+        "sha": " \t1f9d0c73a86b24e5107cad3f88b90250e6c147da\n"
+      }
+    },
+    {
+      "name": "local-canary",
+      "source": "./packages/local-canary"
+    }
+  ]
+}

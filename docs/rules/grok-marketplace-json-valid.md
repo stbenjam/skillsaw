@@ -27,8 +27,8 @@ policy for remote commit pins:
   directories to be missed.
 - For individual entries, specifying valid `name`, `source`, and directory
   paths ensures each plugin is registered properly in the catalog.
-- For remote Git sources, pinning entries with a commit `sha` ensures reproducible,
-  secure installations for everyone using your marketplace.
+- For remote Git sources, pinning entries with a full commit in `sha` or
+  `ref` supports reproducible installations.
 
 This rule validates `.grok-plugin/marketplace.json`. Catalogs targeting Claude
 Code (`.claude-plugin/marketplace.json`) are checked separately by
@@ -57,9 +57,12 @@ Findings distinguish between structural errors and upstream recommendations:
   The root spellings `.` and `./`, trailing or repeated separators, and
   colon-containing components are not valid catalog paths.
 - A source object's non-null `type`, `source`, `url`, `path`, `ref`, or `sha` that is not a string.
-- Remote Git source missing a commit `sha`, when the rule's `require-sha` policy is enabled.
-- Remote Git source with an invalid `sha` (must be a 40- or 64-character hex
-  string).
+- Remote Git source without a full commit pin in `sha` or `ref`, when the
+  rule's `require-sha` policy is enabled.
+- Remote Git source with an invalid explicit `sha` after whitespace trimming
+  (must be a 40- or 64-character hex string). An invalid explicit SHA takes
+  precedence over a valid full-commit `ref` and remains an error even when
+  `require-sha` is disabled.
 
 The catalog decoder distinguishes optional fields from defaulted arrays:
 
@@ -89,13 +92,18 @@ Grok content so metadata errors do not reclassify it as another host's content.
 
 **Info** — style and upstream compatibility tips:
 
-- A commit `sha` using uppercase hex characters or a 64-character SHA-256 hash.
+- A commit pin using uppercase hex characters or a 64-character SHA-256 hash.
   While Grok Build's runtime accepts both, official marketplace submission
   validators (such as `xai-org/plugin-marketplace`) recommend 40-character
   lowercase SHA-1 hashes.
 
 ## What is not reported
 
+- **Effective install pins**: Grok trims surrounding Unicode whitespace from
+  an explicit SHA. When SHA is absent or null, a full 40- or 64-character
+  hexadecimal `ref` becomes the effective pin. Branches, tags and abbreviated
+  refs remain unpinned. This is installation behavior: display-index SHA
+  matching still uses the literal catalog fields.
 - **Source discriminators**: a non-null `url` selects a remote source. With
   an absent or null URL, Grok reads the local `path` regardless of `type` or
   `source` tags. An empty URL remains remote and is reported as unusable.
@@ -159,7 +167,9 @@ Grok content so metadata errors do not reclassify it as another host's content.
 
 ## How to fix
 
-- Pin remote Git sources with a 40-character lowercase commit hash.
+- Pin remote Git sources with a 40-character lowercase commit hash in `sha`.
+  The runtime also accepts full commit IDs in `ref` when SHA is absent or null.
+  This rule checks the pin shape, not whether the remote commit exists.
 - Ensure local `source.path` references point to existing subdirectories of
   the marketplace root, the directory containing `.grok-plugin/`. Use
   `./packages/almanac` or `packages/almanac`, with no trailing or repeated
@@ -193,7 +203,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `require-sha` | Report a url source with no 'sha', which Grok installs with an unpinned git clone | `true` |
+| `require-sha` | Report a url source with no full commit pin in 'sha' or 'ref', which Grok installs with an unpinned git clone | `true` |
 
 
 *Run `skillsaw explain grok-marketplace-json-valid` to see this documentation and the rule's effective configuration in your terminal.*
