@@ -461,6 +461,19 @@ class TestTokenLifetime:
         "</div>\n"
         "\n"
         '[guide]: docs/guide.md "Guide"\n'
+        "\n"
+        "Details\n"
+        "-------\n"
+        "\n"
+        "> 5. Outer step\n"
+        ">    - Nested note\n"
+        ">      ```text\n"
+        ">      nested example\n"
+        ">      ```\n"
+        ">    8. Inner step\n"
+        ">       Continued detail\n"
+        "\n"
+        "After lists.\n"
     )
 
     def test_inline_results_release_children_without_mutating_shared_parse(self):
@@ -469,6 +482,13 @@ class TestTokenLifetime:
         shared_tokens = second._tokens
         assert first._tokens is shared_tokens
         assert any(token.children for token in shared_tokens if token.type == "inline")
+        structural_ids = {
+            id(token)
+            for token in shared_tokens
+            if token.type
+            in {"paragraph_open", "list_item_open", "blockquote_open", "heading_close"}
+        }
+        assert structural_ids
 
         first_links = first.links()
         assert [(link.href, link.file_line) for link in first_links] == [
@@ -476,6 +496,8 @@ class TestTokenLifetime:
             ("chart.png", 13),
         ]
         assert not any(token.children for token in first._tokens if token.type == "inline")
+        assert structural_ids.isdisjoint(id(token) for token in first._tokens)
+        assert structural_ids <= {id(token) for token in shared_tokens}
         assert any(token.children for token in shared_tokens if token.type == "inline")
 
         # A second document still walks the intact shared parse, with its own
@@ -502,15 +524,21 @@ class TestTokenLifetime:
         assert "printf done" not in prose
         assert not any(token.children for token in doc._tokens if token.type == "inline")
 
-        assert [(heading.level, heading.text, heading.body_line) for heading in doc.headings()] == [
-            (1, "Release checks", 1)
-        ]
-        assert [(fence.info, fence.content, fence.body_line_start) for fence in doc.fences()] == [
-            ("sh", "printf done\n", 6)
-        ]
+        assert [
+            (heading.level, heading.text, heading.body_line, heading.setext)
+            for heading in doc.headings()
+        ] == [(1, "Release checks", 1, False), (2, "Details", 16, True)]
+        assert [
+            (fence.info, fence.content, fence.body_line_start, fence.nested)
+            for fence in doc.fences()
+        ] == [("sh", "printf done\n", 6, False), ("text", "nested example\n", 21, True)]
         assert doc.ordered_list_content_lines() == [
             (3, "Read [guide][guide] and ![chart `alt`](chart.png)."),
             (4, "Keep `literal` <!-- note --> visible."),
+            (19, "Outer step"),
+            (20, "Nested note"),
+            (24, "Inner step"),
+            (25, "Continued detail"),
         ]
         assert doc.html_block_spans() == [(9, 12)]
         assert [(comment.text, comment.body_line_start) for comment in doc.html_comments()] == [

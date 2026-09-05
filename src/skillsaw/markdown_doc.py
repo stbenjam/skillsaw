@@ -71,6 +71,21 @@ _PARSER = _make_parser()
 
 _REF_DEF_RE = re.compile(r"^[ \t]{0,3}\[([^\]]+)\]:[ \t]+")
 
+# After the inline walk, lazy queries need block ranges/content, headings
+# with their following inline text, and ordered-list depth. Keep this set
+# aligned with the token queries below when adding a new facade accessor.
+_POST_WALK_TOKEN_TYPES = frozenset(
+    {
+        "inline",
+        "fence",
+        "code_block",
+        "html_block",
+        "heading_open",
+        "ordered_list_open",
+        "ordered_list_close",
+    }
+)
+
 
 def _html_comment_spans(text: str):
     """Yield closed HTML-comment spans and line offsets in one linear pass."""
@@ -922,6 +937,7 @@ class MarkdownDoc:
         self._tokens = [
             token.copy(children=None) if token.type == "inline" and token.children else token
             for token in self._tokens
+            if token.type in _POST_WALK_TOKEN_TYPES
         ]
 
     # -- accessors ------------------------------------------------------------
