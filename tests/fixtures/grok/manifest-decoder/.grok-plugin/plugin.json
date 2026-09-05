@@ -1,0 +1,19 @@
+{
+  "name": "migration-tools",
+  "version": "1.0.0",
+  "description": "Review database migrations and record compatible rollout steps.",
+  "author": {"name": "Data Platform", "channel": "preview", "channel": "stable"},
+  "keywords": ["migrations", "review"],
+  "skills": "skills",
+  "mcpServers": {
+    "mcpServers": {
+      "reference-docs": {
+        "type": "http",
+        "url": "https://docs.example.invalid/preview",
+        "url": "https://docs.example.invalid/current"
+      }
+    }
+  },
+  "releaseNotes": {"channel": "preview"},
+  "releaseNotes": {"channel": "stable"}
+}

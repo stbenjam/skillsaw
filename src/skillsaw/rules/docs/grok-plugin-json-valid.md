@@ -28,12 +28,28 @@ path advisories:
 
 **Errors** — issues that prevent Grok from registering the plugin:
 
-- Invalid JSON syntax, non-finite numbers (`NaN`, `Infinity`, `-Infinity`), or
-  duplicate keys.
+- Invalid JSON syntax, a leading UTF-8 BOM, or non-finite number tokens
+  (`NaN`, `Infinity`, `-Infinity`).
+- Duplicate recognized manifest fields or recognized fields inside `author`.
+- Known fields with values the typed manifest decoder rejects.
 - Manifest is not a JSON object.
 - Missing, empty, or non-string `name`.
 - A `name` that does not match Grok's plugin naming requirements (1-64 characters,
   lowercase alphanumeric and hyphens, no leading or trailing hyphen).
+
+The typed fields use these shapes:
+
+| Fields | Accepted values |
+| --- | --- |
+| `version`, `description`, `homepage`, `repository`, `license` | String, null, or omitted |
+| `author` | Object, null, or omitted; its `name`, `email`, `url` are optional strings |
+| `keywords` | Array of strings; omission defaults to an empty array, but null is invalid |
+| `skills`, `commands`, `agents` | Path string, array of path strings, null, or omitted |
+| `hooks`, `mcpServers`, `lspServers` | Path string or inline JSON value; interpreted by the component loader |
+
+A malformed directory-path list rejects the manifest as a whole; Grok does not
+load just the string elements from a mixed list. Component advice is skipped
+when a typed-field error has already prevented the manifest from loading.
 
 **Warnings** — the plugin registers, but declared components may not load:
 
@@ -57,7 +73,9 @@ path advisories:
 
 - **Name vs directory**: the manifest `name` takes precedence, so differences
   between manifest name and directory name are supported.
-- **Unknown manifest keys**: custom metadata keys are permitted.
+- **Unknown manifest keys**: custom metadata keys are permitted, including
+  duplicates. Duplicate unknown `author` members and inline JSON object keys
+  are also accepted; this does not permit duplicate recognized struct fields.
 - **Bare strings for paths**: strings and arrays are both supported for
   `skills`, `commands`, and `agents`.
 

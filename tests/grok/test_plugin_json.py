@@ -604,17 +604,15 @@ def test_a_skills_directory_symlinked_out_of_the_plugin_displaces_nothing(temp_d
     "declared,reported",
     [
         pytest.param({"Stop": []}, False, id="inline-object"),
-        pytest.param(42, False, id="number"),
+        pytest.param(42, True, id="number"),
         pytest.param(["ok", 7], True, id="list-with-a-non-string"),
     ],
 )
-def test_a_declared_value_the_loader_has_no_arm_for_is_left_alone(
+def test_directory_field_types_and_inline_values_have_distinct_contracts(
     temp_dir, declared, reported
 ) -> None:
-    """Two silences, pinned apart: an inline ``hooks`` object is the
-    component itself, and a value neither arm reads is a shape nothing
-    measured — reporting either would name a defect that may not exist. A
-    *list* still has its string elements read."""
+    """Inline hooks objects load; invalid directory unions reject the
+    entire manifest instead of partially loading their string elements."""
     field = "hooks" if isinstance(declared, dict) else "skills"
     repo = plugin_repo(temp_dir, f"arm-{reported}-{field}", {**MANIFEST, field: declared})
 
@@ -622,7 +620,8 @@ def test_a_declared_value_the_loader_has_no_arm_for_is_left_alone(
 
     assert bool(found) is reported
     if reported:
-        assert found == ["'skills': 'ok' is not in the plugin"]
+        assert found == ["'skills' must be a path string, an array of path strings, or null"]
+        assert at(check(repo), Severity.ERROR) == found
 
 
 def test_an_unreadable_conventional_directory_reports_no_override(temp_dir, monkeypatch) -> None:
