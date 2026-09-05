@@ -234,16 +234,19 @@ class GrokMarketplaceIndexParityRule(Rule):
         return drift
 
     def _compare_sha(self, entry: _Entry, listed: Dict[str, Any], drift: _Drift) -> None:
+        if entry.plugin_dir is not None:
+            # Local display lookup passes no expected SHA, even when the
+            # index records one. Its component comparison still applies.
+            return
         listed_sha = listed.get("sha")
-        listed_sha = listed_sha if isinstance(listed_sha, str) and listed_sha else None
-        if entry.sha and listed_sha is None:
+        listed_sha = listed_sha if isinstance(listed_sha, str) else None
+        if entry.sha is not None and listed_sha is None:
             drift.sha_catalog_only.add(entry.display)
-        elif listed_sha and entry.sha is None:
+        elif listed_sha is not None and entry.sha is None:
             drift.sha_index_only.add(entry.display)
-        elif entry.sha and listed_sha and entry.sha.lower() != listed_sha.lower():
-            # Compared case-insensitively: the installer treats a commit id
-            # that way, and grok-marketplace-json-valid already owns the
-            # casing on its own.
+        elif entry.sha is not None and entry.sha != listed_sha:
+            # The display reader compares stored strings exactly; installer
+            # pin normalization is a separate consumer.
             drift.sha_differs.add(entry.display)
 
     def _compare_skills(self, entry: _Entry, listed: Dict[str, Any], drift: _Drift) -> None:
@@ -381,7 +384,7 @@ class GrokMarketplaceIndexParityRule(Rule):
                 _Entry(
                     display=name or '""',
                     key=name,
-                    sha=sha if isinstance(sha, str) and sha else None,
+                    sha=sha if isinstance(sha, str) else None,
                     plugin_dir=plugin_dir,
                 )
             )

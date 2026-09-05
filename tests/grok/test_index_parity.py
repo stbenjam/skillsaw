@@ -167,9 +167,8 @@ def test_a_sha_that_disagrees_is_reported(temp_dir) -> None:
     assert "'sha' differs: almanac" in only(check(repo), "disagrees").message
 
 
-def test_a_sha_that_differs_only_in_case_is_not_drift(temp_dir) -> None:
-    """The installer treats a commit id case-insensitively, and the casing
-    is grok-marketplace-json-valid's finding, not a second one here."""
+def test_a_sha_that_differs_only_in_case_is_display_drift(temp_dir) -> None:
+    """Display lookup compares stored strings, independently of installation."""
     repo = marketplace(
         temp_dir,
         "case-only",
@@ -177,7 +176,7 @@ def test_a_sha_that_differs_only_in_case_is_not_drift(temp_dir) -> None:
         index({"almanac": {"sha": SHA_A.upper()}}),
     )
 
-    assert check(repo) == []
+    assert "'sha' differs: almanac" in only(check(repo), "disagrees").message
 
 
 @pytest.mark.parametrize(

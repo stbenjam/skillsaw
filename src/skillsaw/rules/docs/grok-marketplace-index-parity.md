@@ -37,8 +37,10 @@ Skillsaw reports parity discrepancies across the index and catalog:
   A local plugin's manifest name controls its listing name, but does not
   substitute for the catalog entry's index lookup key. An empty catalog entry name
   uses the empty string key; diagnostics display that key as `""`.
-- Commit `sha` values that differ between the catalog and index (compared
-  case-insensitively).
+- For remote sources, commit `sha` strings that differ between the catalog and
+  index, including differences in case or whitespace. The display reader compares
+  the stored strings exactly; installer normalization is separate. Local display
+  lookup ignores an optional index `sha` and still compares the skills.
 - Plugin entries in `plugin-index.json` whose values are not objects.
 - For local plugins: skills listed in the index that do not match the skills
   present in the plugin source on disk. Skills match by either their
