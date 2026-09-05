@@ -5713,6 +5713,7 @@ BROKEN_FIXTURES = [
     "grok/config-broken",
     "grok/plugin-broken",
     "grok/marketplace-broken",
+    "grok/index-parity-broken",
     "skills-lock/invalid",
     "antigravity/workspace-broken",
 ]

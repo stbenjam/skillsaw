@@ -7,6 +7,7 @@ import json
 
 import pytest
 
+from skillsaw.blocks import SkillBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import GrokMarketplaceConfigNode, GrokMarketplaceIndexNode, GrokPluginNode
 from skillsaw.rules.builtin.grok import GrokMarketplaceIndexParityRule
@@ -118,3 +119,21 @@ def test_an_unknown_empty_index_key_has_a_visible_label(tmp_path):
     assert check(repo)[0]["message"] == (
         'plugin-index.json disagrees with marketplace.json: not in the catalog: ""'
     )
+
+
+def test_typed_valid_broken_fixture_keeps_parity_coverage(tmp_path):
+    repo = copy_fixture("grok/index-parity-broken", tmp_path)
+    found = check(repo)
+    assert [(v["rule_id"], v["file_path"], v["severity"], v["message"]) for v in found] == [
+        (
+            RULE,
+            INDEX,
+            "warning",
+            "plugin-index.json disagrees with marketplace.json: "
+            "not in the index: published-review; not in the catalog: migration-tools",
+        )
+    ]
+    assert {node.path for node in RepositoryContext(repo).lint_tree.find(SkillBlock)} == {
+        repo / "packages/migration-tools/skills/review-migration/SKILL.md",
+        repo / "packages/catalog-canary/skills/review-catalog/SKILL.md",
+    }
