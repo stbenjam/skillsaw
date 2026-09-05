@@ -169,7 +169,8 @@ rules:
 
 Matcher validation is conservative: it translates Rust inline flags and
 braced hexadecimal escapes only for syntax checking. For example,
-`Bash|(?i)Write`, `(?-u:\w+)`, `(?U).*` and `\x{42}ash` are accepted.
+`Bash|(?i)Write`, `(?-u:\w+)`, `(?U).*`, `\x{42}ash`, `\u{42}ash` and
+`\U{42}ash` are accepted.
 Unclosed groups/classes and unsupported look-around/backreferences are still
 reported in the checked subset. Extended-mode (`x`) patterns are left
 unresolved because comments change tokenization. No finding is a complete

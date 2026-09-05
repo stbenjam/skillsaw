@@ -48,9 +48,9 @@ def test_rust_matchers_use_host_dialect_in_cli(tmp_path, host, block_type, path,
     if outcome == "valid":
         assert found == []
     else:
-        assert len(found) == 8
+        assert len(found) == 10
         assert {(v["rule_id"], v["file_path"], v["severity"]) for v in found} == {
             (rule, path, "warning")
         }
-        for index in range(8):
+        for index in range(10):
             assert sum(f"PreToolUse[{index}] 'matcher'" in v["message"] for v in found) == 1

@@ -7,6 +7,10 @@ import pytest
 from skillsaw.rules.builtin.utils import _to_python_regex, rust_matcher_error
 
 VALID = [
+    "\\u{42}ash",
+    "\\U{42}ash",
+    "\\u{28}Bash",
+    "\\U{28}Bash",
     "Bash|(?i)Write",
     "(?-u:\\w+)",
     "(?U).*",
@@ -18,6 +22,12 @@ VALID = [
     "(?x)Bash # (?=literal comment\n",
 ]
 INVALID = [
+    "\\u{110000}",
+    "\\U{110000}",
+    "\\u{d800}",
+    "\\U{d800}",
+    "\\u{42}(",
+    "\\U{42}(",
     "Bash(",
     "(?=Bash)",
     "(?U)(Bash",
@@ -39,7 +49,9 @@ def test_invalid_structure_is_still_checked_after_translation(pattern):
     assert rust_matcher_error(pattern) is not None
 
 
-@pytest.mark.parametrize("pattern", [r"\(\?U\)", "[(?U)]", r"\\x{42}ash"])
+@pytest.mark.parametrize(
+    "pattern", [r"\(\?U\)", "[(?U)]", r"\\x{42}ash", r"\\u{42}ash", r"\\U{42}ash"]
+)
 def test_literal_flag_and_escape_text_is_not_rewritten(pattern):
     assert _to_python_regex(pattern) == pattern
     assert rust_matcher_error(pattern) is None

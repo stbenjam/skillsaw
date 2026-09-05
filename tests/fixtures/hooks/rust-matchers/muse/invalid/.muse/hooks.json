@@ -72,6 +72,24 @@
             "command": "/audit/not-an-executable"
           }
         ]
+      },
+      {
+        "matcher": "\\u{110000}",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\U{42}(",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
       }
     ]
   }

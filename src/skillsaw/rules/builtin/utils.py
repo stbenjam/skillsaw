@@ -100,7 +100,7 @@ _RUST_NAMED_GROUP = re.compile(r"\(\?<(?![=!])")
 #: Flags affect matching, while only x changes tokenization. The syntax check
 #: neutralizes the others and withholds a verdict for extended-mode patterns.
 _RUST_INLINE_FLAGS = re.compile(r"\(\?([imsRUux]*)(?:-([imsRUux]+))?([):])")
-_RUST_BRACED_HEX = re.compile(r"\\x\{([0-9a-fA-F]+)\}")
+_RUST_BRACED_HEX = re.compile(r"\\[xuU]\{([0-9a-fA-F]+)\}")
 
 #: The constructs the compile check alone cannot see: Python's ``re``
 #: accepts them and Rust's ``regex`` crate — a finite-automaton engine —
@@ -171,7 +171,7 @@ def _to_python_regex(pattern: str) -> str:
     substituted = _RUST_UNICODE_CLASS.sub(r"\\w", pattern)
     if "(?<" in substituted:
         substituted = _RUST_NAMED_GROUP.sub("(?P<", substituted)
-    if not any(token in substituted for token in ("[", "\\z", "(?", "\\x{")):
+    if not any(token in substituted for token in ("[", "\\z", "(?", "\\x{", "\\u{", "\\U{")):
         return substituted
 
     # The set operators only mean anything inside a character class: ``a--b``
