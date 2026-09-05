@@ -7,6 +7,8 @@ import pytest
 from skillsaw.rules.builtin.utils import _to_python_regex, rust_matcher_error
 
 VALID = [
+    "[(?x)]foo",
+    r"\(\?x\)foo",
     "\\u{42}ash",
     "\\U{42}ash",
     "\\u{28}Bash",
@@ -22,6 +24,8 @@ VALID = [
     "(?x)Bash # (?=literal comment\n",
 ]
 INVALID = [
+    "[(?x)](?=foo)",
+    r"\(?x)(?=foo)",
     "\\u{110000}",
     "\\U{110000}",
     "\\u{d800}",
@@ -57,6 +61,7 @@ def test_literal_flag_and_escape_text_is_not_rewritten(pattern):
     assert rust_matcher_error(pattern) is None
 
 
-def test_extended_mode_is_unresolved_even_when_structure_looks_invalid():
+@pytest.mark.parametrize("pattern", ["(?x)(", "[(?x)](?x)(", "(?-x)("])
+def test_extended_mode_is_unresolved_even_when_structure_looks_invalid(pattern):
     # No Rust parser is shipped; comments change what apparent delimiters mean.
-    assert rust_matcher_error("(?x)(") is None
+    assert rust_matcher_error(pattern) is None

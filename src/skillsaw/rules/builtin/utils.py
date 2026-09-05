@@ -281,6 +281,27 @@ def _rust_unsupported(pattern: str) -> Optional[str]:
     return None
 
 
+def _has_extended_mode_flag(pattern: str) -> bool:
+    """Find x flags outside escaped text and character classes."""
+    depth = 0
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "[":
+            depth += 1
+        elif char == "]" and depth:
+            depth -= 1
+        elif char == "(" and not depth:
+            flags = _RUST_INLINE_FLAGS.match(pattern, index)
+            if flags is not None and "x" in (flags[1] + (flags[2] or "")):
+                return True
+        index += 1
+    return False
+
+
 def rust_matcher_error(matcher: str) -> Optional[str]:
     """Why *matcher* fails to compile as a Rust regex, if it does.
 
@@ -299,13 +320,10 @@ def rust_matcher_error(matcher: str) -> Optional[str]:
     """
     if len(matcher) > RUST_MATCHER_MAX_LENGTH:
         return None
-    if "x" in matcher and "(?" in matcher:
-        if any(
-            "x" in (flags[1] + (flags[2] or "")) for flags in _RUST_INLINE_FLAGS.finditer(matcher)
-        ):
-            # Extended-mode comments can contain apparent groups or escapes.
-            # Python and our small scanner cannot prove a Rust syntax failure.
-            return None
+    if "x" in matcher and "(?" in matcher and _has_extended_mode_flag(matcher):
+        # Extended-mode comments can contain apparent groups or escapes.
+        # Python and our small scanner cannot prove a Rust syntax failure.
+        return None
     unsupported = _rust_unsupported(matcher)
     if unsupported is not None:
         return unsupported

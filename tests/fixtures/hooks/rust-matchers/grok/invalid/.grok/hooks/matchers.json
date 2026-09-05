@@ -90,6 +90,24 @@
             "command": "/audit/not-an-executable"
           }
         ]
+      },
+      {
+        "matcher": "[(?x)](?=foo)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\(?x)(?=foo)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
       }
     ]
   }

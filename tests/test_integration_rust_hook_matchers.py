@@ -12,6 +12,7 @@ from tests.cli_runner import run_cli
 from tests.test_integration import copy_fixture
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "host,block_type,path",
     [
@@ -48,9 +49,9 @@ def test_rust_matchers_use_host_dialect_in_cli(tmp_path, host, block_type, path,
     if outcome == "valid":
         assert found == []
     else:
-        assert len(found) == 10
+        assert len(found) == 12
         assert {(v["rule_id"], v["file_path"], v["severity"]) for v in found} == {
             (rule, path, "warning")
         }
-        for index in range(10):
+        for index in range(12):
             assert sum(f"PreToolUse[{index}] 'matcher'" in v["message"] for v in found) == 1
