@@ -5962,6 +5962,7 @@ OPT_IN_RULES = {
     "content-missing-stop-condition",
     "content-inline-tool-examples",
     "antigravity-config-json-valid",
+    "muse-hooks-valid",
 }
 
 

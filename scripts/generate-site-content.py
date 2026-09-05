@@ -321,7 +321,8 @@ RULE_GROUPS = [
         "Muse reads AGENTS.md for portable project instructions and uses the "
         "shared `.agents/memory/` convention for committed memory, both of "
         "which are covered by skillsaw's universal content and security checks. "
-        "Enabled automatically when `.muse/hooks.json` is present.",
+        "Shape validation is opt-in while loader compatibility and public repository "
+        "coverage are limited. Hook discovery and shared security checks remain independent.",
     ),
     (
         "OpenAI Codex",

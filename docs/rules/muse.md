@@ -3,9 +3,9 @@
 
 # Muse Code
 
-Validates `.muse/hooks.json` to ensure project hooks for Muse Code run reliably across lifecycle events. Checks that hook definitions use Muse's supported events, matcher groups, and handler fields so automation runs smoothly during interactive and headless sessions. Muse reads AGENTS.md for portable project instructions and uses the shared `.agents/memory/` convention for committed memory, both of which are covered by skillsaw's universal content and security checks. Enabled automatically when `.muse/hooks.json` is present.
+Validates `.muse/hooks.json` to ensure project hooks for Muse Code run reliably across lifecycle events. Checks that hook definitions use Muse's supported events, matcher groups, and handler fields so automation runs smoothly during interactive and headless sessions. Muse reads AGENTS.md for portable project instructions and uses the shared `.agents/memory/` convention for committed memory, both of which are covered by skillsaw's universal content and security checks. Shape validation is opt-in while loader compatibility and public repository coverage are limited. Hook discovery and shared security checks remain independent.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`muse-hooks-valid`](muse-hooks-valid.md) | .muse/hooks.json must use Muse's events, matcher groups and handler fields | error (auto) | - |
+| [`muse-hooks-valid`](muse-hooks-valid.md) | .muse/hooks.json must use Muse's events, matcher groups and handler fields | error (disabled) | - |
 

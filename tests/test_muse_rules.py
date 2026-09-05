@@ -98,7 +98,7 @@ def test_rule_metadata() -> None:
 
     assert rule.rule_id == "muse-hooks-valid"
     assert rule.default_severity() == Severity.ERROR
-    assert rule.default_enabled == "auto"
+    assert rule.default_enabled is False
     assert rule.since == "0.20.0"
     assert rule.repo_types == frozenset({RepositoryType.MUSE})
     # A tool directory nobody else claims needs no provenance filtering, and
@@ -111,7 +111,7 @@ def test_rule_metadata() -> None:
 def test_generated_defaults_match_the_class() -> None:
     config = LinterConfig.default().get_rule_config("muse-hooks-valid")
 
-    assert config["enabled"] == "auto"
+    assert config["enabled"] is False
     assert config["severity"] == "error"
 
 
@@ -143,7 +143,7 @@ def test_memory_alone_is_not_muse_evidence(temp_dir) -> None:
 
 def test_a_nested_hooks_file_is_the_only_muse_marker_a_monorepo_needs(temp_dir) -> None:
     """Muse reads the ``.muse/`` layer of the package it is started in, so a
-    subpackage hooks file turns the rule on for the whole repository."""
+    subpackage hooks file identifies Muse throughout the repository."""
     nested = temp_dir / "services" / "billing" / ".muse"
     nested.mkdir(parents=True)
     (nested / "hooks.json").write_text('{"hooks": {"Stop": [{"hooks": [{"type": "command"}]}]}}')
@@ -170,11 +170,16 @@ def test_an_excluded_hooks_file_drives_neither_detection_nor_attachment(temp_dir
 def test_configured_exclude_silences_the_rule(tmp_path) -> None:
     """The `.skillsaw.yaml` lever a user would actually pull."""
     repo = copy_fixture("muse/broken", tmp_path)
-    assert violations_for(lint_json(repo, returncode=1), "muse-hooks-valid") != []
+    assert (
+        violations_for(
+            lint_json(repo, "--rule", "muse-hooks-valid", returncode=1), "muse-hooks-valid"
+        )
+        != []
+    )
 
     (repo / ".skillsaw.yaml").write_text('version: "99.0.0"\nexclude:\n  - ".muse/**"\n')
 
-    assert violations_for(lint_json(repo), "muse-hooks-valid") == []
+    assert violations_for(lint_json(repo, "--rule", "muse-hooks-valid"), "muse-hooks-valid") == []
 
 
 # ── Lint tree ────────────────────────────────────────────────────
@@ -284,6 +289,9 @@ def test_a_well_formed_hooks_file_reports_nothing(tmp_path) -> None:
 def test_the_clean_fixture_lints_green(tmp_path) -> None:
     """Including its memory files, which every content and security rule reads."""
     repo = copy_fixture("muse/clean", tmp_path)
+    (repo / ".skillsaw.yaml").write_text(
+        'version: "0.20.0"\nrules:\n  muse-hooks-valid:\n    enabled: true\n'
+    )
     result = run_cli(["lint", "--format", "json", "-v", repo])
     report = json.loads(result.stdout)
 
@@ -930,7 +938,9 @@ def test_a_non_finite_token_is_reported_through_the_cli(tmp_path) -> None:
         '{"type": "command", "command": "make lint", "silent": NaN}]}]}}',
     )
 
-    found = violations_for(lint_json(repo, returncode=1), "muse-hooks-valid")
+    found = violations_for(
+        lint_json(repo, "--rule", "muse-hooks-valid", returncode=1), "muse-hooks-valid"
+    )
 
     assert [v["file_path"] for v in found] == [".muse/hooks.json"]
     assert "not valid JSON" in found[0]["message"]
@@ -1061,6 +1071,7 @@ def test_extra_group_keys_is_configurable_through_a_config_file(tmp_path) -> Non
         'version: "99.0.0"\n'
         "rules:\n"
         "  muse-hooks-valid:\n"
+        "    enabled: true\n"
         "    extra-group-keys:\n"
         "      - enabled\n"
     )
@@ -1077,6 +1088,7 @@ def test_extra_events_is_configurable_through_a_config_file(tmp_path) -> None:
         'version: "99.0.0"\n'
         "rules:\n"
         "  muse-hooks-valid:\n"
+        "    enabled: true\n"
         "    extra-events:\n"
         "      - sessionstart\n"
         "    extra-handler-fields:\n"
@@ -1223,7 +1235,8 @@ def test_the_rule_is_not_loaded_without_muse_evidence(tmp_path) -> None:
     context = RepositoryContext(repo)
 
     assert RepositoryType.MUSE not in context.repo_types
-    loaded = {rule.rule_id for rule in Linter(context, no_plugins=True).rules}
+    config = LinterConfig(rules={"muse-hooks-valid": {"enabled": "auto"}})
+    loaded = {rule.rule_id for rule in Linter(context, config=config, no_plugins=True).rules}
     assert "muse-hooks-valid" not in loaded
     # And it finds nothing even when a unit test calls it directly.
     assert MuseHooksValidRule().check(context) == []
@@ -1233,7 +1246,8 @@ def test_the_rule_runs_on_a_repository_with_muse_evidence(tmp_path) -> None:
     repo = copy_fixture("muse/broken", tmp_path)
     context = RepositoryContext(repo)
 
-    loaded = {rule.rule_id for rule in Linter(context, no_plugins=True).rules}
+    config = LinterConfig(rules={"muse-hooks-valid": {"enabled": "auto"}})
+    loaded = {rule.rule_id for rule in Linter(context, config=config, no_plugins=True).rules}
 
     assert "muse-hooks-valid" in loaded
 
@@ -1244,7 +1258,9 @@ def test_the_rule_runs_on_a_repository_with_muse_evidence(tmp_path) -> None:
 def test_the_cli_reports_every_finding_against_the_hooks_file(tmp_path) -> None:
     repo = copy_fixture("muse/broken", tmp_path)
 
-    found = violations_for(lint_json(repo, returncode=1), "muse-hooks-valid")
+    found = violations_for(
+        lint_json(repo, "--rule", "muse-hooks-valid", returncode=1), "muse-hooks-valid"
+    )
 
     assert {v["file_path"] for v in found} == {".muse/hooks.json"}
     assert {v["severity"] for v in found} == {"error", "warning", "info"}
@@ -1268,11 +1284,14 @@ def test_the_json_report_lists_muse_among_the_repo_types(tmp_path) -> None:
     assert "muse" in lint_json(repo)["stats"]["repo_types"]
 
 
-def test_forcing_the_type_runs_the_rule_without_a_marker(tmp_path) -> None:
+def test_forcing_the_type_runs_an_auto_enabled_rule_without_a_marker(tmp_path) -> None:
     """``--type muse`` is the operator's answer, so the rule runs even
     where detection would not have turned it on — and finds nothing,
     because there is no hooks file to read."""
     repo = write_repo(tmp_path / "forced")
+    (repo / ".skillsaw.yaml").write_text(
+        'version: "0.20.0"\nrules:\n  muse-hooks-valid:\n    enabled: auto\n'
+    )
 
     result = run_cli(["lint", "-v", repo])
     assert "Rule muse-hooks-valid" in result.stdout + result.stderr
@@ -1294,7 +1313,7 @@ def _rule_line(result, rule_id: str) -> str:
 def test_the_cli_fails_on_a_rejected_file(tmp_path) -> None:
     repo = copy_fixture("muse/broken-groups", tmp_path)
 
-    result = run_cli(["lint", "--format", "json", "-v", repo])
+    result = run_cli(["lint", "--rule", "muse-hooks-valid", "--format", "json", "-v", repo])
 
     assert result.returncode != 0
     assert violations_for(json.loads(result.stdout), "muse-hooks-valid") != []

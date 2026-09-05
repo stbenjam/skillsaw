@@ -569,7 +569,7 @@ rules:
 
   # .muse/hooks.json must use Muse's events, matcher groups and handler fields
   muse-hooks-valid:
-    enabled: auto
+    enabled: false
     severity: error
     # extra-events: []
     # extra-handler-fields: []
