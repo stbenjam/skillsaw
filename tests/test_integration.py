@@ -3375,6 +3375,57 @@ class TestDevin:
         assert "devin-rules-valid" in clean["out"]["stats"]["rules_run"]
         assert violations(clean) == []
 
+    @pytest.mark.parametrize("trigger", ["sometimes", 123, []])
+    def test_invalid_optional_fields_do_not_hide_an_invalid_trigger(self, tmp_path, trigger):
+        repo = copy_fixture("devin/inferred-activation", tmp_path)
+        path = repo / ".devin/rules/null-trigger-description.md"
+        original = path.read_text()
+        invalid_trigger = "trigger: " + json.dumps(trigger)
+        invalid_fields = original.replace(
+            "description: Apply when reviewing API changes.", "description: []\nglobs: {}"
+        )
+        path.write_text(invalid_fields.replace("trigger: null", invalid_trigger))
+
+        result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert len(found) == 3
+        assert {(v["rule_id"], v["file_path"], v["line"], v["severity"]) for v in found} == {
+            ("devin-rules-valid", ".devin/rules/null-trigger-description.md", line, "error")
+            for line in (2, 3, 4)
+        }
+        assert "trigger" in next(v["message"] for v in found if v["line"] == 2)
+
+        # Repairing only the optional fields leaves the independent trigger error.
+        path.write_text(original.replace("trigger: null", invalid_trigger))
+        trigger_only = run_lint(
+            repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert trigger_only["rc"] == 1, trigger_only
+        assert [(v["line"], v["message"]) for v in violations(trigger_only)] == [
+            (2, next(v["message"] for v in found if v["line"] == 2))
+        ]
+        path.write_text(original)
+        clean = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert clean["rc"] == 0, clean
+        assert "devin-rules-valid" in clean["out"]["stats"]["rules_run"]
+        assert violations(clean) == []
+
+    @pytest.mark.parametrize("trigger", [None, "glob", "model_decision", "manual"])
+    def test_invalid_optional_fields_do_not_add_activation_noise(self, tmp_path, trigger):
+        repo = copy_fixture("devin/inferred-activation", tmp_path)
+        path = repo / ".devin/rules/null-trigger-description.md"
+        path.write_text(
+            path.read_text()
+            .replace("trigger: null", "trigger: " + json.dumps(trigger))
+            .replace("description: Apply when reviewing API changes.", "description: []")
+        )
+        result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        assert [(v["rule_id"], v["line"], v["message"]) for v in violations(result)] == [
+            ("devin-rules-valid", 3, "'description' must be a scalar value or null")
+        ]
+
     def test_previously_accepted_yaml_scalars_do_not_gain_errors(self, tmp_path):
         repo = copy_fixture("devin/scalar-fields", tmp_path)
         result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")

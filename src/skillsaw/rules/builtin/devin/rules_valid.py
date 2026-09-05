@@ -77,12 +77,11 @@ class DevinRulesValidRule(Rule):
 
             field_errors = self._check_field_shapes(block)
             violations.extend(field_errors)
-            if field_errors:
-                continue
 
             trigger_field = block.field("trigger")
             if trigger_field is None or trigger_field.value is None:
-                violations.extend(self._check_inferred_activation(block))
+                if not field_errors:
+                    violations.extend(self._check_inferred_activation(block))
                 continue
 
             trigger = trigger_field.value
@@ -108,6 +107,10 @@ class DevinRulesValidRule(Rule):
                 )
                 continue
 
+            # Report an independent trigger defect even when optional fields
+            # are malformed, but derive activation requirements only after parsing.
+            if field_errors:
+                continue
             if trigger == "glob":
                 violations.extend(self._check_globs(block))
             elif trigger == "model_decision":
