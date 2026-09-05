@@ -8756,3 +8756,79 @@ class TestTopRulesBlock:
         for fmt in ("json", "sarif", "html", "code-climate", "gitlab"):
             r = run_lint(repo, fmt=fmt, verbose=False)
             assert "Top rules" not in r["stdout"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("lint_external", [True, False])
+def test_self_installed_skills_keep_authorship_in_a_linked_worktree(tmp_path, lint_external):
+    from skillsaw.context import RepositoryContext
+    from skillsaw.lint_target import SkillNode
+
+    primary = copy_fixture("skills-lock/external", tmp_path)
+    lock = primary / "skills-lock.json"
+    data = json.loads(lock.read_text())
+    data["skills"]["authored-skill"] = {
+        "source": "example/owned-skills",
+        "sourceType": "github",
+        "computedHash": "0123456789abcdef" * 4,
+    }
+    lock.write_text(json.dumps(data))
+    (primary / ".skillsaw.yaml").write_text(
+        json.dumps({"lint-external-content": lint_external, "plugins": False})
+    )
+    git_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    git_env.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull})
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(primary), *args],
+            env=git_env,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=10,
+        )
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture Author")
+    git("config", "user.email", "fixture@example.invalid")
+    git("remote", "add", "origin", "https://github.com/example/owned-skills.git")
+    git("add", ".")
+    git("commit", "-qm", "Fixture content")
+    linked = tmp_path / "linked"
+    git("worktree", "add", "--detach", str(linked), "HEAD")
+    assert (primary / ".git").is_dir()
+    assert (linked / ".git").is_file()
+
+    reports = []
+    for repo in (primary, linked):
+        context = RepositoryContext(repo, lint_external_content=lint_external)
+        nodes = {node.path.name: node for node in context.lint_tree.find(SkillNode)}
+        assert not nodes["authored-skill"].externally_sourced
+        assert not context.is_externally_sourced(repo / "skills/authored-skill/SKILL.md")
+        external = repo / ".agents/skills/external-dep/SKILL.md"
+        assert context.is_externally_sourced(external)
+        if lint_external:
+            assert nodes["external-dep"].externally_sourced
+        else:
+            assert "external-dep" not in nodes
+
+        result = run_lint(repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1
+        found = {v["file_path"]: v for v in violations(result)}
+        assert found["skills/authored-skill/SKILL.md"]["fixable"] is True
+        if lint_external:
+            assert found[".agents/skills/external-dep/SKILL.md"]["fixable"] is False
+        else:
+            assert ".agents/skills/external-dep/SKILL.md" not in found
+        reports.append([(v["rule_id"], v["file_path"], v["fixable"]) for v in violations(result)])
+        external_before = external.read_bytes()
+        fixed = run_cli(
+            ["fix", repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins"]
+        )
+        assert fixed.returncode == 0, fixed.stderr
+        assert "name: authored-skill" in (repo / "skills/authored-skill/SKILL.md").read_text()
+        assert external.read_bytes() == external_before
+        clean = run_lint(repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins")
+        assert all(v["file_path"] != "skills/authored-skill/SKILL.md" for v in violations(clean))
+    assert reports[0] == reports[1]

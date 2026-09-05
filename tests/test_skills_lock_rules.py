@@ -694,3 +694,27 @@ def test_own_repository_needs_an_origin_url(tmp_path: Path) -> None:
         '[remote "origin"]\n\turl = https://github.com/Owner/Repo.git\n'
     )
     assert RepositoryExternalContentMixin._github_repository_of(repo) == "owner/repo"
+
+
+@pytest.mark.parametrize("absolute_common", [False, True])
+def test_origin_resolves_relative_gitdir_and_common_directory(tmp_path, absolute_common):
+    from skillsaw.repository_external_content import RepositoryExternalContentMixin
+
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+    metadata = tmp_path / "metadata"
+    gitdir = metadata / "worktrees/checkout"
+    gitdir.mkdir(parents=True)
+    (repo / ".git").write_text("gitdir: ../metadata/worktrees/checkout\n")
+    (gitdir / "commondir").write_text(str(metadata) if absolute_common else "../..\n")
+    (metadata / "config").write_text('[remote "origin"]\nurl = git@github.com:Example/Skills.git\n')
+
+    assert RepositoryExternalContentMixin._github_repository_of(repo) == "example/skills"
+
+
+@pytest.mark.parametrize("pointer", ["", "not a git pointer", "gitdir:", "gitdir: missing"])
+def test_invalid_git_pointer_does_not_invent_an_origin(tmp_path, pointer):
+    from skillsaw.repository_external_content import RepositoryExternalContentMixin
+
+    (tmp_path / ".git").write_text(pointer)
+    assert RepositoryExternalContentMixin._github_repository_of(tmp_path) is None

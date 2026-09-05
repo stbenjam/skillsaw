@@ -129,15 +129,31 @@ class RepositoryExternalContentMixin:
 
     @staticmethod
     def _github_repository_of(root: Path) -> Optional[str]:
-        """``owner/repo`` of *root*'s GitHub origin remote, read from
-        ``.git/config`` — a filesystem read, never a git invocation. ``None``
-        when there is no ordinary ``.git`` directory or no GitHub origin."""
-        config = root / ".git" / "config"
-        if not safe_is_file(config):
-            return None
+        """``owner/repo`` of *root*'s GitHub origin, without invoking Git.
+
+        Linked worktrees keep a ``gitdir:`` pointer in ``.git`` and a
+        ``commondir`` pointer in that metadata directory. Their origin lives
+        in the common config, just as it does for the primary checkout.
+        Missing or unreadable metadata and non-GitHub origins return ``None``.
+        """
+        git_dir = root / ".git"
         try:
+            if safe_is_file(git_dir):
+                pointer = git_dir.read_text(encoding="utf-8", errors="replace").strip()
+                if not pointer.startswith("gitdir:") or not pointer[7:].strip():
+                    return None
+                git_dir = root / pointer[7:].strip()
+            common_file = git_dir / "commondir"
+            if safe_is_file(common_file):
+                common = common_file.read_text(encoding="utf-8", errors="replace").strip()
+                if not common:
+                    return None
+                git_dir = git_dir / common
+            config = git_dir / "config"
+            if not safe_is_file(config):
+                return None
             text = config.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        except (OSError, ValueError):
             return None
         section = _GIT_ORIGIN_SECTION_RE.search(text)
         if section is None:
