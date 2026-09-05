@@ -5923,7 +5923,35 @@ class TestTerminologyGroupsConfig:
         assert all("function/method" not in v["message"] for v in vs)
         assert all(v["severity"] == "error" for v in vs)
 
-    def test_without_groups_config_all_groups_fire(self, tmp_path):
+    @pytest.mark.parametrize("group_setting", [None, "warning"])
+    def test_distinct_technical_concepts_require_explicit_opt_in(self, tmp_path, group_setting):
+        repo = copy_fixture("content/terminology-distinct-concepts", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        if group_setting is not None:
+            config.write_text(
+                "rules:\n  content-inconsistent-terminology:\n"
+                f"    groups:\n      function/method: {group_setting}\n"
+            )
+        result = run_lint(
+            repo,
+            "--rule",
+            "content-inconsistent-terminology",
+            "--fail-on",
+            "info",
+            config=config if group_setting is not None else None,
+        )
+        findings = violations(result)
+        if group_setting is None:
+            assert result["rc"] == 0, result
+            assert findings == []
+        else:
+            assert result["rc"] == 1, result
+            assert len(findings) == 1, findings
+            assert findings[0]["rule_id"] == "content-inconsistent-terminology"
+            assert findings[0]["severity"] == "warning"
+            assert "function/method" in findings[0]["message"]
+
+    def test_without_groups_config_only_default_groups_fire(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         (repo / ".skillsaw.yaml").write_text(
             'version: "99.0.0"\n'
@@ -5934,7 +5962,7 @@ class TestTerminologyGroupsConfig:
         r = run_lint(repo, config=repo / ".skillsaw.yaml")
         assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         messages = [v["message"] for v in self._rule_violations(r)]
-        assert any("function/method" in m for m in messages)
+        assert not any("function/method" in m for m in messages)
         assert any("directory/folder" in m for m in messages)
 
 

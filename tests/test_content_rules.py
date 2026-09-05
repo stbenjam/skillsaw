@@ -1648,10 +1648,10 @@ class TestContentInconsistentTerminologyRule:
     def test_disabled_group_accepts_off_spellings(self, temp_dir, setting):
         """YAML 1.1 loaders parse a bare ``off`` as boolean False; quoted
         strings and casing variants must behave the same."""
-        (temp_dir / "CLAUDE.md").write_text("Write a helper function.\n")
-        (temp_dir / "AGENTS.md").write_text("Write a helper method.\n")
+        (temp_dir / "CLAUDE.md").write_text("Use the output directory.\n")
+        (temp_dir / "AGENTS.md").write_text("Use the output folder.\n")
         context = RepositoryContext(temp_dir)
-        rule = ContentInconsistentTerminologyRule({"groups": {"function/method": setting}})
+        rule = ContentInconsistentTerminologyRule({"groups": {"directory/folder": setting}})
         assert rule.check(context) == []
 
     def test_group_severity_is_case_insensitive(self):
@@ -1688,8 +1688,8 @@ class TestContentInconsistentTerminologyRule:
 
     def test_groups_null_treated_as_absent(self, temp_dir):
         """``groups:`` with no value parses as None and must not raise."""
-        (temp_dir / "CLAUDE.md").write_text("Write a helper function.\n")
-        (temp_dir / "AGENTS.md").write_text("Write a helper method.\n")
+        (temp_dir / "CLAUDE.md").write_text("Use the output directory.\n")
+        (temp_dir / "AGENTS.md").write_text("Use the output folder.\n")
         context = RepositoryContext(temp_dir)
         rule = ContentInconsistentTerminologyRule({"groups": None})
         assert rule._group_overrides == {}
