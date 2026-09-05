@@ -585,6 +585,13 @@ class AgentSkillUnreferencedFilesRule(Rule):
         """Files referenced from the roots, following every referenced local file."""
         skill_resolved = safe_resolve(skill_path) or skill_path
         resolved_of = {f: (safe_resolve(f) or f) for f in all_files}
+        root_paths = {(safe_resolve(root) or root) for root in roots}
+        referenced: Set[Path] = {
+            candidate for candidate in all_files if resolved_of[candidate] in root_paths
+        }
+        if len(referenced) == len(all_files):
+            return referenced
+
         resolved_files = set(resolved_of.values())
         rel_of = {f: resolved_of[f].relative_to(skill_resolved).as_posix() for f in all_files}
         # Per-skill, not per (source, candidate) pair: needles and their
@@ -595,10 +602,6 @@ class AgentSkillUnreferencedFilesRule(Rule):
         dir_specs = {rel_dir: self._dir_specs(rel_dir) for rel_dir in all_dirs}
         block_by_path = {block.resolved_path: block for block in skill_node.find(ContentBlock)}
 
-        root_paths = {(safe_resolve(root) or root) for root in roots}
-        referenced: Set[Path] = {
-            candidate for candidate in all_files if resolved_of[candidate] in root_paths
-        }
         covered_dirs: Set[str] = set()
         queue: deque = deque(roots)
         processed: Set[Path] = set()
@@ -687,6 +690,11 @@ class AgentSkillUnreferencedFilesRule(Rule):
                             continue
                         referenced.add(candidate)
                         newly_referenced.append(candidate)
+
+            # Once every bundled file is accounted for, queued sources
+            # cannot change reachability or the resulting findings.
+            if len(referenced) == len(all_files):
+                break
 
             # Transitive traversal: every referenced file becomes a source,
             # so a data file read by a documented script is not dead
