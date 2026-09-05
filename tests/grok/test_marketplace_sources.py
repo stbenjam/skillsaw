@@ -9,6 +9,7 @@ import pytest
 from skillsaw.context import RepositoryContext
 from skillsaw.formats import grok
 from skillsaw.lint_target import GrokMarketplaceConfigNode, GrokMarketplaceIndexNode, GrokPluginNode
+from skillsaw.rules.builtin.grok import GrokMarketplaceJsonValidRule
 from tests.grok._helpers import copy_fixture, lint_json, violations_for
 
 CATALOG_RULE = "grok-marketplace-json-valid"
@@ -214,3 +215,40 @@ def test_plugin_component_paths_keep_their_distinct_resolution_contract(tmp_path
     )
 
     assert grok.grok_declared_skill_dirs(plugin) == [plugin / "skills"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "settings, expected, fail_on",
+    [
+        ({}, "warning", "error"),
+        ({"severity": None}, "warning", "error"),
+        ({"severity": "info"}, "info", "warning"),
+        ({"severity": "warning"}, "warning", "error"),
+        ({"severity": "error"}, "error", "error"),
+    ],
+)
+def test_remote_subdirectory_severity_controls_cli_exit(tmp_path, settings, expected, fail_on):
+    repo = copy_fixture("grok/marketplace-sources", tmp_path)
+    catalog_path = repo / ".grok-plugin" / "marketplace.json"
+    catalog = json.loads(catalog_path.read_text())
+    source = {**catalog["plugins"][4]["source"], "path": "packages//remote-kit"}
+    _set_source(repo, source, index=4)
+    (repo / ".skillsaw.yaml").write_text(
+        json.dumps({"version": "0.20.0", "fail-on": fail_on, "rules": {CATALOG_RULE: settings}}),
+        encoding="utf-8",
+    )
+
+    assert _local_names(repo) == LOCAL_NAMES
+    report = _report(repo, returncode=1 if expected == "error" else 0)
+    assert len(report["violations"]) == 1
+    finding = report["violations"][0]
+    assert finding["rule_id"] == CATALOG_RULE
+    assert finding["severity"] == expected
+    assert finding["file_path"] == ".grok-plugin/marketplace.json"
+    assert "plugins[4].source.path 'packages//remote-kit'" in finding["message"]
+    assert "relative subdirectory of the cloned repository" in finding["message"]
+    direct = GrokMarketplaceJsonValidRule(settings).check(RepositoryContext(repo))
+    assert len(direct) == 1
+    assert direct[0].severity.value == expected
+    assert direct[0].message == finding["message"]

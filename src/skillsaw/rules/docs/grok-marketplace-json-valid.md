@@ -72,7 +72,7 @@ Grok content so metadata errors do not reclassify it as another host's content.
 
 - Remote Git source `path` that fails the same relative-subdirectory grammar,
   such as `.` or `plugins/almanac/`. Grok refuses that subdirectory during
-  installation; this check retains its existing warning severity.
+  installation; this check defaults to warning and honors an explicit rule severity.
 - A `source` object that specifies neither `path` nor `url`.
 
 **Info** — style and upstream compatibility tips:

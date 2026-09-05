@@ -300,7 +300,7 @@ class GrokMarketplaceJsonValidRule(Rule):
                     "relative subdirectory of the cloned repository without empty, '.', '..' "
                     "or ':' path components; only one leading './' is allowed",
                     file_path=catalog,
-                    severity=Severity.WARNING,
+                    severity=self.scope_severity(Severity.WARNING),
                 )
             )
         return violations
