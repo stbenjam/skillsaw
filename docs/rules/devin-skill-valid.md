@@ -32,7 +32,11 @@ repeated key; remove the duplicate and keep the intended value.
 
 ## Severity
 
-Malformed YAML and invalid field types are errors. Setting both a named
+Malformed YAML and invalid field types are errors. Empty trigger lists and lists
+with no recognized trigger are activation-policy errors: the skill may load,
+but no supported invocation route is declared. Unknown strings alongside `user`
+or `model` are warnings because the recognized route still works. An explicit
+rule severity overrides these primary findings. Setting both a named
 `agent` and `subagent: true` is informational: Devin uses the named agent, so
 the finding explains the precedence without treating a documented
 combination as invalid.

@@ -219,11 +219,20 @@ class DevinSkillValidRule(Rule):
         )
         if len(bad) > 3:
             shown += f", … ({len(bad)} values)"
+        usable = all(isinstance(trigger, str) for trigger in value) and any(
+            trigger in devin.SKILL_TRIGGERS for trigger in value
+        )
+        message = (
+            f"Devin ignores unknown 'triggers' values {shown}; use 'user' and/or 'model'"
+            if usable
+            else f"'triggers' must list only 'user' and/or 'model'; got {shown}"
+        )
         return [
             self.violation(
-                f"'triggers' must list only 'user' and/or 'model'; got {shown}",
+                message,
                 file_path=block.path,
                 line=line_for(f"triggers[{bad[0][0]}]") or field.field_line,
                 block=block,
+                severity=self.scope_severity(Severity.WARNING) if usable else self.severity,
             )
         ]

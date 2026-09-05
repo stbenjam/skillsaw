@@ -373,8 +373,10 @@ def test_native_skill_bad_triggers_is_one_finding_naming_the_values(tmp_path):
 
     assert len(found) == 1
     assert found[0].line == 3
+    assert found[0].severity is Severity.WARNING
     assert found[0].message == (
-        "'triggers' must list only 'user' and/or 'model'; got 'deploy the app', 'ship it', 'release'"
+        "Devin ignores unknown 'triggers' values 'deploy the app', 'ship it', 'release'; "
+        "use 'user' and/or 'model'"
     )
 
 
