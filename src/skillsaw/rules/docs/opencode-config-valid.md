@@ -17,6 +17,11 @@ Different names may appear in both sections; only conflicting definitions of
 the same name are reported. One-to-one renamed settings still accept either
 spelling but report when both are present.
 
+MCP servers may be named `servers` or `timeout`, including a bare 1.x
+`{"enabled": false}` toggle. The value shape distinguishes these entries from
+the 2.0 server map and global timeout. Nested servers named `type`, `command`
+or `enabled` retain their own entries.
+
 The MCP servers declared in OpenCode configuration are also evaluated by policy
 rules such as [`mcp-prohibited`](mcp-prohibited.md).
 

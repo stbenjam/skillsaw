@@ -3747,6 +3747,69 @@ class TestOpenCode:
         assert [v["severity"] for v in unknown] == ["info"]
         assert "'modle'" in unknown[0]["message"]
 
+    def test_mcp_server_names_do_not_change_their_layout(self, tmp_path):
+        from skillsaw.blocks import OpenCodeMcpBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("opencode/mcp-server-names", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(OpenCodeMcpBlock)
+        assert {str(block.path.relative_to(repo)): block.server_names for block in blocks} == {
+            "opencode.json": {"servers", "timeout", "reference"},
+            ".opencode/opencode.json": {"type", "command", "enabled", "flat-reference"},
+        }
+        result = run_lint(repo, "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        report = result["out"]
+        assert report is not None
+        assert {"opencode-config-valid", "mcp-valid-json"} <= set(report["stats"]["rules_run"])
+        assert report["violations"] == []
+
+    def test_mcp_policy_sees_direct_toggles_and_nested_field_names(self, tmp_path):
+        repo = copy_fixture("opencode/mcp-server-names", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  mcp-prohibited:\n    enabled: true\n"
+            "    allowlist: [reference, flat-reference]\n"
+        )
+        result = run_lint(repo, "--no-custom-rules", "--no-plugins", config=config)
+        assert result["rc"] == 1, result
+        report = result["out"]
+        assert report is not None
+        assert sorted(
+            (v["rule_id"], v["file_path"], v["message"]) for v in report["violations"]
+        ) == [
+            (
+                "mcp-prohibited",
+                ".opencode/opencode.json",
+                "non-allowlisted MCP servers defined: command, enabled, type",
+            ),
+            (
+                "mcp-prohibited",
+                "opencode.json",
+                "non-allowlisted MCP servers defined: servers, timeout",
+            ),
+        ]
+
+    @pytest.mark.parametrize("name", ["servers", "timeout"])
+    @pytest.mark.parametrize("enabled", [None, "false", 0, []])
+    def test_invalid_named_toggles_report_the_original_server(self, tmp_path, name, enabled):
+        repo = copy_fixture("opencode/mcp-server-names", tmp_path)
+        path = repo / "opencode.json"
+        data = json.loads(path.read_text())
+        data["mcp"][name]["enabled"] = enabled
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        report = result["out"]
+        assert report is not None
+        assert [(v["rule_id"], v["file_path"], v["message"]) for v in report["violations"]] == [
+            (
+                "opencode-config-valid",
+                "opencode.json",
+                f"MCP server '{name}' 'enabled' must be a boolean",
+            )
+        ]
+
     def test_empty_templates_and_argument_values_are_valid(self, tmp_path):
         from skillsaw.blocks import OpenCodeMcpBlock
         from skillsaw.context import RepositoryContext

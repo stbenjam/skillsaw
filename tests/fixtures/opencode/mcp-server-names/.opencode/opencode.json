@@ -1,0 +1,28 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "type": {
+        "type": "remote",
+        "url": "https://mcp.example.com/type"
+      },
+      "command": {
+        "type": "local",
+        "command": [
+          "node",
+          "tools/command-mcp.js"
+        ]
+      },
+      "enabled": {
+        "enabled": false
+      }
+    },
+    "timeout": {
+      "startup": 5000
+    },
+    "flat-reference": {
+      "type": "remote",
+      "url": "https://mcp.example.com/flat-reference"
+    }
+  }
+}

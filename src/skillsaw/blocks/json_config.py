@@ -1343,35 +1343,21 @@ class VsCodeMcpBlock(McpBlock):
         return "mcp.json (VS Code MCP)"
 
 
-#: Connection fields that identify one OpenCode server, paired with the type
-#: the field has on a server. The *value* type is what does the work: a
-#: server may legitimately be *named* ``command`` or ``type``, and matching
-#: on names alone would read the map holding it as a single server.
-_OPENCODE_CONNECTION_FIELDS = (
-    ("type", str),
-    ("command", list),
-    ("url", str),
-)
-
-
 def _is_opencode_server(value: Any) -> bool:
-    """Whether *value* is one OpenCode MCP server rather than a map of them.
+    """Distinguish a direct MCP server from a map of named servers.
 
-    Answers the same ambiguity upstream's ``isDirectServer`` does, though
-    not identically — it keys on ``type``/``enabled`` holding a non-object,
-    this keys on a connection field of the right type, and the two differ on
-    a bare ``{"enabled": true}``. A server carries a connection field; a map
-    of servers carries server objects. Testing the value and not just the
-    key is what keeps a server named ``command`` — whose ``command`` entry
-    is a nested object, not an argv array — from being mistaken for the
-    server itself. The discriminator is binary, so a ``servers`` map that
-    itself looks like a server is read as one: rare, and it needs a
-    malformed ``servers`` to trigger, but it hides the entries underneath
-    rather than merely misfiling them.
+    Match OpenCode's ``isDirectServer`` compatibility discriminator: a
+    present ``type`` or ``enabled`` whose value is not an object identifies
+    a direct entry, including a bare v1 enabled toggle. Invalid scalar or
+    array values still identify that entry so the shape rule reports the
+    right server. Object-valued fields can instead be nested servers named
+    ``type`` or ``enabled``.
     """
     if not isinstance(value, dict):
         return False
-    return any(isinstance(value.get(field), kind) for field, kind in _OPENCODE_CONNECTION_FIELDS)
+    return any(
+        field in value and not isinstance(value[field], dict) for field in ("type", "enabled")
+    )
 
 
 @dataclass(eq=False)
@@ -1484,10 +1470,9 @@ class OpenCodeMcpBlock(McpBlock):
         for name, cfg in section.items():
             if wrapper and name == "servers":
                 continue
-            # v2 carries a global ``timeout`` beside ``servers``. It is a
-            # setting, not a server, and upstream skips it by name for
-            # exactly this reason. A v1 server genuinely called ``timeout``
-            # carries a connection field, so it survives the test.
+            # v2 carries a global ``timeout`` beside ``servers``. A direct
+            # server field, including an enabled toggle, identifies a v1
+            # server genuinely called ``timeout`` rather than that setting.
             if name == "timeout" and not _is_opencode_server(cfg):
                 continue
             entries.append((name, cfg))
