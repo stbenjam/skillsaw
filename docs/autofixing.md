@@ -38,8 +38,8 @@ Summary:
   [*] 1 violation(s) fixable with `skillsaw fix` ([?] 1 more with `skillsaw fix --suggest`)
 ```
 
-- `[*]` — a **SAFE** fix exists; `skillsaw fix` resolves it.
-- `[?]` — a **SUGGEST** fix exists; it is only applied with `skillsaw fix --suggest`.
+- `[*]` — the rule declares a **SAFE** fix, eligible for `skillsaw fix`.
+- `[?]` — the rule declares a **SUGGEST** fix, requiring `skillsaw fix --suggest`.
 
 Autofix never rewrites vendor-managed plugins under `.codex/plugins/`, even
 when a rule reports a finding there. It likewise never rewrites externally
@@ -48,7 +48,39 @@ skills installed from external `skills-lock.json` sources; those findings
 remain diagnostic even when `lint-external-content` is left at its default
 `true`.
 
-The JSON format carries an additive `fixable` boolean (plus `fix_confidence`: `safe` or `suggest` when fixable) on each violation — whether a deterministic fix exists, even for findings `skillsaw lint` does not show by default; a consumer deciding what a plain fix run repairs should also check `severity`. Fixability is per violation, not per rule — a rule that can only fix some shapes of a problem (e.g. `content-unlinked-internal-reference` only wraps references whose target file exists) marks only those violations. Because `skillsaw fix` batches several violations into one fix per file, its `Fixed N issue(s)` count can differ from the number of marked violations.
+Symbolic-link files are also diagnostic-only for autofix. Lint does not mark
+these findings as fixable. When a selected fix would change a symbolic link,
+`skillsaw fix` and `--dry-run` list the skipped path and explain why. For a
+content edit, edit the target file directly. For a rename, manually remove,
+replace, or rename the symbolic link. Skips for discovered findings are reported
+once per path and reason, within the selected severity and confidence, and do
+not prevent independent regular-file fixes. A policy-only skip exits successfully; a failed write
+still exits nonzero. Dry-run does not apply proposed fixes or run fix callbacks. Existing rename
+bookkeeping can still prune stale entries while checking; dry-run is not yet
+a fully read-only operation.
+
+Explicit file and directory symlinks passed to `skillsaw fix` are skipped
+before CLI path resolution, including dangling links. Name the real file or
+directory directly to select it. Other explicitly selected roots still run;
+this leaf check does not redefine paths through ancestor directory aliases.
+
+A fix can also update supporting metadata. If that follow-up write fails after
+the primary edit, the command reports partial completion and exits nonzero;
+the already applied edit is retained.
+
+The JSON format carries an additive `fixable` boolean, plus `fix_confidence`
+(`safe` or `suggest`) when fixable. These fields describe declared deterministic
+fix support after known path policies: vendor-managed, external, diagnostic-only
+and symbolic-link findings have their fixability and confidence cleared. They
+do not guarantee application; proposal generation and final filesystem checks
+can still skip a fix, including a rename involving another symbolic-link path.
+Metadata also covers findings hidden by the default severity threshold, so a
+consumer deciding what a plain fix run repairs should check `severity`.
+
+Fixability is per violation, not per rule: for example,
+`content-unlinked-internal-reference` marks only references whose target exists.
+Because `skillsaw fix` batches several violations into one fix per file, its
+`Fixed N issue(s)` count can differ from the number of marked violations.
 
 !!! note "Removed in 0.15"
     The deprecated `skillsaw lint --fix` flag was removed. `skillsaw fix` is the single entry point for autofixes.

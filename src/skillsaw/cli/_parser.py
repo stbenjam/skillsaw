@@ -10,11 +10,24 @@ from ..context import RepositoryType
 from ..formatters import EXTENSION_MAP, FORMATS
 from ._config import _get_version
 
+_DEFAULT_FEEDBACK_FILE_BYTES = 4 * 1024 * 1024
+_DEFAULT_FEEDBACK_TOTAL_BYTES = 16 * 1024 * 1024
+
 _COLOR_HELP = (
     "Force ANSI colors and terminal hyperlinks on (--color) or off "
     "(--no-color). Default: color only when stdout is a terminal; "
     "FORCE_COLOR and NO_COLOR are also honored."
 )
+
+
+def _positive_int(value: str) -> int:
+    try:
+        result = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a positive integer") from None
+    if result <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return result
 
 
 def _add_color_flag(subparser) -> None:
@@ -251,10 +264,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
             "Create a local, reviewable diagnostic bundle for a skillsaw bug report. "
             "It never uploads data, and includes no repository files unless --include or "
             "--config names them. Named files are copied verbatim: skillsaw does not scan "
-            "them for secrets, so review the ZIP before sharing it. Two things are refused "
-            "outright: files whose name means credentials (.env, id_rsa, *.pem, ...), and "
+            "them for secrets, so review the ZIP before sharing it. Refused selections include "
+            "files whose name means credentials (.env, id_rsa, *.pem, ...), and "
             "files already excluded by .gitignore, .dockerignore, .npmignore, .helmignore "
-            "or .gcloudignore."
+            "or .gcloudignore. Selected files also have byte limits: 4 MiB per file and "
+            "16 MiB total by default; an oversized selection stops before diagnostic lint "
+            "and creates no bundle."
         ),
     )
     feedback_parser.add_argument(
@@ -288,6 +303,20 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=[],
         metavar="PATH",
         help="Copy a repository-relative UTF-8 text file into the bundle verbatim (repeatable; review it for secrets yourself)",
+    )
+    feedback_parser.add_argument(
+        "--max-file-bytes",
+        type=_positive_int,
+        default=_DEFAULT_FEEDBACK_FILE_BYTES,
+        metavar="BYTES",
+        help="Maximum raw bytes per --include/--config file (positive integer; default: 4194304 / 4 MiB)",
+    )
+    feedback_parser.add_argument(
+        "--max-total-bytes",
+        type=_positive_int,
+        default=_DEFAULT_FEEDBACK_TOTAL_BYTES,
+        metavar="BYTES",
+        help="Maximum retained --include/--config bytes across distinct ZIP members (positive integer; default: 16777216 / 16 MiB)",
     )
     feedback_parser.add_argument(
         "--with-extensions",

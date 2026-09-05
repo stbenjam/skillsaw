@@ -5,6 +5,7 @@ import errno
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -1379,7 +1380,8 @@ def test_feedback_copies_an_explicitly_named_config_verbatim(tmp_path):
         "    enabled: true\n"
         "api_key: sk-abcdefghijklmnopqrstuvwxyz123456\n"
     )
-    config.write_text(body)
+    raw = ("\ufeff" + "# café\n" + body).replace("\n", "\r\n").encode("utf-8")
+    config.write_bytes(raw)
     output = tmp_path / "report.zip"
 
     result = _run_feedback(repo, "--config", str(config), "--output", str(output), "--json")
@@ -1388,15 +1390,13 @@ def test_feedback_copies_an_explicitly_named_config_verbatim(tmp_path):
     archive_directory = json.loads(result.stdout)["archive_directory"]
     with zipfile.ZipFile(output) as bundle:
         assert f"{archive_directory}/skillsaw-config.yaml" in bundle.namelist()
-        shipped = bundle.read(f"{archive_directory}/skillsaw-config.yaml").decode()
+        shipped = bundle.read(f"{archive_directory}/skillsaw-config.yaml")
         environment = json.loads(bundle.read(f"{archive_directory}/environment.json"))
         manifest = json.loads(bundle.read(f"{archive_directory}/manifest.json"))
     assert environment["config_included"] is True
-    assert shipped == body, "the reporter's config must arrive unmodified"
-    assert (
-        manifest["files"]["skillsaw-config.yaml"]["sha256"]
-        == hashlib.sha256(body.encode()).hexdigest()
-    )
+    assert shipped == raw, "the reporter's config must arrive unmodified"
+    assert manifest["files"]["skillsaw-config.yaml"]["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert manifest["files"]["skillsaw-config.yaml"]["size_bytes"] == len(raw)
 
 
 def test_feedback_gates_repository_supplied_rules_behind_with_extensions(tmp_path, monkeypatch):
@@ -1623,7 +1623,7 @@ def test_feedback_includes_a_file_byte_for_byte(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
-    raw = "﻿---\r\nname: demo\r\n---\r\n\r\nCRLF body.\r\n".encode("utf-8")
+    raw = "﻿---\r\nname: demo\r\n---\r\n\r\nCRLF café body.\r\n".encode("utf-8")
     (repo / "reproducer.md").write_bytes(raw)
     output = tmp_path / "report.zip"
 
@@ -1659,3 +1659,364 @@ def test_ignore_patterns_survive_a_byte_order_mark(tmp_path):
     patterns = _feedback._ignore_patterns(tmp_path)
 
     assert [pattern.value for pattern in patterns] == ["scratch.md"]
+
+
+@pytest.fixture
+def attachment_repo(tmp_path, monkeypatch):
+    source = Path(__file__).parent / "fixtures" / "feedback" / "attachment-budgets"
+    repo = shutil.copytree(source, tmp_path / "repo")
+    lint_calls = []
+
+    def diagnostic_lint(*args, **kwargs):
+        lint_calls.append((args, kwargs))
+        return {"stdout": "{}", "stderr": "", "exit_code": 0, "timed_out": False}
+
+    monkeypatch.setattr(_feedback, "_run_diagnostic_lint", diagnostic_lint)
+    return repo, lint_calls
+
+
+def _feedback_members(result):
+    assert result.returncode == 0, result.stderr
+    metadata = json.loads(result.stdout)
+    prefix = metadata["archive_directory"] + "/"
+    with zipfile.ZipFile(metadata["bundle"]) as archive:
+        return {name.removeprefix(prefix): archive.read(name) for name in archive.namelist()}
+
+
+@pytest.mark.integration
+class TestFeedbackAttachmentBudgets:
+    @pytest.mark.parametrize(
+        ("file_limit", "total_limit", "expected_error"),
+        [(8, 16, None), (7, 16, "--max-file-bytes"), (8, 15, "--max-total-bytes")],
+    )
+    def test_exact_fit_and_one_byte_overflow(
+        self, attachment_repo, file_limit, total_limit, expected_error
+    ):
+        repo, lint_calls = attachment_repo
+        result = run_cli(
+            [
+                "feedback",
+                repo,
+                "--include",
+                "note.md",
+                "--include",
+                "details.md",
+                "--max-file-bytes",
+                file_limit,
+                "--max-total-bytes",
+                total_limit,
+                "--json",
+            ]
+        )
+
+        if expected_error:
+            assert result.returncode == 1
+            assert expected_error in result.stderr
+            assert ("note.md" if file_limit == 7 else "details.md") in result.stderr
+            assert lint_calls == []
+            assert not (repo / ".skillsaw-feedback").exists()
+        else:
+            members = _feedback_members(result)
+            manifest = json.loads(members["manifest.json"])["files"]
+            for name in ("note.md", "details.md"):
+                raw = (repo / name).read_bytes()
+                member = f"included/{name}"
+                assert members[member] == raw
+                assert manifest[member] == {
+                    "size_bytes": len(raw),
+                    "sha256": hashlib.sha256(raw).hexdigest(),
+                }
+            assert len(lint_calls) == 1
+            assert "skillsaw-config.yaml" not in members  # Auto-config remains unselected.
+
+    def test_empty_member_fits_after_total_is_exhausted(self, attachment_repo):
+        repo, _ = attachment_repo
+        result = run_cli(
+            [
+                "feedback",
+                repo,
+                "--include",
+                "note.md",
+                "--include",
+                "empty.md",
+                "--max-file-bytes",
+                8,
+                "--max-total-bytes",
+                8,
+                "--json",
+            ]
+        )
+        assert _feedback_members(result)["included/empty.md"] == b""
+
+    def test_normalized_duplicate_counts_once(self, attachment_repo):
+        repo, _ = attachment_repo
+        result = run_cli(
+            [
+                "feedback",
+                repo,
+                "--include",
+                "note.md",
+                "--include",
+                "./note.md",
+                "--max-file-bytes",
+                8,
+                "--max-total-bytes",
+                8,
+                "--json",
+            ]
+        )
+        members = _feedback_members(result)
+        assert [name for name in members if name.startswith("included/")] == ["included/note.md"]
+        assert json.loads(result.stdout)["included_files"] == ["note.md", "note.md"]
+
+    @pytest.mark.skipif(os.name != "posix", reason="contained aliases use symlinks")
+    def test_distinct_alias_members_each_consume_bytes(self, attachment_repo):
+        repo, lint_calls = attachment_repo
+        (repo / "alias.md").symlink_to("note.md")
+        args = [
+            "feedback",
+            repo,
+            "--include",
+            "note.md",
+            "--include",
+            "alias.md",
+            "--max-file-bytes",
+            8,
+            "--json",
+        ]
+        refused = run_cli([*args, "--max-total-bytes", 15])
+        assert refused.returncode == 1
+        assert "alias.md" in refused.stderr
+        assert "--max-total-bytes" in refused.stderr
+        assert lint_calls == []
+        assert not (repo / ".skillsaw-feedback").exists()
+
+        accepted = run_cli([*args, "--max-total-bytes", 16])
+        members = _feedback_members(accepted)
+        assert (
+            members["included/note.md"]
+            == members["included/alias.md"]
+            == (repo / "note.md").read_bytes()
+        )
+
+    def test_config_and_include_are_separate_members(self, attachment_repo):
+        repo, lint_calls = attachment_repo
+        config = repo / ".skillsaw.yaml"
+        raw = config.read_bytes()
+        assert len(raw) == 16
+        args = [
+            "feedback",
+            repo,
+            "--config",
+            config,
+            "--include",
+            ".skillsaw.yaml",
+            "--max-file-bytes",
+            16,
+            "--json",
+        ]
+        refused = run_cli([*args, "--max-total-bytes", 31])
+        assert refused.returncode == 1
+        assert "--include file: .skillsaw.yaml" in refused.stderr
+        assert "--max-total-bytes" in refused.stderr
+        assert lint_calls == []
+        assert not (repo / ".skillsaw-feedback").exists()
+
+        members = _feedback_members(run_cli([*args, "--max-total-bytes", 32]))
+        manifest = json.loads(members["manifest.json"])["files"]
+        for member in ("skillsaw-config.yaml", "included/.skillsaw.yaml"):
+            assert members[member] == raw
+            assert manifest[member] == {"size_bytes": 16, "sha256": hashlib.sha256(raw).hexdigest()}
+
+    @pytest.mark.skipif(os.name != "posix", reason="contained aliases use symlinks")
+    @pytest.mark.parametrize("selection", ["--include", "--config"])
+    def test_all_spelling_guards_precede_selected_reads(
+        self, attachment_repo, monkeypatch, selection
+    ):
+        repo, lint_calls = attachment_repo
+        (repo / ".env").symlink_to("note.md")
+
+        def unexpected_read(*args, **kwargs):
+            pytest.fail("selected content was read before all selection guards")
+
+        monkeypatch.setattr(_feedback, "_read_selected_file", unexpected_read)
+        alias = ".env" if selection == "--include" else repo / ".env"
+        result = run_cli(["feedback", repo, "--include", "note.md", selection, alias])
+        assert result.returncode == 1
+        assert "credentials" in result.stderr
+        assert lint_calls == []
+        assert not (repo / ".skillsaw-feedback").exists()
+
+    def test_reads_obey_remaining_total_even_below_file_limit(self, attachment_repo, monkeypatch):
+        repo, lint_calls = attachment_repo
+        original_open = Path.open
+        read_bytes = {"note.md": 0, "details.md": 0}
+        limits = {"note.md": 11, "details.md": 3}
+        requests = []
+        # Four-byte chunks split the UTF-8 bytes of é across reads in the tiny fixture.
+        monkeypatch.setattr(_feedback, "_SELECTED_FILE_CHUNK_BYTES", 4)
+
+        class RecordingReader:
+            def __init__(self, path, stream):
+                self.path = path
+                self.stream = stream
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.stream.close()
+
+            def read(self, size):
+                name = self.path.name
+                assert 0 < size <= 4
+                assert size <= limits[name] + 1 - read_bytes[name]
+                requests.append(size)
+                data = self.stream.read(size)
+                read_bytes[name] += len(data)
+                return data
+
+        def recording_open(path, mode="r", *args, **kwargs):
+            stream = original_open(path, mode, *args, **kwargs)
+            if mode == "rb" and path in (repo / "note.md", repo / "details.md"):
+                return RecordingReader(path, stream)
+            return stream
+
+        monkeypatch.setattr(Path, "open", recording_open)
+        result = run_cli(
+            [
+                "feedback",
+                repo,
+                "--include",
+                "note.md",
+                "--include",
+                "details.md",
+                "--max-file-bytes",
+                32,
+                "--max-total-bytes",
+                11,
+            ]
+        )
+        assert result.returncode == 1
+        assert "--max-total-bytes" in result.stderr
+        assert read_bytes == {"note.md": 8, "details.md": 4}
+        assert len(requests) > 2
+        assert lint_calls == []
+        assert not (repo / ".skillsaw-feedback").exists()
+
+    def test_large_limits_use_bounded_reads(self, attachment_repo, monkeypatch):
+        repo, lint_calls = attachment_repo
+        expected_bytes = (repo / "note.md").read_bytes()
+        original_open = Path.open
+        requests = []
+
+        class BoundedReader:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.stream.close()
+
+            def read(self, size):
+                # Check before delegating: even a broken implementation never
+                # submits a huge request to the real eight-byte fixture file.
+                assert 0 < size <= 64 * 1024
+                requests.append(size)
+                return self.stream.read(size)
+
+        def bounded_open(path, mode="r", *args, **kwargs):
+            stream = original_open(path, mode, *args, **kwargs)
+            if path == repo / "note.md" and mode == "rb":
+                return BoundedReader(stream)
+            return stream
+
+        monkeypatch.setattr(Path, "open", bounded_open)
+        result = run_cli(
+            [
+                "feedback",
+                repo,
+                "--include",
+                "note.md",
+                "--json",
+                "--max-file-bytes",
+                sys.maxsize + 1,
+                "--max-total-bytes",
+                sys.maxsize + 1,
+            ]
+        )
+        assert _feedback_members(result)["included/note.md"] == expected_bytes
+        assert requests
+        assert len(lint_calls) == 1
+
+    @pytest.mark.parametrize("large_option", ["--max-file-bytes", "--max-total-bytes"])
+    def test_small_effective_limit_accepts_large_override(self, attachment_repo, large_option):
+        repo, lint_calls = attachment_repo
+        small_option = (
+            "--max-total-bytes" if large_option == "--max-file-bytes" else "--max-file-bytes"
+        )
+        result = run_cli(
+            [
+                "feedback",
+                repo,
+                "--include",
+                "note.md",
+                "--json",
+                large_option,
+                sys.maxsize + 1,
+                small_option,
+                8,
+            ]
+        )
+        assert _feedback_members(result)["included/note.md"] == (repo / "note.md").read_bytes()
+        assert len(lint_calls) == 1
+
+    @pytest.mark.parametrize(
+        ("option", "value"),
+        [
+            ("--max-file-bytes", "0"),
+            ("--max-file-bytes", "-1"),
+            ("--max-file-bytes", "1.5"),
+            ("--max-file-bytes", "many"),
+            ("--max-total-bytes", "0"),
+        ],
+    )
+    def test_limits_require_positive_integers(self, attachment_repo, option, value):
+        repo, lint_calls = attachment_repo
+        result = run_cli(["feedback", repo, option, value])
+        assert result.returncode == 2
+        assert "must be a positive integer" in result.stderr
+        assert lint_calls == []
+        assert not (repo / ".skillsaw-feedback").exists()
+
+    def test_byte_overrides_do_not_persist_between_calls(self, attachment_repo):
+        repo, lint_calls = attachment_repo
+        args = ["feedback", repo, "--include", "note.md", "--json"]
+        assert run_cli([*args, "--max-file-bytes", 7]).returncode == 1
+        members = _feedback_members(run_cli(args))
+        assert members["included/note.md"] == (repo / "note.md").read_bytes()
+        assert len(lint_calls) == 1
+
+    def test_invalid_config_encoding_stops_before_lint(self, attachment_repo):
+        repo, lint_calls = attachment_repo
+        config = repo / ".skillsaw.yaml"
+        config.write_bytes(b"\xff")
+        result = run_cli(["feedback", repo, "--config", config])
+        assert result.returncode == 1
+        assert "Could not read config file" in result.stderr
+        assert "expected UTF-8 text" in result.stderr
+        assert lint_calls == []
+        assert not (repo / ".skillsaw-feedback").exists()
+
+    def test_default_limits_and_feedback_only_options(self):
+        from skillsaw.cli._parser import _build_parser
+
+        args = _build_parser().parse_args(["feedback"])
+        assert args.max_file_bytes == 4 * 1024 * 1024
+        assert args.max_total_bytes == 16 * 1024 * 1024
+        for option in ("--max-file-bytes", "--max-total-bytes"):
+            result = run_cli(["lint", option, 8])
+            assert result.returncode == 2
+            assert "unrecognized arguments" in result.stderr
