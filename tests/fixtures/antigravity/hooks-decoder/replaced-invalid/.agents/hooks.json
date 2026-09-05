@@ -1,0 +1,4 @@
+{
+  "review": {"Stop": [{"Command": 42}]},
+  "review": {"STOP": [{"Command": "/audit/not-an-executable"}]}
+}

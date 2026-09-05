@@ -166,6 +166,25 @@ HOOK_GROUP_KEYS = frozenset({"matcher", "hooks"})
 #: .enabled of type jsonhook.JSONHookSpec``) that kills the file.
 HOOK_SPEC_NON_EVENT_KEYS = frozenset({"enabled"})
 
+#: Hook structs match ASCII field names using Go's simple Unicode fold.
+HOOK_SPEC_FIELD_NAMES = MappingProxyType(
+    {key.lower(): key for key in HOOK_EVENTS | HOOK_SPEC_NON_EVENT_KEYS}
+)
+HOOK_ENTRY_FIELD_NAMES = MappingProxyType(
+    {key.lower(): key for key in HOOK_HANDLER_KEYS | HOOK_GROUP_KEYS}
+)
+
+
+def hook_key_fold(key: str) -> str:
+    """Fold known Go fields without expanding sharp s into two letters."""
+    return key.lower().replace("ſ", "s")
+
+
+def hook_field_name(key: str, *, entry: bool = False) -> str:
+    names = HOOK_ENTRY_FIELD_NAMES if entry else HOOK_SPEC_FIELD_NAMES
+    return names.get(hook_key_fold(key), key)
+
+
 #: Top-level keys an author writes meaning file-level metadata, which this
 #: host reads as hook *names*. Each gets its own message saying so, because
 #: "a named hook must be a JSON object" tells the author nothing about why

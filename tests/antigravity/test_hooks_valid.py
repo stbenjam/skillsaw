@@ -277,7 +277,7 @@ class TestFileScopedDefects:
             (
                 "non-finite",
                 '{"a": {"Stop": [{"command": "x", "timeout": 1e400}]}}',
-                "not valid JSON",
+                "'timeout' must be a whole number of seconds",
             ),
             # ``timeout`` is an int32, and ``""`` is not its zero value:
             # measured, ``cannot unmarshal string into … .timeout``.

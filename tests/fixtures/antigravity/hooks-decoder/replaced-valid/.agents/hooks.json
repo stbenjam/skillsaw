@@ -1,0 +1,5 @@
+{
+  "review": {"Stop": [{"Command": "/audit/first"}]},
+  "review": {"Stop": [{"Command": "/audit/second"}], "STOP": [{"Command": "/audit/final"}]},
+  "cleared": {"PreToolUse": [{"Hooks": [{"Command": "/audit/cleared"}], "hooks": null}]}
+}

@@ -1,0 +1,9 @@
+{
+  "prompt-review": {
+    "Stop": [{"type": "command", "Type": "prompt", "prompt": "Check formatting.", "Model": "example-model", "Timeout": 5}]
+  },
+  "tool-review": {
+    "Enabled": false,
+    "PreToolUse": [{"Matcher": "read_file", "Hooks": [{"Command": "/audit/not-an-executable"}]}]
+  }
+}

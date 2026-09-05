@@ -29,6 +29,7 @@ from typing import (
 
 from skillsaw.formats import antigravity
 from skillsaw.blocks.antigravity_mcp import read_mcp_config
+from skillsaw.blocks.antigravity_hooks import read_hooks_config
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.formats.vscode import VSCODE_HOOK_COMMAND_FIELDS
 from skillsaw.lint_target import LintTarget
@@ -950,10 +951,13 @@ class AntigravityHooksBlock(HooksBlock):
     #: hooks.json … invalid character``, and the run loads zero named
     #: hooks.
     strict_json: ClassVar[bool] = True
-    #: Measured: a repeated hook name, a repeated event key inside one
-    #: hook, and a repeated key inside one handler all load, last value
-    #: winning, with the same named-hook count as the file without them.
+    #: Repeated names/events replace earlier values, while handler strings
+    #: retain their prior value on null. Earlier type errors still fail the file.
     duplicate_keys_fatal: ClassVar[bool] = False
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = read_hooks_config(self.path)
 
     def tree_label(self) -> str:
         return f"{self.path.name} (antigravity hooks)"
@@ -1004,7 +1008,7 @@ class AntigravityHooksBlock(HooksBlock):
                 # own spelling is normalized to the canonical name and two
                 # spellings of one event land in the same bucket.
                 canonical = antigravity.HOOK_EVENTS_BY_CASEFOLD.get(
-                    event_type.casefold() if isinstance(event_type, str) else "",
+                    antigravity.hook_key_fold(event_type) if isinstance(event_type, str) else "",
                     event_type,
                 )
                 configs: List[HookEventConfig] = []
