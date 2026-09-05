@@ -4,11 +4,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYPROJECT="$REPO_ROOT/pyproject.toml"
 INIT_PY="$REPO_ROOT/src/skillsaw/__init__.py"
-ACTION_YML="$REPO_ROOT/action.yml"
 
 # Docs carrying an install pin that must track the released version. Historical
 # "Since vX.Y.Z" lines under docs/rules/ are deliberately excluded -- only the
-# two pin patterns below are rewritten, never a bare version string.
+# pin patterns below are rewritten, never a bare version string.
 PINNED_DOCS=(
     "$REPO_ROOT/README.md"
     "$REPO_ROOT/docs/ci.md"
@@ -40,14 +39,13 @@ echo "Bumping version: $current_version -> $new_version"
 # Use python for portable in-place editing (works on both macOS and Linux).
 # Both python programs are quoted heredocs with values passed as argv, so
 # quotes, backticks, and $ in the source never reach the shell.
-python3 - "$PYPROJECT" "$INIT_PY" "$ACTION_YML" "$current_version" "$new_version" <<'PY'
+python3 - "$PYPROJECT" "$INIT_PY" "$current_version" "$new_version" <<'PY'
 import re, sys
 
-pyproject, init_py, action_yml, current, new = sys.argv[1:6]
+pyproject, init_py, current, new = sys.argv[1:5]
 for path, pattern, repl in [
     (pyproject, r'^version = "' + re.escape(current) + '"', 'version = "' + new + '"'),
     (init_py, r'^__version__ = "' + re.escape(current) + '"', '__version__ = "' + new + '"'),
-    (action_yml, r"default: '" + re.escape(current) + "'", "default: '" + new + "'"),
 ]:
     with open(path, encoding='utf-8') as f:
         text = f.read()
@@ -59,7 +57,6 @@ PY
 echo "Updated:"
 echo "  $PYPROJECT"
 echo "  $INIT_PY"
-echo "  $ACTION_YML"
 
 # Rewrite install pins in docs. Each file is optional -- docs get reorganized,
 # and a missing file or absent pin is not an error.
@@ -80,9 +77,6 @@ for pattern, repl in [
     # rewritten: it records the release that introduced an API, which
     # does not move.
     (r'skillsaw>=' + re.escape(current), 'skillsaw>=' + new),
-    # The action's documented version input default, which
-    # test_release_metadata pins to the project version.
-    (r'install \| `' + re.escape(current) + r'`', 'install | `' + new + '`'),
 ]:
     text = re.sub(pattern, repl, text)
 if text != original:

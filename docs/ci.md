@@ -105,12 +105,21 @@ runs can update and remove only the comments they own:
 | Input | Description | Default |
 |-------|-------------|---------|
 | `path` | Path to lint | `.` |
-| `version` | Specific skillsaw version to install | `0.20.0` |
+| `version` | PyPI version to install; empty installs the action checkout | `''` |
 | `strict` | Treat warnings as errors | `false` |
 | `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict: true` is equivalent to `fail-on: warning`, and combining `strict` with a contradictory `fail-on` fails the run | `''` |
 | `verbose` | Include info-level violations | `false` |
 | `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
 | `plugins` | Trusted newline-separated pip requirements to install as rule plugins; values can select indexes or URLs | `''` |
+
+With `version` left empty, the linter comes from the same tag or commit SHA
+as the action. Set `version` to install a specific PyPI release instead:
+
+```yaml
+- uses: stbenjam/skillsaw@v0
+  with:
+    version: '0.19.0'
+```
 
 ### Outputs
 

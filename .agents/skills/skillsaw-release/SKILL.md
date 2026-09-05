@@ -63,8 +63,9 @@ bash scripts/bump-version.sh [version]
 ```
 
 Verify the script updated `pyproject.toml`, `src/skillsaw/__init__.py`, and
-`action.yml` (the action's default skillsaw version). If you pass no version
-argument, keep it empty — the script increments the patch version automatically.
+the documented install pins. The action installs its checkout by default;
+its empty `version` input stays unchanged during a release. If you pass no
+version argument, the script increments the patch version automatically.
 
 Then regenerate generated files, refresh the human contributor list from
 GitHub, and check for pinned version references the script does NOT update:

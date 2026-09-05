@@ -7,7 +7,6 @@ silently dead at exit 0. These tests run the script end-to-end against a
 tmp copy of every pinned file so a rewrite cannot go quietly inert.
 """
 
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -34,11 +33,12 @@ def _make_repo(tmp_path: Path) -> Path:
     (repo / "pyproject.toml").write_text(f'[project]\nname = "skillsaw"\nversion = "{OLD}"\n')
     (repo / "src" / "skillsaw" / "__init__.py").write_text(f'__version__ = "{OLD}"\n')
     (repo / "action.yml").write_text(
-        "inputs:\n  version:\n    description: Version to install\n" f"    default: '{OLD}'\n"
+        "inputs:\n  version:\n    description: PyPI version or empty for checkout\n"
+        "    default: ''\n"
     )
     (repo / "docs" / "ci.md").write_text(
         f"Install with `pip install skillsaw=={OLD}`.\n\n"
-        f"| `version` | Specific skillsaw version to install | `{OLD}` |\n"
+        "| `version` | PyPI version to install; empty installs the action checkout | `''` |\n"
     )
     (repo / "docs" / "pre-commit.md").write_text(f"    rev: v{OLD}\n")
     # The floor moves; prose recording the release that introduced an API
@@ -61,6 +61,7 @@ def _run(repo: Path) -> subprocess.CompletedProcess:
 
 def test_bump_moves_every_pin_site_together(tmp_path):
     repo = _make_repo(tmp_path)
+    action_before = (repo / "action.yml").read_bytes()
     result = _run(repo)
     assert result.returncode == 0, result.stderr
     # A quoting break surfaces as bash `command not found` noise on stderr
@@ -69,14 +70,13 @@ def test_bump_moves_every_pin_site_together(tmp_path):
 
     assert f'version = "{NEW}"' in (repo / "pyproject.toml").read_text()
     assert f'__version__ = "{NEW}"' in (repo / "src" / "skillsaw" / "__init__.py").read_text()
-    assert f"default: '{NEW}'" in (repo / "action.yml").read_text()
+    assert (repo / "action.yml").read_bytes() == action_before
 
     ci = (repo / "docs" / "ci.md").read_text()
     assert f"skillsaw=={NEW}" in ci
-    # The action-input table row is what test_release_metadata asserts
-    # against the project version; its pattern carries backticks, the
-    # characters most easily lost to the shell.
-    assert f"| `version` | Specific skillsaw version to install | `{NEW}` |" in ci
+    assert (
+        "| `version` | PyPI version to install; empty installs the action checkout | `''` |" in ci
+    )
 
     assert f"rev: v{NEW}" in (repo / "docs" / "pre-commit.md").read_text()
 
