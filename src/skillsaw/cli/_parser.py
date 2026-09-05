@@ -483,6 +483,11 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Path to .skillsaw.yaml config file",
     )
     baseline_parser.add_argument(
+        "--include-info",
+        action="store_true",
+        help="Include INFO findings (automatic with fail-on: info in config)",
+    )
+    baseline_parser.add_argument(
         "--no-custom-rules",
         action="store_true",
         dest="no_custom_rules",

@@ -8393,6 +8393,124 @@ class TestBaseline:
         assert summary(r)["warnings"] > 0
 
 
+@pytest.mark.integration
+class TestBaselineInfo:
+    FIXTURE = "config/baseline-info"
+
+    @pytest.mark.parametrize(
+        "settings,baseline_args,lint_args",
+        [
+            ("fail-on: info\n", [], []),
+            ("fail-on: info\nstrict: true\n", [], []),
+            ("", ["--include-info"], ["--fail-on", "info"]),
+        ],
+    )
+    def test_info_threshold_adoption(self, tmp_path, settings, baseline_args, lint_args):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(config.read_text().replace("fail-on: info\n", settings))
+        lint_args = [*lint_args, "--no-custom-rules", "--no-plugins"]
+
+        before = run_lint(repo, *lint_args)
+        assert before["rc"] == 1, before
+        assert len(violations(before)) == 1
+        assert violations(before)[0]["rule_id"] == "content-weak-language"
+        assert violations(before)[0]["severity"] == "info"
+
+        result = run_cli(["baseline", repo, "--no-custom-rules", "--no-plugins", *baseline_args])
+        assert result.returncode == 0, result.stderr
+        data = json.loads((repo / ".skillsaw-baseline.json").read_text())
+        assert len(data["violations"]) == 1
+        saved = data["violations"][0]
+        assert (saved["rule_id"], saved["severity"], saved["file_path"], saved["line"]) == (
+            "content-weak-language",
+            "info",
+            "CLAUDE.md",
+            3,
+        )
+        assert saved["fingerprint"]
+
+        after = run_lint(repo, *lint_args)
+        assert after["rc"] == 0, after
+        assert violations(after) == []
+        assert summary(after)["baseline_suppressed"] == 1
+
+        path = repo / "CLAUDE.md"
+        path.write_text(
+            path.read_text() + "\nTry to update the API reference after interface changes.\n"
+        )
+        changed = run_lint(repo, *lint_args)
+        assert changed["rc"] == 1, changed
+        assert len(violations(changed)) == 1
+        assert "Try to" in violations(changed)[0]["message"]
+        assert violations(changed)[0]["line"] == 6
+        assert summary(changed)["baseline_suppressed"] == 1
+
+    @pytest.mark.parametrize(
+        "severity,threshold,saved_count",
+        [
+            ("info", None, 0),
+            ("info", "warning", 0),
+            ("warning", "error", 1),
+            ("error", "error", 1),
+        ],
+    )
+    def test_default_policy_keeps_warning_and_error_only(
+        self, tmp_path, severity, threshold, saved_count
+    ):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            config.read_text()
+            .replace("fail-on: info\n", f"fail-on: {threshold}\n" if threshold else "")
+            .replace("severity: info", f"severity: {severity}")
+        )
+        before = run_lint(repo, "--fail-on", "info", "--no-custom-rules", "--no-plugins")
+        assert before["rc"] == 1, before
+        assert len(violations(before)) == 1
+        assert violations(before)[0]["severity"] == severity
+
+        result = run_cli(["baseline", repo, "--no-custom-rules", "--no-plugins"])
+        assert result.returncode == 0, result.stderr
+        data = json.loads((repo / ".skillsaw-baseline.json").read_text())
+        assert len(data["violations"]) == saved_count
+        if saved_count:
+            assert data["violations"][0]["severity"] == severity
+
+        after = run_lint(repo, "--fail-on", "info", "--no-custom-rules", "--no-plugins")
+        assert after["rc"] == (0 if saved_count else 1), after
+        assert len(violations(after)) == 1 - saved_count
+        assert summary(after)["baseline_suppressed"] == saved_count
+
+    def test_info_capture_still_excludes_infrastructure_and_deprecation(
+        self, tmp_path, monkeypatch
+    ):
+        from skillsaw.linter import Linter
+        from skillsaw.rule import RuleViolation, Severity
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        original_run = Linter.run
+
+        def run_with_infrastructure(self):
+            return original_run(self) + [
+                RuleViolation(rule_id=rule_id, severity=severity, message="Synthetic notice")
+                for rule_id, severity in [
+                    ("repository-path-error", Severity.ERROR),
+                    ("rule-execution-error", Severity.ERROR),
+                    ("plugin-load-error", Severity.ERROR),
+                    ("deprecated-rule", Severity.INFO),
+                ]
+            ]
+
+        monkeypatch.setattr(Linter, "run", run_with_infrastructure)
+        result = run_cli(["baseline", repo, "--include-info", "--no-custom-rules", "--no-plugins"])
+        assert result.returncode == 0, result.stderr
+        data = json.loads((repo / ".skillsaw-baseline.json").read_text())
+        assert [(v["rule_id"], v["severity"]) for v in data["violations"]] == [
+            ("content-weak-language", "info")
+        ]
+
+
 # ── Rule crash handling (GH-263) ─────────────────────────────────
 
 

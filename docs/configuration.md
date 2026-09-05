@@ -177,6 +177,8 @@ rules added in newer skillsaw versions) fail CI instead of accumulating
 silently. When info violations are what failed the run, the text output
 shows them even without `--verbose`. Pair it with a
 [baseline](baseline.md) to adopt the threshold before reaching zero.
+`skillsaw baseline` includes INFO findings with this config setting; when
+using only `lint --fail-on info`, create it with `baseline --include-info`.
 
 ## Custom Rules
 
