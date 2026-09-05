@@ -1,0 +1,87 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|(?i)Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "(?-u:\\w+)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "(?U).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\x{42}ash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "(?R)^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "(?i-m:Write)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "\\x{28}Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "(?U)(Bash|Write)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      },
+      {
+        "matcher": "(?x)Bash # (?=literal comment\n",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/not-an-executable"
+          }
+        ]
+      }
+    ]
+  }
+}
