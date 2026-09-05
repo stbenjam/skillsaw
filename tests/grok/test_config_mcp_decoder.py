@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from skillsaw.blocks import GrokConfigBlock
@@ -106,6 +108,32 @@ for value, valid in [
             body,
             "http" if valid else None,
             None if valid else "must be 'select'",
+        )
+    )
+
+for value, valid in [
+    ("oauth = []", True),
+    ('oauth = ["client", "CLIENT_SECRET", ["read"], 1234]', True),
+    ('oauth = ["client", "CLIENT_SECRET", ["read"], 1234, "extra"]', False),
+    ("setup = [[], {}]", True),
+    ('setup = { fields = [["site", "Site", "select"]] }', True),
+    ('setup = { fields = [["site", "Site"]] }', False),
+    (
+        'setup = [[["site", "Site", "select", false, "", [["Region", "eu"]]]], { region = ["site", { eu = "europe" }] }]',
+        True,
+    ),
+    (
+        'setup = { fields = [{id="site", label="Site", type="select", options=[["Region"]]}] }',
+        False,
+    ),
+    ('setup = { variables = { region = ["site"] } }', False),
+]:
+    CASES.append(
+        (
+            "struct-array-" + str(len(CASES)),
+            URL + value + "\n",
+            "http" if valid else None,
+            None if valid else "must be",
         )
     )
 
@@ -217,7 +245,9 @@ def inspect_lint(repo):
     assert [block.path for block in blocks] == [repo / ".grok/config.toml"]
     block = blocks[0]
     assert set(dict(block.server_entries())) == {"docs", "issues", "migrations", "canary"}
+    original = copy.deepcopy(block.raw_data)
     servers = {server.name: server for server in block.servers}
+    assert block.raw_data == original
     assert servers["canary"].command == "catalog-review-mcp"
     assert servers["canary"].args == ["--read-only"]
     assert servers["issues"].url == "https://issues.example.invalid/mcp"
@@ -249,6 +279,13 @@ def test_mcp_decoder_matches_native_variant_controls(tmp_path, name, body, trans
             assert servers["docs"].args is None
             assert servers["docs"].env is None
             assert servers["docs"].cwd is None
+        if body.startswith(URL + 'oauth = ["client"'):
+            assert servers["docs"].oauth == {
+                "clientId": "client",
+                "clientSecretEnvVar": "CLIENT_SECRET",
+                "scopes": ["read"],
+                "callbackPort": 1234,
+            }
         if name == "u64-zero":
             assert servers["docs"].startup_timeout == 0
             assert servers["docs"].timeout == 0

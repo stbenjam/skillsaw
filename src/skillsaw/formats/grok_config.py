@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 
 def unit_enum_value(value: Any) -> Optional[str]:
@@ -19,3 +19,16 @@ def unit_enum_value(value: Any) -> Optional[str]:
         if isinstance(body, (dict, list)) and not body:
             return name
     return None
+
+
+def struct_fields(value: Any, fields: Sequence[str], required: int = 0) -> Any:
+    """Normalize a measured Grok TOML positional struct; keep invalid input.
+
+    Field order and the required positional prefix come from the owning
+    struct. Mapping inputs keep their ordinary named-field validation.
+    """
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, list) and required <= len(value) <= len(fields):
+        return dict(zip(fields, value))
+    return value

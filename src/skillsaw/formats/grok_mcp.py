@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from skillsaw.diagnostics import safe_display
-from skillsaw.formats.grok_config import unit_enum_value
+from skillsaw.formats.grok_config import struct_fields, unit_enum_value
 
 URL_FIELDS = ("url", "urlTemplate", "url_template")
 _STDIO_FIELDS = {"command": "string", "args": "strings", "env": "string-map", "cwd": "string"}
@@ -102,6 +102,39 @@ def _fields(
     return problems
 
 
+def _normalized_structs(server: Mapping[str, Any]) -> Dict[str, Any]:
+    """Normalize the OAuth/setup structs whose TOML sequence forms load."""
+    normalized = dict(server)
+    if "oauth" in server:
+        normalized["oauth"] = struct_fields(
+            server["oauth"], ("clientId", "clientSecretEnvVar", "scopes", "callbackPort")
+        )
+    if "setup" not in server:
+        return normalized
+    setup = struct_fields(server["setup"], ("fields", "variables"))
+    normalized["setup"] = setup
+    if not isinstance(setup, dict):
+        return normalized
+    fields = setup.get("fields")
+    if isinstance(fields, list):
+        setup["fields"] = fields = [
+            struct_fields(value, ("id", "label", "type", "required", "default", "options"), 3)
+            for value in fields
+        ]
+        for value in fields:
+            if isinstance(value, dict) and isinstance(value.get("options"), list):
+                value["options"] = [
+                    struct_fields(option, ("label", "value"), 2) for option in value["options"]
+                ]
+    for key in ("variables", "values"):
+        variables = setup.get(key)
+        if isinstance(variables, dict):
+            setup[key] = {
+                name: struct_fields(value, ("from", "map"), 2) for name, value in variables.items()
+            }
+    return normalized
+
+
 def _nested_errors(server: Mapping[str, Any]) -> List[str]:
     problems = []
     oauth = server.get("oauth")
@@ -184,6 +217,7 @@ def decode_mcp_server(server: Mapping[str, Any]) -> Tuple[Optional[str], List[st
     Keep disabled and unresolved-setup definitions available to diagnostic
     consumers. They deserialize even when Grok does not connect to them.
     """
+    server = _normalized_structs(server)
     common = _fields(server, _COMMON_FIELDS) + _nested_errors(server)
     stdio = _fields(server, _STDIO_FIELDS)
     urls = [key for key in URL_FIELDS if key in server]
@@ -212,6 +246,7 @@ def decode_mcp_server(server: Mapping[str, Any]) -> Tuple[Optional[str], List[st
 
 def normalized_mcp_server(server: Mapping[str, Any], transport: str) -> Dict[str, Any]:
     """Expose only the selected variant through the shared MCP role."""
+    server = _normalized_structs(server)
     fields = _STDIO_FIELDS if transport == "stdio" else _HTTP_FIELDS
     result = {key: value for key, value in server.items() if key in fields}
     result["type"] = transport
