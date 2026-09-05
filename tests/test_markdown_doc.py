@@ -445,6 +445,85 @@ class TestProseLines:
         assert [fl for fl, _ in doc.prose_lines()] == [11, 12, 13]
 
 
+class TestTokenLifetime:
+    BODY = (
+        "# Release checks\n"
+        "\n"
+        "> 3. Read [guide][guide] and ![chart `alt`](chart.png).\n"
+        ">    Keep `literal` <!-- note --> visible.\n"
+        "\n"
+        "```sh\n"
+        "printf done\n"
+        "```\n"
+        "\n"
+        "<div>\n"
+        "raw HTML\n"
+        "</div>\n"
+        "\n"
+        '[guide]: docs/guide.md "Guide"\n'
+    )
+
+    def test_inline_results_release_children_without_mutating_shared_parse(self):
+        first = _doc(self.BODY, line_offset=10)
+        second = _doc(self.BODY, line_map=lambda line: line + 100)
+        shared_tokens = second._tokens
+        assert first._tokens is shared_tokens
+        assert any(token.children for token in shared_tokens if token.type == "inline")
+
+        first_links = first.links()
+        assert [(link.href, link.file_line) for link in first_links] == [
+            ("docs/guide.md", 13),
+            ("chart.png", 13),
+        ]
+        assert not any(token.children for token in first._tokens if token.type == "inline")
+        assert any(token.children for token in shared_tokens if token.type == "inline")
+
+        # A second document still walks the intact shared parse, with its own
+        # file coordinates and nested image-alt code span.
+        second_links = second.links()
+        assert [(link.href, link.file_line) for link in second_links] == [
+            ("docs/guide.md", 103),
+            ("chart.png", 103),
+        ]
+        assert [(span.content, span.file_line) for span in second.code_spans()] == [
+            ("alt", 103),
+            ("literal", 104),
+        ]
+        assert first_links[0].dest_file_line == 24
+        assert second_links[0].dest_file_line == 114
+        assert first.links() == first_links
+        for link in second_links:
+            _assert_dest_span_exact(self.BODY, link)
+
+    def test_lazy_block_queries_survive_a_prose_first_walk(self):
+        doc = _doc(self.BODY)
+        prose = doc.prose_text()
+        assert "`literal`" not in prose
+        assert "printf done" not in prose
+        assert not any(token.children for token in doc._tokens if token.type == "inline")
+
+        assert [(heading.level, heading.text, heading.body_line) for heading in doc.headings()] == [
+            (1, "Release checks", 1)
+        ]
+        assert [(fence.info, fence.content, fence.body_line_start) for fence in doc.fences()] == [
+            ("sh", "printf done\n", 6)
+        ]
+        assert doc.ordered_list_content_lines() == [
+            (3, "Read [guide][guide] and ![chart `alt`](chart.png)."),
+            (4, "Keep `literal` <!-- note --> visible."),
+        ]
+        assert doc.html_block_spans() == [(9, 12)]
+        assert [(comment.text, comment.body_line_start) for comment in doc.html_comments()] == [
+            (" note ", 4)
+        ]
+        definitions = doc.reference_definitions()
+        assert [(definition.href, definition.body_line_start) for definition in definitions] == [
+            ("docs/guide.md", 14)
+        ]
+        assert doc.prose_text() == prose
+        assert [link.href for link in doc.links()] == ["docs/guide.md", "chart.png"]
+
+
 class TestTextSegments:
     def test_link_text_marked_in_link(self):
         body = "see [docs/a.md](docs/a.md) and docs/b.md\n"

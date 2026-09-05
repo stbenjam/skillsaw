@@ -916,6 +916,13 @@ class MarkdownDoc:
                 # All spans in this token share one source-to-column map.
                 self._inline_maps.append((map_start, token.content, walker.verbatim_spans))
         self._backfill_reference_spans()
+        # Inline results are now materialized; later queries use only the
+        # top-level tokens. Copy before dropping children: the parser cache
+        # shares its original token graph with other MarkdownDoc instances.
+        self._tokens = [
+            token.copy(children=None) if token.type == "inline" and token.children else token
+            for token in self._tokens
+        ]
 
     # -- accessors ------------------------------------------------------------
 
