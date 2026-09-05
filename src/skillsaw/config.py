@@ -89,6 +89,10 @@ class LinterConfig:
         default_factory=dict, compare=False, repr=False
     )
 
+    # default() materializes registry values for callers and config output;
+    # those values are not user severity overrides until changed.
+    _generated_rule_defaults: bool = field(default=False, init=False, repr=False, compare=False)
+
     # Recognised top-level config keys; anything else triggers a load warning.
     _KNOWN_KEYS = frozenset(
         {
@@ -377,11 +381,29 @@ class LinterConfig:
                 "enabled": rule.default_enabled,
                 "severity": rule.default_severity().value,
             }
-        return cls(
+        config = cls(
             version=__version__,
             exclude_patterns=list(_DEFAULT_EXCLUDE_PATTERNS),
             rules=rules,
         )
+        config._generated_rule_defaults = True
+        return config
+
+    def has_explicit_rule_severity(self, rule_id: str) -> bool:
+        """Whether a rule's severity is an override rather than a generated default.
+
+        Loaded YAML and directly constructed rule mappings express intent,
+        even when the chosen value equals the registry default. A default()
+        config keeps its generated values implicit; changing one to a different
+        severity is an override. Use a direct rule mapping to explicitly choose
+        the same value as a generated default.
+        """
+        severity = (self.rules.get(rule_id) or {}).get("severity")
+        if severity is None:
+            return False
+        return not self._generated_rule_defaults or severity != _default_rules().get(
+            rule_id, {}
+        ).get("severity")
 
     @classmethod
     def for_init(cls) -> "LinterConfig":

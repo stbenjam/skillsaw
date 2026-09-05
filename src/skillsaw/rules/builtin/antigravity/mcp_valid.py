@@ -145,7 +145,7 @@ class AntigravityMcpValidRule(Rule):
                     f"no '{block.servers_key}' object, so Antigravity loads no server "
                     "from this file",
                     file_path=block.path,
-                    severity=Severity.WARNING,
+                    severity=self.scope_severity(Severity.WARNING),
                     fingerprint_discriminator="no-mcpservers",
                 )
             ]
@@ -165,7 +165,7 @@ class AntigravityMcpValidRule(Rule):
         return self.violation(
             f"MCP server '{name}': {problem}; Antigravity loads the server and it starts nothing",
             file_path=block.path,
-            severity=Severity.WARNING,
+            severity=self.scope_severity(Severity.WARNING),
             fingerprint_discriminator=f"{name}:{problem}",
         )
 
@@ -173,7 +173,7 @@ class AntigravityMcpValidRule(Rule):
         return self.violation(
             f"MCP server '{name}': {problem}; {_SERVER_DROPPED}",
             file_path=block.path,
-            severity=Severity.WARNING,
+            severity=self.scope_severity(Severity.WARNING),
             fingerprint_discriminator=f"{name}:{problem}",
         )
 

@@ -113,3 +113,7 @@ deny = ["Bash(psql *)"]
   strings.
 - Choose either compact lists (`allow`, `deny`, `ask`) or verbose `rules`
   tables under `[permission]`. Using compact lists is recommended for brevity.
+
+An explicit rule `severity` applies to primary file, server and field findings,
+including those whose normal failure scope is WARNING. With no override (or
+`severity: null`), each failure scope retains its documented default.

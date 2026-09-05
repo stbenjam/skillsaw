@@ -627,10 +627,8 @@ def test_an_empty_config_is_not_a_defect(tmp_path) -> None:
 # ── Configured severity ──────────────────────────────────────────
 
 
-def test_a_configured_severity_moves_the_file_scoped_findings_only(tmp_path) -> None:
-    """The ERRORs follow the user's override; the per-server and per-key
-    WARNINGs are the rule's verdict on blast radius, not its severity, and
-    stay put whatever the user configures."""
+def test_a_configured_severity_moves_all_primary_findings(tmp_path) -> None:
+    """The configured severity reaches whole-file and dropped-entry defects."""
     repo = copy_fixture("grok/config-broken", tmp_path)
     (repo / ".skillsaw.yaml").write_text(
         'version: "99.0.0"\nrules:\n  grok-config-valid:\n    severity: info\n'
@@ -638,9 +636,8 @@ def test_a_configured_severity_moves_the_file_scoped_findings_only(tmp_path) -> 
 
     found = violations_for(lint_json(repo, returncode=0), "grok-config-valid")
 
-    assert {v["severity"] for v in found} == {"info", "warning"}
-    assert len([v for v in found if v["severity"] == "info"]) == 2
-    assert len([v for v in found if v["severity"] == "warning"]) == 3
+    assert len(found) == 5
+    assert {v["severity"] for v in found} == {"info"}
 
 
 def test_the_rule_can_be_turned_off(tmp_path) -> None:

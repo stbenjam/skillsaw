@@ -9472,3 +9472,32 @@ def test_targeting_a_nested_local_install_keeps_its_external_guard(tmp_path, sco
     fixed = run_cli(["fix", target, *options])
     assert fixed.returncode == 0, fixed.stderr
     assert installed.read_bytes() == before
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("rule_id", ["antigravity-mcp-valid", "grok-config-valid"])
+@pytest.mark.parametrize(
+    "setting,expected",
+    [
+        ("", "warning"),
+        ("null", "warning"),
+        ("info", "info"),
+        ("warning", "warning"),
+        ("error", "error"),
+    ],
+)
+def test_cli_scope_severity_uses_explicit_config_and_exit_threshold(
+    tmp_path, rule_id, setting, expected
+):
+    repo = copy_fixture("config/scope-severity", tmp_path)
+    if setting:
+        (repo / ".skillsaw.yaml").write_text(
+            f'version: "99.0.0"\nrules:\n  {rule_id}:\n    severity: {setting}\n'
+        )
+    result = run_lint(
+        repo, "--rule", rule_id, "--fail-on", "warning", "--no-custom-rules", "--no-plugins"
+    )
+    found = violations(result)
+    assert len(found) == 1 and found[0]["rule_id"] == rule_id
+    assert found[0]["severity"] == expected
+    assert result["rc"] == (0 if expected == "info" else 1), result

@@ -196,7 +196,9 @@ class GrokConfigValidRule(Rule):
 
     def _warn(self, block: GrokConfigBlock, message: str) -> RuleViolation:
         """Report a warning-level violation scoped to an entry or field."""
-        return self.violation(message, file_path=block.path, severity=Severity.WARNING)
+        return self.violation(
+            message, file_path=block.path, severity=self.scope_severity(Severity.WARNING)
+        )
 
 
 def _type_name(value: Any) -> str:

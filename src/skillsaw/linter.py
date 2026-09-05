@@ -244,6 +244,7 @@ class Linter:
         enabled_surfaces = self._enabled_builtin_surfaces()
         for rule in self.rules:
             rule._enabled_surface_rule_ids = enabled_surfaces
+            rule._explicit_severity = self.config.has_explicit_rule_severity(rule.rule_id)
 
         if self._rule_ids:
             unknown = self._rule_ids - self._known_rule_ids

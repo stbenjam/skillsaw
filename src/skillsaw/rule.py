@@ -230,6 +230,7 @@ class Rule(ABC):
         """
         self.config = config or {}
         self._enabled = self.config.get("enabled", True)
+        self._explicit_severity = self.config.get("severity") is not None
 
         # Get severity from config or use default
         severity_str = self.config.get("severity", self.default_severity().value)
@@ -392,6 +393,16 @@ class Rule(ABC):
     @property
     def supports_autofix(self) -> bool:
         return type(self).fix is not Rule.fix
+
+    def scope_severity(self, default: Severity) -> Severity:
+        """Use a failure scope's default unless severity was explicitly configured.
+
+        Some format rules report whole-file failures as ERROR and dropped
+        entries as WARNING. Their primary findings still honor a user's
+        severity override. Linter supplies override provenance after merging
+        registry defaults; direct rule constructors are already explicit.
+        """
+        return self.severity if self._explicit_severity else default
 
     def violation(
         self,

@@ -398,3 +398,10 @@ plugins:
 `--no-plugins` CLI flag skips all plugins for a single run. Individual
 plugin *rules* are configured in the normal `rules:` section by rule ID,
 exactly like builtin rules.
+
+For primary findings with different default failure scopes, an explicit rule
+severity overrides each scope. For example, `antigravity-mcp-valid` normally
+reports an invalid document as ERROR and a dropped server as WARNING; setting
+its severity to INFO lowers both. An omitted or null severity retains the
+default classifications. Intentionally separate advisory findings keep the
+classification documented by their rule.

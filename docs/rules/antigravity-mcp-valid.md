@@ -179,6 +179,10 @@ rules:
       - workspace_credentials
 ```
 
+An explicit rule `severity` applies to primary file, server and field findings,
+including those whose normal failure scope is WARNING. With no override (or
+`severity: null`), each failure scope retains its documented default.
+
 ## Configuration
 
 ```yaml
