@@ -107,18 +107,15 @@ markers = [
 ]
 
 [tool.coverage.run]
-# tests/test_integration.py drives the CLI via subprocess.run([sys.executable,
-# "-m", "skillsaw", ...]). pytest-cov 7 dropped automatic subprocess
-# instrumentation, so without this the entire src/skillsaw/cli/ package
-# reports ~0% despite being exercised by 200+ integration tests. `patch =
-# ["subprocess"]` (coverage.py >=7.10) makes coverage inject itself into
-# subprocesses started via the subprocess module, no COVERAGE_PROCESS_START
-# env var or sitecustomize.py needed.
+# Most CLI integration tests run in-process through tests/cli_runner.py.
+# Import/encoding/TTY isolation and installed-plugin discovery still need
+# subprocesses. pytest-cov 7 no longer instruments those automatically;
+# coverage.py >=7.10 patches their startup without COVERAGE_PROCESS_START
+# or sitecustomize.py configuration.
 patch = ["subprocess"]
 
-# The sys.monitoring backend (CPython 3.12+) traces far more cheaply than the
-# settrace core, and the suite spawns ~750 instrumented CLI subprocesses that
-# each pay the tracing cost from interpreter start. Line coverage is identical.
+# The sys.monitoring backend (CPython 3.12+) reduces tracing overhead in both
+# the pytest workers and remaining CLI subprocesses. Line coverage is identical.
 # On an interpreter that can't use it, coverage warns and falls back to the
 # default core, so a contributor on 3.9-3.11 is unaffected.
 core = "sysmon"

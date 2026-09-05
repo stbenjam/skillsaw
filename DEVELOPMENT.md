@@ -24,16 +24,16 @@ make test-coverage  # what CI's coverage job runs
 Both targets run in parallel via pytest-xdist (`-n auto`). Tests run
 against Python 3.9–3.14 in CI. Locally, your active Python version is used.
 
-Most of `tests/test_integration.py` drives the CLI out-of-process via
-`subprocess.run([sys.executable, "-m", "skillsaw", ...])`. pytest-cov 7
-dropped automatic subprocess instrumentation, so without help
-`src/skillsaw/cli/` would report ~0% coverage despite being thoroughly
-exercised. `pyproject.toml` sets `[tool.coverage.run] patch =
-["subprocess"]` (requires coverage>=7.10) to have coverage.py patch the
-`subprocess` module so child interpreters get instrumented automatically —
-no `COVERAGE_PROCESS_START`/`sitecustomize.py` setup needed. The
-instrumentation roughly doubles the runtime, which is why coverage is
-confined to `make test-coverage`.
+Most integration tests use `tests/cli_runner.py` to invoke the CLI in-process,
+with arguments, streams, environment and working directory isolated for each call.
+Tests that need import isolation, real stream encodings, TTY behavior or freshly
+installed plugin discovery still launch separate interpreters.
+
+Coverage instruments those remaining subprocesses through `[tool.coverage.run]
+patch = ["subprocess"]` in `pyproject.toml` (coverage.py >=7.10). pytest-cov 7 no
+longer instruments child processes automatically. No `COVERAGE_PROCESS_START` or
+`sitecustomize.py` setup is needed. Coverage adds tracing overhead, so ordinary
+local checks use `make test`; `make test-coverage` measures coverage explicitly.
 
 ## Formatting and linting
 
