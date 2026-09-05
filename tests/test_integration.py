@@ -8637,6 +8637,26 @@ class TestMarkdownAstRegressions:
         assert "docs/nope.md" in broken[0]["message"]
         assert broken[0]["line"] == 5
 
+    def test_broken_link_fix_handles_parentheses_and_multiple_destinations(self, tmp_path):
+        repo = copy_fixture("regression/broken-ref-parentheses", tmp_path)
+        result = run_lint(repo, "--rule", "content-broken-internal-reference")
+        found = violations(result)
+        assert len(found) == 3 and all(v["fixable"] for v in found)
+        assert all("fix_data" not in v for v in found)
+        path = repo / "AGENTS.md"
+        before = path.read_text()
+        _run_fix(repo, "--suggest", "--rule", "content-broken-internal-reference")
+        fixed = path.read_text()
+        assert '[the upgrade](docs/setup%28v2%29.md "Upgrade guide")' in fixed
+        assert "[the rollback](docs/rollback%28v2%29.md)" in fixed
+        assert "[the escaped destination](docs/setup%28v2%29.md)" in fixed
+        assert "[the supported guide](docs/setup(v2).md)" in fixed
+        assert len(fixed.splitlines()) == len(before.splitlines())
+        _run_fix(repo, "--suggest", "--rule", "content-broken-internal-reference")
+        assert path.read_text() == fixed
+        after = run_lint(repo, "--rule", "content-broken-internal-reference")
+        assert after["rc"] == 0 and violations(after) == []
+
     def test_broken_link_fix_preserves_anchor(self, tmp_path):
         """Fixing [x](docs/gone.md#sec) must keep the #sec anchor."""
         repo = copy_fixture("regression/markdown-ast-anchor", tmp_path)

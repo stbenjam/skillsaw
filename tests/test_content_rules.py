@@ -2944,6 +2944,26 @@ class TestContentUnlinkedInternalReferenceAutofix:
 
 
 class TestContentBrokenInternalReferenceAutofix:
+    @pytest.mark.parametrize("change", ["diagnostic", "file"])
+    def test_fix_uses_original_destination_evidence(self, temp_dir, change):
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs/setup(v2).md").write_text("# Setup\n")
+        path = temp_dir / "AGENTS.md"
+        path.write_text("Read [the guide](docs/setup(v1).md).\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        found = rule.check(context)
+        assert len(found) == 1 and found[0].fixable
+        if change == "diagnostic":
+            found[0].message = "The user-facing wording can change independently."
+            fixes = rule.fix(context, found)
+            assert len(fixes) == 1
+            assert fixes[0].fixed_content == "Read [the guide](docs/setup%28v2%29.md).\n"
+        else:
+            path.write_text("Read [the guide](docs/new-user-link.md).\n")
+            assert rule.fix(context, found) == []
+            assert path.read_text() == "Read [the guide](docs/new-user-link.md).\n"
+
     def test_suggests_similar_filename(self, temp_dir):
         """Broken link should suggest a similar existing file."""
         (temp_dir / "docs").mkdir()

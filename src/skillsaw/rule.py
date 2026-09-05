@@ -88,6 +88,10 @@ class RuleViolation:
     # baselined under the whole's ceiling.
     consolidated_into: Optional["RuleViolation"] = field(default=None, repr=False, compare=False)
 
+    # Rule-owned strings needed to propose a fix. These are internal
+    # evidence, not diagnostic identity or report fields.
+    fix_data: Optional[Dict[str, str]] = field(default=None, repr=False, compare=False)
+
     def __post_init__(self):
         if self.block is None and self.file_path is not None:
             # Lazy: importing ``skillsaw.blocks`` pulls in ``rules.builtin``
@@ -403,6 +407,7 @@ class Rule(ABC):
         fingerprint_discriminator: Optional[str] = None,
         constituents: Tuple[RuleViolation, ...] = (),
         consolidated_into: Optional[RuleViolation] = None,
+        fix_data: Optional[Dict[str, str]] = None,
     ) -> RuleViolation:
         """Create a violation for this rule.
 
@@ -443,4 +448,5 @@ class Rule(ABC):
             fingerprint_discriminator=fingerprint_discriminator,
             constituents=constituents,
             consolidated_into=consolidated_into,
+            fix_data=dict(fix_data) if fix_data is not None else None,
         )

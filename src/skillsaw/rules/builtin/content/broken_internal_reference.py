@@ -125,14 +125,19 @@ class ContentBrokenInternalReferenceRule(Rule):
                         msg += f" (did you mean '{suggestion}'?)"
                     elif not link.has_dest_span:
                         msg += " (reference-style link — fix the definition manually)"
-                    # fix() only rewrites links that have a fuzzy-match
-                    # suggestion and an inline destination span.
+                    # Keep fix inputs separate from the human message.
+                    fix_data = (
+                        {"target": target, "suggestion": suggestion}
+                        if suggestion is not None and link.has_dest_span
+                        else None
+                    )
                     violations.append(
                         self.violation(
                             msg,
                             block=cf,
                             line=link.body_line,
-                            fixable=suggestion is not None and link.has_dest_span,
+                            fixable=fix_data is not None,
+                            fix_data=fix_data,
                         )
                     )
         return violations
@@ -235,10 +240,12 @@ class ContentBrokenInternalReferenceRule(Rule):
     ) -> List[AutofixResult]:
         fixes_by_file: Dict[Path, List[tuple]] = defaultdict(list)
         for v in violations:
-            if not v.file_path or "did you mean" not in v.message:
+            if not v.file_path or not v.fix_data:
                 continue
-            suggestion = v.message.split("did you mean '")[1].rstrip("'?)")
-            old_target = v.message.split("](")[1].split(")")[0]
+            old_target = v.fix_data.get("target")
+            suggestion = v.fix_data.get("suggestion")
+            if not isinstance(old_target, str) or not isinstance(suggestion, str):
+                continue
             fixes_by_file[v.file_path].append((old_target, suggestion, v))
 
         results: List[AutofixResult] = []

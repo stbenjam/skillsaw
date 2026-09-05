@@ -47,6 +47,11 @@ target carrying an RFC 3986 URI scheme — not just `http(s):` and
 `mailto:`, but also application links like `app://` or `vscode://` —
 are treated as external and never reported.
 
+Suggested corrections preserve link labels, titles and anchors. Destinations
+with spaces or parentheses are percent-encoded so the corrected link remains
+valid Markdown. Files edited after the finding was produced are left alone
+when their original token span can no longer be verified.
+
 ## Configuration
 
 ```yaml
