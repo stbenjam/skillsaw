@@ -45,11 +45,16 @@ Findings distinguish between whole-file syntax errors and table-level issues:
 cannot be loaded:
 
 - `mcp_servers` is not a TOML table.
-- A `[mcp_servers.<name>]` entry that is not a table, or does not specify an
-  executable `command` or `url` string. Other configured servers will still
-  load.
-- A server field with an incompatible data type: `args` that is not an array
-  of strings, or `env` / `headers` that is not a table of string values.
+- A `[mcp_servers.<name>]` entry that is not a table, or does not specify a
+  `command` or URL string. URL fields accept `url`, `urlTemplate`, or
+  `url_template`; HTTP definitions must use only one of these aliases.
+- Invalid fields in the selected transport or common server settings. Grok
+  tries the full stdio variant before HTTP, ignoring fields outside the
+  selected variant. A malformed stdio variant can fall through to HTTP;
+  an enabled, blank command selects stdio and is then rejected.
+- Incorrect common types for `enabled`, timeouts, `tool_timeouts`,
+  `expose_image_base64`, or nested `oauth` / `setup` values. Other servers
+  still load when one entry is rejected.
 - Permission lists (`allow`, `deny`, `ask`) that are not arrays.
 - Individual entries in `allow`, `deny`, or `ask` that are not strings.
 - `[permission] rules` that is not an array of tables, or contains invalid

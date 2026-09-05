@@ -1,0 +1,21 @@
+# The documentation provider publishes the camel-case URL alias.
+[mcp_servers.docs]
+urlTemplate = "https://docs.example.invalid/mcp"
+headers = { X-Project = "platform" }
+
+# The issue provider publishes the snake-case spelling.
+[mcp_servers.issues]
+url_template = "https://issues.example.invalid/mcp"
+
+# A migration from local stdio retains fields that cannot form that variant.
+[mcp_servers.migrations]
+command = "migration-review-mcp"
+args = "retired-local-options"
+url = "https://migrations.example.invalid/mcp"
+
+[mcp_servers.canary]
+command = "catalog-review-mcp"
+args = ["--read-only"]
+
+[permission]
+allow = ["Read"]

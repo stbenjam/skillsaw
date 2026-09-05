@@ -87,6 +87,7 @@ from typing import Any, Dict, List, Mapping, Optional, Set
 # inherited. It lives beside the reader that needed it first rather than
 # being copied here, so one fix covers both ecosystems.
 from skillsaw.formats.codex import inline_documents
+from skillsaw.formats.grok_mcp import decode_mcp_server
 from skillsaw.paths import (
     contained_resolve,
     safe_exists,
@@ -417,6 +418,8 @@ MCP_SERVER_FIELDS = frozenset(
         "tool_timeouts",
         "type",
         "url",
+        "urlTemplate",
+        "url_template",
     }
 )
 
@@ -438,24 +441,8 @@ MCP_SSE_TYPE = "sse"
 
 
 def mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
-    """The transport Grok derives for one ``[mcp_servers.<name>]`` table.
-
-    Exactly Grok's own order, measured: a non-empty ``command`` wins even
-    when ``url`` is also set; otherwise a ``url`` is SSE when ``type`` says
-    so and HTTP when it does not. ``None`` means Grok drops that server —
-    per server and order-independent, so its siblings and ``[permission]``
-    are untouched.
-
-    Neither field's *content* is validated. ``url = "not a url"`` loads as
-    an HTTP server.
-    """
-    command = server.get("command")
-    if isinstance(command, str) and command.strip():
-        return "stdio"
-    url = server.get("url")
-    if isinstance(url, str) and url.strip():
-        return MCP_SSE_TYPE if server.get("type") == MCP_SSE_TYPE else "http"
-    return None
+    """Derive the transport using Grok's complete, ordered variant decoder."""
+    return decode_mcp_server(server)[0]
 
 
 #: The ``[permission]`` keys that hold compact rule strings, and the verbose

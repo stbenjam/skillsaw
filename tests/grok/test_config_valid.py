@@ -353,29 +353,30 @@ def test_a_server_grok_drops_is_one_finding_naming_the_reason(tmp_path, table, r
 def test_a_wrong_typed_server_field_costs_that_server(tmp_path, table, reason) -> None:
     """Grok's deserializer refuses the transport and drops the server;
     ``mcpConfigProblems`` calls it an invalid transport."""
-    repo = config(tmp_path, CANARY + '\n[mcp_servers.quayside]\ncommand = "bin/quayside"\n' + table)
+    connection = (
+        'url = "https://quayside.example/mcp"\n'
+        if table.startswith("headers")
+        else 'command = "bin/quayside"\n'
+    )
+    repo = config(tmp_path, CANARY + "\n[mcp_servers.quayside]\n" + connection + table)
 
     violations = check(repo)
 
     assert messages(violations) == [f"[mcp_servers.quayside] {reason}"]
 
 
-def test_the_other_connection_field_is_typed_too(tmp_path) -> None:
-    """A ``command`` wins the transport, and the ``url`` beside it is still
-    deserialized."""
+def test_stdio_ignores_the_http_connection_field(tmp_path) -> None:
+    """A valid stdio variant wins without decoding HTTP-only fields."""
     repo = config(tmp_path, '[mcp_servers.quayside]\ncommand = "bin/quayside"\nurl = 8080\n')
 
-    assert messages(check(repo)) == ["[mcp_servers.quayside] 'url' must be a string, got integer"]
+    assert check(repo) == []
 
 
-def test_a_url_server_types_its_command_too(tmp_path) -> None:
-    """The mirror: a ``url`` carries the transport, and the ``command``
-    beside it is still deserialized — a non-string one drops the server."""
+def test_http_accepts_a_rejected_stdio_connection_field(tmp_path) -> None:
+    """A numeric command rejects stdio, then the valid HTTP variant loads."""
     repo = config(tmp_path, '[mcp_servers.quayside]\nurl = "https://q.example/mcp"\ncommand = 42\n')
 
-    assert messages(check(repo)) == [
-        "[mcp_servers.quayside] 'command' must be a string, got integer"
-    ]
+    assert check(repo) == []
 
 
 def test_two_defects_in_one_server_are_one_finding(tmp_path) -> None:
@@ -565,9 +566,8 @@ def test_an_unknown_server_field_is_not_a_defect(tmp_path) -> None:
     assert check(repo) == []
 
 
-def test_a_known_but_unchecked_server_field_is_left_alone(tmp_path) -> None:
-    """Every field in ``MCP_SERVER_FIELDS`` this rule does not type-check is
-    vocabulary, not a shape to enforce."""
+def test_valid_common_and_variant_fields_are_accepted(tmp_path) -> None:
+    """Common fields decode, while HTTP-only OAuth scopes are ignored here."""
     repo = config(
         tmp_path,
         '[mcp_servers.berths]\ncommand = "bin/harbourmaster"\ncwd = "services/berths"\n'

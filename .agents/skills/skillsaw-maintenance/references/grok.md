@@ -154,14 +154,17 @@ signal.
   field raises an `mcpConfigProblems` *warning* and the server still loads, so it is
   never a reason to call the file broken. `transport` is the plausible misspelling of
   `type` and is not an alias — reported unrecognized, ignored.
-- **Transport derivation** (`mcp_transport()`), exactly Grok's order: a non-empty
-  `command` → `stdio`, winning even beside a `url`; else a `url` with `type = "sse"` →
-  `sse`; else a `url` → `http`; else Grok drops that server, per server and
-  order-independent, leaving its siblings and `[permission]` untouched. `type` is
-  otherwise advisory, and neither field's content is validated — `url = "not a url"`
-  loads as an HTTP server. `enabled = false` omits the server from `inspect`;
-  `GrokConfigBlock` keeps it anyway, because the command is committed and one word
-  turns it back on.
+- **Transport derivation** (`formats/grok_mcp.py`): Grok tries the entire stdio
+  variant first, then HTTP. Fields outside the selected variant are ignored;
+  malformed stdio fields can allow HTTP fallback. Common fields (`enabled`,
+  timeouts, OAuth and setup) decode independently. A selected blank connection is
+  rejected only when enabled. The URL accepts `url`, `urlTemplate` or `url_template`;
+  two URL aliases reject the HTTP variant. HTTP becomes SSE for case-insensitive
+  `type = "sse"` or an exact `/sse` URL suffix. Neither target's content or
+  reachability is validated. `GrokConfigBlock` normalizes the selected variant,
+  including aliases, while retaining disabled and unresolved-setup definitions for
+  diagnostics. Native `inspect` omits those definitions. These decoding controls
+  were verified against Grok 1.0.13 and the pinned config-types MCP source.
 
 ### `[permission]` and the spellings that load nothing
 
@@ -420,7 +423,7 @@ user guide, or re-verify empirically with the canary matrix above:
   `MCP_SERVER_FIELDS` came from the `mcp_servers.<name>.*` rows of
   `26-config-reference.md` and was confirmed accepted by watching for
   `mcpConfigProblems`; a field added upstream reads as unknown until it is added here.
-  It is vocabulary only — `grok-config-valid` type-checks the fields it names and
+  The decoder in `formats/grok_mcp.py` owns field types; `grok-config-valid`
   never reports membership, because an unknown field warns and the server still loads.
   `MCP_TYPE_MISSPELLED_FIELD` (`transport`) and `PERMISSION_MISSPELLED_KEY`
   (`defaultMode`) sit beside it: a spelling that would become real upstream must move

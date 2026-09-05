@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, ClassVar, Dict, Mapping, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Mapping, Optional, Tuple
 
 from skillsaw.formats.grok import PERMISSION_TABLE, mcp_transport
+from skillsaw.formats.grok_mcp import normalized_mcp_server
 
-from .json_config import McpShapeDeferral
+from .json_config import McpServerConfig, McpShapeDeferral
 from .toml_config import TomlMcpConfigBlock
 
 
@@ -54,12 +55,9 @@ class GrokConfigBlock(TomlMcpConfigBlock):
     def transport(cls, server: Mapping[str, Any]) -> Optional[str]:
         """The transport Grok derives, which is not the portable default.
 
-        A non-empty ``command`` wins even beside a ``url``, a ``url`` alone
-        is HTTP (or SSE when ``type`` says so), and a table with neither is
-        dropped outright. Dropping it here keeps the policy and security
-        rules describing what actually runs; the table is still in
-        :meth:`server_entries`, where the config rule finds it and reports
-        it.
+        The complete stdio variant is tried before HTTP; only fields in the
+        selected variant are exposed. Invalid tables remain available from
+        :meth:`server_entries` for config diagnostics.
 
         A server with ``enabled = false`` is kept. Grok omits it from
         ``inspect``, but the command it names is committed to the repository
@@ -67,6 +65,20 @@ class GrokConfigBlock(TomlMcpConfigBlock):
         any other.
         """
         return mcp_transport(server)
+
+    @property
+    def servers(self) -> List[McpServerConfig]:
+        """Normalize aliases and omit fields ignored by the selected variant."""
+        loaded = []
+        for name, config in self.server_entries():
+            if not isinstance(config, dict):
+                continue
+            transport = self.transport(config)
+            if transport is not None:
+                loaded.append(
+                    McpServerConfig.from_dict(name, normalized_mcp_server(config, transport))
+                )
+        return loaded
 
     @property
     def permission(self) -> Optional[Dict[str, Any]]:
