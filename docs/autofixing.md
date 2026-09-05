@@ -52,10 +52,19 @@ Symbolic-link files are also diagnostic-only for autofix. Lint does not mark
 these findings as fixable. When a selected fix would change a symbolic link,
 `skillsaw fix` and `--dry-run` list the skipped path and explain why. For a
 content edit, edit the target file directly. For a rename, manually remove,
-replace, or rename the symbolic link. Skips are reported once per path and reason,
-within the selected severity and confidence, and do not prevent independent
-regular-file fixes. A policy-only skip exits successfully; a failed write
+replace, or rename the symbolic link. Skips for discovered findings are reported
+once per path and reason, within the selected severity and confidence, and do
+not prevent independent regular-file fixes. A policy-only skip exits successfully; a failed write
 still exits nonzero. Dry-run never writes files or runs fix callbacks.
+
+Explicit file and directory symlinks passed to `skillsaw fix` are skipped
+before CLI path resolution, including dangling links. Name the real file or
+directory directly to select it. Other explicitly selected roots still run;
+this leaf check does not redefine paths through ancestor directory aliases.
+
+A fix can also update supporting metadata. If that follow-up write fails after
+the primary edit, the command reports partial completion and exits nonzero;
+the already applied edit is retained.
 
 The JSON format carries an additive `fixable` boolean, plus `fix_confidence`
 (`safe` or `suggest`) when fixable. These fields describe declared deterministic

@@ -7012,7 +7012,7 @@ class TestUnlinkedInternalReferenceAutofix:
             repo.chmod(0o755)
 
         assert result.returncode == 1
-        assert "Failed to apply 1 fix(es)" in result.stderr
+        assert "Failed to complete 1 fix(es)" in result.stderr
         assert "CLAUDE.md" in result.stderr
         assert "No auto-fixable violations found" not in result.stdout
         assert (repo / "CLAUDE.md").read_text() == before
@@ -7550,6 +7550,100 @@ def copy_autofix_skip_repo(tmp_path, name="repo", *, linked=True):
 @pytest.mark.integration
 @pytest.mark.skipif(os.name == "nt", reason="Requires ordinary POSIX symlinks")
 class TestAutofixSkips:
+    @pytest.mark.parametrize("kind", ["file", "directory", "dangling"])
+    @pytest.mark.parametrize("dry_run", [False, True], ids=["apply", "preview"])
+    def test_explicit_leaf_symlinks_stop_before_resolution(
+        self, tmp_path, monkeypatch, kind, dry_run
+    ):
+        from skillsaw.cli import _fix
+
+        repo = copy_autofix_skip_repo(tmp_path, linked=False)
+        target = repo if kind == "directory" else repo / "CLAUDE.md"
+        if kind == "dangling":
+            target = repo / "missing.md"
+        alias = tmp_path / "selected-link"
+        alias.symlink_to(target, target_is_directory=kind == "directory")
+        original = (repo / "CLAUDE.md").read_bytes()
+        resolver = _fix._resolve_lint_paths
+
+        def guarded_resolver(paths):
+            assert paths == [], "explicit alias reached path resolution"
+            return resolver(paths)
+
+        def unexpected_config(*args, **kwargs):
+            pytest.fail("all-skipped selections should not load repository configuration")
+
+        monkeypatch.setattr(_fix, "_resolve_lint_paths", guarded_resolver)
+        monkeypatch.setattr(_fix, "load_config", unexpected_config)
+        result = run_cli(["fix", alias, *(["--dry-run"] if dry_run else [])])
+        assert result.returncode == 0, result.stderr
+        assert "Skipped 1 path(s):" in result.stdout
+        assert f"[{alias}] symbolic link" in result.stdout
+        assert "Fixed " not in result.stdout and "Would fix" not in result.stdout
+        assert "No auto-fixable" not in result.stdout
+        assert ("dry-run — no files were modified" in result.stdout) is dry_run
+        assert alias.is_symlink()
+        assert (repo / "CLAUDE.md").read_bytes() == original
+
+    @pytest.mark.parametrize("dry_run", [False, True], ids=["apply", "preview"])
+    def test_explicit_alias_keeps_independently_selected_target(
+        self, tmp_path, monkeypatch, dry_run
+    ):
+        from skillsaw.cli import _fix
+
+        repo = copy_autofix_skip_repo(tmp_path, linked=False)
+        alias = tmp_path / "selected-link"
+        alias.symlink_to(repo, target_is_directory=True)
+        original = (repo / "CLAUDE.md").read_bytes()
+        resolver = _fix._resolve_lint_paths
+
+        def guarded_resolver(paths):
+            assert paths == [repo], "alias identity must not enter normalized-root deduplication"
+            return resolver(paths)
+
+        monkeypatch.setattr(_fix, "_resolve_lint_paths", guarded_resolver)
+        result = run_cli(
+            [
+                "fix",
+                alias,
+                repo,
+                "--rule",
+                "content-unlinked-internal-reference",
+                "--no-custom-rules",
+                "--no-plugins",
+                *(["--dry-run"] if dry_run else []),
+            ]
+        )
+        assert result.returncode == 0, result.stderr
+        assert ("Would fix 1 issue(s):" if dry_run else "Fixed 1 issue(s):") in result.stdout
+        assert f"[{repo / 'CLAUDE.md'}]" in result.stdout
+        assert f"[{alias}] symbolic link" in result.stdout
+        assert "Skipped 1 path(s):" in result.stdout
+        assert alias.is_symlink()
+        assert ((repo / "CLAUDE.md").read_bytes() == original) is dry_run
+
+    @pytest.mark.parametrize("error", ["missing", "rule-conflict"])
+    def test_explicit_skip_preserves_independent_input_errors(self, tmp_path, monkeypatch, error):
+        from skillsaw.cli import _fix
+
+        alias = tmp_path / "selected-link"
+        alias.symlink_to(tmp_path / "missing-target")
+        extra = (
+            [tmp_path / "missing-input"]
+            if error == "missing"
+            else ["--rule", "agentskill-name", "--skip-rule", "agentskill-name"]
+        )
+
+        def unexpected_resolver(paths):
+            pytest.fail("invalid inputs should stop before path resolution")
+
+        monkeypatch.setattr(_fix, "_resolve_lint_paths", unexpected_resolver)
+        result = run_cli(["fix", alias, *extra])
+        assert result.returncode == 1
+        assert ("Path not found" if error == "missing" else "cannot be combined") in result.stderr
+        assert "Fixed " not in result.stdout and "Would fix" not in result.stdout
+        assert alias.is_symlink()
+
     """Policy skips preserve diagnostics, previews and independent eligible fixes."""
 
     rule_id = "content-unlinked-internal-reference"
@@ -7695,7 +7789,7 @@ class TestAutofixSkips:
         )
         assert result.returncode == 1
         assert "Skipped 1 path(s):" in result.stdout
-        assert "Failed to apply 1 fix(es)" in result.stderr
+        assert "Failed to complete 1 fix(es)" in result.stderr
         assert "Test write refusal" in result.stderr
         assert "Fixed " not in result.stdout and "No auto-fixable" not in result.stdout
         assert (regular / "CLAUDE.md").read_bytes() == original

@@ -26,22 +26,35 @@ def _rel(path, root):
 
 
 def _run_fix(args):
-    missing = [p for p in args.path if not p.exists()]
-    for p in missing:
-        print(f"Error: Path not found: {p}", file=sys.stderr)
-    if missing:
-        sys.exit(1)
-
-    paths = _resolve_lint_paths(args.path)
-
-    config, _config_path = load_config(args, paths[0])
-    severity_threshold = resolve_fix_level(args, config)
-
     rule_ids = set(args.rule_ids) if args.rule_ids else None
     skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
     if rule_ids and skip_rule_ids:
         print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
         sys.exit(1)
+
+    # Resolving a named leaf symlink erases the identity needed by the
+    # autofix policy. Admit inputs before resolving them, including dangling
+    # links and directory links, while retaining independently named roots.
+    admitted = []
+    input_skips = {}
+    for path in args.path:
+        skip = Linter._symlink_skip(path)
+        if skip is None:
+            admitted.append(path)
+        else:
+            input_skips.setdefault(skip, skip[0].parent)
+
+    missing = [p for p in admitted if not p.exists()]
+    for p in missing:
+        print(f"Error: Path not found: {p}", file=sys.stderr)
+    if missing:
+        sys.exit(1)
+
+    paths = _resolve_lint_paths(admitted)
+
+    if paths:
+        config, _config_path = load_config(args, paths[0])
+        severity_threshold = resolve_fix_level(args, config)
 
     dry_run = getattr(args, "dry_run", False)
     confidence = AutofixConfidence.SUGGEST if args.suggest else AutofixConfidence.SAFE
@@ -49,7 +62,7 @@ def _run_fix(args):
     applied = []
     suggested = []
     failed = []
-    skipped = {}
+    skipped = dict(input_skips)
     deprecation_messages = []
     for fix_path in paths:
         context = RepositoryContext(
@@ -132,7 +145,7 @@ def _run_fix(args):
     # Multi-root runs keep absolute paths — the same relative name in two
     # repos (e.g. CLAUDE.md) would be ambiguous.
     def _display(file_path, root):
-        return _rel(file_path, root) if len(paths) == 1 else file_path
+        return _rel(file_path, root) if len(paths) == 1 and not input_skips else file_path
 
     if applied:
         label = "Would fix" if dry_run else "Fixed"
@@ -183,10 +196,9 @@ def _run_fix(args):
         print("\nRun `skillsaw lint` to see remaining issues.")
 
     if failed:
-        # A write that failed is not a fix that was applied. Say so, and
-        # exit non-zero: "No auto-fixable violations found." over a
-        # read-only tree was a lie the exit code agreed with.
-        print(f"\n{c['red']}Failed to apply {len(failed)} fix(es):{c['reset']}", file=sys.stderr)
+        # Primary writes can fail, or a supporting write can fail after the
+        # primary edit applied. Both need a visible nonzero outcome.
+        print(f"\n{c['red']}Failed to complete {len(failed)} fix(es):{c['reset']}", file=sys.stderr)
         for fix, error, root in failed:
             print(
                 f"  ✗ [{_display(fix.file_path, root)}] {fix.description}: {error}", file=sys.stderr
