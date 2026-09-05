@@ -9178,6 +9178,29 @@ class TestRenameRefsAutofix:
         stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
         assert stale == [], f"rename-refs violations remain after fix: {stale}"
 
+    def test_metadata_failure_reports_applied_edit_and_exits_nonzero(self, tmp_path, monkeypatch):
+        from skillsaw.rules.builtin.agentskills import _helpers
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        metadata = repo / _helpers.RENAMES_MANIFEST
+        original = b'{"renames": [{"old": "earlier", "new": "current"}]}\n'
+        metadata.write_bytes(original)
+
+        def refuse_metadata(path, data, *, root):
+            assert path == metadata and root == repo
+            raise OSError("Metadata write refused")
+
+        monkeypatch.setattr(_helpers, "write_bytes_atomic", refuse_metadata)
+        result = run_cli(
+            ["fix", repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins"]
+        )
+
+        assert result.returncode == 1
+        assert "Fixed 1 issue(s)" in result.stdout
+        assert "File edit applied, but follow-up failed: Metadata write refused" in result.stderr
+        assert "name: data-parser-v2" in (repo / "data-parser-v2/SKILL.md").read_text()
+        assert metadata.read_bytes() == original
+
     def test_dry_run_is_side_effect_free(self, tmp_path):
         """``fix --dry-run`` must not write the renames manifest or modify any
         file, and a subsequent lint must not report phantom stale references."""

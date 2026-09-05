@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 from skillsaw.context import SKILL_REPO_TYPES  # noqa: F401  — re-export for package rules
-from skillsaw.paths import contained_resolve, safe_exists
+from skillsaw.paths import contained_resolve, safe_exists, safe_is_symlink
+from skillsaw.utils import write_bytes_atomic
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle at runtime
     from skillsaw.context import RepositoryContext
@@ -96,13 +97,16 @@ def _read_renames_manifest(root: Path) -> list[dict]:
 
 def _write_renames_manifest(root: Path, renames: list[dict]) -> None:
     path = root / RENAMES_MANIFEST
+    if safe_is_symlink(path):
+        raise OSError(f"Refusing to write through symlink: {path}")
     if not renames:
         if path.exists():
             path.unlink()
         return
-    path.write_text(
-        json.dumps({"renames": renames}, indent=2) + "\n",
-        encoding="utf-8",
+    write_bytes_atomic(
+        path,
+        (json.dumps({"renames": renames}, indent=2) + "\n").encode("utf-8"),
+        root=root,
     )
 
 

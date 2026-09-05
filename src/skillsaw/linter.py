@@ -1501,7 +1501,7 @@ class Linter:
         Returns:
             Tuple of (applied fixes, suggested-but-not-applied fixes).
         """
-        #: (fix, error) for every write that failed in this run; the CLI
+        #: (fix, error) for every write or follow-up that failed in this run; the CLI
         #: reports them and exits non-zero rather than claiming success.
         self.fix_failures: List[Tuple[AutofixResult, str]] = []
         #: Selected paths refused by policy, separate from failed writes.
@@ -1589,10 +1589,10 @@ class Linter:
                         (SAFE = only safe,
                          SUGGEST = safe + suggest)
             root_path: Trusted repository boundary for atomic writes
-            failures: When given, every fix whose write failed is appended
-                      with the OS error text, so a caller can report it
-                      instead of announcing success over a file it never
-                      changed
+            failures: When given, every fix whose write or post-apply step
+                      failed is appended with the OS error text. A primary edit
+                      whose follow-up failed remains in the applied results,
+                      with an explicit partial-failure message here.
             skips: Optional collector for selected path/policy refusals
 
         Returns:
@@ -1675,6 +1675,8 @@ class Linter:
                         fix.file_path,
                         exc,
                     )
+                    if failures is not None:
+                        failures.append((fix, f"File edit applied, but follow-up failed: {exc}"))
 
             applied.append(fix)
 
