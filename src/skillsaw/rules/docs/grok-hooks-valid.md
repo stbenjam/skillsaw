@@ -25,7 +25,7 @@ Severity reflects how much of the hook configuration is affected by an issue:
 - Invalid JSON syntax, non-finite numbers (`NaN`, `Infinity`, `-Infinity`), or
   a file starting with a UTF-8 Byte Order Mark (BOM).
 - Missing top-level `hooks` object, or an object that is not a dictionary.
-- Event values that are not arrays, matcher groups that are not objects, or
+- Recognized event values that are not arrays, matcher groups that are not objects, or
   matcher groups missing their `hooks` array.
 - Handlers missing a `type` field.
 - A `matcher` that is not a string.
@@ -35,7 +35,9 @@ Severity reflects how much of the hook configuration is affected by an issue:
 
 **Warnings** — the file loads, but specific events or handlers may not run:
 
-- Unrecognized hook event names.
+- Unrecognized hook event names. Grok skips their values before decoding
+  groups or handlers, so their descendants do not produce shape errors.
+  Declare a newer event in `extra-events` to enable its strict shape checks.
 - A regex `matcher` that does not compile under Rust's regex engine. Rust's
   regex syntax supports Unicode property classes (`\p{...}`) and set operations
   (`&&`, `--`, `~~`), but does not support lookarounds, backreferences, or

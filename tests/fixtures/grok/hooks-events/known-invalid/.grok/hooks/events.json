@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": 42,
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/recognized"
+          }
+        ]
+      }
+    ]
+  }
+}

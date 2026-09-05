@@ -154,7 +154,8 @@ class _FileCheck:
         for event, groups in hooks.items():
             name = str(event)
             violations.extend(self._check_event_name(name))
-            violations.extend(self._check_groups(name, groups))
+            if name in self.known_events:
+                violations.extend(self._check_groups(name, groups))
         return violations
 
     def _check_event_name(self, event: str) -> List[RuleViolation]:

@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/recognized"
+          }
+        ]
+      }
+    ],
+    "FutureReady": 42,
+    "FutureGroup": [
+      42
+    ],
+    "FutureHandler": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": 42
+          }
+        ]
+      }
+    ],
+    "FutureCommand": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/audit/future"
+          }
+        ]
+      }
+    ]
+  }
+}

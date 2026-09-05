@@ -598,18 +598,16 @@ def test_a_spelling_grok_skips_is_a_warning(tmp_path, event) -> None:
     assert violation.severity == Severity.WARNING
 
 
-def test_an_unknown_event_is_still_shape_checked(tmp_path) -> None:
-    """The entries under it are live configuration if the name is real and
-    this release has simply not heard of it."""
+def test_an_unknown_event_skips_descendant_shape_checks(tmp_path) -> None:
+    """The loader skips unknown event values before decoding matcher groups."""
     repo = repo_with_hooks(
         tmp_path, "unknown-shape", hooks_doc("PreSomethingNew", {"type": "command"})
     )
 
     violations = check(repo)
 
-    assert len(violations) == 2, messages(violations)
+    assert len(violations) == 1, messages(violations)
     assert only(violations, "Unknown hook event").severity == Severity.WARNING
-    assert only(violations, "is missing 'command'").severity == Severity.WARNING
 
 
 # ── Matchers ─────────────────────────────────────────────────────
