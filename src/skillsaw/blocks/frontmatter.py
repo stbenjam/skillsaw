@@ -18,6 +18,7 @@ import yaml
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import (
     _FRONTMATTER_RE,
+    FRONTMATTER_RE_EMPTY_OK,
     _SAFE_LOADER,
     commented_key_line,
     invalidate_read_caches,
@@ -878,6 +879,27 @@ class SkillBlock(FrontmatteredBlock):
     category: str = "skill"
 
 
+def _parse_devin_file_frontmatter(
+    path: Path,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+    """Devin accepts an empty YAML document, but rejects an explicit null scalar."""
+    parsed = _parse_file_frontmatter(path)
+    if parsed[0] is not None or parsed[1] is None:
+        return parsed
+    content = read_text(path)
+    match = FRONTMATTER_RE_EMPTY_OK.match(content) if content is not None else None
+    if match is None:
+        return parsed
+    try:
+        node = yaml.compose(match.group(1), Loader=_SAFE_LOADER)
+    except (yaml.YAMLError, ValueError, RecursionError):
+        return parsed
+    if node is not None:
+        return parsed
+    # Preserve the source body and its file offset; only metadata defaults.
+    return {}, None, None, content[match.end() :], content[: match.end()].count("\n")
+
+
 @dataclass(eq=False)
 class DevinRuleBlock(FrontmatteredBlock):
     """A rule under ``.devin/rules`` or legacy ``.windsurf/rules``."""
@@ -912,7 +934,7 @@ class DevinRuleBlock(FrontmatteredBlock):
     def _parse_frontmatter_file(
         self,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
-        parsed = _parse_file_frontmatter(self.path)
+        parsed = _parse_devin_file_frontmatter(self.path)
         if parsed[0] is not None or parsed[1] is None:
             return parsed
 
@@ -957,6 +979,11 @@ class DevinSkillBlock(FrontmatteredBlock):
     """A Devin-native SKILL.md whose frontmatter is optional."""
 
     category: str = "skill"
+
+    def _parse_frontmatter_file(
+        self,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+        return _parse_devin_file_frontmatter(self.path)
 
 
 @dataclass(eq=False)

@@ -64,7 +64,9 @@ triggers:
 Review the selected path and report actionable findings.
 ```
 
-A native skill with no frontmatter is also valid. Optional string fields,
+A native skill with no frontmatter, an empty header, or a comment-only
+header is also valid. An explicit `null` document between the delimiters
+is invalid. Optional string fields,
 `allowed-tools`, `permissions`, and `triggers` may be omitted or null to use
 Devin's defaults. The nested `permissions.allow`, `permissions.deny`, and
 `permissions.ask` lists may also be null. `subagent` still requires a boolean

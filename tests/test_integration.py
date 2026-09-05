@@ -3835,6 +3835,38 @@ class TestDevin:
         assert found[0]["line"] == line
         assert message in found[0]["message"]
 
+    def test_native_empty_headers_keep_manual_rules_and_skill_content(self, tmp_path):
+        from skillsaw.blocks import DevinRuleBlock, DevinSkillBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("devin/empty-headers", tmp_path)
+        result = run_lint(
+            repo,
+            "--rule",
+            "devin-rules-valid",
+            "--rule",
+            "devin-skill-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert result["rc"] == 0, result
+        assert {"devin-rules-valid", "devin-skill-valid"} <= set(
+            result["out"]["stats"]["rules_run"]
+        )
+        assert [(v["rule_id"], v["severity"], v["file_path"]) for v in violations(result)] == [
+            ("devin-rules-valid", "info", ".devin/rules/manual.md"),
+            ("devin-rules-valid", "info", ".windsurf/rules/manual.md"),
+        ]
+        assert all("manually with @manual" in v["message"] for v in violations(result))
+        tree = RepositoryContext(repo).lint_tree
+        blocks = tree.find(DevinRuleBlock) + tree.find(DevinSkillBlock)
+        assert len(blocks) == 3
+        for block in blocks:
+            assert block.frontmatter_error is None
+            assert block.has_frontmatter
+            assert block.body_text.startswith("# ")
+            assert "Optional" not in block.body_text
+
 
 @pytest.mark.integration
 class TestOpenCode:

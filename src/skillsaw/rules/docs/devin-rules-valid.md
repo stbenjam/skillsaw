@@ -23,6 +23,10 @@ collection-valued descriptions and globs given as a single string or mapping
 still prevent loading. Nullable fields and scalar values accepted by Devin's
 YAML decoding remain accepted in unused fields.
 
+Empty and comment-only frontmatter headers use the same activation defaults
+as an empty mapping. An explicit `null` document, malformed YAML, or a
+missing closing delimiter remains invalid.
+
 ## Severity
 
 Malformed YAML, an unsupported trigger, invalid activation data, and a rule
