@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "local": {"Command": "/audit/not-an-executable", "Args": ["--read-only"]},
+    "timetable": {"serverURL": "https://reader:example-password@feeds.example.invalid/mcp"}
+  }
+}

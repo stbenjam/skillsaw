@@ -28,6 +28,7 @@ from typing import (
 )
 
 from skillsaw.formats import antigravity
+from skillsaw.blocks.antigravity_mcp import read_mcp_config
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.formats.vscode import VSCODE_HOOK_COMMAND_FIELDS
 from skillsaw.lint_target import LintTarget
@@ -1604,21 +1605,13 @@ class AntigravityMcpBlock(McpBlock):
     require_usable_connection: ClassVar[bool] = False
     #: Measured: a comment or a trailing comma is exit 1, not a warning.
     strict_json: ClassVar[bool] = True
-    #: Measured with ``agy mcp list``: a repeated ``mcpServers`` wrapper, a
-    #: repeated server name and a repeated key inside one server all load,
-    #: the last value winning, with no diagnostic.
+    #: Go accepts duplicate keys. Server fields also match without regard
+    #: to case; the host-specific reader preserves their encounter order.
     duplicate_keys_fatal: ClassVar[bool] = False
-    # agy merges these typed maps, but replaces repeated server names and
-    # mcpServers wrappers. Null clears a map. Verified with agy 1.1.26.
-    merge_duplicate_fields: ClassVar[Tuple[Tuple[str, ...], ...]] = (
-        ("mcpServers", "*", "env"),
-        ("mcpServers", "*", "headers"),
-        ("mcpServers", "*", "oauth"),
-    )
     surface_rule: ClassVar[Optional[str]] = "antigravity-mcp-valid"
     credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = antigravity.MCP_CREDENTIAL_MAPS
-    #: ``clientId`` and ``clientSecret`` load at a server's own top level as
-    #: well as inside ``oauth``, so the flatter spelling is scanned too.
+    #: Keep scanning tolerated top-level credential properties, although
+    #: the host consumes those credentials only inside ``oauth``.
     credential_fields: ClassVar[Tuple[str, ...]] = antigravity.MCP_CREDENTIAL_FIELDS
     credential_key_aliases: ClassVar[Mapping[str, str]] = antigravity.MCP_CREDENTIAL_KEY_ALIASES
     #: ``serverUrl`` is Antigravity's spelling and wins over ``command``;
@@ -1630,6 +1623,10 @@ class AntigravityMcpBlock(McpBlock):
         syntax_error_rule="antigravity-mcp-valid",
         keeps_dialect_neutral_checks=True,
     )
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = read_mcp_config(self.path)
 
     def _server_config(self, name: str, cfg: Dict[str, Any]) -> McpServerConfig:
         """Apply Antigravity's endpoint precedence without changing other hosts."""

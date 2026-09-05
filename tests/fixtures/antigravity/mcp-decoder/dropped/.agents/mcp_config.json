@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "control": {"Command": "/audit/not-an-executable"},
+    "command": {"Command": 42, "command": "/audit/not-an-executable"},
+    "args": {"Command": "/audit/not-an-executable", "Args": "--read-only"},
+    "environment": {"Command": "/audit/not-an-executable", "Env": {"PORT": 42}, "env": {"PORT": "80"}},
+    "headers": {"serverURL": "https://feeds.example.invalid/mcp", "Headers": {"X-Count": 42}},
+    "oauth": {"serverURL": "https://feeds.example.invalid/mcp", "OAuth": {"ClientId": 42, "clientId": "ferrymark"}},
+    "disabled": {"Command": "/audit/not-an-executable", "Disabled": "false"}
+  }
+}

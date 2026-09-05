@@ -190,15 +190,40 @@ MCP_AUTH_PROVIDER_TYPES = frozenset({"google_credentials"})
 #: absent: a non-string there is tolerated and the server still loads.
 MCP_STRING_FIELDS = ("command", "url", "serverUrl", "cwd")
 
+#: These server fields are decoded into Go struct fields. The wrapper and
+#: env/header member names remain exact; unknown server properties are ignored.
+MCP_SERVER_FIELDS = MCP_STRING_FIELDS + (
+    "args",
+    "env",
+    "headers",
+    "oauth",
+    "disabled",
+    "disabledTools",
+    "authProviderType",
+)
+MCP_SERVER_FIELD_NAMES = MappingProxyType({key.lower(): key for key in MCP_SERVER_FIELDS})
+MCP_OAUTH_FIELD_NAMES = MappingProxyType({"clientid": "clientId", "clientsecret": "clientSecret"})
+
+
+def mcp_field_name(key: str, *, oauth: bool = False) -> str:
+    """Go's case-insensitive struct matching, restricted to known MCP fields.
+
+    Long s and Kelvin sign also fold to ASCII in Go. ``lower`` handles the
+    latter; full Unicode ``casefold`` would wrongly expand sharp s to ``ss``.
+    """
+    names = MCP_OAUTH_FIELD_NAMES if oauth else MCP_SERVER_FIELD_NAMES
+    return names.get(key.lower().replace("ſ", "s"), key)
+
+
 #: Per-server maps in ``mcp_config.json`` whose values may hold a committed
 #: credential, as ``(key, is_http_header)``. All three are measured to
 #: load: ``env``, ``headers``, and ``oauth`` carrying ``clientId`` /
 #: ``clientSecret``.
 MCP_CREDENTIAL_MAPS = (("env", False), ("headers", True), ("oauth", False))
 
-#: The same two keys spelled at a server's own top level, where they are
-#: scalars rather than a map. Measured to load there too, so a secret
-#: written this way ships and runs exactly like one inside ``oauth``.
+#: Tolerated server-level properties kept in committed-credential scans.
+#: The MCP decoder only consumes these credentials inside ``oauth``;
+#: top-level values are ignored and have no host type requirement.
 MCP_CREDENTIAL_FIELDS = ("clientId", "clientSecret")
 
 #: The ``oauth`` map's keys, renamed to the snake_case spelling the shared
