@@ -415,6 +415,17 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
 - The Rust-dialect matcher check is shared with Muse Code:
   `rust_matcher_error` in `src/skillsaw/rules/builtin/utils.py`.
 
+## Portable matcher evidence
+
+The [matcher evidence notes](../../../../tests/fixtures/hooks/rust-matchers/README.md)
+and [pinned rows](../../../../tests/fixtures/hooks/rust-matchers/evidence.json) preserve
+27 Grok 1.0.13 inspection controls plus literal-flag and conservative-abstention
+controls. Exact patterns, source/binary pins, Rust compilation, observed handler
+identities and expected Skillsaw diagnostics are separate evidence. A missing finding
+can mean the checker abstained; it does not establish native acceptance. The optional
+stdin-only ripgrep replay needs no host installation or hook execution. Keep catch-all
+and ignored-event behavior in the host-specific tests.
+
 ## Sync notes
 Hand-copied values and measured facts that drift — re-check each against the shipped
 user guide, or re-verify empirically with the canary matrix above:

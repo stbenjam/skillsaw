@@ -22,7 +22,25 @@ file, so the shape and the failure scopes below were verified against Muse Code 
 `.muse/hooks.json` carrying a single variation, every handler writing a token to a log
 file, run under `muse exec --provider echo`. The loader emits no diagnostic in headless
 runs — a rejected file, group, event or handler simply never fires — which is why
-`muse-hooks-valid` exists. Re-run that matrix before changing a rule here.
+`muse-hooks-valid` exists. This historical matrix is not current-version conformance;
+see the evidence limits below before changing the rule.
+
+## Matcher evidence and coverage limits
+
+The [matcher evidence notes](../../../../tests/fixtures/hooks/rust-matchers/README.md)
+and [pinned rows](../../../../tests/fixtures/hooks/rust-matchers/evidence.json) record
+Rust-engine acceptance/refusal separately from Grok inspection and expected Skillsaw
+findings. They protect the shared matcher helper, not current Muse loader conformance.
+A null diagnostic can mean conservative abstention. No Muse acceptance is inferred
+from a Grok observation or a successful ripgrep compilation.
+
+The 0.20.0 audit's Muse 1.0.3-R2198.1 loader-only controls produced indistinguishable
+results for working and malformed input, so their verdict is unresolved. The five
+meaningful public samples were two committed project configs, one installer template
+and two generator transcriptions; the generator authors describe unverified contract
+assumptions. Generators were read, not executed. Zero findings do not establish a
+false-positive rate, and these samples do not meet the ten-repository auto-rule gate.
+`muse-hooks-valid` remains opt-in; shared hook inventory and security rules still run.
 
 ## What to check
 - **Hooks file**: `<project-root>/.muse/hooks.json` — user hooks live in
