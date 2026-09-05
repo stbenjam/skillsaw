@@ -3764,6 +3764,77 @@ class TestDevin:
             ".devin/skills/plain/SKILL.md"
         }
 
+    @pytest.mark.parametrize("fields", ["omitted", "null", "empty", "configured"])
+    def test_native_skill_optional_nulls_use_defaults(self, tmp_path, fields):
+        repo = copy_fixture("devin/nullable-skills", tmp_path)
+        paths = sorted((repo / ".devin/skills").glob("*/SKILL.md"))
+        assert len(paths) == 2
+        if fields == "omitted":
+            for path in paths:
+                body = path.read_text().split("---\n", 2)[2]
+                path.write_text("---\nsubagent: false\n---\n" + body)
+        elif fields == "empty":
+            for path in paths:
+                path.write_text(path.read_text().replace(": null", ":"))
+        elif fields == "configured":
+            optional = repo / ".devin/skills/optional-review/SKILL.md"
+            content = optional.read_text()
+            for key, value in {
+                "name": "optional-review",
+                "description": "Review local metadata on request.",
+                "argument-hint": "'[path]'",
+                "model": "sonnet",
+                "agent": "reviewer",
+                "allowed-tools": "[Read]",
+                "permissions": "{allow: [Read(src/**)]}",
+                "triggers": "[user, model]",
+            }.items():
+                content = content.replace(f"{key}: null", f"{key}: {value}")
+            optional.write_text(content)
+            permissions = repo / ".devin/skills/permission-review/SKILL.md"
+            permissions.write_text(permissions.read_text().replace(": null", ": []"))
+        result = run_lint(repo, "--rule", "devin-skill-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+        assert "devin-skill-valid" in result["out"]["stats"]["rules_run"]
+
+    @pytest.mark.parametrize(
+        "before,after,line,message",
+        [
+            ("subagent: false", "subagent: null", 10, "'subagent' must be a boolean"),
+            ("name: null", "name: []", 2, "'name' must be a string"),
+            (
+                "allowed-tools: null",
+                "allowed-tools: {}",
+                7,
+                "'allowed-tools' must be a string or a list",
+            ),
+            ("permissions: null", "permissions: []", 8, "'permissions' must be an object"),
+            ("triggers: null", "triggers: {}", 9, "'triggers' must be a non-empty list"),
+            (
+                "permissions: null",
+                "permissions: {allow: [[]]}",
+                8,
+                "'permissions.allow[0]' must be a string",
+            ),
+        ],
+    )
+    def test_nullable_skill_fields_retain_invalid_shapes(
+        self, tmp_path, before, after, line, message
+    ):
+        repo = copy_fixture("devin/nullable-skills", tmp_path)
+        path = repo / ".devin/skills/optional-review/SKILL.md"
+        path.write_text(path.read_text().replace(before, after))
+        result = run_lint(repo, "--rule", "devin-skill-valid", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["rule_id"] == "devin-skill-valid"
+        assert found[0]["file_path"] == ".devin/skills/optional-review/SKILL.md"
+        assert found[0]["severity"] == "error"
+        assert found[0]["line"] == line
+        assert message in found[0]["message"]
+
 
 @pytest.mark.integration
 class TestOpenCode:

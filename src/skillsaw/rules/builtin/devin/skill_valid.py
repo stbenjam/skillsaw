@@ -81,7 +81,7 @@ class DevinSkillValidRule(Rule):
 
     def _check_string(self, block: DevinSkillBlock, key: str) -> List[RuleViolation]:
         field = block.field(key)
-        if field is None:
+        if field is None or field.value is None:
             return []
         if isinstance(field.value, str):
             return []
@@ -132,6 +132,8 @@ class DevinSkillValidRule(Rule):
             value = permissions[key]
             line = line_for(path_prefix)
 
+        if value is None:
+            return []
         if allow_scalar and isinstance(value, str):
             return []
         if not isinstance(value, list):
@@ -161,7 +163,7 @@ class DevinSkillValidRule(Rule):
 
     def _check_permissions(self, block: DevinSkillBlock, line_for) -> List[RuleViolation]:
         field = block.field("permissions")
-        if field is None:
+        if field is None or field.value is None:
             return []
         if not isinstance(field.value, dict):
             return [
@@ -187,7 +189,7 @@ class DevinSkillValidRule(Rule):
 
     def _check_triggers(self, block: DevinSkillBlock, line_for) -> List[RuleViolation]:
         field = block.field("triggers")
-        if field is None:
+        if field is None or field.value is None:
             return []
         value = field.value
         if not isinstance(value, list) or not value:
