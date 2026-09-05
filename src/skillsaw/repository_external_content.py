@@ -227,11 +227,18 @@ class RepositoryExternalContentMixin:
                 or not safe_is_file(resolved_lockfile)
             ):
                 return False
+            # Locks inside the lint root use the same ownership boundary
+            # as discovery. A directly linted dependency still inherits its
+            # containing lock's boundary when that lock is above the root.
+            repository_root = safe_resolve(self.root_path) or self.root_path
+            ownership_root = (
+                repository_root if project_root.is_relative_to(repository_root) else project_root
+            )
             external_names = self._external_names_from_lock(
                 resolved_lockfile,
                 lock_root=project_root,
-                repository_root=project_root,
-                own_repository=self._github_repository_of(project_root),
+                repository_root=ownership_root,
+                own_repository=self._github_repository_of(ownership_root),
             )
             return (
                 external_names is not None

@@ -8949,3 +8949,49 @@ def test_self_installed_skills_keep_authorship_in_a_linked_worktree(tmp_path, li
         clean = run_lint(repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins")
         assert all(v["file_path"] != "skills/authored-skill/SKILL.md" for v in violations(clean))
     assert reports[0] == reports[1]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("lint_external", [True, False])
+def test_nested_local_source_and_install_both_remain_fixable(tmp_path, lint_external):
+    repo = copy_fixture("skills-lock/nested-local-source", tmp_path)
+    (repo / ".skillsaw.yaml").write_text(json.dumps({"lint-external-content": lint_external}))
+    paths = ["skills/local-dep/SKILL.md", "packages/web/agent/skills/local-dep/SKILL.md"]
+    before = {path: (repo / path).read_text() for path in paths}
+    options = ["--rule", "agentskill-name", "--no-custom-rules", "--no-plugins"]
+    result = run_lint(repo, *options)
+    assert result["rc"] == 1
+    assert {v["file_path"]: v["fixable"] for v in violations(result)} == {
+        path: True for path in paths
+    }
+
+    fixed = run_cli(["fix", repo, *options])
+    assert fixed.returncode == 0, fixed.stderr
+    after = {path: (repo / path).read_text() for path in paths}
+    for path in paths:
+        assert "name: local-dep\n" in after[path]
+        assert len(before[path].splitlines()) == len(after[path].splitlines())
+        assert sum(a != b for a, b in zip(before[path].splitlines(), after[path].splitlines())) == 1
+    clean = run_lint(repo, *options)
+    assert clean["rc"] == 0
+    assert violations(clean) == []
+    repeated = run_cli(["fix", repo, *options])
+    assert repeated.returncode == 0, repeated.stderr
+    assert {path: (repo / path).read_text() for path in paths} == after
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("scope", ["packages/web", "packages/web/agent/skills/local-dep"])
+def test_targeting_a_nested_local_install_keeps_its_external_guard(tmp_path, scope):
+    repo = copy_fixture("skills-lock/nested-local-source", tmp_path)
+    target = repo / scope
+    installed = repo / "packages/web/agent/skills/local-dep/SKILL.md"
+    before = installed.read_bytes()
+    options = ["--rule", "agentskill-name", "--no-custom-rules", "--no-plugins"]
+    linted = run_lint(target, *options)
+    assert linted["rc"] == 1
+    assert len(violations(linted)) == 1
+    assert violations(linted)[0]["fixable"] is False
+    fixed = run_cli(["fix", target, *options])
+    assert fixed.returncode == 0, fixed.stderr
+    assert installed.read_bytes() == before

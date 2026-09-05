@@ -718,3 +718,25 @@ def test_invalid_git_pointer_does_not_invent_an_origin(tmp_path, pointer):
 
     (tmp_path / ".git").write_text(pointer)
     assert RepositoryExternalContentMixin._github_repository_of(tmp_path) is None
+
+
+@pytest.mark.parametrize("scope", ["repository", "project", "installed"])
+@pytest.mark.parametrize("lint_external", [True, False])
+def test_nested_local_source_ownership_uses_the_selected_lint_root(tmp_path, scope, lint_external):
+    repo = _copy_fixture("skills-lock/nested-local-source", tmp_path)
+    installed = repo / "packages/web/agent/skills/local-dep"
+    roots = {"repository": repo, "project": repo / "packages/web", "installed": installed}
+    context = RepositoryContext(roots[scope], lint_external_content=lint_external)
+    external = scope != "repository"
+
+    assert context.is_externally_sourced(installed / "SKILL.md") is external
+    nodes = {node.path: node for node in context.lint_tree.find(SkillNode)}
+    if not external or lint_external:
+        assert nodes[installed].externally_sourced is external
+    else:
+        assert installed not in nodes
+    if scope == "repository":
+        source = repo / "skills/local-dep"
+        assert not nodes[source].externally_sourced
+        assert not context.is_externally_sourced(source / "SKILL.md")
+        assert context.externally_sourced_roots() == set()
