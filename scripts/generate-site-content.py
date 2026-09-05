@@ -935,6 +935,11 @@ def inject_stats(index_path, rules_data):
 GUIDES = [
     ("Home", "index.md", "project homepage (HTML-heavy hero page)"),
     ("Getting Started", "getting-started.md", "install skillsaw and run your first lint"),
+    (
+        "Upgrading to 0.20.0",
+        "upgrading-0.20.md",
+        "review configuration and workflow changes from 0.19.0",
+    ),
     ("Autofixing", "autofixing.md", "how deterministic autofixes work and when they apply"),
     (
         "Porting to Agent Plugins",
@@ -953,8 +958,11 @@ GUIDES = [
     ("CLI Reference", "cli.md", "every command and flag"),
     ("Custom Rules", "custom-rules.md", "write project-local rules in Python"),
     ("Rule Plugins", "plugins.md", "install and publish pip-distributed rule packages"),
-    ("Scaffolding", "scaffolding.md", "deprecated: generate plugins, skills, commands, agents, and hooks"),
-
+    (
+        "Scaffolding",
+        "scaffolding.md",
+        "deprecated: generate plugins, skills, commands, agents, and hooks",
+    ),
     ("Lint Tree", "lint-tree.md", "the typed node tree rules use for discovery"),
     (
         "Supply Chain Protection",
