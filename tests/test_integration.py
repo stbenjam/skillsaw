@@ -7212,6 +7212,58 @@ class TestClaudeMdAgentsImport:
         _run_fix(repo, "--suggest")
         assert _snapshot_contents(repo) == before
 
+    @pytest.mark.parametrize("ignore_generated", [True, False])
+    def test_multiline_generated_banner_respects_explicit_override(
+        self, tmp_path, ignore_generated
+    ):
+        repo = copy_fixture(f"{self.FIXTURES}/generated-pair", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            'version: "99.0.0"\nfail-on: info\nrules:\n'
+            "  claude-md-agents-import:\n"
+            f"    ignore-generated: {str(ignore_generated).lower()}\n"
+        )
+        before = {name: (repo / name).read_bytes() for name in ("CLAUDE.md", "AGENTS.md")}
+        result = run_lint(repo, "--rule", "claude-md-agents-import")
+        found = violations(result)
+        assert result["rc"] == (0 if ignore_generated else 1), result
+        if ignore_generated:
+            assert found == []
+        else:
+            assert len(found) == 1 and found[0]["fixable"] is True
+            assert found[0]["file_path"] == "CLAUDE.md"
+            assert found[0]["line"] == 3
+        _run_fix(repo, "--suggest", "--rule", "claude-md-agents-import")
+        assert (repo / "AGENTS.md").read_bytes() == before["AGENTS.md"]
+        assert (repo / "CLAUDE.md").read_bytes() == (
+            before["CLAUDE.md"] if ignore_generated else b"@AGENTS.md\n"
+        )
+        first = _snapshot_contents(repo)
+        _run_fix(repo, "--suggest", "--rule", "claude-md-agents-import")
+        assert _snapshot_contents(repo) == first
+        after = run_lint(repo, "--rule", "claude-md-agents-import")
+        assert after["rc"] == 0 and violations(after) == []
+
+    @pytest.mark.parametrize("wrapper", ["prose", "fence", "separate-comments"])
+    def test_generated_words_outside_one_banner_do_not_create_an_exemption(self, tmp_path, wrapper):
+        repo = copy_fixture(f"{self.FIXTURES}/generated-pair", tmp_path)
+        body = (repo / "CLAUDE.md").read_text()
+        comment, rest = body.split("-->\n", 1)
+        words = comment.removeprefix("<!-- ")
+        if wrapper == "fence":
+            prefix = "```markdown\n" + comment + "-->\n```\n"
+        elif wrapper == "separate-comments":
+            prefix = "<!-- This file is auto-generated. -->\n<!-- Do not edit. -->\n"
+        else:
+            prefix = words + "\n"
+        for name in ("CLAUDE.md", "AGENTS.md"):
+            (repo / name).write_text(prefix + rest)
+        result = run_lint(repo, "--rule", "claude-md-agents-import")
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["file_path"] == "CLAUDE.md"
+        assert found[0]["fixable"] is True
+
 
 # ── SAFE Autofix Idempotency Suite ──────────────────────────────
 
