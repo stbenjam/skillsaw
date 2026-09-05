@@ -8657,6 +8657,25 @@ class TestMarkdownAstRegressions:
         after = run_lint(repo, "--rule", "content-broken-internal-reference")
         assert after["rc"] == 0 and violations(after) == []
 
+    def test_internal_link_queries_resolve_and_survive_suggested_fix(self, tmp_path):
+        repo = copy_fixture("regression/broken-ref-query", tmp_path)
+        result = run_lint(repo, "--rule", "content-broken-internal-reference")
+        found = violations(result)
+        assert len(found) == 1 and found[0]["fixable"] is True
+        assert "docs/setpu.md?plain=1#install" in found[0]["message"]
+        path = repo / "AGENTS.md"
+        before = path.read_text()
+        _run_fix(repo, "--suggest", "--rule", "content-broken-internal-reference")
+        fixed = path.read_text()
+        assert fixed == before.replace(
+            "docs/setpu.md?plain=1#install", "docs/setup.md?plain=1#install"
+        )
+        assert len(fixed.splitlines()) == len(before.splitlines())
+        _run_fix(repo, "--suggest", "--rule", "content-broken-internal-reference")
+        assert path.read_text() == fixed
+        after = run_lint(repo, "--rule", "content-broken-internal-reference")
+        assert after["rc"] == 0 and violations(after) == []
+
     def test_broken_link_fix_preserves_anchor(self, tmp_path):
         """Fixing [x](docs/gone.md#sec) must keep the #sec anchor."""
         repo = copy_fixture("regression/markdown-ast-anchor", tmp_path)

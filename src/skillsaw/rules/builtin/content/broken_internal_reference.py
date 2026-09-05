@@ -78,8 +78,16 @@ class ContentBrokenInternalReferenceRule(Rule):
                     continue
                 if _URI_SCHEME.match(target):
                     continue
-                # Strip anchor from path (e.g., "file.md#section")
-                target_path = target.split("#")[0]
+                # URI queries and fragments are not filesystem path text.
+                # Retain exact existing filenames containing '?' on hosts
+                # that permit them, just like the literal %XX fallback below.
+                with_query = target.split("#", 1)[0]
+                target_path = with_query.split("?", 1)[0]
+                if target_path != with_query and (
+                    self._exists_in_repo(root, link_dir, with_query)
+                    or self._exists_in_repo(root, link_dir, unquote(with_query))
+                ):
+                    continue
                 if not target_path:
                     continue
                 # Decode percent-escapes (%20 etc.) for the filesystem
@@ -260,8 +268,10 @@ class ContentBrokenInternalReferenceRule(Rule):
             for old_target, suggestion, v in replacements:
                 if v.block is None or v.file_line is None:
                     continue
-                # Preserve any anchor from the original target.
-                anchor = "#" + old_target.split("#", 1)[1] if "#" in old_target else ""
+                # Preserve the exact query and fragment, including empty
+                # delimiters, while replacing only the URI path.
+                old_path = old_target.split("#", 1)[0].split("?", 1)[0]
+                suffix = old_target[len(old_path) :]
                 doc = v.block.markdown
                 for link in doc.links():
                     if (
@@ -290,7 +300,7 @@ class ContentBrokenInternalReferenceRule(Rule):
                     # silently destroyed. Paths without special characters
                     # pass through unchanged.
                     dest = quote(suggestion, safe="/")
-                    edits.append((link.dest_file_line, span[0], span[1], dest + anchor))
+                    edits.append((link.dest_file_line, span[0], span[1], dest + suffix))
                     violations_fixed.append(v)
                     break
             fixed = splice(content, edits)
