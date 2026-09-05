@@ -129,9 +129,13 @@ project guidelines and [DEVELOPMENT.md](DEVELOPMENT.md) for the local setup.
 Questions and bug reports belong in [GitHub
 Issues](https://github.com/stbenjam/skillsaw/issues). For a shareable diagnostic
 bundle, run `skillsaw feedback` in the affected repository and review the ZIP
-before attaching it to an issue — files you add with `--include` are copied in
-verbatim. skillsaw is licensed under
-the [Apache License 2.0](LICENSE).
+before attaching it to an issue. Files selected with `--include` or `--config`
+are copied verbatim, including BOMs and line endings. Selections default to
+4 MiB per file and 16 MiB total across distinct ZIP members; use positive byte
+values with `--max-file-bytes` and `--max-total-bytes` to override these limits.
+An oversized selection stops before diagnostic lint and creates no bundle.
+These limits cover selected file bytes only, not diagnostic output or total
+process memory. skillsaw is licensed under the [Apache License 2.0](LICENSE).
 
 ## Thank you to our contributors
 

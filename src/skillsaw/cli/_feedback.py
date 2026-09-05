@@ -37,12 +37,14 @@ from ..config import find_config
 from ..paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from ..utils import mkdir_parents_anchored, read_text, write_bytes_atomic
 from ._config import _get_version
+from ._parser import _DEFAULT_FEEDBACK_FILE_BYTES, _DEFAULT_FEEDBACK_TOTAL_BYTES
 
 _ISSUE_URL = "https://github.com/stbenjam/skillsaw/issues/new"
 _FEEDBACK_EMAIL = "stephen@bitbin.de"
 _GPG_KEY_URL = "https://github.com/stbenjam.gpg"
 _BUNDLE_SCHEMA_VERSION = 1
 _LINT_TIMEOUT_SECONDS = 120
+_SELECTED_FILE_CHUNK_BYTES = 64 * 1024
 _IGNORED_CONFIG_NOTICE = (
     "The diagnostic lint ran, but its stdout and stderr were withheld because the "
     "auto-discovered config is excluded by an ignore file. Copy a reviewed config to "
@@ -670,6 +672,42 @@ def _included_file(
     return resolved, relative
 
 
+def _read_selected_file(
+    path: Path,
+    label: str,
+    max_file_bytes: int,
+    remaining_bytes: int,
+    max_total_bytes: int,
+) -> bytes:
+    """Read in small chunks, retaining at most one byte beyond the selected limit."""
+    limit = min(max_file_bytes, remaining_bytes)
+    data = bytearray()
+    try:
+        with path.open("rb") as stream:
+            while len(data) <= limit:
+                chunk = stream.read(min(_SELECTED_FILE_CHUNK_BYTES, limit + 1 - len(data)))
+                if not chunk:
+                    break
+                data.extend(chunk)
+    except OSError as error:
+        raise ValueError(f"Could not read {label}") from error
+    if len(data) > limit:
+        if max_file_bytes <= remaining_bytes:
+            raise ValueError(
+                f"{label} exceeds the {max_file_bytes}-byte selected-file limit; "
+                "use --max-file-bytes to raise it"
+            )
+        raise ValueError(
+            f"{label} exceeds the remaining selected-file budget "
+            f"({max_total_bytes} bytes total); use --max-total-bytes to raise it"
+        )
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError(f"Could not read {label}: expected UTF-8 text") from error
+    return bytes(data)
+
+
 def _run_diagnostic_lint(
     root: Path,
     config_path: Path | None,
@@ -921,6 +959,34 @@ def _run_feedback(args) -> None:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
 
+    # Every spelling has passed the guards above. Count each final ZIP member
+    # once, while retaining distinct aliases and explicit config/include copies.
+    config_included = args.config is not None
+    selected_inputs: dict[str, tuple[Path, str]] = {}
+    if config_included:
+        assert config_path is not None
+        selected_inputs["skillsaw-config.yaml"] = (config_path, f"config file: {config_path}")
+    included_names = []
+    for file_path, relative in selected_files:
+        name = relative.as_posix()
+        selected_inputs[f"included/{name}"] = (file_path, f"--include file: {relative}")
+        included_names.append(name)
+
+    max_file_bytes = getattr(args, "max_file_bytes", _DEFAULT_FEEDBACK_FILE_BYTES)
+    max_total_bytes = getattr(args, "max_total_bytes", _DEFAULT_FEEDBACK_TOTAL_BYTES)
+    remaining_bytes = max_total_bytes
+    selected_bytes: dict[str, bytes] = {}
+    try:
+        for name, (file_path, label) in selected_inputs.items():
+            data = _read_selected_file(
+                file_path, label, max_file_bytes, remaining_bytes, max_total_bytes
+            )
+            selected_bytes[name] = data
+            remaining_bytes -= len(data)
+    except ValueError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        sys.exit(1)
+
     config_diagnostics_withheld = False
     if args.config is None and config_path is not None:
         resolved_config = safe_resolve(config_path)
@@ -959,27 +1025,6 @@ def _run_feedback(args) -> None:
                 _replace_local_paths(raw_text, root, config_path)
             )
 
-    config_included = args.config is not None
-    if config_included:
-        assert config_path is not None
-        raw_config = read_text(config_path)
-        if raw_config is None:
-            print(f"Error: Could not read config file: {config_path}", file=sys.stderr)
-            sys.exit(1)
-        artifact_texts["skillsaw-config.yaml"] = raw_config
-
-    included_names = []
-    included_bytes: dict[str, bytes] = {}
-    for file_path, relative in selected_files:
-        try:
-            raw_content = file_path.read_bytes()
-            raw_content.decode("utf-8")
-        except (OSError, UnicodeDecodeError):
-            print(f"Error: Could not read --include file: {relative}", file=sys.stderr)
-            sys.exit(1)
-        included_bytes[f"included/{relative.as_posix()}"] = raw_content
-        included_names.append(relative.as_posix())
-
     message = args.message
     environment = {
         "bundle_schema_version": _BUNDLE_SCHEMA_VERSION,
@@ -998,7 +1043,7 @@ def _run_feedback(args) -> None:
     artifact_texts["environment.json"] = json.dumps(environment, indent=2, sort_keys=True) + "\n"
 
     artifact_bytes = {name: text.encode("utf-8") for name, text in artifact_texts.items()}
-    artifact_bytes.update(included_bytes)
+    artifact_bytes.update(selected_bytes)
     manifest = {
         "bundle_schema_version": _BUNDLE_SCHEMA_VERSION,
         "files": {
