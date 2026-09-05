@@ -3,6 +3,7 @@ Tests for the autofix framework infrastructure
 """
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import List
@@ -422,6 +423,36 @@ class TestApplyFixes:
         applied = Linter.apply_fixes([fix])
         assert len(applied) == 1
         assert target.read_text() == "fixed"
+
+    def test_callback_failure_retains_applied_edits_and_reports_partial_failure(self, temp_dir):
+        target = temp_dir / "first.txt"
+        other = temp_dir / "second.txt"
+        target.write_text("first original")
+        other.write_text("second original")
+
+        def refuse_metadata():
+            raise OSError("Metadata write refused")
+
+        fixes = [
+            AutofixResult(
+                rule_id="test",
+                file_path=path,
+                confidence=AutofixConfidence.SAFE,
+                original_content=path.read_text(),
+                fixed_content="updated",
+                description="Update note",
+                on_apply=refuse_metadata if path == target else None,
+            )
+            for path in (target, other)
+        ]
+        failures = []
+        applied = Linter.apply_fixes(fixes, root_path=temp_dir, failures=failures)
+
+        assert applied == fixes
+        assert target.read_text() == other.read_text() == "updated"
+        assert failures == [
+            (fixes[0], "File edit applied, but follow-up failed: Metadata write refused")
+        ]
 
     def test_apply_refuses_symlink_target(self, temp_dir, caplog):
         victim = temp_dir / "victim.txt"
@@ -1009,6 +1040,55 @@ class TestCommandRenameFix:
         assert len(applied) == 1
         assert applied[0].rule_id == "b"
         assert good_target.read_text() == "fixed"
+
+
+class TestRenameManifest:
+    def test_metadata_merge_uses_anchored_writer_and_retains_json_bytes(
+        self, tmp_path, monkeypatch
+    ):
+        from skillsaw.rules.builtin.agentskills import _helpers
+
+        path = tmp_path / _helpers.RENAMES_MANIFEST
+        retained = {"old": "earlier", "new": "current", "note": "retain this"}
+        path.write_text(json.dumps({"renames": [retained, {"old": "before", "new": "stale"}]}))
+        calls = []
+        original = _helpers.write_bytes_atomic
+
+        def record(destination, data, *, root):
+            calls.append((destination, data, root))
+            original(destination, data, root=root)
+
+        monkeypatch.setattr(_helpers, "write_bytes_atomic", record)
+        _helpers._add_rename(tmp_path, "before", "after")
+        expected = (
+            json.dumps({"renames": [retained, {"old": "before", "new": "after"}]}, indent=2) + "\n"
+        ).encode("utf-8")
+        assert calls == [(path, expected, tmp_path)]
+        assert path.read_bytes() == expected
+        _helpers._add_rename(tmp_path, "before", "after")
+        assert path.read_bytes() == expected
+        assert len(calls) == 2
+        _helpers._write_renames_manifest(tmp_path, [])
+        assert not path.exists()
+
+    @pytest.mark.skipif(os.name == "nt", reason="Requires ordinary POSIX symlinks")
+    @pytest.mark.parametrize(
+        "renames", [[{"old": "before", "new": "after"}], []], ids=["update", "cleanup"]
+    )
+    def test_metadata_alias_is_refused_after_guard(self, tmp_path, renames):
+        from skillsaw.rules.builtin.agentskills import _helpers
+
+        original = b'{"renames": []}\n'
+        regular = tmp_path / "saved-renames.json"
+        regular.write_bytes(original)
+        path = tmp_path / _helpers.RENAMES_MANIFEST
+        path.symlink_to(regular.name)
+
+        with pytest.raises(OSError, match="Refusing to write through symlink"):
+            _helpers._write_renames_manifest(tmp_path, renames)
+
+        assert path.is_symlink()
+        assert regular.read_bytes() == original
 
 
 class TestSkillRenameRefsEndToEnd:
