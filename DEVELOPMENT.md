@@ -57,7 +57,10 @@ The harness lives in `benchmarks/`. It generates a deterministic synthetic
 marketplace repo (plugins, skills, instruction files) and times each linting
 phase — repository discovery, rule loading, lint tree construction, and rule
 execution — plus per-rule wall time, so you can see exactly which rule got
-slower. `--repo PATH` benchmarks a real repository instead:
+slower. It uses the production linter pipeline, with cyclic GC paused during
+rule execution and the separately timed tree build. Infrastructure failures
+abort the run rather than becoming a successful baseline. `--repo PATH`
+benchmarks a real repository instead:
 
 ```bash
 .venv/bin/python3 benchmarks/bench.py --repo ../ai-helpers --repeats 5
