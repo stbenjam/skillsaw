@@ -516,7 +516,7 @@ def test_a_non_table_rules_entry_costs_the_whole_array(tmp_path) -> None:
     violations = check(repo)
 
     assert messages(violations) == [
-        "[permission] 'rules' entries must be tables; "
+        "[permission] 'rules' entries must be rule tables or field arrays; "
         "Grok discards the whole array over entry 3 (integer)"
     ]
     assert violations[0].severity == Severity.WARNING
@@ -528,7 +528,7 @@ def test_an_array_of_rule_strings_is_not_a_rules_array(tmp_path) -> None:
     repo = config(tmp_path, '[permission]\nrules = ["deny Bash"]\n')
 
     assert messages(check(repo)) == [
-        "[permission] 'rules' entries must be tables; "
+        "[permission] 'rules' entries must be rule tables or field arrays; "
         "Grok discards the whole array over entry 1 (string)"
     ]
 
@@ -609,12 +609,13 @@ def test_an_ignored_table_is_not_this_rule(tmp_path) -> None:
     assert check(repo) == []
 
 
-def test_a_non_table_permission_is_not_reported(tmp_path) -> None:
-    """What it costs was never measured, and a rule may not invent a verdict
-    to fill the gap."""
+def test_a_non_table_permission_is_rejected(tmp_path) -> None:
+    """The workspace resolver cannot decode a scalar permission section."""
     repo = config(tmp_path, 'permission = "allow-all"\n')
 
-    assert check(repo) == []
+    assert messages(check(repo)) == [
+        "'permission' must be a table or a valid field array, got string"
+    ]
 
 
 def test_an_empty_config_is_not_a_defect(tmp_path) -> None:

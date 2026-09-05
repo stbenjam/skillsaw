@@ -169,9 +169,14 @@ signal.
 ### `[permission]` and the spellings that load nothing
 
 - **`[permission]`**: `allow`/`deny`/`ask` hold compact rule strings and `rules` holds
-  verbose tables. `rules` is discarded **entirely** whenever any of the three list keys
-  is present, in any order, with no diagnostic — a file carrying both loses every
-  verbose rule it wrote. An unparseable entry costs that entry alone, also silently.
+  verbose entries. Any array-valued compact key selects the compact branch,
+  even an empty array; malformed compact keys alone do not suppress verbose rules.
+  Empty verbose lists need no lost-rule warning. The workspace resolver's verbose
+  types are owned by `formats/grok_permissions.py`: action is required, tool defaults
+  to any, pattern is an optional string, and pattern_mode defaults to glob. Wrong
+  enum spellings or known field types discard the entire verbose list. Grok's TOML
+  unit-enum and positional-struct forms are supported. An unparseable compact rule
+  string costs only that entry.
   A **wrong-typed entry** splits by key, measured: a non-string in a list key costs
   that entry (`allow = ["Bash(git *)", 42]` loaded 1), while a non-table in `rules`
   costs the whole array (two valid rules beside a bare integer loaded 0).

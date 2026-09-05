@@ -13,6 +13,11 @@ from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import grok
 from skillsaw.formats.grok_mcp import decode_mcp_server
+from skillsaw.formats.grok_permissions import (
+    permission_fields,
+    rule_fields,
+    verbose_permission_problems,
+)
 from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import sample
@@ -122,12 +127,19 @@ class GrokConfigValidRule(Rule):
         ``rules`` costs every rule in the array. The findings say which, so
         an author knows whether the rest of the key survived.
 
-        A non-table ``permission`` is deliberately not reported: what it
-        costs was never measured, and a rule may not invent the verdict.
+        Only array-valued compact keys select the compact branch. Otherwise
+        the workspace resolver decodes the complete verbose permission table.
         """
-        table = data.get(grok.PERMISSION_TABLE)
-        if not isinstance(table, dict):
+        if grok.PERMISSION_TABLE not in data:
             return []
+        table = permission_fields(data[grok.PERMISSION_TABLE])
+        if not isinstance(table, dict):
+            return [
+                self._warn(
+                    block,
+                    f"'{grok.PERMISSION_TABLE}' must be a table or a valid field array, got {_type_name(table)}",
+                )
+            ]
 
         violations: List[RuleViolation] = []
         # Document order, so a file with two defects reads top to bottom. No
@@ -158,20 +170,21 @@ class GrokConfigValidRule(Rule):
                 )
 
         rules_key = grok.PERMISSION_RULES_KEY
-        if rules_key not in table:
-            return violations
-        if lists:
-            # Measured: every verbose rule is discarded whenever any of the
-            # three list keys is present, in any order. Its type no longer
-            # matters, so this is the file's one finding about it.
+        compact = [key for key in lists if isinstance(table[key], list)]
+        if compact:
+            if rules_key not in table or table[rules_key] == []:
+                return violations
+            # An array-valued compact key selects the compact branch even
+            # if it is empty. Malformed compact keys do not select it.
             violations.append(
                 self._warn(
                     block,
                     f"[{grok.PERMISSION_TABLE}] '{rules_key}' is discarded because "
-                    f"{_and_list(lists)} also set",
+                    f"{_and_list(compact)} also set",
                 )
             )
-        elif not isinstance(table[rules_key], list):
+            return violations
+        if rules_key in table and not isinstance(table[rules_key], list):
             violations.append(
                 self._warn(
                     block,
@@ -183,15 +196,24 @@ class GrokConfigValidRule(Rule):
             # Measured, and the opposite of the compact keys above: one
             # non-table entry costs the whole array. Two valid rules beside
             # a bare integer loaded nothing, silently.
-            bad = _bad_entries(table[rules_key], dict)
+            bad = _bad_entries([rule_fields(value) for value in table.get(rules_key, [])], dict)
             if bad:
                 violations.append(
                     self._warn(
                         block,
-                        f"[{grok.PERMISSION_TABLE}] '{rules_key}' entries must be tables; "
+                        f"[{grok.PERMISSION_TABLE}] '{rules_key}' entries must be rule tables or field arrays; "
                         f"Grok discards the whole array over {sample(bad)}",
                     )
                 )
+            else:
+                problems = verbose_permission_problems(table)
+                if problems:
+                    violations.append(
+                        self._warn(
+                            block,
+                            f"[{grok.PERMISSION_TABLE}] Grok discards the whole '{rules_key}' array: {sample(problems)}",
+                        )
+                    )
         return violations
 
     def _warn(self, block: GrokConfigBlock, message: str) -> RuleViolation:

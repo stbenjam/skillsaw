@@ -42,11 +42,15 @@ cannot be loaded:
   still load when one entry is rejected.
 - Permission lists (`allow`, `deny`, `ask`) that are not arrays.
 - Individual entries in `allow`, `deny`, or `ask` that are not strings.
-- `[permission] rules` that is not an array of tables, or contains invalid
-  entries.
-- `[permission] rules` specified alongside `allow`, `deny`, or `ask`. Grok
-  prioritizes compact permission lists (`allow`/`deny`/`ask`) over verbose
-  `rules` tables when both are present, so compact lists take precedence.
+- A malformed permission section, or verbose `rules` with invalid entries.
+  Actions are `allow`, `deny`, or `ask`; tool names are lowercase Grok names.
+  `pattern` must be a string and `pattern_mode` is `glob` or `domain`.
+  One malformed verbose rule discards the whole list, including valid siblings.
+- Nonempty verbose `rules` specified alongside an array-valued `allow`,
+  `deny`, or `ask`. Even an empty compact array takes precedence. A malformed
+  compact key alone does not hide valid verbose rules; `rules = []` adds no
+  lost-rule warning. Accepted TOML enum and positional-field representations
+  remain supported.
 
 ## What is not reported
 

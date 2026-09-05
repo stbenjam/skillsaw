@@ -447,7 +447,7 @@ def mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
 
 #: The ``[permission]`` keys that hold compact rule strings, and the verbose
 #: table array beside them. Measured: ``rules`` is discarded **entirely**
-#: whenever any of the three list keys is present, in any order, with no
+#: whenever any of the three compact keys holds an array, in any order, with no
 #: diagnostic — which is the defect worth reporting, since a file carrying
 #: both loses every verbose rule it wrote.
 #:
