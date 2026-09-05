@@ -82,7 +82,6 @@ def test_a_commands_only_directory_is_one_finding(broken) -> None:
         pytest.param({"README.md": "# almanac\n\nNothing here yet.\n"}, id="readme-only"),
         pytest.param({"commands/tide.md": COMMAND}, id="commands-only"),
         pytest.param({".lsp.json": "{}"}, id="lsp-only"),
-        pytest.param({"skills/tide-window/notes.md": "# Notes\n"}, id="skills-without-skill-md"),
     ],
 )
 def test_directories_the_installer_refuses_warn(temp_dir, files) -> None:
@@ -98,6 +97,7 @@ def test_directories_the_installer_refuses_warn(temp_dir, files) -> None:
     "files",
     [
         pytest.param({"skills/tide-window/SKILL.md": SKILL}, id="skills"),
+        pytest.param({"skills/tide-window/notes.md": "# Notes\n"}, id="skills-without-skill-md"),
         pytest.param({"agents/berth-reviewer.md": AGENT}, id="agents"),
         pytest.param({"hooks/hooks.json": HOOKS_JSON}, id="hooks"),
         pytest.param({".mcp.json": SERVERS}, id="mcp"),

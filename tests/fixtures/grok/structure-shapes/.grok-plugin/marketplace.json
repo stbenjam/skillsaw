@@ -1,0 +1,41 @@
+{
+  "name": "migration-structure-examples",
+  "plugins": [
+    {
+      "name": "nested-skills",
+      "source": "./packages/nested-skills"
+    },
+    {
+      "name": "root-skill",
+      "source": "./packages/root-skill"
+    },
+    {
+      "name": "placeholder-skills",
+      "source": "./packages/placeholder-skills"
+    },
+    {
+      "name": "nested-agents",
+      "source": "./packages/nested-agents"
+    },
+    {
+      "name": "placeholder-agents",
+      "source": "./packages/placeholder-agents"
+    },
+    {
+      "name": "child-package",
+      "source": "./packages/child-bundle"
+    },
+    {
+      "name": "readme-only",
+      "source": "./packages/readme-only"
+    },
+    {
+      "name": "commands-only",
+      "source": "./packages/commands-only"
+    },
+    {
+      "name": "lsp-only",
+      "source": "./packages/lsp-only"
+    }
+  ]
+}

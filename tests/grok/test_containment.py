@@ -342,9 +342,10 @@ def test_a_skill_symlinked_out_of_the_checkout_is_not_read_by_the_parity_walk(te
     assert run_rule(GrokMarketplaceIndexParityRule, repo) == []
 
 
-def test_a_component_symlinked_out_of_the_plugin_does_not_make_it_installable(temp_dir) -> None:
-    """Grok drops a component that leaves the plugin root, so counting one
-    would call a directory installable that the installer refuses."""
+def test_a_contained_skills_directory_is_installable_without_reading_escaped_children(
+    temp_dir,
+) -> None:
+    """Installation tests the contained directory; content walks still exclude its escape."""
     outside = _outside(temp_dir)
     (outside / "borrowed").mkdir()
     (outside / "borrowed" / "SKILL.md").write_text(
@@ -359,10 +360,9 @@ def test_a_component_symlinked_out_of_the_plugin_does_not_make_it_installable(te
 
     found = run_rule(GrokPluginStructureRule, repo)
 
-    assert [v.message for v in found] == [
-        "Grok installs nothing from 'almanac/': no .grok-plugin/plugin.json and none of "
-        "skills/<name>/SKILL.md, agents/*.md, hooks/hooks.json or .mcp.json"
-    ]
+    assert len(found) == 1
+    assert "installs it as 'almanac-<hash>'" in found[0].message
+    assert RepositoryContext(repo).lint_tree.find(SkillBlock) == []
 
 
 def test_a_skills_directory_symlinked_out_does_not_make_it_installable(temp_dir) -> None:
@@ -388,7 +388,7 @@ def test_a_skills_directory_symlinked_out_does_not_make_it_installable(temp_dir)
 
     assert [v.message for v in found] == [
         "Grok installs nothing from 'almanac/': no .grok-plugin/plugin.json and none of "
-        "skills/<name>/SKILL.md, agents/*.md, hooks/hooks.json or .mcp.json"
+        "skills/, agents/, hooks/hooks.json or .mcp.json, and no installable immediate child plugin"
     ]
 
 

@@ -11,16 +11,22 @@ from typing import List, Set
 
 from skillsaw.context import RepositoryContext
 from skillsaw.formats import grok
+from skillsaw.formats.grok_manifest import manifest_type_errors, read_manifest_json
 from skillsaw.lint_target import GrokPluginConfigNode
-from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
+from skillsaw.paths import (
+    contained_resolve,
+    safe_is_dir,
+    safe_is_file,
+    safe_is_symlink,
+    safe_resolve,
+)
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import strict_json
 
 from ._helpers import GROK_PLUGIN_REPO_TYPES
 
 #: What ``grok plugin install`` accepts from a manifest-less directory,
 #: rendered for the one message this rule has.
-_INSTALLABLE = f"skills/<name>/{grok.SKILL_FILENAME}, agents/*.md, hooks/hooks.json or .mcp.json"
+_INSTALLABLE = "skills/, agents/, hooks/hooks.json or .mcp.json"
 
 
 class GrokPluginStructureRule(Rule):
@@ -70,6 +76,9 @@ class GrokPluginStructureRule(Rule):
             if safe_is_file(node.path):
                 continue
             if not self._installable(plugin_dir):
+                if self._has_child_plugin(plugin_dir):
+                    # The installer selects children, not a synthesized parent.
+                    continue
                 if not check_installable:
                     # The naming advisory below still applies: a directory
                     # whose components are generated at build time installs
@@ -80,7 +89,7 @@ class GrokPluginStructureRule(Rule):
                     self.violation(
                         f"Grok installs nothing from '{plugin_dir.name}/': no "
                         f"{grok.PLUGIN_DIR_NAME}/{grok.PLUGIN_MANIFEST} and none of "
-                        f"{_INSTALLABLE}",
+                        f"{_INSTALLABLE}, and no installable immediate child plugin",
                         file_path=plugin_dir,
                     )
                 )
@@ -115,19 +124,38 @@ class GrokPluginStructureRule(Rule):
         root = safe_resolve(plugin_dir)
         if root is None:
             return False
-        skills = plugin_dir / grok.COMPONENT_PATHS["skills"][0]
-        if any(
-            _contained_file(child / grok.SKILL_FILENAME, root) for child in _children(skills, root)
-        ):
-            return True
-        agents = plugin_dir / grok.COMPONENT_PATHS["agents"][0]
-        if any(
-            child.suffix == ".md" and _contained_file(child, root)
-            for child in _children(agents, root)
-        ):
-            return True
+        for field in ("skills", "agents"):
+            directory = plugin_dir / grok.COMPONENT_PATHS[field][0]
+            if contained_resolve(directory, root) is not None and safe_is_dir(directory):
+                # Installation tests directory presence, not content depth.
+                return True
         for field in ("hooks", "mcpServers"):
             if _contained_file(plugin_dir / grok.COMPONENT_PATHS[field][0], root):
+                return True
+        return False
+
+    def _has_child_plugin(self, plugin_dir: Path) -> bool:
+        """The installer's one-level fallback, without following child symlinks."""
+        root = safe_resolve(plugin_dir)
+        if root is None:
+            return False
+        for child in _children(plugin_dir, root):
+            if (
+                safe_is_symlink(child)
+                or not safe_is_dir(child)
+                or contained_resolve(child, root) is None
+            ):
+                continue
+            if self._installable(child):
+                return True
+            manifest = grok.grok_manifest_path(child)
+            if manifest is None:
+                continue
+            data, error = read_manifest_json(manifest)
+            if error or not isinstance(data, dict) or manifest_type_errors(data):
+                continue
+            name = data.get("name")
+            if isinstance(name, str) and grok.PLUGIN_NAME_RE.fullmatch(name):
                 return True
         return False
 

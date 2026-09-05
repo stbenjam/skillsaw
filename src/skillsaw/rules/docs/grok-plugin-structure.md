@@ -5,8 +5,11 @@ In Grok Build, a plugin package can be installed with or without an explicit
 plugins based on the presence of recognized component directories or files:
 `skills/`, `agents/`, `hooks/hooks.json`, or `.mcp.json`.
 
-If a plugin directory has neither a manifest nor recognized components, Grok
-Build cannot install it when users attempt `grok plugin install`.
+The installer accepts `skills/` and `agents/` directories by their presence;
+nested content and tracked placeholders do not make the source uninstallable.
+If the source root is not a plugin, Grok also checks its immediate child
+directories for a valid manifest or conventional components. It does not
+recursively search deeper bundles or follow child directory symlinks.
 
 Additionally, directories containing only `commands/` or `.lsp.json` require
 either a manifest or an accompanying component (such as a skill or hook) to be
@@ -17,12 +20,13 @@ an installable component or a manifest so users can install them smoothly.
 
 ## Severity
 
-**Warning** — the directory lacks recognized components or a manifest, so Grok
-cannot install it.
+**Warning** — the source root and its immediate children lack an installable
+plugin.
 
 **Info** — when a catalog references a local plugin directory that lacks a
 manifest, Grok installs it under a generated name (like `<dir>-<hash>`). Adding a
-manifest with an explicit `name` ensures clean, predictable naming.
+manifest with an explicit `name` ensures clean, predictable naming. A child
+bundle does not receive this synthesized-parent-name advice.
 
 ## Examples
 
