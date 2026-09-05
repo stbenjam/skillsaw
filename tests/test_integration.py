@@ -7550,6 +7550,8 @@ def copy_autofix_skip_repo(tmp_path, name="repo", *, linked=True):
 @pytest.mark.integration
 @pytest.mark.skipif(os.name == "nt", reason="Requires ordinary POSIX symlinks")
 class TestAutofixSkips:
+    """Policy skips preserve diagnostics, previews and independent eligible fixes."""
+
     @pytest.mark.parametrize("kind", ["file", "directory", "dangling"])
     @pytest.mark.parametrize("dry_run", [False, True], ids=["apply", "preview"])
     def test_explicit_leaf_symlinks_stop_before_resolution(
@@ -7643,8 +7645,6 @@ class TestAutofixSkips:
         assert ("Path not found" if error == "missing" else "cannot be combined") in result.stderr
         assert "Fixed " not in result.stdout and "Would fix" not in result.stdout
         assert alias.is_symlink()
-
-    """Policy skips preserve diagnostics, previews and independent eligible fixes."""
 
     rule_id = "content-unlinked-internal-reference"
 

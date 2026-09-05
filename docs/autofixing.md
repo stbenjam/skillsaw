@@ -55,7 +55,9 @@ content edit, edit the target file directly. For a rename, manually remove,
 replace, or rename the symbolic link. Skips for discovered findings are reported
 once per path and reason, within the selected severity and confidence, and do
 not prevent independent regular-file fixes. A policy-only skip exits successfully; a failed write
-still exits nonzero. Dry-run never writes files or runs fix callbacks.
+still exits nonzero. Dry-run does not apply proposed fixes or run fix callbacks. Existing rename
+bookkeeping can still prune stale entries while checking; dry-run is not yet
+a fully read-only operation.
 
 Explicit file and directory symlinks passed to `skillsaw fix` are skipped
 before CLI path resolution, including dangling links. Name the real file or
