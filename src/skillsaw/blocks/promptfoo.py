@@ -12,9 +12,15 @@ from io import StringIO
 from typing import List, Optional
 
 from ruamel.yaml import YAML as _RuamelYAML
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
 from skillsaw.lint_target import LintTarget
-from skillsaw.utils import read_text, read_yaml_commented, commented_item_line
+from skillsaw.utils import (
+    commented_item_line,
+    invalidate_read_caches,
+    read_text,
+    read_yaml_commented,
+)
 
 from .base import ContentBlock
 
@@ -46,11 +52,17 @@ class PromptfooPromptBlock(ContentBlock):
             idx = int(idx_str)
         except ValueError:
             return
-        if 0 <= idx < len(prompts):
-            prompts[idx] = new_body
+        if not 0 <= idx < len(prompts):
+            return
+        # An empty block scalar can absorb its trailing YAML comment.
+        # Spell the empty string explicitly so the written value stays empty.
+        prompts[idx] = new_body if new_body else DoubleQuotedScalarString("")
         buf = StringIO()
         ruyaml.dump(data, buf)
         self.path.write_text(buf.getvalue(), encoding="utf-8")
+        self.body = new_body
+        invalidate_read_caches(self.path)
+        self.invalidate_find_cache()
 
     def tree_label(self) -> str:
         return f"{self.yaml_path} ({self.category})"
