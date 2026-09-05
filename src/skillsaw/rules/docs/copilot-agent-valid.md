@@ -23,8 +23,11 @@ template variables (`${{ secrets.NAME }}` and `${{ vars.NAME }}`) are recognized
 as valid placeholders.
 
 GitHub's `local` MCP transport is accepted as the cloud spelling of `stdio`.
-VS Code command hooks may use `command`, `windows`, `linux`, and `osx`; every
-provided command is security-scanned. Hooks on cloud-only agents are ignored.
+VS Code hooks use command handlers; an omitted `type` defaults to `command`.
+They may use `command`, `windows`, `linux`, `osx`, `bash`, and `powershell`;
+every provided command is security-scanned. Additional hook metadata is
+tolerated, but separate Claude `args` do not change the command VS Code runs.
+Hooks on cloud-only agents are ignored.
 
 ## Severity
 

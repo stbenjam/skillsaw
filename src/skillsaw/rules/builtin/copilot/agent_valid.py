@@ -5,19 +5,14 @@ from __future__ import annotations
 import re
 from typing import Any, List, Optional, Tuple
 
-from skillsaw.blocks import VSCODE_HOOK_COMMAND_FIELDS
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import CopilotAgentBlock
-from skillsaw.rules.builtin.hooks.json_valid import (
-    _OPTIONAL_FIELD_TYPES,
-    _TYPE_REQUIRED_FIELDS,
-    _TYPE_SPECIFIC_FIELDS,
-    _VALID_HOOK_EVENTS,
-    _VALID_HOOK_TYPES,
-    _check_field_type,
-    _format_type_name,
+from skillsaw.formats.vscode import (
+    VSCODE_HOOK_COMMAND_FIELDS,
+    VSCODE_HOOK_EVENTS,
+    VSCODE_HOOK_TYPES,
 )
 from skillsaw.rules.builtin.utils import (
     commented_item_line,
@@ -625,7 +620,7 @@ class CopilotAgentValidRule(Rule):
     def _check_hooks(
         self, block: CopilotAgentBlock, data: dict, violations: List[RuleViolation]
     ) -> bool:
-        if "hooks" not in data:
+        if "hooks" not in data or not block.supports_vscode:
             return True
         hooks = data["hooks"]
         if not isinstance(hooks, dict):
@@ -642,7 +637,7 @@ class CopilotAgentValidRule(Rule):
         for event, configs in hooks.items():
             event_line = _key_line(hooks, event)
             shown_event = safe_display(event)
-            if not isinstance(event, str) or event not in _VALID_HOOK_EVENTS:
+            if not isinstance(event, str) or event not in VSCODE_HOOK_EVENTS:
                 violations.append(
                     self._finding(
                         block,
@@ -700,21 +695,10 @@ class CopilotAgentValidRule(Rule):
                         )
                         valid = False
                         continue
-                elif "type" in config:
+                else:
+                    # normalizeForResolve defaults an absent type to command.
                     flat_config = True
                     handlers = [config]
-                else:
-                    violations.append(
-                        self._finding(
-                            block,
-                            f"Hook event '{shown_event}[{index}]' must define 'type' or a "
-                            "nested 'hooks' list",
-                            line=config_line,
-                            discriminator=f"hooks:{shown_event}:{index}:shape",
-                        )
-                    )
-                    valid = False
-                    continue
                 for handler_index, handler in enumerate(handlers):
                     handler_line = (
                         config_line
@@ -754,8 +738,8 @@ class CopilotAgentValidRule(Rule):
                 )
             )
             return False
-        hook_type = handler.get("type")
-        if not isinstance(hook_type, str) or hook_type not in _VALID_HOOK_TYPES:
+        hook_type = handler.get("type", "command")
+        if not isinstance(hook_type, str) or hook_type not in VSCODE_HOOK_TYPES:
             # YAML aliases can build an exponentially expanding acyclic list.
             # Rendering a non-string value before truncating it is therefore
             # not work-bounded; its type is the useful schema diagnostic.
@@ -772,145 +756,44 @@ class CopilotAgentValidRule(Rule):
             )
             return False
 
-        # Run every phase: one malformed field must not hide later diagnostics.
-        required_valid = self._check_hook_required_fields(
-            block, path, hook_type, handler, line, violations
-        )
-        optional_valid = self._check_hook_optional_fields(block, path, handler, line, violations)
-        self._warn_hook_field_compatibility(block, path, hook_type, handler, line, violations)
+        # VS Code tolerates extra properties. Claude's args, async, prompt,
+        # and transport metadata do not acquire Claude's types on this host.
+        return self._check_hook_commands(block, path, handler, line, violations)
 
-        valid = required_valid
-        if not optional_valid:
-            valid = False
-        return valid
-
-    def _check_hook_required_fields(
+    def _check_hook_commands(
         self,
         block: CopilotAgentBlock,
         path: str,
-        hook_type: str,
         handler: dict,
         line: Optional[int],
         violations: List[RuleViolation],
     ) -> bool:
-        """Validate the fields that make a handler of *hook_type* runnable."""
+        """Validate every command field without hiding later diagnostics."""
         valid = True
-        if hook_type == "command":
-            present_commands = [key for key in VSCODE_HOOK_COMMAND_FIELDS if key in handler]
-            if not present_commands:
-                violations.append(
-                    self._finding(
-                        block,
-                        f"Hook '{path}' of type 'command' requires at least one of: "
-                        f"{', '.join(VSCODE_HOOK_COMMAND_FIELDS)}",
-                        line=line,
-                        discriminator=f"hooks:{path}:command:missing",
-                    )
+        present_commands = [key for key in VSCODE_HOOK_COMMAND_FIELDS if key in handler]
+        if not present_commands:
+            violations.append(
+                self._finding(
+                    block,
+                    f"Hook '{path}' of type 'command' requires at least one of: "
+                    f"{', '.join(VSCODE_HOOK_COMMAND_FIELDS)}",
+                    line=line,
+                    discriminator=f"hooks:{path}:command:missing",
                 )
-                valid = False
-            for key in present_commands:
-                if not _nonempty_string(handler[key]):
-                    violations.append(
-                        self._finding(
-                            block,
-                            f"Hook '{path}' field '{key}' must be a non-empty string",
-                            line=_key_line(handler, key) or line,
-                            discriminator=f"hooks:{path}:{key}:type",
-                        )
-                    )
-                    valid = False
-            return valid
-
-        for key, expected in _TYPE_REQUIRED_FIELDS[hook_type].items():
-            if key not in handler:
+            )
+            valid = False
+        for key in present_commands:
+            if not _nonempty_string(handler[key]):
                 violations.append(
                     self._finding(
                         block,
-                        f"Hook '{path}' of type '{hook_type}' requires '{key}'",
-                        line=line,
-                        discriminator=f"hooks:{path}:{key}:missing",
-                    )
-                )
-                valid = False
-            elif not _check_field_type(handler[key], expected) or (
-                expected is str and not handler[key].strip()
-            ):
-                violations.append(
-                    self._finding(
-                        block,
-                        f"Hook '{path}' field '{key}' must be a non-empty "
-                        f"{_format_type_name(expected)}",
+                        f"Hook '{path}' field '{key}' must be a non-empty string",
                         line=_key_line(handler, key) or line,
                         discriminator=f"hooks:{path}:{key}:type",
                     )
                 )
                 valid = False
         return valid
-
-    def _check_hook_optional_fields(
-        self,
-        block: CopilotAgentBlock,
-        path: str,
-        handler: dict,
-        line: Optional[int],
-        violations: List[RuleViolation],
-    ) -> bool:
-        """Validate common optional fields and command argument members."""
-        valid = True
-        for key, expected in _OPTIONAL_FIELD_TYPES.items():
-            if key not in handler:
-                continue
-            if not _check_field_type(handler[key], expected):
-                violations.append(
-                    self._finding(
-                        block,
-                        f"Hook '{path}' field '{key}' must be a " f"{_format_type_name(expected)}",
-                        line=_key_line(handler, key) or line,
-                        discriminator=f"hooks:{path}:{key}:optional-type",
-                    )
-                )
-                valid = False
-        if isinstance(handler.get("args"), list):
-            for index, arg in enumerate(handler["args"]):
-                if not isinstance(arg, str):
-                    violations.append(
-                        self._finding(
-                            block,
-                            f"Hook '{path}' field 'args[{index}]' must be a string",
-                            line=_item_line(handler["args"], index)
-                            or _key_line(handler, "args")
-                            or line,
-                            discriminator=f"hooks:{path}:args:{index}",
-                        )
-                    )
-                    valid = False
-        return valid
-
-    def _warn_hook_field_compatibility(
-        self,
-        block: CopilotAgentBlock,
-        path: str,
-        hook_type: str,
-        handler: dict,
-        line: Optional[int],
-        violations: List[RuleViolation],
-    ) -> None:
-        """Warn when a valid field belongs to a different handler type."""
-        for key in handler:
-            allowed_types = (
-                {"command"} if key in VSCODE_HOOK_COMMAND_FIELDS else _TYPE_SPECIFIC_FIELDS.get(key)
-            )
-            if allowed_types is not None and hook_type not in allowed_types:
-                violations.append(
-                    self._finding(
-                        block,
-                        f"Hook '{path}' field '{key}' is only valid for types: "
-                        f"{', '.join(sorted(allowed_types))}",
-                        line=_key_line(handler, key) or line,
-                        severity=Severity.WARNING,
-                        discriminator=f"hooks:{path}:{key}:compatibility",
-                    )
-                )
 
     def _compatibility_warning(
         self,

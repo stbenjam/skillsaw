@@ -650,33 +650,31 @@ def test_embedded_yaml_payload_token_estimate_does_not_expand_alias_dag(tmp_path
     assert 0 < embedded[0].estimate_tokens() < 1_000
 
 
-def test_all_supported_hook_handler_types_are_valid(tmp_path):
+@pytest.mark.parametrize(
+    "command_field", ["command", "windows", "linux", "osx", "bash", "powershell"]
+)
+def test_supported_hook_command_fields_are_valid(tmp_path, command_field):
     _write_agent(
         tmp_path,
-        "description: Runs typed lifecycle hooks\n"
-        "target: vscode\n"
-        "hooks:\n"
-        "  PostToolUse:\n"
-        "    - hooks:\n"
-        "        - type: command\n"
-        "          command: make lint\n"
-        "          args: [--quiet]\n"
-        "        - type: http\n"
-        "          url: https://example.test/hooks\n"
-        "          headers: {Authorization: bearer-token}\n"
-        "        - type: mcp_tool\n"
-        "          server: local-tools\n"
-        "          tool: summarize\n"
-        "          input: {format: concise}\n"
-        "        - type: prompt\n"
-        "          prompt: Review the tool result.\n"
-        "          model: GPT-5\n"
-        "        - type: agent\n"
-        "          prompt: Investigate the failure.\n"
-        "          model: GPT-5",
+        "description: Runs a lifecycle check\ntarget: vscode\nhooks:\n"
+        "  PostToolUse:\n    - type: command\n"
+        f"      {command_field}: printf ready",
     )
-
     assert _check(tmp_path) == []
+
+
+@pytest.mark.parametrize("hook_type", ["http", "mcp_tool", "prompt", "agent", "null", "''"])
+def test_unsupported_hook_handler_types_are_reported(tmp_path, hook_type):
+    _write_agent(
+        tmp_path,
+        "description: Runs a lifecycle check\ntarget: vscode\nhooks:\n"
+        f"  PostToolUse:\n    - type: {hook_type}\n      command: printf ready",
+    )
+    found = _check(tmp_path)
+    assert len(found) == 1
+    assert found[0].severity is Severity.ERROR
+    assert found[0].line == 6
+    assert "has invalid type" in found[0].message
 
 
 def test_hook_handler_diagnostics_preserve_order_and_metadata(tmp_path):
@@ -692,23 +690,13 @@ def test_hook_handler_diagnostics_preserve_order_and_metadata(tmp_path):
         "        - type: command\n"
         "        - type: command\n"
         "          command: []\n"
-        "        - type: http\n"
-        "          prompt: misplaced\n"
-        "        - type: mcp_tool\n"
-        "          server: ''\n"
-        "          tool: 7\n"
-        "          args:\n"
-        "            - --ok\n"
-        "            - 9\n"
-        "          timeout: true\n"
-        "          url: misplaced\n"
+        "        - type: command\n"
+        "          bash: []\n"
+        "          powershell: false\n"
         "        - type: prompt\n"
-        "          prompt: ''\n"
-        "          headers: []",
+        "          prompt: ''",
     )
-
     found = _check(tmp_path)
-
     assert [(v.severity, v.line, v.message, v.fingerprint_discriminator) for v in found] == [
         (
             Severity.ERROR,
@@ -725,8 +713,7 @@ def test_hook_handler_diagnostics_preserve_order_and_metadata(tmp_path):
         (
             Severity.ERROR,
             9,
-            "Hook 'PostToolUse[0].hooks[2]' of type 'command' requires at least one of: "
-            "command, windows, linux, osx",
+            "Hook 'PostToolUse[0].hooks[2]' of type 'command' requires at least one of: command, windows, linux, osx, bash, powershell",
             "hooks:PostToolUse[0].hooks[2]:command:missing",
         ),
         (
@@ -737,70 +724,21 @@ def test_hook_handler_diagnostics_preserve_order_and_metadata(tmp_path):
         ),
         (
             Severity.ERROR,
-            12,
-            "Hook 'PostToolUse[0].hooks[4]' of type 'http' requires 'url'",
-            "hooks:PostToolUse[0].hooks[4]:url:missing",
+            13,
+            "Hook 'PostToolUse[0].hooks[4]' field 'bash' must be a non-empty string",
+            "hooks:PostToolUse[0].hooks[4]:bash:type",
         ),
         (
-            Severity.WARNING,
-            13,
-            "Hook 'PostToolUse[0].hooks[4]' field 'prompt' is only valid for types: "
-            "agent, prompt",
-            "hooks:PostToolUse[0].hooks[4]:prompt:compatibility",
+            Severity.ERROR,
+            14,
+            "Hook 'PostToolUse[0].hooks[4]' field 'powershell' must be a non-empty string",
+            "hooks:PostToolUse[0].hooks[4]:powershell:type",
         ),
         (
             Severity.ERROR,
             15,
-            "Hook 'PostToolUse[0].hooks[5]' field 'server' must be a non-empty str",
-            "hooks:PostToolUse[0].hooks[5]:server:type",
-        ),
-        (
-            Severity.ERROR,
-            16,
-            "Hook 'PostToolUse[0].hooks[5]' field 'tool' must be a non-empty str",
-            "hooks:PostToolUse[0].hooks[5]:tool:type",
-        ),
-        (
-            Severity.ERROR,
-            20,
-            "Hook 'PostToolUse[0].hooks[5]' field 'timeout' must be a int/float",
-            "hooks:PostToolUse[0].hooks[5]:timeout:optional-type",
-        ),
-        (
-            Severity.ERROR,
-            19,
-            "Hook 'PostToolUse[0].hooks[5]' field 'args[1]' must be a string",
-            "hooks:PostToolUse[0].hooks[5]:args:1",
-        ),
-        (
-            Severity.WARNING,
-            17,
-            "Hook 'PostToolUse[0].hooks[5]' field 'args' is only valid for types: command",
-            "hooks:PostToolUse[0].hooks[5]:args:compatibility",
-        ),
-        (
-            Severity.WARNING,
-            21,
-            "Hook 'PostToolUse[0].hooks[5]' field 'url' is only valid for types: http",
-            "hooks:PostToolUse[0].hooks[5]:url:compatibility",
-        ),
-        (
-            Severity.ERROR,
-            23,
-            "Hook 'PostToolUse[0].hooks[6]' field 'prompt' must be a non-empty str",
-            "hooks:PostToolUse[0].hooks[6]:prompt:type",
-        ),
-        (
-            Severity.ERROR,
-            24,
-            "Hook 'PostToolUse[0].hooks[6]' field 'headers' must be a dict",
-            "hooks:PostToolUse[0].hooks[6]:headers:optional-type",
-        ),
-        (
-            Severity.WARNING,
-            24,
-            "Hook 'PostToolUse[0].hooks[6]' field 'headers' is only valid for types: http",
-            "hooks:PostToolUse[0].hooks[6]:headers:compatibility",
+            "Hook 'PostToolUse[0].hooks[5]' has invalid type 'prompt'",
+            "hooks:PostToolUse[0].hooks[5]:handler-type",
         ),
     ]
 
@@ -908,7 +846,10 @@ def test_recursive_hook_aliases_do_not_crash_shape_validation(tmp_path):
     found = _check(tmp_path)
 
     assert len(found) == 1
-    assert "has invalid type" in found[0].message
+    assert found[0].message == (
+        "Hook 'PostToolUse[0].hooks[0]' of type 'command' requires at least one of: "
+        "command, windows, linux, osx, bash, powershell"
+    )
 
 
 def test_non_string_hook_event_key_keeps_its_line(tmp_path):

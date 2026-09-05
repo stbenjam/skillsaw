@@ -29,6 +29,7 @@ from typing import (
 
 from skillsaw.formats import antigravity
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
+from skillsaw.formats.vscode import VSCODE_HOOK_COMMAND_FIELDS
 from skillsaw.lint_target import LintTarget
 from skillsaw.repository_types import RepositoryType
 from skillsaw.utils import (
@@ -78,10 +79,6 @@ def _as_str_list(value: Any) -> Optional[List[str]]:
         return None
     return [v for v in value if isinstance(v, str)]
 
-
-#: VS Code's per-platform command keys, which ``copilot-agent-valid``
-#: enforces as that host's vocabulary — one host's spelling, not the union.
-VSCODE_HOOK_COMMAND_FIELDS = ("command", "windows", "linux", "osx")
 
 #: Every key any host may carry an executable command string under. Each one
 #: is a command something will run, so ``hooks-dangerous`` and
@@ -158,7 +155,9 @@ class HookHandler:
                 yield " ".join([command, *self.args]), source_line
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookHandler":
+    def from_dict(
+        cls, d: Dict[str, Any], *, line_offset: int = 0, default_type: str = ""
+    ) -> "HookHandler":
         """Build a handler from raw JSON, dropping values of the wrong type.
 
         The annotations here are a contract the JSON cannot be trusted to
@@ -183,7 +182,7 @@ class HookHandler:
                 (value, variant_line + line_offset if variant_line is not None else None)
             )
         return cls(
-            type=_as_str(d.get("type")) or "",
+            type=_as_str(d.get("type", default_type)) or "",
             command=_as_str(d.get("command")),
             command_variants=command_variants,
             args=_as_str_list(d.get("args")),
@@ -215,13 +214,17 @@ class HookEventConfig:
     handlers: List[HookHandler] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any], *, line_offset: int = 0) -> "HookEventConfig":
+    def from_dict(
+        cls, d: Dict[str, Any], *, line_offset: int = 0, default_type: str = ""
+    ) -> "HookEventConfig":
         handlers: List[HookHandler] = []
         raw_hooks = d.get("hooks", [])
         if isinstance(raw_hooks, list):
             for h in raw_hooks:
                 if isinstance(h, dict):
-                    handlers.append(HookHandler.from_dict(h, line_offset=line_offset))
+                    handlers.append(
+                        HookHandler.from_dict(h, line_offset=line_offset, default_type=default_type)
+                    )
         return cls(
             # Coerced like the handler fields: a list-valued matcher reaches
             # every consumer annotated ``str``, and the generated docs page
@@ -234,7 +237,9 @@ class HookEventConfig:
         )
 
 
-def parse_hooks_events(hooks_obj: Any, *, line_offset: int = 0) -> Dict[str, List[HookEventConfig]]:
+def parse_hooks_events(
+    hooks_obj: Any, *, line_offset: int = 0, default_type: str = ""
+) -> Dict[str, List[HookEventConfig]]:
     """Parse a ``hooks`` object into event configs.
 
     Supports both the nested (hooks.json / settings.json) format
@@ -253,9 +258,15 @@ def parse_hooks_events(hooks_obj: Any, *, line_offset: int = 0) -> Dict[str, Lis
             if not isinstance(cfg, dict):
                 continue
             if "hooks" in cfg:
-                entries.append(HookEventConfig.from_dict(cfg, line_offset=line_offset))
-            elif "type" in cfg:
-                handler = HookHandler.from_dict(cfg, line_offset=line_offset)
+                entries.append(
+                    HookEventConfig.from_dict(
+                        cfg, line_offset=line_offset, default_type=default_type
+                    )
+                )
+            elif "type" in cfg or default_type:
+                handler = HookHandler.from_dict(
+                    cfg, line_offset=line_offset, default_type=default_type
+                )
                 matcher = _as_str(cfg.get("matcher")) or ".*"
                 entries.append(HookEventConfig(matcher=matcher, handlers=[handler]))
         if entries:

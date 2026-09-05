@@ -1887,6 +1887,90 @@ class TestFixMultiplePaths:
 @pytest.mark.integration
 class TestCopilotAgentValidation:
 
+    def test_vscode_hook_vocabulary_keeps_commands_and_lines(self, tmp_path):
+        from skillsaw.blocks import CopilotAgentBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("copilot-hook-vocabulary", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(CopilotAgentBlock)
+        commands = {
+            (block.path.name, command, line)
+            for block in blocks
+            for entries in block.hooks_events.values()
+            for entry in entries
+            for handler in entry.handlers
+            for command, line in handler.iter_effective_commands()
+        }
+        assert commands == {
+            ("shells.agent.md", "printf shell-ready", 7),
+            ("shells.agent.md", "Write-Output shell-ready", 8),
+            ("defaults.agent.md", "printf direct-ready", 6),
+            ("defaults.agent.md", "printf nested-ready", 9),
+            ("defaults.agent.md", "printf error-recorded", 12),
+        }
+        result = run_lint(repo, "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        assert result["out"] is not None
+        assert "copilot-agent-valid" in result["out"]["stats"]["rules_run"]
+        assert result["out"]["violations"] == []
+
+        policy = run_lint(repo, "--rule", "hooks-prohibited", "--no-custom-rules", "--no-plugins")
+        assert policy["rc"] == 1, policy
+        assert policy["out"] is not None
+        findings = policy["out"]["violations"]
+        assert len(findings) == 5
+        assert {v["rule_id"] for v in findings} == {"hooks-prohibited"}
+        assert {
+            (Path(v["file_path"]).name, v["message"].split(" — ", 1)[1], v["line"])
+            for v in findings
+        } == {(name, repr(command), line) for name, command, line in commands}
+
+    @pytest.mark.parametrize("hook_type", ["prompt", "http", "mcp_tool", "agent"])
+    def test_unsupported_vscode_hook_types_retain_diagnostics(self, tmp_path, hook_type):
+        repo = copy_fixture("copilot-hook-vocabulary", tmp_path)
+        path = repo / ".github/agents/shells.agent.md"
+        path.write_text(path.read_text().replace("type: command", f"type: {hook_type}"))
+        result = run_lint(
+            repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert result["rc"] == 1, result
+        assert result["out"] is not None
+        assert [(v["file_path"], v["line"], v["message"]) for v in result["out"]["violations"]] == [
+            (
+                ".github/agents/shells.agent.md",
+                6,
+                f"Hook 'PostToolUse[0].hooks[0]' has invalid type '{hook_type}'",
+            )
+        ]
+
+    def test_unrecognized_event_is_reported_and_cloud_hooks_stay_ignored(self, tmp_path):
+        repo = copy_fixture("copilot-hook-vocabulary", tmp_path)
+        path = repo / ".github/agents/shells.agent.md"
+        path.write_text(path.read_text().replace("PostToolUse:", "Setup:"))
+        result = run_lint(
+            repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert result["rc"] == 1, result
+        assert result["out"] is not None
+        assert [(v["file_path"], v["line"], v["message"]) for v in result["out"]["violations"]] == [
+            (".github/agents/shells.agent.md", 5, "Unknown hook event 'Setup'")
+        ]
+        path.write_text(path.read_text().replace("target: vscode", "target: github-copilot"))
+        cloud = run_lint(repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins")
+        assert cloud["rc"] == 0, cloud
+        assert cloud["out"] is not None
+        assert [
+            (v["file_path"], v["line"], v["severity"], v["message"])
+            for v in cloud["out"]["violations"]
+        ] == [
+            (
+                ".github/agents/shells.agent.md",
+                4,
+                "warning",
+                "'hooks' is ignored by GitHub Copilot cloud",
+            )
+        ]
+
     def test_official_style_examples_and_legacy_chatmode_are_clean(self, tmp_path):
         repo = copy_fixture("copilot-agents-clean", tmp_path)
 
