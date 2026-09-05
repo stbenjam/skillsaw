@@ -1894,6 +1894,57 @@ class TestFeedbackAttachmentBudgets:
         assert lint_calls == []
         assert not (repo / ".skillsaw-feedback").exists()
 
+    def test_unrepresentable_read_limit_stops_before_open(self, attachment_repo, monkeypatch):
+        repo, lint_calls = attachment_repo
+        original_open = Path.open
+
+        def guarded_open(path, mode="r", *args, **kwargs):
+            if path == repo / "note.md" and mode == "rb":
+                pytest.fail("unrepresentable read count reached the selected file")
+            return original_open(path, mode, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", guarded_open)
+        result = run_cli(
+            [
+                "feedback",
+                repo,
+                "--include",
+                "note.md",
+                "--max-file-bytes",
+                sys.maxsize,
+                "--max-total-bytes",
+                sys.maxsize,
+            ]
+        )
+        assert result.returncode == 1
+        assert "note.md" in result.stderr
+        assert "platform's read range" in result.stderr
+        assert "--max-file-bytes or --max-total-bytes" in result.stderr
+        assert lint_calls == []
+        assert not (repo / ".skillsaw-feedback").exists()
+
+    @pytest.mark.parametrize("large_option", ["--max-file-bytes", "--max-total-bytes"])
+    def test_small_effective_limit_accepts_large_override(self, attachment_repo, large_option):
+        repo, lint_calls = attachment_repo
+        small_option = (
+            "--max-total-bytes" if large_option == "--max-file-bytes" else "--max-file-bytes"
+        )
+        result = run_cli(
+            [
+                "feedback",
+                repo,
+                "--include",
+                "note.md",
+                "--json",
+                large_option,
+                sys.maxsize + 1,
+                small_option,
+                8,
+            ]
+        )
+        assert _feedback_members(result)["included/note.md"] == (repo / "note.md").read_bytes()
+        assert len(lint_calls) == 1
+
     @pytest.mark.parametrize(
         ("option", "value"),
         [

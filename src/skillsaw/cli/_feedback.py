@@ -680,6 +680,11 @@ def _read_selected_file(
 ) -> bytes:
     """Read a guarded selection with one overflow byte, preserving its raw text."""
     limit = min(max_file_bytes, remaining_bytes)
+    if limit >= sys.maxsize:
+        raise ValueError(
+            f"{label}: selected-file byte limits exceed this platform's read range; "
+            "lower --max-file-bytes or --max-total-bytes"
+        )
     try:
         with path.open("rb") as stream:
             data = stream.read(limit + 1)
