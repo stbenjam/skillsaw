@@ -730,19 +730,19 @@ def test_hook_handler_diagnostics_preserve_order_and_metadata(tmp_path):
         (
             Severity.ERROR,
             11,
-            "Hook 'PostToolUse[0].hooks[3]' field 'command' must be a non-empty string",
+            "Hook 'PostToolUse[0].hooks[3]' field 'command' must be a string",
             "hooks:PostToolUse[0].hooks[3]:command:type",
         ),
         (
             Severity.ERROR,
             13,
-            "Hook 'PostToolUse[0].hooks[4]' field 'bash' must be a non-empty string",
+            "Hook 'PostToolUse[0].hooks[4]' field 'bash' must be a string",
             "hooks:PostToolUse[0].hooks[4]:bash:type",
         ),
         (
             Severity.ERROR,
             14,
-            "Hook 'PostToolUse[0].hooks[4]' field 'powershell' must be a non-empty string",
+            "Hook 'PostToolUse[0].hooks[4]' field 'powershell' must be a string",
             "hooks:PostToolUse[0].hooks[4]:powershell:type",
         ),
         (

@@ -802,16 +802,29 @@ class CopilotAgentValidRule(Rule):
             )
             valid = False
         for key in present_commands:
-            if not _nonempty_string(handler[key]):
+            if not isinstance(handler[key], str):
                 violations.append(
                     self._finding(
                         block,
-                        f"Hook '{path}' field '{key}' must be a non-empty string",
+                        f"Hook '{path}' field '{key}' must be a string",
                         line=_key_line(handler, key) or line,
                         discriminator=f"hooks:{path}:{key}:type",
                     )
                 )
                 valid = False
+        if valid and not any(handler[key] for key in present_commands):
+            # VS Code ignores empty alternatives. A nonempty platform/default
+            # string suffices; only an entirely empty handler has no command.
+            violations.append(
+                self._finding(
+                    block,
+                    f"Hook '{path}' has no non-empty command; set at least one of: "
+                    f"{', '.join(VSCODE_HOOK_COMMAND_FIELDS)}",
+                    line=_key_line(handler, present_commands[0]) or line,
+                    discriminator=f"hooks:{path}:command:empty",
+                )
+            )
+            valid = False
         return valid
 
     def _compatibility_warning(

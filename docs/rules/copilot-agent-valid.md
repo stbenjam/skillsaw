@@ -40,7 +40,9 @@ as valid placeholders.
 GitHub's `local` MCP transport is accepted as the cloud spelling of `stdio`.
 VS Code hooks use command handlers; an omitted `type` defaults to `command`.
 They may use `command`, `windows`, `linux`, `osx`, `bash`, and `powershell`;
-every provided command is security-scanned. Additional hook metadata is
+empty alternatives are ignored when another command string is present, and
+every provided command is security-scanned. A handler with only empty commands
+has no command to run. Additional hook metadata is
 tolerated, but separate Claude `args` do not change the command VS Code runs.
 Hooks on cloud-only agents are ignored.
 
