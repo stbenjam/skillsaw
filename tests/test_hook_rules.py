@@ -2565,6 +2565,6 @@ def test_a_non_finite_token_anywhere_rejects_the_whole_file(temp_dir):
     found = ClaudeHooksValidRule({}).check(RepositoryContext(plugin_dir))
 
     assert len(found) == 1, [v.message for v in found]
-    assert "'NaN' at hooks.PostToolUse[0].hooks[0].headers.x" in found[0].message
+    assert "Invalid JSON: NaN is not valid JSON" in found[0].message
     assert "Claude Code rejects the whole file" in found[0].message
     assert found[0].line is None

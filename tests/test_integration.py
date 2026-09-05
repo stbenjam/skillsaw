@@ -373,6 +373,36 @@ class TestHooksJson:
         assert found[0]["file_path"] == "hooks/hooks.json"
         assert "Unknown event type 'NotAClaudeEvent'" in found[0]["message"]
 
+    @pytest.mark.parametrize(
+        "source_value,valid",
+        [
+            ("1e400", True),
+            ("-1e400", True),
+            ('"NaN and Infinity"', True),
+            ("NaN", False),
+            ("Infinity", False),
+            ("-Infinity", False),
+            ('NaN, "revisionWeight": 1', False),
+        ],
+    )
+    def test_json_number_syntax_matches_claude_parser(self, tmp_path, source_value, valid):
+        repo = copy_fixture("hooks-json-number-syntax", tmp_path)
+        path = repo / "hooks/hooks.json"
+        path.write_text(path.read_text().replace("1e400", source_value))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert "claude-hooks-valid" in result["out"]["stats"]["rules_run"]
+        found = violations(result)
+        assert result["rc"] == (0 if valid else 1), result
+        if valid:
+            assert found == []
+        else:
+            assert len(found) == 1, found
+            assert found[0]["rule_id"] == "claude-hooks-valid"
+            assert found[0]["file_path"] == "hooks/hooks.json"
+            token = source_value.split(",")[0]
+            assert f"Invalid JSON: {token} is not valid JSON" in found[0]["message"]
+            assert "Claude Code rejects the whole file" in found[0]["message"]
+
 
 # ── Supply Chain Hooks ──────────────────────────────────────────
 

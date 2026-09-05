@@ -1,0 +1,9 @@
+{
+  "description": "Infinity is an ordinary word in this string",
+  "revisionWeight": 1e400,
+  "hooks": {
+    "SessionStart": [{
+      "hooks": [{"type": "command", "command": "printf ready"}]
+    }]
+  }
+}
