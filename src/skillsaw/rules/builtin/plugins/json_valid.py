@@ -42,7 +42,9 @@ class PluginJsonValidRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        recommended_fields = self.config.get("recommended-fields", self.DEFAULT_RECOMMENDED_FIELDS)
+        recommended_fields = self.setting("recommended-fields")
+        if not isinstance(recommended_fields, list):
+            recommended_fields = self.config_schema["recommended-fields"]["default"]
 
         for plugin_node in context.lint_tree.find(PluginNode):
             plugin_path = plugin_node.path

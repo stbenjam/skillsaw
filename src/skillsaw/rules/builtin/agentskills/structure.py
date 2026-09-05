@@ -40,7 +40,10 @@ class AgentSkillStructureRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        allowed = set(self.config.get("allowed_dirs", DEFAULT_ALLOWED_DIRS))
+        allowed_dirs = self.setting("allowed_dirs")
+        if not isinstance(allowed_dirs, list):
+            allowed_dirs = self.config_schema["allowed_dirs"]["default"]
+        allowed = set(allowed_dirs)
 
         for skill_node in context.lint_tree.find(SkillNode):
             skill_path = skill_node.path

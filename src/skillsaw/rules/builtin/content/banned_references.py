@@ -125,7 +125,10 @@ class ContentBannedReferencesRule(Rule):
     def _config_patterns(self) -> List[Tuple[re.Pattern, str]]:
         """Untrusted patterns from ``.skillsaw.yaml`` — run under a time budget."""
         patterns: List[Tuple[re.Pattern, str]] = []
-        for entry in self.config.get("banned", []):
+        configured = self.setting("banned")
+        if not isinstance(configured, list):
+            configured = self.config_schema["banned"]["default"]
+        for entry in configured:
             if isinstance(entry, dict) and "pattern" in entry:
                 msg = entry.get("message", f"Banned reference: matches '{entry['pattern']}'")
                 try:
