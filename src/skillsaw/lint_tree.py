@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, TYPE_CHECKING, Tuple
@@ -89,6 +90,7 @@ from .formats.codex import (
     codex_inline_mcp_servers,
 )
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
+from .discovery.excludes import is_root_or_ancestor_excluded
 from .discovery.opencode import contained_instruction_globs
 from .formats import antigravity, devin, grok, muse
 from .utils import has_apm_generated_header, read_text
@@ -586,6 +588,18 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     _is_excluded = context.is_path_excluded
     _is_in_compiled_dir = context.in_apm_compiled_dir
 
+    def _record_walk_error(exc: OSError) -> None:
+        path = Path(exc.filename) if exc.filename is not None else context.root_path
+        if is_root_or_ancestor_excluded(path, context.root_path, _is_excluded):
+            return
+        message = f"Could not read {path}: {exc}"
+        if message not in context.lint_tree_errors:
+            context.lint_tree_errors.append(message)
+            logger.warning(message)
+
+    for error in context._repository_scan().walk_errors:
+        _record_walk_error(error)
+
     apm_source_root = (
         (safe_resolve((context.root_path / ".apm")) or (context.root_path / ".apm"))
         if context.has_apm
@@ -865,7 +879,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # carry its own — hence the walk-backed ``agent_tool_dirs`` rather than a
     # root-anchored lookup.
     def _readable_matches(directory: Path, pattern: str) -> List[Path]:
-        """Every *pattern* match under *directory*, or nothing if it is unread.
+        """Return readable filename matches while reporting traversal errors.
 
         The four guards in this helper are what any glob of a repository directory
         needs, and a caller that skips the last one fails *silently*: a
@@ -888,16 +902,21 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # filesystem before a single match was rejected.
         if state.resolve_repo_path(directory) is None:
             return []
-        try:
-            return sorted(directory.glob(pattern))
-        except OSError as exc:
-            # A directory that cannot be read drops silently otherwise, and
-            # "no findings" is indistinguishable from "nothing to find".
-            message = f"Could not read {directory}: {exc}"
-            if message not in context.lint_tree_errors:
-                context.lint_tree_errors.append(message)
-            logger.warning(message)
-            return []
+        # These attachment patterns are a filename glob, optionally prefixed
+        # with **/. Path.glob suppresses traversal errors, so enumerate with
+        # an error callback and preserve its no-symlink-descent behavior.
+        recursive = pattern.startswith("**/")
+        filename_pattern = pattern[3:] if recursive else pattern
+        matches = []
+        for dirpath, dirnames, filenames in os.walk(directory, onerror=_record_walk_error):
+            here = Path(dirpath)
+            dirnames[:] = (
+                [name for name in dirnames if not _is_excluded(here / name)] if recursive else []
+            )
+            matches.extend(
+                here / name for name in filenames if fnmatch.fnmatch(name, filename_pattern)
+            )
+        return sorted(matches)
 
     def _add_glob(
         parent: LintTarget,
