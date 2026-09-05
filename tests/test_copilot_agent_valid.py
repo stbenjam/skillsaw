@@ -347,7 +347,7 @@ def test_explicit_target_compatibility_is_warning_only(tmp_path):
     assert {v.line for v in found} == {4, 6, 7, 8, 11}
 
 
-def test_vscode_target_warns_for_cloud_fields_and_string_tools(tmp_path):
+def test_vscode_target_warns_only_for_cloud_fields(tmp_path):
     _write_agent(
         tmp_path,
         "description: Local-only agent with cloud-specific fields\n"
@@ -359,9 +359,9 @@ def test_vscode_target_warns_for_cloud_fields_and_string_tools(tmp_path):
 
     found = _check(tmp_path)
 
-    assert len(found) == 3
+    assert len(found) == 2
     assert all(v.severity is Severity.WARNING for v in found)
-    assert {v.line for v in found} == {4, 5, 7}
+    assert {v.line for v in found} == {5, 7}
     assert RepositoryContext(tmp_path).lint_tree.find(CopilotAgentMcpBlock) == []
 
 

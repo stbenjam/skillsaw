@@ -2004,6 +2004,47 @@ class TestCopilotAgentValidation:
             ),
         ]
 
+    def test_vscode_and_legacy_string_tools_pass_warning_threshold(self, tmp_path):
+        from skillsaw.blocks import CopilotAgentBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("copilot-string-tools", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(CopilotAgentBlock)
+        assert {
+            (block.path.name, block.effective_target, block.field_value("tools"))
+            for block in blocks
+        } == {
+            ("reviewer.agent.md", "vscode", "read, search"),
+            ("reviewer.chatmode.md", "vscode", "read, search"),
+        }
+        result = run_lint(repo, "--fail-on", "warning", "--no-custom-rules", "--no-plugins")
+        assert result["rc"] == 0, result
+        assert result["out"] is not None
+        assert "copilot-agent-valid" in result["out"]["stats"]["rules_run"]
+        assert result["out"]["violations"] == []
+
+    def test_string_tools_keep_subagent_access_validation(self, tmp_path):
+        repo = copy_fixture("copilot-string-tools", tmp_path)
+        path = repo / ".github/agents/reviewer.agent.md"
+        path.write_text(
+            path.read_text().replace(
+                "tools: read, search", "tools: read, search\nagents: [Reviewer]"
+            )
+        )
+        result = run_lint(
+            repo, "--rule", "copilot-agent-valid", "--no-custom-rules", "--no-plugins"
+        )
+        assert result["rc"] == 1, result
+        assert result["out"] is not None
+        findings = result["out"]["violations"]
+        assert len(findings) == 1
+        assert (findings[0]["file_path"], findings[0]["line"], findings[0]["rule_id"]) == (
+            ".github/agents/reviewer.agent.md",
+            5,
+            "copilot-agent-valid",
+        )
+        assert "requires the 'agent' tool" in findings[0]["message"]
+
     def test_official_style_examples_and_legacy_chatmode_are_clean(self, tmp_path):
         repo = copy_fixture("copilot-agents-clean", tmp_path)
 

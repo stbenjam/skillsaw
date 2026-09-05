@@ -203,7 +203,7 @@ class CopilotAgentValidRule(Rule):
                 )
             )
 
-        tools_valid, tool_names, tools_is_string = self._check_tools(block, data, violations)
+        tools_valid, tool_names = self._check_tools(block, data, violations)
         model_valid, model_is_list = self._check_model(block, data, violations)
         agents_valid, agent_names = self._check_agents(block, data, violations)
         metadata_valid = self._check_metadata(block, data, violations)
@@ -239,8 +239,6 @@ class CopilotAgentValidRule(Rule):
             mcp_valid=mcp_valid,
             model_valid=model_valid,
             model_is_list=model_is_list,
-            tools_valid=tools_valid,
-            tools_is_string=tools_is_string,
         )
 
         includes_cloud = target != "vscode"
@@ -398,9 +396,9 @@ class CopilotAgentValidRule(Rule):
 
     def _check_tools(
         self, block: CopilotAgentBlock, data: dict, violations: List[RuleViolation]
-    ) -> Tuple[bool, List[str], bool]:
+    ) -> Tuple[bool, List[str]]:
         if "tools" not in data:
-            return True, [], False
+            return True, []
         value = data["tools"]
         if isinstance(value, str):
             parts = [part.strip() for part in value.split(",")]
@@ -413,13 +411,13 @@ class CopilotAgentValidRule(Rule):
                         discriminator="tools:value",
                     )
                 )
-                return False, [], True
-            return True, parts, True
+                return False, []
+            return True, parts
         if isinstance(value, list):
             valid, names = self._check_string_list(
                 block, "tools", value, violations, allow_empty=True
             )
-            return valid, names, False
+            return valid, names
         violations.append(
             self._finding(
                 block,
@@ -428,7 +426,7 @@ class CopilotAgentValidRule(Rule):
                 discriminator="tools:type",
             )
         )
-        return False, [], False
+        return False, []
 
     def _check_model(
         self, block: CopilotAgentBlock, data: dict, violations: List[RuleViolation]
@@ -849,8 +847,6 @@ class CopilotAgentValidRule(Rule):
         mcp_valid: bool,
         model_valid: bool,
         model_is_list: bool,
-        tools_valid: bool,
-        tools_is_string: bool,
     ) -> None:
         if target == "github-copilot":
             for key, valid in (
@@ -871,14 +867,3 @@ class CopilotAgentValidRule(Rule):
             for key, valid in (("mcp-servers", mcp_valid), ("metadata", metadata_valid)):
                 if key in data and valid:
                     self._compatibility_warning(block, data, key, "VS Code", violations)
-            if "tools" in data and tools_valid and tools_is_string:
-                violations.append(
-                    self._finding(
-                        block,
-                        "VS Code expects 'tools' as a YAML list; the comma-separated string "
-                        "spelling is for GitHub Copilot cloud compatibility",
-                        line=_key_line(data, "tools"),
-                        severity=Severity.WARNING,
-                        discriminator="compatibility:tools:vscode",
-                    )
-                )

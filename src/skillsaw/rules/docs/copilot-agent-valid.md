@@ -37,8 +37,8 @@ oversized cloud prompt are errors.
 
 Compatibility findings are warnings because the file remains usable in its
 selected environment: VS Code-only fields on `target: github-copilot`, cloud
-MCP/metadata on `target: vscode`, a cloud-only tools string in VS Code, and a
-VS Code model array in cloud. The retired `infer` field is also a warning;
+MCP/metadata on `target: vscode`, and a VS Code model array in cloud. The retired
+`infer` field is also a warning;
 `disable-model-invocation` takes precedence when both are present.
 
 Unknown top-level fields are accepted by default because the format evolves
@@ -86,8 +86,9 @@ Create a detailed implementation plan.
 
 - Use `target: vscode`, `target: github-copilot`, or omit `target` for a
   shared agent.
-- Keep VS Code `tools` as a YAML list. Add `agent`, `custom-agent`, or `Task`
-  when a non-empty `agents` list is paired with an explicit tools restriction.
+- Write `tools` as a YAML list or comma-separated string in either environment.
+  Add `agent`, `custom-agent`, or `Task` when a non-empty `agents` list is paired
+  with an explicit tools restriction.
 - Replace quoted booleans with `true` or `false`; replace retired `infer` with
   `user-invocable` and `disable-model-invocation`.
 - Keep handoff `label`, `agent`, and optional qualified `model` values as
