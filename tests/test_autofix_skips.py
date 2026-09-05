@@ -166,6 +166,48 @@ def _alias_linter(tmp_path):
     return linter
 
 
+def test_filter_reuses_symlink_status_only_within_one_call(tmp_path, monkeypatch):
+    import skillsaw.linter as module
+
+    linter = _alias_linter(tmp_path)
+    calls = []
+    original = module.safe_is_symlink
+
+    def record(path):
+        calls.append(path)
+        return original(path)
+
+    monkeypatch.setattr(module, "safe_is_symlink", record)
+
+    def findings():
+        return [
+            linter.rules[0].violation(
+                "Update note",
+                file_path=tmp_path / name,
+                fixable=True,
+                fix_confidence=AutofixConfidence.SAFE,
+            )
+            for name in ("alias.txt", "alias.txt", "notes.txt", "notes.txt")
+        ]
+
+    filtered = linter._filter_violations(findings())
+    assert calls == [tmp_path / "alias.txt", tmp_path / "notes.txt"]
+    assert [v.fixable for v in filtered] == [False, False, True, True]
+    assert [v.fix_confidence for v in filtered] == [
+        None,
+        None,
+        AutofixConfidence.SAFE,
+        AutofixConfidence.SAFE,
+    ]
+
+    (tmp_path / "alias.txt").unlink()
+    (tmp_path / "alias.txt").write_text("Independent note.\n")
+    calls.clear()
+    filtered = linter._filter_violations(findings())
+    assert calls == [tmp_path / "alias.txt", tmp_path / "notes.txt"]
+    assert all(v.fixable and v.fix_confidence == AutofixConfidence.SAFE for v in filtered)
+
+
 def test_skipped_alias_does_not_reserve_eligible_target(tmp_path):
     linter = _alias_linter(tmp_path)
     applied, suggested = linter.fix_and_apply()

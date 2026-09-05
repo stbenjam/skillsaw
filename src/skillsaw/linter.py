@@ -1171,6 +1171,13 @@ class Linter:
         fix() masks that metadata before returning it to callers.
         """
         kept: List[RuleViolation] = []
+        symlink_status: Dict[Optional[Path], bool] = {}
+
+        def _is_symlink(file_path: Optional[Path]) -> bool:
+            if file_path not in symlink_status:
+                symlink_status[file_path] = self._symlink_skip(file_path) is not None
+            return symlink_status[file_path]
+
         for v in violations:
             if self._is_excluded(v):
                 logger.info(
@@ -1213,11 +1220,7 @@ class Linter:
                 self._is_on_external_source(v)
                 or self._is_vendor_managed(v.file_path)
                 or (v.block is not None and v.block.diagnostic_only)
-                or (
-                    not preserve_symlink_fixability
-                    and v.fixable
-                    and self._symlink_skip(v.file_path) is not None
-                )
+                or (not preserve_symlink_fixability and v.fixable and _is_symlink(v.file_path))
             ):
                 # Still reported — hostile third-party content is worth
                 # knowing about — but never advertised as fixable, because
