@@ -35,12 +35,13 @@ hedge (see Sync notes).
 - Third-party schema (unofficial, one author's reading — useful for cross-checking,
   not authoritative): https://github.com/typeforged/codex-plugin-marketplace
 - Hooks: https://developers.openai.com/codex/hooks — hook sources, lifecycle events,
-  handler types, and per-handler fields. No JSON Schema is linked from the prose; the
-  generated schema lives at
-  https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated (see Sync
-  notes). Read it at the tag of the Codex release skillsaw supports, never on `main`:
-  `main` carries fields no release ships, and syncing from it makes `codex-hooks-valid`
-  enforce a field the shipped release does not have.
+  handler types, and per-handler fields. Configuration definitions live in
+  `codex-rs/core/config.schema.json`; aliases, JSON nullability and JSON/TOML wrapper
+  differences require `codex-rs/config/src/hook_config.rs`. The generated TOML
+  schema omits nullable types, so it is insufficient for JSON validation.
+  `codex-rs/hooks/schema/generated` describes event input/output payloads, not hook
+  configuration. Read each source at the supported release tag: `main` may carry
+  fields no released host accepts.
 
 ## What to check
 - **Manifest paths**: `.codex-plugin/plugin.json` and `$REPO_ROOT/.agents/plugins/marketplace.json`.
@@ -229,8 +230,9 @@ Hand-copied value sets that drift — re-check each against upstream:
   required/optional per-handler fields, which events honor `matcher`, which reject
   `mcp_tool`, and the `SessionEnd`/`Interrupt` short-timeout events), read by
   `codex/hooks_valid.py`: re-check against https://developers.openai.com/codex/hooks
-  and the generated schema under `codex-rs/hooks/schema/generated`, read at the
-  supported release's tag rather than on `main`, on every sync.
+  and the configuration schema/source listed above, read at the supported
+  release's tag rather than on `main`, on every sync. Use the event input/output
+  schemas only for payload contracts.
 - The TOML dialect of the project layer's `[hooks]` tables, mapped by
   `codex_config_hooks()` in `formats/codex.py` — the one place the mapping lives.
   `[[hooks.<Event>]]` renders to a `{matcher?, hooks: [...]}` entry and
