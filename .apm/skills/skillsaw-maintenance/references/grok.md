@@ -337,9 +337,11 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   and an absent `description` are INFO. It reports no unknown key, no name/directory
   disagreement, and no bare string where an array is allowed.
 - Plugin directories — `grok-plugin-structure` (WARNING): no manifest and none of
-  `skills/<n>/SKILL.md`, `agents/*.md`, `hooks/hooks.json` or `.mcp.json`, which is
-  what `grok plugin install` refuses. One INFO for a manifest-less directory a catalog
-  addresses by name, since it installs as `<dir>-<hash>`.
+  `skills/`, `agents/`, `hooks/hooks.json` or `.mcp.json` at the source root or
+  an immediate child plugin. Directory existence is sufficient for installation;
+  nested content and placeholders do not make it uninstallable. One INFO for a
+  convention-based source root a catalog addresses by name, since it installs as
+  `<dir>-<hash>`; child bundles do not receive that parent-name advice.
 - Catalogs — `grok-marketplace-json-valid` (ERROR): the whole-catalog defects (invalid
   JSON, a non-object root, a missing or non-array `plugins`) and the entry defects that
   drop a plugin silently, plus the `sha` contract. The url `path` shape and a source
@@ -412,8 +414,9 @@ user guide, or re-verify empirically with the canary matrix above:
   the file, and `"mcpServers": ["servers.json"]` loaded no servers. Re-verify with
   `grok inspect --json` if the manifest type changes upstream.
 - The component set that makes a manifest-less directory installable —
-  `skills/<n>/SKILL.md`, `agents/*.md`, `hooks/hooks.json`, `.mcp.json` — in
-  `_installable` in `rules/builtin/grok/plugin_structure.py`. `commands/` alone and
+  `skills/`, `agents/`, `hooks/hooks.json`, `.mcp.json` — in `_installable` in
+  `rules/builtin/grok/plugin_structure.py`. `_has_child_plugin` mirrors the
+  installer's single-level fallback without following child symlinks. `commands/` alone and
   `.lsp.json` alone are discovered and then refused by `grok plugin install`, which is
   the asymmetry to re-verify if the installer changes.
 - **Replace, not extend.** A manifest `skills`/`commands`/`agents` path replaces the
