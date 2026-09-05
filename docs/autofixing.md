@@ -48,6 +48,14 @@ skills installed from external `skills-lock.json` sources; those findings
 remain diagnostic even when `lint-external-content` is left at its default
 `true`.
 
+Symbolic-link files are also diagnostic-only for autofix. Lint does not mark
+these findings as fixable. When a selected fix would change a symbolic link,
+`skillsaw fix` and `--dry-run` list the skipped path and explain why; edit the
+target file directly instead. Skips are reported once per path and reason,
+within the selected severity and confidence, and do not prevent independent
+regular-file fixes. A policy-only skip exits successfully; a failed write
+still exits nonzero. Dry-run never writes files or runs fix callbacks.
+
 The JSON format carries an additive `fixable` boolean (plus `fix_confidence`: `safe` or `suggest` when fixable) on each violation — whether a deterministic fix exists, even for findings `skillsaw lint` does not show by default; a consumer deciding what a plain fix run repairs should also check `severity`. Fixability is per violation, not per rule — a rule that can only fix some shapes of a problem (e.g. `content-unlinked-internal-reference` only wraps references whose target file exists) marks only those violations. Because `skillsaw fix` batches several violations into one fix per file, its `Fixed N issue(s)` count can differ from the number of marked violations.
 
 !!! note "Removed in 0.15"

@@ -49,6 +49,7 @@ def _run_fix(args):
     applied = []
     suggested = []
     failed = []
+    skipped = {}
     deprecation_messages = []
     for fix_path in paths:
         context = RepositoryContext(
@@ -83,6 +84,7 @@ def _run_fix(args):
         # The rename pass below replaces the linter; keep the first pass's
         # failed writes or a partial fix could still report success.
         path_failures = list(linter.fix_failures)
+        path_skips = list(linter.fix_skips)
 
         if not dry_run and any(f.rule_id == "agentskill-name" for f in path_applied):
             context = RepositoryContext(
@@ -105,10 +107,13 @@ def _run_fix(args):
             path_applied.extend(rename_applied)
             path_suggested.extend(rename_suggested)
             path_failures.extend(linter.fix_failures)
+            path_skips.extend(linter.fix_skips)
 
         applied.extend((f, context.root_path) for f in path_applied)
         suggested.extend((f, context.root_path) for f in path_suggested)
         failed.extend((f, error, context.root_path) for f, error in path_failures)
+        for path, reason in path_skips:
+            skipped.setdefault((path, reason), context.root_path)
 
         # fix output only lists fixes, so the deprecation notices carried in
         # the violations list would otherwise never reach the user.
@@ -153,7 +158,7 @@ def _run_fix(args):
                     else:
                         print(f"      {line}")
                 print(f"      {c['dim']}{'─' * 40}{c['reset']}")
-    elif not failed:
+    elif not failed and not skipped:
         if suggested:
             print("No safe fixes found.")
         else:
@@ -166,7 +171,12 @@ def _run_fix(args):
         print("\nRun `skillsaw fix --suggest` to apply suggested fixes.")
         print("Run `skillsaw fix --suggest --dry-run` to preview changes.")
 
-    if dry_run and applied:
+    if skipped:
+        print(f"\nSkipped {len(skipped)} path(s):")
+        for (path, reason), root in skipped.items():
+            print(f"  - [{_display(path, root)}] {reason}")
+
+    if dry_run and (applied or skipped):
         print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
 
     if applied and not dry_run:
