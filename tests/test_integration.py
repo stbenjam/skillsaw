@@ -3668,15 +3668,9 @@ class TestDevin:
         result = run_lint(repo, "--rule", "devin-rules-valid", "--no-custom-rules", "--no-plugins")
         assert result["rc"] == 0, result
         assert "devin-rules-valid" in result["out"]["stats"]["rules_run"]
-        found = violations(result)
-        # Full YAML scalar coercion is a separate decoder correction. Preserve
-        # the old advisory for a numeric inferred description without making
-        # an accepted file fail, and keep unused boolean list items accepted.
-        assert [(v["file_path"], v["severity"]) for v in found] == [
-            (".devin/rules/numeric-description.md", "info")
-        ]
-        assert found[0]["rule_id"] == "devin-rules-valid"
-        assert "never activates on its own" in found[0]["message"]
+        # Native scalar decoding also makes the numeric description available
+        # to inference, so this accepted rule is no longer misreported as manual.
+        assert violations(result) == []
 
     def test_null_and_empty_fields_preserve_inferred_activation(self, tmp_path):
         from skillsaw.blocks import DevinRuleBlock
@@ -3834,6 +3828,53 @@ class TestDevin:
         assert found[0]["severity"] == "error"
         assert found[0]["line"] == line
         assert message in found[0]["message"]
+
+    def test_native_scalar_decoding_matches_consumer_values(self, tmp_path):
+        repo = copy_fixture("devin/scalar-decoding", tmp_path)
+        result = run_lint(
+            repo,
+            "--rule",
+            "devin-rules-valid",
+            "--rule",
+            "devin-skill-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert result["rc"] == 0, result
+        assert {"devin-rules-valid", "devin-skill-valid"} <= set(
+            result["out"]["stats"]["rules_run"]
+        )
+        assert violations(result) == []
+
+    @pytest.mark.parametrize(
+        "value,accepted",
+        [
+            ("true", True),
+            ("false", True),
+            ("False", True),
+            ("yes", False),
+            ("no", False),
+            ("on", False),
+            ("off", False),
+            ('"true"', False),
+        ],
+    )
+    def test_native_subagent_boolean_spellings(self, tmp_path, value, accepted):
+        repo = copy_fixture("devin/scalar-decoding", tmp_path)
+        path = repo / ".devin/skills/scalar-review/SKILL.md"
+        path.write_text(path.read_text().replace("subagent: false", f"subagent: {value}"))
+        result = run_lint(repo, "--rule", "devin-skill-valid", "--no-custom-rules", "--no-plugins")
+        assert "devin-skill-valid" in result["out"]["stats"]["rules_run"]
+        assert result["rc"] == (0 if accepted else 1), result
+        found = violations(result)
+        if accepted:
+            assert found == []
+        else:
+            assert [(v["rule_id"], v["line"], v["severity"]) for v in found] == [
+                ("devin-skill-valid", 5, "error")
+            ]
+            assert found[0]["file_path"] == ".devin/skills/scalar-review/SKILL.md"
+            assert "'subagent' must be a boolean" in found[0]["message"]
 
     def test_native_empty_headers_keep_manual_rules_and_skill_content(self, tmp_path):
         from skillsaw.blocks import DevinRuleBlock, DevinSkillBlock

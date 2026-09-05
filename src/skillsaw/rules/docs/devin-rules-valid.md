@@ -23,6 +23,12 @@ collection-valued descriptions and globs given as a single string or mapping
 still prevent loading. Nullable fields and scalar values accepted by Devin's
 YAML decoding remain accepted in unused fields.
 
+Devin preserves scalar text in descriptions and glob-list items. For example,
+`description: 42` participates in activation inference, and `globs: [42, false]`
+uses the patterns `42` and `false`. Collections remain invalid descriptions or
+glob-list items; a scalar `globs` field remains incompatible with the CLI.
+Devin ignores YAML merge keys (`<<`); declare activation fields explicitly.
+
 Empty and comment-only frontmatter headers use the same activation defaults
 as an empty mapping. An explicit `null` document, malformed YAML, or a
 missing closing delimiter remains invalid.

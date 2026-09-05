@@ -242,6 +242,7 @@ Run the requested workflow.
         "Read Bash",
         "Bash(openspec:*)",
         "mcp__github__get_issue",
+        "yes",
     ],
 )
 def test_native_skill_accepts_scalar_allowed_tools(tmp_path, allowed_tools):
@@ -254,7 +255,7 @@ def test_native_skill_accepts_scalar_allowed_tools(tmp_path, allowed_tools):
     assert DevinSkillValidRule().check(RepositoryContext(tmp_path)) == []
 
 
-@pytest.mark.parametrize("allowed_tools", ["42", "{}"])
+@pytest.mark.parametrize("allowed_tools", ["42", "false", "{}"])
 def test_native_skill_rejects_non_string_allowed_tools_scalar(tmp_path, allowed_tools):
     skill = _native_skill(
         tmp_path,
@@ -295,18 +296,18 @@ def test_invalid_native_skill_fields_have_nested_yaml_lines(tmp_path):
         "broken",
         """---
 argument-hint: []
-model: false
+model: {}
 subagent: maybe
 agent: [reviewer]
 allowed-tools:
   - read
-  - 4
+  - {}
 permissions:
   allow: read
   deny:
     - exec
   ask:
-    - false
+    - []
 triggers:
   - user
   - autonomous

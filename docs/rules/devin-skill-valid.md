@@ -72,6 +72,14 @@ Devin's defaults. The nested `permissions.allow`, `permissions.deny`, and
 `permissions.ask` lists may also be null. `subagent` still requires a boolean
 when present; `subagent: null` prevents the skill from loading.
 
+Native string fields retain scalar text such as `yes`, dates, and numbers.
+String lists also accept scalar items, including `null` as the literal pattern
+`null`. A scalar `allowed-tools` value still must be a string: numbers and
+booleans only work as list items. Use `true` or `false` for `subagent`; YAML 1.1
+spellings such as `yes`, `no`, `on`, and `off` do not load, nor does a quoted
+`"true"`. These decoding rules apply only to Devin-native frontmatter. Devin ignores
+YAML merge keys (`<<`); declare native fields explicitly instead.
+
 ## How to fix
 
 - Use strings for `name`, `description`, `argument-hint`, `model`, and

@@ -58,3 +58,121 @@ def test_portable_skill_empty_header_contract_is_unchanged(tmp_path, frontmatter
     path.write_text("---\n" + frontmatter + "---\nReview the requested metadata.\n")
 
     assert SkillBlock(path=path).frontmatter_error is not None
+
+
+@pytest.mark.parametrize("key", ["name", "description", "argument-hint", "model", "agent"])
+@pytest.mark.parametrize("value", ["42", "1e3", "0123", "true", "yes", "2026-09-04"])
+def test_native_skill_string_fields_preserve_lexical_scalars(tmp_path, key, value):
+    path = tmp_path / "SKILL.md"
+    source = f"---\n{key}: {value}\n---\nReview local metadata.\n"
+    path.write_text(source)
+    block = DevinSkillBlock(path=path)
+
+    assert block.field_value(key) == value
+    assert block.field(key).field_line == 2
+    assert block.body_text == "Review local metadata.\n"
+    assert path.read_text() == source
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [("true", True), ("False", False), ("yes", "yes"), ("off", "off"), ('"true"', "true")],
+)
+def test_native_subagent_retains_actual_boolean_contract(tmp_path, value, expected):
+    path = tmp_path / "SKILL.md"
+    path.write_text(f"---\nsubagent: {value}\n---\nReview local metadata.\n")
+    value = DevinSkillBlock(path=path).field_value("subagent")
+
+    assert value == expected
+    assert type(value) is type(expected)
+
+
+@pytest.mark.parametrize(
+    "block_type,key",
+    [(DevinSkillBlock, "allowed-tools"), (DevinSkillBlock, "triggers"), (DevinRuleBlock, "globs")],
+)
+def test_native_string_lists_preserve_scalar_text(tmp_path, block_type, key):
+    path = tmp_path / "context.md"
+    path.write_text(
+        f"---\n{key}: [42, false, yes, null, ~, 2026-09-04]\n---\nReview local metadata.\n"
+    )
+
+    assert block_type(path=path).field_value(key) == [
+        "42",
+        "false",
+        "yes",
+        "null",
+        "~",
+        "2026-09-04",
+    ]
+
+
+def test_native_permission_lists_preserve_scalar_text(tmp_path):
+    path = tmp_path / "SKILL.md"
+    path.write_text(
+        "---\npermissions:\n  allow: [42, false, null]\n  deny: [yes]\n  ask: [2026-09-04]\n---\nReview local metadata.\n"
+    )
+
+    assert DevinSkillBlock(path=path).field_value("permissions") == {
+        "allow": ["42", "false", "null"],
+        "deny": ["yes"],
+        "ask": ["2026-09-04"],
+    }
+
+
+def test_native_alias_conversion_does_not_retype_unknown_extension(tmp_path):
+    path = tmp_path / "SKILL.md"
+    path.write_text(
+        "---\nfuture: &tools [yes, 42]\nallowed-tools: *tools\n---\nReview local metadata.\n"
+    )
+    block = DevinSkillBlock(path=path)
+
+    assert block.field_value("future") == [True, 42]
+    assert block.field_value("allowed-tools") == ["yes", "42"]
+    fields = block.find(BodyContent)
+    assert block.find(BodyContent)[0] is fields[0]
+
+
+@pytest.mark.parametrize("key", ["description", "trigger"])
+def test_native_rule_string_fields_preserve_scalars(tmp_path, key):
+    path = tmp_path / "rule.md"
+    path.write_text(f"---\n{key}: yes\n---\nReview local metadata.\n")
+
+    assert DevinRuleBlock(path=path).field_value(key) == "yes"
+
+
+def test_portable_skill_yaml_scalar_contract_is_unchanged(tmp_path):
+    path = tmp_path / "SKILL.md"
+    path.write_text(
+        "---\ndescription: yes\nsubagent: on\nallowed-tools: [42]\n---\nReview local metadata.\n"
+    )
+    block = SkillBlock(path=path)
+
+    assert block.field_value("description") is True
+    assert block.field_value("subagent") is True
+    assert block.field_value("allowed-tools") == [42]
+
+
+@pytest.mark.parametrize("block_type", [DevinRuleBlock, DevinSkillBlock])
+def test_native_merge_key_does_not_invent_known_fields(tmp_path, block_type):
+    path = tmp_path / "context.md"
+    path.write_text(
+        "---\ndefaults: &defaults\n  description: []\n<<: *defaults\n---\nReview local metadata.\n"
+    )
+    block = block_type(path=path)
+
+    assert block.frontmatter_error is None
+    assert block.field("description") is None
+    assert block.field_value("defaults") == {"description": []}
+    assert SkillBlock(path=path).field_value("description") == []
+
+
+def test_native_permissions_ignore_merge_key_but_keep_explicit_fields(tmp_path):
+    path = tmp_path / "SKILL.md"
+    path.write_text(
+        "---\ndefaults: &defaults\n  allow: invalid-scalar\npermissions:\n  <<: *defaults\n  deny: [Read]\n---\nReview local metadata.\n"
+    )
+    permissions = DevinSkillBlock(path=path).field_value("permissions")
+
+    assert "allow" not in permissions
+    assert permissions["deny"] == ["Read"]
