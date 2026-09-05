@@ -1311,6 +1311,28 @@ class TestStripJsonc:
         assert data is None
         assert "line 5" in error
 
+    @pytest.mark.parametrize(
+        "comment",
+        ["// 文档 😀\r\n", "/* 文档\r\n😀\n */", "/* */\n// 第二条\n"],
+    )
+    def test_unicode_comment_offsets_and_adjacent_trailing_comma(self, comment):
+        from skillsaw.utils import strip_jsonc
+
+        prefix = '{"标题": "😀 // keep", "items": ["é",'
+        source = prefix + comment + '], "value": }'
+        stripped = strip_jsonc(source)
+        assert len(stripped) == len(source)
+        assert stripped[: len(prefix) - 1] == prefix[:-1]
+        assert stripped[len(prefix) - 1] == " "
+        assert [i for i, char in enumerate(stripped) if char == "\n"] == [
+            i for i, char in enumerate(source) if char == "\n"
+        ]
+        with pytest.raises(json.JSONDecodeError) as failure:
+            json.loads(stripped)
+        assert failure.value.pos == source.rindex("}")
+        assert failure.value.lineno == source.count("\n") + 1
+        assert failure.value.colno == len(source.rsplit("\n", 1)[-1])
+
     def test_a_plain_json_document_never_reaches_the_stripper(self, tmp_path, monkeypatch):
         """Valid JSON parses as-is, so the per-character scan is off the common path."""
         import skillsaw.utils as utils_module

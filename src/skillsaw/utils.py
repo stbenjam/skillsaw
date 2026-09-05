@@ -8,6 +8,7 @@ import re
 import secrets
 import stat
 import threading
+from io import StringIO
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple
 
@@ -776,7 +777,9 @@ def strip_jsonc(content: str) -> str:
     does not allow. :func:`read_jsonc` relies on that to keep this scan off
     the common path entirely.
     """
-    out = list(content)
+    # Use a character buffer rather than a Python list entry per character.
+    # Seeking uses character offsets, including for non-ASCII source text.
+    out = StringIO(content)
     length = len(content)
     index = 0
     in_string = False
@@ -804,23 +807,29 @@ def strip_jsonc(content: str) -> str:
         if char == "/" and index + 1 < length:
             following = content[index + 1]
             if following == "/":
-                while index < length and content[index] != "\n":
-                    out[index] = " "
-                    index += 1
+                end = content.find("\n", index)
+                end = length if end == -1 else end
+                out.seek(index)
+                out.write(" " * (end - index))
+                index = end
                 continue
             if following == "*":
                 end = content.find("*/", index + 2)
                 # An unterminated block comment runs to end of file, which is
                 # what every JSONC reader does with one.
                 end = length if end == -1 else end + 2
-                for position in range(index, end):
-                    if out[position] != "\n":
-                        out[position] = " "
+                while index < end:
+                    newline = content.find("\n", index, end)
+                    stop = end if newline == -1 else newline
+                    out.seek(index)
+                    out.write(" " * (stop - index))
+                    index = stop + 1
                 index = end
                 continue
         if char in "}]":
             if last_comma != -1 and last_significant == last_comma:
-                out[last_comma] = " "
+                out.seek(last_comma)
+                out.write(" ")
             last_comma = -1
             last_significant = index
         elif char == ",":
@@ -829,7 +838,7 @@ def strip_jsonc(content: str) -> str:
         elif not char.isspace():
             last_significant = index
         index += 1
-    return "".join(out)
+    return out.getvalue()
 
 
 @_file_cache.cached
@@ -843,15 +852,12 @@ def read_jsonc(
     *allow_duplicate_keys*, as with :func:`read_json_strict`.
 
     Parsed as-is first, and stripped only if that fails. Most files at these
-    locations are plain JSON, and :func:`strip_jsonc` materializes one list
-    slot per character plus a joined copy — roughly 8x the file resident,
-    against 2x for an ordinary read. Parsing first keeps an unbounded,
-    attacker-sized config off that path (THREAT_MODEL T11 — whole-file size
-    limits are still open) and costs nothing in results, since the strip is
-    a no-op on every document the first parse would have accepted. The
-    reported error still comes from the stripped parse, so its line, column
-    and position stay the ones this function's offset preservation exists
-    for.
+    locations are plain JSON, so this avoids an unnecessary scan and copy.
+    The fallback uses a character buffer and writes comment spans in batches;
+    it does not allocate a Python list slot per source character. Both paths
+    still read whole files (THREAT_MODEL T11 tracks a separate byte budget).
+    Stripping is a no-op on every document the first parse accepts. Errors
+    come from the stripped parse, preserving source line, column and offset.
     """
     content = read_text(file_path)
     if content is None:
