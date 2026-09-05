@@ -403,6 +403,36 @@ class TestProseLines:
         assert texts[0] == "use " + " " * len("`docs/x.md`") + " here"
         assert len(texts[0]) == len(body.split("\n")[0])
 
+    def test_verbatim_spans_share_mapping_without_losing_prose_positions(self, monkeypatch):
+        from skillsaw import markdown_doc
+
+        body = (
+            "> Review `alpha` and `beta`\n"
+            "> with <!-- note --> `gamma`.\n"
+            "\n"
+            "Keep `delta` visible only as code.\n"
+        )
+        doc = _doc(body, line_offset=10)
+        # Prime the inline walk, then count only the maps used to blank prose.
+        assert [span.content for span in doc.code_spans()] == ["alpha", "beta", "gamma", "delta"]
+        mapped_tokens = []
+
+        def record_map(body_lines, map_start, content):
+            mapped_tokens.append(map_start)
+            return _ContentMap(body_lines, map_start, content)
+
+        monkeypatch.setattr(markdown_doc, "_ContentMap", record_map)
+        assert doc.prose_lines() == [
+            (11, "> Review " + " " * len("`alpha`") + " and " + " " * len("`beta`")),
+            (12, "> with " + " " * len("<!-- note -->") + " " + " " * len("`gamma`") + "."),
+            (13, ""),
+            (14, "Keep " + " " * len("`delta`") + " visible only as code."),
+            (15, ""),
+        ]
+        assert mapped_tokens == [0, 3]
+        assert len(doc.prose_text()) == len(body)
+        assert mapped_tokens == [0, 3]  # The cached prose accessor adds no maps.
+
     def test_cross_paragraph_stray_backticks_do_not_hide_content(self):
         # Legacy DOTALL inline-code regex blanked across paragraph
         # boundaries, which CommonMark never does.

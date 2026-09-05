@@ -912,8 +912,9 @@ class MarkdownDoc:
             self._segments.extend(walker.segments)
             self._inline_comments.extend(walker.html_comments)
             map_start = token.map[0] if token.map else 0
-            for span in walker.verbatim_spans:
-                self._inline_maps.append((map_start, token.content, [span]))
+            if walker.verbatim_spans:
+                # All spans in this token share one source-to-column map.
+                self._inline_maps.append((map_start, token.content, walker.verbatim_spans))
         self._backfill_reference_spans()
 
     # -- accessors ------------------------------------------------------------
