@@ -81,3 +81,37 @@ def test_omitted_hook_collections_accept_defaults_and_empty_events_do_not_merge(
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(result.stdout)
     assert report["violations"] == []
+
+
+def test_mcp_input_refuses_only_unrepresentable_values(tmp_path):
+    repo = copy_fixture("codex/hooks-mcp-input", tmp_path)
+    blocks = RepositoryContext(repo).lint_tree.find(CodexHooksBlock)
+    assert len(blocks) == 5
+    result = run_cli(
+        [
+            "lint",
+            str(repo),
+            "--rule",
+            "codex-hooks-valid",
+            "--format",
+            "json",
+            "--no-custom-rules",
+            "--no-plugins",
+            "--no-baseline",
+        ]
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    findings = json.loads(result.stdout)["violations"]
+    assert len(findings) == 3, findings
+    assert {v["file_path"] for v in findings} == {
+        "nested-null/.codex/hooks.json",
+        "array-null/.codex/hooks.json",
+        "unsigned-integers/.codex/hooks.json",
+    }
+    assert {v["rule_id"] for v in findings} == {"codex-hooks-valid"}
+    assert {v["severity"] for v in findings} == {"error"}
+    assert sum("'input' contains null" in v["message"] for v in findings) == 2
+    assert (
+        sum("unsigned integer outside TOML's signed 64-bit range" in v["message"] for v in findings)
+        == 1
+    )

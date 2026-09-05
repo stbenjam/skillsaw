@@ -291,6 +291,30 @@ def codex_mcp_transport(server: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
+def codex_mcp_input_problem(value: Dict[str, Any]) -> Optional[str]:
+    """Return the first value kind that prevents Codex's TOML trust hashing.
+
+    Walk iterators so nested input uses neither recursion nor a second
+    full-width list of its contents. JSON input has no reference cycles.
+    """
+    pending = [iter(value.values())]
+    while pending:
+        for item in pending[-1]:
+            if item is None:
+                return "null"
+            # serde_json decodes this interval as u64, which TOML cannot
+            # represent. Larger integer tokens and those below i64::MIN
+            # decode as f64 instead; rejecting those would be a false error.
+            if isinstance(item, int) and 2**63 <= item < 2**64:
+                return "an unsigned integer outside TOML's signed 64-bit range"
+            if isinstance(item, (dict, list)):
+                pending.append(iter(item.values() if isinstance(item, dict) else item))
+                break
+        else:
+            pending.pop()
+    return None
+
+
 def codex_manifest(plugin_dir: Path) -> Dict[str, Any]:
     """A Codex plugin's parsed manifest, or ``{}`` when absent or unparseable.
 

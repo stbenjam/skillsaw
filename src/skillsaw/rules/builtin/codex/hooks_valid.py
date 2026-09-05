@@ -42,6 +42,7 @@ from skillsaw.formats.codex import (
     CODEX_HOOK_SHORT_TIMEOUT_EVENTS,
     CODEX_HOOK_SHORT_TIMEOUT_MAX_SECONDS,
     CODEX_HOOK_SKIPPED_HANDLER_TYPES,
+    codex_mcp_input_problem,
 )
 from skillsaw.paths import safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -649,6 +650,18 @@ class CodexHooksValidRule(Rule):
                             file_path=block.path,
                         )
                     )
+
+        input_value = handler.get("input")
+        if handler_type == "mcp_tool" and isinstance(input_value, dict):
+            problem = codex_mcp_input_problem(input_value)
+            if problem is not None:
+                violations.append(
+                    self.violation(
+                        f"Hook {where} 'input' contains {problem}; Codex requires values "
+                        "representable as TOML. Omit unset values or encode large IDs as strings",
+                        file_path=block.path,
+                    )
+                )
 
         violations.extend(self._check_alias_conflicts(where, handler_type, handler, block))
 

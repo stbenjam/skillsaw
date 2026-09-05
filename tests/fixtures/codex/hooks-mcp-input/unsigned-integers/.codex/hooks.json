@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "reference",
+            "tool": "lookup",
+            "input": {
+              "ids": [
+                9223372036854775808,
+                18446744073709551615
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

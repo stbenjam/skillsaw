@@ -48,7 +48,11 @@ and `timeout`. These are optional fields in Codex's released configuration
 deserializer. A default does not imply nullability: command `async` must
 still be a boolean, and MCP `input` must still be an object. Null does not
 make a field valid on another handler type or resolve a Windows alias
-conflict.
+conflict. MCP `input` also cannot contain null inside an object or array:
+Codex converts these arguments to TOML for trust hashing and refuses values
+TOML cannot represent. Omit unset entries instead; empty objects and arrays
+are accepted. Unsigned integers from `2^63` through `2^64 - 1` also cannot
+be represented for trust hashing; encode such identifiers as strings.
 
 **A shape defect in `config.toml` is worse than the same defect in
 `hooks.json`.** The refusals were measured against codex-cli 0.153.2: a TOML
