@@ -1404,13 +1404,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     root_plugin_owner: Path | None = None
     for plugin_path in plugin_dirs:
         prov = context.provenance(plugin_path)
-        # Compiled-output filtering is a Claude/APM concept; a Codex or
-        # Antigravity claim is its own provenance and keeps the directory.
+        # Compiled-output filtering is a Claude/APM concept; an explicit
+        # Codex, Grok or Antigravity claim keeps the directory.
         # ``.agents/`` is both an APM compile target and Antigravity's
         # customization root, so without the second half an authored
         # ``.agents/plugins/<name>/`` would be discarded as generated output
         # in every APM repository with a Codex target.
-        if _is_in_compiled_dir(plugin_path) and not (prov.codex or prov.antigravity):
+        if _is_in_compiled_dir(plugin_path) and not (prov.codex or prov.grok or prov.antigravity):
             continue
         resolved_plugin = safe_resolve(plugin_path)
         if resolved_plugin is None:

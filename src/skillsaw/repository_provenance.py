@@ -182,8 +182,8 @@ class RepositoryProvenanceMixin:
           source listing in any Codex catalog.
         * ``agent-plugin`` — a contained package carrying an Agent Plugins
           schema identifier in root ``plugin.json``.
-        * ``grok`` — a contained ``.grok-plugin/plugin.json``, or a local
-          source listing in any Grok catalog.
+        * ``grok`` — a contained ``.grok-plugin/plugin.json``, a local
+          source listing in any Grok catalog, or a contained config path.
         * ``antigravity`` — a contained ``plugin.json`` at
           ``<customization root>/plugins/<name>`` or carrying its official
           schema identifier, or membership of the

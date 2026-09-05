@@ -351,6 +351,10 @@ PROJECT_CONFIG_TABLES = frozenset({"mcp_servers", "permission", "plugins", "mcp"
 #: remains documented but unmeasured.
 PROJECT_CONFIG_TABLES_MEASURED = frozenset({"mcp_servers", "permission"})
 
+#: PluginsConfig's defaulted Vec<String> fields. A mistyped field refuses
+#: the whole plugin table before project paths join the live configuration.
+PLUGIN_CONFIG_LIST_FIELDS = frozenset({"paths", "disabled", "enabled"})
+
 #: Tables a project file was measured to *not* contribute, each with a
 #: positive user-scope control so "nothing happened" is a refusal rather
 #: than a mis-run. ``hooks`` is the sharp one: the honored path for a

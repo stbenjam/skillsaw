@@ -65,9 +65,15 @@ class GrokPluginStructureRule(Rule):
         # directory by name is what makes a synthesized install name a
         # problem rather than a detail.
         addressed: Set[Path] = set(context.grok_local_source_dirs())
+        configured_only = set(context.grok_config_source_dirs()) - addressed
 
         for node in context.lint_tree.find(GrokPluginConfigNode):
             plugin_dir = node.plugin_dir
+            if safe_resolve(plugin_dir) in configured_only:
+                # Config paths load a plugin directly, without installation.
+                # Runtime accepts commands-only plugins and never searches
+                # child bundles, so installer advice has no consumer here.
+                continue
             if not safe_is_dir(plugin_dir):
                 # A catalog source that does not resolve. One defect, and it
                 # belongs to grok-marketplace-json-valid, which names the

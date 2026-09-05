@@ -148,6 +148,16 @@ signal.
   resolver, so its absent project plugins cannot establish a refusal. The source
   is `xai-grok-shell/src/config/mod.rs` at
   `72a61251fcffb464bcc687aeb5a998e5a98ec0c9`; no authenticated session was needed.
+  Config paths name individual plugins with separate component trust; they skip
+  installer child-bundle search. User-scope `inspect` confirms root `plugin.json`,
+  custom skill paths, absolute paths and `.`; empty strings are skipped.
+  Native strings are session-cwd-relative. Static discovery
+  assumes a session launched beside each declaring `.grok/`, including nested
+  project roots, and contains targets within the lint checkout. It does not expand
+  environment variables or `~`, inspect external user configuration, or infer trust.
+  These declarations feed the shared provenance and skill-discovery claim set even
+  under unrelated `--type` overrides. Installer-only structure advice skips paths
+  declared solely for direct loading; catalog-addressed paths retain that check.
 - **User scope**: `GrokConfigBlock.is_user_config` matches the actual configured
   user file by canonical path, as `xai-grok-workspace/src/project_config.rs` does.
   Project-only advice skips that file while TOML and MCP validation keep it.

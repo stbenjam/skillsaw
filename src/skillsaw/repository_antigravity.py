@@ -28,7 +28,6 @@ class RepositoryAntigravityMixin:
         plugins: List[Path]
         codex_plugins: List[Path]
         agent_plugins: List[Path]
-        grok_plugins: List[Path]
         skills: List[Path]
         antigravity_plugins: List[Path]
         _antigravity_claims: Optional[Set[Path]]
@@ -37,6 +36,8 @@ class RepositoryAntigravityMixin:
         _antigravity_plugin_forced: bool
 
         def agent_tool_dirs(self, name: str) -> List[Path]: ...
+
+        def grok_plugin_roots(self) -> List[Path]: ...
 
         def is_path_excluded(self, path: Path) -> bool: ...
 
@@ -210,7 +211,7 @@ class RepositoryAntigravityMixin:
                 *self.plugins,
                 *self.codex_plugins,
                 *self.agent_plugins,
-                *self.grok_plugins,
+                *self.grok_plugin_roots(),
                 *self.antigravity_plugin_roots(),
             )
             if (r := safe_resolve(p)) is not None

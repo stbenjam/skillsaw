@@ -33,10 +33,10 @@ class RepositoryGrokMixin:
         root_path: Path
         plugins: List[Path]
         codex_plugins: List[Path]
-        agent_plugins: List[Path]
         skills: List[Path]
         grok_plugins: List[Path]
         _grok_catalog_paths: Optional[List[Path]]
+        _grok_config_paths: Optional[List[Path]]
         _grok_claims: Optional[Set[Path]]
         _grok_roots: Optional[List[Path]]
         _grok_root_set: Optional[Set[Path]]
@@ -45,6 +45,10 @@ class RepositoryGrokMixin:
         _grok_marketplace_forced: bool
 
         def agent_tool_dirs(self, name: str) -> List[Path]: ...
+
+        def antigravity_plugin_roots(self) -> List[Path]: ...
+
+        def agent_plugin_roots(self) -> List[Path]: ...
 
         def is_path_excluded(self, path: Path) -> bool: ...
 
@@ -59,9 +63,9 @@ class RepositoryGrokMixin:
         declared — ``provenance()`` reads the marker straight off the
         filesystem and :meth:`_grok_catalog_files` re-enumerates catalogs
         past this gate, so a declared or catalog-claimed directory keeps its
-        container and prose in the lint tree either way. ``GROK_PROJECT`` is
-        deliberately not a gate value: ``.grok/`` is project configuration,
-        not a plugin claim.
+        container and prose in the lint tree either way. Project-config path
+        declarations join that same ungated claim set; ``GROK_PROJECT`` need
+        not force plugin discovery for their content to remain visible.
         """
         selected = None
         if repo_types is not None:
@@ -74,6 +78,7 @@ class RepositoryGrokMixin:
             self._grok_marketplace_forced = False
         self._grok_discovery_enabled = selected is not False
         self._grok_catalog_paths = None
+        self._grok_config_paths = None
         self._grok_claims = None
         self._grok_roots = None
         self._grok_root_set = None
@@ -169,6 +174,14 @@ class RepositoryGrokMixin:
         """
         return list(self._grok_local_sources())
 
+    def grok_config_source_dirs(self) -> List[Path]:
+        """Contained config path declarations, independent of ``--type``."""
+        if self._grok_config_paths is None:
+            self._grok_config_paths = grok_discovery.grok_config_sources(
+                self.root_path, self.agent_tool_dirs(".grok"), self.is_path_excluded
+            )
+        return list(self._grok_config_paths)
+
     def _discover_grok_plugins(self) -> List[Path]:
         """Directories declaring a Grok plugin (see ``discovery.grok``)."""
         return [
@@ -176,7 +189,7 @@ class RepositoryGrokMixin:
             for path in grok_discovery.discover_grok_plugins(
                 self.root_path,
                 self._grok_marker_dirs(),
-                self._grok_local_sources(),
+                [*self._grok_local_sources(), *self.grok_config_source_dirs()],
                 forced=self._grok_plugin_forced,
             )
             if not self.is_path_excluded(path)
@@ -185,12 +198,12 @@ class RepositoryGrokMixin:
     def _grok_claim_set(self) -> Set[Path]:
         """Every resolved directory Grok claims, computed once per context.
 
-        The union of discovered plugin roots and the catalogs' local
-        sources. The marker half of the evidence does not come from here —
-        ``provenance()`` asks ``grok_manifest_is_contained`` directly, which
-        is what keeps a declared plugin declared under a ``--type`` override
+        The union of discovered plugin roots, catalogs' local sources and
+        project-config path declarations. The marker half of the evidence
+        does not come from here — ``provenance()`` asks
+        ``grok_manifest_is_contained`` directly, which is what keeps a declared plugin declared under a ``--type`` override
         that switched this discovery off. What the union adds is the catalog
-        claims and the seed a forced ``--type grok-plugin`` needs, so the
+        and config claims and the seed a forced ``--type grok-plugin`` needs, so the
         check the operator asked for has a node to run against. Rebuilding
         it per call would make repository detection quadratic in the catalog
         size.
@@ -198,6 +211,7 @@ class RepositoryGrokMixin:
         if self._grok_claims is None:
             claims = {r for r in (safe_resolve(p) for p in self.grok_plugins) if r is not None}
             claims.update(self._grok_local_sources())
+            claims.update(self.grok_config_source_dirs())
             self._grok_claims = claims
         return self._grok_claims
 
@@ -232,35 +246,38 @@ class RepositoryGrokMixin:
         """Drop every cached Grok view; re-run discovery when excludes narrowed.
 
         Called from ``apply_excludes``. The clear is unconditional because
-        the claim set folds in both plugin roots and catalog sources and an
-        exclude can drop either, while *filtering* — true only when the
+        the claim set folds in plugin roots, catalog sources and config paths;
+        an exclusion can drop any of them, while *filtering* — true only when the
         context actually carries exclude patterns — re-probes: a newly
-        excluded catalog may be the only source for a plugin whose own path
-        matches no pattern.
+        excluded catalog or config may be the only source for a plugin whose
+        own path matches no pattern.
         """
-        before = {r for r in (safe_resolve(p) for p in self.grok_plugins) if r is not None}
+        before = set(self._grok_claim_set())
         self._grok_catalog_paths = None
+        self._grok_config_paths = None
         self._grok_claims = None
         self._grok_roots = None
         self._grok_root_set = None
-        if filtering and self._grok_discovery_enabled:
-            self.grok_plugins = self._discover_grok_plugins()
+        if filtering:
+            if self._grok_discovery_enabled:
+                self.grok_plugins = self._discover_grok_plugins()
             self._prune_skills_of_dropped_grok_plugins(before)
+        else:
+            # Keep a snapshot for a later narrowing apply_excludes, even
+            # when --type disabled the discovery list and no tree was read.
+            self._grok_claim_set()
 
     def _prune_skills_of_dropped_grok_plugins(self, before: Set[Path]) -> None:
         """Drop skills whose only owner left the Grok set, as the Codex arm does.
 
-        A plugin claimed by a catalog alone leaves ``grok_plugins`` when that
-        catalog is excluded, while its skills were discovered by the shared
-        walk and stay in ``self.skills`` — where they attach as standalone
-        nodes and keep linting the very content the exclusion removed. A
-        skill any other active plugin still claims keeps its owner and is
+        A plugin can lose its only catalog or config claim, while its skills
+        were discovered by the shared walk and stay in ``self.skills`` — where
+        they attach as standalone nodes and keep linting the excluded content.
+        A skill any other active plugin still claims keeps its owner and is
         preserved — including a nested Grok plugin of its own, which the
         re-probe kept because it carries a manifest.
         """
-        dropped = before - {
-            r for r in (safe_resolve(p) for p in self.grok_plugins) if r is not None
-        }
+        dropped = before - self._grok_claim_set()
         if not dropped:
             return
         active = {
@@ -268,8 +285,9 @@ class RepositoryGrokMixin:
             for p in (
                 *self.plugins,
                 *self.codex_plugins,
-                *self.agent_plugins,
-                *self.grok_plugins,
+                *self.agent_plugin_roots(),
+                *self._grok_claim_set(),
+                *self.antigravity_plugin_roots(),
             )
             if (r := safe_resolve(p)) is not None
         }

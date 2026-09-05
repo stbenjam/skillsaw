@@ -1,0 +1,2 @@
+[plugins]
+paths = ["packages/review-tools", "packages/convention-tools"]

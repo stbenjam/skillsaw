@@ -18,6 +18,15 @@ recognized as installable packages during installation.
 This rule verifies that directories intended as Grok plugins include either
 an installable component or a manifest so users can install them smoothly.
 
+Directories declared only by `[plugins].paths` in `.grok/config.toml` load
+without installation, so they skip this installer check. Direct loading accepts
+commands-only plugins and does not search child bundles. A directory also
+addressed by a catalog retains the installation check.
+
+Grok resolves config paths against its session directory. Static lint assumes
+a session launched beside each declaring `.grok/` directory, keeps plugin targets
+inside the lint root, and does not infer environment or home expansion.
+
 ## Severity
 
 **Warning** — the source root and its immediate children lack an installable

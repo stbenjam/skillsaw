@@ -1,0 +1,9 @@
+{
+  "name": "review-tools",
+  "version": "1.0.0",
+  "description": "Review database migration plans and their rollback notes.",
+  "skills": "./guides/",
+  "commands": "./prompts/",
+  "hooks": "./config/hooks.json",
+  "mcpServers": "./config/mcp.json"
+}
