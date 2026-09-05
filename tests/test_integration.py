@@ -9272,6 +9272,63 @@ class TestRenameRefsAutofix:
         stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
         assert stale == [], f"rename-refs violations remain after fix: {stale}"
 
+    @pytest.mark.parametrize(
+        "cleanup_failure",
+        [
+            pytest.param(
+                "symlink",
+                marks=pytest.mark.skipif(
+                    os.name == "nt", reason="Requires ordinary POSIX symlinks"
+                ),
+            ),
+            "write-refusal",
+        ],
+    )
+    def test_optional_metadata_cleanup_failure_preserves_findings(
+        self, tmp_path, monkeypatch, cleanup_failure
+    ):
+        from skillsaw.rules.builtin.agentskills import _helpers, rename_refs
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins")
+        args = ["--rule", "agentskill-rename-refs", "--no-custom-rules", "--no-plugins"]
+        expected = run_lint(repo, *args)
+        assert expected["rc"] == 0, expected["stderr"]
+        assert [(v["file_path"], v["line"]) for v in violations(expected)] == [
+            ("CLAUDE.md", 5),
+            ("CLAUDE.md", 7),
+            ("CLAUDE.md", 12),
+        ]
+        metadata = repo / _helpers.RENAMES_MANIFEST
+        active = json.loads(metadata.read_text())["renames"]
+        original = (
+            json.dumps({"renames": [*active, {"old": "retired-entry", "new": "current-entry"}]})
+            + "\n"
+        ).encode()
+        metadata.write_bytes(original)
+        if cleanup_failure == "symlink":
+            saved = repo / "saved-renames.json"
+            metadata.rename(saved)
+            metadata.symlink_to(saved.name)
+
+        attempts = []
+        write = rename_refs._write_renames_manifest
+
+        def cleanup(root, remaining):
+            assert root == repo
+            attempts.append(remaining)
+            if cleanup_failure == "write-refusal":
+                raise OSError("Optional cleanup refused")
+            write(root, remaining)
+
+        monkeypatch.setattr(rename_refs, "_write_renames_manifest", cleanup)
+        actual = run_lint(repo, *args)
+        assert actual["rc"] == 0, actual["stderr"]
+        assert violations(actual) == violations(expected)
+        assert attempts == [active]
+        assert metadata.is_symlink() is (cleanup_failure == "symlink")
+        assert metadata.read_bytes() == original
+
     def test_metadata_failure_reports_applied_edit_and_exits_nonzero(self, tmp_path, monkeypatch):
         from skillsaw.rules.builtin.agentskills import _helpers
 

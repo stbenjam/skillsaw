@@ -134,7 +134,12 @@ class AgentSkillRenameRefsRule(Rule):
             current = _read_renames_manifest(context.root_path)
             still_active = [r for r in current if r["old"] in referenced_olds]
             if len(still_active) < len(current):
-                _write_renames_manifest(context.root_path, still_active)
+                try:
+                    _write_renames_manifest(context.root_path, still_active)
+                except OSError:
+                    # Optional bookkeeping must not discard the findings above.
+                    # Required rename callbacks still report their write failures.
+                    pass
 
         return violations
 
