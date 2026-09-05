@@ -7,7 +7,7 @@ Validates Google Antigravity primitives: plugin manifests (`plugin.json`), lifec
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must parse as an object whose 'entries' are objects with a string 'path' | error (disabled) | - |
+| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must decode their paths and filters correctly | error (disabled) | - |
 | [`antigravity-hooks-valid`](antigravity-hooks-valid.md) | hooks.json must use Antigravity's hook events, handler types and fields | error (auto) | - |
 | [`antigravity-mcp-valid`](antigravity-mcp-valid.md) | mcp_config.json must parse and declare servers Antigravity can load | error (auto) | - |
 | [`antigravity-plugin-json-valid`](antigravity-plugin-json-valid.md) | plugin.json must parse as an Antigravity manifest with correctly typed fields | error (auto) | - |

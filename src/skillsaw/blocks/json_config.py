@@ -28,6 +28,7 @@ from typing import (
 )
 
 from skillsaw.formats import antigravity
+from skillsaw.formats.antigravity_registry import read_registry
 from skillsaw.blocks.antigravity_mcp import read_mcp_config
 from skillsaw.blocks.antigravity_hooks import read_hooks_config
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
@@ -1661,10 +1662,13 @@ class AntigravityConfigBlock(JsonConfigBlock):
 
     category: str = "antigravity config"
     jsonc: ClassVar[bool] = True
-    #: Measured against a functional ``agents.json``: a repeated
-    #: ``entries`` key and a repeated ``path`` inside one entry both load
-    #: the last value's directory, with no diagnostic.
+    #: Ordered decoding retains prior path strings on null and reuses
+    #: corresponding entries across nonempty repeated arrays.
     duplicate_keys_fatal: ClassVar[bool] = False
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = read_registry(self.path)
 
     def tree_label(self) -> str:
         return f"{self.path.name} (antigravity config)"

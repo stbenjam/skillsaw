@@ -67,6 +67,10 @@ PLUGINS_DIR_NAME = "plugins"
 #: for it, so it is deliberately not here.
 REGISTRY_FILENAMES = ("agents.json", "plugins.json", "skills.json", "workflows.json")
 
+#: JSONConfig and PathEntry fields use Go case-insensitive matching.
+REGISTRY_FIELDS = frozenset({"entries", "inherits"})
+REGISTRY_ENTRY_FIELDS = frozenset({"path", "include_only", "exclude"})
+
 #: The two registries whose ``entries`` the lint tree resolves. Both are
 #: measured end to end — a ``plugins.json`` naming a container loads every
 #: plugin under it, an ``agents.json`` naming a directory loads the agents

@@ -91,7 +91,7 @@ skillsaw includes **101** built-in rules organized into the following categories
 | [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
-| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must parse as an object whose 'entries' are objects with a string 'path' | error (disabled) | - | Google Antigravity |
+| [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must decode their paths and filters correctly | error (disabled) | - | Google Antigravity |
 | [`antigravity-hooks-valid`](antigravity-hooks-valid.md) | hooks.json must use Antigravity's hook events, handler types and fields | error (auto) | - | Google Antigravity |
 | [`antigravity-mcp-valid`](antigravity-mcp-valid.md) | mcp_config.json must parse and declare servers Antigravity can load | error (auto) | - | Google Antigravity |
 | [`antigravity-plugin-json-valid`](antigravity-plugin-json-valid.md) | plugin.json must parse as an Antigravity manifest with correctly typed fields | error (auto) | - | Google Antigravity |
