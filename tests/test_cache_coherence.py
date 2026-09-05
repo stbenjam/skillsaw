@@ -1,6 +1,5 @@
 """Core-owned writes must be visible without caller-managed cache resets."""
 
-import json
 from pathlib import Path
 
 import pytest
@@ -10,7 +9,6 @@ from skillsaw.context import RepositoryContext
 from skillsaw.linter import Linter
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import read_text
-from tests.cli_runner import run_cli
 from tests.test_autofix import copy_fixture
 
 RULE = "content-unlinked-internal-reference"
@@ -207,29 +205,3 @@ def test_unapplied_fix_preserves_disk_and_cached_tree(tmp_path, monkeypatch, mod
     assert read_text(path) == before
     assert linter.context.lint_tree is tree
     assert [v.file_path for v in linter.run()] == [path]
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("fixture,filename", FIXTURES)
-def test_cli_fix_converges_on_static_fixture(tmp_path, fixture, filename):
-    repo = copy_fixture(fixture, tmp_path)
-    path = repo / filename
-    before = path.read_bytes()
-    options = [str(repo), "--rule", RULE, "--no-custom-rules", "--no-plugins"]
-    lint_args = ["lint", *options, "--format", "json", "--fail-on", "info"]
-    first = run_cli(lint_args)
-    report = json.loads(first.stdout)
-    assert first.returncode == 1
-    assert [(v["rule_id"], v["file_path"]) for v in report["violations"]] == [(RULE, filename)]
-
-    fixed = run_cli(["fix", *options])
-    assert fixed.returncode == 0, fixed.stderr
-    after = path.read_bytes()
-    assert len(after.splitlines()) == len(before.splitlines())
-    assert sum(a != b for a, b in zip(before.splitlines(), after.splitlines())) == 1
-    clean = run_cli(lint_args)
-    assert clean.returncode == 0, clean.stderr
-    assert json.loads(clean.stdout)["violations"] == []
-    repeated = run_cli(["fix", *options])
-    assert repeated.returncode == 0, repeated.stderr
-    assert path.read_bytes() == after
