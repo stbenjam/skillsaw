@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+[ "$1" = init ]
+printf '%s\n' "$TMPDIR" "$2" > "$RECIPE_RECORD"
+if [ "${RECIPE_FAIL:-}" = yes ]; then
+    exit 7
+fi
+printf 'generated config\n' > "$2/.skillsaw.yaml"
