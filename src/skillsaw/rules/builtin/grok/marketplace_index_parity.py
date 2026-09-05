@@ -13,6 +13,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Set
 
 from skillsaw.context import RepositoryContext
 from skillsaw.formats import grok
+from skillsaw.formats.grok_catalog import catalog_type_errors, read_catalog_json
 from skillsaw.lint_target import GrokMarketplaceConfigNode, GrokMarketplaceIndexNode
 from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -355,12 +356,10 @@ class GrokMarketplaceIndexParityRule(Rule):
 
     def _catalog_entries(self, catalog: Path) -> Optional[List[_Entry]]:
         """The catalog reduced to parity inputs, or ``None`` when unusable."""
-        data, error = strict_json(catalog)
-        if error or not isinstance(data, dict):
+        data, error = read_catalog_json(catalog)
+        if error or not isinstance(data, dict) or catalog_type_errors(data):
             return None
-        entries = data.get("plugins")
-        if not isinstance(entries, list):
-            return None
+        entries = data.get("plugins", [])
 
         marketplace_root = catalog.parent.parent
         resolved_root = safe_resolve(marketplace_root)

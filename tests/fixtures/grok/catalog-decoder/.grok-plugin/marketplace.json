@@ -1,0 +1,27 @@
+{
+  "name": "data-platform",
+  "description": "Migration review tools maintained by the data platform team.",
+  "owner": {"name": "Data Platform", "channel": "preview", "channel": "stable"},
+  "plugins": [
+    {
+      "name": "migration-tools",
+      "description": "Review schema migration plans before deployment.",
+      "version": "1.0.0",
+      "category": "development",
+      "author": {"name": "Data Platform", "team": "preview", "team": "stable"},
+      "tags": ["database"],
+      "keywords": ["migration"],
+      "domains": ["database"],
+      "source": {"path": "./packages/retired", "path": "./packages/migration-tools"},
+      "channel": "preview",
+      "channel": "stable"
+    },
+    {
+      "name": "catalog-canary",
+      "description": "Check that the published catalog includes review guidance.",
+      "source": "./packages/catalog-canary"
+    }
+  ],
+  "channel": "preview",
+  "channel": "stable"
+}

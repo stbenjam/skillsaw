@@ -29,6 +29,7 @@ from skillsaw.formats.grok import (
     grok_local_source_path,
     grok_marker_escapes,
 )
+from skillsaw.formats.grok_catalog import read_catalog_json
 from skillsaw.paths import (
     contained_resolve,
     safe_exists,
@@ -36,7 +37,6 @@ from skillsaw.paths import (
     safe_is_symlink,
     safe_resolve,
 )
-from skillsaw.utils import read_json_strict
 
 # Grok reads a marketplace catalog from ``<root>/.grok-plugin/marketplace.json``
 # and a plugin manifest from ``<plugin>/.grok-plugin/plugin.json``. Each has a
@@ -50,16 +50,13 @@ GROK_PLUGIN_MANIFEST = (PLUGIN_DIR_NAME, PLUGIN_MANIFEST)
 
 
 def _read_json_or_none(path: Path) -> Any:
-    """Parsed JSON at *path*, or ``None`` when Grok could not read it.
+    """Read catalog declarations for diagnostic ownership.
 
-    Strict, and the one place in discovery that is: a catalog carrying a
-    bare ``NaN`` or a duplicated key is a document Grok's parser refuses
-    outright, so it declares no local sources and claims no directory. The
-    catalog rule still reports it — the node is built on the file's
-    existence, never on its contents. Uses the shared cached reader, so
-    repeated reads of one catalog cost nothing.
+    The host reader distinguishes accepted source/unknown duplicates from
+    syntax failures. Typed metadata errors belong to the validity rule:
+    they must not reclassify otherwise declared Grok content as Claude.
     """
-    data, error = read_json_strict(path)
+    data, error = read_catalog_json(path)
     return None if error else data
 
 
@@ -149,7 +146,7 @@ def grok_local_sources(catalog_files: Iterable[Path]) -> List[Path]:
     wider one would claim a sibling package for Grok and take it out of
     every other ecosystem's format scope.
 
-    An entry with no usable ``name`` declares nothing either: Grok drops it,
+    An entry without a string ``name`` declares nothing either: Grok drops it,
     so claiming its target would switch an otherwise unmarked plugin's
     Claude-scoped rules off and attach Grok configuration for content Grok
     never installs.
@@ -162,14 +159,14 @@ def grok_local_sources(catalog_files: Iterable[Path]) -> List[Path]:
         data = _read_json_or_none(catalog)
         if not isinstance(data, dict):
             continue
-        entries = data.get("plugins")
+        entries = data.get("plugins", [])
         if not isinstance(entries, list):
             continue
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
             name = entry.get("name")
-            if not isinstance(name, str) or not name:
+            if not isinstance(name, str):
                 continue
             path = grok_local_source_path(entry.get("source"))
             if path is None:

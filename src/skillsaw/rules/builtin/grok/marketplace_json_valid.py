@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats import grok
+from skillsaw.formats.grok_catalog import catalog_type_errors, read_catalog_json
 from skillsaw.lint_target import GrokMarketplaceConfigNode
 from skillsaw.paths import (
     contained_resolve,
@@ -20,7 +21,6 @@ from skillsaw.paths import (
     safe_resolve,
 )
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import strict_json
 
 from ._helpers import GROK_MARKETPLACE_REPO_TYPES, escape_reason
 
@@ -59,7 +59,7 @@ class GrokMarketplaceJsonValidRule(Rule):
 
         for node in context.lint_tree.find(GrokMarketplaceConfigNode):
             catalog = node.path
-            data, error = strict_json(catalog)
+            data, error = read_catalog_json(catalog)
             if error:
                 # An absent file is a ``--type``-seeded node, not a syntax
                 # error: "Invalid JSON: Failed to read" would name the wrong
@@ -76,14 +76,13 @@ class GrokMarketplaceJsonValidRule(Rule):
                     self.violation("Marketplace catalog must be a JSON object", file_path=catalog)
                 )
                 continue
-            if "plugins" not in data:
-                violations.append(self.violation("Missing 'plugins' array", file_path=catalog))
+            errors = catalog_type_errors(data)
+            if errors:
+                violations.extend(self.violation(message, file_path=catalog) for message in errors)
+                # A bad typed member rejects the catalog as a whole, so
+                # installation advice about its other entries is misleading.
                 continue
-            entries = data["plugins"]
-            if not isinstance(entries, list):
-                violations.append(self.violation("'plugins' must be an array", file_path=catalog))
-                continue
-            violations.extend(self._check_entries(entries, catalog))
+            violations.extend(self._check_entries(data.get("plugins", []), catalog))
 
         return violations
 
@@ -101,12 +100,6 @@ class GrokMarketplaceJsonValidRule(Rule):
         by_name: Dict[str, List[int]] = {}
 
         for index, entry in enumerate(entries):
-            if not isinstance(entry, dict):
-                violations.append(
-                    self.violation(f"plugins[{index}] must be an object", file_path=catalog)
-                )
-                continue
-            violations.extend(self._check_name(entry, index, catalog))
             source_violations, target, installs = self._check_source(
                 entry, index, catalog, marketplace_root, resolved_root
             )
@@ -134,33 +127,6 @@ class GrokMarketplaceJsonValidRule(Rule):
 
         return violations
 
-    def _check_name(self, entry: Dict[str, Any], index: int, catalog: Path) -> List[RuleViolation]:
-        """An entry with no usable ``name`` is dropped from the catalog.
-
-        The *value* is not checked against Grok's plugin-name rule: a local
-        entry named ``Bad Name!`` loads and surfaces under the name its
-        manifest declares, so demanding the format here would report a
-        catalog that works.
-        """
-        if "name" not in entry:
-            return [self.violation(f"plugins[{index}] missing required 'name'", file_path=catalog)]
-        name = entry["name"]
-        if not isinstance(name, str):
-            return [
-                self.violation(
-                    f"plugins[{index}] 'name' must be a string, got '{safe_display(name)}'",
-                    file_path=catalog,
-                )
-            ]
-        if not name:
-            return [
-                self.violation(
-                    f"plugins[{index}] required field 'name' is an empty string",
-                    file_path=catalog,
-                )
-            ]
-        return []
-
     def _check_source(
         self,
         entry: Dict[str, Any],
@@ -183,17 +149,6 @@ class GrokMarketplaceJsonValidRule(Rule):
                 None,
                 False,
             )
-        if not isinstance(source, (str, dict)):
-            return (
-                [
-                    self.violation(
-                        f"plugins[{index}].source must be a path string or an object",
-                        file_path=catalog,
-                    )
-                ],
-                None,
-                False,
-            )
         if isinstance(source, str) and not source:
             return (
                 [self.violation(f"plugins[{index}].source is an empty path", file_path=catalog)],
@@ -201,20 +156,6 @@ class GrokMarketplaceJsonValidRule(Rule):
                 False,
             )
 
-        if isinstance(source, dict):
-            # Check coordinate types before dispatch: a mistyped non-null
-            # URL cannot be interpreted as an absent URL and claim a local
-            # directory. Null is allowed for both optional string fields.
-            malformed = [
-                self.violation(
-                    f"plugins[{index}].source.{field} must be a string or null",
-                    file_path=catalog,
-                )
-                for field in ("url", "path")
-                if source.get(field) is not None and not isinstance(source[field], str)
-            ]
-            if malformed:
-                return malformed, None, False
         if grok.is_url_source(source):
             # An unpinned or oddly-cased sha still clones; an invalid path
             # prevents installation and cannot create an installed-name

@@ -1,0 +1,5 @@
+{
+  "name": "fallback-canary",
+  "version": "1.0.0",
+  "description": "Review conventional discovery when a marketplace catalog cannot be loaded."
+}

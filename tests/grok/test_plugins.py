@@ -437,8 +437,8 @@ def test_the_broken_marketplace_fixture_reports_only_the_grok_rules(tmp_path) ->
 
     report = lint_json(repo, "-v", returncode=1)
 
+    # Typed catalog errors prevent parity advice about entries Grok never lists.
     assert {violation["rule_id"] for violation in report["violations"]} == {
-        "grok-marketplace-index-parity",
         "grok-marketplace-json-valid",
         "grok-plugin-structure",
     }

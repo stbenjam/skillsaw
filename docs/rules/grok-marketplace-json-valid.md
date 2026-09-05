@@ -18,11 +18,11 @@
 `.grok-plugin/marketplace.json` is the catalog Grok Build uses to discover, list,
 and install plugins across repositories.
 
-Validating your marketplace catalog ensures that every listed plugin can be
-cleanly discovered and installed:
+This rule checks the catalog decoder and local paths, with a configurable
+policy for remote commit pins:
 
 - When a catalog is well-formed, Grok lists all declared plugins. If the file has
-  syntax errors or an invalid `plugins` array, Grok falls back to searching only
+  syntax errors or invalid typed fields, Grok falls back to searching only
   the default `plugins/` directory, which can cause plugins located in other
   directories to be missed.
 - For individual entries, specifying valid `name`, `source`, and directory
@@ -38,15 +38,17 @@ Code (`.claude-plugin/marketplace.json`) are checked separately by
 
 Findings distinguish between structural errors and upstream recommendations:
 
-**Errors** — issues that prevent the catalog or specific plugin entries from loading:
+**Errors** — catalog or entry load failures, and the configured commit-pin policy:
 
-- Invalid JSON syntax, non-finite numbers (`NaN`, `Infinity`, `-Infinity`), or
-  duplicate keys.
-- Catalog missing a top-level `plugins` array.
+- Invalid JSON syntax, a leading UTF-8 BOM, or non-finite number tokens
+  (`NaN`, `Infinity`, `-Infinity`).
+- Duplicate recognized catalog, entry, owner, or author fields.
+- Missing or non-string catalog `name`, or invalid known field types.
+- A present `plugins` value that is not an array.
 - Missing catalog file when explicitly linting with `--type grok-marketplace`.
 - Plugin entries that are not JSON objects.
 - Missing or invalid `source` (must be a path string or source object).
-- Missing, empty, or non-string plugin entry `name`.
+- Missing or non-string plugin entry `name`.
 - Duplicate resolved plugin names within the same catalog.
 - Local `source.path` pointing to a directory that does not exist under the
   marketplace root.
@@ -54,10 +56,29 @@ Findings distinguish between structural errors and upstream recommendations:
   marketplace root, or contains an empty or current-directory component.
   The root spellings `.` and `./`, trailing or repeated separators, and
   colon-containing components are not valid catalog paths.
-- A source object's non-null `url` or `path` that is not a string.
-- Remote Git source missing a commit `sha` (unpinned clone).
+- A source object's non-null `type`, `source`, `url`, `path`, `ref`, or `sha` that is not a string.
+- Remote Git source missing a commit `sha`, when the rule's `require-sha` policy is enabled.
 - Remote Git source with an invalid `sha` (must be a 40- or 64-character hex
   string).
+
+The catalog decoder distinguishes optional fields from defaulted arrays:
+
+| Field | Accepted values |
+| --- | --- |
+| Catalog `name` | Required string; empty is accepted |
+| Catalog `description` | String, null, or omitted |
+| Catalog `owner` | Object, null, or omitted; the object requires string `name` and accepts optional nullable string `email` |
+| Catalog `plugins` | Array of objects; omission defaults to an empty array, but null is invalid |
+| Entry `name` | Required string; empty is accepted |
+| Entry `version`, `description`, `category`, `homepage` | String, null, or omitted |
+| Entry `author` | Object, null, or omitted; the object requires string `name` |
+| Entry `tags`, `keywords`, `domains` | Arrays of strings; omission defaults to empty arrays, but null is invalid |
+| Entry `source` | String, object, null, or omitted; null or omission leaves the entry without a loadable source |
+
+A bad typed field rejects the entire catalog, including valid sibling entries.
+The rule reports those errors before installation advice. Index parity also
+stands down for that rejected catalog. Diagnostic discovery retains declared
+Grok content so metadata errors do not reclassify it as another host's content.
 
 **Warnings** — catalog format advisories:
 
@@ -81,8 +102,16 @@ Findings distinguish between structural errors and upstream recommendations:
 - **Path separators**: Grok accepts slash or backslash separators between
   directory names. It removes one leading `./` before parsing; a leading
   `.\` is not equivalent.
-- **Top-level catalog name**: optional in marketplace catalogs.
-- **Unknown metadata keys**: custom catalog or entry metadata is preserved.
+- **Empty names**: empty string catalog and entry names pass decoding. A local
+  plugin is listed under its effective manifest name. Display-index keys still
+  use the catalog entry's literal name.
+- **Empty catalogs**: omitting `plugins` or using an empty array is valid and
+  suppresses conventional `plugins/` fallback discovery.
+- **Unknown metadata keys**: custom catalog, entry, owner, and author members
+  are ignored, including duplicates.
+- **Source object duplicates**: the last value is effective, but every occurrence
+  must have the accepted type. A valid later value cannot repair an earlier
+  non-string value. This differs from duplicate recognized struct fields.
 
 ## Examples
 
@@ -90,6 +119,7 @@ Findings distinguish between structural errors and upstream recommendations:
 
 ```json
 {
+  "name": "harbour-plugins",
   "plugins": [
     {
       "name": "almanac",

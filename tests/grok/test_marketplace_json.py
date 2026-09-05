@@ -51,7 +51,7 @@ def url_entry(name: str, **source) -> dict:
 def catalog_repo(temp_dir, name: str, catalog, plugins=()):
     """A marketplace repository holding *catalog* and the *plugins* it lists."""
     repo = write_repo(temp_dir / name)
-    write_catalog(repo, catalog)
+    write_catalog(repo, {"name": "harbour-plugins", **catalog})
     for relative_path, manifest in plugins:
         write_plugin(repo / relative_path, manifest)
     return repo
@@ -81,8 +81,10 @@ def test_malformed_json_is_an_error(temp_dir) -> None:
     "catalog,expected",
     [
         pytest.param([], "Marketplace catalog must be a JSON object", id="top-level-array"),
-        pytest.param({"name": "x"}, "Missing 'plugins' array", id="no-plugins"),
-        pytest.param({"plugins": {}}, "'plugins' must be an array", id="plugins-object"),
+        pytest.param({"plugins": []}, "Marketplace catalog missing required 'name'", id="no-name"),
+        pytest.param(
+            {"name": "x", "plugins": {}}, "'plugins' must be an array", id="plugins-object"
+        ),
     ],
 )
 def test_a_catalog_grok_discards_is_an_error(temp_dir, catalog, expected) -> None:
@@ -117,11 +119,6 @@ def test_an_entry_that_is_not_an_object_is_an_error(temp_dir) -> None:
         pytest.param({"source": "./plugins/almanac"}, "missing required 'name'", id="absent"),
         pytest.param(
             {"name": 7, "source": "./plugins/almanac"}, "'name' must be a string", id="non-string"
-        ),
-        pytest.param(
-            {"name": "", "source": "./plugins/almanac"},
-            "'name' is an empty string",
-            id="empty",
         ),
     ],
 )
@@ -163,8 +160,18 @@ def test_duplicates_are_counted_on_the_resolved_manifest_name(temp_dir) -> None:
     assert "'almanac' at plugins[0], plugins[1]" in found.message
 
 
-def test_one_duplicated_name_is_one_finding(broken) -> None:
-    assert len([m for m in messages(check(broken)) if "Duplicate" in m]) == 1
+def test_rejected_catalog_skips_entry_installation_advice(broken) -> None:
+    assert at(check(broken), Severity.ERROR) == [
+        "plugins[7].source.sha must be a string or null",
+        "plugins[10] missing required 'name'",
+    ]
+
+
+def test_one_duplicated_name_is_one_finding(temp_dir) -> None:
+    repo = catalog_repo(temp_dir, "repeated", {"plugins": [url_entry("almanac", sha=SHA_A)] * 3})
+    assert messages(check(repo)) == [
+        "Duplicate plugin name 'almanac' at plugins[0], plugins[1], plugins[2]"
+    ]
 
 
 def test_two_catalogs_in_one_repository_do_not_collide(temp_dir) -> None:
@@ -174,7 +181,7 @@ def test_two_catalogs_in_one_repository_do_not_collide(temp_dir) -> None:
     for package in ("harbour", "estuary"):
         write_catalog(
             repo / "packages" / package,
-            {"plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
+            {"name": package, "plugins": [{"name": "almanac", "source": "./plugins/almanac"}]},
         )
         write_plugin(repo / "packages" / package / "plugins" / "almanac", {"name": "almanac"})
 
@@ -358,21 +365,19 @@ def test_every_local_spelling_grok_installs_reports_nothing(temp_dir, source) ->
     assert check(repo) == []
 
 
-def test_a_catalog_with_no_top_level_name_reports_nothing(temp_dir) -> None:
-    """An absent catalog ``name`` changes nothing observable, and a local
-    marketplace is named after its directory regardless."""
-    repo = catalog_repo(temp_dir, "nameless", {"plugins": [url_entry("almanac", sha=SHA_A)]})
-
+def test_an_omitted_plugin_vector_is_a_valid_empty_catalog(temp_dir) -> None:
+    repo = catalog_repo(temp_dir, "empty-catalog", {"name": "harbour-plugins"})
     assert check(repo) == []
 
 
-def test_an_entry_name_grok_overrides_reports_nothing(temp_dir) -> None:
+@pytest.mark.parametrize("name", ["Bad Name!", ""])
+def test_an_entry_name_grok_overrides_reports_nothing(temp_dir, name) -> None:
     """The catalog name is replaced by the plugin's manifest name, so its
     format is not this rule's to enforce."""
     repo = catalog_repo(
         temp_dir,
         "loud-entry-name",
-        {"plugins": [{"name": "Bad Name!", "source": "./plugins/almanac"}]},
+        {"plugins": [{"name": name, "source": "./plugins/almanac"}]},
         plugins=[("plugins/almanac", {"name": "almanac"})],
     )
 

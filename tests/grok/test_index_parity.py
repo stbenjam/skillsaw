@@ -68,7 +68,7 @@ def marketplace(temp_dir, name: str, catalog, index_doc, skills=(), manifest=Non
     ``(directory, frontmatter name)`` pair when the two differ.
     """
     repo = write_repo(temp_dir / name)
-    write_catalog(repo, catalog)
+    write_catalog(repo, {"name": "harbour-plugins", **catalog})
     if index_doc is not None:
         write_catalog(repo, index_doc, filename="plugin-index.json")
     if skills or manifest:
@@ -87,7 +87,14 @@ def check(repo, config=None):
 
 @pytest.fixture
 def broken(tmp_path):
-    return copy_fixture("grok/marketplace-broken", tmp_path)
+    repo = copy_fixture("grok/marketplace-broken", tmp_path)
+    # Exercise parity only after the whole catalog passes typed decoding.
+    path = repo / ".grok-plugin/marketplace.json"
+    data = json.loads(path.read_text())
+    data["plugins"][7]["source"]["sha"] = SHA_A
+    data["plugins"][10]["name"] = "wind-fetch"
+    path.write_text(json.dumps(data))
+    return repo
 
 
 # ── No index at all ──────────────────────────────────────────────
@@ -496,9 +503,9 @@ def test_the_broken_fixture_is_one_consolidated_finding(broken) -> None:
     message = found[0].message
     # The exact clause, so the bound on the sample and the deduplication
     # behind it are pinned rather than merely executed: the fixture drifts
-    # five names, one of them the duplicated ``escaping`` — and ``moved``,
+    # six names, one of them the duplicated ``escaping`` — and ``moved``,
     # whose local path resolves nowhere, is not one of them.
-    assert "not in the index: abbreviated, berth-notes, counted, and 2 more" in message
+    assert "not in the index: abbreviated, berth-notes, counted, and 3 more" in message
     assert "moved" not in message
     assert "not in the catalog: retired" in message
     assert "'sha' differs: drifted" in message
