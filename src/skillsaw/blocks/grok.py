@@ -9,6 +9,7 @@ from typing import Any, ClassVar, Dict, List, Mapping, Optional, Tuple
 
 from skillsaw.formats.grok import PERMISSION_TABLE, mcp_transport
 from skillsaw.formats.grok_mcp import normalized_mcp_server
+from skillsaw.paths import safe_resolve
 
 from .json_config import McpServerConfig, McpShapeDeferral
 from .toml_config import TomlMcpConfigBlock
@@ -65,7 +66,10 @@ class GrokConfigBlock(TomlMcpConfigBlock):
             override = os.environ.get("GROK_HOME")
             home = Path(override) if override else Path.home() / ".grok"
             user_config = home / "config.toml"
-            return self.path == user_config or self.path.resolve() == user_config.resolve()
+            if self.path == user_config:
+                return True
+            resolved = safe_resolve(self.path)
+            return resolved is not None and resolved == safe_resolve(user_config)
         except (OSError, RuntimeError, ValueError):
             return False
 

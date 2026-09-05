@@ -117,3 +117,11 @@ def test_user_file_still_receives_config_validation(
     assert expected in findings[0]["message"]
     assert findings[0]["severity"] == severity
     assert Path(findings[0]["file_path"]).name == "config.toml"
+
+
+def test_unresolved_paths_do_not_establish_user_identity(tmp_path, monkeypatch):
+    repo = copy_fixture("grok/config-user-scope", tmp_path)
+    monkeypatch.setenv("GROK_HOME", str(tmp_path / "separate-home"))
+    block = RepositoryContext(repo).lint_tree.find(GrokConfigBlock)[0]
+    monkeypatch.setattr("skillsaw.blocks.grok.safe_resolve", lambda path: None)
+    assert not block.is_user_config
