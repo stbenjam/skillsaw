@@ -133,20 +133,21 @@ signal.
 ### What a project file contributes
 
 - **Measured honored**: `[mcp_servers]` and `[permission]`
-  (`PROJECT_CONFIG_TABLES_MEASURED`). **Documented but unmeasured**: `[plugins]` and
-  `[mcp] max_output_bytes` — no observable at *either* scope. `PROJECT_CONFIG_TABLES`
-  holds all four, because a rule must not report a documented table as ignored; the
-  measured subset is what a message may make a claim about.
+  (`PROJECT_CONFIG_TABLES_MEASURED`). `[plugins]` additionally has source-confirmed
+  project support; `[mcp] max_output_bytes` remains documented but unmeasured.
+  `PROJECT_CONFIG_TABLES` holds all four.
 - **Measured refused**: `[hooks]` (the honored path for a project's hooks is
   `.grok/hooks/*.json`, which loads), `[skills].paths` and `[sandbox].profile`, each
   with a positive user-scope control (`PROJECT_CONFIG_TABLES_REFUSED`).
-- **`[plugins]`**: `enabled` and `disabled` are documented and were **not** reproduced
-  at project *or* user scope against a `.grok/plugins/` directory, so nothing may be
-  asserted to work and no rule reports an unrecognized key inside the table. `paths`
-  is user-scope only — three independent runs ignored a project `paths`, relative or
-  absolute, git repository or not, and the user layer's `paths` plugin arrived
-  `scope: "config"` and `enabled: false`. That is the one measured refusal inside an
-  honored table, and `PROJECT_CONFIG_KEYS_REFUSED` is where it lives.
+- **`[plugins]`**: the live session's `resolve_effective_plugins_config()` merges
+  trusted project `paths` and project `disabled`. `inspect` does not call that
+  resolver, so its absent project plugins cannot establish a refusal. The source
+  is `xai-grok-shell/src/config/mod.rs` at
+  `72a61251fcffb464bcc687aeb5a998e5a98ec0c9`; no authenticated session was needed.
+- **User scope**: `GrokConfigBlock.is_user_config` matches the actual configured
+  user file by canonical path, as `xai-grok-workspace/src/project_config.rs` does.
+  Project-only advice skips that file while TOML and MCP validation keep it.
+  A dotfiles checkout elsewhere is not guessed to be user configuration.
 
 ### `[mcp_servers]`
 
@@ -306,8 +307,9 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   `description` Grok's loader registers a `.grok/agents/*.md` by. An empty value
   satisfies it; presence is the whole test.
 - Project `config.toml` — `src/skillsaw/rules/builtin/grok/`: `grok-config-valid`
-  (ERROR) reports the parse error that costs the whole file, and at a hardcoded
-  WARNING the per-server and per-key defects that cost one server or one key — a
+  (ERROR) reports the parse error that costs the whole file, and at its
+  configurable secondary severity (WARNING by default) the per-server and
+  per-key defects that cost one server or one key — a
   non-table `mcp_servers`, a server naming neither a `command` nor a `url` (or an
   empty one), a wrong-typed `args`/`env`/`headers`/`url`/`command`, a non-array
   `allow`/`deny`/`ask` or `rules`, and `rules` written beside a list key. It never
@@ -315,12 +317,11 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   `grok-config-project-scope` (WARNING, option `extra-tables`) reports what the
   project layer drops: a top-level table or scalar outside `PROJECT_CONFIG_TABLES`
   (only `hooks` carries a hint — it is the one refusal with somewhere else in the
-  repository to go — and the rest are one consolidated finding), the keys in
-  `PROJECT_CONFIG_KEYS_REFUSED`, and the silent misspellings. It reports no
-  unrecognized key inside `[plugins]` or `[mcp]`: nothing was measured there in
-  either direction, and `extra-tables` reaches top-level names only. Neither rule
-  claims anything for `[plugins] enabled`/`disabled` or `[mcp] max_output_bytes`,
-  which are documented and unmeasured.
+  repository to go — and the rest are one consolidated finding), and the silent
+  misspellings. Unknown keys inside `[plugins]` or `[mcp]` stay open, and
+  `extra-tables` reaches top-level names only. Trusted project plugin paths
+  follow the live resolver described above; the actual user config is exempt
+  from project-only advice.
 - Plugin manifests — `grok-plugin-json-valid` (ERROR): invalid JSON and a `name` that
   is missing, non-string, empty or outside `PLUGIN_NAME_RE`, each of which makes Grok
   skip the whole directory. Component paths that escape or do not exist, and an
@@ -416,7 +417,7 @@ user guide, or re-verify empirically with the canary matrix above:
   *generator* wrote, so it carries the union of both readings and reports drift only
   for a name neither produces.
 - `PROJECT_CONFIG_TABLES` and its `_MEASURED` / `_REFUSED` companions,
-  `PROJECT_CONFIG_KEYS_REFUSED`, `MCP_SERVER_FIELDS` and `mcp_transport()` in
+  `MCP_SERVER_FIELDS` and `mcp_transport()` in
   `formats/grok.py`.
   The split between measured and documented is the thing to preserve: re-measure before
   moving a name across it, and never widen a rule's claim on the reference's word alone.

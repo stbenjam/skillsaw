@@ -1,8 +1,10 @@
-"""Grok Build's project ``config.toml``."""
+"""Grok Build configuration discovered in a repository."""
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Mapping, Optional, Tuple
 
 from skillsaw.formats.grok import PERMISSION_TABLE, mcp_transport
@@ -14,7 +16,7 @@ from .toml_config import TomlMcpConfigBlock
 
 @dataclass(eq=False)
 class GrokConfigBlock(TomlMcpConfigBlock):
-    """A ``.grok/config.toml`` — project-scoped Grok Build configuration.
+    """A ``.grok/config.toml``, including user config in a HOME repository.
 
     It carries the MCP role because ``[mcp_servers.<name>]`` is where a Grok
     project declares its servers — there is no ``.grok/mcp.json`` — and the
@@ -50,6 +52,22 @@ class GrokConfigBlock(TomlMcpConfigBlock):
     # deliberately left at their inherited values: both are read only by the
     # JSON shape walk in ``mcp-valid-json``, which this block never reaches.
     # Setting them here would look like configuration and be dead.
+
+    @property
+    def is_user_config(self) -> bool:
+        """Match the user file Grok excludes from project-layer discovery.
+
+        A non-empty GROK_HOME is used verbatim; otherwise Grok uses the
+        platform home directory. Canonical identity handles symlinked homes
+        without inferring scope from a checkout's name or contents.
+        """
+        try:
+            override = os.environ.get("GROK_HOME")
+            home = Path(override) if override else Path.home() / ".grok"
+            user_config = home / "config.toml"
+            return self.path == user_config or self.path.resolve() == user_config.resolve()
+        except (OSError, RuntimeError, ValueError):
+            return False
 
     @classmethod
     def transport(cls, server: Mapping[str, Any]) -> Optional[str]:

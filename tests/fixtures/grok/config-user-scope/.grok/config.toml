@@ -1,0 +1,9 @@
+# Personal settings tracked by a Git repository rooted at HOME.
+[compat.claude]
+skills = true
+
+[ui]
+vim_mode = true
+
+[mcp_servers.canary]
+command = "scope-canary"

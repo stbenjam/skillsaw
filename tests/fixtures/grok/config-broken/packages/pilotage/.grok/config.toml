@@ -1,4 +1,3 @@
 [plugins]
-# Honoured only from the user's own config. A project file's paths entry is
-# ignored whether it is relative or absolute.
+# The live session loads these paths after the project is trusted.
 paths = ["./.grok/plugins/pilot-charts"]

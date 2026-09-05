@@ -87,6 +87,8 @@ class GrokConfigProjectScopeRule(Rule):
         honored = self._honored_tables()
 
         for block in context.lint_tree.find(GrokConfigBlock):
+            if block.is_user_config:
+                continue
             data = block.raw_data
             if data is None:
                 # A file Grok refuses to parse contributes nothing at all,
@@ -94,7 +96,6 @@ class GrokConfigProjectScopeRule(Rule):
                 # here would name a scope defect in a file with no scope.
                 continue
             violations.extend(self._check_top_level(block, data, honored))
-            violations.extend(self._check_refused_keys(block, data))
             violations.extend(self._check_mcp(block, data))
             violations.extend(self._check_servers(block))
             violations.extend(self._check_permission(block, data))
@@ -146,34 +147,6 @@ class GrokConfigProjectScopeRule(Rule):
             # into a project file wrote several tables, and naming each one
             # separately buries the run.
             violations.append(self._violation(block, f"{sample(plain)} {_verb(plain)} {_IGNORED}"))
-        return violations
-
-    # -- Keys inside an honored table -------------------------------
-
-    def _check_refused_keys(
-        self, block: GrokConfigBlock, data: Dict[str, Any]
-    ) -> List[RuleViolation]:
-        """Keys a project file drops from a table it otherwise honors.
-
-        Measured refusals only, from
-        :data:`~skillsaw.formats.grok.PROJECT_CONFIG_KEYS_REFUSED`. An
-        unknown key inside one of these tables is not reported: nothing was
-        measured in either direction, and ``extra-tables`` reaches top-level
-        names only, so a Grok release adding a key would leave a working
-        config carrying a finding with no way to answer it.
-        """
-        violations: List[RuleViolation] = []
-        for table_name, refused in grok.PROJECT_CONFIG_KEYS_REFUSED.items():
-            table = data.get(table_name)
-            if not isinstance(table, dict):
-                continue
-            present = [f"'{key}'" for key in table if key in refused]
-            if present:
-                violations.append(
-                    self._violation(
-                        block, f"[{table_name}] {sample(present)} {_verb(present)} {_IGNORED}"
-                    )
-                )
         return violations
 
     # -- Misspellings inside an honored table -----------------------

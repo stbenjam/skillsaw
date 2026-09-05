@@ -1,0 +1,6 @@
+# Load this repository's plugin during local development in a trusted folder.
+[plugins]
+paths = ["./plugins/soleur"]
+
+[mcp_servers.canary]
+command = "scope-canary"
