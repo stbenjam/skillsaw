@@ -151,11 +151,26 @@ def test_a_remote_subdirectory_keeps_its_remote_identity(tmp_path, path):
 
 
 @pytest.mark.parametrize("path", ["", ".", "./", "packages/almanac/", "packages//almanac"])
-def test_invalid_remote_subdirectories_keep_the_existing_warning_severity(tmp_path, path):
+@pytest.mark.parametrize("index_present", [True, False])
+def test_invalid_remote_subdirectories_keep_display_identity(tmp_path, path, index_present):
+    """Native listing still attaches indexed components to these entries.
+
+    Installer rejection does not make them absent from the display catalog;
+    omitting their index entry must still produce the ordinary parity warning.
+    """
     repo = copy_fixture("grok/marketplace-sources", tmp_path)
     catalog = json.loads((repo / ".grok-plugin" / "marketplace.json").read_text())
     source = {**catalog["plugins"][4]["source"], "path": path}
     _set_source(repo, source, index=4)
+    index_path = repo / ".grok-plugin" / "plugin-index.json"
+    index = json.loads(index_path.read_text())
+    if index_present:
+        index["plugins"]["remote-kit"]["components"] = {
+            "skills": [{"name": "remote-display-canary", "description": "Review remote metadata."}]
+        }
+    else:
+        del index["plugins"]["remote-kit"]
+    index_path.write_text(json.dumps(index), encoding="utf-8")
 
     assert _local_names(repo) == LOCAL_NAMES
     report = _report(repo)
@@ -163,7 +178,17 @@ def test_invalid_remote_subdirectories_keep_the_existing_warning_severity(tmp_pa
     assert len(found) == 1
     assert found[0]["severity"] == "warning"
     assert "relative subdirectory of the cloned repository" in found[0]["message"]
-    assert violations_for(report, PARITY_RULE) == []
+    drift = violations_for(report, PARITY_RULE)
+    if index_present:
+        assert drift == []
+    else:
+        assert [(v["severity"], v["file_path"], v["message"]) for v in drift] == [
+            (
+                "warning",
+                ".grok-plugin/plugin-index.json",
+                "plugin-index.json disagrees with marketplace.json: not in the index: remote-kit",
+            )
+        ]
 
 
 def test_a_backslash_source_still_checks_canonical_containment(tmp_path):

@@ -6,7 +6,7 @@ catalog alongside `marketplace.json`. When users run `grok plugin list
 commands, and version info.
 
 Keeping `plugin-index.json` in sync with `marketplace.json` ensures that what
-users see in the marketplace browser accurately reflects what gets installed:
+users see in the marketplace browser reflects the declared plugins:
 
 - For remote Git repository plugins, Grok matches the `sha` between
   `marketplace.json` and `plugin-index.json` to verify component details. If
@@ -18,11 +18,16 @@ This rule checks that `plugin-index.json` accurately reflects the contents of
 `marketplace.json`. If a repository does not include `plugin-index.json`, this
 rule simply stands down, as the index file is optional.
 
+Display parity is separate from installation validation. Grok still displays a
+remote plugin and its matching index metadata when its source `path` contains
+an invalid subdirectory. Keep that entry in the index and correct the source
+path using the [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md)
+finding; removing the index entry would omit metadata for a visible plugin.
+
 ## Severity
 
-Findings carry **Warning** severity. The marketplace catalog remains
-functional, and plugins can still be installed; keeping parity ensures a smooth
-and accurate browsing experience for users.
+Findings carry **Warning** severity because they describe missing or inaccurate
+browser metadata. They do not establish whether a source can be installed.
 
 ## What it checks
 

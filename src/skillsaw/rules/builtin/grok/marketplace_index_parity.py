@@ -136,8 +136,8 @@ class GrokMarketplaceIndexParityRule(Rule):
         return ".grok-plugin/plugin-index.json must agree with the catalog beside it"
 
     def default_severity(self) -> Severity:
-        # The catalog still loads and every plugin still installs; what
-        # drifts is what the browser shows before anyone installs it.
+        # Parity describes the browser's metadata. Installation problems
+        # are separate findings owned by the catalog validator.
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -373,10 +373,9 @@ class GrokMarketplaceIndexParityRule(Rule):
             source = entry.get("source")
             plugin_dir = self._local_dir(source, marketplace_root, resolved_root)
             if plugin_dir is None and not self._is_usable_url(source):
-                # An entry Grok drops — no local directory and no repository
-                # to clone. ``grok-marketplace-json-valid`` names it, and
-                # reporting it here too would say the index is behind on a
-                # plugin that installs nowhere.
+                # No usable local directory or remote URL to display.
+                # The catalog validator names the source problem; there is
+                # no discovered entry whose index metadata can be compared.
                 continue
             resolved = grok.grok_plugin_name(plugin_dir) if plugin_dir is not None else None
             names = {value for value in (name, resolved) if value}
@@ -398,7 +397,13 @@ class GrokMarketplaceIndexParityRule(Rule):
 
     @staticmethod
     def _is_usable_url(source: Any) -> bool:
-        """Whether *source* is a url entry with a repository to clone."""
+        """Whether *source* supplies a remote URL for the display comparison.
+
+        Grok 1.0.13's scanner carries remote subdirectory paths verbatim and
+        still attaches matching index components. Their lexical validation
+        happens at installation, so rejecting them here would falsely say
+        an entry visible in the browser is absent from the catalog.
+        """
         if not grok.is_url_source(source):
             return False
         url = source.get("url") if isinstance(source, dict) else None
