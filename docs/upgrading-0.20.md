@@ -22,6 +22,8 @@ version gate.
 The old name remains an alias for Claude validation in configuration, CLI flags,
 suppressions and baselines. Other hosts have their own shape rules, including
 `codex-hooks-valid`, `grok-hooks-valid` and `muse-hooks-valid`.
+Muse hook shape validation is opt-in in 0.20.0 because available real-world
+coverage is limited; enable `muse-hooks-valid` explicitly to use it.
 
 An old `hooks-json-valid: {enabled: false}` entry therefore disables only the
 Claude rule. Configure each host's rule directly when needed. Some Codex findings
