@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from skillsaw.diagnostics import safe_display
+from skillsaw.formats.grok_config import unit_enum_value
 
 URL_FIELDS = ("url", "urlTemplate", "url_template")
 _STDIO_FIELDS = {"command": "string", "args": "strings", "env": "string-map", "cwd": "string"}
@@ -48,6 +49,8 @@ def _type_name(value: Any) -> str:
 
 def _value_error(field: str, value: Any, kind: str) -> Optional[str]:
     label = f"'{safe_display(field)}'"
+    if kind == "select":
+        return None if unit_enum_value(value) == "select" else f"{label} must be 'select'"
     if kind in ("string", "boolean", "table"):
         expected = {"string": str, "boolean": bool, "table": dict}[kind]
         if isinstance(value, expected):
@@ -135,7 +138,7 @@ def _nested_errors(server: Mapping[str, Any]) -> List[str]:
                     {
                         "id": "string",
                         "label": "string",
-                        "type": "string",
+                        "type": "select",
                         "required": "boolean",
                         "default": "string",
                         "options": "tables",
@@ -144,8 +147,6 @@ def _nested_errors(server: Mapping[str, Any]) -> List[str]:
                     ("id", "label", "type"),
                 )
             )
-            if isinstance(value.get("type"), str) and value["type"] != "select":
-                problems.append(f"'{prefix}type' must be 'select'")
             options = value.get("options", [])
             if isinstance(options, list):
                 for index, option in enumerate(options, 1):

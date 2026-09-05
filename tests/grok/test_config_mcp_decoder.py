@@ -90,6 +90,25 @@ CASES = [
         None,
     ),
 ]
+for value, valid in [
+    ("{ select = {} }", True),
+    ("{ select = [] }", True),
+    ("{ select = { ignored = 42 } }", False),
+    ("{ select = [42] }", False),
+    ("{ select = 42 }", False),
+    ("{ select = {}, other = {} }", False),
+    ("{ other = {} }", False),
+]:
+    body = URL + 'setup = { fields = [{ id = "site", label = "Site", type = ' + value + " }] }\n"
+    CASES.append(
+        (
+            "setup-enum-" + str(len(CASES)),
+            body,
+            "http" if valid else None,
+            None if valid else "must be 'select'",
+        )
+    )
+
 
 for field, value, reason in [
     ("command", "42", "must be a string"),
