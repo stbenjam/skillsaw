@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "REPLACE_WITH_CASE_PATTERN",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "true probe_target"
+          },
+          {
+            "type": "command",
+            "command": "true probe_same_group"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "true probe_same_event"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "true probe_other_event"
+          }
+        ]
+      }
+    ]
+  }
+}

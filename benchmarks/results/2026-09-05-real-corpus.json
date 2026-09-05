@@ -1,0 +1,495 @@
+{
+  "date": "2026-09-05",
+  "baseline": "d35234c459ec271c9540a9fb5a59f72cc77d1e6e",
+  "candidate_runtime": "2139de08974127b0271fb1176900887cea43d601",
+  "python": "3.14.5",
+  "platform": "Linux-7.0.10-101.fc43.aarch64-aarch64-with-glibc2.42",
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "ruamel.yaml": "0.19.1",
+    "markdown-it-py": "4.2.0"
+  },
+  "config_sha256": "01d361944b93d3169babc42e8e5e93de0ffd87e3a48ae2694581c0c016bbab6a",
+  "configuration": "Saved baseline LinterConfig.default(); plugins disabled; CLI --no-custom-rules --no-plugins --no-baseline --format json",
+  "cache_policy": "Fresh Python processes; OS cache is not dropped",
+  "warmups_per_source": 1,
+  "timed_pairs": 4,
+  "wall_metric": "GNU time child elapsed seconds, resolution 0.01s",
+  "memory_metric": "Per-child Linux peak RSS in KiB; divide by 1024 for MiB",
+  "corpus": [
+    {
+      "name": "tons-of-skills",
+      "repository": "jeremylongshore/tons-of-skills-marketplace",
+      "commit": "a0ea67e4efd7f1236ec900ae4fc2e70d9e805e15"
+    },
+    {
+      "name": "ai-helpers",
+      "repository": "openshift-eng/ai-helpers",
+      "commit": "72044d97c253f2225f6ed929796ffe26a0f4edb8"
+    },
+    {
+      "name": "awesome-copilot",
+      "repository": "github/awesome-copilot",
+      "commit": "7b1ebe6333397841ca918dec904d24d4695fe953"
+    },
+    {
+      "name": "superpowers",
+      "repository": "obra/superpowers",
+      "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+    },
+    {
+      "name": "gh-aw",
+      "repository": "github/gh-aw",
+      "commit": "d53fa8144e5d7923b6f8b1b6a6cb7111b9639ce9"
+    }
+  ],
+  "semantics": [
+    {
+      "repo": "superpowers",
+      "semantics_sha256": "eed373786ca08129074c7607d55cfd59d3d60122c39c88ee5d96213196455c28",
+      "violations": 47,
+      "nodes": 85,
+      "rules": 58,
+      "equal": true,
+      "candidate_head": "2139de08974127b0271fb1176900887cea43d601"
+    },
+    {
+      "repo": "tons-of-skills",
+      "semantics_sha256": "52e4104fdf1d83fbfc0be6e49ea30e5e2b03b511817921840a3188031971600d",
+      "violations": 5829,
+      "nodes": 48287,
+      "rules": 56,
+      "equal": true,
+      "candidate_head": "2139de08974127b0271fb1176900887cea43d601"
+    },
+    {
+      "repo": "ai-helpers",
+      "semantics_sha256": "578ee5174123d6b89036b87c95a83d6b44da8cacbd8a26e7e6a6939497489b8c",
+      "violations": 538,
+      "nodes": 1282,
+      "rules": 56,
+      "equal": true,
+      "candidate_head": "2139de08974127b0271fb1176900887cea43d601"
+    },
+    {
+      "repo": "awesome-copilot",
+      "semantics_sha256": "1f6d58cba64165a7d82bc517db3c8642b1983fb146547c8e8c7dc7cebdbeb261",
+      "violations": 2316,
+      "nodes": 3289,
+      "rules": 49,
+      "equal": true,
+      "candidate_head": "2139de08974127b0271fb1176900887cea43d601"
+    },
+    {
+      "repo": "gh-aw",
+      "semantics_sha256": "0256e5bb146fdaf2d617899f5348c52125f48ade91506967407ea7fd44be2c02",
+      "violations": 214,
+      "nodes": 344,
+      "rules": 48,
+      "equal": true,
+      "candidate_head": "2139de08974127b0271fb1176900887cea43d601"
+    }
+  ],
+  "samples": [
+    {
+      "repo": "tons-of-skills",
+      "label": "baseline",
+      "pair": 0,
+      "position": 0,
+      "gnu_wall_seconds": 22.72,
+      "user_seconds": 21.46,
+      "system_seconds": 1.08,
+      "peak_rss_kib": 1238924
+    },
+    {
+      "repo": "tons-of-skills",
+      "label": "candidate",
+      "pair": 0,
+      "position": 1,
+      "gnu_wall_seconds": 20.46,
+      "user_seconds": 19.3,
+      "system_seconds": 0.98,
+      "peak_rss_kib": 832864
+    },
+    {
+      "repo": "tons-of-skills",
+      "label": "candidate",
+      "pair": 1,
+      "position": 0,
+      "gnu_wall_seconds": 20.48,
+      "user_seconds": 19.22,
+      "system_seconds": 1.06,
+      "peak_rss_kib": 832864
+    },
+    {
+      "repo": "tons-of-skills",
+      "label": "baseline",
+      "pair": 1,
+      "position": 1,
+      "gnu_wall_seconds": 22.68,
+      "user_seconds": 21.34,
+      "system_seconds": 1.11,
+      "peak_rss_kib": 1238916
+    },
+    {
+      "repo": "tons-of-skills",
+      "label": "baseline",
+      "pair": 2,
+      "position": 0,
+      "gnu_wall_seconds": 20.35,
+      "user_seconds": 19.06,
+      "system_seconds": 1.12,
+      "peak_rss_kib": 1238960
+    },
+    {
+      "repo": "tons-of-skills",
+      "label": "candidate",
+      "pair": 2,
+      "position": 1,
+      "gnu_wall_seconds": 20.36,
+      "user_seconds": 19.16,
+      "system_seconds": 1.01,
+      "peak_rss_kib": 832768
+    },
+    {
+      "repo": "tons-of-skills",
+      "label": "candidate",
+      "pair": 3,
+      "position": 0,
+      "gnu_wall_seconds": 20.81,
+      "user_seconds": 19.63,
+      "system_seconds": 0.98,
+      "peak_rss_kib": 832860
+    },
+    {
+      "repo": "tons-of-skills",
+      "label": "baseline",
+      "pair": 3,
+      "position": 1,
+      "gnu_wall_seconds": 20.25,
+      "user_seconds": 18.97,
+      "system_seconds": 1.11,
+      "peak_rss_kib": 1238944
+    },
+    {
+      "repo": "ai-helpers",
+      "label": "baseline",
+      "pair": 0,
+      "position": 0,
+      "gnu_wall_seconds": 2.28,
+      "user_seconds": 2.17,
+      "system_seconds": 0.09,
+      "peak_rss_kib": 190020
+    },
+    {
+      "repo": "ai-helpers",
+      "label": "candidate",
+      "pair": 0,
+      "position": 1,
+      "gnu_wall_seconds": 2.11,
+      "user_seconds": 2.0,
+      "system_seconds": 0.08,
+      "peak_rss_kib": 154168
+    },
+    {
+      "repo": "ai-helpers",
+      "label": "candidate",
+      "pair": 1,
+      "position": 0,
+      "gnu_wall_seconds": 2.1,
+      "user_seconds": 1.99,
+      "system_seconds": 0.09,
+      "peak_rss_kib": 154172
+    },
+    {
+      "repo": "ai-helpers",
+      "label": "baseline",
+      "pair": 1,
+      "position": 1,
+      "gnu_wall_seconds": 2.5,
+      "user_seconds": 2.35,
+      "system_seconds": 0.1,
+      "peak_rss_kib": 190020
+    },
+    {
+      "repo": "ai-helpers",
+      "label": "baseline",
+      "pair": 2,
+      "position": 0,
+      "gnu_wall_seconds": 2.24,
+      "user_seconds": 2.13,
+      "system_seconds": 0.09,
+      "peak_rss_kib": 190036
+    },
+    {
+      "repo": "ai-helpers",
+      "label": "candidate",
+      "pair": 2,
+      "position": 1,
+      "gnu_wall_seconds": 2.09,
+      "user_seconds": 1.98,
+      "system_seconds": 0.08,
+      "peak_rss_kib": 154152
+    },
+    {
+      "repo": "ai-helpers",
+      "label": "candidate",
+      "pair": 3,
+      "position": 0,
+      "gnu_wall_seconds": 2.1,
+      "user_seconds": 1.98,
+      "system_seconds": 0.08,
+      "peak_rss_kib": 153980
+    },
+    {
+      "repo": "ai-helpers",
+      "label": "baseline",
+      "pair": 3,
+      "position": 1,
+      "gnu_wall_seconds": 2.21,
+      "user_seconds": 2.12,
+      "system_seconds": 0.07,
+      "peak_rss_kib": 190036
+    },
+    {
+      "repo": "awesome-copilot",
+      "label": "baseline",
+      "pair": 0,
+      "position": 0,
+      "gnu_wall_seconds": 6.28,
+      "user_seconds": 5.95,
+      "system_seconds": 0.26,
+      "peak_rss_kib": 449480
+    },
+    {
+      "repo": "awesome-copilot",
+      "label": "candidate",
+      "pair": 0,
+      "position": 1,
+      "gnu_wall_seconds": 6.1,
+      "user_seconds": 5.86,
+      "system_seconds": 0.18,
+      "peak_rss_kib": 296320
+    },
+    {
+      "repo": "awesome-copilot",
+      "label": "candidate",
+      "pair": 1,
+      "position": 0,
+      "gnu_wall_seconds": 6.11,
+      "user_seconds": 5.86,
+      "system_seconds": 0.17,
+      "peak_rss_kib": 296336
+    },
+    {
+      "repo": "awesome-copilot",
+      "label": "baseline",
+      "pair": 1,
+      "position": 1,
+      "gnu_wall_seconds": 6.28,
+      "user_seconds": 5.96,
+      "system_seconds": 0.24,
+      "peak_rss_kib": 449472
+    },
+    {
+      "repo": "awesome-copilot",
+      "label": "baseline",
+      "pair": 2,
+      "position": 0,
+      "gnu_wall_seconds": 6.26,
+      "user_seconds": 5.97,
+      "system_seconds": 0.22,
+      "peak_rss_kib": 449496
+    },
+    {
+      "repo": "awesome-copilot",
+      "label": "candidate",
+      "pair": 2,
+      "position": 1,
+      "gnu_wall_seconds": 6.1,
+      "user_seconds": 5.86,
+      "system_seconds": 0.19,
+      "peak_rss_kib": 296344
+    },
+    {
+      "repo": "awesome-copilot",
+      "label": "candidate",
+      "pair": 3,
+      "position": 0,
+      "gnu_wall_seconds": 6.09,
+      "user_seconds": 5.85,
+      "system_seconds": 0.18,
+      "peak_rss_kib": 296328
+    },
+    {
+      "repo": "awesome-copilot",
+      "label": "baseline",
+      "pair": 3,
+      "position": 1,
+      "gnu_wall_seconds": 6.28,
+      "user_seconds": 5.99,
+      "system_seconds": 0.22,
+      "peak_rss_kib": 449436
+    },
+    {
+      "repo": "gh-aw",
+      "label": "baseline",
+      "pair": 0,
+      "position": 0,
+      "gnu_wall_seconds": 12.13,
+      "user_seconds": 11.81,
+      "system_seconds": 0.2,
+      "peak_rss_kib": 254424
+    },
+    {
+      "repo": "gh-aw",
+      "label": "candidate",
+      "pair": 0,
+      "position": 1,
+      "gnu_wall_seconds": 11.98,
+      "user_seconds": 11.71,
+      "system_seconds": 0.16,
+      "peak_rss_kib": 253412
+    },
+    {
+      "repo": "gh-aw",
+      "label": "candidate",
+      "pair": 1,
+      "position": 0,
+      "gnu_wall_seconds": 11.98,
+      "user_seconds": 11.61,
+      "system_seconds": 0.23,
+      "peak_rss_kib": 253340
+    },
+    {
+      "repo": "gh-aw",
+      "label": "baseline",
+      "pair": 1,
+      "position": 1,
+      "gnu_wall_seconds": 11.94,
+      "user_seconds": 11.65,
+      "system_seconds": 0.19,
+      "peak_rss_kib": 254420
+    },
+    {
+      "repo": "gh-aw",
+      "label": "baseline",
+      "pair": 2,
+      "position": 0,
+      "gnu_wall_seconds": 11.95,
+      "user_seconds": 11.59,
+      "system_seconds": 0.21,
+      "peak_rss_kib": 254104
+    },
+    {
+      "repo": "gh-aw",
+      "label": "candidate",
+      "pair": 2,
+      "position": 1,
+      "gnu_wall_seconds": 11.98,
+      "user_seconds": 11.69,
+      "system_seconds": 0.19,
+      "peak_rss_kib": 253368
+    },
+    {
+      "repo": "gh-aw",
+      "label": "candidate",
+      "pair": 3,
+      "position": 0,
+      "gnu_wall_seconds": 11.97,
+      "user_seconds": 11.68,
+      "system_seconds": 0.18,
+      "peak_rss_kib": 253048
+    },
+    {
+      "repo": "gh-aw",
+      "label": "baseline",
+      "pair": 3,
+      "position": 1,
+      "gnu_wall_seconds": 12.03,
+      "user_seconds": 11.73,
+      "system_seconds": 0.19,
+      "peak_rss_kib": 254236
+    },
+    {
+      "repo": "superpowers",
+      "label": "baseline",
+      "pair": 0,
+      "position": 0,
+      "gnu_wall_seconds": 0.36,
+      "user_seconds": 0.33,
+      "system_seconds": 0.02,
+      "peak_rss_kib": 49296
+    },
+    {
+      "repo": "superpowers",
+      "label": "candidate",
+      "pair": 0,
+      "position": 1,
+      "gnu_wall_seconds": 0.31,
+      "user_seconds": 0.29,
+      "system_seconds": 0.01,
+      "peak_rss_kib": 48944
+    },
+    {
+      "repo": "superpowers",
+      "label": "candidate",
+      "pair": 1,
+      "position": 0,
+      "gnu_wall_seconds": 0.31,
+      "user_seconds": 0.29,
+      "system_seconds": 0.01,
+      "peak_rss_kib": 48952
+    },
+    {
+      "repo": "superpowers",
+      "label": "baseline",
+      "pair": 1,
+      "position": 1,
+      "gnu_wall_seconds": 0.29,
+      "user_seconds": 0.27,
+      "system_seconds": 0.02,
+      "peak_rss_kib": 49292
+    },
+    {
+      "repo": "superpowers",
+      "label": "baseline",
+      "pair": 2,
+      "position": 0,
+      "gnu_wall_seconds": 0.3,
+      "user_seconds": 0.28,
+      "system_seconds": 0.01,
+      "peak_rss_kib": 49296
+    },
+    {
+      "repo": "superpowers",
+      "label": "candidate",
+      "pair": 2,
+      "position": 1,
+      "gnu_wall_seconds": 0.29,
+      "user_seconds": 0.26,
+      "system_seconds": 0.02,
+      "peak_rss_kib": 48952
+    },
+    {
+      "repo": "superpowers",
+      "label": "candidate",
+      "pair": 3,
+      "position": 0,
+      "gnu_wall_seconds": 0.29,
+      "user_seconds": 0.27,
+      "system_seconds": 0.01,
+      "peak_rss_kib": 48980
+    },
+    {
+      "repo": "superpowers",
+      "label": "baseline",
+      "pair": 3,
+      "position": 1,
+      "gnu_wall_seconds": 0.3,
+      "user_seconds": 0.28,
+      "system_seconds": 0.02,
+      "peak_rss_kib": 49284
+    }
+  ]
+}

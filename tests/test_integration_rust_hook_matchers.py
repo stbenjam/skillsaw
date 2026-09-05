@@ -1,4 +1,4 @@
-"""Both hook consumers accept Rust syntax under a warning exit threshold."""
+"""Both hook rules follow the recorded diagnostic policy through the CLI."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from skillsaw.blocks.json_config import GrokHooksBlock, MuseHooksBlock
 from skillsaw.context import RepositoryContext
 from tests.cli_runner import run_cli
 from tests.test_integration import copy_fixture
+from tests.test_rust_matcher_dialects import CASES
 
 
 @pytest.mark.integration
@@ -46,12 +47,20 @@ def test_rust_matchers_use_host_dialect_in_cli(tmp_path, host, block_type, path,
     report = json.loads(result.stdout)
     assert report["stats"]["rules_run"] == [rule]
     found = report["violations"]
+    by_pattern = {case["pattern"]: case for case in CASES}
+    groups = json.loads((repo / path).read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+    expected = [
+        index
+        for index, group in enumerate(groups)
+        if by_pattern[group["matcher"]]["skillsaw_finding"] == "warning"
+    ]
     if outcome == "valid":
+        assert expected == []
         assert found == []
     else:
-        assert len(found) == 12
+        assert len(found) == len(expected) == 12
         assert {(v["rule_id"], v["file_path"], v["severity"]) for v in found} == {
             (rule, path, "warning")
         }
-        for index in range(12):
+        for index in expected:
             assert sum(f"PreToolUse[{index}] 'matcher'" in v["message"] for v in found) == 1

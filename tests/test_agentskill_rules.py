@@ -2373,3 +2373,38 @@ def test_covered_subtrees_are_not_scanned_again(temp_dir, monkeypatch):
     # lead to assets/, but repeating descendant directory searches adds no work.
     assert calls["docs/deep"] == 1
     assert calls["docs-other"] > 1
+
+
+def test_root_only_skill_needs_no_reachability_source_reads(temp_dir, monkeypatch):
+    from skillsaw.rules.builtin.agentskills import unreferenced_files
+
+    repo = copy_fixture("agentskills/clean/code-review", temp_dir)
+    reads = []
+    original = unreferenced_files.read_text
+
+    def record(path):
+        reads.append(path.relative_to(repo).as_posix())
+        return original(path)
+
+    monkeypatch.setattr(unreferenced_files, "read_text", record)
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(repo)) == []
+    assert reads == []
+
+
+def test_reachability_stops_after_last_transitive_target(temp_dir, monkeypatch):
+    from skillsaw.rules.builtin.agentskills import unreferenced_files
+
+    repo = copy_fixture("unreferenced-covered-subtrees", temp_dir)
+    (repo / "docs-other" / "orphan.md").unlink()
+    reads = []
+    original = unreferenced_files.read_text
+
+    def record(path):
+        reads.append(path.relative_to(repo).as_posix())
+        return original(path)
+
+    monkeypatch.setattr(unreferenced_files, "read_text", record)
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(repo)) == []
+    # The root covers docs/, but its guide must still be read to reach the
+    # data file. Remaining queued documents cannot add any bundled target.
+    assert reads == ["SKILL.md", "docs/deep/guide.md"]

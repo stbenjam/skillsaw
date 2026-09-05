@@ -1,0 +1,526 @@
+{
+  "assembled_at": "2026-09-05",
+  "grok": {
+    "version": "1.0.13 (5e9a58528b76, stable)",
+    "binary_sha256": "b926fc5308374396e260e7efbd6107231a8dae13c084ddaf0fe89b7ebb3edd25",
+    "source_revision": "72a61251fcffb464bcc687aeb5a998e5a98ec0c9",
+    "source": {
+      "matcher.rs": {
+        "url": "https://github.com/xai-org/grok-build/blob/72a61251fcffb464bcc687aeb5a998e5a98ec0c9/crates/codegen/xai-grok-hooks/src/matcher.rs",
+        "sha256": "c295133a859e17bc6e964f93581192a7f7e41882519d2116affca1649de4aff7"
+      },
+      "config.rs": {
+        "url": "https://github.com/xai-org/grok-build/blob/72a61251fcffb464bcc687aeb5a998e5a98ec0c9/crates/codegen/xai-grok-hooks/src/config.rs",
+        "sha256": "2e37edd875fef6b0ac1f6ef7535654a9e113ab0f02b754b35077135a0553a7f9"
+      }
+    },
+    "method": "Saved inspect --json metadata from isolated user-scope hooks, network disabled; no hooks dispatched."
+  },
+  "ripgrep": {
+    "version": "ripgrep 15.2.0 (rev e89fff89ac)",
+    "source": "https://github.com/BurntSushi/ripgrep/tree/15.2.0",
+    "engine": "default",
+    "stdin": "Bash\nWrite\nwrite\n(Bash\n"
+  },
+  "muse": {
+    "verdict": "unresolved",
+    "historical_version": "1.0.2-R2040.1",
+    "inconclusive_version": "1.0.3-R2198.1"
+  },
+  "audit_record_sha256": {
+    "implementation-rust-hook-matchers": {
+      "native.json": "73b439667612ee27348b71bb3b3b90751331518fee08e2834e74974e18d665f4",
+      "rust-oracle.json": "f60c6f8ed1c08f0c711317864776d142901d3395cb653d737cc44a8ff02fd253"
+    },
+    "implementation-rust-unicode-escapes": {
+      "native.json": "dbada5d6e9ca7edc44e74d1947e81fafeedadec5e3dd088ee2a01b627c092b05",
+      "rust-oracle.json": "f90a5abbe57ddb747d77888009be8b9e38a7396039e5d67ca07795a2db39b0eb"
+    },
+    "implementation-p2-controls": {
+      "native-matcher-controls.json": "64286367c7f2d3b6e803a1bde3c84d1eacc6105c59533a727a7a044b8014cc74"
+    }
+  },
+  "cases": [
+    {
+      "id": "hook-matchers/valid-0",
+      "pattern": "Bash|(?i)Write",
+      "record": "implementation-rust-hook-matchers/valid-0",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "hook-matchers/valid-1",
+      "pattern": "(?-u:\\w+)",
+      "record": "implementation-rust-hook-matchers/valid-1",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "hook-matchers/valid-2",
+      "pattern": "(?U).*",
+      "record": "implementation-rust-hook-matchers/valid-2",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "hook-matchers/valid-3",
+      "pattern": "\\x{42}ash",
+      "record": "implementation-rust-hook-matchers/valid-3",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "hook-matchers/valid-4",
+      "pattern": "(?R)^Bash$",
+      "record": "implementation-rust-hook-matchers/valid-4",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "hook-matchers/valid-5",
+      "pattern": "(?i-m:Write)",
+      "record": "implementation-rust-hook-matchers/valid-5",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "hook-matchers/valid-6",
+      "pattern": "\\x{28}Bash",
+      "record": "implementation-rust-hook-matchers/valid-6",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "hook-matchers/valid-7",
+      "pattern": "(?U)(Bash|Write)",
+      "record": "implementation-rust-hook-matchers/valid-7",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "hook-matchers/valid-8",
+      "pattern": "(?x)Bash # (?=literal comment\n",
+      "record": "implementation-rust-hook-matchers/valid-8",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "unresolved",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "hook-matchers/invalid-0",
+      "pattern": "Bash(",
+      "record": "implementation-rust-hook-matchers/invalid-0",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "hook-matchers/invalid-1",
+      "pattern": "(?=Bash)",
+      "record": "implementation-rust-hook-matchers/invalid-1",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "hook-matchers/invalid-2",
+      "pattern": "(?U)(Bash",
+      "record": "implementation-rust-hook-matchers/invalid-2",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "hook-matchers/invalid-3",
+      "pattern": "(?-u:[a-z)",
+      "record": "implementation-rust-hook-matchers/invalid-3",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "hook-matchers/invalid-4",
+      "pattern": "\\x{110000}",
+      "record": "implementation-rust-hook-matchers/invalid-4",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "hook-matchers/invalid-5",
+      "pattern": "\\x{d800}",
+      "record": "implementation-rust-hook-matchers/invalid-5",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "hook-matchers/invalid-6",
+      "pattern": "\\x{}",
+      "record": "implementation-rust-hook-matchers/invalid-6",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "hook-matchers/invalid-7",
+      "pattern": "\\x{42}(",
+      "record": "implementation-rust-hook-matchers/invalid-7",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "unicode-escapes/valid-0",
+      "pattern": "\\u{42}ash",
+      "record": "implementation-rust-unicode-escapes/valid-0",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "unicode-escapes/valid-1",
+      "pattern": "\\U{42}ash",
+      "record": "implementation-rust-unicode-escapes/valid-1",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "unicode-escapes/valid-2",
+      "pattern": "\\u{28}Bash",
+      "record": "implementation-rust-unicode-escapes/valid-2",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "unicode-escapes/valid-3",
+      "pattern": "\\U{28}Bash",
+      "record": "implementation-rust-unicode-escapes/valid-3",
+      "rust_verdict": "accepted",
+      "grok_verdict": "accepted",
+      "grok_handler_targets": [
+        "true probe_target",
+        "true probe_same_group",
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 0
+    },
+    {
+      "id": "unicode-escapes/invalid-0",
+      "pattern": "\\u{110000}",
+      "record": "implementation-rust-unicode-escapes/invalid-0",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "unicode-escapes/invalid-1",
+      "pattern": "\\U{110000}",
+      "record": "implementation-rust-unicode-escapes/invalid-1",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "unicode-escapes/invalid-2",
+      "pattern": "\\u{d800}",
+      "record": "implementation-rust-unicode-escapes/invalid-2",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "unicode-escapes/invalid-3",
+      "pattern": "\\U{d800}",
+      "record": "implementation-rust-unicode-escapes/invalid-3",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "unicode-escapes/invalid-4",
+      "pattern": "\\u{42}(",
+      "record": "implementation-rust-unicode-escapes/invalid-4",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "unicode-escapes/invalid-5",
+      "pattern": "\\U{42}(",
+      "record": "implementation-rust-unicode-escapes/invalid-5",
+      "rust_verdict": "refused",
+      "grok_verdict": "refused",
+      "grok_handler_targets": [
+        "true probe_same_event",
+        "true probe_other_event"
+      ],
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "literal-flags/0",
+      "pattern": "[(?x)](?=foo)",
+      "record": "implementation-p2-controls/0",
+      "rust_verdict": "refused",
+      "grok_verdict": "unresolved",
+      "grok_handler_targets": null,
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "literal-flags/2",
+      "pattern": "[(?x)]foo",
+      "record": "implementation-p2-controls/2",
+      "rust_verdict": "accepted",
+      "grok_verdict": "unresolved",
+      "grok_handler_targets": null,
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 1
+    },
+    {
+      "id": "literal-flags/4",
+      "pattern": "\\(\\?x\\)foo",
+      "record": "implementation-p2-controls/4",
+      "rust_verdict": "accepted",
+      "grok_verdict": "unresolved",
+      "grok_handler_targets": null,
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": null,
+      "rust_exit": 1
+    },
+    {
+      "id": "literal-flags/5",
+      "pattern": "\\(?x)(?=foo)",
+      "record": "implementation-p2-controls/5",
+      "rust_verdict": "refused",
+      "grok_verdict": "unresolved",
+      "grok_handler_targets": null,
+      "skillsaw_assessment": "checked",
+      "skillsaw_finding": "warning",
+      "rust_exit": 2
+    },
+    {
+      "id": "abstention/0",
+      "pattern": "(?x)(",
+      "record": "portable-evidence/2026-09-05",
+      "rust_verdict": "refused",
+      "grok_verdict": "unresolved",
+      "grok_handler_targets": null,
+      "skillsaw_assessment": "unresolved",
+      "skillsaw_finding": null,
+      "rust_exit": 2
+    },
+    {
+      "id": "abstention/1",
+      "pattern": "[(?x)](?x)(",
+      "record": "portable-evidence/2026-09-05",
+      "rust_verdict": "refused",
+      "grok_verdict": "unresolved",
+      "grok_handler_targets": null,
+      "skillsaw_assessment": "unresolved",
+      "skillsaw_finding": null,
+      "rust_exit": 2
+    },
+    {
+      "id": "abstention/2",
+      "pattern": "(?-x)(",
+      "record": "portable-evidence/2026-09-05",
+      "rust_verdict": "refused",
+      "grok_verdict": "unresolved",
+      "grok_handler_targets": null,
+      "skillsaw_assessment": "unresolved",
+      "skillsaw_finding": null,
+      "rust_exit": 2
+    }
+  ]
+}

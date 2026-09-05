@@ -403,6 +403,36 @@ class TestProseLines:
         assert texts[0] == "use " + " " * len("`docs/x.md`") + " here"
         assert len(texts[0]) == len(body.split("\n")[0])
 
+    def test_verbatim_spans_share_mapping_without_losing_prose_positions(self, monkeypatch):
+        from skillsaw import markdown_doc
+
+        body = (
+            "> Review `alpha` and `beta`\n"
+            "> with <!-- note --> `gamma`.\n"
+            "\n"
+            "Keep `delta` visible only as code.\n"
+        )
+        doc = _doc(body, line_offset=10)
+        # Prime the inline walk, then count only the maps used to blank prose.
+        assert [span.content for span in doc.code_spans()] == ["alpha", "beta", "gamma", "delta"]
+        mapped_tokens = []
+
+        def record_map(body_lines, map_start, content):
+            mapped_tokens.append(map_start)
+            return _ContentMap(body_lines, map_start, content)
+
+        monkeypatch.setattr(markdown_doc, "_ContentMap", record_map)
+        assert doc.prose_lines() == [
+            (11, "> Review " + " " * len("`alpha`") + " and " + " " * len("`beta`")),
+            (12, "> with " + " " * len("<!-- note -->") + " " + " " * len("`gamma`") + "."),
+            (13, ""),
+            (14, "Keep " + " " * len("`delta`") + " visible only as code."),
+            (15, ""),
+        ]
+        assert mapped_tokens == [0, 3]
+        assert len(doc.prose_text()) == len(body)
+        assert mapped_tokens == [0, 3]  # The cached prose accessor adds no maps.
+
     def test_cross_paragraph_stray_backticks_do_not_hide_content(self):
         # Legacy DOTALL inline-code regex blanked across paragraph
         # boundaries, which CommonMark never does.
@@ -413,6 +443,113 @@ class TestProseLines:
     def test_file_lines_respect_offset(self):
         doc = _doc("a\nb\n", line_offset=10)
         assert [fl for fl, _ in doc.prose_lines()] == [11, 12, 13]
+
+
+class TestTokenLifetime:
+    BODY = (
+        "# Release checks\n"
+        "\n"
+        "> 3. Read [guide][guide] and ![chart `alt`](chart.png).\n"
+        ">    Keep `literal` <!-- note --> visible.\n"
+        "\n"
+        "```sh\n"
+        "printf done\n"
+        "```\n"
+        "\n"
+        "<div>\n"
+        "raw HTML\n"
+        "</div>\n"
+        "\n"
+        '[guide]: docs/guide.md "Guide"\n'
+        "\n"
+        "Details\n"
+        "-------\n"
+        "\n"
+        "> 5. Outer step\n"
+        ">    - Nested note\n"
+        ">      ```text\n"
+        ">      nested example\n"
+        ">      ```\n"
+        ">    8. Inner step\n"
+        ">       Continued detail\n"
+        "\n"
+        "After lists.\n"
+    )
+
+    def test_inline_results_release_children_without_mutating_shared_parse(self):
+        first = _doc(self.BODY, line_offset=10)
+        second = _doc(self.BODY, line_map=lambda line: line + 100)
+        shared_tokens = second._tokens
+        assert first._tokens is shared_tokens
+        assert any(token.children for token in shared_tokens if token.type == "inline")
+        structural_ids = {
+            id(token)
+            for token in shared_tokens
+            if token.type
+            in {"paragraph_open", "list_item_open", "blockquote_open", "heading_close"}
+        }
+        assert structural_ids
+
+        first_links = first.links()
+        assert [(link.href, link.file_line) for link in first_links] == [
+            ("docs/guide.md", 13),
+            ("chart.png", 13),
+        ]
+        assert not any(token.children for token in first._tokens if token.type == "inline")
+        assert structural_ids.isdisjoint(id(token) for token in first._tokens)
+        assert structural_ids <= {id(token) for token in shared_tokens}
+        assert any(token.children for token in shared_tokens if token.type == "inline")
+
+        # A second document still walks the intact shared parse, with its own
+        # file coordinates and nested image-alt code span.
+        second_links = second.links()
+        assert [(link.href, link.file_line) for link in second_links] == [
+            ("docs/guide.md", 103),
+            ("chart.png", 103),
+        ]
+        assert [(span.content, span.file_line) for span in second.code_spans()] == [
+            ("alt", 103),
+            ("literal", 104),
+        ]
+        assert first_links[0].dest_file_line == 24
+        assert second_links[0].dest_file_line == 114
+        assert first.links() == first_links
+        for link in second_links:
+            _assert_dest_span_exact(self.BODY, link)
+
+    def test_lazy_block_queries_survive_a_prose_first_walk(self):
+        doc = _doc(self.BODY)
+        prose = doc.prose_text()
+        assert "`literal`" not in prose
+        assert "printf done" not in prose
+        assert not any(token.children for token in doc._tokens if token.type == "inline")
+
+        assert [
+            (heading.level, heading.text, heading.body_line, heading.setext)
+            for heading in doc.headings()
+        ] == [(1, "Release checks", 1, False), (2, "Details", 16, True)]
+        assert [
+            (fence.info, fence.content, fence.body_line_start, fence.nested)
+            for fence in doc.fences()
+        ] == [("sh", "printf done\n", 6, False), ("text", "nested example\n", 21, True)]
+        assert doc.ordered_list_content_lines() == [
+            (3, "Read [guide][guide] and ![chart `alt`](chart.png)."),
+            (4, "Keep `literal` <!-- note --> visible."),
+            (19, "Outer step"),
+            (20, "Nested note"),
+            (24, "Inner step"),
+            (25, "Continued detail"),
+        ]
+        assert doc.html_block_spans() == [(9, 12)]
+        assert [(comment.text, comment.body_line_start) for comment in doc.html_comments()] == [
+            (" note ", 4)
+        ]
+        definitions = doc.reference_definitions()
+        assert [(definition.href, definition.body_line_start) for definition in definitions] == [
+            ("docs/guide.md", 14)
+        ]
+        assert doc.prose_text() == prose
+        assert [link.href for link in doc.links()] == ["docs/guide.md", "chart.png"]
 
 
 class TestTextSegments:
