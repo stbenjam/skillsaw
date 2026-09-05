@@ -3829,6 +3829,54 @@ class TestDevin:
         assert found[0]["line"] == line
         assert message in found[0]["message"]
 
+    def test_native_duplicate_fields_report_and_clear_independently(self, tmp_path):
+        repo = copy_fixture("devin/duplicate-fields", tmp_path)
+        result = run_lint(
+            repo,
+            "--rule",
+            "devin-rules-valid",
+            "--rule",
+            "devin-skill-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert result["rc"] == 1, result
+        assert {"devin-rules-valid", "devin-skill-valid"} <= set(
+            result["out"]["stats"]["rules_run"]
+        )
+        assert {(v["file_path"], v["line"], v["message"]) for v in violations(result)} == {
+            (".devin/skills/duplicate-name/SKILL.md", 3, "Duplicate frontmatter field 'name'"),
+            (
+                ".devin/skills/duplicate-permissions/SKILL.md",
+                4,
+                "Duplicate frontmatter field 'permissions.allow'",
+            ),
+            (".devin/rules/duplicate-trigger.md", 3, "Duplicate frontmatter field 'trigger'"),
+            (".windsurf/rules/duplicate-globs.md", 3, "Duplicate frontmatter field 'globs'"),
+        }
+        assert all(v["severity"] == "error" for v in violations(result))
+        for relative, line in {
+            ".devin/skills/duplicate-name/SKILL.md": 3,
+            ".devin/skills/duplicate-permissions/SKILL.md": 4,
+            ".devin/rules/duplicate-trigger.md": 3,
+            ".windsurf/rules/duplicate-globs.md": 3,
+        }.items():
+            path = repo / relative
+            lines = path.read_text().splitlines(keepends=True)
+            del lines[line - 1]
+            path.write_text("".join(lines))
+        clean = run_lint(
+            repo,
+            "--rule",
+            "devin-rules-valid",
+            "--rule",
+            "devin-skill-valid",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert clean["rc"] == 0, clean
+        assert violations(clean) == []
+
     def test_native_scalar_decoding_matches_consumer_values(self, tmp_path):
         repo = copy_fixture("devin/scalar-decoding", tmp_path)
         result = run_lint(

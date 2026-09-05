@@ -25,6 +25,11 @@ This rule validates Devin's documented fields while tolerating unknown keys
 for forward compatibility. The skill body still receives skillsaw's shared
 content-quality and security checks.
 
+A known field may appear only once, even when its value is null. This also
+applies to `permissions.allow`, `permissions.deny`, and `permissions.ask`.
+Duplicate unknown extension keys remain accepted. The finding points to the
+repeated key; remove the duplicate and keep the intended value.
+
 ## Severity
 
 Malformed YAML and invalid field types are errors. Setting both a named

@@ -176,3 +176,90 @@ def test_native_permissions_ignore_merge_key_but_keep_explicit_fields(tmp_path):
 
     assert "allow" not in permissions
     assert permissions["deny"] == ["Read"]
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("name", "review"),
+        ("description", "Review metadata"),
+        ("argument-hint", "path"),
+        ("model", "sonnet"),
+        ("agent", "reviewer"),
+        ("subagent", "false"),
+        ("allowed-tools", "[Read]"),
+        ("permissions", "{allow: [Read]}"),
+        ("triggers", "[user]"),
+    ],
+)
+def test_native_skill_rejects_duplicate_known_fields_at_repeated_key(tmp_path, key, value):
+    path = tmp_path / "SKILL.md"
+    path.write_text(f"---\n{key}: {value}\n{key}: {value}\n---\nReview local metadata.\n")
+    block = DevinSkillBlock(path=path)
+
+    assert block.frontmatter_error == f"Duplicate frontmatter field '{key}'"
+    assert block.frontmatter_error_line == 3
+
+
+@pytest.mark.parametrize(
+    "key,value", [("trigger", "manual"), ("description", "Review metadata"), ("globs", "[src/**]")]
+)
+def test_native_rule_rejects_duplicate_known_fields(tmp_path, key, value):
+    path = tmp_path / "rule.md"
+    path.write_text(f"---\n{key}: {value}\n{key}: {value}\n---\nReview local metadata.\n")
+    block = DevinRuleBlock(path=path)
+
+    assert block.frontmatter_error == f"Duplicate frontmatter field '{key}'"
+    assert block.frontmatter_error_line == 3
+
+
+@pytest.mark.parametrize("first,second", [("null", "review"), ("review", "null"), ("null", "null")])
+def test_native_null_still_counts_as_a_declared_field(tmp_path, first, second):
+    path = tmp_path / "SKILL.md"
+    path.write_text(f"---\nname: {first}\nname: {second}\n---\nReview local metadata.\n")
+    block = DevinSkillBlock(path=path)
+
+    assert block.frontmatter_error == "Duplicate frontmatter field 'name'"
+    assert block.frontmatter_error_line == 3
+
+
+@pytest.mark.parametrize("key", ["allow", "deny", "ask"])
+def test_native_duplicate_permissions_keep_nested_source_line(tmp_path, key):
+    path = tmp_path / "SKILL.md"
+    path.write_text(
+        f"---\npermissions:\n  {key}: [Read]\n  {key}: [Read]\n---\nReview local metadata.\n"
+    )
+    block = DevinSkillBlock(path=path)
+
+    assert block.frontmatter_error == f"Duplicate frontmatter field 'permissions.{key}'"
+    assert block.frontmatter_error_line == 4
+
+
+@pytest.mark.parametrize("block_type", [DevinRuleBlock, DevinSkillBlock])
+def test_native_unknown_duplicates_remain_accepted(tmp_path, block_type):
+    path = tmp_path / "context.md"
+    path.write_text("---\nfuture: first\nfuture: second\n---\nReview local metadata.\n")
+    block = block_type(path=path)
+
+    assert block.frontmatter_error is None
+    assert block.field_value("future") == "second"
+
+
+def test_native_unknown_permission_duplicates_remain_accepted(tmp_path):
+    path = tmp_path / "SKILL.md"
+    path.write_text(
+        "---\npermissions:\n  future: first\n  future: second\n  allow: [Read]\n---\nReview local metadata.\n"
+    )
+    block = DevinSkillBlock(path=path)
+
+    assert block.frontmatter_error is None
+    assert block.field_value("permissions")["allow"] == ["Read"]
+
+
+def test_portable_duplicate_policy_is_unchanged(tmp_path):
+    path = tmp_path / "SKILL.md"
+    path.write_text("---\nname: first\nname: second\n---\nReview local metadata.\n")
+    block = SkillBlock(path=path)
+
+    assert block.frontmatter_error is None
+    assert block.field_value("name") == "second"

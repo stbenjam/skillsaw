@@ -48,7 +48,7 @@ class DevinSkillValidRule(Rule):
                 continue
 
             line_for = yaml_path_line_lookup(block.read_frontmatter_text(), line_offset=1)
-            for key in ("name", "description", "argument-hint", "model", "agent"):
+            for key in devin.SKILL_STRING_FIELDS:
                 violations.extend(self._check_string(block, key))
             violations.extend(self._check_bool(block, "subagent"))
             violations.extend(

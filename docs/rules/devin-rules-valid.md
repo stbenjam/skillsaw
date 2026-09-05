@@ -48,6 +48,11 @@ Empty and comment-only frontmatter headers use the same activation defaults
 as an empty mapping. An explicit `null` document, malformed YAML, or a
 missing closing delimiter remains invalid.
 
+Declare `trigger`, `description`, and `globs` only once per header. Devin
+rejects repeated known keys, including null-valued duplicates; skillsaw
+reports the repeated key's line. Duplicate unknown extension keys remain
+accepted.
+
 ## Severity
 
 Malformed YAML, an unsupported trigger, invalid activation data, and a rule

@@ -10,7 +10,6 @@ from skillsaw.utils import FRONTMATTER_RE_EMPTY_OK, _SAFE_LOADER, read_text
 
 _YAML = "tag:yaml.org,2002:"
 _TEXT_TAGS = frozenset(_YAML + tag for tag in ("str", "bool", "int", "float", "timestamp", "null"))
-_SKILL_STRINGS = frozenset({"name", "description", "argument-hint", "model", "agent"})
 
 
 def _string(node, *, optional=False):
@@ -61,7 +60,7 @@ def _native_fields(node, *, skill):
     pairs = []
     for key, value in node.value:
         name = key.value if isinstance(key, yaml.ScalarNode) else None
-        if name in (_SKILL_STRINGS if skill else {"trigger", "description"}):
+        if name in (devin.SKILL_STRING_FIELDS if skill else {"trigger", "description"}):
             value = _string(value, optional=True)
         elif name in ({"allowed-tools", "triggers"} if skill else {"globs"}):
             value = _string_list(value)
@@ -90,6 +89,20 @@ def _native_fields(node, *, skill):
     return yaml.MappingNode(node.tag, pairs, node.start_mark, node.end_mark, node.flow_style)
 
 
+def _duplicate_field(node, known_fields, *, prefix=""):
+    seen = {}
+    for key, _value in node.value:
+        if not isinstance(key, yaml.ScalarNode) or key.value not in known_fields:
+            continue
+        if key.value in seen:
+            # An aliased key retains its anchor's source mark. Do not report
+            # that earlier line as though it were the repeated occurrence.
+            line = key.start_mark.line + 2 if key is not seen[key.value] else None
+            return prefix + key.value, line
+        seen[key.value] = key
+    return None
+
+
 def parse_devin_frontmatter(
     content: str, *, skill: bool = False
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
@@ -106,6 +119,25 @@ def parse_devin_frontmatter(
         if node is None:
             data = {}
         elif isinstance(node, yaml.MappingNode):
+            known_fields = (
+                devin.SKILL_FRONTMATTER_FIELDS if skill else devin.RULE_FRONTMATTER_FIELDS
+            )
+            duplicate = _duplicate_field(node, known_fields)
+            if skill and duplicate is None:
+                for key, value in node.value:
+                    if (
+                        isinstance(key, yaml.ScalarNode)
+                        and key.value == "permissions"
+                        and isinstance(value, yaml.MappingNode)
+                    ):
+                        duplicate = _duplicate_field(
+                            value, devin.PERMISSION_KEYS, prefix="permissions."
+                        )
+                        if duplicate is not None:
+                            break
+            if duplicate is not None:
+                name, line = duplicate
+                return None, f"Duplicate frontmatter field '{name}'", line, content, 0
             data = loader.construct_document(_native_fields(node, skill=skill))
         else:
             return None, error, None, content, 0

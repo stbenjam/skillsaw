@@ -42,6 +42,11 @@ DEVIN_ONLY_INSTRUCTION_FILENAMES = frozenset({"AGENTS.local.md", "AGENT.md", ".w
 
 RULE_TRIGGERS = frozenset({"always_on", "manual", "model_decision", "agent", "glob"})
 SKILL_TRIGGERS = frozenset({"user", "model"})
+SKILL_STRING_FIELDS = ("name", "description", "argument-hint", "model", "agent")
+SKILL_FRONTMATTER_FIELDS = frozenset(
+    (*SKILL_STRING_FIELDS, "subagent", "allowed-tools", "permissions", "triggers")
+)
+RULE_FRONTMATTER_FIELDS = frozenset({"trigger", "description", "globs"})
 PERMISSION_KEYS = ("allow", "deny", "ask")
 WORKSPACE_RULE_MAX_CHARACTERS = 12_000
 
