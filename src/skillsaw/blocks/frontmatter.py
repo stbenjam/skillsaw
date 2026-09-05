@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -22,6 +23,7 @@ from skillsaw.utils import (
     commented_key_line,
     invalidate_read_caches,
     read_text,
+    write_text_preserving,
     parse_frontmatter,
     read_frontmatter_commented,
     extract_section,
@@ -31,7 +33,7 @@ from skillsaw.utils import (
 )
 
 from .base import ContentBlock
-from .devin_frontmatter import parse_devin_frontmatter, read_devin_frontmatter
+from .devin_frontmatter import parse_devin_frontmatter
 from .json_config import CopilotAgentMcpBlock, HookEventConfig, parse_hooks_events
 
 
@@ -47,6 +49,13 @@ def _parse_file_frontmatter(
     content = read_text(path)
     if content is None:
         return None, f"Failed to read file: {path}", None, "", 0
+    return _parse_frontmatter_content(content)
+
+
+def _parse_frontmatter_content(
+    content: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+    """Parse portable frontmatter without reading or writing a file."""
     if not content.startswith("---"):
         return None, None, None, content, 0
     fm, body, error_line = parse_frontmatter(content)
@@ -132,14 +141,27 @@ class BodyContent(ContentBlock):
 
     def write_body(self, new_body: str) -> None:
         content = read_text(self.path)
-        if content is None or not content.startswith("---"):
-            self.path.write_text(new_body, encoding="utf-8")
-        else:
-            fm, file_body, _ = parse_frontmatter(content)
-            if fm is None:
+        # Dialect parsers keep key-line bookkeeping. A preflight on a copy
+        # leaves the attached block unchanged when an edit is refused.
+        parser = (
+            copy(self.parent)._parse_frontmatter_content
+            if isinstance(self.parent, FrontmatteredBlock)
+            else _parse_frontmatter_content
+        )
+        prefix = ""
+        if content is not None:
+            _fm, error, _line, file_body, _offset = parser(content)
+            if error is not None:
                 raise ValueError("Cannot rewrite body: frontmatter is malformed")
-            fm_section = content[: len(content) - len(file_body)]
-            self.path.write_text(fm_section + new_body, encoding="utf-8")
+            prefix = content[: len(content) - len(file_body)]
+        updated = prefix + new_body
+        # Preflight the normalized text readers will see after the preserving
+        # writer restores the file's original BOM and line-ending style.
+        candidate = updated.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+        _fm, error, _line, parsed_body, _offset = parser(candidate)
+        if error is not None or parsed_body != new_body:
+            raise ValueError("Cannot rewrite body: edit changes the frontmatter boundary")
+        write_text_preserving(self.path, updated)
         self.body = new_body
         invalidate_read_caches(self.path)
         self.invalidate_find_cache()
@@ -186,10 +208,20 @@ class FrontmatteredBlock(LintTarget):
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
         """Parse this file's frontmatter.
 
-        The seam a format with its own frontmatter dialect overrides; see
-        :class:`CursorRuleBlock`.
+        Dialects override the content parser so reads and write preflight
+        checks use the same frontmatter boundary.
         """
-        return _parse_file_frontmatter(self.path)
+        content = read_text(self.path)
+        if content is None:
+            return None, f"Failed to read file: {self.path}", None, "", 0
+        return self._parse_frontmatter_content(content)
+
+    def _parse_frontmatter_content(
+        self,
+        content: str,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+        """The same dialect parser serves reads and body-write preflight checks."""
+        return _parse_frontmatter_content(content)
 
     def _ensure_parsed(self) -> None:
         if self._fm_parsed is None:
@@ -457,8 +489,9 @@ class CursorRuleBlock(FrontmatteredBlock):
     #: is authoritative, as it is for every well-formed file.
     _mdc_key_lines: Optional[Dict[str, int]] = field(default=None, repr=False)
 
-    def _parse_frontmatter_file(
+    def _parse_frontmatter_content(
         self,
+        content: str,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
         """Fall back to Cursor's permissive dialect when strict YAML fails.
 
@@ -467,16 +500,13 @@ class CursorRuleBlock(FrontmatteredBlock):
         itself accepts — reaches the lenient reader, and a file with no
         closing ``---`` still fails, because Cursor cannot read that either.
         """
-        parsed = _parse_file_frontmatter(self.path)
+        parsed = _parse_frontmatter_content(content)
         frontmatter, error, _error_line, _body, _fm_lines = parsed
         if frontmatter is not None:
-            return self._apply_cursor_scalars(parsed)
+            return self._apply_cursor_scalars(parsed, content)
         if error is None:
             return parsed
 
-        content = read_text(self.path)
-        if content is None:
-            return parsed
         if content.split("\n", 1)[0].strip() != "---":
             # The generic parser treats any ``---`` prefix as an opener, so a
             # setext rule like ``----`` arrives here as a malformed-frontmatter
@@ -534,6 +564,7 @@ class CursorRuleBlock(FrontmatteredBlock):
     def _apply_cursor_scalars(
         self,
         parsed: Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int],
+        content: str,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
         """Re-read strict-YAML scalars the way Cursor's ``.mdc`` reader does.
 
@@ -557,9 +588,6 @@ class CursorRuleBlock(FrontmatteredBlock):
         """
         frontmatter = parsed[0]
         if not frontmatter:
-            return parsed
-        content = read_text(self.path)
-        if content is None:
             return parsed
         split = _split_mdc_frontmatter(content)
         if split is None:
@@ -608,8 +636,9 @@ class GrokAgentBlock(FrontmatteredBlock):
     _grok_key_lines: Dict[str, int] = field(default_factory=dict, init=False, repr=False)
     _grok_frontmatter_text: str = field(default="", init=False, repr=False)
 
-    def _parse_frontmatter_file(
+    def _parse_frontmatter_content(
         self,
+        content: str,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
         """Read Grok's delimiter prefixes without changing other hosts.
 
@@ -621,9 +650,6 @@ class GrokAgentBlock(FrontmatteredBlock):
         """
         self._grok_key_lines = {}
         self._grok_frontmatter_text = ""
-        content = read_text(self.path)
-        if content is None:
-            return None, f"Failed to read file: {self.path}", None, "", 0
         trimmed = content.lstrip()
         if not trimmed.startswith("---"):
             return None, None, None, content, 0
@@ -910,16 +936,14 @@ class DevinRuleBlock(FrontmatteredBlock):
             changed = True
         return "\n".join(lines), changed
 
-    def _parse_frontmatter_file(
+    def _parse_frontmatter_content(
         self,
+        content: str,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
-        parsed = read_devin_frontmatter(self.path)
+        parsed = parse_devin_frontmatter(content)
         if parsed[0] is not None or parsed[1] is None:
             return parsed
 
-        content = read_text(self.path)
-        if content is None:
-            return parsed
         split = _split_mdc_frontmatter(content)
         if split is None:
             return parsed
@@ -961,10 +985,11 @@ class DevinSkillBlock(FrontmatteredBlock):
 
     category: str = "skill"
 
-    def _parse_frontmatter_file(
+    def _parse_frontmatter_content(
         self,
+        content: str,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
-        return read_devin_frontmatter(self.path, skill=True)
+        return parse_devin_frontmatter(content, skill=True)
 
 
 @dataclass(eq=False)

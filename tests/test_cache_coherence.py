@@ -135,6 +135,7 @@ def test_failed_block_write_preserves_cached_state(tmp_path, monkeypatch, writer
         raise PermissionError("fixture write denied")
 
     monkeypatch.setattr(Path, "write_text", denied)
+    monkeypatch.setattr("skillsaw.blocks.frontmatter.write_text_preserving", denied)
     with pytest.raises(PermissionError, match="fixture write denied"):
         if writer == "file":
             plain.write_body("Updated body.\n")

@@ -1,12 +1,11 @@
 """Consumer-specific scalar construction for Devin's native frontmatter."""
 
-from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
 from skillsaw.formats import devin
-from skillsaw.utils import FRONTMATTER_RE_EMPTY_OK, _SAFE_LOADER, read_text
+from skillsaw.utils import FRONTMATTER_RE_EMPTY_OK, _SAFE_LOADER
 
 _YAML = "tag:yaml.org,2002:"
 _TEXT_TAGS = frozenset(_YAML + tag for tag in ("str", "bool", "int", "float", "timestamp", "null"))
@@ -148,12 +147,3 @@ def parse_devin_frontmatter(
     finally:
         loader.dispose()
     return data, None, None, content[match.end() :], content[: match.end()].count("\n")
-
-
-def read_devin_frontmatter(
-    path: Path, *, skill: bool = False
-) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
-    content = read_text(path)
-    if content is None:
-        return None, f"Failed to read file: {path}", None, "", 0
-    return parse_devin_frontmatter(content, skill=skill)
