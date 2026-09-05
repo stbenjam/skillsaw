@@ -27,8 +27,10 @@ the plugin still loads, so none of them is reported.
 **Errors** — the directory is not a plugin:
 
 - `plugin.json` is missing, or is not a regular file.
-- Invalid JSON, or a duplicate key. Antigravity's parser rejects a repeated
-  field rather than keeping the last one.
+- Invalid JSON, including an unpaired Unicode surrogate escape in any
+  string or key, even inside discarded metadata.
+- A repeated known root field (`name`, `description`, `disabled`, `logo`).
+  Neither copy wins, including when one or both values are `null`.
 - A UTF-8 byte-order mark (BOM). Remove it; the loader does not strip it.
 - A root that is not a JSON object.
 - A type error on one of the four fields: `name`, `description` and `logo`
@@ -42,13 +44,14 @@ the plugin still loads, so none of them is reported.
 
 **Info**:
 
-- No `name` at all. Discovery falls back to the directory name, so the
-  plugin works where it sits, and `agy plugin validate` and
-  `agy plugin install` both refuse it.
+- No canonical `name`. Runtime discovery falls back to the directory name.
+  Add `name` for consistent behavior across consumers. The separate
+  installer accepts capitalized `Name`, which the runtime ignores; this
+  advisory does not claim every missing canonical name prevents installation.
 
 ## What is not reported
 
-- **Unknown keys.** `$schema`, `version`, `author`, `homepage`, `license`,
+- **Unknown keys and their duplicates.** `$schema`, `version`, `author`, `homepage`, `license`,
   `keywords`, `entrypoint` and everything else are discarded by the parser
   and cost nothing. A package written to the portable Agent Plugins schema
   and dropped into `.agents/plugins/` is claimed and loaded by Antigravity
@@ -60,6 +63,9 @@ the plugin still loads, so none of them is reported.
   and is narrower than what `agy` loads — it lists only `name` and
   `description`, while `disabled` and `logo` load fine — so this rule
   follows the loader rather than the schema.
+- **Capitalized fields.** Runtime fields match exactly: `Description`,
+  `Disabled` and `Logo` are unknown metadata. This ProtoJSON behavior differs
+  from Antigravity's hooks, MCP and registry readers.
 - **`disabled: true`.** It is the documented way to keep a plugin in the
   tree without loading it.
 - **A `null` value, and an empty string in a string field.** protojson
@@ -97,6 +103,5 @@ the plugin still loads, so none of them is reported.
 - Give `description` a sentence saying when the plugin is worth loading —
   it is what a reader sees before the components.
 - Write `disabled` as a boolean, not `"no"` or `0`.
-- Delete a repeated key. Neither copy wins: this manifest is protojson,
-  which refuses the document outright (`proto: duplicate field "name"`), so
-  the directory is not a plugin at all.
+- Remove repeated known root fields. A repeated `name`, for example, fails
+  with `proto: duplicate field "name"`. Repeated unknown metadata is accepted.
