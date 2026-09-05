@@ -7539,6 +7539,168 @@ def _snapshot_contents(repo: Path) -> Dict[str, str]:
     return contents
 
 
+def copy_autofix_skip_repo(tmp_path, name="repo", *, linked=True):
+    repo = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path / name)
+    if linked:
+        (repo / "CLAUDE.md").rename(repo / "instructions.txt")
+        (repo / "CLAUDE.md").symlink_to("instructions.txt")
+    return repo
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(os.name == "nt", reason="Requires ordinary POSIX symlinks")
+class TestAutofixSkips:
+    """Policy skips preserve diagnostics, previews and independent eligible fixes."""
+
+    rule_id = "content-unlinked-internal-reference"
+
+    @pytest.mark.parametrize("linked", [False, True], ids=["regular", "symlink"])
+    def test_symlink_metadata_preview_and_fix_agree(self, tmp_path, linked):
+        repo = copy_autofix_skip_repo(tmp_path, linked=linked)
+        path = repo / "CLAUDE.md"
+        original = path.read_bytes()
+        report = run_cli(
+            [
+                "lint",
+                repo,
+                "--rule",
+                self.rule_id,
+                "--format",
+                "json",
+                "--verbose",
+                "--no-custom-rules",
+                "--no-plugins",
+            ]
+        )
+        assert report.returncode == 0, report.stderr
+        findings = json.loads(report.stdout)["violations"]
+        assert len(findings) == 3
+        assert {v["file_path"] for v in findings} == {"CLAUDE.md"}
+        assert all(v["fixable"] is (not linked) for v in findings)
+        assert all(v.get("fix_confidence") == (None if linked else "safe") for v in findings)
+
+        preview = _run_fix(
+            repo, "--rule", self.rule_id, "--dry-run", "--no-custom-rules", "--no-plugins"
+        )
+        assert preview.returncode == 0, preview.stderr
+        assert path.read_bytes() == original
+        assert "dry-run — no files were modified" in preview.stdout
+        result = _run_fix(repo, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins")
+        assert result.returncode == 0, result.stderr
+        if linked:
+            for output in (preview.stdout, result.stdout):
+                assert "Skipped 1 path(s):" in output
+                assert "[CLAUDE.md] symbolic link; edit its target directly" in output
+                assert "Would fix" not in output and "Fixed " not in output
+                assert "No auto-fixable" not in output
+                assert "--- a/" not in output
+            assert path.is_symlink()
+            assert path.read_bytes() == original
+        else:
+            assert "Would fix 1 issue(s)" in preview.stdout
+            assert "Fixed 1 issue(s)" in result.stdout
+            assert "Skipped" not in result.stdout
+            assert path.read_bytes() != original
+            assert path.read_bytes().count(b"\n") == original.count(b"\n")
+            assert b"[docs/guide.md](docs/guide.md)" in path.read_bytes()
+            clean = run_cli(
+                [
+                    "lint",
+                    repo,
+                    "--rule",
+                    self.rule_id,
+                    "--format",
+                    "json",
+                    "--verbose",
+                    "--no-custom-rules",
+                    "--no-plugins",
+                ]
+            )
+            assert clean.returncode == 0, clean.stderr
+            assert json.loads(clean.stdout)["violations"] == []
+        after = path.read_bytes()
+        repeated = _run_fix(repo, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins")
+        assert repeated.returncode == 0, repeated.stderr
+        assert path.read_bytes() == after
+
+    def test_hidden_and_suppressed_findings_do_not_become_skips(self, tmp_path):
+        repo = copy_autofix_skip_repo(tmp_path)
+        (repo / ".skillsaw.yaml").write_text(f"rules:\n  {self.rule_id}:\n    severity: info\n")
+        hidden = _run_fix(repo, "--no-custom-rules", "--no-plugins")
+        assert hidden.returncode == 0, hidden.stderr
+        assert "Skipped" not in hidden.stdout
+        visible = _run_fix(repo, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins")
+        assert visible.returncode == 0, visible.stderr
+        assert "Skipped 1 path(s):" in visible.stdout
+
+        target = repo / "instructions.txt"
+        target.write_text(f"<!-- skillsaw-disable {self.rule_id} -->\n" + target.read_text())
+        suppressed = _run_fix(repo, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins")
+        assert suppressed.returncode == 0, suppressed.stderr
+        assert "Skipped" not in suppressed.stdout
+
+    def test_two_roots_keep_distinct_lexical_skip_paths(self, tmp_path):
+        first = copy_autofix_skip_repo(tmp_path, "first")
+        second = copy_autofix_skip_repo(tmp_path, "second")
+        result = run_cli(
+            ["fix", first, second, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins"]
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Skipped 2 path(s):" in result.stdout
+        assert f"[{first / 'CLAUDE.md'}] symbolic link" in result.stdout
+        assert f"[{second / 'CLAUDE.md'}] symbolic link" in result.stdout
+
+    def test_rename_followup_retains_and_deduplicates_skips(self, tmp_path, monkeypatch):
+        from skillsaw.linter import Linter
+
+        repo = copy_autofix_skip_repo(tmp_path)
+        shutil.copytree(FIXTURES / "autofix/fixable-accuracy-name/My_Skill", repo / "handoff")
+        calls = []
+        original = Linter.fix_and_apply
+
+        def record(self, *args, **kwargs):
+            result = original(self, *args, **kwargs)
+            calls.append(list(self.fix_skips))
+            return result
+
+        monkeypatch.setattr(Linter, "fix_and_apply", record)
+        result = _run_fix(
+            repo,
+            "--rule",
+            self.rule_id,
+            "--rule",
+            "agentskill-name",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert result.returncode == 0, result.stderr
+        assert len(calls) == 2 and all(calls)
+        assert "name: handoff" in (repo / "handoff/SKILL.md").read_text()
+        assert "Skipped 1 path(s):" in result.stdout
+        assert result.stdout.count("[CLAUDE.md] symbolic link") == 1
+
+    def test_write_failure_still_fails_with_policy_skips(self, tmp_path, monkeypatch):
+        import skillsaw.linter as module
+
+        linked = copy_autofix_skip_repo(tmp_path, "linked")
+        regular = copy_autofix_skip_repo(tmp_path, "regular", linked=False)
+        original = (regular / "CLAUDE.md").read_bytes()
+
+        def refused(*args, **kwargs):
+            raise OSError("Test write refusal")
+
+        monkeypatch.setattr(module, "write_text_preserving", refused)
+        result = run_cli(
+            ["fix", linked, regular, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins"]
+        )
+        assert result.returncode == 1
+        assert "Skipped 1 path(s):" in result.stdout
+        assert "Failed to apply 1 fix(es)" in result.stderr
+        assert "Test write refusal" in result.stderr
+        assert "Fixed " not in result.stdout and "No auto-fixable" not in result.stdout
+        assert (regular / "CLAUDE.md").read_bytes() == original
+
+
 @pytest.mark.integration
 class TestEncodingPreservingAutofix:
     """Autofix must not rewrite a file's byte shape (issue #315).

@@ -1,9 +1,6 @@
 """Policy skips preserve diagnostics, previews and independent eligible fixes."""
 
-import json
 import os
-import shutil
-from pathlib import Path
 
 import pytest
 
@@ -11,24 +8,10 @@ from skillsaw.baseline import build_baseline
 from skillsaw.context import RepositoryContext
 from skillsaw.linter import Linter
 from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, Severity
-from tests.cli_runner import run_cli
+from tests.test_integration import copy_autofix_skip_repo
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="Requires ordinary POSIX symlinks")
-FIXTURES = Path(__file__).parent / "fixtures"
 RULE = "content-unlinked-internal-reference"
-
-
-def _copy_repo(tmp_path, name="repo", *, linked=True):
-    repo = tmp_path / name
-    shutil.copytree(FIXTURES / "autofix/unlinked-ref-multiple-paths", repo)
-    if linked:
-        (repo / "CLAUDE.md").rename(repo / "instructions.txt")
-        (repo / "CLAUDE.md").symlink_to("instructions.txt")
-    return repo
-
-
-def _cli(command, *args):
-    return run_cli([command, *args, "--no-custom-rules", "--no-plugins"])
 
 
 def _linter(repo, **kwargs):
@@ -37,53 +20,8 @@ def _linter(repo, **kwargs):
     )
 
 
-@pytest.mark.integration
-@pytest.mark.parametrize("linked", [False, True], ids=["regular", "symlink"])
-def test_symlink_metadata_preview_and_fix_agree(tmp_path, linked):
-    repo = _copy_repo(tmp_path, linked=linked)
-    path = repo / "CLAUDE.md"
-    original = path.read_bytes()
-    report = _cli("lint", repo, "--rule", RULE, "--format", "json", "--verbose")
-    assert report.returncode == 0, report.stderr
-    findings = json.loads(report.stdout)["violations"]
-    assert len(findings) == 3
-    assert {v["file_path"] for v in findings} == {"CLAUDE.md"}
-    assert all(v["fixable"] is (not linked) for v in findings)
-    assert all(v.get("fix_confidence") == (None if linked else "safe") for v in findings)
-
-    preview = _cli("fix", repo, "--rule", RULE, "--dry-run")
-    assert preview.returncode == 0, preview.stderr
-    assert path.read_bytes() == original
-    assert "dry-run — no files were modified" in preview.stdout
-    result = _cli("fix", repo, "--rule", RULE)
-    assert result.returncode == 0, result.stderr
-    if linked:
-        for output in (preview.stdout, result.stdout):
-            assert "Skipped 1 path(s):" in output
-            assert "[CLAUDE.md] symbolic link; edit its target directly" in output
-            assert "Would fix" not in output and "Fixed " not in output
-            assert "No auto-fixable" not in output
-            assert "--- a/" not in output
-        assert path.is_symlink()
-        assert path.read_bytes() == original
-    else:
-        assert "Would fix 1 issue(s)" in preview.stdout
-        assert "Fixed 1 issue(s)" in result.stdout
-        assert "Skipped" not in result.stdout
-        assert path.read_bytes() != original
-        assert path.read_bytes().count(b"\n") == original.count(b"\n")
-        assert b"[docs/guide.md](docs/guide.md)" in path.read_bytes()
-        clean = _cli("lint", repo, "--rule", RULE, "--format", "json", "--verbose")
-        assert clean.returncode == 0, clean.stderr
-        assert json.loads(clean.stdout)["violations"] == []
-    after = path.read_bytes()
-    repeated = _cli("fix", repo, "--rule", RULE)
-    assert repeated.returncode == 0, repeated.stderr
-    assert path.read_bytes() == after
-
-
 def test_proposal_generation_does_not_leak_symlink_fixability(tmp_path):
-    repo = _copy_repo(tmp_path)
+    repo = copy_autofix_skip_repo(tmp_path)
     remaining, proposals = _linter(repo).fix()
     assert len(proposals) == 1
     assert len(proposals[0].violations_fixed) == 3
@@ -97,26 +35,8 @@ def test_proposal_generation_does_not_leak_symlink_fixability(tmp_path):
     assert all(not v.fixable and v.fix_confidence is None for v in remaining)
 
 
-@pytest.mark.integration
-def test_hidden_and_suppressed_findings_do_not_become_skips(tmp_path):
-    repo = _copy_repo(tmp_path)
-    (repo / ".skillsaw.yaml").write_text(f"rules:\n  {RULE}:\n    severity: info\n")
-    hidden = _cli("fix", repo)
-    assert hidden.returncode == 0, hidden.stderr
-    assert "Skipped" not in hidden.stdout
-    visible = _cli("fix", repo, "--rule", RULE)
-    assert visible.returncode == 0, visible.stderr
-    assert "Skipped 1 path(s):" in visible.stdout
-
-    target = repo / "instructions.txt"
-    target.write_text(f"<!-- skillsaw-disable {RULE} -->\n" + target.read_text())
-    suppressed = _cli("fix", repo, "--rule", RULE)
-    assert suppressed.returncode == 0, suppressed.stderr
-    assert "Skipped" not in suppressed.stdout
-
-
 def test_baselined_findings_do_not_become_skips(tmp_path):
-    repo = _copy_repo(tmp_path)
+    repo = copy_autofix_skip_repo(tmp_path)
     linter = _linter(repo)
     visible = linter.run()
     assert len(visible) == 3
@@ -314,56 +234,3 @@ def test_write_boundary_reports_newly_symlinked_rename_source(tmp_path):
     ]
     assert not proposal.file_path.exists()
     assert (tmp_path / "notes.txt").read_text() == "Original note.\n"
-
-
-@pytest.mark.integration
-def test_two_roots_keep_distinct_lexical_skip_paths(tmp_path):
-    first = _copy_repo(tmp_path, "first")
-    second = _copy_repo(tmp_path, "second")
-    result = _cli("fix", first, second, "--rule", RULE)
-    assert result.returncode == 0, result.stderr
-    assert "Skipped 2 path(s):" in result.stdout
-    assert f"[{first / 'CLAUDE.md'}] symbolic link" in result.stdout
-    assert f"[{second / 'CLAUDE.md'}] symbolic link" in result.stdout
-
-
-@pytest.mark.integration
-def test_rename_followup_retains_and_deduplicates_skips(tmp_path, monkeypatch):
-    repo = _copy_repo(tmp_path)
-    shutil.copytree(FIXTURES / "autofix/fixable-accuracy-name/My_Skill", repo / "handoff")
-    calls = []
-    original = Linter.fix_and_apply
-
-    def record(self, *args, **kwargs):
-        result = original(self, *args, **kwargs)
-        calls.append(list(self.fix_skips))
-        return result
-
-    monkeypatch.setattr(Linter, "fix_and_apply", record)
-    result = _cli("fix", repo, "--rule", RULE, "--rule", "agentskill-name")
-    assert result.returncode == 0, result.stderr
-    assert len(calls) == 2 and all(calls)
-    assert "name: handoff" in (repo / "handoff/SKILL.md").read_text()
-    assert "Skipped 1 path(s):" in result.stdout
-    assert result.stdout.count("[CLAUDE.md] symbolic link") == 1
-
-
-@pytest.mark.integration
-def test_write_failure_still_fails_with_policy_skips(tmp_path, monkeypatch):
-    import skillsaw.linter as module
-
-    linked = _copy_repo(tmp_path, "linked")
-    regular = _copy_repo(tmp_path, "regular", linked=False)
-    original = (regular / "CLAUDE.md").read_bytes()
-
-    def refused(*args, **kwargs):
-        raise OSError("Test write refusal")
-
-    monkeypatch.setattr(module, "write_text_preserving", refused)
-    result = _cli("fix", linked, regular, "--rule", RULE)
-    assert result.returncode == 1
-    assert "Skipped 1 path(s):" in result.stdout
-    assert "Failed to apply 1 fix(es)" in result.stderr
-    assert "Test write refusal" in result.stderr
-    assert "Fixed " not in result.stdout and "No auto-fixable" not in result.stdout
-    assert (regular / "CLAUDE.md").read_bytes() == original
