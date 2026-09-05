@@ -18,6 +18,7 @@ import yaml
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import (
     _FRONTMATTER_RE,
+    _SAFE_LOADER,
     commented_key_line,
     invalidate_read_caches,
     read_text,
@@ -603,6 +604,74 @@ class GrokAgentBlock(FrontmatteredBlock):
     """.grok/agents/*.md — Grok Build's project subagents."""
 
     category: str = "agent"
+    _grok_key_lines: Dict[str, int] = field(default_factory=dict, init=False, repr=False)
+    _grok_frontmatter_text: str = field(default="", init=False, repr=False)
+
+    def _parse_frontmatter_file(
+        self,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+        """Read Grok's delimiter prefixes without changing other hosts.
+
+        AgentDefinition::parse in Grok Build 1.0.13 trims leading whitespace,
+        consumes an opening ``---`` prefix and stops YAML at the first
+        ``\n---``. A following newline ends the closing delimiter line;
+        without one, its suffix is the body. Keep body whitespace so
+        content-rule spans still address the file.
+        """
+        self._grok_key_lines = {}
+        self._grok_frontmatter_text = ""
+        content = read_text(self.path)
+        if content is None:
+            return None, f"Failed to read file: {self.path}", None, "", 0
+        trimmed = content.lstrip()
+        if not trimmed.startswith("---"):
+            return None, None, None, content, 0
+        start = len(content) - len(trimmed) + 3
+        end = content.find("\n---", start)
+        error = "Invalid frontmatter (malformed YAML or missing closing ---)"
+        if end < 0:
+            return None, error, None, content, 0
+        text = content[start:end]
+        self._grok_frontmatter_text = text
+        offset = content[:start].count("\n")
+        # One safe LibYAML-backed parse supplies both data and source marks;
+        # field lookups must not reparse YAML for every key.
+        loader = _SAFE_LOADER(text)
+        try:
+            node = loader.get_single_node()
+            if not isinstance(node, yaml.MappingNode):
+                return None, error, None, content, 0
+            key_lines = {
+                key.value: key.start_mark.line + offset + 1
+                for key, _value in node.value
+                if isinstance(key, yaml.ScalarNode) and key.tag == "tag:yaml.org,2002:str"
+            }
+            data = loader.construct_document(node)
+        except (yaml.YAMLError, ValueError, RecursionError) as exc:
+            mark = getattr(exc, "problem_mark", None)
+            line = mark.line + offset + 1 if mark is not None else None
+            return None, error, line, content, 0
+        finally:
+            loader.dispose()
+        if not isinstance(data, dict):
+            return None, error, None, content, 0
+        self._grok_key_lines = key_lines
+        after_closing = end + 4
+        newline = content.find("\n", after_closing)
+        body_start = newline + 1 if newline >= 0 else after_closing
+        return data, None, None, content[body_start:], content[:body_start].count("\n")
+
+    def key_line(self, key: str) -> Optional[int]:
+        self._ensure_parsed()
+        return self._grok_key_lines.get(key)
+
+    def read_frontmatter_text(self) -> str:
+        self._ensure_parsed()
+        return self._grok_frontmatter_text
+
+    def line_map(self) -> Dict[str, int]:
+        self._ensure_parsed()
+        return dict(self._grok_key_lines)
 
 
 @dataclass(eq=False)

@@ -12,8 +12,10 @@ so it won't appear in the list of available agents.
 The `description` also helps the model decide when to delegate tasks to the
 subagent. While [`content-description-routing`](content-description-routing.md)
 evaluates whether the description provides clear routing context, this rule
-verifies that the required frontmatter fields exist so the agent registers
-cleanly.
+verifies that the required frontmatter fields exist and have scalar values.
+Grok accepts leading whitespace before the opening `---` and delimiter-line
+suffixes such as `--- # Agent metadata`. Their YAML fields and body retain
+file-relative locations for lint findings.
 
 Slash commands in `.grok/commands/*.md` do not require frontmatter; Grok
 automatically derives command names from their filenames.
@@ -26,10 +28,13 @@ automatically derives command names from their filenames.
 - Missing YAML frontmatter block.
 - Missing `name` key.
 - Missing `description` key.
+- A sequence or mapping in either required field.
 
-Both keys must be present. Grok accepts an empty value (e.g. `description: ""`)
-for basic registration, so description quality and guidance are checked
+Both keys must be present. Grok converts YAML scalars to strings here, including
+numbers, booleans, null and empty values. A list or mapping is rejected even
+when it contains a single string. Description quality and guidance are checked
 separately by [`content-description-routing`](content-description-routing.md).
+This rule does not validate every optional field accepted by the agent decoder.
 
 ## Examples
 
@@ -63,6 +68,8 @@ Read the migration and report anything the schema diff does not explain.
 
 - Add a YAML frontmatter block containing both `name` and `description` to
   each agent file under `.grok/agents/*.md`.
+- Replace a list or mapping in `name` or `description` with a scalar value.
+  Descriptions spanning several lines can use YAML `|` or `>` block scalars.
 - Phrase the `description` with actionable guidance on when the model should
   delegate to this agent (e.g., "Use when ...").
 - Optional metadata fields like `tools` and `model` are welcome and can be
