@@ -1151,7 +1151,12 @@ class Linter:
         """Fresh leaf-only refusal, retaining the selected path for reporting."""
         for path in (file_path, rename_from):
             if path is not None and safe_is_symlink(path):
-                return Path(os.path.abspath(path)), "symbolic link; edit its target directly"
+                remedy = (
+                    "remove, replace, or rename the symbolic link manually"
+                    if rename_from is not None
+                    else "edit its target directly"
+                )
+                return Path(os.path.abspath(path)), f"symbolic link; {remedy}"
         return None
 
     def _filter_violations(

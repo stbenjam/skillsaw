@@ -60,7 +60,7 @@ def test_symlink_metadata_preview_and_fix_agree(tmp_path, linked):
     if linked:
         for output in (preview.stdout, result.stdout):
             assert "Skipped 1 path(s):" in output
-            assert "[CLAUDE.md] symbolic link" in output
+            assert "[CLAUDE.md] symbolic link; edit its target directly" in output
             assert "Would fix" not in output and "Fixed " not in output
             assert "No auto-fixable" not in output
             assert "--- a/" not in output
@@ -281,7 +281,12 @@ def test_rename_proposal_metadata_tracks_both_endpoints(tmp_path, linked_source)
     assert suggested == []
     if linked_source:
         assert applied == []
-        assert [path for path, _ in linter.fix_skips] == [tmp_path / "alias.txt"]
+        assert linter.fix_skips == [
+            (
+                tmp_path / "alias.txt",
+                "symbolic link; remove, replace, or rename the symbolic link manually",
+            )
+        ]
         assert (tmp_path / "notes.txt").read_text() == "Original note.\n"
         assert not (tmp_path / "renamed.txt").exists()
     else:
@@ -290,15 +295,23 @@ def test_rename_proposal_metadata_tracks_both_endpoints(tmp_path, linked_source)
         assert (tmp_path / "renamed.txt").read_text() == "Updated note.\n"
 
 
-def test_write_boundary_reports_symlinked_rename_source(tmp_path):
+def test_write_boundary_reports_newly_symlinked_rename_source(tmp_path):
     linter = _alias_linter(tmp_path)
+    alias = tmp_path / "alias.txt"
+    alias.unlink()
+    alias.write_text("Original alias note.\n")
     _remaining, proposals = linter.fix()
     proposal = proposals[0]
     proposal.rename_from = proposal.file_path
     proposal.file_path = tmp_path / "renamed.txt"
+    # The proposal was eligible, but the source changed before application.
+    alias.unlink()
+    alias.symlink_to("notes.txt")
     skips = []
     assert Linter.apply_fixes([proposal], skips=skips) == []
-    assert [path for path, _ in skips] == [tmp_path / "alias.txt"]
+    assert skips == [
+        (alias, "symbolic link; remove, replace, or rename the symbolic link manually")
+    ]
     assert not proposal.file_path.exists()
     assert (tmp_path / "notes.txt").read_text() == "Original note.\n"
 
