@@ -214,8 +214,13 @@ class ContentMcpToolNameRule(Rule):
             for body_line, col, token, short in candidates:
                 ordinal = occurrences.get((body_line, token), 0)
                 occurrences[(body_line, token)] = ordinal + 1
-                fixable = content is not None and (
-                    file_span(
+                # A server may expose a short name that itself looks qualified.
+                # Another fix pass would then strip part of the actual tool name.
+                ambiguous_short = short.startswith("mcp__") and bool(self._short_name(short))
+                fixable = (
+                    not ambiguous_short
+                    and content is not None
+                    and file_span(
                         doc, content, doc.file_line(body_line), body_line, col, col + len(token)
                     )
                     is not None

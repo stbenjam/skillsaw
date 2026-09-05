@@ -7299,6 +7299,26 @@ class TestContentMcpToolNameSuggestGate:
         _run_fix(repo, "--suggest")
         assert _snapshot_contents(repo) == first
 
+    def test_ambiguous_short_name_is_diagnostic_only_across_suggest_runs(self, tmp_path):
+        repo = copy_fixture("content/mcp-tool-name-ambiguous", tmp_path)
+        path = repo / "CLAUDE.md"
+        before = path.read_text()
+        args = ("--rule", "content-mcp-tool-name")
+        initial = run_lint(repo, *args)
+        ours = violations(initial)
+        assert initial["rc"] == 1
+        assert [(item["line"], item["fixable"]) for item in ours] == [(3, False), (4, True)]
+
+        _run_fix(repo, "--suggest", *args)
+        expected = before.replace("mcp__internal__report__generate", "report__generate")
+        assert path.read_text() == expected
+        assert expected.count("\n") == before.count("\n")
+        remaining = run_lint(repo, *args)
+        assert [(item["line"], item["fixable"]) for item in violations(remaining)] == [(3, False)]
+        assert remaining["rc"] == 1
+        _run_fix(repo, "--suggest", *args)
+        assert path.read_text() == expected
+
 
 @pytest.mark.integration
 class TestClaudeMdAgentsImport:

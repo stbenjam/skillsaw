@@ -1,0 +1,5 @@
+version: "0.20.0"
+fail-on: warning
+rules:
+  content-mcp-tool-name:
+    enabled: true
