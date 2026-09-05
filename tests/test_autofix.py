@@ -954,10 +954,9 @@ class TestCommandRenameFix:
         assert fix.rename_from is None
 
     def test_case_only_rename(self, temp_dir):
-        """Case-only rename (e.g. MyCommand.md -> mycommand.md) must work
-        on both case-sensitive and case-insensitive filesystems."""
+        """A letter-case-only rename must leave one correctly named file."""
         content = "---\ndescription: test\n---\n"
-        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"MyCommand.md": content})
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"Deploy.md": content})
         context = RepositoryContext(plugin_dir)
         rule = CommandNamingRule()
 
@@ -972,9 +971,10 @@ class TestCommandRenameFix:
         assert len(applied) == 1
 
         commands_dir = plugin_dir / "commands"
-        # The kebab-case file must exist with correct content
-        assert (commands_dir / "my-command.md").exists()
-        assert (commands_dir / "my-command.md").read_text() == content
+        # Enumerate actual spelling: exists() alone can accept the old name
+        # on a case-insensitive filesystem.
+        assert [path.name for path in commands_dir.iterdir()] == ["deploy.md"]
+        assert (commands_dir / "deploy.md").read_text() == content
 
     def test_apply_fix_isolates_oserror(self, temp_dir):
         """One fix raising OSError must not prevent subsequent fixes."""
