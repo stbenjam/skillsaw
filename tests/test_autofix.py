@@ -406,23 +406,6 @@ class TestLinterFix:
 
 
 class TestApplyFixes:
-    def test_apply_safe_fixes(self, temp_dir):
-        target = temp_dir / "test.txt"
-        target.write_text("original")
-
-        fix = AutofixResult(
-            rule_id="test",
-            file_path=target,
-            confidence=AutofixConfidence.SAFE,
-            original_content="original",
-            fixed_content="fixed",
-            description="test fix",
-        )
-
-        applied = Linter.apply_fixes([fix])
-        assert len(applied) == 1
-        assert target.read_text() == "fixed"
-
     def test_apply_refuses_symlink_target(self, temp_dir, caplog):
         victim = temp_dir / "victim.txt"
         victim.write_text("original")

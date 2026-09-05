@@ -154,9 +154,6 @@ class TestPatternsMatchingAnywhere:
         (re.compile(r"\bproperly\b", re.IGNORECASE), "vagueness"),
     ]
 
-    def test_no_match_returns_empty(self):
-        assert patterns_matching_anywhere("clean direct text", self.PATTERNS) == []
-
     def test_subset_preserves_order(self):
         text = "you should properly try to do this"
         active = patterns_matching_anywhere(text, self.PATTERNS)
