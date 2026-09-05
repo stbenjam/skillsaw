@@ -174,17 +174,10 @@ class GrokPluginJsonValidRule(Rule):
             want_dir = grok.COMPONENT_PATHS[field][1]
             resolved: List[Path] = []
             for raw in declared:
-                if not raw:
-                    violations.append(
-                        self.violation(
-                            f"'{field}' declares an empty path",
-                            file_path=manifest,
-                            severity=Severity.WARNING,
-                        )
-                    )
-                    continue
-                reason = escape_reason(raw, root, "plugin root")
-                if reason:
+                target = plugin_dir / raw
+                contained = contained_resolve(target, root)
+                if contained is None:
+                    reason = escape_reason(raw, root, "plugin root")
                     violations.append(
                         self.violation(
                             f"'{field}': '{safe_display(raw)}' {reason}",
@@ -193,7 +186,6 @@ class GrokPluginJsonValidRule(Rule):
                         )
                     )
                     continue
-                target = plugin_dir / raw
                 if not safe_exists(target):
                     if check_paths_exist:
                         violations.append(
@@ -218,9 +210,7 @@ class GrokPluginJsonValidRule(Rule):
                         )
                     )
                     continue
-                contained = contained_resolve(target, root)
-                if contained is not None:
-                    resolved.append(contained)
+                resolved.append(contained)
 
             if check_overrides:
                 violations.extend(

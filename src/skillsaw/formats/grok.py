@@ -728,8 +728,10 @@ def grok_declared_paths(plugin_dir: Path, field: str, want_dir: bool) -> List[Pa
     found: List[Path] = []
     seen: Set[Path] = set()
     for item in candidates:
-        if not isinstance(item, str) or not item:
+        if not isinstance(item, str):
             continue
+        # An empty directory path names the plugin root. File fields still
+        # require a regular file below it.
         candidate = contained_resolve(plugin_dir / item, root)
         if candidate is None or candidate in seen:
             # Two spellings of one path are one component list, and every

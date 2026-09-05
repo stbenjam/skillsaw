@@ -69,7 +69,8 @@ when a typed-field error has already prevented the manifest from loading.
 **Warnings** — the plugin registers, but declared components may not load:
 
 - A declared `skills`, `commands`, `agents`, `hooks`, or `mcpServers` path that
-  is absolute, contains `..`, or resolves outside the plugin package.
+  resolves outside the plugin package. Contained absolute or parent-normalized
+  spellings remain valid.
 - A declared path that does not exist on disk.
 - A path pointing to the wrong resource type (e.g. specifying a file where a
   directory is expected, or vice versa).
@@ -159,3 +160,9 @@ rules:
 
 
 *Run `skillsaw explain grok-plugin-json-valid` to see this documentation and the rule's effective configuration in your terminal.*
+
+Plugin component paths follow canonical containment, independently of the
+marketplace source grammar. Contained paths such as `nested/../skills` remain
+valid, and an empty directory-field path names the plugin root. These paths
+still participate in override coverage; a path outside the plugin or a target
+of the wrong kind remains a warning.

@@ -206,10 +206,10 @@ def test_an_inline_hooks_object_is_not_a_path(temp_dir) -> None:
     assert check(repo) == []
 
 
-def test_an_empty_declared_path_warns(temp_dir) -> None:
+def test_an_empty_directory_path_names_the_plugin_root(temp_dir) -> None:
     repo = plugin_repo(temp_dir, "empty-path", {**MANIFEST, "skills": [""]})
 
-    assert at(check(repo), Severity.WARNING) == ["'skills' declares an empty path"]
+    assert at(check(repo), Severity.WARNING) == []
 
 
 # ── The override that replaces rather than extends ───────────────
