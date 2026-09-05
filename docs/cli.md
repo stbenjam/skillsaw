@@ -67,6 +67,8 @@ Create a local diagnostic bundle for a bug report
 | `-o`, `--output` | Bundle ZIP path (default: .skillsaw-feedback/ under the repository) |  |
 | `--message` | Short description of the problem to include in the bundle |  |
 | `--include` | Copy a repository-relative UTF-8 text file into the bundle verbatim (repeatable; review it for secrets yourself) |  |
+| `--max-file-bytes` | Maximum raw bytes per --include/--config file (positive integer; default: 4194304 / 4 MiB) | `4194304` |
+| `--max-total-bytes` | Maximum retained --include/--config bytes across distinct ZIP members (positive integer; default: 16777216 / 16 MiB) | `16777216` |
 | `--with-extensions` | Run custom and installed plugin rules in the diagnostic lint run |  |
 | `--json` | Print the bundle result as JSON for agents and automation |  |
 
