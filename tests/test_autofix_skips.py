@@ -1,0 +1,236 @@
+"""Policy skips preserve diagnostics, previews and independent eligible fixes."""
+
+import os
+
+import pytest
+
+from skillsaw.baseline import build_baseline
+from skillsaw.context import RepositoryContext
+from skillsaw.linter import Linter
+from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, Severity
+from tests.test_integration import copy_autofix_skip_repo
+
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="Requires ordinary POSIX symlinks")
+RULE = "content-unlinked-internal-reference"
+
+
+def _linter(repo, **kwargs):
+    return Linter(
+        RepositoryContext(repo), rule_ids={RULE}, no_custom_rules=True, no_plugins=True, **kwargs
+    )
+
+
+def test_proposal_generation_does_not_leak_symlink_fixability(tmp_path):
+    repo = copy_autofix_skip_repo(tmp_path)
+    remaining, proposals = _linter(repo).fix()
+    assert len(proposals) == 1
+    assert len(proposals[0].violations_fixed) == 3
+    assert proposals[0].confidence == AutofixConfidence.SAFE
+    assert all(
+        not v.fixable and v.fix_confidence is None
+        for v in [*remaining, *proposals[0].violations_fixed]
+    )
+    remaining, proposals = _linter(repo).fix(severity_threshold="error")
+    assert len(remaining) == 3 and proposals == []
+    assert all(not v.fixable and v.fix_confidence is None for v in remaining)
+
+
+def test_baselined_findings_do_not_become_skips(tmp_path):
+    repo = copy_autofix_skip_repo(tmp_path)
+    linter = _linter(repo)
+    visible = linter.run()
+    assert len(visible) == 3
+    baseline = build_baseline(visible, repo, "test")
+    baselined = _linter(repo, baseline=baseline)
+    assert baselined.fix_and_apply() == ([], [])
+    assert baselined.fix_skips == []
+    assert baselined.baseline_suppressed_count == 3
+
+
+class _AliasRule(Rule):
+    """Legacy rule: confidence is on results, not violation metadata."""
+
+    rule_id = "test-alias-proposals"
+    description = "Independent proposals for two names of one file"
+    result_confidence = AutofixConfidence.SAFE
+
+    def default_severity(self):
+        return Severity.WARNING
+
+    def check(self, context):
+        return [
+            self.violation("Update note", file_path=context.root_path / name)
+            for name in ("alias.txt", "notes.txt")
+        ]
+
+    def fix(self, context, violations):
+        return [
+            AutofixResult(
+                rule_id=self.rule_id,
+                file_path=v.file_path,
+                confidence=self.result_confidence,
+                original_content=v.file_path.read_text(),
+                fixed_content="Updated note.\n",
+                description="Update note",
+                violations_fixed=[v],
+            )
+            for v in violations
+        ]
+
+
+def _alias_linter(tmp_path):
+    (tmp_path / "notes.txt").write_text("Original note.\n")
+    (tmp_path / "alias.txt").symlink_to("notes.txt")
+    linter = Linter(RepositoryContext(tmp_path), no_custom_rules=True, no_plugins=True)
+    linter.rules = [_AliasRule()]
+    return linter
+
+
+def test_filter_reuses_symlink_status_only_within_one_call(tmp_path, monkeypatch):
+    import skillsaw.linter as module
+
+    linter = _alias_linter(tmp_path)
+    calls = []
+    original = module.safe_is_symlink
+
+    def record(path):
+        calls.append(path)
+        return original(path)
+
+    monkeypatch.setattr(module, "safe_is_symlink", record)
+
+    def findings():
+        return [
+            linter.rules[0].violation(
+                "Update note",
+                file_path=tmp_path / name,
+                fixable=True,
+                fix_confidence=AutofixConfidence.SAFE,
+            )
+            for name in ("alias.txt", "alias.txt", "notes.txt", "notes.txt")
+        ]
+
+    filtered = linter._filter_violations(findings())
+    assert calls == [tmp_path / "alias.txt", tmp_path / "notes.txt"]
+    assert [v.fixable for v in filtered] == [False, False, True, True]
+    assert [v.fix_confidence for v in filtered] == [
+        None,
+        None,
+        AutofixConfidence.SAFE,
+        AutofixConfidence.SAFE,
+    ]
+
+    (tmp_path / "alias.txt").unlink()
+    (tmp_path / "alias.txt").write_text("Independent note.\n")
+    calls.clear()
+    filtered = linter._filter_violations(findings())
+    assert calls == [tmp_path / "alias.txt", tmp_path / "notes.txt"]
+    assert all(v.fixable and v.fix_confidence == AutofixConfidence.SAFE for v in filtered)
+
+
+def test_skipped_alias_does_not_reserve_eligible_target(tmp_path):
+    linter = _alias_linter(tmp_path)
+    applied, suggested = linter.fix_and_apply()
+    assert [fix.file_path for fix in applied] == [tmp_path / "notes.txt"]
+    assert suggested == []
+    assert [path for path, _ in linter.fix_skips] == [tmp_path / "alias.txt"]
+    assert (tmp_path / "notes.txt").read_text() == "Updated note.\n"
+    assert (tmp_path / "alias.txt").is_symlink()
+
+
+def test_nonfixable_symlink_diagnostic_is_not_a_skip(tmp_path):
+    class DiagnosticRule(_AliasRule):
+        fix = Rule.fix
+
+    linter = _alias_linter(tmp_path)
+    linter.rules = [DiagnosticRule()]
+    assert len(linter.run()) == 2
+    assert linter.fix_and_apply() == ([], [])
+    assert linter.fix_skips == []
+
+
+def test_unselected_confidence_does_not_report_skips_or_unusable_suggestions(tmp_path):
+    linter = _alias_linter(tmp_path)
+    linter.rules[0].result_confidence = AutofixConfidence.SUGGEST
+    applied, suggested = linter.fix_and_apply()
+    assert applied == []
+    assert [fix.file_path for fix in suggested] == [tmp_path / "notes.txt"]
+    assert linter.fix_skips == []
+    assert (tmp_path / "notes.txt").read_text() == "Original note.\n"
+    applied, _ = linter.fix_and_apply(AutofixConfidence.SUGGEST)
+    assert [fix.file_path for fix in applied] == [tmp_path / "notes.txt"]
+    assert len(linter.fix_skips) == 1
+
+
+@pytest.mark.parametrize("linked_source", [False, True], ids=["regular-source", "linked-source"])
+def test_rename_proposal_metadata_tracks_both_endpoints(tmp_path, linked_source):
+    class RenameRule(_AliasRule):
+        def check(self, context):
+            source = context.root_path / "notes.txt"
+            if not source.exists():
+                return []
+            return [
+                self.violation(
+                    "Rename note",
+                    file_path=source,
+                    fixable=True,
+                    fix_confidence=AutofixConfidence.SAFE,
+                )
+            ]
+
+        def fix(self, context, violations):
+            proposal = super().fix(context, violations)[0]
+            proposal.rename_from = context.root_path / (
+                "alias.txt" if linked_source else "notes.txt"
+            )
+            proposal.file_path = context.root_path / "renamed.txt"
+            return [proposal]
+
+    linter = _alias_linter(tmp_path)
+    linter.rules = [RenameRule()]
+    remaining, proposals = linter.fix()
+    assert remaining == [] and len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal.confidence == AutofixConfidence.SAFE
+    assert len(proposal.violations_fixed) == 1
+    violation = proposal.violations_fixed[0]
+    assert violation.file_path == tmp_path / "notes.txt"
+    assert violation.fixable is (not linked_source)
+    assert violation.fix_confidence == (None if linked_source else AutofixConfidence.SAFE)
+    applied, suggested = linter.fix_and_apply()
+    assert suggested == []
+    if linked_source:
+        assert applied == []
+        assert linter.fix_skips == [
+            (
+                tmp_path / "alias.txt",
+                "symbolic link; remove, replace, or rename the symbolic link manually",
+            )
+        ]
+        assert (tmp_path / "notes.txt").read_text() == "Original note.\n"
+        assert not (tmp_path / "renamed.txt").exists()
+    else:
+        assert len(applied) == 1 and linter.fix_skips == []
+        assert not (tmp_path / "notes.txt").exists()
+        assert (tmp_path / "renamed.txt").read_text() == "Updated note.\n"
+
+
+def test_write_boundary_reports_newly_symlinked_rename_source(tmp_path):
+    linter = _alias_linter(tmp_path)
+    alias = tmp_path / "alias.txt"
+    alias.unlink()
+    alias.write_text("Original alias note.\n")
+    _remaining, proposals = linter.fix()
+    proposal = proposals[0]
+    proposal.rename_from = proposal.file_path
+    proposal.file_path = tmp_path / "renamed.txt"
+    # The proposal was eligible, but the source changed before application.
+    alias.unlink()
+    alias.symlink_to("notes.txt")
+    skips = []
+    assert Linter.apply_fixes([proposal], skips=skips) == []
+    assert skips == [
+        (alias, "symbolic link; remove, replace, or rename the symbolic link manually")
+    ]
+    assert not proposal.file_path.exists()
+    assert (tmp_path / "notes.txt").read_text() == "Original note.\n"

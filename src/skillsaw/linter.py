@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import inspect
 import logging
+import os
 import re
 import sys
 import warnings
@@ -1143,8 +1144,27 @@ class Linter:
             self._vendor_managed_cache[file_path] = cached
         return cached
 
+    @staticmethod
+    def _symlink_skip(
+        file_path: Optional[Path], rename_from: Optional[Path] = None
+    ) -> Optional[Tuple[Path, str]]:
+        """Fresh leaf-only refusal, retaining the selected path for reporting."""
+        for path in (file_path, rename_from):
+            if path is not None and safe_is_symlink(path):
+                remedy = (
+                    "remove, replace, or rename the symbolic link manually"
+                    if rename_from is not None
+                    else "edit its target directly"
+                )
+                return Path(os.path.abspath(path)), f"symbolic link; {remedy}"
+        return None
+
     def _filter_violations(
-        self, violations: List[RuleViolation], record_baseline: bool = True
+        self,
+        violations: List[RuleViolation],
+        record_baseline: bool = True,
+        *,
+        preserve_symlink_fixability: bool = False,
     ) -> List[RuleViolation]:
         """Filter violations by global excludes, per-rule excludes, and inline suppression.
 
@@ -1152,8 +1172,17 @@ class Linter:
         but stale/suppressed accounting is left untouched — used for the
         per-rule calls in :meth:`fix`, which would otherwise overwrite the
         accounting with only the last rule's view of the baseline.
+        ``preserve_symlink_fixability`` is private to proposal generation;
+        fix() masks that metadata before returning it to callers.
         """
         kept: List[RuleViolation] = []
+        symlink_status: Dict[Optional[Path], bool] = {}
+
+        def _is_symlink(file_path: Optional[Path]) -> bool:
+            if file_path not in symlink_status:
+                symlink_status[file_path] = self._symlink_skip(file_path) is not None
+            return symlink_status[file_path]
+
         for v in violations:
             if self._is_excluded(v):
                 logger.info(
@@ -1196,6 +1225,7 @@ class Linter:
                 self._is_on_external_source(v)
                 or self._is_vendor_managed(v.file_path)
                 or (v.block is not None and v.block.diagnostic_only)
+                or (not preserve_symlink_fixability and v.fixable and _is_symlink(v.file_path))
             ):
                 # Still reported — hostile third-party content is worth
                 # knowing about — but never advertised as fixable, because
@@ -1344,7 +1374,14 @@ class Linter:
                     continue
 
                 checked.extend(rule_violations)
-                visible = self._filter_violations(rule_violations, record_baseline=False)
+                # Some fixers use declared fixability to form their proposal.
+                # Keep it privately until the proposal supplies its confidence;
+                # public findings are masked again below.
+                visible = self._filter_violations(
+                    rule_violations,
+                    record_baseline=False,
+                    preserve_symlink_fixability=True,
+                )
 
                 # Diagnostic-only blocks never reach a fixer at all. Clearing
                 # their fixability metadata is presentation; a third-party rule's
@@ -1370,6 +1407,11 @@ class Linter:
                                 or not self._is_external_source_path(f.rename_from)
                             )
                         ]
+                        for fix in fixes:
+                            if self._symlink_skip(fix.file_path, fix.rename_from) is not None:
+                                for violation in fix.violations_fixed:
+                                    violation.fixable = False
+                                    violation.fix_confidence = None
                         all_fixes.extend(fixes)
                         fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
                         remaining = [v for v in visible if id(v) not in fixed_violations]
@@ -1380,6 +1422,11 @@ class Linter:
                         all_violations.extend(visible)
                 else:
                     all_violations.extend(visible)
+
+                for violation in visible:
+                    if violation.fixable and self._symlink_skip(violation.file_path) is not None:
+                        violation.fixable = False
+                        violation.fix_confidence = None
 
             _ = self.context.lint_tree
             all_violations.extend(self._lint_tree_error_violations())
@@ -1454,9 +1501,11 @@ class Linter:
         Returns:
             Tuple of (applied fixes, suggested-but-not-applied fixes).
         """
-        #: (fix, error) for every write that failed in this run; the CLI
+        #: (fix, error) for every write or follow-up that failed in this run; the CLI
         #: reports them and exits non-zero rather than claiming success.
         self.fix_failures: List[Tuple[AutofixResult, str]] = []
+        #: Selected paths refused by policy, separate from failed writes.
+        self.fix_skips: List[Tuple[Path, str]] = []
         from .rules.builtin.utils import invalidate_read_caches
 
         all_applied: List[AutofixResult] = []
@@ -1471,9 +1520,16 @@ class Linter:
             if not fixes:
                 break
 
-            applicable = [f for f in fixes if f.confidence in allowed]
-            suggested = [f for f in fixes if f.confidence not in allowed]
-            all_suggested.extend(suggested)
+            applicable = []
+            for fix in fixes:
+                skip = self._symlink_skip(fix.file_path, fix.rename_from)
+                if skip is not None:
+                    if fix.confidence in allowed:
+                        self.fix_skips.append(skip)
+                elif fix.confidence in allowed:
+                    applicable.append(fix)
+                else:
+                    all_suggested.append(fix)
 
             if not applicable:
                 break
@@ -1489,6 +1545,7 @@ class Linter:
                 confidence,
                 root_path=self.context.root_path,
                 failures=self.fix_failures,
+                skips=self.fix_skips,
             )
             all_applied.extend(applied)
 
@@ -1512,6 +1569,7 @@ class Linter:
             if not (has_conflicts or state_changed):
                 break
 
+        self.fix_skips = list(dict.fromkeys(self.fix_skips))
         return all_applied, all_suggested
 
     @staticmethod
@@ -1520,6 +1578,7 @@ class Linter:
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
         root_path: Optional[Path] = None,
         failures: Optional[List[Tuple[AutofixResult, str]]] = None,
+        skips: Optional[List[Tuple[Path, str]]] = None,
     ) -> List[AutofixResult]:
         """
         Write fix results to disk.
@@ -1530,10 +1589,11 @@ class Linter:
                         (SAFE = only safe,
                          SUGGEST = safe + suggest)
             root_path: Trusted repository boundary for atomic writes
-            failures: When given, every fix whose write failed is appended
-                      with the OS error text, so a caller can report it
-                      instead of announcing success over a file it never
-                      changed
+            failures: When given, every fix whose write or post-apply step
+                      failed is appended with the OS error text. A primary edit
+                      whose follow-up failed remains in the applied results,
+                      with an explicit partial-failure message here.
+            skips: Optional collector for selected path/policy refusals
 
         Returns:
             List of fixes that were actually applied
@@ -1550,10 +1610,11 @@ class Linter:
             # A target may be swapped for a symlink after discovery or
             # between fixed-point passes. Re-check at the write boundary so
             # autofix never follows it outside the repository.
-            if safe_is_symlink(fix.file_path) or (
-                fix.rename_from is not None and safe_is_symlink(fix.rename_from)
-            ):
-                logger.warning("Skipping autofix for symlinked path: %s", fix.file_path)
+            skip = Linter._symlink_skip(fix.file_path, fix.rename_from)
+            if skip is not None:
+                logger.warning("Skipping autofix for symlinked path: %s", skip[0])
+                if skips is not None:
+                    skips.append(skip)
                 continue
 
             try:
@@ -1614,6 +1675,8 @@ class Linter:
                         fix.file_path,
                         exc,
                     )
+                    if failures is not None:
+                        failures.append((fix, f"File edit applied, but follow-up failed: {exc}"))
 
             applied.append(fix)
 

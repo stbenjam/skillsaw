@@ -7012,7 +7012,7 @@ class TestUnlinkedInternalReferenceAutofix:
             repo.chmod(0o755)
 
         assert result.returncode == 1
-        assert "Failed to apply 1 fix(es)" in result.stderr
+        assert "Failed to complete 1 fix(es)" in result.stderr
         assert "CLAUDE.md" in result.stderr
         assert "No auto-fixable violations found" not in result.stdout
         assert (repo / "CLAUDE.md").read_text() == before
@@ -7537,6 +7537,262 @@ def _snapshot_contents(repo: Path) -> Dict[str, str]:
         except (UnicodeDecodeError, OSError):
             pass
     return contents
+
+
+def copy_autofix_skip_repo(tmp_path, name="repo", *, linked=True):
+    repo = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path / name)
+    if linked:
+        (repo / "CLAUDE.md").rename(repo / "instructions.txt")
+        (repo / "CLAUDE.md").symlink_to("instructions.txt")
+    return repo
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(os.name == "nt", reason="Requires ordinary POSIX symlinks")
+class TestAutofixSkips:
+    """Policy skips preserve diagnostics, previews and independent eligible fixes."""
+
+    @pytest.mark.parametrize("kind", ["file", "directory", "dangling"])
+    @pytest.mark.parametrize("dry_run", [False, True], ids=["apply", "preview"])
+    def test_explicit_leaf_symlinks_stop_before_resolution(
+        self, tmp_path, monkeypatch, kind, dry_run
+    ):
+        from skillsaw.cli import _fix
+
+        repo = copy_autofix_skip_repo(tmp_path, linked=False)
+        target = repo if kind == "directory" else repo / "CLAUDE.md"
+        if kind == "dangling":
+            target = repo / "missing.md"
+        alias = tmp_path / "selected-link"
+        alias.symlink_to(target, target_is_directory=kind == "directory")
+        original = (repo / "CLAUDE.md").read_bytes()
+        resolver = _fix._resolve_lint_paths
+
+        def guarded_resolver(paths):
+            assert paths == [], "explicit alias reached path resolution"
+            return resolver(paths)
+
+        def unexpected_config(*args, **kwargs):
+            pytest.fail("all-skipped selections should not load repository configuration")
+
+        monkeypatch.setattr(_fix, "_resolve_lint_paths", guarded_resolver)
+        monkeypatch.setattr(_fix, "load_config", unexpected_config)
+        result = run_cli(["fix", alias, *(["--dry-run"] if dry_run else [])])
+        assert result.returncode == 0, result.stderr
+        assert "Skipped 1 path(s):" in result.stdout
+        assert f"[{alias}] symbolic link" in result.stdout
+        assert "Fixed " not in result.stdout and "Would fix" not in result.stdout
+        assert "No auto-fixable" not in result.stdout
+        assert ("dry-run — no files were modified" in result.stdout) is dry_run
+        assert alias.is_symlink()
+        assert (repo / "CLAUDE.md").read_bytes() == original
+
+    @pytest.mark.parametrize("dry_run", [False, True], ids=["apply", "preview"])
+    def test_explicit_alias_keeps_independently_selected_target(
+        self, tmp_path, monkeypatch, dry_run
+    ):
+        from skillsaw.cli import _fix
+
+        repo = copy_autofix_skip_repo(tmp_path, linked=False)
+        alias = tmp_path / "selected-link"
+        alias.symlink_to(repo, target_is_directory=True)
+        original = (repo / "CLAUDE.md").read_bytes()
+        resolver = _fix._resolve_lint_paths
+
+        def guarded_resolver(paths):
+            assert paths == [repo], "alias identity must not enter normalized-root deduplication"
+            return resolver(paths)
+
+        monkeypatch.setattr(_fix, "_resolve_lint_paths", guarded_resolver)
+        result = run_cli(
+            [
+                "fix",
+                alias,
+                repo,
+                "--rule",
+                "content-unlinked-internal-reference",
+                "--no-custom-rules",
+                "--no-plugins",
+                *(["--dry-run"] if dry_run else []),
+            ]
+        )
+        assert result.returncode == 0, result.stderr
+        assert ("Would fix 1 issue(s):" if dry_run else "Fixed 1 issue(s):") in result.stdout
+        assert f"[{repo / 'CLAUDE.md'}]" in result.stdout
+        assert f"[{alias}] symbolic link" in result.stdout
+        assert "Skipped 1 path(s):" in result.stdout
+        assert alias.is_symlink()
+        assert ((repo / "CLAUDE.md").read_bytes() == original) is dry_run
+
+    @pytest.mark.parametrize("error", ["missing", "rule-conflict"])
+    def test_explicit_skip_preserves_independent_input_errors(self, tmp_path, monkeypatch, error):
+        from skillsaw.cli import _fix
+
+        alias = tmp_path / "selected-link"
+        alias.symlink_to(tmp_path / "missing-target")
+        extra = (
+            [tmp_path / "missing-input"]
+            if error == "missing"
+            else ["--rule", "agentskill-name", "--skip-rule", "agentskill-name"]
+        )
+
+        def unexpected_resolver(paths):
+            pytest.fail("invalid inputs should stop before path resolution")
+
+        monkeypatch.setattr(_fix, "_resolve_lint_paths", unexpected_resolver)
+        result = run_cli(["fix", alias, *extra])
+        assert result.returncode == 1
+        assert ("Path not found" if error == "missing" else "cannot be combined") in result.stderr
+        assert "Fixed " not in result.stdout and "Would fix" not in result.stdout
+        assert alias.is_symlink()
+
+    rule_id = "content-unlinked-internal-reference"
+
+    @pytest.mark.parametrize("linked", [False, True], ids=["regular", "symlink"])
+    def test_symlink_metadata_preview_and_fix_agree(self, tmp_path, linked):
+        repo = copy_autofix_skip_repo(tmp_path, linked=linked)
+        path = repo / "CLAUDE.md"
+        original = path.read_bytes()
+        report = run_cli(
+            [
+                "lint",
+                repo,
+                "--rule",
+                self.rule_id,
+                "--format",
+                "json",
+                "--verbose",
+                "--no-custom-rules",
+                "--no-plugins",
+            ]
+        )
+        assert report.returncode == 0, report.stderr
+        findings = json.loads(report.stdout)["violations"]
+        assert len(findings) == 3
+        assert {v["file_path"] for v in findings} == {"CLAUDE.md"}
+        assert all(v["fixable"] is (not linked) for v in findings)
+        assert all(v.get("fix_confidence") == (None if linked else "safe") for v in findings)
+
+        preview = _run_fix(
+            repo, "--rule", self.rule_id, "--dry-run", "--no-custom-rules", "--no-plugins"
+        )
+        assert preview.returncode == 0, preview.stderr
+        assert path.read_bytes() == original
+        assert "dry-run — no files were modified" in preview.stdout
+        result = _run_fix(repo, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins")
+        assert result.returncode == 0, result.stderr
+        if linked:
+            for output in (preview.stdout, result.stdout):
+                assert "Skipped 1 path(s):" in output
+                assert "[CLAUDE.md] symbolic link; edit its target directly" in output
+                assert "Would fix" not in output and "Fixed " not in output
+                assert "No auto-fixable" not in output
+                assert "--- a/" not in output
+            assert path.is_symlink()
+            assert path.read_bytes() == original
+        else:
+            assert "Would fix 1 issue(s)" in preview.stdout
+            assert "Fixed 1 issue(s)" in result.stdout
+            assert "Skipped" not in result.stdout
+            assert path.read_bytes() != original
+            assert path.read_bytes().count(b"\n") == original.count(b"\n")
+            assert b"[docs/guide.md](docs/guide.md)" in path.read_bytes()
+            clean = run_cli(
+                [
+                    "lint",
+                    repo,
+                    "--rule",
+                    self.rule_id,
+                    "--format",
+                    "json",
+                    "--verbose",
+                    "--no-custom-rules",
+                    "--no-plugins",
+                ]
+            )
+            assert clean.returncode == 0, clean.stderr
+            assert json.loads(clean.stdout)["violations"] == []
+        after = path.read_bytes()
+        repeated = _run_fix(repo, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins")
+        assert repeated.returncode == 0, repeated.stderr
+        assert path.read_bytes() == after
+
+    def test_hidden_and_suppressed_findings_do_not_become_skips(self, tmp_path):
+        repo = copy_autofix_skip_repo(tmp_path)
+        (repo / ".skillsaw.yaml").write_text(f"rules:\n  {self.rule_id}:\n    severity: info\n")
+        hidden = _run_fix(repo, "--no-custom-rules", "--no-plugins")
+        assert hidden.returncode == 0, hidden.stderr
+        assert "Skipped" not in hidden.stdout
+        visible = _run_fix(repo, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins")
+        assert visible.returncode == 0, visible.stderr
+        assert "Skipped 1 path(s):" in visible.stdout
+
+        target = repo / "instructions.txt"
+        target.write_text(f"<!-- skillsaw-disable {self.rule_id} -->\n" + target.read_text())
+        suppressed = _run_fix(repo, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins")
+        assert suppressed.returncode == 0, suppressed.stderr
+        assert "Skipped" not in suppressed.stdout
+
+    def test_two_roots_keep_distinct_lexical_skip_paths(self, tmp_path):
+        first = copy_autofix_skip_repo(tmp_path, "first")
+        second = copy_autofix_skip_repo(tmp_path, "second")
+        result = run_cli(
+            ["fix", first, second, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins"]
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Skipped 2 path(s):" in result.stdout
+        assert f"[{first / 'CLAUDE.md'}] symbolic link" in result.stdout
+        assert f"[{second / 'CLAUDE.md'}] symbolic link" in result.stdout
+
+    def test_rename_followup_retains_and_deduplicates_skips(self, tmp_path, monkeypatch):
+        from skillsaw.linter import Linter
+
+        repo = copy_autofix_skip_repo(tmp_path)
+        shutil.copytree(FIXTURES / "autofix/fixable-accuracy-name/My_Skill", repo / "handoff")
+        calls = []
+        original = Linter.fix_and_apply
+
+        def record(self, *args, **kwargs):
+            result = original(self, *args, **kwargs)
+            calls.append(list(self.fix_skips))
+            return result
+
+        monkeypatch.setattr(Linter, "fix_and_apply", record)
+        result = _run_fix(
+            repo,
+            "--rule",
+            self.rule_id,
+            "--rule",
+            "agentskill-name",
+            "--no-custom-rules",
+            "--no-plugins",
+        )
+        assert result.returncode == 0, result.stderr
+        assert len(calls) == 2 and all(calls)
+        assert "name: handoff" in (repo / "handoff/SKILL.md").read_text()
+        assert "Skipped 1 path(s):" in result.stdout
+        assert result.stdout.count("[CLAUDE.md] symbolic link") == 1
+
+    def test_write_failure_still_fails_with_policy_skips(self, tmp_path, monkeypatch):
+        import skillsaw.linter as module
+
+        linked = copy_autofix_skip_repo(tmp_path, "linked")
+        regular = copy_autofix_skip_repo(tmp_path, "regular", linked=False)
+        original = (regular / "CLAUDE.md").read_bytes()
+
+        def refused(*args, **kwargs):
+            raise OSError("Test write refusal")
+
+        monkeypatch.setattr(module, "write_text_preserving", refused)
+        result = run_cli(
+            ["fix", linked, regular, "--rule", self.rule_id, "--no-custom-rules", "--no-plugins"]
+        )
+        assert result.returncode == 1
+        assert "Skipped 1 path(s):" in result.stdout
+        assert "Failed to complete 1 fix(es)" in result.stderr
+        assert "Test write refusal" in result.stderr
+        assert "Fixed " not in result.stdout and "No auto-fixable" not in result.stdout
+        assert (regular / "CLAUDE.md").read_bytes() == original
 
 
 @pytest.mark.integration
@@ -9015,6 +9271,86 @@ class TestRenameRefsAutofix:
         r = run_lint(repo)
         stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
         assert stale == [], f"rename-refs violations remain after fix: {stale}"
+
+    @pytest.mark.parametrize(
+        "cleanup_failure",
+        [
+            pytest.param(
+                "symlink",
+                marks=pytest.mark.skipif(
+                    os.name == "nt", reason="Requires ordinary POSIX symlinks"
+                ),
+            ),
+            "write-refusal",
+        ],
+    )
+    def test_optional_metadata_cleanup_failure_preserves_findings(
+        self, tmp_path, monkeypatch, cleanup_failure
+    ):
+        from skillsaw.rules.builtin.agentskills import _helpers, rename_refs
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins")
+        args = ["--rule", "agentskill-rename-refs", "--no-custom-rules", "--no-plugins"]
+        expected = run_lint(repo, *args)
+        assert expected["rc"] == 0, expected["stderr"]
+        assert [(v["file_path"], v["line"]) for v in violations(expected)] == [
+            ("CLAUDE.md", 5),
+            ("CLAUDE.md", 7),
+            ("CLAUDE.md", 12),
+        ]
+        metadata = repo / _helpers.RENAMES_MANIFEST
+        active = json.loads(metadata.read_text())["renames"]
+        original = (
+            json.dumps({"renames": [*active, {"old": "retired-entry", "new": "current-entry"}]})
+            + "\n"
+        ).encode()
+        metadata.write_bytes(original)
+        if cleanup_failure == "symlink":
+            saved = repo / "saved-renames.json"
+            metadata.rename(saved)
+            metadata.symlink_to(saved.name)
+
+        attempts = []
+        write = rename_refs._write_renames_manifest
+
+        def cleanup(root, remaining):
+            assert root == repo
+            attempts.append(remaining)
+            if cleanup_failure == "write-refusal":
+                raise OSError("Optional cleanup refused")
+            write(root, remaining)
+
+        monkeypatch.setattr(rename_refs, "_write_renames_manifest", cleanup)
+        actual = run_lint(repo, *args)
+        assert actual["rc"] == 0, actual["stderr"]
+        assert violations(actual) == violations(expected)
+        assert attempts == [active]
+        assert metadata.is_symlink() is (cleanup_failure == "symlink")
+        assert metadata.read_bytes() == original
+
+    def test_metadata_failure_reports_applied_edit_and_exits_nonzero(self, tmp_path, monkeypatch):
+        from skillsaw.rules.builtin.agentskills import _helpers
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        metadata = repo / _helpers.RENAMES_MANIFEST
+        original = b'{"renames": [{"old": "earlier", "new": "current"}]}\n'
+        metadata.write_bytes(original)
+
+        def refuse_metadata(path, data, *, root):
+            assert path == metadata and root == repo
+            raise OSError("Metadata write refused")
+
+        monkeypatch.setattr(_helpers, "write_bytes_atomic", refuse_metadata)
+        result = run_cli(
+            ["fix", repo, "--rule", "agentskill-name", "--no-custom-rules", "--no-plugins"]
+        )
+
+        assert result.returncode == 1
+        assert "Fixed 1 issue(s)" in result.stdout
+        assert "File edit applied, but follow-up failed: Metadata write refused" in result.stderr
+        assert "name: data-parser-v2" in (repo / "data-parser-v2/SKILL.md").read_text()
+        assert metadata.read_bytes() == original
 
     def test_dry_run_is_side_effect_free(self, tmp_path):
         """``fix --dry-run`` must not write the renames manifest or modify any

@@ -26,22 +26,35 @@ def _rel(path, root):
 
 
 def _run_fix(args):
-    missing = [p for p in args.path if not p.exists()]
-    for p in missing:
-        print(f"Error: Path not found: {p}", file=sys.stderr)
-    if missing:
-        sys.exit(1)
-
-    paths = _resolve_lint_paths(args.path)
-
-    config, _config_path = load_config(args, paths[0])
-    severity_threshold = resolve_fix_level(args, config)
-
     rule_ids = set(args.rule_ids) if args.rule_ids else None
     skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
     if rule_ids and skip_rule_ids:
         print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
         sys.exit(1)
+
+    # Resolving a named leaf symlink erases the identity needed by the
+    # autofix policy. Admit inputs before resolving them, including dangling
+    # links and directory links, while retaining independently named roots.
+    admitted = []
+    input_skips = {}
+    for path in args.path:
+        skip = Linter._symlink_skip(path)
+        if skip is None:
+            admitted.append(path)
+        else:
+            input_skips.setdefault(skip, skip[0].parent)
+
+    missing = [p for p in admitted if not p.exists()]
+    for p in missing:
+        print(f"Error: Path not found: {p}", file=sys.stderr)
+    if missing:
+        sys.exit(1)
+
+    paths = _resolve_lint_paths(admitted)
+
+    if paths:
+        config, _config_path = load_config(args, paths[0])
+        severity_threshold = resolve_fix_level(args, config)
 
     dry_run = getattr(args, "dry_run", False)
     confidence = AutofixConfidence.SUGGEST if args.suggest else AutofixConfidence.SAFE
@@ -49,6 +62,7 @@ def _run_fix(args):
     applied = []
     suggested = []
     failed = []
+    skipped = dict(input_skips)
     deprecation_messages = []
     for fix_path in paths:
         context = RepositoryContext(
@@ -83,6 +97,7 @@ def _run_fix(args):
         # The rename pass below replaces the linter; keep the first pass's
         # failed writes or a partial fix could still report success.
         path_failures = list(linter.fix_failures)
+        path_skips = list(linter.fix_skips)
 
         if not dry_run and any(f.rule_id == "agentskill-name" for f in path_applied):
             context = RepositoryContext(
@@ -105,10 +120,13 @@ def _run_fix(args):
             path_applied.extend(rename_applied)
             path_suggested.extend(rename_suggested)
             path_failures.extend(linter.fix_failures)
+            path_skips.extend(linter.fix_skips)
 
         applied.extend((f, context.root_path) for f in path_applied)
         suggested.extend((f, context.root_path) for f in path_suggested)
         failed.extend((f, error, context.root_path) for f, error in path_failures)
+        for path, reason in path_skips:
+            skipped.setdefault((path, reason), context.root_path)
 
         # fix output only lists fixes, so the deprecation notices carried in
         # the violations list would otherwise never reach the user.
@@ -127,7 +145,7 @@ def _run_fix(args):
     # Multi-root runs keep absolute paths — the same relative name in two
     # repos (e.g. CLAUDE.md) would be ambiguous.
     def _display(file_path, root):
-        return _rel(file_path, root) if len(paths) == 1 else file_path
+        return _rel(file_path, root) if len(paths) == 1 and not input_skips else file_path
 
     if applied:
         label = "Would fix" if dry_run else "Fixed"
@@ -153,7 +171,7 @@ def _run_fix(args):
                     else:
                         print(f"      {line}")
                 print(f"      {c['dim']}{'─' * 40}{c['reset']}")
-    elif not failed:
+    elif not failed and not skipped:
         if suggested:
             print("No safe fixes found.")
         else:
@@ -166,17 +184,21 @@ def _run_fix(args):
         print("\nRun `skillsaw fix --suggest` to apply suggested fixes.")
         print("Run `skillsaw fix --suggest --dry-run` to preview changes.")
 
-    if dry_run and applied:
+    if skipped:
+        print(f"\nSkipped {len(skipped)} path(s):")
+        for (path, reason), root in skipped.items():
+            print(f"  - [{_display(path, root)}] {reason}")
+
+    if dry_run and (applied or skipped):
         print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
 
     if applied and not dry_run:
         print("\nRun `skillsaw lint` to see remaining issues.")
 
     if failed:
-        # A write that failed is not a fix that was applied. Say so, and
-        # exit non-zero: "No auto-fixable violations found." over a
-        # read-only tree was a lie the exit code agreed with.
-        print(f"\n{c['red']}Failed to apply {len(failed)} fix(es):{c['reset']}", file=sys.stderr)
+        # Primary writes can fail, or a supporting write can fail after the
+        # primary edit applied. Both need a visible nonzero outcome.
+        print(f"\n{c['red']}Failed to complete {len(failed)} fix(es):{c['reset']}", file=sys.stderr)
         for fix, error, root in failed:
             print(
                 f"  ✗ [{_display(fix.file_path, root)}] {fix.description}: {error}", file=sys.stderr
