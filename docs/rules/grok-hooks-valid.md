@@ -168,6 +168,13 @@ reported in the checked subset. Extended-mode (`x`) patterns are left
 unresolved because comments change tokenization. No finding is a complete
 Rust regex validation guarantee.
 
+## Numeric timeouts
+
+Write a timeout as an unsigned integer token, such as `0` or `30`. Grok
+rejects literal `-0`, decimal/exponent forms such as `0.0` and `0e0`, and
+integers above `18446744073709551615`. A wrong timeout type prevents the
+whole hooks file from loading.
+
 ## Configuration
 
 ```yaml
