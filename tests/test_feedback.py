@@ -1850,10 +1850,15 @@ class TestFeedbackAttachmentBudgets:
     def test_reads_obey_remaining_total_even_below_file_limit(self, attachment_repo, monkeypatch):
         repo, lint_calls = attachment_repo
         original_open = Path.open
-        reads = []
+        read_bytes = {"note.md": 0, "details.md": 0}
+        limits = {"note.md": 11, "details.md": 3}
+        requests = []
+        # Four-byte chunks split the UTF-8 bytes of é across reads in the tiny fixture.
+        monkeypatch.setattr(_feedback, "_SELECTED_FILE_CHUNK_BYTES", 4)
 
         class RecordingReader:
-            def __init__(self, stream):
+            def __init__(self, path, stream):
+                self.path = path
                 self.stream = stream
 
             def __enter__(self):
@@ -1863,14 +1868,18 @@ class TestFeedbackAttachmentBudgets:
                 self.stream.close()
 
             def read(self, size):
-                reads.append(size)
-                assert 0 < size <= 12
-                return self.stream.read(size)
+                name = self.path.name
+                assert 0 < size <= 4
+                assert size <= limits[name] + 1 - read_bytes[name]
+                requests.append(size)
+                data = self.stream.read(size)
+                read_bytes[name] += len(data)
+                return data
 
         def recording_open(path, mode="r", *args, **kwargs):
             stream = original_open(path, mode, *args, **kwargs)
             if mode == "rb" and path in (repo / "note.md", repo / "details.md"):
-                return RecordingReader(stream)
+                return RecordingReader(path, stream)
             return stream
 
         monkeypatch.setattr(Path, "open", recording_open)
@@ -1890,38 +1899,57 @@ class TestFeedbackAttachmentBudgets:
         )
         assert result.returncode == 1
         assert "--max-total-bytes" in result.stderr
-        assert reads == [12, 4]
+        assert read_bytes == {"note.md": 8, "details.md": 4}
+        assert len(requests) > 2
         assert lint_calls == []
         assert not (repo / ".skillsaw-feedback").exists()
 
-    def test_unrepresentable_read_limit_stops_before_open(self, attachment_repo, monkeypatch):
+    def test_large_limits_use_bounded_reads(self, attachment_repo, monkeypatch):
         repo, lint_calls = attachment_repo
+        expected_bytes = (repo / "note.md").read_bytes()
         original_open = Path.open
+        requests = []
 
-        def guarded_open(path, mode="r", *args, **kwargs):
+        class BoundedReader:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.stream.close()
+
+            def read(self, size):
+                # Check before delegating: even a broken implementation never
+                # submits a huge request to the real eight-byte fixture file.
+                assert 0 < size <= 64 * 1024
+                requests.append(size)
+                return self.stream.read(size)
+
+        def bounded_open(path, mode="r", *args, **kwargs):
+            stream = original_open(path, mode, *args, **kwargs)
             if path == repo / "note.md" and mode == "rb":
-                pytest.fail("unrepresentable read count reached the selected file")
-            return original_open(path, mode, *args, **kwargs)
+                return BoundedReader(stream)
+            return stream
 
-        monkeypatch.setattr(Path, "open", guarded_open)
+        monkeypatch.setattr(Path, "open", bounded_open)
         result = run_cli(
             [
                 "feedback",
                 repo,
                 "--include",
                 "note.md",
+                "--json",
                 "--max-file-bytes",
-                sys.maxsize,
+                sys.maxsize + 1,
                 "--max-total-bytes",
-                sys.maxsize,
+                sys.maxsize + 1,
             ]
         )
-        assert result.returncode == 1
-        assert "note.md" in result.stderr
-        assert "platform's read range" in result.stderr
-        assert "--max-file-bytes or --max-total-bytes" in result.stderr
-        assert lint_calls == []
-        assert not (repo / ".skillsaw-feedback").exists()
+        assert _feedback_members(result)["included/note.md"] == expected_bytes
+        assert requests
+        assert len(lint_calls) == 1
 
     @pytest.mark.parametrize("large_option", ["--max-file-bytes", "--max-total-bytes"])
     def test_small_effective_limit_accepts_large_override(self, attachment_repo, large_option):

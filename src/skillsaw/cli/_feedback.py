@@ -44,6 +44,7 @@ _FEEDBACK_EMAIL = "stephen@bitbin.de"
 _GPG_KEY_URL = "https://github.com/stbenjam.gpg"
 _BUNDLE_SCHEMA_VERSION = 1
 _LINT_TIMEOUT_SECONDS = 120
+_SELECTED_FILE_CHUNK_BYTES = 64 * 1024
 _IGNORED_CONFIG_NOTICE = (
     "The diagnostic lint ran, but its stdout and stderr were withheld because the "
     "auto-discovered config is excluded by an ignore file. Copy a reviewed config to "
@@ -678,16 +679,16 @@ def _read_selected_file(
     remaining_bytes: int,
     max_total_bytes: int,
 ) -> bytes:
-    """Read a guarded selection with one overflow byte, preserving its raw text."""
+    """Read in small chunks, retaining at most one byte beyond the selected limit."""
     limit = min(max_file_bytes, remaining_bytes)
-    if limit >= sys.maxsize:
-        raise ValueError(
-            f"{label}: selected-file byte limits exceed this platform's read range; "
-            "lower --max-file-bytes or --max-total-bytes"
-        )
+    data = bytearray()
     try:
         with path.open("rb") as stream:
-            data = stream.read(limit + 1)
+            while len(data) <= limit:
+                chunk = stream.read(min(_SELECTED_FILE_CHUNK_BYTES, limit + 1 - len(data)))
+                if not chunk:
+                    break
+                data.extend(chunk)
     except OSError as error:
         raise ValueError(f"Could not read {label}") from error
     if len(data) > limit:
@@ -704,7 +705,7 @@ def _read_selected_file(
         data.decode("utf-8")
     except UnicodeDecodeError as error:
         raise ValueError(f"Could not read {label}: expected UTF-8 text") from error
-    return data
+    return bytes(data)
 
 
 def _run_diagnostic_lint(
