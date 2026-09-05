@@ -364,7 +364,13 @@ class FileCache:
                 # fall back to the unresolved path so caching can proceed without
                 # raising during key lookup.
                 resolved = file_path
-            self._resolved[file_path] = resolved
+            # Aliases can grow independently of the cached-result count.
+            # Bound their memo separately without discarding parsed values.
+            if self._maxsize > 0:
+                with self._lock:
+                    if len(self._resolved) >= self._maxsize:
+                        self._resolved.clear()
+                    self._resolved[file_path] = resolved
         return resolved
 
     def cached(self, func: Callable) -> Callable:
