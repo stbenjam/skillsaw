@@ -167,8 +167,14 @@ you!
   </tr>
   <tr>
     <td width="25%"><a href="https://github.com/skyth3r"><code>@skyth3r</code></a></td>
+    <td width="25%"><a href="https://github.com/stbenjam"><code>@stbenjam</code></a></td>
     <td width="25%"><a href="https://github.com/tchughesiv"><code>@tchughesiv</code></a></td>
     <td width="25%"><a href="https://github.com/tyraziel"><code>@tyraziel</code></a></td>
+  </tr>
+  <tr>
+    <td width="25%"><a href="https://github.com/zerocodefast"><code>@zerocodefast</code></a></td>
+    <td width="25%"></td>
+    <td width="25%"></td>
     <td width="25%"></td>
   </tr>
 </table>

@@ -1635,8 +1635,7 @@ class Linter:
                     # the same inode even when their names differ in casing.
                     # Path.rename() handles this correctly, but we must not skip
                     # a case-only rename via the ``dst.exists()`` guard.
-                    same_file = (safe_resolve(src) or src) == (safe_resolve(dst) or dst)
-                    if dst.exists() and not same_file:
+                    if dst.exists() and not src.samefile(dst):
                         continue
                     if root_path is None:
                         src.rename(dst)

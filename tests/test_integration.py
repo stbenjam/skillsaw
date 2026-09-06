@@ -7539,6 +7539,25 @@ def _snapshot_contents(repo: Path) -> Dict[str, str]:
     return contents
 
 
+@pytest.mark.integration
+def test_case_only_command_rename(tmp_path):
+    repo = copy_fixture("autofix/case-only-command", tmp_path)
+    commands = repo / "commands"
+    original = (commands / "Deploy.md").read_bytes()
+    args = ["fix", repo, "--rule", "claude-command-naming", "--suggest"]
+
+    result = run_cli(args)
+    assert result.returncode == 0, result.stderr
+    assert [path.name for path in commands.iterdir()] == ["deploy.md"]
+    assert (commands / "deploy.md").read_bytes() == original
+    assert violations(run_lint(repo, "--rule", "claude-command-naming")) == []
+
+    second = run_cli(args)
+    assert second.returncode == 0, second.stderr
+    assert [path.name for path in commands.iterdir()] == ["deploy.md"]
+    assert (commands / "deploy.md").read_bytes() == original
+
+
 def copy_autofix_skip_repo(tmp_path, name="repo", *, linked=True):
     repo = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path / name)
     if linked:

@@ -118,7 +118,7 @@ as the action. Set `version` to install a specific PyPI release instead:
 ```yaml
 - uses: stbenjam/skillsaw@v0
   with:
-    version: '0.19.0'
+    version: '0.20.0'
 ```
 
 ### Outputs
