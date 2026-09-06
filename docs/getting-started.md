@@ -25,10 +25,15 @@ fingerprinting works and configuration options.
 
 ## :sparkles: Onboard with AI
 
-!!! tip "Skip the manual setup — let your AI coding agent do it all"
+!!! tip "Skip the manual setup - paste the below into your tool of choice"
 
-    The **`skillsaw-onboard`** skill walks your agent through the full
-    adoption flow in one interactive session.
+    ```text
+    Read and follow the instructions at
+    https://raw.githubusercontent.com/stbenjam/skillsaw/refs/heads/main/skills/skillsaw-onboard/SKILL.md
+    to onboard this repo to skillsaw.
+    ```
+
+Or install the plugin globally for regular use (recommended):
 
 === "Claude Code"
 
@@ -47,19 +52,6 @@ fingerprinting works and configuration options.
     ```
 
     Start a new Codex session, then invoke **`$skillsaw-onboard`**.
-
-=== "Other AI coding agents"
-
-    Paste this into your coding agent:
-
-    ```
-    Read and follow the instructions at
-    https://raw.githubusercontent.com/stbenjam/skillsaw/refs/heads/main/skills/skillsaw-onboard/SKILL.md
-    to onboard this repo to skillsaw.
-    ```
-
-    Or consult your agent's documentation for how to install a new
-    [agentskills.io](https://agentskills.io) skill.
 
 ## Keep skillsaw updated
 
