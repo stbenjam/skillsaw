@@ -6,6 +6,7 @@ repo_name: stbenjam/skillsaw
 
 theme:
   name: material
+  custom_dir: docs/overrides
   palette:
     # Palette toggle: follows system preference on first visit.
     - media: "(prefers-color-scheme: light)"
@@ -65,6 +66,7 @@ plugins:
   # rules/<rule-id>/ scheme (#279) — keep the old URLs alive.
   - redirects:
       redirect_maps:
+        upgrading-0.20.md: changelog/0.20.0.md
         rules/content/index.md: rules/content-intelligence.md
         rules/content/weak-language.md: rules/content-weak-language.md
         rules/content/tautological.md: rules/content-tautological.md
@@ -106,12 +108,12 @@ markdown_extensions:
 
 exclude_docs: |
   designs/
+  includes/
 
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Guides:
-    - Upgrading to 0.20.0: upgrading-0.20.md
     - Autofixing: autofixing.md
     - Porting to Agent Plugins: porting.md
     - Baseline: baseline.md
@@ -150,5 +152,6 @@ nav:
     - Security: rules/security.md
     - Vercel: rules/vercel.md
     - Deprecated: rules/deprecated.md
+  - Changelog: changelog.md
   - Research: research.md
 

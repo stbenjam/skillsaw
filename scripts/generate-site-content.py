@@ -936,11 +936,6 @@ def inject_stats(index_path, rules_data):
 GUIDES = [
     ("Home", "index.md", "project homepage (HTML-heavy hero page)"),
     ("Getting Started", "getting-started.md", "install skillsaw and run your first lint"),
-    (
-        "Upgrading to 0.20.0",
-        "upgrading-0.20.md",
-        "review configuration and workflow changes from 0.19.0",
-    ),
     ("Autofixing", "autofixing.md", "how deterministic autofixes work and when they apply"),
     (
         "Porting to Agent Plugins",
@@ -970,6 +965,7 @@ GUIDES = [
         "supply-chain-protection.md",
         "the security model and dangerous-configuration rules",
     ),
+    ("Changelog", "changelog.md", "release notes and upgrade guidance for every release"),
     ("Research", "research.md", "the research basis behind the content intelligence rules"),
 ]
 

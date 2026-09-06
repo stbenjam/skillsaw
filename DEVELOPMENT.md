@@ -156,3 +156,20 @@ This runs 7 specialist reviewers (architecture, Python, security, QA, docs, ecos
 4. `make verify-apm` — agent dirs match APM sources (no injected/unmanaged content)
 5. Bump version via `scripts/bump-version.sh` (for releases)
 6. Test against `openshift-eng/ai-helpers`: clone it, run `skillsaw`, ensure exit 0
+
+### Website release notes
+
+The site publishes GitHub releases under **Changelog**, with a page per release.
+The Pages workflow refreshes these pages on site builds and when releases are
+published, edited, or deleted. Local builds use the committed Markdown and need
+no GitHub access. To refresh that snapshot:
+
+```bash
+gh api --paginate --slurp repos/stbenjam/skillsaw/releases > /tmp/skillsaw-releases.json
+.venv/bin/python3 scripts/generate-changelog.py /tmp/skillsaw-releases.json
+make build-site
+```
+
+Edit release notes on GitHub. The 0.20.0 migration guide is maintained in
+`docs/includes/upgrading-0.20.md` and embedded in its release page by the generator.
+The former `/upgrading-0.20/` URL redirects to that release page.

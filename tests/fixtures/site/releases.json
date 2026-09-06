@@ -1,0 +1,10 @@
+[
+  [
+    {"tag_name": "v0.19.0", "draft": false, "prerelease": false, "published_at": "2026-08-27T21:07:57Z", "html_url": "https://github.com/stbenjam/skillsaw/releases/tag/v0.19.0", "body": "## What's New\n\n- Add Cursor support."},
+    {"tag_name": "v0.22.0", "draft": true, "prerelease": false, "published_at": null, "html_url": "https://github.com/stbenjam/skillsaw/releases/tag/v0.22.0", "body": "Unpublished work"},
+    {"tag_name": "v0.21.0-rc.1", "draft": false, "prerelease": true, "published_at": "2026-09-07T12:00:00Z", "html_url": "https://github.com/stbenjam/skillsaw/releases/tag/v0.21.0-rc.1", "body": null}
+  ],
+  [
+    {"tag_name": "v0.20.0", "draft": false, "prerelease": false, "published_at": "2026-09-06T20:45:16Z", "html_url": "https://github.com/stbenjam/skillsaw/releases/tag/v0.20.0", "body": "## What's New\n\n- More supported tools.\n\n```bash\nskillsaw lint -v\n```"}
+  ]
+]

@@ -141,6 +141,12 @@
     align-items: center;
 }
 
+.md-header__topic:first-child {
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+}
+
 .md-header__topic:first-child .md-ellipsis {
     font-size: 0;
     display: block;
@@ -149,8 +155,17 @@
     height: 1.5rem;
     min-width: 7rem;
     position: relative;
-    top: 5px;
+    top: 0;
     filter: brightness(0) invert(1);
+}
+
+.skillsaw-tagline {
+    display: block;
+    font-size: 0.55rem;
+    font-weight: 400;
+    line-height: 1.2;
+    margin-top: 0.15rem;
+    color: var(--md-primary-bg-color);
 }
 
 /* ---------------------------------------------------------------------------
