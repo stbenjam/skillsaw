@@ -76,6 +76,22 @@ def relative_to_str(path: Path, root: Path) -> Optional[str]:
     return path_str[len(prefix) :]
 
 
+def is_case_only_alias(source: Path, destination: Path) -> bool:
+    """Whether destination is a spelling alias, not a separate hard-link entry.
+
+    Case-insensitive filesystems can resolve both spellings to the same inode
+    while listing only the source name. An independently listed destination
+    must remain a collision, even if it shares that inode.
+    """
+    return (
+        source.name != destination.name
+        and source.name.casefold() == destination.name.casefold()
+        and source.parent.samefile(destination.parent)
+        and source.samefile(destination)
+        and not any(child.name == destination.name for child in destination.parent.iterdir())
+    )
+
+
 def safe_resolve(path: Path) -> Optional[Path]:
     """``path.resolve()``, or ``None`` when the path cannot be resolved.
 

@@ -5,6 +5,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
+from skillsaw.paths import is_case_only_alias
 
 
 class CommandNamingRule(Rule):
@@ -78,7 +79,7 @@ class CommandNamingRule(Rule):
             # Skip if the target already exists (and isn't the same file
             # on a case-insensitive filesystem).
             try:
-                if new_path.exists() and not old_path.samefile(new_path):
+                if new_path.exists() and not is_case_only_alias(old_path, new_path):
                     continue
                 content = old_path.read_text(encoding="utf-8")
             except OSError:

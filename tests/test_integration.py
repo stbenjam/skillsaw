@@ -7540,10 +7540,29 @@ def _snapshot_contents(repo: Path) -> Dict[str, str]:
 
 
 @pytest.mark.integration
-def test_case_only_command_rename(tmp_path):
+@pytest.mark.parametrize("emulate_alias", [False, True])
+def test_case_only_command_rename(tmp_path, monkeypatch, emulate_alias):
     repo = copy_fixture("autofix/case-only-command", tmp_path)
     commands = repo / "commands"
     original = (commands / "Deploy.md").read_bytes()
+    if emulate_alias:
+        original_exists = Path.exists
+        original_samefile = Path.samefile
+        source = commands / "Deploy.md"
+        destination = commands / "deploy.md"
+
+        def alias_exists(path):
+            if str(path) == str(destination):
+                return original_exists(source) or original_exists(path)
+            return original_exists(path)
+
+        def alias_samefile(path, other):
+            if str(path) == str(source) and str(other) == str(destination):
+                return True
+            return original_samefile(path, other)
+
+        monkeypatch.setattr(Path, "exists", alias_exists)
+        monkeypatch.setattr(Path, "samefile", alias_samefile)
     args = ["fix", repo, "--rule", "claude-command-naming", "--suggest"]
 
     result = run_cli(args)

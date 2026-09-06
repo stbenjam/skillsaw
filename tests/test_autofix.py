@@ -990,6 +990,36 @@ class TestCommandRenameFix:
         assert [path.name for path in commands_dir.iterdir()] == ["deploy.md"]
         assert (commands_dir / "deploy.md").read_text() == content
 
+    @pytest.mark.parametrize(
+        "old_name,new_name", [("MyCommand", "my-command"), ("Deploy", "deploy")]
+    )
+    def test_distinct_hardlink_destination_is_not_a_case_alias(self, temp_dir, old_name, new_name):
+        content = "---\ndescription: Review deployment configuration.\n---\n"
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {f"{old_name}.md": content})
+        source = plugin_dir / "commands" / f"{old_name}.md"
+        destination = source.with_name(f"{new_name}.md")
+        if destination.exists():
+            pytest.skip("Filesystem cannot hold distinct case-only directory entries")
+        os.link(source, destination)
+        context = RepositoryContext(plugin_dir)
+        rule = CommandNamingRule()
+        assert rule.fix(context, rule.check(context)) == []
+
+        fix = AutofixResult(
+            rule_id=rule.rule_id,
+            file_path=destination,
+            rename_from=source,
+            confidence=AutofixConfidence.SUGGEST,
+            original_content=content,
+            fixed_content=content,
+            description="Rename command",
+        )
+        assert Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST) == []
+        assert sorted(path.name for path in source.parent.iterdir()) == sorted(
+            [source.name, destination.name]
+        )
+        assert source.read_text() == destination.read_text() == content
+
     def test_apply_fix_isolates_oserror(self, temp_dir):
         """One fix raising OSError must not prevent subsequent fixes."""
         good_target = temp_dir / "good.txt"

@@ -17,7 +17,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, TYPE_CHECKING
-from skillsaw.paths import path_within_roots, safe_is_symlink, safe_resolve
+from skillsaw.paths import is_case_only_alias, path_within_roots, safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -1635,7 +1635,7 @@ class Linter:
                     # the same inode even when their names differ in casing.
                     # Path.rename() handles this correctly, but we must not skip
                     # a case-only rename via the ``dst.exists()`` guard.
-                    if dst.exists() and not src.samefile(dst):
+                    if dst.exists() and not is_case_only_alias(src, dst):
                         continue
                     if root_path is None:
                         src.rename(dst)
