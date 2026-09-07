@@ -6,7 +6,7 @@
 !!! warning "Deprecated"
     Deprecated since v0.18.0 and will be removed in a future release. This rule no longer runs under `enabled: auto`; set `enabled: true` explicitly to keep it during the transition.
 
-    Built on the lost-in-the-middle attention research: instructions in the middle 20–80% of a long file were the most likely to be dropped. Newer models no longer show that attention dip, so moving CRITICAL lines to the edges of a file stopped being worth the churn.
+    Built on the lost-in-the-middle attention research: instructions in the middle 20–80% of a long file were assumed to be the most likely to be dropped. Models still show that attention dip, but it occurs across a long context window, not within a single skill or instruction file loaded on its own. Where a line sits inside one file says little about where it lands in the context, so moving CRITICAL lines to the edges of a file was not worth the churn.
 
 Detect critical instructions in the middle of files where LLM attention is lowest
 

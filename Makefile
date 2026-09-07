@@ -51,7 +51,7 @@ test-coverage: venv
 # Generate example config in a temp dir to avoid clobbering .skillsaw.yaml
 generate-example: $(VENV_EXTRAS_STAMP)
 	@set -eu; \
-	example_dir=$$(mktemp -d); \
+	example_dir=$$(mktemp -d "$${TMPDIR:-/tmp}/skillsaw-example.XXXXXX"); \
 	trap 'rm -rf "$$example_dir"' 0 HUP INT TERM; \
 	"$(VENV)/bin/skillsaw" init "$$example_dir"; \
 	if [ -d .skillsaw.yaml.example ]; then \
