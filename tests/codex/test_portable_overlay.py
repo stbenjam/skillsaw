@@ -52,11 +52,13 @@ def _catalog_package(tmp_path):
     return repo, package
 
 
-@pytest.mark.parametrize("override", [None, {RepositoryType.AGENT_PLUGIN}])
+@pytest.mark.parametrize(
+    "override", [None, {RepositoryType.AGENT_PLUGIN}, {RepositoryType.MARKETPLACE}]
+)
 def test_late_catalog_exclusion_removes_portable_configs_and_skills(tmp_path, override):
     repo, package = _catalog_package(tmp_path)
     context = RepositoryContext(repo, repo_types=override)
-    assert package in context.agent_plugins
+    assert package in context.agent_plugin_roots()
     assert context.lint_tree.find(AgentPluginMcpBlock)
     config = LinterConfig.default()
     config.exclude_patterns = [".agents/plugins/**"]
@@ -67,6 +69,106 @@ def test_late_catalog_exclusion_removes_portable_configs_and_skills(tmp_path, ov
     )
     assert not linter.context.lint_tree.find(AgentPluginMcpBlock)
     assert package / "skills/release-summary" not in linter.context.skills
+
+
+def test_forced_codex_validates_portable_root_identity(tmp_path):
+    repo, package = _catalog_package(tmp_path)
+    path = package / "plugin.json"
+    data = json.loads(path.read_text())
+    data.pop("name")
+    path.write_text(json.dumps(data))
+    context = RepositoryContext(repo, repo_types={RepositoryType.CODEX_PLUGIN})
+    findings = Linter(context).run()
+    assert any(v.file_path == path and v.severity.value == "error" for v in findings)
+
+
+@pytest.mark.parametrize("kind", ["directory", "dangling", "blocked"])
+def test_occupied_fallback_remains_the_diagnostic_target(tmp_path, kind):
+    repo = copy_fixture("codex/portable-overlay", tmp_path)
+    _set_extension(repo, None)
+    path = repo / ".codex-plugin/plugin.json"
+    path.unlink()
+    if kind == "directory":
+        path.mkdir()
+    elif kind == "dangling":
+        path.symlink_to(repo / "missing-fallback.json")
+    else:
+        path.parent.rmdir()
+        path.parent.write_text("blocked")
+    assert codex_manifest_view(repo).path == path
+    findings = CodexPluginJsonValidRule({}).check(RepositoryContext(repo))
+    assert len(findings) == 1 and findings[0].file_path == path
+
+
+@pytest.mark.parametrize("location", ["packages/release", ".codex/plugins/release"])
+def test_forced_agent_plugin_does_not_claim_legacy_host_sources(tmp_path, location):
+    repo, package = _catalog_package(tmp_path)
+    (package / "plugin.json").unlink()
+    if location.startswith(".codex"):
+        installed = repo / location
+        installed.parent.mkdir(parents=True)
+        package.rename(installed)
+        package = installed
+    context = RepositoryContext(repo, repo_types={RepositoryType.AGENT_PLUGIN})
+    assert package not in context.agent_plugins
+    assert all(n.plugin_dir != package for n in context.lint_tree.find(AgentPluginConfigNode))
+
+
+def test_installed_portable_package_is_not_documented(tmp_path):
+    from skillsaw.docs.extractor import extract_docs
+
+    source = copy_fixture("codex/portable-overlay", tmp_path)
+    repo = tmp_path / "installed-repo"
+    package = repo / ".codex/plugins/release"
+    package.parent.mkdir(parents=True)
+    source.rename(package)
+    docs = extract_docs(RepositoryContext(repo))
+    assert docs.plugins == []
+    assert docs.skills == []
+
+
+@pytest.mark.parametrize(
+    "override", [None, {RepositoryType.CODEX_PLUGIN}, {RepositoryType.MARKETPLACE}]
+)
+def test_portable_skills_are_immediate_only(tmp_path, override):
+    repo = copy_fixture("codex/portable-overlay", tmp_path)
+    immediate = repo / "skills/release-summary"
+    nested = repo / "skills/private/nested"
+    shutil.copytree(immediate, nested)
+    context = RepositoryContext(repo, repo_types=override)
+    assert immediate in context.skills
+    assert nested not in context.skills
+
+
+def test_malformed_active_overlay_is_not_registerable(tmp_path):
+    from skillsaw.rules.builtin.codex import CodexMarketplaceRegistrationRule
+
+    repo = copy_fixture("codex/portable-overlay", tmp_path)
+    _set_extension(repo, None)
+    (repo / ".codex-plugin/plugin.json").write_text("{invalid")
+    assert not CodexMarketplaceRegistrationRule._has_declared_name(RepositoryContext(repo), repo)
+
+
+def test_symlinked_pure_portable_install_retains_codex_hooks_under_override(tmp_path):
+    source = copy_fixture("codex/portable-overlay", tmp_path)
+    repo = tmp_path / "install-repo"
+    package = repo / "packages/release"
+    package.parent.mkdir(parents=True)
+    source.rename(package)
+    shutil.rmtree(package / ".codex-plugin")
+    path = package / "plugin.json"
+    data = json.loads(path.read_text())
+    data.pop("extensions")
+    path.write_text(json.dumps(data))
+    hooks = package / "hooks/hooks.json"
+    hooks.parent.mkdir()
+    shutil.copyfile(package / "lifecycle/start.json", hooks)
+    installed = repo / ".codex/plugins/release"
+    installed.parent.mkdir(parents=True)
+    installed.symlink_to(package)
+    context = RepositoryContext(repo, repo_types={RepositoryType.MARKETPLACE})
+    assert context.provenance(package).codex
+    assert any(block.path == hooks for block in context.lint_tree.find(CodexHooksBlock))
 
 
 @pytest.mark.parametrize(

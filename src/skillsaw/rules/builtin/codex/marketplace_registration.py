@@ -209,13 +209,15 @@ class CodexMarketplaceRegistrationRule(Rule):
         a machine-dependent string the autofix must not commit. The missing
         field is codex-plugin-json-valid's to report.
         """
-        manifest = codex_manifest_view(plugin_dir).data
+        view = codex_manifest_view(plugin_dir)
+        if not view.overlay_valid:
+            return False
+        manifest = view.data
         name = manifest.get("name")
         if not isinstance(name, str) or not name:
             return False
-        # A non-kebab name trades one violation for another:
-        # codex-marketplace-json-valid rejects it on the next run. The
-        # manifest name has to be corrected by hand first.
+        # Legacy names use kebab case; a portable catalog entry may match
+        # its canonical identifier, whose schema also permits dots.
         return bool(KEBAB_CASE.match(name)) or portable_name_matches(plugin_dir, name)
 
     def _unregistered(

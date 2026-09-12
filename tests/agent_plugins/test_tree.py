@@ -2,7 +2,7 @@
 
 The AgentPluginMcpBlock tree role is deliberately ``--type``-invariant while
 the dedicated agent-plugin-mcp-valid rule is gated on
-``RepositoryType.AGENT_PLUGIN``. These tests pin the resulting invariant: an
+the portable package and its Codex hosts. These tests pin the resulting invariant: an
 invalid ``mcp.json`` in a dual-format package is reported by exactly one rule
 under ANY ``--type`` — no findings lost, no duplicates.
 """
@@ -38,14 +38,14 @@ def _mcp_validation_findings(repo, repo_types: Optional[Set[RepositoryType]] = N
 class TestDualPackageMcpValidationAcrossTypes:
     """Invalid mcp.json (with a .mcp.json symlink at it) always surfaces once."""
 
-    def test_forced_codex_type_reports_via_generic_rule(self, tmp_path):
+    def test_forced_codex_type_reports_via_dedicated_rule(self, tmp_path):
         repo = copy_fixture("agent-plugins/dual-codex-broken-mcp", tmp_path)
         assert (repo / ".mcp.json").is_symlink()
 
         findings = _mcp_validation_findings(repo, repo_types={RepositoryType.CODEX_PLUGIN})
 
         assert len(findings) == 1
-        assert findings[0].rule_id == "mcp-valid-json"
+        assert findings[0].rule_id == "agent-plugin-mcp-valid"
         assert "invalid json" in findings[0].message.lower()
 
     def test_auto_detected_dual_package_reports_via_dedicated_rule(self, tmp_path):

@@ -15,6 +15,8 @@ from .discovery.antigravity import (
     antigravity_manifest_is_contained,
     antigravity_marker_escapes,
 )
+from .discovery import agent_plugins as agent_plugins_discovery
+from .discovery import codex as codex_discovery
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
 from .formats.codex_manifest import declares_openai_extension
 from .formats.grok import grok_manifest_is_contained, grok_marker_escapes
@@ -137,16 +139,21 @@ class RepositoryProvenanceMixin:
         _provenance_cache: Dict[Path, PluginProvenance]
         _format_scope_cache: Dict[Tuple[Path, str], bool]
         _contained_plugin_roots: Optional[Set[Path]]
+        _agent_plugin_claims: Optional[Set[Path]]
+        _agent_plugin_installed_roots: Set[Path]
+        _agent_plugin_catalog_paths: Tuple[Path, ...]
         # Populated late in ``RepositoryContext.__init__`` — read through
         # ``getattr`` in :meth:`provenance`, see the note there.
         marketplace_entries: Dict[Path, Dict[str, Any]]
 
         # Required host behavior.
+        def _codex_catalog_files(self) -> List[Path]: ...
+
+        def is_path_excluded(self, path: Path) -> bool: ...
+
         def _codex_claim_set(self) -> Set[Path]: ...
 
         def _codex_claims_possible(self) -> bool: ...
-
-        def _agent_plugin_claim_set(self) -> Set[Path]: ...
 
         def _agent_plugin_root_set(self) -> Set[Path]: ...
 
@@ -163,6 +170,31 @@ class RepositoryProvenanceMixin:
         def grok_plugin_root_set(self) -> Set[Path]: ...
 
         def is_codex_installed_plugin(self, plugin_dir: Path) -> bool: ...
+
+    def _agent_plugin_claim_set(self) -> Set[Path]:
+        """Filesystem-declared portable plugin roots, independent of ``--type``."""
+        if self._agent_plugin_claims is None:
+            self._agent_plugin_catalog_paths = tuple(self._codex_catalog_files())
+            paths = agent_plugins_discovery.discover_agent_plugins(
+                self.root_path,
+                package_roots=codex_discovery.codex_local_sources(
+                    self.root_path, self._agent_plugin_catalog_paths
+                ),
+                collection_roots=(self.root_path.joinpath(*codex_discovery.CODEX_INSTALL_DIR),),
+            )
+            self._agent_plugin_claims = set()
+            self._agent_plugin_installed_roots = set()
+            install_root = codex_discovery.codex_install_root(self.root_path)
+            for path in paths:
+                resolved = safe_resolve(path)
+                if resolved is None or self.is_path_excluded(path):
+                    continue
+                self._agent_plugin_claims.add(resolved)
+                # Preserve the lexical install location before resolving a
+                # symlink to its package directory outside the install tree.
+                if codex_discovery.is_installed_codex_plugin(path, self.root_path, install_root):
+                    self._agent_plugin_installed_roots.add(resolved)
+        return self._agent_plugin_claims
 
     def provenance(self, plugin_dir: Path) -> PluginProvenance:
         """The :class:`PluginProvenance` for *plugin_dir*, cached per path.

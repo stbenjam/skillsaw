@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List
 
 from skillsaw.context import RepositoryContext
+from skillsaw.repository_types import PORTABLE_COMPONENT_REPO_TYPES
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.agent_plugins import (
     SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS,
@@ -25,7 +26,6 @@ from skillsaw.paths import (
 from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import (
-    AGENT_PLUGIN_REPO_TYPES,
     manifest_fields,
     plugin_validators,
     schema_error_summary,
@@ -39,7 +39,7 @@ _SUPPORTED_VERSIONS_TEXT = " and ".join(SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS)
 class AgentPluginJsonValidRule(Rule):
     """Validate the portable manifest and fixed skills component location."""
 
-    repo_types = AGENT_PLUGIN_REPO_TYPES
+    repo_types = PORTABLE_COMPONENT_REPO_TYPES
     since = "0.18.0"
 
     @property

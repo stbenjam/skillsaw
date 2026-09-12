@@ -35,7 +35,7 @@ from skillsaw.blocks.antigravity_hooks import read_hooks_config
 from skillsaw.formats.opencode import MCP_OAUTH_V1_TO_V2
 from skillsaw.formats.vscode import VSCODE_HOOK_COMMAND_FIELDS
 from skillsaw.lint_target import LintTarget
-from skillsaw.repository_types import RepositoryType
+from skillsaw.repository_types import PORTABLE_COMPONENT_REPO_TYPES, RepositoryType
 from skillsaw.utils import (
     commented_key_line,
     has_utf8_bom,
@@ -1280,7 +1280,7 @@ class AgentPluginMcpBlock(McpBlock):
     """
 
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
-        repo_types=frozenset({RepositoryType.AGENT_PLUGIN}),
+        repo_types=PORTABLE_COMPONENT_REPO_TYPES,
         keeps_dialect_neutral_checks=False,
     )
 

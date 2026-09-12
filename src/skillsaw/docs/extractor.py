@@ -663,6 +663,8 @@ def _extract_agent_plugins(
     """
     docs: List[PluginDoc] = []
     for node in context.lint_tree.find(AgentPluginConfigNode):
+        if context.is_codex_installed_plugin(node.plugin_dir):
+            continue
         # The tree's ownership decision, read back rather than re-derived.
         plugin_resolved = node.plugin_owner or safe_resolve(node.plugin_dir)
         if plugin_resolved is None or plugin_resolved in documented:

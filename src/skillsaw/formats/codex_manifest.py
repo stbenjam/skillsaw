@@ -16,7 +16,14 @@ from skillsaw.formats.agent_plugins import (
     load_agent_plugin_schema,
     supported_agent_plugin_schema_version,
 )
-from skillsaw.paths import contained_resolve, safe_is_file, safe_resolve
+from skillsaw.paths import (
+    contained_resolve,
+    safe_exists,
+    safe_is_dir,
+    safe_is_file,
+    safe_is_symlink,
+    safe_resolve,
+)
 from skillsaw.utils import read_json
 
 OPENAI_EXTENSION = "com.openai"
@@ -90,12 +97,14 @@ class CodexManifestView:
     path: Path
     data: dict[str, Any]
     portable: bool = False
+    overlay_valid: bool = True
 
 
 def codex_manifest_view(plugin_dir: Path) -> CodexManifestView:
     compatibility_path = plugin_dir / ".codex-plugin" / "plugin.json"
     portable = portable_manifest(plugin_dir)
     extension = openai_extension(portable) if portable is not None else None
+    overlay_valid = True
     if extension is not None:
         path, overlay = plugin_dir / "plugin.json", extension
     else:
@@ -104,10 +113,18 @@ def codex_manifest_view(plugin_dir: Path) -> CodexManifestView:
         contained = contained_resolve(path, root) if root is not None else None
         data, error = read_json(contained) if contained is not None else (None, None)
         overlay = data if not error and isinstance(data, dict) else {}
-        if portable is not None and not safe_is_file(path):
+        marker = compatibility_path.parent
+        occupied = (
+            safe_exists(path)
+            or safe_is_symlink(path)
+            or ((safe_exists(marker) or safe_is_symlink(marker)) and not safe_is_dir(marker))
+        )
+        overlay_valid = not error and isinstance(data, dict)
+        if portable is not None and not occupied:
             path = plugin_dir / "plugin.json"
+            overlay_valid = True
     if portable is None:
-        return CodexManifestView(path, overlay)
+        return CodexManifestView(path, overlay, overlay_valid=overlay_valid)
     # Root identity is canonical; an overlay's name/version cannot replace
     # it, and its skills/mcpServers cannot augment the fixed components.
     data = {
@@ -125,4 +142,4 @@ def codex_manifest_view(plugin_dir: Path) -> CodexManifestView:
         if key in portable
     }
     data.update({key: overlay[key] for key in OPENAI_OVERLAY_FIELDS if key in overlay})
-    return CodexManifestView(path, data, portable=True)
+    return CodexManifestView(path, data, portable=True, overlay_valid=overlay_valid)

@@ -10,7 +10,7 @@ Agent Plugins mcp.json must conform to a supported schema and semantics
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.18.0 |
-| **Repo Types** | agent-plugin |
+| **Repo Types** | agent-plugin, codex-marketplace, codex-plugin |
 | **Category** | [Agent Plugins](agent-plugins.md) |
 
 Agent Plugins define a portable `mcp.json` format at the plugin root. This

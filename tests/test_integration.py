@@ -736,17 +736,17 @@ class TestAgentPlugins:
 
         The dual-format package symlinks .mcp.json at the portable mcp.json,
         so the tree carries the document only as the Agent Plugins parser
-        role. With agent-plugin-mcp-valid filtered out by --type codex-plugin,
-        the generic mcp-valid-json rule must pick the file up instead.
+        role. The host activates the portable validator, and the generic
+        rule defers so the defect is reported exactly once.
         """
         repo = copy_fixture("agent-plugins/dual-codex-broken-mcp", tmp_path)
         assert (repo / ".mcp.json").is_symlink()
         r = run_lint(repo, "--type", "codex-plugin")
 
         assert r["rc"] == 1
-        found = by_rule(r)["mcp-valid-json"]
+        found = by_rule(r)["agent-plugin-mcp-valid"]
         assert any("Invalid JSON" in v["message"] for v in found)
-        assert "agent-plugin-mcp-valid" not in rule_ids(r)
+        assert "mcp-valid-json" not in rule_ids(r)
 
     def test_auto_detected_dual_package_reports_broken_mcp_once(self, tmp_path):
         repo = copy_fixture("agent-plugins/dual-codex-broken-mcp", tmp_path)
@@ -9998,6 +9998,25 @@ class TestCodexRootWithClaudeMarketplace:
 
 @pytest.mark.integration
 class TestCodexPortableOverlay:
+    @pytest.mark.parametrize("host_type", ["codex-plugin", "codex-marketplace"])
+    @pytest.mark.parametrize("component", ["plugin.json", "mcp.json"])
+    def test_forced_codex_validates_portable_components(self, tmp_path, host_type, component):
+        repo = copy_fixture("codex/portable-overlay", tmp_path)
+        path = repo / component
+        if component == "plugin.json":
+            data = json.loads(path.read_text())
+            data.pop("name")
+            path.write_text(json.dumps(data))
+            rule = "agent-plugin-json-valid"
+        else:
+            path.write_text("{invalid")
+            rule = "agent-plugin-mcp-valid"
+        result = run_lint(repo, "--type", host_type)
+        assert any(
+            v["rule_id"] == rule and v["file_path"] == component
+            for v in result["out"]["violations"]
+        )
+
     @pytest.mark.parametrize("overlay", ["inline", "fallback", "none"])
     def test_installed_portable_mcp_receives_format_and_security_checks(self, tmp_path, overlay):
         source = copy_fixture("codex/portable-overlay", tmp_path)

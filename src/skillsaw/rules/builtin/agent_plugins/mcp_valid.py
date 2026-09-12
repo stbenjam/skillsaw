@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryContext
+from skillsaw.repository_types import PORTABLE_COMPONENT_REPO_TYPES
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.agent_plugins import (
     SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS,
@@ -34,7 +35,6 @@ from skillsaw.rules.builtin.secret_detection import (
 )
 
 from ._helpers import (
-    AGENT_PLUGIN_REPO_TYPES,
     mcp_schemas,
     mcp_validators,
     schema_error_summary,
@@ -76,7 +76,7 @@ def _is_control_character(char: str) -> bool:
 class AgentPluginMcpValidRule(Rule):
     """Validate Agent Plugins mcp.json with component/server isolation."""
 
-    repo_types = AGENT_PLUGIN_REPO_TYPES
+    repo_types = PORTABLE_COMPONENT_REPO_TYPES
     since = "0.18.0"
 
     # Mirrors ``content-embedded-secrets``: a project that allowlisted its own

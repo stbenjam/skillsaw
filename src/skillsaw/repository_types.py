@@ -111,6 +111,16 @@ TOOL_REPO_TYPES = frozenset(
 )
 
 
+# Hosts whose portable components use the Agent Plugins validators. Shared
+# with the MCP block's deferral so a forced host type never validates twice.
+PORTABLE_COMPONENT_REPO_TYPES = frozenset(
+    {
+        RepositoryType.AGENT_PLUGIN,
+        RepositoryType.CODEX_PLUGIN,
+        RepositoryType.CODEX_MARKETPLACE,
+    }
+)
+
 # Repository types that may hold one of ``INSTRUCTION_FILES``. CLINE,
 # OPENCODE, MUSE, GROK_PROJECT and CODEX_PROJECT are deliberately absent:
 # the instruction-file rules only ever look at

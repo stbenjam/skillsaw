@@ -131,10 +131,13 @@ class RepositoryScanMixin:
 
     def _discover_skills(self) -> List[Path]:
         """Discover Agent Skills through the state-free Claude discovery seam."""
+        from .formats.codex_manifest import portable_manifest
+
         recursive_agent_plugins = [
             plugin
             for plugin in self.agent_plugin_roots()
-            if (provenance := self.provenance(plugin)).claude or provenance.codex
+            if (provenance := self.provenance(plugin)).claude
+            or (provenance.codex and portable_manifest(plugin) is None)
         ]
         return claude_discovery.discover_skills(
             self.root_path,
@@ -147,7 +150,7 @@ class RepositoryScanMixin:
                 for plugin in self.plugins
                 if not self.provenance(plugin).agent_plugin or self.provenance(plugin).claude
             ],
-            codex_plugins=self.codex_plugins,
+            codex_plugins=[p for p in self.codex_plugins if portable_manifest(p) is None],
             # Config and catalog declarations retain custom skill paths
             # under unrelated --type overrides, just like their tree nodes.
             grok_plugins=self.grok_plugin_roots(),

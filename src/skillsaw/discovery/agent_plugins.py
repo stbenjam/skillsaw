@@ -88,6 +88,7 @@ def discover_agent_plugins(
         return []
 
     collection_children: List[Path] = []
+    conventional_children: Set[Path] = set()
     for plugins_dir in (root / "plugins", *collection_roots):
         if safe_is_dir(plugins_dir) and contained_resolve(plugins_dir, resolved_root) is not None:
             try:
@@ -98,6 +99,8 @@ def discover_agent_plugins(
                 )
             except OSError:
                 pass
+            if plugins_dir == root / "plugins":
+                conventional_children.update(collection_children)
 
     found: List[Path] = []
     seen: Set[Path] = set()
@@ -105,7 +108,7 @@ def discover_agent_plugins(
         resolved = safe_resolve(candidate)
         if resolved is None or resolved in seen or not resolved.is_relative_to(resolved_root):
             continue
-        if forced:
+        if forced and (candidate == root or candidate in conventional_children):
             # An explicit ``--type agent-plugin`` is the escape hatch for
             # packages whose manifests are missing or too malformed to
             # self-identify, so every collection member is validated. The

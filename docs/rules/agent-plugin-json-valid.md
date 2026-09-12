@@ -10,7 +10,7 @@ Agent Plugins plugin.json and skills location must conform to a supported schema
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.18.0 |
-| **Repo Types** | agent-plugin |
+| **Repo Types** | agent-plugin, codex-marketplace, codex-plugin |
 | **Category** | [Agent Plugins](agent-plugins.md) |
 
 An Agent Plugin is a self-contained package rooted at a directory with a
