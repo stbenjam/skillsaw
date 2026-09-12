@@ -45,7 +45,16 @@ scratch.](https://asciinema.org/a/1259880)
 
 ## Try it
 
-Install the onboarding skill from the repository you want to lint:
+Paste this into your coding agent to onboard skillsaw now:
+
+```text
+Read and follow the instructions at
+https://raw.githubusercontent.com/stbenjam/skillsaw/refs/heads/main/skills/skillsaw-onboard/SKILL.md
+to onboard this repo to skillsaw.
+```
+
+Or install the onboarding skill for regular use (recommended). Run this from
+the repository you want to lint:
 
 ```bash
 npx skills add stbenjam/skillsaw
@@ -53,7 +62,7 @@ npx skills add stbenjam/skillsaw
 
 Select **`skillsaw-onboard`** and your coding agent, then ask the agent to use
 that skill to onboard the repo. See [Onboard with AI](https://skillsaw.org/getting-started/#onboard-with-ai)
-for plugin installation and one-time prompt alternatives.
+for plugin installation alternatives.
 
 Or run it yourself. No installation is required with
 [`uvx`](https://docs.astral.sh/uv/guides/tools/):
