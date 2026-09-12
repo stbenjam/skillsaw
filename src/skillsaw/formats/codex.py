@@ -95,7 +95,12 @@ CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
 
 # Local interface assets in the published plugin field guide. The official
 # catalog also stores explicitly referenced assets under .codex-plugin/.
-CODEX_INTERFACE_ASSET_FIELDS = ("composerIcon", "logo", "logoDark", "screenshots")
+CODEX_INTERFACE_ASSET_FIELDS = {
+    "composerIcon": str,
+    "logo": str,
+    "logoDark": str,
+    "screenshots": list,
+}
 
 #: The project directory Codex reads, and the two committed files skillsaw
 #: lints inside it. Named here so discovery and the lint tree spell the

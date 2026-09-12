@@ -260,6 +260,10 @@ class TestPluginStructure:
             [],
             {},
             {"logo": 42},
+            {"logo": ["./.codex-plugin/assets/icon.svg"]},
+            {"composerIcon": ["./.codex-plugin/assets/icon.svg"]},
+            {"logoDark": ["./.codex-plugin/assets/icon.svg"]},
+            {"screenshots": "./.codex-plugin/assets/icon.svg"},
             {"logo": [["./.codex-plugin/assets/icon.svg"]]},
             {"logo": "./.codex-plugin/assets/missing.svg"},
             {"logo": "./.codex-plugin/assets/../assets/icon.svg"},
@@ -284,6 +288,29 @@ class TestPluginStructure:
         outside.write_text("<svg/>")
         asset.symlink_to(outside)
         assert len(run_rule(CodexPluginStructureRule, repo)) == 1
+
+    @pytest.mark.parametrize("name", ["unused.svg", "hooks.json", "plugin.json"])
+    def test_unreferenced_sibling_is_not_exempt(self, tmp_path, name):
+        repo = copy_fixture("codex/manifest-assets", tmp_path)
+        sibling = repo / ".codex-plugin/assets" / name
+        sibling.write_text("{}")
+        violations = run_rule(CodexPluginStructureRule, repo)
+        assert len(violations) == 1
+        assert violations[0].file_path == sibling
+
+    def test_nested_asset_reference_does_not_exempt_sibling_directory(self, tmp_path):
+        repo = copy_fixture("codex/manifest-assets", tmp_path)
+        assets = repo / ".codex-plugin/assets"
+        (assets / "nested").mkdir()
+        (assets / "icon.svg").rename(assets / "nested/icon.svg")
+        (assets / "unused").mkdir()
+        manifest = repo / ".codex-plugin/plugin.json"
+        data = json.loads(manifest.read_text())
+        data["interface"] = {"logo": "./.codex-plugin/assets/nested/icon.svg"}
+        manifest.write_text(json.dumps(data))
+        violations = run_rule(CodexPluginStructureRule, repo)
+        assert len(violations) == 1
+        assert violations[0].file_path == assets / "unused"
 
     def test_stray_file_in_manifest_dir_warns(self, tmp_path):
         repo = copy_fixture("codex/broken", tmp_path)

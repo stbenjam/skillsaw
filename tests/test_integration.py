@@ -9964,6 +9964,7 @@ class TestCodexManifestAssets:
         assert findings[0]["file_path"] == ".codex-plugin/hooks.json"
 
 
+@pytest.mark.integration
 class TestCodexRootWithClaudeMarketplace:
     """Catalog ownership must not become a Claude plugin claim or autofix."""
 

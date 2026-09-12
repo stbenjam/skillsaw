@@ -6,9 +6,11 @@ The Codex specification reserves `.codex-plugin/` for the manifest alone:
 Files parked in the manifest directory are not conventionally discovered where
 Codex looks for them. Explicitly referenced interface assets are an exception:
 the official OpenAI catalog uses `.codex-plugin/assets/` for some icons and
-logos. The rule accepts an entry containing an existing, contained file named by
+logos. The rule accepts an existing, contained file named by
 `interface.composerIcon`, `logo`, `logoDark`, or `screenshots`. Missing, escaping,
-and unreferenced assets do not receive this exception; manifest path validation
+and unreferenced assets, including siblings inside an asset directory, do not
+receive this exception. Scalar asset fields must be strings and `screenshots`
+must be a list before they can grant an exemption; manifest path validation
 continues to check the references themselves.
 
 ## Examples

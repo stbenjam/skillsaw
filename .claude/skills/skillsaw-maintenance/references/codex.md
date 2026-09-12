@@ -303,6 +303,6 @@ not a bug in the catalog.
 The 2026-09-11 corpus includes Temporal, Chatcut, Superpowers and Remotion manifests
 whose interface fields explicitly reference `.codex-plugin/assets/`. These files
 are addressed by path rather than conventional discovery. `codex-plugin-structure`
-therefore exempts entries containing existing, contained interface assets referenced
-by the manifest; it still reports unreferenced entries. The documentation's preferred
+therefore exempts existing, contained interface assets referenced by the manifest;
+it still reports unreferenced siblings inside their directories. The documentation's preferred
 root-level `assets/` layout remains guidance, not evidence that these icons cannot load.

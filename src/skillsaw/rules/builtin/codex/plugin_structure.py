@@ -44,18 +44,27 @@ class CodexPluginStructureRule(Rule):
                 # See codex-plugin-json-valid.
                 continue
             manifest_dir = node.path.parent
-            asset_entries = _referenced_asset_entries(node)
+            assets = _referenced_assets(node)
             try:
-                entries = sorted(manifest_dir.iterdir())
+                entries = sorted(manifest_dir.iterdir(), reverse=True)
             except OSError:
                 continue
 
-            for entry in entries:
-                if entry.name == "plugin.json" or entry.name in asset_entries:
+            while entries:
+                entry = entries.pop()
+                if entry == node.path or entry in assets:
                     continue
+                # Descend only along explicitly referenced paths. A sibling
+                # asset or misplaced hook does not inherit the exemption.
+                if any(asset.is_relative_to(entry) for asset in assets):
+                    try:
+                        entries.extend(sorted(entry.iterdir(), reverse=True))
+                        continue
+                    except OSError:
+                        pass
                 violations.append(
                     self.violation(
-                        f"'{safe_display(entry.name)}' does not belong in .codex-plugin/ — keep "
+                        f"'{safe_display(entry.relative_to(manifest_dir))}' does not belong in .codex-plugin/ — keep "
                         "skills/, hooks/, assets/, .mcp.json and .app.json at the "
                         "plugin root",
                         file_path=entry,
@@ -65,8 +74,8 @@ class CodexPluginStructureRule(Rule):
         return violations
 
 
-def _referenced_asset_entries(node: CodexPluginConfigNode) -> Set[str]:
-    """Manifest-directory entries containing an explicitly named local asset.
+def _referenced_assets(node: CodexPluginConfigNode) -> Set[Path]:
+    """Existing, explicitly named local assets in the manifest directory.
 
     Assets are loaded by path, not conventional discovery. The official
     openai/plugins catalog uses .codex-plugin/assets/ for several plugins;
@@ -80,8 +89,10 @@ def _referenced_asset_entries(node: CodexPluginConfigNode) -> Set[str]:
     if root is None:
         return set()
     entries = set()
-    for field in CODEX_INTERFACE_ASSET_FIELDS:
+    for field, expected_type in CODEX_INTERFACE_ASSET_FIELDS.items():
         value = data["interface"].get(field)
+        if not isinstance(value, expected_type):
+            continue
         values = value if isinstance(value, list) else [value]
         for value in values:
             if not isinstance(value, str) or not value.startswith("./"):
@@ -91,5 +102,5 @@ def _referenced_asset_entries(node: CodexPluginConfigNode) -> Set[str]:
                 continue
             target = contained_resolve(node.plugin_dir / Path(value), root)
             if target is not None and safe_is_file(target):
-                entries.add(parts[1])
+                entries.add(node.plugin_dir.joinpath(*parts))
     return entries
