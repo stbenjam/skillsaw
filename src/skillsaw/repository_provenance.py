@@ -15,7 +15,7 @@ from .discovery.antigravity import (
     antigravity_manifest_is_contained,
     antigravity_marker_escapes,
 )
-from .discovery.claude import marketplace_claims_path
+from .discovery.claude import marketplace_local_sources
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
 from .formats.grok import grok_manifest_is_contained, grok_marker_escapes
 from .paths import safe_exists, safe_is_file, safe_is_symlink, safe_resolve
@@ -138,11 +138,9 @@ class RepositoryProvenanceMixin:
         # Required host state.
         root_path: Path
         _provenance_cache: Dict[Path, PluginProvenance]
+        _claude_claims: Optional[Set[Path]]
         _format_scope_cache: Dict[Tuple[Path, str], bool]
         _contained_plugin_roots: Optional[Set[Path]]
-        # Populated late in ``RepositoryContext.__init__`` — read through
-        # ``getattr`` in :meth:`provenance`, see the note there.
-        marketplace_entries: Dict[Path, Dict[str, Any]]
 
         # Required host behavior.
         def _codex_claim_set(self) -> Set[Path]: ...
@@ -167,6 +165,12 @@ class RepositoryProvenanceMixin:
 
         def is_codex_installed_plugin(self, plugin_dir: Path) -> bool: ...
 
+    def _claude_claim_set(self) -> Set[Path]:
+        """Cache filesystem catalog claims independently of discovery and --type."""
+        if self._claude_claims is None:
+            self._claude_claims = marketplace_local_sources(self.root_path)
+        return self._claude_claims
+
     def provenance(self, plugin_dir: Path) -> PluginProvenance:
         """The :class:`PluginProvenance` for *plugin_dir*, cached per path.
 
@@ -181,8 +185,7 @@ class RepositoryProvenanceMixin:
         strength order:
 
         * ``claude`` — a ``.claude-plugin`` marker that is not just a
-          marketplace catalog, or a listing in the Claude marketplace
-          (``marketplace_entries``).
+          marketplace catalog, or a listing in the on-disk Claude marketplace.
         * ``codex`` — a contained ``.codex-plugin/plugin.json``, or a local
           source listing in any Codex catalog.
         * ``agent-plugin`` — a contained package carrying an Agent Plugins
@@ -209,13 +212,6 @@ class RepositoryProvenanceMixin:
             return cached
 
         ecosystems = set()
-        # ``getattr`` rather than a plain attribute read: this is genuinely
-        # reachable, not defensiveness. ``RepositoryContext.__init__`` runs
-        # type detection — which consults provenance — before it assigns
-        # ``marketplace_entries``, so the early consults land here with the
-        # attribute absent and must fall back to "no marketplace listing".
-        # Those early records are discarded by the unconditional cache clear
-        # at the end of ``apply_excludes``; see the ordering comment there.
         claude_marker = plugin_dir / ".claude-plugin"
         claude_manifest = claude_marker / "plugin.json"
         # A catalog publishes its entries, not the directory hosting it.
@@ -229,10 +225,8 @@ class RepositoryProvenanceMixin:
         )
         dot_claude = resolved is not None and resolved == safe_resolve(self.root_path / ".claude")
         claude_package = claude_plugin_marker or (
-            resolved is not None and resolved in getattr(self, "marketplace_entries", {})
+            resolved is not None and resolved in self._claude_claim_set()
         )
-        if dot_claude and not claude_package:
-            claude_package = marketplace_claims_path(self.root_path, resolved)
         if claude_package:
             ecosystems.add("claude")
         elif dot_claude:

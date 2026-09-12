@@ -135,18 +135,19 @@ def plugin_metadata(
     return metadata or None
 
 
-def marketplace_claims_path(root: Path, candidate: Path) -> bool:
-    """Whether the on-disk catalog packages *candidate*, regardless of --type."""
+def marketplace_local_sources(root: Path) -> Set[Path]:
+    """Contained package roots claimed by the on-disk catalog, regardless of --type."""
     data = load_marketplace(root)
     entries = data.get("plugins") if data else None
     if not isinstance(entries, list):
-        return False
-    return any(
-        isinstance(entry, dict)
-        and isinstance(entry.get("source"), str)
-        and resolve_plugin_source(root, data, entry["source"], entry) == candidate
+        return set()
+    return {
+        candidate
         for entry in entries
-    )
+        if isinstance(entry, dict)
+        and isinstance(entry.get("source"), str)
+        and (candidate := resolve_plugin_source(root, data, entry["source"], entry)) is not None
+    }
 
 
 def discover_plugins(

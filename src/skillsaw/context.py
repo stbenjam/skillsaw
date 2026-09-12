@@ -166,6 +166,7 @@ class RepositoryContext(
         self._codex_install_root: Any = _UNSET
         self._codex_roots: Optional[List[Path]] = None
         self._codex_claims: Optional[Set[Path]] = None
+        self._claude_claims: Optional[Set[Path]] = None
         self._codex_evidence: Optional[bool] = None
         self._agent_plugin_roots: Optional[Set[Path]] = None
         self._contained_plugin_roots: Optional[Set[Path]] = None
@@ -313,9 +314,11 @@ class RepositoryContext(
             self._pattern_variants_cache[pattern] = _pattern_variants(pattern)
         return self._pattern_variants_cache[pattern]
 
-    def matches_patterns(self, path: Path, patterns: List[str]) -> bool:
+    def matches_patterns(self, path: Path, patterns: List[str], *, resolve: bool = True) -> bool:
         """Match a path with pattern variants cached by this context."""
-        return path_matches_patterns(path, self.root_path, patterns, self.pattern_variants)
+        return path_matches_patterns(
+            path, self.root_path, patterns, self.pattern_variants, resolve=resolve
+        )
 
     def apm_targets(self, target: str) -> bool:
         """Whether ``apm.yml`` lists *target* among its compile targets.
@@ -444,11 +447,10 @@ class RepositoryContext(
             self.repo_types.discard(RepositoryType.AGENTSKILLS)
         # The claim set folds in both plugin roots and catalog sources, and
         # excludes can drop either — always recompute on the next consult.
-        # The unconditional clear is also load-bearing for __init__ ordering:
-        # type detection consults provenance before marketplace_entries
-        # exists, and this end-of-init clear is what discards those early
-        # records. Never scope it under ``if self.exclude_patterns:``.
+        # Clear ownership and discovery views together, including early
+        # type-detection records when no excludes are configured.
         self._codex_claims = None
+        self._claude_claims = None
         self._codex_evidence = None
         self._agent_plugin_claims = None
         self._agent_plugin_roots = None

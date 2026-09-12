@@ -228,6 +228,7 @@ class _TreeBuildState:
     mcp_paths: Set[Path] = field(default_factory=set)
     openai_seen: Set[Tuple[Path, Path]] = field(default_factory=set)
     opencode_configs: List[OpenCodeConfigBlock] = field(default_factory=list)
+    project_command_roles: Dict[Path, CommandBlock] = field(default_factory=dict)
 
     def resolve_repo_path(self, path: Path) -> Path | None:
         """Resolve *path* only when repository containment is safe."""
@@ -256,6 +257,13 @@ class _TreeBuildState:
         block.plugin_owner = owner
         block.content_suppressed = content_suppressed
         parent.children.append(block)
+        if issubclass(block_cls, (SkillBlock, SkillRefBlock)):
+            command = self.project_command_roles.get(resolved)
+            if command is not None:
+                # Keep command frontmatter/structure, but the canonical skill
+                # role owns the prose so shared rules inspect it only once.
+                command.body_lintable = False
+                command._invalidate_parsed()
 
     def add_parser_block(
         self,
@@ -811,13 +819,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             ("rules", PluginRuleBlock, "**/*.md"),
         ):
             content_dir = plugin_dir / dirname
-            if not _contained(content_dir) or not safe_is_dir(content_dir):
+            if (
+                not _contained(content_dir)
+                or not safe_is_dir(content_dir)
+                or context.is_path_excluded(content_dir)
+            ):
                 continue
             try:
                 files = sorted(content_dir.glob(pattern))
             except OSError:
                 continue
             for md in files:
+                if context.matches_patterns(md, context.exclude_patterns, resolve=False):
+                    continue
                 # Project commands may expose a bundled skill prompt through
                 # a symlink. Their boundary is the repository, while packaged
                 # plugins keep their own boundary and nested ownership guards.
@@ -830,7 +844,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                     # A command may expose SKILL.md or a skill reference.
                     # Claim its command role without blocking the skill role
                     # that attaches later over the same resolved file.
-                    state.add_parser_block(parent, md, block_cls, owner=owner)
+                    command = state.add_parser_block(parent, md, block_cls, owner=owner)
+                    if command is not None:
+                        state.project_command_roles[command.resolved_path] = command
         readme = plugin_dir / "README.md"
         if _contained(readme):
             state.add_block(parent, readme, ReadmeBlock, owner=owner)
@@ -1414,6 +1430,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         seen_plugin_dirs.add(resolved_candidate)
         plugin_dirs.append(candidate)
 
+    # Forced packaging types change discovery, never catalog ownership. These
+    # roots still bound project-command aliases even when they are not attached.
+    seen_plugin_dirs.update(context._claude_claim_set())
     root_plugin_owner: Path | None = None
     for plugin_path in plugin_dirs:
         prov = context.provenance(plugin_path)

@@ -241,10 +241,11 @@ class ContentProgressiveDisclosureRule(Rule):
         is_skill = cf.category == "skill"
         boundary = self_path.parent if is_skill else root
         inventory = self._bundled_inventory(self_path.parent) if is_skill else None
-        if self._has_local_link(cf, boundary, self_path, inventory=inventory):
+        link_dir = cf.link_base_dir(root)
+        if self._has_local_link(cf, boundary, self_path, link_dir, inventory=inventory):
             return True
         if cf.category in _IMPORT_CATEGORIES and self._has_import_reference(
-            cf, body, boundary, self_path
+            cf, body, boundary, self_path, link_dir
         ):
             return True
         if inventory is None:
@@ -258,6 +259,7 @@ class ContentProgressiveDisclosureRule(Rule):
         cf: ContentBlock,
         boundary: Path,
         self_path: Path,
+        link_dir: Path,
         *,
         inventory: Optional[Tuple[Set[str], Set[str]]],
     ) -> bool:
@@ -290,7 +292,7 @@ class ContentProgressiveDisclosureRule(Rule):
             for candidate in candidates:
                 if not candidate:
                     continue
-                resolved = safe_resolve(cf.path.parent / candidate)
+                resolved = safe_resolve(link_dir / candidate)
                 if resolved is None or resolved == self_path or resolved == boundary:
                     continue
                 if not resolved.is_relative_to(boundary):
@@ -308,7 +310,7 @@ class ContentProgressiveDisclosureRule(Rule):
         return False
 
     def _has_import_reference(
-        self, cf: ContentBlock, body: str, boundary: Path, self_path: Path
+        self, cf: ContentBlock, body: str, boundary: Path, self_path: Path, link_dir: Path
     ) -> bool:
         """An ``@path`` import resolving to an existing path in *boundary*.
 
@@ -325,7 +327,7 @@ class ContentProgressiveDisclosureRule(Rule):
             import_path = import_ref.path
             if import_path.startswith("~"):
                 continue
-            resolved = safe_resolve(cf.path.parent / import_path)
+            resolved = safe_resolve(link_dir / import_path)
             if resolved is None or resolved == self_path or resolved == boundary:
                 continue
             if not resolved.is_relative_to(boundary):

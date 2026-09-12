@@ -22,11 +22,13 @@ def path_matches_patterns(
     root: Path,
     patterns: List[str],
     variants_for: Callable[[str], Tuple[str, ...]] = pattern_variants,
+    *,
+    resolve: bool = True,
 ) -> bool:
     """Match *path* using a pure or caller-owned pattern expander."""
     if not patterns:
         return False
-    resolved = safe_resolve(path)
+    resolved = safe_resolve(path) if resolve else path
     if resolved is None:
         return False
     rel = relative_to_str(resolved, root)

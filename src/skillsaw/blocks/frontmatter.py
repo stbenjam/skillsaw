@@ -189,6 +189,7 @@ class FrontmatteredBlock(LintTarget):
 
     category: str = ""
     content_lintable_fields: Tuple[str, ...] = ()
+    body_lintable: bool = True
 
     def link_base_dir(self, repo_root: Path) -> Path:
         """Directory relative Markdown links in this file's body use."""
@@ -263,7 +264,7 @@ class FrontmatteredBlock(LintTarget):
                     )
                 )
         body_text = self._fm_parsed[3]
-        if body_text:
+        if body_text and self.body_lintable:
             self.children.append(
                 BodyContent(
                     path=self.path,

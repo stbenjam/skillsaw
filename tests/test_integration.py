@@ -986,7 +986,17 @@ class TestSkillCommandSymlinkRoots:
         assert result["rc"] == 0, result
         assert not violations(result), result
 
-    @pytest.mark.parametrize("consumer", ["missing", "ordinary-symlink", "excluded"])
+    @pytest.mark.parametrize(
+        "consumer",
+        [
+            "missing",
+            "ordinary-symlink",
+            "excluded",
+            "excluded-file",
+            "excluded-glob",
+            "excluded-dir",
+        ],
+    )
     def test_without_discovered_consumer_files_still_warn(self, tmp_path, consumer):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         command = repo / self.COMMAND
@@ -997,13 +1007,86 @@ class TestSkillCommandSymlinkRoots:
             command.unlink()
         else:
             config = repo / ".skillsaw.yaml"
-            config.write_text('exclude:\n  - ".claude"\n')
+            pattern = {
+                "excluded": ".claude",
+                "excluded-file": self.COMMAND,
+                "excluded-glob": ".claude/commands/**",
+                "excluded-dir": ".claude/commands",
+            }[consumer]
+            config.write_text(f'exclude:\n  - "{pattern}"\n')
         result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning", config=config)
         assert result["rc"] == 1, result
         assert {v["file_path"] for v in violations(result)} == {
             f"{self.SKILL}/security-audit-init.md",
             f"{self.SKILL}/references/checklist.md",
         }
+
+    @pytest.mark.parametrize("target", ["SKILL.md", "references/checklist.md"])
+    def test_shared_parser_roles_expose_prose_once(self, tmp_path, target):
+        """Keeping command and skill roles must not duplicate content findings."""
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        command = repo / self.COMMAND
+        command.unlink()
+        command.symlink_to(f"../../{self.SKILL}/{target}")
+        implementation = repo / self.SKILL / target
+        implementation.write_text(implementation.read_text() + "\nTODO: Document validation.\n")
+        tree = RepositoryContext(repo).lint_tree
+        assert (
+            len([b for b in tree.content_blocks() if b.resolved_path == implementation.resolve()])
+            == 1
+        )
+        result = run_lint(repo, "--rule", "content-placeholder-text")
+        found = violations(result)
+        assert len(found) == 1, result
+        assert found[0]["file_path"] == f"{self.SKILL}/{target}"
+
+    @pytest.mark.parametrize("forced", [False, True])
+    def test_command_cannot_claim_catalog_owned_sibling(self, tmp_path, forced):
+        """Catalog ownership bounds command aliases even when --type skips discovery."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        marker = repo / ".claude-plugin/marketplace.json"
+        marker.parent.mkdir()
+        marker.write_text(
+            json.dumps(
+                {
+                    "name": "audit-marketplace",
+                    "owner": {"name": "Audit team"},
+                    "plugins": [
+                        {"name": "audit-plugin", "source": f"./{self.SKILL}", "strict": False}
+                    ],
+                }
+            )
+        )
+        extra = ["--type", "dot-claude", "--type", "agentskills"] if forced else []
+        result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning", *extra)
+        assert result["rc"] == 1, result
+        assert {v["file_path"] for v in violations(result)} == {
+            f"{self.SKILL}/security-audit-init.md",
+            f"{self.SKILL}/references/checklist.md",
+        }
+
+    def test_unlinked_paths_use_implementation_base(self, tmp_path):
+        """Bare references beside the implementation remain detectable."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        implementation = repo / self.SKILL / "security-audit-init.md"
+        implementation.write_text("Read references/checklist.md before recording findings.\n")
+        result = run_lint(repo, "--rule", "content-unlinked-internal-reference")
+        found = violations(result)
+        assert len(found) == 1, result
+        assert found[0]["file_path"] == self.COMMAND
+        assert "references/checklist.md" in found[0]["message"]
+
+    def test_command_disclosure_uses_implementation_base(self, tmp_path):
+        """A valid local link counts when disclosure checks are enabled for commands."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  content-progressive-disclosure:\n    limits:\n      command: 1\n"
+        )
+        result = run_lint(repo, "--rule", "content-progressive-disclosure", config=config)
+        assert not violations(result), result
 
     def test_command_does_not_cover_unused_siblings(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
@@ -3088,9 +3171,10 @@ class TestCursorRules:
     def test_prompt_hook_findings_are_never_advertised_as_fixable(self, tmp_path):
         """A prompt is a decoded JSON string — no span exists to splice a fix into."""
         repo = tmp_path / "promptfix"
-        (repo / ".cursor" / "references").mkdir(parents=True)
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "references").mkdir()
         (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
-        (repo / ".cursor" / "references" / "policy.md").write_text("# Policy\n\nDetails.\n")
+        (repo / "references" / "policy.md").write_text("# Policy\n\nDetails.\n")
         hooks = repo / ".cursor" / "hooks.json"
         hooks.write_text(
             json.dumps(

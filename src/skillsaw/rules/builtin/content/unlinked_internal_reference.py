@@ -131,8 +131,9 @@ class ContentUnlinkedInternalReferenceRule(Rule):
         violations = []
         for cf in gather_all_content_blocks(context):
             doc = cf.markdown
+            link_dir = cf.link_base_dir(root)
             for body_line, _col, path_str, _span in self._candidates(doc, patterns):
-                resolved = safe_resolve(cf.path.parent / path_str)
+                resolved = safe_resolve(link_dir / path_str)
                 file_exists = False
                 if resolved is not None:
                     try:
