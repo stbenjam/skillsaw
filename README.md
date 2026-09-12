@@ -53,6 +53,17 @@ https://raw.githubusercontent.com/stbenjam/skillsaw/refs/heads/main/skills/skill
 to onboard this repo to skillsaw.
 ```
 
+Or install the onboarding skill for regular use (recommended). Run this from
+the repository you want to lint:
+
+```bash
+npx skills add stbenjam/skillsaw
+```
+
+Select **`skillsaw-onboard`** and your coding agent, then ask the agent to use
+that skill to onboard the repo. See [Onboard with AI](https://skillsaw.org/getting-started/#onboard-with-ai)
+for plugin installation alternatives.
+
 Or run it yourself. No installation is required with
 [`uvx`](https://docs.astral.sh/uv/guides/tools/):
 

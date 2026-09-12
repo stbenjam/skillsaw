@@ -33,9 +33,21 @@ fingerprinting works and configuration options.
     to onboard this repo to skillsaw.
     ```
 
-Or install the plugin globally for regular use (recommended):
+Or install the onboarding skill for regular use. The
+[skills CLI](https://github.com/vercel-labs/skills) is recommended:
 
-=== "Claude Code"
+=== "skills CLI (recommended)"
+
+    Run this from the repository you want to onboard:
+
+    ```bash
+    npx skills add stbenjam/skillsaw
+    ```
+
+    Select **`skillsaw-onboard`** and your coding agent in the installer.
+    Then ask your agent to use **`skillsaw-onboard`** to onboard the repo.
+
+=== "Claude Code plugin"
 
     ```bash
     claude plugin marketplace add stbenjam/skillsaw
@@ -44,7 +56,7 @@ Or install the plugin globally for regular use (recommended):
 
     Then type **`/skillsaw-onboard`** and follow the prompts.
 
-=== "Codex"
+=== "Codex plugin"
 
     ```bash
     codex plugin marketplace add stbenjam/skillsaw
