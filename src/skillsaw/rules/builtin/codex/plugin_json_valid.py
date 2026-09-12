@@ -38,7 +38,7 @@ _EXPECTED_KIND = {"hooks": "file", "mcpServers": "file", "skills": "dir"}
 
 
 class CodexPluginJsonValidRule(Rule):
-    """Check that .codex-plugin/plugin.json is valid"""
+    """Validate the selected Codex manifest or portable OpenAI overlay."""
 
     repo_types = CODEX_PLUGIN_REPO_TYPES
     since = "0.18.0"
@@ -66,7 +66,7 @@ class CodexPluginJsonValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return ".codex-plugin/plugin.json must be valid JSON with required fields"
+        return "The selected Codex manifest or portable OpenAI overlay must be valid"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR

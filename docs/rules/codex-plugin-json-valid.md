@@ -3,7 +3,7 @@
 
 # codex-plugin-json-valid
 
-.codex-plugin/plugin.json must be valid JSON with required fields
+The selected Codex manifest or portable OpenAI overlay must be valid
 
 | | |
 |---|---|
