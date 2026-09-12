@@ -44,6 +44,22 @@ hedge (see Sync notes).
   fields no released host accepts.
 
 ## What to check
+- **Portable packages and overlay precedence**: root `plugin.json` with a supported
+  Agent Plugins schema owns identity and the fixed `skills/` and `mcp.json` paths.
+  An object-valued `extensions.com.openai` replaces the entire compatibility
+  overlay, including when empty. Missing or non-object extensions fall back to
+  `.codex-plugin/plugin.json`. Only `apps`, `hooks`, and `interface` are taken from
+  either overlay; its identity, `skills`, and `mcpServers` do not override or add
+  portable components. Confirmed against Codex 0.154.0's
+  [`agent_plugin_manifest.rs`](https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/core-plugins/src/agent_plugin_manifest.rs).
+  `formats/codex_manifest.py` owns the selection used by discovery, rules and docs.
+  Its `CODEX_PORTABLE_SCHEMA_VERSIONS` is `1.0.0` for Codex 0.154.0, from
+  `codex-rs/utils/plugins/src/plugin_namespace.rs`; the bundled Agent Plugins
+  `1.1.0` draft is not yet a portable format that this Codex release loads.
+  The lint tree represents the selected overlay at its actual source path.
+  Local catalog sources can name portable packages outside `plugins/*` and must
+  activate the Agent Plugins rules too. A portable manifest alone does not claim
+  Codex ownership: an OpenAI extension, compatibility marker or catalog does.
 - **Manifest paths**: `.codex-plugin/plugin.json` and `$REPO_ROOT/.agents/plugins/marketplace.json`.
   Codex also reads `~/.agents/plugins/marketplace.json` (out of scope — not in a repo)
   and `$REPO_ROOT/.claude-plugin/marketplace.json` (owned by the Claude rules).

@@ -89,6 +89,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
+from .formats.codex_manifest import codex_manifest_view
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.excludes import is_root_or_ancestor_excluded
 from .discovery.opencode import contained_instruction_globs
@@ -1508,14 +1509,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # Codex manifest cluster, for any directory Codex claims (dual
         # directories hang it off their PluginNode).
         if prov.codex:
-            manifest = plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST)
+            manifest_view = codex_manifest_view(plugin_path)
+            manifest = manifest_view.path
             # Not gated on the manifest existing: a plugin whose manifest is
             # missing must still reach codex-plugin-json-valid to be
             # reported. An excluded manifest is no plugin-wide skip either —
             # hooks and MCP files carry executable commands and have their
             # own exclusion checks; the linter filters violations filed
             # against the excluded manifest itself.
-            node = CodexPluginConfigNode(path=manifest)
+            node = CodexPluginConfigNode(
+                path=manifest,
+                portable_overlay=manifest_view.portable,
+                inline_overlay=manifest == plugin_path / "plugin.json",
+            )
             node.plugin_owner = resolved_plugin
             state.add_openai_metadata(
                 node,
@@ -1566,7 +1572,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # Same treatment for MCP: the conventional .mcp.json, declared
             # files, and inline maps are all commands the host will spawn.
             native_mcp = plugin_path / ".mcp.json"
-            if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
+            if not manifest_view.portable and not _shadowed_by_agent_plugin_mcp(
+                native_mcp, agent_plugin_mcp
+            ):
                 _add_contained_plugin_block(node, native_mcp, McpBlock, owner=resolved_plugin)
             for declared_mcp in codex_declared_mcp_files(plugin_path):
                 if _shadowed_by_agent_plugin_mcp(declared_mcp, agent_plugin_mcp):

@@ -738,6 +738,7 @@ class RepositoryContext(
             for path in agent_plugins_discovery.discover_agent_plugins(
                 self.root_path,
                 forced=self._agent_plugin_forced,
+                package_roots=self._codex_local_sources(),
             )
             if not self.is_path_excluded(path)
         ]
@@ -747,7 +748,9 @@ class RepositoryContext(
         if self._agent_plugin_claims is None:
             self._agent_plugin_claims = {
                 resolved
-                for path in agent_plugins_discovery.discover_agent_plugins(self.root_path)
+                for path in agent_plugins_discovery.discover_agent_plugins(
+                    self.root_path, package_roots=self._codex_local_sources()
+                )
                 if not self.is_path_excluded(path) and (resolved := safe_resolve(path)) is not None
             }
         return self._agent_plugin_claims
@@ -785,8 +788,13 @@ class RepositoryContext(
         quadratic in the catalog size.
         """
         if self._codex_claims is None:
+            from .formats.codex_manifest import declares_openai_extension
+
             claims = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r is not None}
             claims.update(self._codex_local_sources())
+            claims.update(
+                path for path in self._agent_plugin_claim_set() if declares_openai_extension(path)
+            )
             self._codex_claims = claims
         return self._codex_claims
 

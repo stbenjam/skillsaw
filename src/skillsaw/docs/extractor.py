@@ -388,7 +388,9 @@ def _extract_codex_plugin(
     rule files attach when the plugin ships them.
     """
     plugin_dir = node.plugin_dir
-    meta = _read_json_dict(node)
+    from skillsaw.formats.codex_manifest import codex_manifest_view
+
+    meta = codex_manifest_view(plugin_dir).data
 
     author_val = meta.get("author")
     if isinstance(author_val, str):

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "release-api": {"type": "streamable-http", "url": "https://release.example.com/mcp"}
+  }
+}

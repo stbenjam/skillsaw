@@ -7,6 +7,7 @@ from typing import List
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import CodexPluginConfigNode
+from skillsaw.paths import contained_resolve, safe_resolve
 
 from skillsaw.diagnostics import safe_display
 
@@ -39,7 +40,12 @@ class CodexPluginStructureRule(Rule):
                 # wrote, so its structure is not this repository's to fix.
                 # See codex-plugin-json-valid.
                 continue
-            manifest_dir = node.path.parent
+            # Inline metadata changes the selected manifest, not the reserved
+            # directory's layout requirement. Inspect it when it still exists.
+            root = safe_resolve(node.plugin_dir)
+            manifest_dir = node.plugin_dir / ".codex-plugin"
+            if root is None or contained_resolve(manifest_dir, root) is None:
+                continue
             try:
                 entries = sorted(manifest_dir.iterdir())
             except OSError:

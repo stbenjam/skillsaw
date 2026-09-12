@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "portable-release",
+  "version": "1.0.0",
+  "description": "Review release evidence and summarize outstanding release work.",
+  "extensions": {
+    "com.openai": {
+      "hooks": "./lifecycle/start.json",
+      "interface": {"displayName": "Portable Release"}
+    }
+  }
+}

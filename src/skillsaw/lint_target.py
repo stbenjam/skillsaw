@@ -449,18 +449,24 @@ class CodexMarketplaceConfigNode(LintTarget):
 
 @dataclass(eq=False)
 class CodexPluginConfigNode(LintTarget):
-    """A .codex-plugin/plugin.json manifest file (OpenAI Codex).
+    """A legacy Codex manifest or the selected portable OpenAI overlay.
 
     The node addresses the manifest rather than the plugin directory so a
     directory that is both a Claude and a Codex plugin keeps a single
     ``PluginNode`` subtree. Codex-only manifests live under a
     ``CodexPluginNode``; ``plugin_dir`` recovers the owning directory.
+    An inline portable overlay uses root ``plugin.json`` as its source;
+    a compatibility overlay keeps ``.codex-plugin/plugin.json``. Portable
+    identity belongs to the sibling Agent Plugins node and its rules.
     """
+
+    portable_overlay: bool = False
+    inline_overlay: bool = False
 
     @property
     def plugin_dir(self) -> Path:
         """The plugin directory that owns this manifest."""
-        return self.path.parent.parent
+        return self.path.parent if self.inline_overlay else self.path.parent.parent
 
     def tree_label(self) -> str:
         return "plugin.json [codex]"

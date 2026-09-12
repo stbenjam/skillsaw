@@ -1,0 +1,6 @@
+{
+  "name": "legacy-name",
+  "hooks": "./lifecycle/fallback.json",
+  "skills": "./unused-skills",
+  "mcpServers": "./unused-mcp.json"
+}

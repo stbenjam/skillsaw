@@ -1,10 +1,16 @@
 ## Why
 
-`.codex-plugin/plugin.json` is the required entry point for an OpenAI
-Codex plugin. Codex reads the plugin's name from it and resolves every
-bundled component through it, so a manifest that names a path outside the
-plugin root — or a path that does not ship — installs a plugin whose
-skills, hooks or assets silently never load.
+Legacy Codex plugins use `.codex-plugin/plugin.json`. Portable Agent Plugins
+use root `plugin.json` for identity, `skills/` for skills, and `mcp.json` for
+MCP servers. An object-valued `extensions.com.openai` supplies the OpenAI
+overlay; otherwise `.codex-plugin/plugin.json` supplies it. The two overlays
+are not merged, even when the inline object is empty.
+
+This rule checks the selected portable overlay's `hooks`, `apps`, and
+`interface` paths. Agent Plugins rules validate root identity. Legacy
+`skills` and `mcpServers` declarations cannot change portable components.
+Paths escaping the plugin root or naming files that do not ship can leave
+hooks or assets unavailable.
 
 ## Examples
 

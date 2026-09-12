@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Iterable, List, Optional, Set
 
 from skillsaw.discovery import exact_name_exists
 from skillsaw.formats.agent_plugins import is_agent_plugin_schema
@@ -67,13 +67,16 @@ def declares_agent_plugin(package_root: Path) -> bool:
     return bool(declared_schema(package_root / PLUGIN_MANIFEST, package_root, "plugin"))
 
 
-def discover_agent_plugins(root: Path, *, forced: bool = False) -> List[Path]:
-    """Discover portable plugin roots at the lint root and ``plugins/*``.
+def discover_agent_plugins(
+    root: Path, *, forced: bool = False, package_roots: Iterable[Path] = ()
+) -> List[Path]:
+    """Discover portable roots at the lint root, ``plugins/*`` and explicit sources.
 
     Agent Plugins defines a package, not a marketplace. ``plugins/*`` is the
     conventional collection layout used by public multi-package repositories;
     arbitrary recursive scanning would claim vendored or example manifests the
-    caller did not ask to lint.
+    caller did not ask to lint. ``package_roots`` adds directories explicitly
+    named by a host catalog, with the same containment and schema checks.
     """
     resolved_root = safe_resolve(root)
     if resolved_root is None:
@@ -93,7 +96,7 @@ def discover_agent_plugins(root: Path, *, forced: bool = False) -> List[Path]:
 
     found: List[Path] = []
     seen: Set[Path] = set()
-    for candidate in [root, *collection_children]:
+    for candidate in [root, *collection_children, *package_roots]:
         resolved = safe_resolve(candidate)
         if resolved is None or resolved in seen or not resolved.is_relative_to(resolved_root):
             continue

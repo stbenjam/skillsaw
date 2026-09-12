@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from skillsaw.formats.codex_manifest import OPENAI_OVERLAY_FIELDS, openai_extension
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
@@ -115,9 +116,18 @@ class CodexPluginJsonValidRule(Rule):
                 )
                 continue
 
-            violations.extend(self._check_name(data, manifest))
+            if node.portable_overlay:
+                # Agent Plugins owns root identity and schema validation.
+                # Codex consumes only these three overlay fields; legacy
+                # skills/mcpServers declarations have no portable effect.
+                overlay = (openai_extension(data) or {}) if node.inline_overlay else data
+                data = {key: overlay[key] for key in OPENAI_OVERLAY_FIELDS if key in overlay}
+            else:
+                violations.extend(self._check_name(data, manifest))
 
             for field in recommended_fields:
+                if node.portable_overlay:
+                    break
                 if not isinstance(field, str):
                     # ``field not in data`` raises TypeError on an
                     # unhashable value — a rule crash for every manifest.

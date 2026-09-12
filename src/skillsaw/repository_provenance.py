@@ -16,6 +16,7 @@ from .discovery.antigravity import (
     antigravity_marker_escapes,
 )
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
+from .formats.codex_manifest import declares_openai_extension
 from .formats.grok import grok_manifest_is_contained, grok_marker_escapes
 from .paths import safe_exists, safe_is_file, safe_is_symlink, safe_resolve
 
@@ -233,17 +234,21 @@ class RepositoryProvenanceMixin:
             # the repository's own command and agent content Codex-only
             # and switch its Claude-format checks off.
             ecosystems.add("claude")
-        if codex_manifest_is_contained(plugin_dir) or (
-            resolved is not None
-            and resolved in self._codex_claim_set()
-            # A catalog claim is a declaration about a directory, never a
-            # licence to read through it: the marker gets the same
-            # containment check discovery applies, so a claimed directory
-            # whose ``.codex-plugin`` symlinks out of the tree is not Codex
-            # and no Codex node is built over it. A directory with no marker
-            # at all still passes — codex-plugin-json-valid reports the
-            # missing manifest.
-            and not codex_marker_escapes(plugin_dir)
+        if (
+            declares_openai_extension(plugin_dir)
+            or codex_manifest_is_contained(plugin_dir)
+            or (
+                resolved is not None
+                and resolved in self._codex_claim_set()
+                # A catalog claim is a declaration about a directory, never a
+                # licence to read through it: the marker gets the same
+                # containment check discovery applies, so a claimed directory
+                # whose ``.codex-plugin`` symlinks out of the tree is not Codex
+                # and no Codex node is built over it. A directory with no marker
+                # at all still passes — codex-plugin-json-valid reports the
+                # missing manifest.
+                and not codex_marker_escapes(plugin_dir)
+            )
         ):
             ecosystems.add("codex")
         if resolved is not None and resolved in self._agent_plugin_claim_set():

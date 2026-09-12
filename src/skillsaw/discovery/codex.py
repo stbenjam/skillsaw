@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Set
 
 from skillsaw.formats.codex import CODEX_PLUGIN_MANIFEST, codex_local_source_path
+from skillsaw.formats.codex_manifest import declares_openai_extension, portable_manifest
 from skillsaw.paths import (
     contained_resolve,
     safe_exists,
@@ -184,6 +185,7 @@ def discover_codex_plugins(
     """
     found: List[Path] = []
     seen: Set[Path] = set()
+    local_sources = tuple(local_sources)
 
     root = safe_resolve(root_path) or root_path
 
@@ -200,6 +202,12 @@ def discover_codex_plugins(
         # manifest, so both are containment-checked.
         resolved = _contained(directory)
         if resolved is None or resolved in seen:
+            return
+        if declares_openai_extension(directory) or (
+            directory in local_sources and portable_manifest(directory) is not None
+        ):
+            seen.add(resolved)
+            found.append(directory)
             return
         # The marker must resolve within *this plugin*, not merely the
         # repository: `plugins/a/.codex-plugin -> plugins/b/.codex-plugin`

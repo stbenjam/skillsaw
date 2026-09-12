@@ -1,0 +1,1 @@
+{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo fallback-start"}]}]}}

@@ -107,6 +107,10 @@ being silently ignored.
 | Look up commands and flags | [CLI Reference](https://skillsaw.org/cli/) |
 | Feed the docs to an AI agent | [llms.txt](https://skillsaw.org/llms.txt) index, [llms-full.txt](https://skillsaw.org/llms-full.txt) full docs |
 
+Codex portable plugins can place OpenAI metadata and hooks in
+`plugin.json` under `extensions.com.openai`. Skillsaw follows that overlay's
+precedence over `.codex-plugin/plugin.json`, validates its declared resources,
+and checks portable `skills/` and `mcp.json` through the Agent Plugins rules.
 
 ## Measure the result
 

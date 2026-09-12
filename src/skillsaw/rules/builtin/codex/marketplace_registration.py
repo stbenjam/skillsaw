@@ -22,6 +22,11 @@ from skillsaw.formats.codex import (
     is_remote_source,
 )
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
+from skillsaw.formats.codex_manifest import (
+    codex_manifest_view,
+    portable_manifest,
+    portable_name_matches,
+)
 from skillsaw.paths import safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rules.builtin.utils import reject_duplicate_json_keys, read_json, read_text
 
@@ -204,14 +209,14 @@ class CodexMarketplaceRegistrationRule(Rule):
         a machine-dependent string the autofix must not commit. The missing
         field is codex-plugin-json-valid's to report.
         """
-        manifest = _read_manifest(plugin_dir.joinpath(*context.CODEX_PLUGIN_MANIFEST))
+        manifest = codex_manifest_view(plugin_dir).data
         name = manifest.get("name")
         if not isinstance(name, str) or not name:
             return False
         # A non-kebab name trades one violation for another:
         # codex-marketplace-json-valid rejects it on the next run. The
         # manifest name has to be corrected by hand first.
-        return bool(KEBAB_CASE.match(name))
+        return bool(KEBAB_CASE.match(name)) or portable_name_matches(plugin_dir, name)
 
     def _unregistered(
         self,
@@ -339,7 +344,10 @@ class CodexMarketplaceRegistrationRule(Rule):
                 )
                 continue
 
-            if not codex_manifest_is_contained(plugin_dir):
+            if (
+                not codex_manifest_is_contained(plugin_dir)
+                and portable_manifest(plugin_dir) is None
+            ):
                 # Installability is asked of the entry, not of the tree: the
                 # catalog may name a directory no node was built over. The
                 # shared format reader answers it, so "usable manifest" means

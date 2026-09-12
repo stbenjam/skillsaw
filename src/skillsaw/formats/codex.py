@@ -316,13 +316,15 @@ def codex_mcp_input_problem(value: Dict[str, Any]) -> Optional[str]:
 
 
 def codex_manifest(plugin_dir: Path) -> Dict[str, Any]:
-    """A Codex plugin's parsed manifest, or ``{}`` when absent or unparseable.
+    """Effective Codex metadata, or ``{}`` when absent or unparseable.
 
     Uses the shared cached reader: strips a UTF-8 BOM, and repeated reads
-    cost nothing.
+    cost nothing. Portable identity and OpenAI overlay precedence live in
+    ``codex_manifest_view`` so discovery, rules and docs read one selection.
     """
-    data, error = read_json(plugin_dir.joinpath(*CODEX_PLUGIN_MANIFEST))
-    return data if not error and isinstance(data, dict) else {}
+    from .codex_manifest import codex_manifest_view
+
+    return codex_manifest_view(plugin_dir).data
 
 
 def codex_plugin_name(plugin_dir: Path) -> str:
