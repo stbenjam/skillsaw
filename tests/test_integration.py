@@ -902,6 +902,104 @@ class TestAgentskills:
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(os.name == "nt", reason="Requires ordinary POSIX symlinks")
+class TestSkillCommandSymlinkRoots:
+    """Discovered commands consume bundled prompts and their references (#607)."""
+
+    RULE = "agentskill-unreferenced-files"
+    FIXTURE = "agentskills/command-symlink"
+    SKILL = "harnessing/security-audit-phased"
+    COMMAND = ".claude/commands/security-audit-init.md"
+
+    def test_active_command_is_a_transitive_root(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        assert (repo / self.COMMAND).is_symlink()
+        result = run_lint(repo)
+        assert result["rc"] == 0, result
+        assert not by_rule(result).get(self.RULE), result
+
+    def test_links_resolve_beside_the_implementation(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        implementation = repo / self.SKILL / "security-audit-init.md"
+        # A bare directory name is not a raw-text mention: only resolving
+        # the Markdown link can reach the checklist through this directory.
+        implementation.write_text("Read the [review steps](references).\n")
+        result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning")
+        assert result["rc"] == 0, result
+        assert not violations(result), result
+
+    @pytest.mark.parametrize("consumer", ["missing", "ordinary-symlink", "excluded"])
+    def test_without_discovered_consumer_files_still_warn(self, tmp_path, consumer):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        command = repo / self.COMMAND
+        config = None
+        if consumer == "ordinary-symlink":
+            command.rename(command.with_suffix(".txt"))
+        elif consumer == "missing":
+            command.unlink()
+        else:
+            config = repo / ".skillsaw.yaml"
+            config.write_text('exclude:\n  - ".claude"\n')
+        result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning", config=config)
+        assert result["rc"] == 1, result
+        assert {v["file_path"] for v in violations(result)} == {
+            f"{self.SKILL}/security-audit-init.md",
+            f"{self.SKILL}/references/checklist.md",
+        }
+
+    def test_command_does_not_cover_unused_siblings(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        unused = repo / self.SKILL / "unused.md"
+        shutil.copyfile(repo / self.SKILL / "security-audit-init.md", unused)
+        result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning")
+        assert result["rc"] == 1, result
+        assert {v["file_path"] for v in violations(result)} == {f"{self.SKILL}/unused.md"}
+
+    @pytest.mark.parametrize("target", ["dangling", "cycle", "external"])
+    def test_unsafe_command_symlinks_do_not_become_roots(self, tmp_path, target):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        command = repo / self.COMMAND
+        command.unlink()
+        if target == "external":
+            outside = tmp_path / "outside.md"
+            outside.write_text("Read security-audit-init.md and checklist.md.\n")
+            command.symlink_to(outside)
+        elif target == "cycle":
+            command.symlink_to(command.name)
+        else:
+            command.symlink_to("missing.md")
+        result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning")
+        assert result["rc"] == 1, result
+        assert {v["rule_id"] for v in violations(result)} == {self.RULE}
+        assert {v["file_path"] for v in violations(result)} == {
+            f"{self.SKILL}/security-audit-init.md",
+            f"{self.SKILL}/references/checklist.md",
+        }
+
+    def test_packaged_command_keeps_plugin_containment(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        plugin = repo / "plugins/audit-plugin"
+        plugin.parent.mkdir()
+        (repo / ".claude").rename(plugin)
+        command = plugin / "commands/security-audit-init.md"
+        command.unlink()
+        command.symlink_to(f"../../../{self.SKILL}/security-audit-init.md")
+        assert command.is_file()
+        marker = plugin / ".claude-plugin"
+        marker.mkdir()
+        (marker / "plugin.json").write_text('{"name": "audit-plugin"}\n')
+        from skillsaw.context import RepositoryContext
+
+        assert plugin in RepositoryContext(repo).plugins
+        result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning")
+        assert result["rc"] == 1, result
+        assert {v["file_path"] for v in violations(result)} == {
+            f"{self.SKILL}/security-audit-init.md",
+            f"{self.SKILL}/references/checklist.md",
+        }
+
+
+@pytest.mark.integration
 class TestUnreferencedSkillFiles:
     """End-to-end coverage for agentskill-unreferenced-files."""
 

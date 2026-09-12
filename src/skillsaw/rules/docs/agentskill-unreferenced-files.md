@@ -16,6 +16,14 @@ transitively** in any local file reachable from SKILL.md (e.g. SKILL.md →
 `references/a.md` → `references/b.md`). A skill-root `README.md` and
 `agents/openai.yaml` also count as reference roots.
 
+Bundled files discovered as command entrypoints are also roots. For example,
+`.claude/commands/security-audit-init.md` can symlink to a prompt beside
+`SKILL.md`; that prompt and the files it references count as used even when
+the skill only names `/security-audit-init`. References resolve beside the
+bundled implementation. Undiscovered or excluded commands, dangling or cyclic
+symlinks, and links outside the repository do not establish roots. Packaged
+plugin commands remain contained within their owning plugin.
+
 Mentions are detected in markdown links, inline code spans, fenced code blocks,
 and plain prose:
 

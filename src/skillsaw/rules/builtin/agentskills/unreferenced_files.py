@@ -96,13 +96,16 @@ under tests/ that nothing in the skill references), ``test_*.py`` files
 and anything under a ``testdata/`` directory at any depth (bundled
 scripts routinely ship self-tests and fixtures nothing documents —
 e.g. ai-helpers' ``scripts/test_validate.py`` + ``scripts/testdata/``),
-hidden files or directories, and symlinks (which are also never
+hidden files or directories, and bundled symlinks (which are also never
 followed). The ``exclude`` config option adds glob patterns on top of
 (not replacing) these defaults.
 
 A skill-root README.md and OpenAI ``agents/openai.yaml`` additionally count
 as reference roots alongside SKILL.md: human-facing documentation and host
 metadata are both legitimate entrypoints into the package.
+Bundled files discovered as command entrypoints also count as roots,
+including targets of repository-contained ``.claude/commands/*.md``
+symlinks. Their references are followed relative to the bundled target.
 
 A directory holding more than ``collapse_directory_threshold`` (default
 5) unreferenced files is reported once, naming the directory and a
@@ -125,7 +128,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.markdown_doc import MarkdownDoc
-from skillsaw.blocks import ContentBlock
+from skillsaw.blocks import CommandBlock, ContentBlock
 from skillsaw.utils import read_text
 
 from skillsaw.discovery import exact_name_exists
@@ -358,6 +361,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
         ]
 
         violations: List[RuleViolation] = []
+        command_paths = {block.resolved_path for block in context.lint_tree.find(CommandBlock)}
         for skill_node in context.lint_tree.find(SkillNode):
             skill_path = skill_node.path
             skill_md = skill_path / "SKILL.md"
@@ -385,7 +389,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             if openai_metadata is not None and not context.is_path_excluded(openai_metadata):
                 roots.append(openai_metadata)
             referenced = self._reachable_files(
-                skill_node, skill_path, roots, all_files, directory_covers
+                skill_node, skill_path, roots, all_files, directory_covers, command_paths
             )
 
             skill_resolved = safe_resolve(skill_path) or skill_path
@@ -581,10 +585,16 @@ class AgentSkillUnreferencedFilesRule(Rule):
         roots: List[Path],
         all_files: List[Path],
         directory_covers: bool,
+        command_paths: Set[Path],
     ) -> Set[Path]:
         """Files referenced from the roots, following every referenced local file."""
         skill_resolved = safe_resolve(skill_path) or skill_path
         resolved_of = {f: (safe_resolve(f) or f) for f in all_files}
+        # Discovery already enforces containment and excludes. Only bundled
+        # files become roots: an unrelated command must not contribute text
+        # mentions to this skill. Use the target path so relative links resolve
+        # beside the implementation, not beside its discovery symlink.
+        roots = roots + [f for f in all_files if resolved_of[f] in command_paths]
         root_paths = {(safe_resolve(root) or root) for root in roots}
         referenced: Set[Path] = {
             candidate for candidate in all_files if resolved_of[candidate] in root_paths

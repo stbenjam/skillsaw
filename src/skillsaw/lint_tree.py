@@ -816,7 +816,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             except OSError:
                 continue
             for md in files:
-                if _contained(md):
+                # Project commands may expose a bundled skill prompt through
+                # a symlink. Their boundary is the repository, while packaged
+                # plugins keep their own boundary and nested ownership guards.
+                project_command = (
+                    block_cls is CommandBlock
+                    and plugin_dir == context.root_path / ".claude"
+                    and _inside_plugin(md, repo_root)
+                )
+                if _contained(md) or project_command:
                     state.add_block(parent, md, block_cls, owner=owner)
         readme = plugin_dir / "README.md"
         if _contained(readme):
