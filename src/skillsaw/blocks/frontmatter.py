@@ -168,6 +168,12 @@ class BodyContent(ContentBlock):
         if isinstance(self.parent, FrontmatteredBlock):
             self.parent._invalidate_parsed()
 
+    def link_base_dir(self, repo_root: Path) -> Path:
+        """Honor the containing file's link base for embedded Markdown bodies."""
+        if isinstance(self.parent, FrontmatteredBlock):
+            return self.parent.link_base_dir(repo_root)
+        return super().link_base_dir(repo_root)
+
     def tree_label(self) -> str:
         return "body"
 
@@ -183,6 +189,10 @@ class FrontmatteredBlock(LintTarget):
 
     category: str = ""
     content_lintable_fields: Tuple[str, ...] = ()
+
+    def link_base_dir(self, repo_root: Path) -> Path:
+        """Directory relative Markdown links in this file's body use."""
+        return self.path.parent
 
     def file_line(self, line: int) -> int:
         """For FrontmatteredBlock, line numbers are already file-absolute."""
@@ -865,6 +875,10 @@ class CommandBlock(FrontmatteredBlock):
     """commands/*.md in plugins."""
 
     category: str = "command"
+
+    def link_base_dir(self, repo_root: Path) -> Path:
+        """Relative links belong to the implementation, including symlink targets."""
+        return self.resolved_path.parent
 
     def provenance_dir(self) -> Optional[Path]:
         # The owner the attach recorded, which is the claimed directory

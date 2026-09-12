@@ -787,7 +787,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 return False
         return False
 
-    def _add_plugin_prose(parent: LintTarget, plugin_dir: Path, owner: Path) -> None:
+    def _add_plugin_prose(
+        parent: LintTarget, plugin_dir: Path, owner: Path, claude_project: bool
+    ) -> None:
         """The one prose attach for every plugin container.
 
         ``commands/``, ``agents/``, ``rules/`` and README follow the same
@@ -820,12 +822,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 # a symlink. Their boundary is the repository, while packaged
                 # plugins keep their own boundary and nested ownership guards.
                 project_command = (
-                    block_cls is CommandBlock
-                    and plugin_dir == context.root_path / ".claude"
-                    and _inside_plugin(md, repo_root)
+                    block_cls is CommandBlock and claude_project and _inside_plugin(md, repo_root)
                 )
-                if _contained(md) or project_command:
+                if _contained(md):
                     state.add_block(parent, md, block_cls, owner=owner)
+                elif project_command:
+                    # A command may expose SKILL.md or a skill reference.
+                    # Claim its command role without blocking the skill role
+                    # that attaches later over the same resolved file.
+                    state.add_parser_block(parent, md, block_cls, owner=owner)
         readme = plugin_dir / "README.md"
         if _contained(readme):
             state.add_block(parent, readme, ReadmeBlock, owner=owner)
@@ -1486,7 +1491,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 elif isinstance(child, HooksBlock) and safe_resolve(child.path) in claimed_hooks:
                     child.plugin_owner = resolved_plugin
 
-        _add_plugin_prose(container, plugin_path, resolved_plugin)
+        _add_plugin_prose(container, plugin_path, resolved_plugin, prov.claude_project)
 
         # Conventional Claude configs belong only to Claude or legacy
         # unclaimed packages. Portable-only packages must not accidentally

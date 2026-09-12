@@ -916,7 +916,65 @@ class TestSkillCommandSymlinkRoots:
         assert (repo / self.COMMAND).is_symlink()
         result = run_lint(repo)
         assert result["rc"] == 0, result
+        assert summary(result)["warnings"] == 0, result
         assert not by_rule(result).get(self.RULE), result
+
+    def test_command_targeting_skill_preserves_both_roles(self, tmp_path):
+        """Command discovery must not hide the SKILL.md parser from skill rules."""
+        from skillsaw.blocks import CommandBlock, SkillBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        command = repo / self.COMMAND
+        command.unlink()
+        command.symlink_to(f"../../{self.SKILL}/SKILL.md")
+        tree = RepositoryContext(repo).lint_tree
+        target = (repo / self.SKILL / "SKILL.md").resolve()
+        assert target in {b.resolved_path for b in tree.find(CommandBlock)}
+        assert target in {b.resolved_path for b in tree.find(SkillBlock)}
+        result = run_lint(repo, "--rule", "agentskill-valid")
+        assert result["rc"] == 0, result
+        assert not violations(result), result
+
+    @pytest.mark.parametrize("declaration", ["catalog", "manifest", "codex-catalog"])
+    @pytest.mark.parametrize("forced", [False, True])
+    def test_packaged_dot_claude_keeps_containment(self, tmp_path, declaration, forced):
+        """A .claude package never inherits the project layer's wider boundary."""
+        from skillsaw.context import RepositoryContext
+        from skillsaw.repository_types import RepositoryType
+
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        if declaration == "manifest":
+            marker = repo / ".claude/.claude-plugin/plugin.json"
+            data = {"name": "audit-plugin"}
+        elif declaration == "catalog":
+            marker = repo / ".claude-plugin/marketplace.json"
+            data = {
+                "name": "audit-marketplace",
+                "owner": {"name": "Audit team"},
+                "plugins": [{"name": "audit-plugin", "source": "./.claude", "strict": False}],
+            }
+        else:
+            marker = repo / ".agents/plugins/marketplace.json"
+            data = {
+                "name": "audit-marketplace",
+                "plugins": [
+                    {"name": "audit-plugin", "source": {"source": "local", "path": "./.claude"}}
+                ],
+            }
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps(data))
+        types = {RepositoryType.DOT_CLAUDE, RepositoryType.AGENTSKILLS} if forced else None
+        context = RepositoryContext(repo, repo_types=types)
+        assert repo / ".claude" in context.plugins
+        assert not context.provenance(repo / ".claude").claude_project
+        extra = ["--type", "dot-claude", "--type", "agentskills"] if forced else []
+        result = run_lint(repo, "--rule", self.RULE, "--fail-on", "warning", *extra)
+        assert result["rc"] == 1, result
+        assert {v["file_path"] for v in violations(result)} == {
+            f"{self.SKILL}/security-audit-init.md",
+            f"{self.SKILL}/references/checklist.md",
+        }
 
     def test_links_resolve_beside_the_implementation(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)

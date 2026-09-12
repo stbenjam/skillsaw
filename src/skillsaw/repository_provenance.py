@@ -15,6 +15,7 @@ from .discovery.antigravity import (
     antigravity_manifest_is_contained,
     antigravity_marker_escapes,
 )
+from .discovery.claude import marketplace_claims_path
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
 from .formats.grok import grok_manifest_is_contained, grok_marker_escapes
 from .paths import safe_exists, safe_is_file, safe_is_symlink, safe_resolve
@@ -41,6 +42,9 @@ class PluginProvenance:
 
     ecosystems: FrozenSet[str]
     installed: bool = False
+    # Only the un-packaged repository .claude layer may consume sibling
+    # command implementations. Catalog/manifest claims retain package bounds.
+    claude_project: bool = False
 
     @property
     def codex_only(self) -> bool:
@@ -223,11 +227,15 @@ class RepositoryProvenanceMixin:
             or safe_is_symlink(claude_manifest)
             or not safe_is_file(claude_marker / "marketplace.json")
         )
-        if claude_plugin_marker or (
+        dot_claude = resolved is not None and resolved == safe_resolve(self.root_path / ".claude")
+        claude_package = claude_plugin_marker or (
             resolved is not None and resolved in getattr(self, "marketplace_entries", {})
-        ):
+        )
+        if dot_claude and not claude_package:
+            claude_package = marketplace_claims_path(self.root_path, resolved)
+        if claude_package:
             ecosystems.add("claude")
-        elif resolved is not None and resolved == safe_resolve(self.root_path / ".claude"):
+        elif dot_claude:
             # The .claude/ directory is Claude by definition — a Codex
             # catalog listing "./.claude" as a local source must not turn
             # the repository's own command and agent content Codex-only
@@ -276,6 +284,7 @@ class RepositoryProvenanceMixin:
         record = PluginProvenance(
             ecosystems=frozenset(ecosystems),
             installed=self.is_codex_installed_plugin(plugin_dir),
+            claude_project=dot_claude and not claude_package and ecosystems == {"claude"},
         )
         self._provenance_cache[key] = record
         self._provenance_cache[plugin_dir] = record
