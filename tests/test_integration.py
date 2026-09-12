@@ -9947,6 +9947,23 @@ def test_cli_scope_severity_uses_explicit_config_and_exit_threshold(
 
 
 @pytest.mark.integration
+class TestCodexManifestAssets:
+    def test_explicit_assets_pass_and_stray_hooks_still_warn(self, tmp_path):
+        repo = copy_fixture("codex/manifest-assets", tmp_path)
+        rules = ["--rule", "codex-plugin-structure", "--rule", "codex-plugin-json-valid"]
+        result = run_lint(repo, *rules, "--strict")
+        assert result["rc"] == 0, result["stdout"] + result["stderr"]
+        assert result["out"]["violations"] == []
+
+        (repo / ".codex-plugin/hooks.json").write_text('{"hooks": {}}')
+        result = run_lint(repo, *rules, "--strict")
+        assert result["rc"] == 1
+        findings = result["out"]["violations"]
+        assert len(findings) == 1
+        assert findings[0]["rule_id"] == "codex-plugin-structure"
+        assert findings[0]["file_path"] == ".codex-plugin/hooks.json"
+
+
 class TestCodexRootWithClaudeMarketplace:
     """Catalog ownership must not become a Claude plugin claim or autofix."""
 

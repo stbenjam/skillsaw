@@ -237,7 +237,7 @@ rules:
     #   - description
     # check-paths-exist: true
 
-  # Only plugin.json belongs in .codex-plugin/
+  # .codex-plugin/ should contain only its manifest and referenced interface assets
   codex-plugin-structure:
     enabled: auto
     severity: warning

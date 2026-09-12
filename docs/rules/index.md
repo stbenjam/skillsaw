@@ -118,7 +118,7 @@ skillsaw includes **101** built-in rules organized into the following categories
 | [`codex-hooks-valid`](codex-hooks-valid.md) | Codex hooks files must use Codex's hook events, handler types, and fields | error (auto) | - | OpenAI Codex |
 | [`codex-openai-metadata`](codex-openai-metadata.md) | Validate skill openai.yaml and catalog-compatible plugin metadata | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-json-valid`](codex-plugin-json-valid.md) | .codex-plugin/plugin.json must be valid JSON with required fields | error (auto) | - | OpenAI Codex |
-| [`codex-plugin-structure`](codex-plugin-structure.md) | Only plugin.json belongs in .codex-plugin/ | warning (auto) | - | OpenAI Codex |
+| [`codex-plugin-structure`](codex-plugin-structure.md) | .codex-plugin/ should contain only its manifest and referenced interface assets | warning (auto) | - | OpenAI Codex |
 | [`codex-marketplace-json-valid`](codex-marketplace-json-valid.md) | .agents/plugins/marketplace.json must be valid JSON with required fields | error (auto) | - | OpenAI Codex |
 | [`codex-marketplace-registration`](codex-marketplace-registration.md) | Codex plugins must be registered in .agents/plugins/marketplace.json | error (auto) | auto | OpenAI Codex |
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |

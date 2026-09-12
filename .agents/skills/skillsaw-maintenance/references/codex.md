@@ -212,7 +212,8 @@ Hand-copied value sets that drift — re-check each against upstream:
   publishes exactly this pair as an enum; the prose spec only describes the field and
   uses `ON_INSTALL` in its examples. Two upstream documents of differing strictness,
   so check both.
-- `_PATH_FIELDS` / `_INTERFACE_PATH_FIELDS` in `codex/plugin_json_valid.py`.
+- `_PATH_FIELDS` in `codex/plugin_json_valid.py` and `CODEX_INTERFACE_ASSET_FIELDS`
+  in `formats/codex.py`.
   `plugin-json-spec.md` documents `logoDark` and requires every asset path to point at
   a real file inside the plugin. Watch for fields being added to that list.
 - `_INTERFACE_STRINGS` in `codex/openai_metadata.py` = `display_name`,
@@ -298,3 +299,10 @@ upstream requires and why skillsaw does not enforce it.
 Clone https://github.com/openai/plugins and run skillsaw's `codex-*` rules against it.
 It must report zero violations; anything it reports is a false positive in our rules,
 not a bug in the catalog.
+
+The 2026-09-11 corpus includes Temporal, Chatcut, Superpowers and Remotion manifests
+whose interface fields explicitly reference `.codex-plugin/assets/`. These files
+are addressed by path rather than conventional discovery. `codex-plugin-structure`
+therefore exempts entries containing existing, contained interface assets referenced
+by the manifest; it still reports unreferenced entries. The documentation's preferred
+root-level `assets/` layout remains guidance, not evidence that these icons cannot load.

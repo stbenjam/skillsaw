@@ -93,6 +93,10 @@ def inline_documents(declared: Any, key: str) -> List[Dict[str, Any]]:
 # the readers below need no repository state at all.
 CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
 
+# Local interface assets in the published plugin field guide. The official
+# catalog also stores explicitly referenced assets under .codex-plugin/.
+CODEX_INTERFACE_ASSET_FIELDS = ("composerIcon", "logo", "logoDark", "screenshots")
+
 #: The project directory Codex reads, and the two committed files skillsaw
 #: lints inside it. Named here so discovery and the lint tree spell the
 #: location once, the way the Muse leg reads ``muse.TOOL_DIR_NAME``.

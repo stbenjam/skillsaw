@@ -1,0 +1,9 @@
+{
+  "name": "release-notes",
+  "version": "1.0.0",
+  "description": "Draft release notes from merged pull requests.",
+  "interface": {
+    "composerIcon": "./.codex-plugin/assets/icon.svg",
+    "logo": "./.codex-plugin/assets/icon.svg"
+  }
+}

@@ -10,6 +10,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.lint_target import CodexPluginConfigNode
+from skillsaw.formats.codex import CODEX_INTERFACE_ASSET_FIELDS
 from skillsaw.paths import safe_exists, safe_is_dir, safe_is_file
 from skillsaw.rules.builtin.utils import read_json
 
@@ -27,8 +28,6 @@ from ._helpers import (
 _PATH_FIELDS = ("skills", "mcpServers", "apps")
 # Interface asset fields documented in plugin-json-spec.md. In addition to
 # local relative paths, these accept remote HTTP/HTTPS URLs and data URIs.
-_INTERFACE_PATH_FIELDS = ("composerIcon", "logo", "logoDark")
-_INTERFACE_PATH_LIST_FIELDS = ("screenshots",)
 
 # What each field has to be on disk for the lint tree to follow it. Only
 # fields the tree actually filters on are listed — nothing drops ``apps``
@@ -350,7 +349,7 @@ class CodexPluginJsonValidRule(Rule):
 
         interface = data.get("interface")
         if isinstance(interface, dict):
-            for field in _INTERFACE_PATH_FIELDS + _INTERFACE_PATH_LIST_FIELDS:
+            for field in CODEX_INTERFACE_ASSET_FIELDS:
                 if field in interface:
                     _flatten(f"interface.{field}", interface[field], drop_objects=False)
 

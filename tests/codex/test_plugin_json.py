@@ -238,6 +238,53 @@ class TestPluginJsonValid:
 
 
 class TestPluginStructure:
+    def test_referenced_manifest_assets_are_allowed(self, tmp_path):
+        repo = copy_fixture("codex/manifest-assets", tmp_path)
+        assert run_rule(CodexPluginStructureRule, repo) == []
+        assert run_rule(CodexPluginJsonValidRule, repo) == []
+
+    @pytest.mark.parametrize("field", ["composerIcon", "logo", "logoDark", "screenshots"])
+    def test_each_interface_asset_field_exempts_its_entry(self, tmp_path, field):
+        repo = copy_fixture("codex/manifest-assets", tmp_path)
+        manifest = repo / ".codex-plugin/plugin.json"
+        data = json.loads(manifest.read_text())
+        path = "./.codex-plugin/assets/icon.svg"
+        data["interface"] = {field: [path] if field == "screenshots" else path}
+        manifest.write_text(json.dumps(data))
+        assert run_rule(CodexPluginStructureRule, repo) == []
+
+    @pytest.mark.parametrize(
+        "interface",
+        [
+            None,
+            [],
+            {},
+            {"logo": 42},
+            {"logo": [["./.codex-plugin/assets/icon.svg"]]},
+            {"logo": "./.codex-plugin/assets/missing.svg"},
+            {"logo": "./.codex-plugin/assets/../assets/icon.svg"},
+            {"logo": "https://example.com/.codex-plugin/assets/icon.svg"},
+        ],
+    )
+    def test_invalid_references_do_not_exempt_assets(self, tmp_path, interface):
+        repo = copy_fixture("codex/manifest-assets", tmp_path)
+        manifest = repo / ".codex-plugin/plugin.json"
+        data = json.loads(manifest.read_text())
+        data["interface"] = interface
+        manifest.write_text(json.dumps(data))
+        violations = run_rule(CodexPluginStructureRule, repo)
+        assert len(violations) == 1
+        assert violations[0].file_path.name == "assets"
+
+    def test_escaping_asset_does_not_exempt_entry(self, tmp_path):
+        repo = copy_fixture("codex/manifest-assets", tmp_path)
+        asset = repo / ".codex-plugin/assets/icon.svg"
+        asset.unlink()
+        outside = tmp_path / "outside.svg"
+        outside.write_text("<svg/>")
+        asset.symlink_to(outside)
+        assert len(run_rule(CodexPluginStructureRule, repo)) == 1
+
     def test_stray_file_in_manifest_dir_warns(self, tmp_path):
         repo = copy_fixture("codex/broken", tmp_path)
         violations = run_rule(CodexPluginStructureRule, repo)

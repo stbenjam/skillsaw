@@ -3,7 +3,7 @@
 
 # codex-plugin-structure
 
-Only plugin.json belongs in .codex-plugin/
+.codex-plugin/ should contain only its manifest and referenced interface assets
 
 | | |
 |---|---|
@@ -18,8 +18,13 @@ Only plugin.json belongs in .codex-plugin/
 The Codex specification reserves `.codex-plugin/` for the manifest alone:
 "Only `plugin.json` belongs in `.codex-plugin/`. Keep `skills/`,
 `hooks/`, `assets/`, `.mcp.json`, and `.app.json` at the plugin root."
-Files parked in the manifest directory are not discovered where Codex
-looks for them, so hooks and assets stored there never load.
+Files parked in the manifest directory are not conventionally discovered where
+Codex looks for them. Explicitly referenced interface assets are an exception:
+the official OpenAI catalog uses `.codex-plugin/assets/` for some icons and
+logos. The rule accepts an entry containing an existing, contained file named by
+`interface.composerIcon`, `logo`, `logoDark`, or `screenshots`. Missing, escaping,
+and unreferenced assets do not receive this exception; manifest path validation
+continues to check the references themselves.
 
 ## Examples
 
