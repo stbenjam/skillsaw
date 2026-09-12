@@ -25,17 +25,22 @@ fingerprinting works and configuration options.
 
 ## :sparkles: Onboard with AI
 
-!!! tip "Skip the manual setup - paste the below into your tool of choice"
+Use the **`skillsaw-onboard`** skill to have your coding agent lint the repo,
+apply fixes, and set up CI and a baseline. Install it with the
+[skills CLI](https://github.com/vercel-labs/skills) (recommended):
 
-    ```text
-    Read and follow the instructions at
-    https://raw.githubusercontent.com/stbenjam/skillsaw/refs/heads/main/skills/skillsaw-onboard/SKILL.md
-    to onboard this repo to skillsaw.
+=== "skills CLI (recommended)"
+
+    Run this from the repository you want to onboard:
+
+    ```bash
+    npx skills add stbenjam/skillsaw
     ```
 
-Or install the plugin globally for regular use (recommended):
+    Select **`skillsaw-onboard`** and your coding agent in the installer.
+    Then ask your agent to use **`skillsaw-onboard`** to onboard the repo.
 
-=== "Claude Code"
+=== "Claude Code plugin"
 
     ```bash
     claude plugin marketplace add stbenjam/skillsaw
@@ -44,7 +49,7 @@ Or install the plugin globally for regular use (recommended):
 
     Then type **`/skillsaw-onboard`** and follow the prompts.
 
-=== "Codex"
+=== "Codex plugin"
 
     ```bash
     codex plugin marketplace add stbenjam/skillsaw
@@ -52,6 +57,16 @@ Or install the plugin globally for regular use (recommended):
     ```
 
     Start a new Codex session, then invoke **`$skillsaw-onboard`**.
+
+=== "One-time prompt"
+
+    Paste this into your coding agent:
+
+    ```text
+    Read and follow the instructions at
+    https://raw.githubusercontent.com/stbenjam/skillsaw/refs/heads/main/skills/skillsaw-onboard/SKILL.md
+    to onboard this repo to skillsaw.
+    ```
 
 ## Keep skillsaw updated
 
