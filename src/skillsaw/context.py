@@ -170,6 +170,7 @@ class RepositoryContext(
         self._agent_plugin_roots: Optional[Set[Path]] = None
         self._contained_plugin_roots: Optional[Set[Path]] = None
         self._agent_plugin_claims: Optional[Set[Path]] = None
+        self._agent_plugin_catalog_paths: Tuple[Path, ...] = ()
         self._init_mcp_registry(repo_types)
         self._provenance_cache: Dict[Path, PluginProvenance] = {}
         # Views over _provenance_cache, invalidated with it: keeping them
@@ -387,7 +388,10 @@ class RepositoryContext(
             codex_before = list(self.codex_plugins)
             agent_plugins_before = list(self.agent_plugins)
             roots_before = {r for r in (safe_resolve(p) for p in codex_before) if r}
-            marketplaces_before = tuple(self._codex_marketplace_paths or ())
+            marketplaces_before = (
+                *tuple(self._codex_marketplace_paths or ()),
+                *self._agent_plugin_catalog_paths,
+            )
             self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
             self.codex_plugins = [p for p in self.codex_plugins if not self.is_path_excluded(p)]
             self.agent_plugins = [p for p in self.agent_plugins if not self.is_path_excluded(p)]
@@ -412,6 +416,8 @@ class RepositoryContext(
                 self.codex_plugins = [
                     p for p in self._discover_codex_plugins() if not self.is_path_excluded(p)
                 ]
+            if self._agent_plugin_discovery_enabled and codex_catalog_changed:
+                self.agent_plugins = self._discover_agent_plugins()
             roots_after = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r}
             dropped = roots_before - roots_after
             if dropped:
@@ -430,7 +436,9 @@ class RepositoryContext(
                 self._codex_roots = None
             if self.agent_plugins != agent_plugins_before:
                 active_roots = {
-                    root for p in self.agent_plugins if (root := safe_resolve(p)) is not None
+                    root
+                    for p in (*self.agent_plugins, *self.codex_plugins, *self.plugins)
+                    if (root := safe_resolve(p)) is not None
                 }
                 dropped_roots = {
                     root
@@ -732,13 +740,19 @@ class RepositoryContext(
         )
 
     def _discover_agent_plugins(self) -> List[Path]:
-        """Portable packages declared at the root or under ``plugins/*``."""
+        """Portable packages in collections, host installs and local catalogs."""
+        # Keep discovery's contributing catalogs so late excludes can drop
+        # their packages even when --type switched Codex discovery off.
+        self._agent_plugin_catalog_paths = tuple(self._codex_catalog_files())
         return [
             path
             for path in agent_plugins_discovery.discover_agent_plugins(
                 self.root_path,
                 forced=self._agent_plugin_forced,
-                package_roots=self._codex_local_sources(),
+                package_roots=codex_discovery.codex_local_sources(
+                    self.root_path, self._agent_plugin_catalog_paths
+                ),
+                collection_roots=(self.root_path.joinpath(*codex_discovery.CODEX_INSTALL_DIR),),
             )
             if not self.is_path_excluded(path)
         ]
@@ -749,7 +763,9 @@ class RepositoryContext(
             self._agent_plugin_claims = {
                 resolved
                 for path in agent_plugins_discovery.discover_agent_plugins(
-                    self.root_path, package_roots=self._codex_local_sources()
+                    self.root_path,
+                    package_roots=self._codex_local_sources(),
+                    collection_roots=(self.root_path.joinpath(*codex_discovery.CODEX_INSTALL_DIR),),
                 )
                 if not self.is_path_excluded(path) and (resolved := safe_resolve(path)) is not None
             }
@@ -793,7 +809,9 @@ class RepositoryContext(
             claims = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r is not None}
             claims.update(self._codex_local_sources())
             claims.update(
-                path for path in self._agent_plugin_claim_set() if declares_openai_extension(path)
+                path
+                for path in self._agent_plugin_claim_set()
+                if declares_openai_extension(path) or self.is_codex_installed_plugin(path)
             )
             self._codex_claims = claims
         return self._codex_claims

@@ -24,7 +24,7 @@ from skillsaw.formats.codex import (
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
 from skillsaw.formats.codex_manifest import (
     codex_manifest_view,
-    portable_manifest,
+    portable_manifest_is_usable,
     portable_name_matches,
 )
 from skillsaw.paths import safe_is_dir, safe_is_file, safe_resolve
@@ -344,9 +344,8 @@ class CodexMarketplaceRegistrationRule(Rule):
                 )
                 continue
 
-            if (
-                not codex_manifest_is_contained(plugin_dir)
-                and portable_manifest(plugin_dir) is None
+            if not codex_manifest_is_contained(plugin_dir) and not portable_manifest_is_usable(
+                plugin_dir
             ):
                 # Installability is asked of the entry, not of the tree: the
                 # catalog may name a directory no node was built over. The

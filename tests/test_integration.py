@@ -9998,6 +9998,74 @@ class TestCodexRootWithClaudeMarketplace:
 
 @pytest.mark.integration
 class TestCodexPortableOverlay:
+    @pytest.mark.parametrize("overlay", ["inline", "fallback", "none"])
+    def test_installed_portable_mcp_receives_format_and_security_checks(self, tmp_path, overlay):
+        source = copy_fixture("codex/portable-overlay", tmp_path)
+        repo = tmp_path / "installed-repo"
+        package = repo / ".codex/plugins/release"
+        package.parent.mkdir(parents=True)
+        source.rename(package)
+        if overlay != "inline":
+            path = package / "plugin.json"
+            data = json.loads(path.read_text())
+            data.pop("extensions")
+            path.write_text(json.dumps(data))
+        if overlay == "none":
+            shutil.rmtree(package / ".codex-plugin")
+        result = run_lint(repo, "--rule", "mcp-prohibited")
+        findings = result["out"]["violations"]
+        assert len(findings) == 1
+        assert findings[0]["file_path"] == ".codex/plugins/release/mcp.json"
+        (package / "mcp.json").write_text("{invalid")
+        result = run_lint(repo)
+        assert any(
+            v["rule_id"] == "agent-plugin-mcp-valid"
+            and v["file_path"] == ".codex/plugins/release/mcp.json"
+            for v in result["out"]["violations"]
+        )
+
+    @pytest.mark.parametrize("inline", [True, False])
+    @pytest.mark.parametrize("escape", ["directory", "manifest"])
+    def test_escaping_fallback_is_reported_unless_shadowed(self, tmp_path, inline, escape):
+        source = copy_fixture("codex/portable-overlay", tmp_path)
+        repo = tmp_path / "catalog"
+        package = repo / "packages/release"
+        package.parent.mkdir(parents=True)
+        source.rename(package)
+        if not inline:
+            path = package / "plugin.json"
+            data = json.loads(path.read_text())
+            data.pop("extensions")
+            path.write_text(json.dumps(data))
+        marker = package / ".codex-plugin"
+        target = marker if escape == "directory" else marker / "plugin.json"
+        outside = tmp_path / "outside-fallback"
+        target.rename(outside)
+        target.symlink_to(outside, target_is_directory=escape == "directory")
+        catalog = repo / ".agents/plugins/marketplace.json"
+        catalog.parent.mkdir(parents=True)
+        catalog.write_text(
+            json.dumps(
+                {
+                    "name": "release-catalog",
+                    "plugins": [
+                        {
+                            "name": "portable-release",
+                            "source": {"source": "local", "path": "./packages/release"},
+                        }
+                    ],
+                }
+            )
+        )
+        result = run_lint(repo, "--rule", "codex-marketplace-registration")
+        findings = result["out"]["violations"]
+        if inline:
+            assert findings == []
+        else:
+            assert len(findings) == 1
+            assert "no usable" in findings[0]["message"]
+            assert findings[0]["file_path"] == ".agents/plugins/marketplace.json"
+
     @pytest.mark.parametrize("inline", [True, False])
     def test_referenced_assets_in_reserved_directory_still_warn(self, tmp_path, inline):
         repo = copy_fixture("codex/portable-overlay", tmp_path)

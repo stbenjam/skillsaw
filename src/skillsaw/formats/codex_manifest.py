@@ -56,6 +56,16 @@ def declares_openai_extension(plugin_dir: Path) -> bool:
     return data is not None and openai_extension(data) is not None
 
 
+def portable_manifest_is_usable(plugin_dir: Path) -> bool:
+    """A portable entry may not rely on an escaping compatibility overlay."""
+    from skillsaw.formats.codex import codex_marker_escapes
+
+    data = portable_manifest(plugin_dir)
+    return data is not None and (
+        openai_extension(data) is not None or not codex_marker_escapes(plugin_dir)
+    )
+
+
 @lru_cache(maxsize=None)
 def _name_validator(version: str):
     from jsonschema.validators import validator_for

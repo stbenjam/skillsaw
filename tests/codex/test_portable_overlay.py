@@ -7,9 +7,11 @@ import pytest
 
 from skillsaw.blocks import AgentPluginMcpBlock, CodexHooksBlock, HooksBlock, McpBlock
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.config import LinterConfig
+from skillsaw.linter import Linter
 from skillsaw.formats.codex import codex_declared_skill_dirs, codex_plugin_name
 from skillsaw.formats.codex_manifest import codex_manifest_view
-from skillsaw.lint_target import CodexPluginConfigNode
+from skillsaw.lint_target import AgentPluginConfigNode, CodexPluginConfigNode
 from skillsaw.rules.builtin.codex import CodexPluginJsonValidRule, CodexPluginStructureRule
 
 from ._helpers import copy_fixture
@@ -24,6 +26,47 @@ def _set_extension(repo, value):
 
 def _hooks(context):
     return [block.path.name for block in context.lint_tree.find(HooksBlock)]
+
+
+def _catalog_package(tmp_path):
+    source = copy_fixture("codex/portable-overlay", tmp_path)
+    repo = tmp_path / "catalog"
+    package = repo / "packages/release"
+    package.parent.mkdir(parents=True)
+    source.rename(package)
+    catalog = repo / ".agents/plugins/marketplace.json"
+    catalog.parent.mkdir(parents=True)
+    catalog.write_text(
+        json.dumps(
+            {
+                "name": "release-catalog",
+                "plugins": [
+                    {
+                        "name": "portable-release",
+                        "source": {"source": "local", "path": "./packages/release"},
+                    }
+                ],
+            }
+        )
+    )
+    return repo, package
+
+
+@pytest.mark.parametrize("override", [None, {RepositoryType.AGENT_PLUGIN}])
+def test_late_catalog_exclusion_removes_portable_configs_and_skills(tmp_path, override):
+    repo, package = _catalog_package(tmp_path)
+    context = RepositoryContext(repo, repo_types=override)
+    assert package in context.agent_plugins
+    assert context.lint_tree.find(AgentPluginMcpBlock)
+    config = LinterConfig.default()
+    config.exclude_patterns = [".agents/plugins/**"]
+    linter = Linter(context, config, rule_ids={"agent-plugin-mcp-valid"})
+    assert package not in linter.context.agent_plugins
+    assert all(
+        node.plugin_dir != package for node in linter.context.lint_tree.find(AgentPluginConfigNode)
+    )
+    assert not linter.context.lint_tree.find(AgentPluginMcpBlock)
+    assert package / "skills/release-summary" not in linter.context.skills
 
 
 @pytest.mark.parametrize(

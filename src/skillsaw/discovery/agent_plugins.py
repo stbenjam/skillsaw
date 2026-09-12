@@ -68,7 +68,11 @@ def declares_agent_plugin(package_root: Path) -> bool:
 
 
 def discover_agent_plugins(
-    root: Path, *, forced: bool = False, package_roots: Iterable[Path] = ()
+    root: Path,
+    *,
+    forced: bool = False,
+    package_roots: Iterable[Path] = (),
+    collection_roots: Iterable[Path] = (),
 ) -> List[Path]:
     """Discover portable roots at the lint root, ``plugins/*`` and explicit sources.
 
@@ -77,22 +81,23 @@ def discover_agent_plugins(
     arbitrary recursive scanning would claim vendored or example manifests the
     caller did not ask to lint. ``package_roots`` adds directories explicitly
     named by a host catalog, with the same containment and schema checks.
+    ``collection_roots`` adds host install directories using those same gates.
     """
     resolved_root = safe_resolve(root)
     if resolved_root is None:
         return []
 
     collection_children: List[Path] = []
-    plugins_dir = root / "plugins"
-    if safe_is_dir(plugins_dir) and contained_resolve(plugins_dir, resolved_root) is not None:
-        try:
-            collection_children = [
-                child
-                for child in sorted(plugins_dir.iterdir())
-                if safe_is_dir(child) and contained_resolve(child, resolved_root) is not None
-            ]
-        except OSError:
-            pass
+    for plugins_dir in (root / "plugins", *collection_roots):
+        if safe_is_dir(plugins_dir) and contained_resolve(plugins_dir, resolved_root) is not None:
+            try:
+                collection_children.extend(
+                    child
+                    for child in sorted(plugins_dir.iterdir())
+                    if safe_is_dir(child) and contained_resolve(child, resolved_root) is not None
+                )
+            except OSError:
+                pass
 
     found: List[Path] = []
     seen: Set[Path] = set()
