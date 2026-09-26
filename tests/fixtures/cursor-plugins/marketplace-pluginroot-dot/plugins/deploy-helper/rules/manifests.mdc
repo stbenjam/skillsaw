@@ -1,0 +1,10 @@
+---
+description: Apply when editing Kubernetes deployment manifests.
+alwaysApply: false
+globs: "deploy/**/*.yaml"
+---
+# Deployment manifests
+
+Set resource requests and limits on every container. Pin images by digest
+rather than a mutable tag, and keep readiness probes pointed at an endpoint
+that checks downstream dependencies.

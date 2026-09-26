@@ -1,0 +1,6 @@
+﻿{
+  // Native manifests retain their JSON5 number and BOM support.
+  id: 'weather',
+  configSchema: {},
+  extra: [NaN, Infinity, -Infinity],
+}

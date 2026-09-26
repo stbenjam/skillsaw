@@ -869,7 +869,9 @@ Native plugins load rules, agents, commands, skills, hooks, MCP, and variable
 schema metadata. Explicit component paths replace defaults; supported prose
 extensions and path globs follow the Cursor reference. Commands also support
 `.txt`. A root `SKILL.md` is used when there is no skills directory or override.
-Inline hooks and MCP entries receive the existing security and policy checks.
+A declared skills path is searched recursively, but not below a directory
+that already holds `SKILL.md`. A `SKILL.md` outside Cursor's skills path never loads in Cursor, but it is
+still linted as a portable Agent Skill. Inline hooks and MCP entries receive the existing security and policy checks.
 Declared and conventional component files must stay within the package.
 
 [`cursor-plugin-json-valid`](rules/cursor-plugin-json-valid.md) validates native

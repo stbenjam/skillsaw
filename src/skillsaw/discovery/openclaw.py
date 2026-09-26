@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from skillsaw.formats.openclaw import MANIFEST, contained_file, read_package, read_package_text
-from skillsaw.paths import safe_exists, safe_is_symlink, safe_resolve, contained_resolve
+from skillsaw.paths import Resolver, safe_exists, safe_is_symlink, safe_resolve, contained_resolve
 
 
 def declares_extensions(path: Path) -> bool:
@@ -25,7 +25,7 @@ def declares_extensions(path: Path) -> bool:
     return isinstance(metadata, dict) and "extensions" in metadata
 
 
-def claims_plugin(root: Path) -> bool:
+def claims_plugin(root: Path, *, resolve: Resolver = safe_resolve) -> bool:
     """Native markers and package extension declarations establish ownership.
 
     Even broken markers claim the directory, allowing a useful diagnostic
@@ -34,7 +34,9 @@ def claims_plugin(root: Path) -> bool:
     marker = root / MANIFEST
     if safe_exists(marker) or safe_is_symlink(marker):
         return True
-    return contained_file(root, "package.json") and declares_extensions(root / "package.json")
+    return contained_file(root, "package.json", resolve=resolve) and declares_extensions(
+        root / "package.json"
+    )
 
 
 def discover_plugins(

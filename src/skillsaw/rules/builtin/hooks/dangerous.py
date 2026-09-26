@@ -2,7 +2,7 @@
 Rule: hooks-dangerous
 
 Flags hook commands that match dangerous patterns: download-and-execute,
-obfuscation, and suspicious runtimes or network access.
+obfuscation, and network access.
 """
 
 import re
@@ -155,8 +155,6 @@ _OBFUSCATION_RE = re.compile(
     re.VERBOSE,
 )
 
-_BUN_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
-
 _NETWORK_FETCH_RE = re.compile(
     rf"{_CMD_BOUNDARY}\s*{_REDIRECTION}"
     rf"(?:{_VAR_ASSIGN}\s+)*"  # VAR=value assignment prefixes
@@ -171,7 +169,6 @@ _POSIX_TOKENS = (
     "nc ",
     "eval",
     "base64",
-    "bun",
 )
 
 
@@ -467,9 +464,6 @@ def dangerous_command_descriptions(command: str) -> List[str]:
 
     if _OBFUSCATION_RE.search(command):
         findings.append("uses obfuscation techniques (eval/base64)")
-
-    if not findings and _BUN_RE.search(command):
-        findings.append("uses bun runtime (uncommon in hooks, verify intent)")
 
     if not findings and _NETWORK_FETCH_RE.search(command):
         findings.append("performs network requests (verify intent)")

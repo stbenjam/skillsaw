@@ -17,6 +17,7 @@ from skillsaw.formats.agent_plugins import (
     supported_agent_plugin_schema_version,
 )
 from skillsaw.paths import (
+    Resolver,
     contained_resolve,
     safe_exists,
     safe_is_dir,
@@ -34,12 +35,14 @@ OPENAI_OVERLAY_FIELDS = ("apps", "hooks", "interface")
 CODEX_PORTABLE_SCHEMA_VERSIONS = ("1.0.0",)
 
 
-def portable_manifest(plugin_dir: Path) -> Optional[dict[str, Any]]:
+def portable_manifest(
+    plugin_dir: Path, *, resolve: Resolver = safe_resolve
+) -> Optional[dict[str, Any]]:
     """A supported, contained portable manifest, without claiming a host."""
-    root = safe_resolve(plugin_dir)
+    root = resolve(plugin_dir)
     if root is None:
         return None
-    path = contained_resolve(plugin_dir / "plugin.json", root)
+    path = contained_resolve(plugin_dir / "plugin.json", root, resolve)
     if path is None or not safe_is_file(path):
         return None
     data, error = read_json(path)
@@ -58,8 +61,8 @@ def openai_extension(data: dict[str, Any]) -> Optional[dict[str, Any]]:
     return value if isinstance(value, dict) else None
 
 
-def declares_openai_extension(plugin_dir: Path) -> bool:
-    data = portable_manifest(plugin_dir)
+def declares_openai_extension(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> bool:
+    data = portable_manifest(plugin_dir, resolve=resolve)
     return data is not None and openai_extension(data) is not None
 
 
@@ -100,17 +103,17 @@ class CodexManifestView:
     overlay_valid: bool = True
 
 
-def codex_manifest_view(plugin_dir: Path) -> CodexManifestView:
+def codex_manifest_view(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> CodexManifestView:
     compatibility_path = plugin_dir / ".codex-plugin" / "plugin.json"
-    portable = portable_manifest(plugin_dir)
+    portable = portable_manifest(plugin_dir, resolve=resolve)
     extension = openai_extension(portable) if portable is not None else None
     overlay_valid = True
     if extension is not None:
         path, overlay = plugin_dir / "plugin.json", extension
     else:
         path = compatibility_path
-        root = safe_resolve(plugin_dir)
-        contained = contained_resolve(path, root) if root is not None else None
+        root = resolve(plugin_dir)
+        contained = contained_resolve(path, root, resolve) if root is not None else None
         data, error = read_json(contained) if contained is not None else (None, None)
         overlay = data if not error and isinstance(data, dict) else {}
         marker = compatibility_path.parent

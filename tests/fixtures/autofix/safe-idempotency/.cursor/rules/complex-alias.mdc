@@ -1,0 +1,8 @@
+---
+enabled: &enabled "true"
+alwaysApply: *enabled
+description: Apply Python review conventions
+---
+
+Review public Python APIs for precise argument and return types.
+Keep exception handling close to the operation that can fail.

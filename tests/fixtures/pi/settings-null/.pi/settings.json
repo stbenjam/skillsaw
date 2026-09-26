@@ -1,0 +1,9 @@
+{
+  "skills": ["../skills"],
+  "extensions": null,
+  "prompts": null,
+  "themes": null,
+  "packages": [
+    {"source": "../review-kit", "autoload": null}
+  ]
+}

@@ -15,6 +15,7 @@ from ._helpers import (
     _ansi_colors,
     _resolve_lint_paths,
     color_enabled,
+    warn_removed_skip_rules,
 )
 
 
@@ -32,6 +33,7 @@ def _run_fix(args):
     if rule_ids and skip_rule_ids:
         print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
         sys.exit(1)
+    removed_skips = set(skip_rule_ids or ())
 
     # Resolving a named leaf symlink erases the identity needed by the
     # autofix policy. Admit inputs before resolving them, including dangling
@@ -85,6 +87,8 @@ def _run_fix(args):
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
 
+        removed_skips.intersection_update(linter.removed_skip_rule_ids)
+
         rule_progress = _RuleProgress(args)
         try:
             path_applied, path_suggested = linter.fix_and_apply(
@@ -135,6 +139,8 @@ def _run_fix(args):
             if notice.message not in advisory_messages:
                 advisory_messages.append(notice.message)
 
+    if paths:
+        warn_removed_skip_rules(removed_skips)
     c = _ansi_colors(color_enabled(sys.stdout, args.color))
 
     for message in advisory_messages:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import AbstractSet, Optional
+from typing import AbstractSet, Callable, Optional
 
 
 def is_absolute_path(path: str) -> bool:
@@ -111,7 +111,15 @@ def safe_resolve(path: Path) -> Optional[Path]:
         return None
 
 
-def contained_resolve(path: Path, root: Path) -> Optional[Path]:
+#: The shape of :func:`safe_resolve`. Probes that realpath a plugin
+#: directory and its markers accept one as ``resolve=``, so a caller that
+#: asks the same directory many questions — ``RepositoryContext.provenance``
+#: runs about ten probes per directory — can hand in a memoized resolver it
+#: owns and invalidates, instead of each probe walking the same ancestors.
+Resolver = Callable[[Path], Optional[Path]]
+
+
+def contained_resolve(path: Path, root: Path, resolve: Resolver = safe_resolve) -> Optional[Path]:
     """``path`` resolved, when it stays inside *root* — else ``None``.
 
     The reject-a-symlink-escape idiom in one place: a resolution failure
@@ -119,7 +127,7 @@ def contained_resolve(path: Path, root: Path) -> Optional[Path]:
     caller holding a resolved root can write ``if contained_resolve(p,
     root) is None: reject``.
     """
-    resolved = safe_resolve(path)
+    resolved = resolve(path)
     if resolved is None or not resolved.is_relative_to(root):
         return None
     return resolved

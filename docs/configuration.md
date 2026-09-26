@@ -245,6 +245,11 @@ do not affect the grade or enter baselines. Remove obsolete entries or correct
 misspelled rule IDs to clear the warnings. Unknown options inside a known rule
 still produce `invalid-config` warnings and follow the configured failure threshold.
 
+On the command line, `--skip-rule` with a removed rule prints a warning and
+the run continues, since the rule no longer runs anyway. `--rule` with a
+removed rule exits 1 and names the release that removed it. Any other
+unknown ID passed to either flag is an error.
+
 ## Rule Options
 
 Many rules accept options beyond `enabled` and `severity` — each rule's

@@ -16,7 +16,7 @@ hide:
 skillsaw lints the files that steer your AI coding agents: skills, plugins,
 instructions, and tool configs across Claude Code, Codex, Copilot, Agent Skills,
 Google Antigravity, OpenCode, and more. It catches security risks, structural
-flaws, and content dead zones with 106 rules, then applies deterministic
+flaws, and unclear instructions with 106 rules, then applies deterministic
 autofixes.
 </p>
 
@@ -64,8 +64,8 @@ autofixes.
 
     ---
 
-    [Research-backed](research.md) content intelligence: eliminates instruction drift,
-    attention dead zones, cognitive overload, contradictions, and redundant tooling.
+    [Research-backed](research.md) content checks flag instruction drift,
+    excessive instruction budgets, long sections, contradictions, and redundant tooling.
 
 -   :robot:{ .lg .middle } **CI-Ready & Baselines**
 

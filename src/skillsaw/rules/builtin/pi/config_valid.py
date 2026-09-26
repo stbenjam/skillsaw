@@ -23,7 +23,10 @@ class PiConfigValidRule(Rule):
         return "Pi package and project resource declarations must have valid types"
 
     def default_severity(self) -> Severity:
-        # Current Pi ignores malformed manifest fields rather than crashing.
+        # Malformed .pi/settings.json resource fields can stop Pi at startup
+        # (the settings loader spreads them unchecked), but readPiManifest
+        # drops malformed package.json#pi fields. One default must not put
+        # ERROR on the package.json cases Pi ignores.
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -52,13 +55,19 @@ class PiConfigValidRule(Rule):
                     continue
                 bad = []
 
-                def lists(mapping, prefix):
+                def lists(mapping, prefix, allow_null):
                     for key in RESOURCE_FIELDS:
-                        if key in mapping and not string_list(mapping[key]):
+                        if key not in mapping or (allow_null and mapping[key] is None):
+                            continue
+                        if not string_list(mapping[key]):
                             bad.append(f"{prefix}{key} (expected an array of strings)")
 
-                lists(config, "" if settings else "pi.")
-                if settings and "packages" in config:
+                # Pi reads top-level settings fields as `?? []` and drops
+                # manifest fields that are not string arrays, so null means
+                # absent in both. A null package filter is not: Pi passes it
+                # to the filter and the package is silently dropped.
+                lists(config, "" if settings else "pi.", allow_null=True)
+                if settings and config.get("packages") is not None:
                     packages = config["packages"]
                     if not isinstance(packages, list):
                         bad.append("packages (expected an array)")
@@ -74,8 +83,10 @@ class PiConfigValidRule(Rule):
                                     or not entry["source"].strip()
                                 ):
                                     bad.append(f"{prefix}.source (expected a nonempty string)")
-                                lists(entry, prefix + ".")
-                                if "autoload" in entry and not isinstance(entry["autoload"], bool):
+                                lists(entry, prefix + ".", allow_null=False)
+                                autoload = entry.get("autoload")
+                                # Pi only tests `autoload === false`.
+                                if autoload is not None and not isinstance(autoload, bool):
                                     bad.append(f"{prefix}.autoload (expected a boolean)")
                             else:
                                 bad.append(f"{prefix} (expected a source string or object)")
@@ -83,7 +94,15 @@ class PiConfigValidRule(Rule):
                     detail = "; ".join(bad[:5])
                     if len(bad) > 5:
                         detail += f"; and {len(bad) - 5} more"
+                    consequence = (
+                        "project settings are not sanitized, so Pi can fail at startup"
+                        if settings
+                        else "Pi ignores these fields and loads none of their resources"
+                    )
                     violations.append(
-                        self.violation(f"Invalid Pi resource declarations: {detail}", block=block)
+                        self.violation(
+                            f"Invalid Pi resource declarations: {detail} ({consequence})",
+                            block=block,
+                        )
                     )
         return violations

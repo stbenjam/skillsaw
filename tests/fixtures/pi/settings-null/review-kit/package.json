@@ -1,0 +1,9 @@
+{
+  "name": "review-kit",
+  "version": "1.2.0",
+  "keywords": ["pi-package"],
+  "pi": {
+    "prompts": ["./prompts"],
+    "themes": null
+  }
+}

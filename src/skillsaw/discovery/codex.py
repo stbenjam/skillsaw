@@ -16,6 +16,7 @@ from typing import Any, Callable, Iterable, List, Optional, Set
 from skillsaw.formats.codex import CODEX_PLUGIN_MANIFEST, codex_local_source_path
 from skillsaw.formats.codex_manifest import declares_openai_extension, portable_manifest_is_usable
 from skillsaw.paths import (
+    Resolver,
     contained_resolve,
     safe_exists,
     safe_is_dir,
@@ -304,7 +305,11 @@ def codex_install_root(root_path: Path) -> Optional[Path]:
 
 
 def is_installed_codex_plugin(
-    plugin_dir: Path, root_path: Path, install_root: Optional[Path]
+    plugin_dir: Path,
+    root_path: Path,
+    install_root: Optional[Path],
+    *,
+    resolve: Resolver = safe_resolve,
 ) -> bool:
     """Whether *plugin_dir* sits under the personal-install location.
 
@@ -325,7 +330,7 @@ def is_installed_codex_plugin(
             return True
     except ValueError:  # pragma: no cover - defensive
         pass
-    resolved = safe_resolve(plugin_dir)
+    resolved = resolve(plugin_dir)
     if resolved is None:
         return False
     return resolved != install_root and resolved.is_relative_to(install_root)

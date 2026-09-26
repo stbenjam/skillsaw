@@ -6,13 +6,16 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
+import yaml
+from yaml.tokens import AliasToken, AnchorToken, ScalarToken, TagToken
+
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import CursorRuleBlock, InstructionBlock
 from skillsaw.paths import safe_resolve
 from skillsaw.rules.builtin.utils import read_text
-from skillsaw.utils import replace_frontmatter_field
+from skillsaw.utils import _SAFE_LOADER
 
 _ALWAYS_APPLY_FIX_PREFIX = "'alwaysApply' must be a boolean"
 
@@ -131,6 +134,32 @@ def _trailing_comment(line: str) -> str:
             before = body[:index]
             return before[len(before.rstrip()) :] + body[index:]
     return ""
+
+
+def _has_simple_scalar(content: str, line: Optional[int]) -> bool:
+    """Only rewrite a complete, unanchored scalar on the key's own line.
+
+    Parsed values lose YAML's source span: a stripped block scalar or folded
+    quoted string can contain no newline despite occupying several lines.
+    Scanning the key line alone refuses those continuations and preserves
+    aliases, anchors and tags whose semantics a replacement would change.
+    """
+    lines = content.split("\n")
+    if line is None or not 1 <= line <= len(lines):
+        return False
+    try:
+        tokens = list(yaml.scan(lines[line - 1], Loader=_SAFE_LOADER))
+    except yaml.YAMLError:
+        return False
+    if any(isinstance(token, (AliasToken, AnchorToken, TagToken)) for token in tokens):
+        return False
+    scalars = [token for token in tokens if isinstance(token, ScalarToken)]
+    return (
+        len(scalars) == 2
+        and scalars[0].value == "alwaysApply"
+        and scalars[1].style not in (">", "|")
+        and scalars[1].start_mark.line == scalars[1].end_mark.line
+    )
 
 
 class CursorRulesValidRule(Rule):
@@ -394,33 +423,17 @@ class CursorRulesValidRule(Rule):
         field = block.field("alwaysApply")
         if field is None or not isinstance(field.value, str):
             return None
-        # A newline in the value marks a block scalar — declined early;
-        # the line-count invariant below explains why no rewrite is correct.
-        if "\n" in field.value:
+        if not _has_simple_scalar(original, field.field_line):
             return None
         boolean = _BOOLEAN_STRINGS.get(field.value.strip().lower())
         if boolean is None:
             return None
-        # The line-scoped rewrite is preferred, not a fallback: it touches
-        # exactly the span that is wrong, so the line count holds and an
-        # authored trailing comment survives. ``replace_frontmatter_field``
-        # re-emits the whole field and drops both. It stays for the case
-        # where no line number was recovered.
+        # Change only the verified key line, preserving its trailing comment.
         candidate = _replace_key_line(original, field.field_line, f"alwaysApply: {boolean}")
-        if candidate is None:
-            candidate = replace_frontmatter_field(
-                original, "alwaysApply", f"alwaysApply: {boolean}"
-            )
         if candidate is None or candidate == original:
             return None
-        # A value wider than its key line — a folded or literal block scalar,
-        # ``alwaysApply: >`` with an indented ``true`` — has a span the
-        # one-line replacement cannot fill, so rewriting it deletes the
-        # continuation and shifts every later diagnostic. Decline instead of
-        # corrupting; check() asks this same function, so the violation stops
-        # advertising a fix at the same moment. Stated as the line-count
-        # invariant rather than as a block-scalar test, so any other
-        # multi-line spelling is refused too.
+        # Keep the general line-count invariant alongside the authored-scalar
+        # guard above; no rewrite may shift later diagnostics.
         if candidate.count("\n") != original.count("\n"):
             return None
         return candidate

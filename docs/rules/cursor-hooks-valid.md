@@ -112,6 +112,12 @@ file, or an inline `hooks` object in their manifest or marketplace entry.
 The same event and handler checks apply. Unlike project `.cursor/hooks.json`,
 plugin hooks may omit `version`; an explicit version is still validated.
 
+A plugin that also ships a Claude Code manifest often keeps Claude's
+`hooks/hooks.json` at that default path, with matcher groups that nest a
+`hooks` array under PascalCase events. When every entry has that shape, the
+rule reports one finding for the file instead of checking each entry. Point
+`hooks` in `.cursor-plugin/plugin.json` at a separate Cursor-format file.
+
 ## Configuration
 
 ```yaml

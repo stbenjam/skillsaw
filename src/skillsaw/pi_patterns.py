@@ -1,15 +1,19 @@
-"""Bounded matching for Pi resource globs and ignore files."""
+"""Bounded matching for Pi resource globs and ignore files.
+
+``pathspec`` and ``wcmatch`` are imported where they are used: discovery
+imports this module on every run, and only a repository declaring Pi
+resources ever matches a pattern.
+"""
 
 import re
 from functools import lru_cache
-from typing import Iterable
-
-from pathspec import GitIgnoreSpec
-from wcmatch import glob
+from typing import TYPE_CHECKING, Iterable, Sequence
 
 from .timeouts import RegexTimeout, regex_timeout
 
-_FLAGS = glob.GLOBSTAR | glob.BRACE | glob.EXTGLOB
+if TYPE_CHECKING:
+    from pathspec import GitIgnoreSpec
+
 _PATTERN_SECONDS = 0.02
 _MAX_PATTERN_LENGTH = 1024
 _MAX_IGNORE_PATTERNS = 4096
@@ -19,8 +23,10 @@ _MAX_IGNORE_PATTERNS = 4096
 def _compile_glob(pattern: str):
     if not pattern or len(pattern) > _MAX_PATTERN_LENGTH:
         return None
+    from wcmatch import glob
+
     with regex_timeout(_PATTERN_SECONDS):
-        return glob.compile(pattern, flags=_FLAGS, limit=256)
+        return glob.compile(pattern, flags=glob.GLOBSTAR | glob.BRACE | glob.EXTGLOB, limit=256)
 
 
 def _globmatch(value: str, pattern: str) -> bool:
@@ -34,7 +40,15 @@ def _globmatch(value: str, pattern: str) -> bool:
         return False
 
 
+def _ignore_spec(patterns: Sequence = ()) -> "GitIgnoreSpec":
+    from pathspec import GitIgnoreSpec
+
+    return GitIgnoreSpec(list(patterns[-_MAX_IGNORE_PATTERNS:]), backend="simple")
+
+
 def _ignore_patterns(lines: Iterable[str]) -> list:
+    from pathspec import GitIgnoreSpec
+
     patterns = []
     for index, line in enumerate(lines):
         if index >= _MAX_IGNORE_PATTERNS:
@@ -51,7 +65,7 @@ def _ignore_patterns(lines: Iterable[str]) -> list:
     return patterns
 
 
-def _ignored(ignore: GitIgnoreSpec, value: str) -> bool:
+def _ignored(ignore: "GitIgnoreSpec", value: str) -> bool:
     try:
         with regex_timeout(_PATTERN_SECONDS):
             return ignore.match_file(value)

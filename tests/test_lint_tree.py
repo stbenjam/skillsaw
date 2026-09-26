@@ -1013,7 +1013,8 @@ def test_tree_rejects_coderabbit_symlink_outside_repo(tmp_path):
 def test_unresolvable_repository_root_surfaces_lint_error(temp_dir, monkeypatch):
     """A failed canonical-root lookup must not silently produce a partial tree."""
     context = RepositoryContext(temp_dir)
-    monkeypatch.setattr("skillsaw.lint_tree.safe_resolve", lambda path: None)
+    # The tree build resolves through the context's memo.
+    monkeypatch.setattr(context, "resolve_path", lambda path: None)
 
     linter = Linter(context, LinterConfig.default())
     first_errors = [v for v in linter.run() if v.rule_id == "repository-path-error"]

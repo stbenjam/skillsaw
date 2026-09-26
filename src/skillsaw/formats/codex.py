@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from skillsaw.paths import (
+    Resolver,
     contained_resolve,
     safe_exists,
     safe_is_dir,
@@ -436,7 +437,7 @@ def codex_inline_mcp_servers(plugin_dir: Path) -> List[Dict[str, Any]]:
     return inline_documents(codex_manifest(plugin_dir).get("mcpServers"), "mcpServers")
 
 
-def codex_manifest_is_contained(plugin_dir: Path) -> bool:
+def codex_manifest_is_contained(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> bool:
     """Whether *plugin_dir* carries a Codex manifest of its own.
 
     The authorship evidence the Claude rules stand down on, asked directly
@@ -448,19 +449,19 @@ def codex_manifest_is_contained(plugin_dir: Path) -> bool:
     manifest, and exempting on it would leave the directory covered by no
     rule at all.
     """
-    root = safe_resolve(plugin_dir)
+    root = resolve(plugin_dir)
     if root is None:
         return False
     manifest_dir = plugin_dir / CODEX_PLUGIN_MANIFEST[0]
-    if contained_resolve(manifest_dir, root) is None:
+    if contained_resolve(manifest_dir, root, resolve) is None:
         return False
     manifest = plugin_dir.joinpath(*CODEX_PLUGIN_MANIFEST)
-    if contained_resolve(manifest, root) is None:
+    if contained_resolve(manifest, root, resolve) is None:
         return False
     return safe_is_file(manifest)
 
 
-def codex_marker_escapes(plugin_dir: Path) -> bool:
+def codex_marker_escapes(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> bool:
     """Whether *plugin_dir*'s ``.codex-plugin`` marker points out of the plugin.
 
     The containment half of :func:`codex_manifest_is_contained`, asked
@@ -470,14 +471,14 @@ def codex_marker_escapes(plugin_dir: Path) -> bool:
     (or a ``plugin.json`` inside it) that resolves elsewhere is another
     plugin's — or another tree's — and no claim may adopt it.
     """
-    root = safe_resolve(plugin_dir)
+    root = resolve(plugin_dir)
     if root is None:
         # Containment cannot be proven, so fail closed.
         return True
     manifest_dir = plugin_dir / CODEX_PLUGIN_MANIFEST[0]
     if not (safe_exists(manifest_dir) or safe_is_symlink(manifest_dir)):
         return False
-    if contained_resolve(manifest_dir, root) is None:
+    if contained_resolve(manifest_dir, root, resolve) is None:
         return True
     manifest = plugin_dir.joinpath(*CODEX_PLUGIN_MANIFEST)
-    return safe_exists(manifest) and contained_resolve(manifest, root) is None
+    return safe_exists(manifest) and contained_resolve(manifest, root, resolve) is None

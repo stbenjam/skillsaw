@@ -89,6 +89,7 @@ from typing import Any, Dict, List, Mapping, Optional, Set
 from skillsaw.formats.codex import inline_documents
 from skillsaw.formats.grok_mcp import decode_mcp_server
 from skillsaw.paths import (
+    Resolver,
     contained_resolve,
     safe_exists,
     safe_is_dir,
@@ -798,7 +799,7 @@ def grok_inline_mcp(plugin_dir: Path) -> List[Dict[str, Any]]:
     return _grok_inline(plugin_dir, "mcpServers")
 
 
-def grok_manifest_is_contained(plugin_dir: Path) -> bool:
+def grok_manifest_is_contained(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> bool:
     """Whether *plugin_dir* carries a Grok manifest of its own.
 
     ``.grok-plugin/plugin.json`` only, never the ``.claude-plugin`` or root
@@ -807,19 +808,19 @@ def grok_manifest_is_contained(plugin_dir: Path) -> bool:
     Containment is checked the way discovery checks it, so a marker or a
     manifest symlinked out of the plugin is not this plugin's.
     """
-    root = safe_resolve(plugin_dir)
+    root = resolve(plugin_dir)
     if root is None:
         return False
     marker = plugin_dir / PLUGIN_DIR_NAME
-    if contained_resolve(marker, root) is None:
+    if contained_resolve(marker, root, resolve) is None:
         return False
     manifest = marker / PLUGIN_MANIFEST
-    if contained_resolve(manifest, root) is None:
+    if contained_resolve(manifest, root, resolve) is None:
         return False
     return safe_is_file(manifest)
 
 
-def grok_marker_escapes(plugin_dir: Path) -> bool:
+def grok_marker_escapes(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> bool:
     """Whether *plugin_dir*'s ``.grok-plugin`` marker points out of the plugin.
 
     The containment half of :func:`grok_manifest_is_contained`, asked
@@ -828,14 +829,14 @@ def grok_marker_escapes(plugin_dir: Path) -> bool:
     marker (or a ``plugin.json`` inside it) that resolves elsewhere is
     another plugin's, and no claim may adopt it.
     """
-    root = safe_resolve(plugin_dir)
+    root = resolve(plugin_dir)
     if root is None:
         # Containment cannot be proven, so fail closed.
         return True
     marker = plugin_dir / PLUGIN_DIR_NAME
     if not (safe_exists(marker) or safe_is_symlink(marker)):
         return False
-    if contained_resolve(marker, root) is None:
+    if contained_resolve(marker, root, resolve) is None:
         return True
     manifest = marker / PLUGIN_MANIFEST
-    return safe_exists(manifest) and contained_resolve(manifest, root) is None
+    return safe_exists(manifest) and contained_resolve(manifest, root, resolve) is None

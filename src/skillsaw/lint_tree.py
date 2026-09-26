@@ -7,6 +7,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+from functools import cached_property
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, TYPE_CHECKING, Tuple
@@ -251,9 +252,18 @@ class _TreeBuildState:
     opencode_configs: List[OpenCodeConfigBlock] = field(default_factory=list)
     pi_prompts: List[Tuple[LintTarget, Path, Optional[Path]]] = field(default_factory=list)
 
+    @cached_property
+    def portable_skill_dirs(self) -> Set[Path]:
+        """Physical skill identities retained for non-Pi consumers."""
+        return {
+            resolved
+            for path in self.context.skills
+            if (resolved := self.context.resolve_path(path)) is not None
+        }
+
     def resolve_repo_path(self, path: Path) -> Path | None:
         """Resolve *path* only when repository containment is safe."""
-        return contained_resolve(path, self.repo_root)
+        return contained_resolve(path, self.repo_root, self.context.resolve_path)
 
     def add_block(
         self,
@@ -368,10 +378,10 @@ class _TreeBuildState:
         refs_dir = skill_path / "references"
         if not refs_dir.is_dir():
             return
-        root = safe_resolve(containment_root) if containment_root is not None else None
+        root = self.context.resolve_path(containment_root) if containment_root is not None else None
         for ref_file in sorted(refs_dir.glob("*.md")):
             if root is not None:
-                resolved = safe_resolve(ref_file)
+                resolved = self.context.resolve_path(ref_file)
                 if resolved is None or not resolved.is_relative_to(root):
                     continue
             self.add_block(skill_node, ref_file, SkillRefBlock, owner=owner)
@@ -391,9 +401,9 @@ class _TreeBuildState:
         # there is no file to attach.
         if not safe_is_file(path) or self.context.is_path_excluded(path):
             return
-        resolved = safe_resolve(path)
-        root = safe_resolve(containment_root)
-        owner = safe_resolve(metadata_root)
+        resolved = self.context.resolve_path(path)
+        root = self.context.resolve_path(containment_root)
+        owner = self.context.resolve_path(metadata_root)
         if (
             resolved is None
             or root is None
@@ -537,7 +547,7 @@ def _claim_attached_hooks(
             isinstance(child, HooksBlock)
             and (block_cls is None or type(child) is block_cls)
             and child.plugin_owner is None
-            and safe_resolve(child.path) == resolved
+            and state.context.resolve_path(child.path) == resolved
         ):
             child.plugin_owner = owner
     return True
@@ -553,8 +563,8 @@ def _attach_apm_skills(
         return
 
     for skill_path in state.context.skills:
-        if not (safe_resolve(skill_path) or skill_path).is_relative_to(
-            safe_resolve(apm_skills) or apm_skills
+        if not (state.context.resolve_path(skill_path) or skill_path).is_relative_to(
+            state.context.resolve_path(apm_skills) or apm_skills
         ):
             continue
         skill_node = SkillNode(path=skill_path)
@@ -620,8 +630,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return AgentsMdBlock
         return _INSTRUCTION_FILE_BLOCK_TYPES.get(path.name, InstructionBlock)
 
+    # Every realpath of the build goes through the context's memo: the
+    # plugin loop, prose attach and containment checks ask about the same
+    # directories the provenance probes already resolved.
+    resolve = context.resolve_path
     root = LintTarget(path=context.root_path)
-    repo_root = safe_resolve(context.root_path)
+    repo_root = resolve(context.root_path)
     if repo_root is None:
         message = f"Repository root could not be resolved: {context.root_path}"
         if message not in context.lint_tree_errors:
@@ -648,7 +662,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _record_walk_error(error)
 
     apm_source_root = (
-        (safe_resolve((context.root_path / ".apm")) or (context.root_path / ".apm"))
+        (resolve((context.root_path / ".apm")) or (context.root_path / ".apm"))
         if context.has_apm
         else None
     )
@@ -657,7 +671,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """Return whether *p* belongs to the active APM source tree."""
         if apm_source_root is None:
             return False
-        resolved = safe_resolve(p) or p
+        resolved = resolve(p) or p
         return resolved == apm_source_root or resolved.is_relative_to(apm_source_root)
 
     # Editor directories the loops below will actually walk. Discovery drops
@@ -673,7 +687,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     antigravity_roots = {
         resolved
         for directory in context.antigravity_workspace_roots()
-        if (resolved := safe_resolve(directory)) is not None
+        if (resolved := resolve(directory)) is not None
     }
     eligible_tool_dirs = {
         editor: (
@@ -682,7 +696,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             else {
                 resolved
                 for directory in context.agent_tool_dirs(editor)
-                if (resolved := safe_resolve(directory)) is not None
+                if (resolved := resolve(directory)) is not None
             }
         )
         for editor in {editor for editor, _sub, _pattern, _cls in _EDITOR_GLOBS}
@@ -728,7 +742,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                         continue
                     if not fnmatch.fnmatch(candidate.name, pattern.rsplit("/", 1)[-1]):
                         continue
-                    editor_dir = safe_resolve(Path(*parts[: index + 1]))
+                    editor_dir = resolve(Path(*parts[: index + 1]))
                     if editor_dir is not None and editor_dir in eligible_tool_dirs[editor]:
                         return True
             return False
@@ -737,7 +751,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # file. Let the canonical target's owner win too, or the early
         # instruction sweep claims the resolved path and suppresses structural
         # validation when the editor loop arrives later.
-        resolved = safe_resolve(p)
+        resolved = resolve(p)
         return _lexically_claimed(p) or (resolved is not None and _lexically_claimed(resolved))
 
     # APM's Copilot target compiles `.apm/<kind>/` into the root
@@ -747,7 +761,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # repository with no `.apm/prompts/` is authored content and stays.
     apm_compiled_github: Set[Path] = set()
     if context.has_apm and context.apm_targets("copilot"):
-        root_github = safe_resolve(context.root_path / ".github")
+        root_github = resolve(context.root_path / ".github")
         for kind in ("agents", "prompts", "chatmodes", "instructions"):
             if root_github is not None and (context.root_path / ".apm" / kind).is_dir():
                 apm_compiled_github.add(root_github / kind)
@@ -773,7 +787,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     def _is_apm_compiled_github(path: Path) -> bool:
         """Whether *path* is APM output rather than authored content."""
-        resolved = safe_resolve(path)
+        resolved = resolve(path)
         return resolved is not None and resolved in apm_compiled_github
 
     # Nearest package ownership, with the roots resolved once per context.
@@ -790,7 +804,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         attached once as the Agent Plugins parser role, so a second parser
         role here would duplicate every policy and security finding.
         """
-        return agent_plugin_mcp is not None and safe_resolve(path) == agent_plugin_mcp
+        return agent_plugin_mcp is not None and resolve(path) == agent_plugin_mcp
 
     def _add_contained_plugin_block(
         parent: (
@@ -809,8 +823,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         declaration, so nothing else has checked where they resolve to. A
         symlink would otherwise read an external file under an in-repo path.
         """
-        root = safe_resolve(parent.plugin_dir)
-        resolved = safe_resolve(p)
+        root = resolve(parent.plugin_dir)
+        resolved = resolve(p)
         if root is None or resolved is None or not resolved.is_relative_to(root):
             return
         state.add_parser_block(parent, p, block_cls, owner=owner)
@@ -826,7 +840,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         ``seen_plugin_dirs`` is fully populated before the plugin loop makes
         the first call here.
         """
-        resolved = safe_resolve(candidate)
+        resolved = resolve(candidate)
         if resolved is None:
             return False
         for ancestor in resolved.parents:
@@ -845,7 +859,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         whoever owns it. Containment as in ``_add_contained_plugin_block``: a symlink
         would pull an external file under an in-repo name.
         """
-        plugin_resolved = safe_resolve(plugin_dir)
+        plugin_resolved = resolve(plugin_dir)
         if plugin_resolved is None:
             return
 
@@ -898,7 +912,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # Prefer the portable parser role so ecosystem-neutral policy rules see
     # the executable surface once rather than reporting duplicate findings.
     root_agent_plugin_mcp = (
-        safe_resolve(context.root_path / "mcp.json") if repo_root in agent_plugin_roots else None
+        resolve(context.root_path / "mcp.json") if repo_root in agent_plugin_roots else None
     )
     root_native_mcp = context.root_path / ".mcp.json"
     if not _shadowed_by_agent_plugin_mcp(root_native_mcp, root_agent_plugin_mcp):
@@ -1364,7 +1378,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if _is_excluded(grok_marketplace_json):
             continue
         catalog_node = GrokMarketplaceConfigNode(path=grok_marketplace_json)
-        marketplace_root = safe_resolve(grok_marketplace_json.parent.parent)
+        marketplace_root = resolve(grok_marketplace_json.parent.parent)
         if marketplace_root is not None:
             index_locations = [
                 (marketplace_root.joinpath(*parts), False) for parts in grok.PLUGIN_INDEX_PATHS
@@ -1392,7 +1406,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 # of the marketplace is not this marketplace's display
                 # catalog, and the parity rule would report a file it does
                 # not own.
-                resolved_index = contained_resolve(index_json, marketplace_root)
+                resolved_index = contained_resolve(index_json, marketplace_root, resolve)
                 if resolved_index is None or resolved_index in index_seen:
                     continue
                 if present and not _is_excluded(index_json):
@@ -1445,7 +1459,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *sorted(p for p in context._antigravity_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._agent_plugin_claim_set() if not context.is_path_excluded(p)),
     ):
-        resolved_candidate = safe_resolve(candidate)
+        resolved_candidate = resolve(candidate)
         if resolved_candidate is None:
             # A claim that cannot resolve (symlink loop, unreadable
             # parent) must not abort tree construction for the whole
@@ -1475,13 +1489,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             prov.codex or prov.grok or prov.antigravity or prov.openclaw or is_cursor
         ):
             continue
-        resolved_plugin = safe_resolve(plugin_path)
+        resolved_plugin = resolve(plugin_path)
         if resolved_plugin is None:
             continue
 
         is_openclaw = prov.openclaw or plugin_path in openclaw_plugin_roots
         is_agent_plugin = resolved_plugin in agent_plugin_roots
-        agent_plugin_mcp = safe_resolve(plugin_path / "mcp.json") if is_agent_plugin else None
+        agent_plugin_mcp = resolve(plugin_path / "mcp.json") if is_agent_plugin else None
 
         # Container type: Claude identity keeps PluginNode and its Claude
         # rules. Otherwise Codex wins the neutral hierarchy choice when a
@@ -1545,16 +1559,16 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # in the declared-files loop below, wherever the plugin sits in
             # the tree. (``hooks/hooks.json`` needs nothing either: it
             # attaches under the Codex cluster with containment.)
-            claimed_mcp = {safe_resolve(plugin_path / ".mcp.json")} - {None}
+            claimed_mcp = {resolve(plugin_path / ".mcp.json")} - {None}
             claimed_hooks: Set[Optional[Path]] = set()
             if prov.codex:
-                claimed_hooks = {
-                    safe_resolve(plugin_path / CODEX_DIR_NAME / CODEX_HOOKS_FILENAME)
-                } - {None}
+                claimed_hooks = {resolve(plugin_path / CODEX_DIR_NAME / CODEX_HOOKS_FILENAME)} - {
+                    None
+                }
             for child in root.children:
-                if isinstance(child, McpBlock) and safe_resolve(child.path) in claimed_mcp:
+                if isinstance(child, McpBlock) and resolve(child.path) in claimed_mcp:
                     child.plugin_owner = resolved_plugin
-                elif isinstance(child, HooksBlock) and safe_resolve(child.path) in claimed_hooks:
+                elif isinstance(child, HooksBlock) and resolve(child.path) in claimed_hooks:
                     child.plugin_owner = resolved_plugin
 
         if is_openclaw:
@@ -1563,7 +1577,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             node.plugin_owner = resolved_plugin
             if not _is_excluded(node.path):
                 container.children.append(node)
-                payload = inline_mcp_servers(plugin_path)
+                payload = inline_mcp_servers(plugin_path, resolve=resolve)
                 if payload is not None:
                     block = OpenClawInlineMcpBlock(
                         path=node.path, inline_data={"mcpServers": payload}
@@ -1571,7 +1585,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                     block.plugin_owner = resolved_plugin
                     state.attach_prebuilt(node, block)
             package_path = plugin_path / "package.json"
-            if contained_file(plugin_path, "package.json"):
+            if contained_file(plugin_path, "package.json", resolve=resolve):
                 state.add_parser_block(
                     container, package_path, OpenClawPackageConfigNode, owner=resolved_plugin
                 )
@@ -1581,7 +1595,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 origin,
                 data,
                 {
-                    field: cursor.component_files(plugin_path, data, field, _is_excluded)
+                    field: cursor.component_files(
+                        plugin_path, data, field, _is_excluded, resolve=resolve
+                    )
                     for field in ("rules", "commands", "agents")
                 },
             )
@@ -1622,7 +1638,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                     ("hooks", CursorPluginHooksBlock),
                     ("mcpServers", CursorPluginMcpBlock),
                 ):
-                    for path in cursor.component_paths(plugin_path, data, field):
+                    for path in cursor.component_paths(plugin_path, data, field, resolve=resolve):
                         if not is_root_or_ancestor_excluded(
                             path, plugin_path, _is_excluded
                         ) and _inside_plugin(path, resolved_plugin):
@@ -1685,7 +1701,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # Codex manifest cluster, for any directory Codex claims (dual
         # directories hang it off their PluginNode).
         if prov.codex:
-            manifest_view = codex_manifest_view(plugin_path)
+            manifest_view = codex_manifest_view(plugin_path, resolve=resolve)
             manifest = manifest_view.path
             # Not gated on the manifest existing: a plugin whose manifest is
             # missing must still reach codex-plugin-json-valid to be
@@ -1916,7 +1932,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
         if container is not root:
             if marketplace_node is not None and resolved_plugin.is_relative_to(
-                (safe_resolve(marketplace_dir) or marketplace_dir)
+                (resolve(marketplace_dir) or marketplace_dir)
             ):
                 marketplace_node.children.append(container)
             else:
@@ -1948,7 +1964,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # with is_relative_to() is O(skills x plugins) and dominated tree
         # construction on large marketplaces (3.6k skills x 445 plugins).
         parent_plugin: LintTarget | None = None
-        resolved_skill = safe_resolve(skill_path) or skill_path
+        resolved_skill = resolve(skill_path) or skill_path
         for candidate in (resolved_skill, *resolved_skill.parents):
             node = (
                 cursor_plugin_nodes.get(candidate)
@@ -1993,9 +2009,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Promptfoo prompt content blocks ---
     for block in PromptfooPromptBlock.gather_from_tree(root):
-        block_resolved = safe_resolve(block.path) or block.path
+        block_resolved = resolve(block.path) or block.path
         for node in root.find(PromptfooConfigNode):
-            if (safe_resolve(node.path) or node.path) == block_resolved:
+            if (resolve(node.path) or node.path) == block_resolved:
                 node.children.append(block)
                 break
 
@@ -2060,9 +2076,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         for parent, path, cls, owner in cursor_prose:
             if cls is not CursorRuleBlock:
                 state.add_block(parent, path, cls, owner=owner)
-                prose_paths.add(safe_resolve(path))
+                prose_paths.add(resolve(path))
                 continue
-            resolved = safe_resolve(path)
+            resolved = resolve(path)
             if resolved is None or resolved in cursor_rule_paths:
                 continue
             role = CursorRuleValidationBlock if resolved in prose_paths else CursorRuleBlock
@@ -2092,7 +2108,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         for extra in matches:
             if not extra.is_file():
                 continue
-            extra_resolved = safe_resolve(extra)
+            extra_resolved = resolve(extra)
             if extra_resolved is not None and any(
                 claimed == extra_resolved for claimed, _ in state.seen_roles
             ):
@@ -2112,7 +2128,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     def _path_is_external(path: Path) -> bool:
         if not external_roots:
             return False
-        resolved = safe_resolve(path)
+        resolved = resolve(path)
         return resolved is not None and path_within_roots(resolved, external_roots)
 
     def _tag_and_prune_external(parent: LintTarget, inherited_external: bool = False) -> None:

@@ -299,3 +299,14 @@ def install_warning_display() -> None:
     # look like the exact Skillsaw handler whose marker it copied.
     setattr(_showwarning, "_skillsaw_warning_display", _showwarning)
     warnings.showwarning = _showwarning
+
+
+def warn_removed_skip_rules(skip_rule_ids) -> None:
+    """Warn for retired skips absent from the loaded rules in every input path."""
+    from ..linter import REMOVED_RULES, removed_rule_note
+
+    for rule_id in sorted(set(skip_rule_ids or ()) & REMOVED_RULES.keys()):
+        print(
+            f"Warning: --skip-rule {rule_id} has no effect. {removed_rule_note(rule_id)}.",
+            file=sys.stderr,
+        )

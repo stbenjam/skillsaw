@@ -4,6 +4,9 @@ Pi resolves package resources relative to `package.json`, and project resource
 paths and local package sources relative to `.pi/settings.json`. A missing
 literal path can silently omit content.
 
+Project settings paths trim surrounding whitespace and accept local `file://`
+URLs within the repository. Package manifest paths retain their literal spelling.
+
 ## Activation
 
 This rule is opt-in because generated files and bundled npm dependencies may

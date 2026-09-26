@@ -8,6 +8,8 @@ from skillsaw.repository_types import RepositoryType
 from skillsaw.rule import Rule, Severity
 from skillsaw.diagnostics import safe_display
 
+_SHOWN = 5
+
 
 class CursorMarketplaceValidRule(Rule):
     since = "0.21.0"
@@ -56,6 +58,7 @@ class CursorMarketplaceValidRule(Rule):
             if not isinstance(entries, list):
                 continue
             names = set()
+            missing = []
             metadata = data.get("metadata")
             prefix = metadata.get("pluginRoot", "") if isinstance(metadata, dict) else ""
             for entry in entries:
@@ -75,11 +78,27 @@ class CursorMarketplaceValidRule(Rule):
                 if source is None or not isinstance(prefix, str):
                     continue
                 path = cursor.source_path(block.path.parent.parent, prefix, source)
-                if path is None or not safe_is_dir(path):
+                if path is None:
                     violations.append(
                         self.violation(
-                            f"Plugin {safe_display(repr(name))}: source must name an existing directory inside this marketplace",
+                            f"Plugin {safe_display(repr(name))}: source must be a relative path that stays inside this marketplace",
                             file_path=block.path,
                         )
                     )
+                elif not safe_is_dir(path):
+                    missing.append(safe_display(repr(name)))
+            if missing:
+                # One finding per catalog: a copied or stale marketplace
+                # otherwise reports every entry separately.
+                shown = ", ".join(missing[:_SHOWN])
+                if len(missing) > _SHOWN:
+                    shown += f", and {len(missing) - _SHOWN} more"
+                noun = "entry has" if len(missing) == 1 else "entries have"
+                violations.append(
+                    self.violation(
+                        f"{len(missing)} plugin {noun} no local plugin directory: {shown}; "
+                        "point each source at an existing directory inside this marketplace",
+                        file_path=block.path,
+                    )
+                )
         return violations

@@ -160,6 +160,7 @@ class RepositoryContext(
             lint_external_content: Whether externally sourced nodes should be
                 attached to the lint tree.
         """
+        self._resolve_cache: Dict[Path, Optional[Path]] = {}
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
         self.lint_external_content = lint_external_content
@@ -284,6 +285,7 @@ class RepositoryContext(
 
     def rebuild_lint_tree(self) -> None:
         self._lint_tree = None
+        self._resolve_cache.clear()
 
     @property
     def repo_type(self) -> RepositoryType:
@@ -398,6 +400,7 @@ class RepositoryContext(
         after construction must call it again. Filtering only narrows —
         previously excluded paths are not rediscovered.
         """
+        self._resolve_cache.clear()
         # A removed Pi declaration changes a skill's role, not its visibility.
         pi_candidates = set(self._pi_portable_skills)
         self.skills = sorted(set(self.skills) | pi_candidates)
@@ -771,7 +774,8 @@ class RepositoryContext(
             claims.update(
                 path
                 for path in self._agent_plugin_claim_set()
-                if declares_openai_extension(path) or self.is_codex_installed_plugin(path)
+                if declares_openai_extension(path, resolve=self.resolve_path)
+                or self.is_codex_installed_plugin(path)
             )
             self._codex_claims = claims
         return self._codex_claims
@@ -789,11 +793,11 @@ class RepositoryContext(
             # call costs a filesystem round-trip for every skill.
             self._codex_install_root = codex_discovery.codex_install_root(self.root_path)
         if codex_discovery.is_installed_codex_plugin(
-            plugin_dir, self.root_path, self._codex_install_root
+            plugin_dir, self.root_path, self._codex_install_root, resolve=self.resolve_path
         ):
             return True
         self._agent_plugin_claim_set()
-        return safe_resolve(plugin_dir) in self._agent_plugin_installed_roots
+        return self.resolve_path(plugin_dir) in self._agent_plugin_installed_roots
 
     def _load_marketplace(self) -> Optional[Dict[str, Any]]:
         """Load marketplace.json if it exists"""

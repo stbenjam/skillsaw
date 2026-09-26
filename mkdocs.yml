@@ -118,6 +118,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Guides:
+    - Upgrading to 0.21: upgrading-0.21.md
     - Autofixing: autofixing.md
     - Porting to Agent Plugins: porting.md
     - Baseline: baseline.md

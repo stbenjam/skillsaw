@@ -1155,8 +1155,8 @@ def test_dangerous_obfuscation_eval(temp_dir):
     assert any(v.severity == Severity.ERROR and "obfuscation" in v.message for v in violations)
 
 
-def test_dangerous_bun_warning(temp_dir):
-    """Bun runtime in hooks should produce a warning."""
+def test_local_bun_hook_is_allowed(temp_dir):
+    """A local Bun formatting script is an ordinary hook command."""
     plugin_dir = _make_hooks_plugin(
         temp_dir,
         {
@@ -1175,9 +1175,7 @@ def test_dangerous_bun_warning(temp_dir):
     context = RepositoryContext(plugin_dir)
     rule = HooksDangerousRule()
     violations = rule.check(context)
-    assert len(violations) == 1
-    assert violations[0].severity == Severity.ERROR
-    assert "bun" in violations[0].message
+    assert violations == []
 
 
 def test_dangerous_network_fetch(temp_dir):
@@ -1666,8 +1664,8 @@ def test_dangerous_download_exec_substitution_variants(temp_dir, command):
     assert any("downloads and executes" in v.message for v in violations)
 
 
-def test_bun_runtime_is_reported(temp_dir):
-    """bun as a hook runtime is uncommon enough to ask the author to verify."""
+def test_local_bun_session_hook_is_allowed(temp_dir):
+    """The runtime alone does not make a local session hook dangerous."""
     plugin_dir = _make_hooks_plugin(
         temp_dir,
         {
@@ -1686,10 +1684,7 @@ def test_bun_runtime_is_reported(temp_dir):
     context = RepositoryContext(plugin_dir)
     rule = HooksDangerousRule()
     violations = rule.check(context)
-    assert [v.message for v in violations] == [
-        "Hook SessionStart: uses bun runtime (uncommon in hooks, verify intent) — "
-        "command: 'bun run .claude/index.js'"
-    ]
+    assert violations == []
 
 
 # ── Windows command overrides ─────────────────────────────────

@@ -1,0 +1,38 @@
+{
+  "name": "platform-plugins",
+  "owner": {
+    "name": "Developer Experience",
+    "email": "devex@example.com"
+  },
+  "metadata": {
+    "description": "Cursor plugins maintained by the developer experience team",
+    "pluginRoot": "plugins"
+  },
+  "plugins": [
+    {
+      "name": "code-review",
+      "source": "code-review",
+      "description": "Review conventions for pull requests"
+    },
+    {
+      "name": "release-notes",
+      "source": "release-notes",
+      "description": "Draft release notes from merged pull requests"
+    },
+    {
+      "name": "incident-response",
+      "source": "incident-response",
+      "description": "Runbooks for on-call engineers"
+    },
+    {
+      "name": "migration-helper",
+      "source": "migration-helper",
+      "description": "Guidance for database schema migrations"
+    },
+    {
+      "name": "shared-rules",
+      "source": "../shared-rules",
+      "description": "Rules shared with the monorepo's other marketplaces"
+    }
+  ]
+}

@@ -26,6 +26,10 @@ This rule flags hook commands that:
 - obfuscate their payload (`eval`, `base64 -d`)
 - make network requests
 
+Running a local script or package task with Bun is allowed, just as with
+other runtimes. Download-and-execute patterns such as `curl ... | bun` or
+`curl -o task.js ... && bun task.js` are still flagged.
+
 The scanner's vocabulary is POSIX shell: a Windows override (`commandWindows` or
 `command_windows` — Codex and Muse Code accept either) is scanned with the same
 heuristics as any other command, and PowerShell constructs are out of scope by
@@ -33,8 +37,9 @@ design — a project that ships PowerShell hooks should enable
 [`hooks-prohibited`](hooks-prohibited.md), which reviews every hook regardless of
 the language it is written in.
 
-A fetch on its own is not flagged — `curl -o tool.zip https://...` is an
-ordinary install step.
+A fetch on its own, such as `curl -o tool.zip https://...`, is flagged as
+a network request. Review the destination and payload, then allowlist the
+exact command when the request is intentional.
 
 ## Examples
 

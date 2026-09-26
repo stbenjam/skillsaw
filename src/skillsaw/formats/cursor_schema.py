@@ -8,12 +8,18 @@ No upstream schema or description text is redistributed here.
 """
 
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
-from jsonschema import Draft7Validator
+if TYPE_CHECKING:
+    from jsonschema import Draft7Validator
 
 
 @lru_cache(maxsize=2)
-def validator(kind: str) -> Draft7Validator:
+def validator(kind: str) -> "Draft7Validator":
+    # jsonschema costs ~19ms to import; rule discovery imports this module
+    # on every run, and only a Cursor package ever validates against it.
+    from jsonschema import Draft7Validator
+
     text = {"type": "string"}
     strings = {"type": "array", "items": text}
     paths = {"anyOf": [text, strings]}

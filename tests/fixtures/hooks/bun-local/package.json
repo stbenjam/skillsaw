@@ -1,0 +1,5 @@
+{
+  "name": "review-tools",
+  "private": true,
+  "scripts": {"lint": "tsc --noEmit"}
+}

@@ -5462,12 +5462,12 @@ class TestConfigFeatures:
         repo = copy_fixture("config/unknown-rules", tmp_path)
         result = run_cli(["fix", str(repo)])
         assert result.returncode == 0, result.stderr
-        for rule in (
-            "skill-frontmatter",
-            "content-critical-position",
-            "misspelled-or-removed-rule",
-        ):
-            assert f"Unknown rule '{rule}'" in result.stdout
+        assert (
+            "Rule 'skill-frontmatter' was removed in 0.21.0 (use 'agentskill-valid' instead)"
+            in result.stdout
+        )
+        assert "Rule 'content-critical-position' was removed in 0.21.0" in result.stdout
+        assert "Unknown rule 'misspelled-or-removed-rule'" in result.stdout
 
     def test_unknown_rules_do_not_hide_invalid_options(self, tmp_path):
         repo = copy_fixture("config/unknown-rules", tmp_path)
@@ -5551,6 +5551,47 @@ class TestCliOverrides:
         assert r["rc"] == 1
         assert r["out"] is None
         assert "Unknown repository type 'unknown'" in r["stderr"]
+
+    @pytest.mark.parametrize("command", ["lint", "fix"])
+    def test_skip_rule_removed_rule_warns_and_continues(self, tmp_path, command):
+        """Skipping a rule that no longer exists is already satisfied, so
+        an old CI script keeps running instead of failing on upgrade."""
+        repo = copy_fixture("cli-overrides/removed-rule-ids", tmp_path)
+
+        result = run_cli([command, str(repo), "--skip-rule", "skill-frontmatter"])
+
+        assert result.returncode == 0, result.stderr
+        assert result.stderr.count("--skip-rule skill-frontmatter has no effect") == 1
+        assert (
+            "Rule 'skill-frontmatter' was removed in 0.21.0 (use 'agentskill-valid' instead)"
+            in result.stderr
+        )
+
+    def test_rule_removed_rule_names_the_removal(self, tmp_path):
+        repo = copy_fixture("cli-overrides/removed-rule-ids", tmp_path)
+
+        r = run_lint(repo, "--rule", "content-critical-position")
+
+        assert r["rc"] == 1
+        assert r["out"] is None
+        assert "Rule 'content-critical-position' was removed in 0.21.0" in r["stderr"]
+        assert "Unknown rule" not in r["stderr"]
+
+    @pytest.mark.parametrize(
+        "flag, error",
+        [
+            ("--rule", "Unknown rule(s): skill-frontmater"),
+            ("--skip-rule", "Unknown rule(s) in --skip-rule: skill-frontmater"),
+        ],
+    )
+    def test_misspelled_rule_ids_still_fail(self, tmp_path, flag, error):
+        repo = copy_fixture("cli-overrides/removed-rule-ids", tmp_path)
+
+        r = run_lint(repo, flag, "skill-frontmater")
+
+        assert r["rc"] == 1
+        assert error in r["stderr"]
+        assert "removed" not in r["stderr"]
 
 
 # ── Exit Codes ───────────────────────────────────────────────────
@@ -7978,7 +8019,7 @@ class TestSafeAutofixIdempotency:
         "agentskill-valid": 7,
         "claude-command-frontmatter": 3,
         "content-unlinked-internal-reference": 24,
-        "cursor-rules-valid": 3,
+        "cursor-rules-valid": 10,
     }
 
     @staticmethod
@@ -8100,7 +8141,7 @@ class TestSafeAutofixIdempotency:
         assert "No auto-fixable violations found" in result.stdout
 
     def test_relint_shows_zero_pre_existing_safe_violations(self, tmp_path):
-        """After fix, none of the original SAFE-rule violations should remain.
+        """After fix, none of the original fixable SAFE-rule violations remain.
 
         Fixes may introduce new violations (e.g. adding frontmatter with an
         empty description triggers agentskill-valid).  Those are expected and
@@ -8115,7 +8156,7 @@ class TestSafeAutofixIdempotency:
         before_keys = {
             (v["rule_id"], v["file_path"], v["message"])
             for v in violations(r_before)
-            if v["rule_id"] in safe_rules
+            if v["rule_id"] in safe_rules and v["fixable"]
         }
 
         self._fix_all(repo)
@@ -10211,6 +10252,56 @@ class TestCursorNativePlugins:
             "hooks-dangerous",
         } <= rules
 
+    def test_claude_format_plugin_hooks_report_once(self, tmp_path):
+        """A dual plugin's Claude hooks.json sits at Cursor's default path."""
+        repo = copy_fixture("cursor-plugins/dual-claude-hooks", tmp_path)
+        result = run_lint(repo)
+        found = by_rule(result)
+        assert [(v["severity"], v["message"]) for v in found["cursor-hooks-valid"]] == [
+            (
+                "error",
+                "Hooks use Claude Code's format (matcher groups nesting a 'hooks' "
+                "array), not Cursor's; point .cursor-plugin/plugin.json 'hooks' at "
+                "a Cursor-format hooks file",
+            )
+        ]
+        assert "claude-hooks-valid" not in found
+
+    def test_mixed_format_plugin_hooks_keep_entry_checks(self, tmp_path):
+        repo = copy_fixture("cursor-plugins/dual-claude-hooks", tmp_path)
+        hooks = repo / "hooks/hooks.json"
+        data = json.loads(hooks.read_text())
+        data["hooks"]["afterFileEdit"] = [{"command": "./scripts/check-format.sh"}]
+        hooks.write_text(json.dumps(data))
+        messages = [v["message"] for v in by_rule(run_lint(repo))["cursor-hooks-valid"]]
+        assert "Hook PreToolUse[0] is missing 'command'" in messages
+        assert not any("Claude Code's format" in m for m in messages)
+
+    @pytest.mark.parametrize("group", [{}, []], ids=["object", "empty"])
+    def test_malformed_group_keeps_entry_checks(self, tmp_path, group):
+        """A bad event group beside Claude groups is not hidden by the summary."""
+        repo = copy_fixture("cursor-plugins/dual-claude-hooks", tmp_path)
+        hooks = repo / "hooks/hooks.json"
+        data = json.loads(hooks.read_text())
+        data["hooks"]["afterFileEdit"] = group
+        hooks.write_text(json.dumps(data))
+        messages = [v["message"] for v in by_rule(run_lint(repo))["cursor-hooks-valid"]]
+        assert any("afterFileEdit" in m for m in messages), messages
+        assert not any("Claude Code's format" in m for m in messages)
+
+    def test_missing_sources_report_once_per_marketplace(self, tmp_path):
+        repo = copy_fixture("cursor-plugins/marketplace-missing-sources", tmp_path)
+        result = run_lint(repo, "--rule", "cursor-marketplace-json-valid")
+        assert result["rc"] == 1, result
+        messages = sorted(v["message"] for v in result["out"]["violations"])
+        assert messages == [
+            "3 plugin entries have no local plugin directory: 'release-notes', "
+            "'incident-response', 'migration-helper'; point each source at an "
+            "existing directory inside this marketplace",
+            "Plugin 'shared-rules': source must be a relative path that stays "
+            "inside this marketplace",
+        ]
+
 
 @pytest.mark.integration
 @pytest.mark.parametrize("flags", [[], ["--dry-run"]])
@@ -10221,7 +10312,7 @@ def test_fix_unknown_rule_advisories_neutralize_terminal_controls(tmp_path, flag
     result = run_cli(["fix", str(repo), "--no-custom-rules", "--no-color", *flags])
     assert result.returncode == 0, result.stderr
     assert "Unknown rule 'terminal�[2J�[H���spoof'" in result.stdout
-    assert "Unknown rule 'skill-frontmatter'" in result.stdout
+    assert "Rule 'skill-frontmatter' was removed in 0.21.0" in result.stdout
     assert "No auto-fixable violations found." in result.stdout
     assert not any((control in result.stdout for control in ("\x1b", "\x07", "\u202e")))
     assert config.read_bytes() == original
@@ -10375,6 +10466,8 @@ class TestPiLegacySettings:
             {"customDirectories": []},
             {"customDirectories": None},
             {"customDirectories": "../native"},
+            # Pi reads `skills: null` as `?? []`, the same as omitting it.
+            None,
         ],
     )
     def test_legacy_object_without_directory_array_keeps_autoload(self, tmp_path, legacy):
@@ -10387,7 +10480,6 @@ class TestPiLegacySettings:
     @pytest.mark.parametrize(
         "skills",
         [
-            None,
             "../native",
             {"customDirectories": ["../native", None]},
             {"customDirectories": [12]},

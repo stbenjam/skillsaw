@@ -35,6 +35,7 @@ from skillsaw.formats.antigravity import (
     RULES_DIR_NAME,
 )
 from skillsaw.paths import (
+    Resolver,
     contained_resolve,
     safe_is_dir,
     safe_is_file,
@@ -145,7 +146,9 @@ def customization_root_is_marked(base: Path, *, is_excluded: Callable[[Path], bo
     return False
 
 
-def antigravity_manifest_is_contained(plugin_dir: Path) -> bool:
+def antigravity_manifest_is_contained(
+    plugin_dir: Path, *, resolve: Resolver = safe_resolve
+) -> bool:
     """Whether *plugin_dir* carries an Antigravity manifest of its own.
 
     Authorship evidence is read directly from the filesystem, independently
@@ -163,11 +166,11 @@ def antigravity_manifest_is_contained(plugin_dir: Path) -> bool:
     first**, which ``discover_antigravity_plugins`` and
     ``registry_plugin_roots`` both do before calling in.
     """
-    root = safe_resolve(plugin_dir)
+    root = resolve(plugin_dir)
     if root is None:
         return False
     manifest = plugin_dir / PLUGIN_MANIFEST
-    resolved_manifest = contained_resolve(manifest, root)
+    resolved_manifest = contained_resolve(manifest, root, resolve)
     if resolved_manifest is None or not safe_is_file(resolved_manifest):
         return False
     if is_antigravity_plugin_location(plugin_dir):
@@ -176,19 +179,19 @@ def antigravity_manifest_is_contained(plugin_dir: Path) -> bool:
     return not error and isinstance(data, dict) and data.get("$schema") == PLUGIN_SCHEMA_ID
 
 
-def antigravity_marker_escapes(plugin_dir: Path) -> bool:
+def antigravity_marker_escapes(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> bool:
     """Whether *plugin_dir*'s ``plugin.json`` points out of the plugin.
 
     The containment half of :func:`antigravity_manifest_is_contained`,
     asked without requiring the manifest to exist, so a claim over a
     manifest-less directory still stands.
     """
-    root = safe_resolve(plugin_dir)
+    root = resolve(plugin_dir)
     if root is None:
         # Containment cannot be proven, so fail closed.
         return True
     manifest = plugin_dir / PLUGIN_MANIFEST
-    return contained_resolve(manifest, root) is None
+    return contained_resolve(manifest, root, resolve) is None
 
 
 def discover_antigravity_plugins(

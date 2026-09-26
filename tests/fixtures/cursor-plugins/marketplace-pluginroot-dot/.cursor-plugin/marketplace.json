@@ -1,0 +1,18 @@
+{
+  "name": "deploy-tools",
+  "owner": {
+    "name": "Release Engineering",
+    "email": "release@example.com"
+  },
+  "metadata": {
+    "description": "Deployment guidance for services on the internal platform",
+    "pluginRoot": "plugins"
+  },
+  "plugins": [
+    {
+      "name": "deploy-helper",
+      "source": "./plugins/deploy-helper",
+      "description": "Rules for writing safe deployment manifests"
+    }
+  ]
+}

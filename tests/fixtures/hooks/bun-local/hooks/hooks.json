@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {"type": "command", "command": "bun run scripts/format.ts"},
+          {"type": "command", "command": "bun run lint"}
+        ]
+      }
+    ]
+  }
+}

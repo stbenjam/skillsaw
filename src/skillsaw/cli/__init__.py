@@ -23,6 +23,12 @@ _SUBCOMMANDS = {
 
 _DEPRECATED_COMMANDS = frozenset({"add"})
 
+# Commands removed in a release stay reserved: falling through to the
+# implicit lint path would run `skillsaw lint docs --output site.html` and
+# overwrite the page an old CI step meant to generate. A plugin registering
+# the name still wins, like any other plugin subcommand.
+_REMOVED_COMMANDS = {"docs": "0.21.0"}
+
 
 def _warn_deprecated_command(command: str) -> None:
     print(
@@ -30,6 +36,17 @@ def _warn_deprecated_command(command: str) -> None:
         "in an upcoming release.",
         file=sys.stderr,
     )
+
+
+def _exit_removed_command(command: str) -> None:
+    print(
+        f"Error: 'skillsaw {command}' was removed in {_REMOVED_COMMANDS[command]}. "
+        "Rule documentation is at https://skillsaw.org/rules/ and in "
+        "'skillsaw explain <rule>'. To lint a directory named "
+        f"'{command}', run 'skillsaw lint {command}'.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 
 def _tolerate_unencodable_output() -> None:
@@ -79,6 +96,8 @@ def main():
             exe = find_plugin_command(sys.argv[1])
             if exe is not None:
                 sys.exit(run_plugin_command(exe, sys.argv[1], sys.argv[2:]))
+            if sys.argv[1] in _REMOVED_COMMANDS:
+                _exit_removed_command(sys.argv[1])
         sys.argv.insert(1, "lint")
 
     parser = _build_parser()

@@ -886,11 +886,11 @@ def generate_research_page(research):
 
 
 # The hero sentence's rule count, anchored on the words that lead into it:
-# "…structural flaws, and content dead zones with N rules, then applies
-# deterministic autofixes." The whitespace before "zones" is captured rather
+# "…structural flaws, and unclear instructions with N rules, then applies
+# deterministic autofixes." The whitespace before "instructions" is captured rather
 # than matched literally because the sentence wraps across two source lines,
 # and rewriting the count must not reflow the paragraph.
-HERO_RULE_COUNT_RE = re.compile(r"(dead\s+zones with )\d+( rules\b)")
+HERO_RULE_COUNT_RE = re.compile(r"(unclear\s+instructions with )\d+( rules\b)")
 
 
 def inject_stats(index_path, rules_data):
@@ -933,6 +933,7 @@ def inject_stats(index_path, rules_data):
 GUIDES = [
     ("Home", "index.md", "project homepage (HTML-heavy hero page)"),
     ("Getting Started", "getting-started.md", "install skillsaw and run your first lint"),
+    ("Upgrading to 0.21", "upgrading-0.21.md", "migration notes for skillsaw 0.21.0"),
     ("Autofixing", "autofixing.md", "how deterministic autofixes work and when they apply"),
     (
         "Porting to Agent Plugins",

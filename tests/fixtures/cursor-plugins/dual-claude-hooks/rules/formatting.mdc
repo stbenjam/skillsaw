@@ -1,0 +1,8 @@
+---
+description: Apply before committing source changes.
+alwaysApply: false
+---
+# Formatting before commit
+
+Run the repository formatter on every file you changed before you commit.
+Do not commit generated files by hand; regenerate them with the build.

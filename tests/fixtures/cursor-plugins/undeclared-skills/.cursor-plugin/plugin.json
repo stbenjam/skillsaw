@@ -1,0 +1,10 @@
+{
+  "name": "release-kit",
+  "version": "2.1.0",
+  "description": "Pull request summaries and release preparation for Cursor",
+  "author": {
+    "name": "Release Engineering",
+    "email": "release@example.com"
+  },
+  "skills": "./skills/"
+}

@@ -21,7 +21,7 @@ from skillsaw.baseline import (
 )
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext
-from skillsaw.linter import Linter
+from skillsaw.linter import REMOVED_RULES, Linter
 from skillsaw.rule import RuleViolation, Severity
 from skillsaw.rules.builtin import (
     BUILTIN_RULE_REGISTRY,
@@ -367,8 +367,13 @@ def deprecated_config(plugin_repo):
 
 def test_deprecated_builtins_removed():
     removed = {"content-critical-position", "content-actionability-score", "skill-frontmatter"}
-    assert removed.isdisjoint(BUILTIN_RULE_REGISTRY)
-    assert removed.isdisjoint(LinterConfig.default().rules)
+    assert removed <= REMOVED_RULES.keys()
+    # A removed ID that a builtin still claims would be unreachable as removed.
+    assert REMOVED_RULES.keys().isdisjoint(BUILTIN_RULE_REGISTRY)
+    assert REMOVED_RULES.keys().isdisjoint(RULE_ALIASES)
+    assert REMOVED_RULES.keys().isdisjoint(LinterConfig.default().rules)
+    for replacement in filter(None, (r for _, r in REMOVED_RULES.values())):
+        assert replacement in BUILTIN_RULE_REGISTRY
 
 
 def test_future_builtin_deprecation_remains_supported(plugin_repo, monkeypatch):

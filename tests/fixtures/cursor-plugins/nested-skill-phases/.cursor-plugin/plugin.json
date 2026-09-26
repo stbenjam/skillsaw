@@ -1,0 +1,10 @@
+{
+  "name": "app-onboard",
+  "version": "0.3.0",
+  "description": "Take an application from an idea to a running cloud deployment",
+  "author": {
+    "name": "Cloud Enablement",
+    "email": "cloud-enablement@example.com"
+  },
+  "skills": "./skills/"
+}

@@ -464,8 +464,8 @@ def test_marketplace_name_not_kebab_case_warns(temp_dir):
     assert kebab[0].severity == Severity.WARNING
 
 
-def test_marketplace_command_bun_note_warns_while_executions_error(temp_dir):
-    """The bun note is a verify-intent heads-up; execution findings are not."""
+def test_marketplace_local_bun_is_allowed_while_download_execution_errors(temp_dir):
+    """A local runtime is allowed; downloading and executing code is not."""
     (temp_dir / "bun").mkdir()
     bun_repo = _marketplace_with(
         temp_dir / "bun",
@@ -474,9 +474,7 @@ def test_marketplace_command_bun_note_warns_while_executions_error(temp_dir):
         ],
     )
     violations = MarketplaceJsonValidRule().check(RepositoryContext(bun_repo))
-    bun = [v for v in violations if "uses bun runtime" in v.message]
-    assert len(bun) == 1
-    assert bun[0].severity == Severity.WARNING
+    assert violations == []
 
     (temp_dir / "exec").mkdir()
     exec_repo = _marketplace_with(

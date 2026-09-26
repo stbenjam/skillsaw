@@ -54,6 +54,11 @@ def _run_explain(args):
                 break
 
     if rule_class is None:
+        from ..linter import REMOVED_RULES, removed_rule_note
+
+        if args.rule_id in REMOVED_RULES:
+            print(f"Error: {removed_rule_note(args.rule_id)}.", file=sys.stderr)
+            sys.exit(1)
         print(f"Error: Unknown rule '{args.rule_id}'", file=sys.stderr)
         import difflib
 

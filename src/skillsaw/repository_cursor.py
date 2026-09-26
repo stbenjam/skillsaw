@@ -71,7 +71,7 @@ class RepositoryCursorMixin:
             p
             for root in self.cursor_plugin_roots()
             for _, data in self.cursor_views(root)
-            for p in cursor.skill_dirs(root, data, self.is_path_excluded)
+            for p in cursor.skill_dirs(root, data, self.is_path_excluded, resolve=self.resolve_path)
             if not self.is_path_excluded(p)
             and not self.is_path_excluded(p / "SKILL.md")
             and next((parent for parent in (p, *p.parents) if parent in roots), None) == root
@@ -113,20 +113,40 @@ class RepositoryCursorMixin:
         return self._cursor_evidence()[3]
 
     def _filter_cursor_skills(self, discovered: Iterable[Path]) -> list[Path]:
-        """Replace generic skill discovery only inside exclusively Cursor packages."""
+        """Replace generic skill discovery only under Cursor's own skill roots.
+
+        Inside an exclusively Cursor package, Cursor's resolution decides
+        which skills sit under its declared (or default) ``skills`` path.
+        A SKILL.md elsewhere in the package never loads in Cursor, but it
+        is still the portable Agent Skills layout and stays linted.
+        """
         if not self.cursor_plugin_roots():
             return list(discovered)
-        cursor_only = {
-            p
+        skill_roots = {
+            p: [
+                component
+                for _, data in self.cursor_views(p)
+                for component in cursor.component_paths(p, data, "skills")
+            ]
             for p in self.cursor_plugin_roots()
             if self.provenance(p).ecosystems == frozenset({"cursor"})
         }
-        if not cursor_only:
-            return sorted(set(discovered) | self.cursor_skills())
-        roots = set(self.distinct_plugin_dirs())
+        candidates = list(discovered)
+        if skill_roots:
+            roots = set(self.distinct_plugin_dirs())
 
-        def owned_by_cursor(path: Path) -> bool:
-            owner = next((p for p in (path, *path.parents) if p in roots), None)
-            return owner in cursor_only
+            def resolved_by_cursor(path: Path) -> bool:
+                owner = next((p for p in (path, *path.parents) if p in roots), None)
+                return any(path.is_relative_to(c) for c in skill_roots.get(owner, ()))
 
-        return sorted({p for p in discovered if not owned_by_cursor(p)} | self.cursor_skills())
+            candidates = [p for p in candidates if not resolved_by_cursor(p)]
+        candidates.extend(sorted(self.cursor_skills()))
+        # Different hosts can select an alias and its canonical directory.
+        # Deduplicate containers as well as their physical SKILL.md children,
+        # or the tree gains an empty SkillNode reporting a missing entrypoint.
+        by_resolved: dict[Path, Path] = {}
+        for path in candidates:
+            resolved = self.resolve_path(path)
+            if resolved is not None:
+                by_resolved.setdefault(resolved, path)
+        return sorted(by_resolved.values())

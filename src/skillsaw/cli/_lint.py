@@ -18,6 +18,7 @@ from ._helpers import (
     _resolve_lint_paths,
     color_enabled,
     hyperlinks_enabled,
+    warn_removed_skip_rules,
 )
 from skillsaw.paths import safe_resolve
 
@@ -135,6 +136,7 @@ def _run_lint(args):
     if rule_ids and skip_rule_ids:
         print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
         sys.exit(1)
+    removed_skips = set(skip_rule_ids or ())
 
     lint_started = time.perf_counter()
     all_violations = []
@@ -164,6 +166,8 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+
+        removed_skips.intersection_update(linter.removed_skip_rule_ids)
 
         # After Linter construction plugin repo type detectors have run, so
         # a repository recognized only by a plugin is not warned about.
@@ -208,6 +212,7 @@ def _run_lint(args):
                         print(f"  - {entry.rule_id}{location}: {entry.message}")
                 print("  Run `skillsaw baseline` to update.\n")
 
+    warn_removed_skip_rules(removed_skips)
     merged_context = _build_merged_context(contexts)
     unique_rules = _dedup_rules(all_rules)
     lint_duration = time.perf_counter() - lint_started

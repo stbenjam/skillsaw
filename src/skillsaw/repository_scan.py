@@ -56,6 +56,8 @@ class RepositoryScanMixin:
 
         def provenance(self, plugin_dir: Path) -> PluginProvenance: ...
 
+        def resolve_path(self, path: Path) -> Optional[Path]: ...
+
         def in_apm_compiled_dir(self, path: Path) -> bool: ...
 
         def _should_skip_dir(self, item: Path) -> bool: ...
@@ -235,7 +237,7 @@ class RepositoryScanMixin:
             plugin
             for plugin in self.agent_plugin_roots()
             if (provenance := self.provenance(plugin)).claude
-            or (provenance.codex and portable_manifest(plugin) is None)
+            or (provenance.codex and portable_manifest(plugin, resolve=self.resolve_path) is None)
         ]
         skills = claude_discovery.discover_skills(
             self.root_path,
@@ -249,7 +251,11 @@ class RepositoryScanMixin:
                 if self.provenance(plugin).claude
                 or not (self.provenance(plugin).agent_plugin or self.provenance(plugin).openclaw)
             ],
-            codex_plugins=[p for p in self.codex_plugins if portable_manifest(p) is None],
+            codex_plugins=[
+                p
+                for p in self.codex_plugins
+                if portable_manifest(p, resolve=self.resolve_path) is None
+            ],
             # Config and catalog declarations retain custom skill paths
             # under unrelated --type overrides, just like their tree nodes.
             grok_plugins=self.grok_plugin_roots(),

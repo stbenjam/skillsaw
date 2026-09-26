@@ -57,7 +57,9 @@ class PiResourcePathsRule(Rule):
                         c in entry for c in "*?${}"
                     ):
                         continue
-                    path = local_path(block.path.parent, entry, context.root_path)
+                    path = local_path(
+                        block.path.parent, entry, context.root_path, settings=settings
+                    )
                     if (
                         path is not None
                         and not context.is_path_excluded(path)

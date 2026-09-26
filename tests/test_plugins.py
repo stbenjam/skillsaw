@@ -551,6 +551,18 @@ def test_config_entry_for_unloaded_plugin_rule_not_flagged(fake_plugin, repo):
     assert "invalid-config" not in {v.rule_id for v in violations}
 
 
+def test_removed_builtin_rule_noticed_with_plugins_skipped(fake_plugin, repo):
+    """Known builtin removals remain advisory when plugin loading is disabled."""
+    fake_plugin("fake_lenient", module_attrs={"SKILLSAW_RULES": [AlwaysFiresRule]})
+    config = LinterConfig.default()
+    config.rules["plugin-always-fires"] = {"severity": "error"}
+    config.rules["skill-frontmatter"] = {"enabled": True}
+    linter, violations = _lint(repo, config=config, no_plugins=True)
+    notices = [v.message for v in violations if v.rule_id == "unknown-rule"]
+    assert len(notices) == 1
+    assert "skill-frontmatter" in notices[0] and "removed in 0.21.0" in notices[0]
+
+
 # ---------------------------------------------------------------------------
 # Config parsing
 # ---------------------------------------------------------------------------

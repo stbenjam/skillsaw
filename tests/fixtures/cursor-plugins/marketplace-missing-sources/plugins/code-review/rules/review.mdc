@@ -1,0 +1,8 @@
+---
+description: Apply when reviewing a pull request.
+alwaysApply: false
+---
+# Pull request review
+
+Read the linked issue before the diff. Flag behavior changes that lack a
+test, and ask for a reproduction when a fix has no regression coverage.

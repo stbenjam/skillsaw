@@ -172,7 +172,7 @@ def test_inject_stats_rewrites_only_the_hero_count(tmp_path):
     unrelated count on the page is rewritten with the rule total."""
     index = tmp_path / "index.md"
     index.write_text(
-        "It catches dead zones with <!-- RULE_COUNT --> rules, then autofixes.\n"
+        "It catches unclear instructions with <!-- RULE_COUNT --> rules, then autofixes.\n"
         "The runbooks plugin ships with 5 rules of its own.\n"
         "A baseline starts you with 5 rules disabled.\n"
     )
@@ -180,7 +180,7 @@ def test_inject_stats_rewrites_only_the_hero_count(tmp_path):
     site_content.inject_stats(index, [object()] * 42)
 
     assert index.read_text() == (
-        "It catches dead zones with 42 rules, then autofixes.\n"
+        "It catches unclear instructions with 42 rules, then autofixes.\n"
         "The runbooks plugin ships with 5 rules of its own.\n"
         "A baseline starts you with 5 rules disabled.\n"
     )
@@ -189,14 +189,14 @@ def test_inject_stats_rewrites_only_the_hero_count(tmp_path):
 def test_inject_stats_is_idempotent_after_the_marker_is_gone(tmp_path):
     index = tmp_path / "index.md"
     index.write_text(
-        "It catches dead zones with 42 rules, then autofixes.\n"
+        "It catches unclear instructions with 42 rules, then autofixes.\n"
         "The runbooks plugin ships with 5 rules of its own.\n"
     )
 
     site_content.inject_stats(index, [object()] * 43)
 
     expected = (
-        "It catches dead zones with 43 rules, then autofixes.\n"
+        "It catches unclear instructions with 43 rules, then autofixes.\n"
         "The runbooks plugin ships with 5 rules of its own.\n"
     )
     assert index.read_text() == expected
@@ -210,12 +210,13 @@ def test_inject_stats_rewrites_the_hero_across_a_line_wrap(tmp_path):
     """The real hero sentence wraps mid-phrase, and rewriting the count must
     not reflow the paragraph."""
     index = tmp_path / "index.md"
-    index.write_text("It catches structural flaws and content dead\nzones with 42 rules.\n")
+    index.write_text("It catches structural flaws and unclear\ninstructions with 42 rules.\n")
 
     site_content.inject_stats(index, [object()] * 43)
 
     assert (
-        index.read_text() == "It catches structural flaws and content dead\nzones with 43 rules.\n"
+        index.read_text()
+        == "It catches structural flaws and unclear\ninstructions with 43 rules.\n"
     )
 
 

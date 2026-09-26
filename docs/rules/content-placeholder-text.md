@@ -149,13 +149,13 @@ These papers justify multiple rules simultaneously:
 
 | Paper | Venue | Rules |
 |-------|-------|-------|
-| Liu et al., [Lost in the Middle](https://arxiv.org/abs/2307.03172) | TACL 2024 | critical-position, section-length, cognitive-chunks |
+| Liu et al., [Lost in the Middle](https://arxiv.org/abs/2307.03172) | TACL 2024 | section-length, cognitive-chunks |
 | [Curse of Instructions](https://openreview.net/forum?id=R6q67CDBCH) | ICLR 2025 | instruction-budget, contradiction, inconsistent-terminology |
 | Jaroslawicz et al., [How Many Instructions Can LLMs Follow at Once?](https://arxiv.org/abs/2507.11538) | arXiv 2025 | instruction-budget |
 | Levy, Jacoby & Goldberg, [Same Task, More Tokens](https://arxiv.org/abs/2402.14848) | ACL 2024 | tautological, redundant-with-tooling, instruction-budget, section-length |
-| Bsharat et al., [Principled Instructions Are All You Need](https://arxiv.org/abs/2312.16171) | arXiv 2023 | weak-language, negative-only, actionability-score |
+| Bsharat et al., [Principled Instructions Are All You Need](https://arxiv.org/abs/2312.16171) | arXiv 2023 | weak-language, negative-only |
 | [Suppressing Pink Elephants](https://arxiv.org/abs/2402.07896) | arXiv 2024 | negative-only |
-| Chroma, [Context Rot](https://research.trychroma.com/context-rot) | 2025 | critical-position, instruction-budget, section-length |
+| Chroma, [Context Rot](https://research.trychroma.com/context-rot) | 2025 | instruction-budget, section-length |
 | [When Prompts Go Wrong](https://arxiv.org/abs/2507.20439) | arXiv 2025 | contradiction |
 | [Anthropic: Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | 2025 | tautological, redundant-with-tooling, instruction-budget, broken-internal-reference, placeholder-text |
 | Wang et al., [LLMs Meet Library Evolution](https://yebof.github.io/assets/pdf/wang2025icse.pdf) | ICSE 2025 | banned-references |

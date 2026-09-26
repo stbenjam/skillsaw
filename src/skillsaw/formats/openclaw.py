@@ -13,8 +13,8 @@ from typing import Any
 
 import json5
 
-from skillsaw.paths import contained_resolve, safe_is_file, safe_resolve
-from skillsaw.utils import cached_file_read, strip_jsonc
+from skillsaw.paths import Resolver, contained_resolve, safe_is_file, safe_resolve
+from skillsaw.utils import _reject_non_finite, cached_file_read, strip_jsonc
 
 MANIFEST = "openclaw.plugin.json"
 # MAX_PLUGIN_MANIFEST_BYTES in the pinned native loader, before any parsing.
@@ -104,7 +104,8 @@ def read_package_text(path: Path) -> tuple[str | None, str | None]:
     if len(raw) > MAX_PACKAGE_BYTES:
         return None, f"package.json exceeds OpenClaw's {MAX_PACKAGE_BYTES}-byte limit"
     try:
-        return raw.decode("utf-8-sig"), None
+        # The native package loader calls JSON.parse without stripping a BOM.
+        return raw.decode("utf-8"), None
     except UnicodeDecodeError:
         return None, "package.json must be UTF-8 text"
 
@@ -116,16 +117,16 @@ def read_package(path: Path) -> tuple[object | None, str | None]:
     if error:
         return None, error
     try:
-        return json.loads(content), None
+        return json.loads(content, parse_constant=_reject_non_finite), None
     except (ValueError, RecursionError) as exc:
         return None, f"Cannot parse package.json: {exc}"
 
 
-def contained_file(root: Path, name: str) -> bool:
-    resolved = safe_resolve(root)
+def contained_file(root: Path, name: str, *, resolve: Resolver = safe_resolve) -> bool:
+    resolved = resolve(root)
     return (
         resolved is not None
-        and contained_resolve(root / name, resolved) is not None
+        and contained_resolve(root / name, resolved, resolve) is not None
         and safe_is_file(root / name)
     )
 
@@ -181,14 +182,14 @@ def _property_order(key: str) -> int:
     return 2**32
 
 
-def inline_mcp_servers(plugin: Path) -> dict[str, Any] | None:
+def inline_mcp_servers(plugin: Path, *, resolve: Resolver = safe_resolve) -> dict[str, Any] | None:
     """Expose exactly the servers retained by normalizeManifestMcpServers.
 
     The pinned manifest-capability-normalizers.ts trims server names and
     rejects empty names, prototype keys and non-object entries before the
     runtime sees them. This is host normalization, not Python dict protection.
     """
-    if not contained_file(plugin, MANIFEST):
+    if not contained_file(plugin, MANIFEST, resolve=resolve):
         return None
     data, _ = read_manifest(plugin / MANIFEST)
     servers = data.get("mcpServers") if isinstance(data, dict) else None

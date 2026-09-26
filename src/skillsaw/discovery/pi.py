@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Callable, Iterable
-
-from pathspec import GitIgnoreSpec
+from typing import TYPE_CHECKING, Callable, Iterable
+from urllib.parse import unquote, urlsplit
 
 from skillsaw.discovery.detect import WALK_SKIP_DIRS, VENDOR_DIR_NAMES
 
@@ -20,7 +19,10 @@ from skillsaw.paths import (
     safe_exists,
 )
 from skillsaw.utils import read_json, read_text
-from skillsaw.pi_patterns import _globmatch, _ignore_patterns, _ignored, _MAX_IGNORE_PATTERNS
+from skillsaw.pi_patterns import _globmatch, _ignore_patterns, _ignore_spec, _ignored
+
+if TYPE_CHECKING:
+    from pathspec import GitIgnoreSpec
 
 _SKIP_DIRS = WALK_SKIP_DIRS | VENDOR_DIR_NAMES
 
@@ -38,8 +40,41 @@ def package_marker(path: Path) -> bool:
     )
 
 
-def local_path(base: Path, value: str, boundary: Path) -> Path | None:
+def local_path(base: Path, value: str, boundary: Path, *, settings: bool = False) -> Path | None:
     """Resolve only repository-local resources; never consult home or the network."""
+    if settings:
+        # Pi normalizes project paths, but manifest entries use raw path.resolve.
+        value = value.strip()
+        if value.startswith("file://"):
+            try:
+                url = urlsplit(value)
+                # Match fileURLToPath's local-host and encoded-separator guards.
+                encoded_path = url.path.lower()
+                if (
+                    url.netloc.lower() not in {"", "localhost"}
+                    or "%2f" in encoded_path
+                    or (os.name == "nt" and "%5c" in encoded_path)
+                ):
+                    return None
+                if any(
+                    len(part) < 2 or any(char not in "0123456789abcdefABCDEF" for char in part[:2])
+                    for part in url.path.split("%")[1:]
+                ):
+                    return None
+                value = unquote(url.path, errors="strict")
+                if os.name == "nt":
+                    # A local Windows file URL must name a drive, not a rooted
+                    # path relative to the current drive or a network share.
+                    if (
+                        len(value) < 4
+                        or value[0] != "/"
+                        or value[1].lower() not in "abcdefghijklmnopqrstuvwxyz"
+                        or value[2:4] != ":/"
+                    ):
+                        return None
+                    value = value[1:]
+            except (ValueError, UnicodeError):
+                return None
     if not value or value.startswith(("~", *REMOTE_PREFIXES)) or "\x00" in value:
         return None
     path = Path(os.path.abspath(base / value))
@@ -72,7 +107,7 @@ def package_roots(
             source = entry.get("source") if isinstance(entry, dict) else entry
             if not isinstance(source, str):
                 continue
-            local = local_path(path.parent, source, root)
+            local = local_path(path.parent, source, root, settings=True)
             if local is not None and safe_is_dir(local) and not excluded(local):
                 roots.add(local)
     return sorted(roots)
@@ -223,7 +258,7 @@ def collect(
                     raw = prefix + "/" + raw.lstrip("/")
                 lines.append(("!" if neg else "") + raw)
             patterns.extend(_ignore_patterns(lines))
-        ignore = GitIgnoreSpec(patterns[-_MAX_IGNORE_PATTERNS:], backend="simple")
+        ignore = _ignore_spec(patterns)
 
         def ignored(p: Path) -> bool:
             rel = (relative_to_str(p, path) or p.name) + ("/" if safe_is_dir(p) else "")
@@ -255,7 +290,7 @@ def collect(
         # Explicit files have no suffix restriction in Pi's loader.
         return [path]
     try:
-        return walk(path, True, GitIgnoreSpec([], backend="simple"))
+        return walk(path, True, _ignore_spec())
     except RecursionError:
         # Deep repository trees must not escape the constructor's discovery leg.
         return []
@@ -289,7 +324,7 @@ def resources(
                 if _globmatch(relative_to_str(p, base) or p.name, entry.removeprefix("./"))
             ]
         else:
-            local = local_path(base, entry, boundary)
+            local = local_path(base, entry, boundary, settings=not manifest)
             roots = [local] if local is not None else []
         for resource in roots:
             paths.extend(collect(resource, kind, boundary, excluded))

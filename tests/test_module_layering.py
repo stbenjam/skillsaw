@@ -57,6 +57,28 @@ def test_module_importable_as_first_import(module):
     assert result.returncode == 0, f"`import {module}` failed as a first import:\n{result.stderr}"
 
 
+# Third-party modules only some ecosystems need. Rule discovery imports every
+# builtin rule module on every run, so a module-level import of one of these
+# costs every lint — ~19ms for jsonschema alone on an empty directory.
+LAZY_DEPENDENCIES = ("jsonschema", "pathspec", "wcmatch")
+
+
+def test_rule_discovery_does_not_import_ecosystem_dependencies():
+    """A fresh interpreter importing the CLI and every builtin rule stays lean.
+
+    Runs in a subprocess: this test worker has long since imported all three.
+    """
+    code = (
+        "import sys, skillsaw.cli, skillsaw.rules.builtin, skillsaw.context, skillsaw.lint_tree\n"
+        f"print(sorted(m for m in {LAZY_DEPENDENCIES!r} if m in sys.modules))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "[]"
+
+
 # ---------------------------------------------------------------------------
 # Backward-compat re-exports
 # ---------------------------------------------------------------------------

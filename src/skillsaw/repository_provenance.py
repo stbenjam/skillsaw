@@ -155,6 +155,7 @@ class RepositoryProvenanceMixin:
         # Required host state.
         root_path: Path
         _provenance_cache: Dict[Path, PluginProvenance]
+        _resolve_cache: Dict[Path, Optional[Path]]
         _format_scope_cache: Dict[Tuple[Path, str], bool]
         _contained_plugin_roots: Optional[Set[Path]]
         _agent_plugin_claims: Optional[Set[Path]]
@@ -263,6 +264,27 @@ class RepositoryProvenanceMixin:
                     self._agent_plugin_installed_roots.add(resolved)
         return self._agent_plugin_claims
 
+    def resolve_path(self, path: Path) -> Optional[Path]:
+        """:func:`safe_resolve`, memoized for this context.
+
+        Every provenance probe realpaths the plugin directory and its markers
+        on its own, so an uncached consult walked the same ancestors about ten
+        times per directory. The probes take this as their ``resolve=``
+        argument. The memo belongs to the context, never the module: it is
+        cleared with the provenance records in ``apply_excludes`` and on every
+        ``rebuild_lint_tree()``, so a ``fix`` pass that renames or relinks a
+        directory is seen by the next build, and in-process runs sharing one
+        interpreter never read each other's answers. Relative paths depend on
+        the working directory and are resolved uncached.
+        """
+        if not path.is_absolute():
+            return safe_resolve(path)
+        try:
+            return self._resolve_cache[path]
+        except KeyError:
+            resolved = self._resolve_cache[path] = safe_resolve(path)
+            return resolved
+
     def provenance(self, plugin_dir: Path) -> PluginProvenance:
         """The :class:`PluginProvenance` for *plugin_dir*, cached per path.
 
@@ -297,7 +319,8 @@ class RepositoryProvenanceMixin:
         cached = self._provenance_cache.get(plugin_dir)
         if cached is not None:
             return cached
-        resolved = safe_resolve(plugin_dir)
+        resolve = self.resolve_path
+        resolved = resolve(plugin_dir)
         key = resolved if resolved is not None else plugin_dir
         cached = self._provenance_cache.get(key)
         if cached is not None:
@@ -327,15 +350,15 @@ class RepositoryProvenanceMixin:
             resolved is not None and resolved in getattr(self, "marketplace_entries", {})
         ):
             ecosystems.add("claude")
-        elif resolved is not None and resolved == safe_resolve(self.root_path / ".claude"):
+        elif resolved is not None and resolved == resolve(self.root_path / ".claude"):
             # The .claude/ directory is Claude by definition — a Codex
             # catalog listing "./.claude" as a local source must not turn
             # the repository's own command and agent content Codex-only
             # and switch its Claude-format checks off.
             ecosystems.add("claude")
         if (
-            declares_openai_extension(plugin_dir)
-            or codex_manifest_is_contained(plugin_dir)
+            declares_openai_extension(plugin_dir, resolve=resolve)
+            or codex_manifest_is_contained(plugin_dir, resolve=resolve)
             or (
                 resolved is not None
                 and resolved in self._codex_claim_set()
@@ -346,7 +369,7 @@ class RepositoryProvenanceMixin:
                 # and no Codex node is built over it. A directory with no marker
                 # at all still passes — codex-plugin-json-valid reports the
                 # missing manifest.
-                and not codex_marker_escapes(plugin_dir)
+                and not codex_marker_escapes(plugin_dir, resolve=resolve)
             )
         ):
             ecosystems.add("codex")
@@ -354,7 +377,7 @@ class RepositoryProvenanceMixin:
             ecosystems.add("pi")
         if resolved is not None and resolved in self._agent_plugin_claim_set():
             ecosystems.add("agent-plugin")
-        if grok_manifest_is_contained(plugin_dir) or (
+        if grok_manifest_is_contained(plugin_dir, resolve=resolve) or (
             resolved is not None
             and resolved in self._grok_claim_set()
             # A catalog claim is a declaration about a directory, never a
@@ -364,10 +387,10 @@ class RepositoryProvenanceMixin:
             # though Grok reads both: each is another ecosystem's
             # declaration, and adopting it would put every Claude plugin
             # under Grok's format rules too.
-            and not grok_marker_escapes(plugin_dir)
+            and not grok_marker_escapes(plugin_dir, resolve=resolve)
         ):
             ecosystems.add("grok")
-        if antigravity_manifest_is_contained(plugin_dir) or (
+        if antigravity_manifest_is_contained(plugin_dir, resolve=resolve) or (
             resolved is not None
             and resolved in self._antigravity_claim_set()
             # A forced ``--type antigravity-plugin`` claims every direct
@@ -376,10 +399,10 @@ class RepositoryProvenanceMixin:
             # gets the same containment check discovery applies, so a
             # ``plugin.json`` symlinked out of the plugin is not this
             # plugin's and no node is built to read it.
-            and not antigravity_marker_escapes(plugin_dir)
+            and not antigravity_marker_escapes(plugin_dir, resolve=resolve)
         ):
             ecosystems.add("antigravity")
-        if claims_plugin(plugin_dir):
+        if claims_plugin(plugin_dir, resolve=resolve):
             ecosystems.add("openclaw")
         if resolved is not None and resolved in self._cursor_claim_set():
             ecosystems.add("cursor")

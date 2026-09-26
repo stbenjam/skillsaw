@@ -130,7 +130,42 @@ def test_cli_native_pi_metadata_valid(fixture, tmp_path):
 def test_cli_invalid_metadata(tmp_path):
     root = copy_fixture("invalid", tmp_path)
     result = run_cli(["lint", str(root), "--rule", "pi-config-valid", "--format", "json"])
-    assert len(json.loads(result.stdout)["violations"]) == 2
+    violations = json.loads(result.stdout)["violations"]
+    assert len(violations) == 2
+    by_file = {Path(v["file_path"]).name: v for v in violations}
+    # Pi spreads settings fields unchecked and crashes at startup (pi 0.84.2:
+    # TypeError), while readPiManifest drops malformed package.json#pi fields.
+    assert "Pi can fail at startup" in by_file["settings.json"]["message"]
+    assert "Pi ignores these fields" in by_file["package.json"]["message"]
+    assert {v["severity"] for v in violations} == {"warning"}
+
+
+def test_null_fields_pi_reads_as_absent_are_valid(tmp_path):
+    # settings-manager reads top-level resource fields as `?? []`, a package
+    # entry's autoload only matters when `=== false`, and readPiManifest drops
+    # a null manifest field. pi 0.84.2 loads this fixture's skill and prompt.
+    root = copy_fixture("settings-null", tmp_path)
+    args = ["lint", str(root), "--rule", "pi-config-valid", "--format", "json"]
+    result = run_cli(args)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not json.loads(result.stdout)["violations"]
+
+    settings = root / ".pi/settings.json"
+    settings.write_text('{"skills": ["../skills"], "packages": null}\n')
+    assert not json.loads(run_cli(args).stdout)["violations"]
+
+
+def test_null_package_filter_still_warns(tmp_path):
+    # Unlike a top-level null, a null package filter reaches Pi's filter as
+    # null.length, and the loader drops the whole package.
+    root = copy_fixture("settings-null", tmp_path)
+    (root / ".pi/settings.json").write_text(
+        '{"packages": [{"source": "../review-kit", "prompts": null}]}\n'
+    )
+    result = run_cli(["lint", str(root), "--rule", "pi-config-valid", "--format", "json"])
+    (violation,) = json.loads(result.stdout)["violations"]
+    assert "packages[0].prompts (expected an array of strings)" in violation["message"]
+    assert "Pi can fail at startup" in violation["message"]
 
 
 def test_unrelated_npm_package_is_not_pi(tmp_path):
@@ -508,11 +543,13 @@ def test_local_package_symlink_has_canonical_provenance(tmp_path):
 
 
 def test_transient_compile_failure_is_not_cached(monkeypatch):
+    from wcmatch import glob
+
     from skillsaw import pi_patterns
     from skillsaw.timeouts import RegexTimeout
 
     pi_patterns._compile_glob.cache_clear()
-    original = pi_patterns.glob.compile
+    original = glob.compile
     calls = 0
 
     def compile_once(pattern, **kwargs):
@@ -522,7 +559,7 @@ def test_transient_compile_failure_is_not_cached(monkeypatch):
             raise RegexTimeout("transient load")
         return original(pattern, **kwargs)
 
-    monkeypatch.setattr(pi_patterns.glob, "compile", compile_once)
+    monkeypatch.setattr(glob, "compile", compile_once)
     assert not pi_patterns._globmatch("review.md", "*.md")
     assert pi_patterns._globmatch("review.md", "*.md")
     assert calls == 2

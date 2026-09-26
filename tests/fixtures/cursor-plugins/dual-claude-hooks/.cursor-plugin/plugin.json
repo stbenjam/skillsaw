@@ -1,0 +1,10 @@
+{
+  "name": "commit-guard",
+  "version": "1.4.0",
+  "description": "Blocks commits that skip the formatter and reminds the agent to run tests",
+  "author": {
+    "name": "Tooling Guild",
+    "email": "tooling@example.com"
+  },
+  "rules": "./rules/"
+}

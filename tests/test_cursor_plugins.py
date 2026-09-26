@@ -10,6 +10,7 @@ from skillsaw.blocks.cursor import CursorAgentBlock, CursorPluginBlock
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.cursor.plugin_valid import CursorPluginValidRule
 from skillsaw.rules.builtin.cursor.marketplace_valid import CursorMarketplaceValidRule
+from tests.cli_runner import run_cli
 from tests.test_integration import copy_fixture
 
 
@@ -23,13 +24,18 @@ def test_cursor_native_components(tmp_path):
         CursorRuleBlock,
         CursorCommandBlock,
         CursorAgentBlock,
-        SkillBlock,
         CursorPluginBlock,
     ):
         assert len(tree.find(cls)) == 1, cls
     assert len(tree.find(HooksBlock)) == 1
     assert len(tree.find(McpBlock)) == 2
-    assert all("ignored" not in str(b.path) for b in tree.find(SkillBlock))
+    # Cursor loads capabilities/ only; the default skills/ it overrides
+    # stays on the portable walk.
+    plugin = repo / "packages/review"
+    assert {b.path.parent for b in tree.find(SkillBlock)} == {
+        plugin / "capabilities/review",
+        plugin / "skills/ignored",
+    }
     assert all("ignored" not in str(b.path) for b in tree.find(CursorCommandBlock))
     assert not CursorPluginValidRule().check(context)
     assert not CursorMarketplaceValidRule().check(context)
@@ -103,7 +109,8 @@ def test_cursor_default_and_root_skill(tmp_path):
     manifest = plugin / ".cursor-plugin/plugin.json"
     manifest.write_text('{"name":"review"}')
     context = RepositoryContext(plugin)
-    assert context.skills == [plugin / "skills/ignored"]
+    # capabilities/ is no longer declared, so it is portable content only.
+    assert context.skills == [plugin / "capabilities/review", plugin / "skills/ignored"]
     # With no default directory, use the root skill.
     (plugin / "skills").rename(plugin / "unused-skills")
     (plugin / "SKILL.md").write_text((plugin / "capabilities/review/SKILL.md").read_text())
@@ -113,7 +120,8 @@ def test_cursor_default_and_root_skill(tmp_path):
     from skillsaw.utils import invalidate_read_caches
 
     invalidate_read_caches(manifest)
-    assert not RepositoryContext(plugin).skills
+    # Cursor loads no skills, but the root SKILL.md is still a portable skill.
+    assert RepositoryContext(plugin).skills == [plugin]
 
 
 def test_cursor_nested_marketplace_and_excluded_component(tmp_path):
@@ -183,6 +191,35 @@ def test_cursor_source_containment_and_remote_sources(tmp_path, source):
     )
     findings = CursorMarketplaceValidRule().check(RepositoryContext(repo))
     assert bool(findings) == (not source.startswith("https://"))
+
+
+def test_cursor_missing_sources_truncate_long_lists(tmp_path):
+    repo = copy_fixture("cursor-plugins/clean", tmp_path)
+    catalog = repo / ".cursor-plugin/marketplace.json"
+    plugins = [{"name": f"plugin-{i}", "source": f"missing-{i}"} for i in range(8)]
+    catalog.write_text(json.dumps({"name": "catalog", "plugins": plugins}))
+    findings = CursorMarketplaceValidRule().check(RepositoryContext(repo))
+    assert [v.message for v in findings] == [
+        "8 plugin entries have no local plugin directory: 'plugin-0', 'plugin-1', "
+        "'plugin-2', 'plugin-3', 'plugin-4', and 3 more; point each source at an "
+        "existing directory inside this marketplace"
+    ]
+
+
+def test_cursor_inline_claude_format_hooks_report_once(tmp_path):
+    from skillsaw.rules.builtin.cursor.hooks_valid import CursorHooksValidRule
+
+    repo = copy_fixture("cursor-plugins/clean", tmp_path)
+    catalog = repo / ".cursor-plugin/marketplace.json"
+    data = json.loads(catalog.read_text())
+    group = {"matcher": "Bash", "hooks": [{"type": "command", "command": "./check.sh"}]}
+    data["plugins"][0]["hooks"] = {"hooks": {"PreToolUse": [group, group]}}
+    catalog.write_text(json.dumps(data))
+    findings = CursorHooksValidRule().check(RepositoryContext(repo))
+    assert [v.message for v in findings] == [
+        "Hooks use Claude Code's format (matcher groups nesting a 'hooks' array), "
+        "not Cursor's; rewrite each hook as {command, matcher?} directly under a Cursor event"
+    ]
 
 
 def test_cursor_plugin_mcp_duplicate_keys_keep_last_value(tmp_path):
@@ -422,13 +459,21 @@ def test_cursor_default_skill_directory_is_one_level(tmp_path):
     grouped = plugin / "skills/group/nested"
     grouped.mkdir(parents=True)
     (grouped / "SKILL.md").write_text((plugin / "skills/ignored/SKILL.md").read_text())
-    assert RepositoryContext(plugin).skills == [plugin / "skills/ignored"]
+    # Cursor's default skills/ is one level deep; capabilities/ is portable.
+    assert RepositoryContext(plugin).skills == [
+        plugin / "capabilities/review",
+        plugin / "skills/ignored",
+    ]
     # Explicit component directories are recursively expanded by the host.
     manifest.write_text('{"name":"review","skills":"skills"}')
     from skillsaw.utils import invalidate_read_caches
 
     invalidate_read_caches(manifest)
-    assert set(RepositoryContext(plugin).skills) == {plugin / "skills/ignored", grouped}
+    assert set(RepositoryContext(plugin).skills) == {
+        plugin / "capabilities/review",
+        plugin / "skills/ignored",
+        grouped,
+    }
 
 
 @pytest.mark.parametrize(
@@ -541,3 +586,49 @@ def test_cursor_component_override_keeps_skill_role(tmp_path, component):
     assert len([b for b in context.lint_tree.find(BodyContent) if b.path == path]) == 1
     if component == "rules":
         assert len([b for b in context.lint_tree.find(CursorRuleBlock) if b.path == path]) == 1
+
+
+@pytest.mark.parametrize("args", [(), ("--type", "agentskills")])
+def test_cursor_undeclared_skills_stay_portable(tmp_path, args):
+    """A declared ``skills`` path replaces Cursor's folder discovery, but a
+    SKILL.md elsewhere in the package is still portable Agent Skills content
+    that 0.20.0 linted; only skills under Cursor's own roots are replaced."""
+    repo = copy_fixture("cursor-plugins/undeclared-skills", tmp_path)
+    context = RepositoryContext(repo)
+    assert context.provenance(repo).ecosystems == frozenset({"cursor"})
+    assert context.skills == [
+        repo / "shared/skills/changelog-draft",
+        repo / "skills/pr-summary",
+    ]
+    result = run_cli(
+        ["lint", str(repo), "--no-custom-rules", "--no-baseline", "--format", "json", "-v", *args]
+    )
+    report = json.loads(result.stdout)
+    # Verbose reports list the skill directories rather than counting them.
+    assert len(report["stats"]["skills"]) == 2
+    unlinked = sorted(
+        v["file_path"]
+        for v in report["violations"]
+        if v["rule_id"] == "content-unlinked-internal-reference"
+    )
+    assert unlinked == [
+        "shared/skills/changelog-draft/SKILL.md",
+        "skills/pr-summary/SKILL.md",
+    ]
+
+
+def test_cursor_declared_skills_stop_at_a_skill_directory(tmp_path):
+    """A declared ``skills`` path must not turn a skill's phase files into
+    skills of their own: the default one-level walk and the portable walk
+    both stop at a directory holding SKILL.md (microsoft/skills
+    azure-app-onboard ships deploy/, prepare/ and scaffold/ phases)."""
+    repo = copy_fixture("cursor-plugins/nested-skill-phases", tmp_path)
+    skill = repo / "skills/app-onboard"
+    phases = [skill / "prepare/SKILL.md", skill / "deploy/SKILL.md"]
+    before = [p.read_bytes() for p in phases]
+    assert RepositoryContext(repo).skills == [skill]
+    result = run_cli(["lint", str(repo), "--no-custom-rules", "--format", "json", "-v"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["violations"] == []
+    run_cli(["fix", "--suggest", "--no-custom-rules", str(repo)])
+    assert [p.read_bytes() for p in phases] == before

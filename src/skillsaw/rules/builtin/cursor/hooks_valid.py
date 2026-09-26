@@ -5,7 +5,7 @@ Rule: cursor-hooks-valid
 from typing import Any, Dict, List, Set
 
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.blocks.cursor import CursorPluginHooksBlock
+from skillsaw.blocks.cursor import CursorInlineHooksBlock, CursorPluginHooksBlock
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import CursorHooksBlock
@@ -125,10 +125,33 @@ class CursorHooksValidRule(Rule):
                 )
                 continue
 
+            if isinstance(block, CursorPluginHooksBlock) and _is_claude_shaped(data):
+                violations.append(self._claude_shaped(block))
+                continue
+
             violations.extend(self._check_version(data, block))
             violations.extend(self._check_hooks(data, block))
 
         return violations
+
+    def _claude_shaped(self, block: CursorPluginHooksBlock) -> RuleViolation:
+        """One finding for a whole Claude Code hooks file in a Cursor plugin.
+
+        Dual-manifest plugins ship Claude's ``hooks/hooks.json``, which is
+        also Cursor's default plugin hooks path. Cursor documents a Claude
+        event mapping only for ``.claude/settings*.json``, so whether a plugin
+        load accepts this shape is unverified: one finding names the file
+        rather than one per matcher group and per PascalCase event.
+        """
+        if isinstance(block, CursorInlineHooksBlock):
+            remedy = "rewrite each hook as {command, matcher?} directly under a Cursor event"
+        else:
+            remedy = "point .cursor-plugin/plugin.json 'hooks' at a Cursor-format hooks file"
+        return self.violation(
+            "Hooks use Claude Code's format (matcher groups nesting a 'hooks' array), "
+            f"not Cursor's; {remedy}",
+            file_path=block.path,
+        )
 
     def _check_version(self, data: dict, block: CursorHooksBlock) -> List[RuleViolation]:
         """Project hooks require version 1; plugin hooks may omit it."""
@@ -313,3 +336,26 @@ class CursorHooksValidRule(Rule):
                 )
             )
         return violations
+
+
+def _is_claude_shaped(data: dict) -> bool:
+    """Every hook entry is a Claude matcher group: ``{matcher?, hooks: [...]}``.
+
+    A Cursor entry names its own ``command`` or ``prompt`` and never nests a
+    ``hooks`` array, so the shape alone tells the formats apart. A file that
+    mixes both, or has a malformed or empty event group, keeps the per-entry
+    checks, which report the stray groups.
+    """
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict) or not hooks:
+        return False
+    if not all(isinstance(group, list) and group for group in hooks.values()):
+        return False
+    entries = [e for group in hooks.values() for e in group]
+    return all(
+        isinstance(e, dict)
+        and isinstance(e.get("hooks"), list)
+        and "command" not in e
+        and "prompt" not in e
+        for e in entries
+    )
