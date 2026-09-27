@@ -185,7 +185,7 @@ jobs:
           show_full_output: true
           claude_args: |
             --permission-mode auto
-            --model ${{ matrix.pr.fable && 'claude-fable-5' || 'claude-opus-5' }}
+            --model ${{ matrix.pr.fable && 'claude-fable-5' || 'claude-opus-5-5' }}
             ${{ matrix.pr.ultracode && '--effort ultracode' || '' }}
 
       - name: Verify unprivileged tests started for the current PR head

@@ -54,7 +54,7 @@ jobs:
           show_full_output: true
           claude_args: |
             --permission-mode auto
-            --model ${{ contains(github.event.pull_request.labels.*.name, 'fable-5') && 'claude-fable-5' || 'claude-opus-5' }}
+            --model ${{ contains(github.event.pull_request.labels.*.name, 'fable-5') && 'claude-fable-5' || 'claude-opus-5-5' }}
 
       - name: Post panel verdict
         if: always()

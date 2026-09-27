@@ -27,7 +27,7 @@ jobs:
           claude_args: |
             --permission-mode auto
             --max-turns 200
-            --model claude-opus-5
+            --model claude-opus-5-5
 
       - name: Upload execution log
         if: always()
