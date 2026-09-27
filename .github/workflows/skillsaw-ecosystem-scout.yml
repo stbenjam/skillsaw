@@ -18,7 +18,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: anthropics/claude-code-action@1f291e1cfe0f5fc21db2aef19af844591600ade7 # v1.0.206
+      - uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790 # v1.0.235
         with:
           prompt: |
             Use the skillsaw-ecosystem-scout skill. Follow every step in the skill.
