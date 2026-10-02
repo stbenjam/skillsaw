@@ -145,6 +145,7 @@ nav:
     - Cursor: rules/cursor.md
     - Devin: rules/devin.md
     - Google Antigravity: rules/antigravity.md
+    - Goose: rules/goose.md
     - Grok Build: rules/grok.md
     - Hooks: rules/hooks.md
     - Instruction Files: rules/instruction-files.md

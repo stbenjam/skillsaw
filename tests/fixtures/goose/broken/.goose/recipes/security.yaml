@@ -1,0 +1,21 @@
+title: Review security findings
+description: Check that security diagnostics reach recipe prompts and extensions.
+instructions: |
+  Read the changed files.
+  Review [missing guidance](missing.md) before continuing.
+prompt: >
+  You might want to check the patch for problems.
+activities:
+  - "Review [missing activity guide](activity.md)."
+extensions:
+  - type: streamable_http
+    name: remote
+    uri: https://user:password@mcp.example.com/mcp
+    headers:
+      Authorization: Bearer committed-secret-value
+  - type: stdio
+    name: local
+    cmd: tool
+    args: []
+    envs:
+      API_TOKEN: committed-secret-value

@@ -218,6 +218,7 @@ def test_every_detected_tool_type_is_listed_in_tool_repo_types(tmp_path):
     (tmp_path / ".clinerules").write_text("Prefer small commits.\n")
     (tmp_path / ".devin" / "rules").mkdir(parents=True)
     (tmp_path / "opencode.json").write_text('{"$schema": "https://opencode.ai/config.json"}\n')
+    (tmp_path / ".goose" / "recipes").mkdir(parents=True)
     (tmp_path / ".pi").mkdir()
     (tmp_path / ".pi" / "settings.json").write_text("{}\n")
     (tmp_path / ".muse").mkdir()

@@ -170,6 +170,13 @@ RULE_GROUPS = [
         "automatically when Devin repository context is present.",
     ),
     (
+        "Goose",
+        ["goose-recipe-valid", "goose-subrecipe-references"],
+        "Opt-in checks for Goose recipe metadata, parameter and extension declarations, "
+        "and contained local subrecipe paths. Recipe instructions, prompts and activities "
+        "receive shared content checks; external extensions receive MCP security and policy checks.",
+    ),
+    (
         "Google Antigravity",
         [
             "antigravity-config-json-valid",

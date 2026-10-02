@@ -6093,6 +6093,11 @@ class TestRuleCoverage:
         repo = copy_fixture("pi/mcp-invalid", tmp_path / "pi_mcp_invalid")
         fired |= rule_ids(run_lint(repo, "--rule", "pi-mcp-valid"))
 
+        repo = copy_fixture("goose/broken", tmp_path / "goose_broken")
+        fired |= rule_ids(
+            run_lint(repo, "--rule", "goose-recipe-valid", "--rule", "goose-subrecipe-references")
+        )
+
         missing = all_rule_ids - fired
         assert not missing, (
             f"Rules without test coverage ({len(missing)}): {sorted(missing)}\n"
@@ -10943,3 +10948,187 @@ def test_pi_skill_description_routing_fallback_when_native_rule_disabled(tmp_pat
         ("content-description-routing", "skills/missing/SKILL.md"),
         ("content-description-routing", "skills/nulled/SKILL.md"),
     ]
+
+
+class TestGoose:
+    def test_valid_recipes_and_monorepo_discovery(self, tmp_path):
+        from skillsaw.blocks.base import ContentBlock
+        from skillsaw.blocks.goose import GooseRecipeBlock, GooseRecipeProseBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("goose/clean", tmp_path)
+        result = run_lint(
+            repo, "--rule", "goose-recipe-valid", "--rule", "goose-subrecipe-references"
+        )
+        assert result["rc"] == 0
+        assert violations(result) == []
+        assert result["out"]["stats"]["repo_types"] == ["goose"]
+        tree = RepositoryContext(repo).lint_tree
+        recipes = tree.find(GooseRecipeBlock)
+        assert {block.path.relative_to(repo).as_posix() for block in recipes} == {
+            ".goose/recipes/review.yaml",
+            ".goose/recipes/checks/child.yaml",
+            ".goose/recipes/summary.json",
+            ".goose/recipes/desktop.yml",
+            ".goose/recipes/scalars.yaml",
+            "packages/web/.goose/recipes/check.yaml",
+            "packages/web/followup.yaml",
+        }
+        assert all(not isinstance(block, ContentBlock) for block in recipes)
+        assert len(tree.find(GooseRecipeProseBlock)) == 9
+
+    def test_static_defects_are_consolidated_and_located(self, tmp_path):
+        repo = copy_fixture("goose/broken", tmp_path)
+        result = run_lint(
+            repo, "--rule", "goose-recipe-valid", "--rule", "goose-subrecipe-references"
+        )
+        assert result["rc"] == 1
+        findings = by_rule(result)
+        fields = next(
+            v for v in findings["goose-recipe-valid"] if v["file_path"].endswith("fields.yaml")
+        )
+        assert fields["line"] == 3
+        assert fields["severity"] == "error"
+        assert "prompt: expected a string" in fields["message"]
+        assert "file parameters cannot have a default" in fields["message"]
+        assert len(findings["goose-recipe-valid"]) == 2
+        references = findings["goose-subrecipe-references"]
+        assert len(references) == 1
+        assert references[0]["line"] == 22
+        assert "sub_recipes[0].path" in references[0]["message"]
+        assert "generated.yaml" not in references[0]["message"]
+
+    def test_prose_reference_lines_and_safe_fix(self, tmp_path):
+        repo = copy_fixture("goose/broken", tmp_path)
+        path = repo / ".goose/recipes/security.yaml"
+        before = path.read_bytes()
+        result = run_lint(
+            repo, "--rule", "content-broken-internal-reference", "--rule", "content-weak-language"
+        )
+        findings = by_rule(result)
+        assert {v["line"] for v in findings["content-broken-internal-reference"]} == {5, 9}
+        assert {v["line"] for v in findings["content-weak-language"]} == {6}
+        _fix_widened(
+            repo, "--rule", "content-broken-internal-reference", "--rule", "content-weak-language"
+        )
+        assert path.read_bytes() == before
+        _run_fix(
+            repo, "--rule", "content-broken-internal-reference", "--rule", "content-weak-language"
+        )
+        assert path.read_bytes() == before
+
+    def test_mcp_security_survives_disabling_format_rule(self, tmp_path):
+        repo = copy_fixture("goose/broken", tmp_path)
+        result = run_lint(repo, "--skip-rule", "goose-recipe-valid")
+        findings = [
+            v for v in by_rule(result)["mcp-valid-json"] if v["file_path"].endswith("security.yaml")
+        ]
+        assert len(findings) == 3
+        assert {v["line"] for v in findings} == {13, 15, 21}
+        assert any("user information" in v["message"] for v in findings)
+        assert all("committed-secret-value" not in v["message"] for v in findings)
+
+    def test_mcp_policy_counts_external_extensions(self, tmp_path):
+        repo = copy_fixture("goose/clean", tmp_path)
+        findings = by_rule(run_lint(repo, "--rule", "mcp-prohibited"))["mcp-prohibited"]
+        assert len(findings) == 1
+        assert findings[0]["line"] == 13
+        assert findings[0]["file_path"] == ".goose/recipes/review.yaml"
+
+    def test_explicit_directory_and_unmarked_yaml(self, tmp_path):
+        repo = copy_fixture("goose/explicit", tmp_path)
+        assert violations(run_lint(repo)) == []
+        assert run_lint(repo)["out"]["stats"]["repo_types"] == ["unknown"]
+        result = run_lint(repo, "--type", "goose", "--rule", "content-broken-internal-reference")
+        assert [v["file_path"] for v in violations(result)] == ["review.yaml"]
+        assert result["out"]["stats"]["repo_types"] == ["goose"]
+
+    def test_opt_in_and_severity_override(self, tmp_path):
+        repo = copy_fixture("goose/broken", tmp_path)
+        assert not {"goose-recipe-valid", "goose-subrecipe-references"} & rule_ids(run_lint(repo))
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n  goose-recipe-valid:\n    enabled: true\n    severity: warning\n"
+        )
+        assert {v["severity"] for v in by_rule(run_lint(repo))["goose-recipe-valid"]} == {"warning"}
+
+    def test_forced_discovery_skips_project_config_files(self, tmp_path):
+        from skillsaw.blocks.goose import GooseRecipeBlock
+        from skillsaw.context import RepositoryContext, RepositoryType
+
+        repo = copy_fixture("goose/explicit-configs", tmp_path)
+        result = run_lint(repo, "--type", "goose")
+        assert result["rc"] == 1
+        found = violations(result)
+        assert len(found) == 1
+        assert found[0]["rule_id"] == "goose-recipe-valid"
+        assert found[0]["file_path"] == "broken.yaml"
+        recipes = RepositoryContext(repo, repo_types={RepositoryType.GOOSE}).lint_tree.find(
+            GooseRecipeBlock
+        )
+        assert {block.path.name for block in recipes} == {"review.yaml", "broken.yaml"}
+        recipe_dir = repo / ".goose/recipes"
+        recipe_dir.mkdir(parents=True)
+        (repo / "package.json").rename(recipe_dir / "package.json")
+        automatic = RepositoryContext(repo).lint_tree.find(GooseRecipeBlock)
+        assert {block.path.relative_to(repo).as_posix() for block in automatic} == {
+            ".goose/recipes/package.json"
+        }
+
+    def test_exclusions_and_cycles(self, tmp_path):
+        from skillsaw.blocks.goose import GooseRecipeBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("goose/clean", tmp_path)
+        path = repo / ".goose/recipes/checks/child.yaml"
+        with path.open("a") as stream:
+            stream.write(
+                '  sub_recipes:\n    - name: parent\n      path: "{{ recipe_dir }}/../review.yaml"\n'
+            )
+        assert len(RepositoryContext(repo).lint_tree.find(GooseRecipeBlock)) == 7
+        context = RepositoryContext(repo, exclude_patterns=[".goose/**", "packages/**/.goose/**"])
+        assert context.lint_tree.find(GooseRecipeBlock) == []
+        assert "goose" not in context.repo_type_names()
+
+    def test_symlink_and_traversal_do_not_read_outside(self, tmp_path):
+        from skillsaw.blocks.goose import GooseRecipeBlock
+        from skillsaw.context import RepositoryContext
+
+        repo = copy_fixture("goose/explicit", tmp_path / "repo")
+        outside = tmp_path / "outside.yaml"
+        outside.write_text("title: Outside\ndescription: Private recipe\nprompt: private-marker\n")
+        (repo / "linked.yaml").symlink_to(outside)
+        with (repo / "review.yaml").open("a") as stream:
+            stream.write(
+                "  - name: outside\n    path: ../outside.yaml\n  - name: link\n    path: linked.yaml\n"
+            )
+        from skillsaw.context import RepositoryType
+
+        recipes = RepositoryContext(repo, repo_types={RepositoryType.GOOSE}).lint_tree.find(
+            GooseRecipeBlock
+        )
+        assert {block.path.name for block in recipes} == {"review.yaml", "check.yaml"}
+        result = run_lint(repo, "--type", "goose", "--rule", "goose-subrecipe-references")
+        assert result["rc"] == 0
+        assert violations(result) == []
+
+    def test_json_diagnostics_are_file_level_and_fields_are_distinct(self, tmp_path):
+        repo = copy_fixture("goose/clean", tmp_path)
+        path = repo / ".goose/recipes/summary.json"
+        content = json.loads(path.read_text())
+        content["instructions"] = "Read [the guide](missing.md)."
+        content["prompt"] = "Read [the guide](missing.md)."
+        path.write_text(json.dumps(content))
+        result = run_lint(repo, "--rule", "content-broken-internal-reference")
+        found = [v for v in violations(result) if v["file_path"].endswith("summary.json")]
+        assert len(found) == 2
+        assert all(not v.get("line") for v in found)
+        from skillsaw.blocks.goose import GooseRecipeProseBlock
+        from skillsaw.context import RepositoryContext
+
+        blocks = [
+            b
+            for b in RepositoryContext(repo).lint_tree.find(GooseRecipeProseBlock)
+            if b.path == path
+        ]
+        assert len(set(blocks)) == 2
+        assert len({b.fingerprint_identity(1) for b in blocks}) == 2

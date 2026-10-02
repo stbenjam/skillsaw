@@ -1,0 +1,1 @@
+{"name":"recipe-library","private":true,"scripts":{"lint":"skillsaw lint . --type goose"}}

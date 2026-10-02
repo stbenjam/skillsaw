@@ -1,0 +1,3 @@
+title: Check tests
+description: Inspect tests before approving the change.
+prompt: Read the tests and compare them with the documented behavior.

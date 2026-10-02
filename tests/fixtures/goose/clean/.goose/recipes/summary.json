@@ -1,0 +1,1 @@
+{"title":"Summarize a patch","description":"Describe a change for its reviewer.","prompt":"Read the patch and summarize its effect.","settings":{"goose_model":"example"},"unknown_future_field":true}

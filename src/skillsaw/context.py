@@ -108,6 +108,7 @@ class RepositoryContext(
         RepositoryType.CLINE,
         RepositoryType.DEVIN,
         RepositoryType.OPENCODE,
+        RepositoryType.GOOSE,
         RepositoryType.ANTIGRAVITY,
         RepositoryType.KIRO,
         RepositoryType.SKILLS_LOCK,
@@ -166,6 +167,7 @@ class RepositoryContext(
         self._resolve_cache: Dict[Path, Optional[Path]] = {}
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
+        self.goose_recipes_forced = repo_types is not None and RepositoryType.GOOSE in repo_types
         self.lint_external_content = lint_external_content
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}

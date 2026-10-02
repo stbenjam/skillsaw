@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: lint-recipes
+        name: Lint Goose recipes
+        entry: skillsaw lint . --type goose
+        language: system
+        pass_filenames: false

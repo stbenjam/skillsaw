@@ -1,0 +1,6 @@
+title: Review standalone recipes
+description: Check recipes stored outside the project recipe directory.
+instructions: Read [the guide](missing.md) before reviewing the patch.
+sub_recipes:
+  - name: child
+    path: children/check.yaml

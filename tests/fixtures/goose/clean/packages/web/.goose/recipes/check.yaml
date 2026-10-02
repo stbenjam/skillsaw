@@ -1,0 +1,6 @@
+title: Check the web component
+description: Review the web component with its own workspace as the base.
+prompt: Read the web changes and summarize the effects.
+sub_recipes:
+  - name: followup
+    path: followup.yaml

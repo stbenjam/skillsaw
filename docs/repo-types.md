@@ -90,6 +90,40 @@ Lints operate on repository-local authored resources. Remote packages are not
 installed, and extension code is never executed. Consumer package filters are
 validated without hiding the package's authored content from diagnostics.
 
+## Goose recipes
+
+`goose` detects `.goose/recipes/`, including nested monorepo workspaces.
+YAML, Desktop `.yml`, and JSON recipes get separate structured and prose nodes:
+`instructions`, `prompt`, and `activities` receive shared content, reference and
+security checks. External `stdio` and `streamable_http` extensions receive MCP
+credential checks and configured server policy; built-in extensions do not.
+
+For a directory containing standalone recipes, use:
+
+```bash
+skillsaw lint my-recipes --type goose --rule goose-recipe-valid --rule goose-subrecipe-references
+```
+
+The explicit type selects top-level YAML/JSON files in that directory as
+recipes, skipping skillsaw configuration, pre-commit and MkDocs configuration,
+Node package manifests and npm/pnpm lockfiles. Other unrelated files can be
+excluded through configuration. Automatic discovery selects top-level files
+in `.goose/recipes/`.
+Both follow contained local subrecipe references and respect exclusions.
+Other repository YAML/JSON files are untouched.
+
+[`goose-recipe-valid`](rules/goose-recipe-valid.md) and
+[`goose-subrecipe-references`](rules/goose-subrecipe-references.md) are opt-in.
+The adapter uses Goose v1.52.0's recipe contract; it checks static authoring
+fields rather than rendering templates or replacing `goose recipe validate`.
+YAML findings retain source lines; JSON findings are file-level. Embedded
+prose is diagnostic-only, so `skillsaw fix` leaves the recipe intact.
+
+Personal libraries, environment search paths, remote sources, and arbitrary
+template expressions require runtime state and are not resolved. The adapter
+does not execute recipes, retry commands or extensions, fetch dependencies,
+or scan Goose's machine configuration.
+
 ## Agent Plugins
 
 Portable plugin packages following the [Agent Plugins v1

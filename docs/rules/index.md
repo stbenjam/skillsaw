@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **108** built-in rules organized into the following categories:
+skillsaw includes **110** built-in rules organized into the following categories:
 
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
@@ -15,6 +15,7 @@ skillsaw includes **108** built-in rules organized into the following categories
 - [Copilot / VS Code](copilot.md) (1 rule)
 - [Cursor](cursor.md) (4 rules)
 - [Devin](devin.md) (2 rules)
+- [Goose](goose.md) (2 rules)
 - [Google Antigravity](antigravity.md) (4 rules)
 - [Grok Build](grok.md) (8 rules)
 - [Hooks](hooks.md) (3 rules)
@@ -93,6 +94,8 @@ skillsaw includes **108** built-in rules organized into the following categories
 | [`cursor-marketplace-json-valid`](cursor-marketplace-json-valid.md) | Cursor marketplaces must contain valid entries with unique names and resolvable local sources | error (auto) | - | Cursor |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
+| [`goose-recipe-valid`](goose-recipe-valid.md) | Goose recipe metadata, parameters and extensions must have valid shapes | error (disabled) | - | Goose |
+| [`goose-subrecipe-references`](goose-subrecipe-references.md) | Literal local Goose subrecipe paths should exist inside the lint root | warning (disabled) | - | Goose |
 | [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must decode their paths and filters correctly | error (disabled) | - | Google Antigravity |
 | [`antigravity-hooks-valid`](antigravity-hooks-valid.md) | hooks.json must use Antigravity's hook events, handler types and fields | error (auto) | - | Google Antigravity |
 | [`antigravity-mcp-valid`](antigravity-mcp-valid.md) | mcp_config.json must parse and declare servers Antigravity can load | error (auto) | - | Google Antigravity |

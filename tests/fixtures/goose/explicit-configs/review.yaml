@@ -1,0 +1,3 @@
+title: Review changes
+description: Summarize a patch and suggest focused checks.
+instructions: Read the changed files and identify supported behavior that needs verification.

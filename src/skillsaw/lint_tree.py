@@ -103,6 +103,7 @@ from .formats.openclaw import MANIFEST, contained_file, inline_mcp_servers
 from .blocks.pi import PiPackageNode, PiPackageBlock
 from .discovery.pi import package_resources
 from .pi_tree import attach_pi_resources, attach_pi_projects, attach_pi_prompts
+from .goose_tree import attach_goose_recipes
 from .formats import antigravity, devin, grok, muse, cursor
 from .blocks.cursor import (
     CursorAgentBlock,
@@ -2014,6 +2015,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             root.children.append(skill_node)
 
     # --- .coderabbit.yaml ---
+    attach_goose_recipes(state, root)
+
     cr_path = context.root_path / ".coderabbit.yaml"
     cr_resolved = state.resolve_repo_path(cr_path)
     if cr_resolved is not None and safe_exists(cr_resolved) and not _is_excluded(cr_path):

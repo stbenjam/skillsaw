@@ -1,0 +1,4 @@
+recipe:
+  title: Check test coverage
+  description: Inspect the tests for a change and identify gaps.
+  prompt: Read the tests and list missing regression scenarios.

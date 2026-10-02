@@ -45,6 +45,7 @@ class RepositoryType(Enum):
     CLINE = "cline"  # Repository with `.clinerules`
     DEVIN = "devin"  # Repository with `.devin/`, `.windsurf/` or Devin instructions
     OPENCODE = "opencode"  # Repository with an `opencode.json` or `.opencode/`
+    GOOSE = "goose"  # Project recipes under `.goose/recipes/`
     MUSE = "muse"  # Repository with `.muse/` configuration — Muse Code
     # Repository with a `.grok/` project layer — skills, rules, commands,
     # agents, hooks, MCP. Grok plugins and marketplaces are separate
@@ -107,6 +108,7 @@ TOOL_REPO_TYPES = frozenset(
         RepositoryType.CLINE,
         RepositoryType.DEVIN,
         RepositoryType.OPENCODE,
+        RepositoryType.GOOSE,
         RepositoryType.MUSE,
         RepositoryType.GROK_PROJECT,
         RepositoryType.CODEX_PROJECT,

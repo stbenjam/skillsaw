@@ -1,0 +1,28 @@
+title: Broken metadata
+description: Exercise invalid recipe authoring fields.
+prompt: [unexpected, array]
+parameters:
+  - key: source
+    description: File to read.
+    input_type: file
+    requirement: required
+    default: private.txt
+  - key: mode
+    description: Review mode.
+    input_type: invalid
+    requirement: optional
+extensions:
+  - type: stdio
+    name: local
+    cmd: tool
+  - type: [unsupported]
+    name: invalid
+sub_recipes:
+  - name: missing
+    path: missing.yaml
+  - name: generated
+    path: "{{ output_dir }}/generated.yaml"
+  - name: personal
+    path: ~/private.yaml
+  - name: named
+    path: library-recipe

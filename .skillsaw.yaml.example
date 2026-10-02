@@ -1,7 +1,7 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
-version: "0.21.0"
+version: "0.21.1"
 
 rules:
 
@@ -484,6 +484,16 @@ rules:
   devin-skill-valid:
     enabled: auto
     severity: error
+
+  # Goose recipe metadata, parameters and extensions must have valid shapes
+  goose-recipe-valid:
+    enabled: false
+    severity: error
+
+  # Literal local Goose subrecipe paths should exist inside the lint root
+  goose-subrecipe-references:
+    enabled: false
+    severity: warning
 
   # .grok/agents/*.md must declare a name and a description in frontmatter
   grok-agent-valid:

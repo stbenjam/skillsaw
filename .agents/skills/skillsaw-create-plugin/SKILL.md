@@ -70,7 +70,7 @@ version = "0.1.0"
 description = "<one line: what the rules enforce>"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["skillsaw>=0.21.0"]
+dependencies = ["skillsaw>=0.21.1"]
 
 [project.entry-points."skillsaw.plugins"]
 <name> = "skillsaw_<name>"

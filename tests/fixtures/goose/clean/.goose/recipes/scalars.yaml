@@ -1,0 +1,12 @@
+title: null
+description: 2026-10-01
+version: null
+prompt: false
+parameters: null
+activities: null
+settings: null
+extensions:
+  - type: builtin
+    name: developer
+    args: ignored field
+    cwd: [also, ignored]

@@ -1,0 +1,34 @@
+title: Review a patch
+description: Check a proposed change against the repository conventions.
+instructions: |
+  Read the changed modules and their tests.
+  Explain any correctness defects with a concrete example.
+prompt: Review {{ component }} and report required changes.
+parameters:
+  - key: component
+    input_type: string
+    requirement: optional
+    default: backend
+    description: Component to review.
+extensions:
+  - type: builtin
+    name: developer
+  - type: platform
+    name: summon
+  - type: stdio
+    name: filesystem
+    cmd: npx
+    args: ["@modelcontextprotocol/server-filesystem", "."]
+    envs:
+      API_TOKEN: "${API_TOKEN}"
+  - type: streamable_http
+    name: remote
+    uri: https://mcp.example.com/mcp
+    headers:
+      Authorization: "Bearer ${MCP_TOKEN}"
+sub_recipes:
+  - name: checks
+    path: "{{ recipe_dir }}/checks/child.yaml"
+    values:
+      count: 3
+      verbose: true

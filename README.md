@@ -26,7 +26,7 @@ and context rules backed by research and frontier lab guidance.
 It understands Agent Skills,
 [Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
 plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
-GEMINI.md, QWEN.md, Cursor plugins and marketplaces, Copilot, Cline, Devin, Kiro, OpenCode, Muse Code, Pi,
+GEMINI.md, QWEN.md, Cursor plugins and marketplaces, Copilot, Cline, Devin, Kiro, OpenCode, Goose recipes, Muse Code, Pi,
 Grok Build, Google Antigravity, native OpenClaw plugins, hooks, agent configuration, MCP Registry
 `server.json` publisher metadata,
 Vercel skills CLI lockfiles, and eval formats. Safe structural fixes can be applied
@@ -76,6 +76,16 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 
 For `lint --fail-on info`, use `baseline --include-info` to accept existing
 INFO findings too. A configured `fail-on: info` includes them automatically.
+
+Goose recipes under `.goose/recipes/` receive shared content and MCP security
+checks. Enable the optional recipe checks for standalone recipe directories with:
+
+```bash
+uvx skillsaw lint my-recipes --type goose --rule goose-recipe-valid --rule goose-subrecipe-references
+```
+
+See [Goose recipe support](https://skillsaw.org/repo-types/#goose-recipes) for
+discovery, path resolution and validation limits.
 
 ## What it catches
 

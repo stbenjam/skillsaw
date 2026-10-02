@@ -77,6 +77,7 @@ class McpValidJsonRule(Rule):
         "codex-hooks-valid",
         "copilot-agent-valid",
         "grok-config-valid",
+        "goose-recipe-valid",
     )
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a
