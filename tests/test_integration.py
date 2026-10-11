@@ -5313,6 +5313,15 @@ class TestApm:
         assert summary(r)["errors"] == 0
         assert summary(r)["warnings"] == 0
 
+    def test_memory_only_package_passes(self, tmp_path):
+        """APM discovers `.apm/memory/*.memory.md` as context primitives"""
+        repo = copy_fixture("apm/memory-only", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "apm-structure-valid" not in rule_ids(r)
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+
     def test_oversized_yaml_integer_is_a_normal_parse_finding(
         self, tmp_path, oversized_integer_digits
     ):

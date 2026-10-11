@@ -15,13 +15,16 @@ from skillsaw.lint_target import ApmNode
 # packages built purely from prompts/, agents/, context/, hooks/, or
 # extensions/. `extensions/` is the experimental "canvas" primitive
 # (gated by the canvas flag); it is a real source dir, so a package
-# built purely from it must not be flagged.
+# built purely from it must not be flagged. `memory/` holds
+# `*.memory.md` files APM discovers as context primitives
+# (apm_cli/primitives/discovery.py, v0.33.0).
 APM_PRIMITIVE_DIRS = (
     "skills",
     "instructions",
     "prompts",
     "agents",
     "context",
+    "memory",
     "hooks",
     "extensions",
 )
