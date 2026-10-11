@@ -1,0 +1,7 @@
+name: payments-context
+version: 0.4.1
+description: Shared project memory for the payments service agents
+author: payments-platform
+targets:
+  - claude
+  - copilot

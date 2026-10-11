@@ -228,6 +228,7 @@ _APM_CONTENT_GLOBS = (
     ("prompts", "*.md", PromptBlock),
     ("chatmodes", "*.md", ChatmodeBlock),
     ("context", "*.md", ContextFileBlock),
+    ("memory", "*.memory.md", ContextFileBlock),
 )
 
 

@@ -5322,6 +5322,18 @@ class TestApm:
         assert summary(r)["errors"] == 0
         assert summary(r)["warnings"] == 0
 
+    def test_memory_file_is_linted_for_hidden_instructions(self, tmp_path):
+        """Memory primitives reach the Markdown parser and security rules."""
+        repo = copy_fixture("apm/memory-hidden-instructions", tmp_path)
+        r = run_lint(repo, "--strict")
+
+        assert r["rc"] == 1
+        assert "apm-structure-valid" not in rule_ids(r)
+        found = by_rule(r)["security-hidden-instructions"]
+        assert len(found) == 1
+        assert found[0]["file_path"] == ".apm/memory/payments-service.memory.md"
+        assert found[0]["line"] == 6
+
     def test_oversized_yaml_integer_is_a_normal_parse_finding(
         self, tmp_path, oversized_integer_digits
     ):
