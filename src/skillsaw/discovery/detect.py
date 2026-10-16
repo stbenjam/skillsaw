@@ -17,11 +17,12 @@ from skillsaw.discovery.antigravity import (
     customization_root_declares_a_file,
     customization_root_is_marked,
 )
+from skillsaw.discovery.codex_instructions import probe_file
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.formats import antigravity, codex, devin, grok, muse
 from skillsaw.formats.openclaw import MANIFEST as OPENCLAW_MANIFEST
-from skillsaw.paths import contained_resolve, safe_resolve
+from skillsaw.paths import Resolver, contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
 WALK_SKIP_DIRS = frozenset(
@@ -170,6 +171,8 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
                     promptfoo_evals.setdefault(evals_dir, []).append(path)
         found.update(here / name for name in filenames if name.endswith(".instructions.md"))
         if not vendored:
+            if "AGENTS.override.md" in filenames:
+                found.add(here / "AGENTS.override.md")
             found.update(here / name for name in filenames if devin.is_instruction_filename(name))
             if "server.json" in filenames:
                 mcp_registry_files.append(here / "server.json")
@@ -346,6 +349,8 @@ def tool_types(
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
     legacy_editor_files: Optional[Mapping[str, Iterable[Path]]] = None,
     skills_lock_files: Optional[Iterable[Path]] = None,
+    *,
+    resolve: Resolver = safe_resolve,
 ) -> Set[str]:
     """Return ``RepositoryType`` values for the tools configured here.
 
@@ -378,6 +383,13 @@ def tool_types(
                 continue
             for name, is_dir in entries:
                 path = base / name
+                if type_value == "codex-project" and name == codex.CODEX_CONFIG_FILENAME:
+                    # Match project-config attachment, including excluded
+                    # ancestors and symlink targets, before enabling its rules.
+                    candidate = probe_file(path, root, resolve=resolve, is_excluded=is_excluded)
+                    if candidate is not None and candidate.issue is None:
+                        return True
+                    continue
                 if is_excluded(path):
                     continue
                 if path.is_dir() if is_dir else path.exists():
@@ -502,7 +514,17 @@ def tool_types(
         # carry their own types, so ``.grok/`` itself is the only marker
         # that is Grok Build's alone.
         ("grok-project", tool_marker("grok-project")),
-        ("codex-project", tool_marker("codex-project")),
+        (
+            "codex-project",
+            tool_marker("codex-project")
+            or any(
+                path.name == "AGENTS.override.md"
+                and (candidate := probe_file(path, root, resolve=resolve, is_excluded=is_excluded))
+                is not None
+                and candidate.issue is None
+                for path in files
+            ),
+        ),
         ("antigravity", antigravity_marker()),
         ("gemini", marker("GEMINI.md")),
         ("qwen", marker("QWEN.md")),

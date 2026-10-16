@@ -375,6 +375,24 @@ content-paths:
 
 Matched files are analyzed by all `content-*` rules.
 
+## Codex Instruction Analysis
+
+The optional `codex-instructions` mapping describes one Codex project root/cwd
+projection shared by `tree --codex-instructions` and the opt-in
+`codex-project-instructions` rule. The root is the supplied repository path.
+
+```yaml
+codex-instructions:
+  cwd: services/payments
+  project_doc_max_bytes: 65536
+  project_doc_fallback_filenames: [TEAM_GUIDE.md]
+```
+
+Omit either `project_doc_*` value, or set it to `null`, to use in-scope project
+TOML followed by assumed Codex defaults. These analysis inputs do not edit
+Codex's settings. See [Codex project instructions](rules/codex-project-instructions.md)
+for the selection model, byte accounting, trust assumptions, and CI setup.
+
 ## External Content
 
 `lint-external-content` is the repository-wide policy for lint-tree nodes
