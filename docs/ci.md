@@ -118,7 +118,7 @@ as the action. Set `version` to install a specific PyPI release instead:
 ```yaml
 - uses: stbenjam/skillsaw@v0
   with:
-    version: '0.21.0'
+    version: '0.22.0'
 ```
 
 ### Outputs
@@ -281,7 +281,7 @@ Quality report, available since skillsaw 0.11.3):
 ```yaml
 skillsaw:
   script:
-    - pip install skillsaw==0.21.1
+    - pip install skillsaw==0.22.0
     - skillsaw lint --output gitlab:gl-code-quality-report.json .
   artifacts:
     reports:
