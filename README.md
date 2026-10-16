@@ -87,6 +87,11 @@ uvx skillsaw lint my-recipes --type goose --rule goose-recipe-valid --rule goose
 See [Goose recipe support](https://skillsaw.org/repo-types/#goose-recipes) for
 discovery, path resolution and validation limits.
 
+Ruler `.ruler/` and Rulesync `.rulesync/rules/` sources are discovered
+automatically. Generate explicitly, then lint the native consumer files with
+skillsaw. See the [generator workflow](https://skillsaw.org/generators/) for
+source checks, verified-copy attribution, and Rulesync's ownership opt-in.
+
 ## What it catches
 
 - **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (project config, plugins & marketplaces), Cursor plugins & marketplaces, Grok Build (project config, plugins & marketplaces), Google Antigravity (configuration in any customization root — `.agents/`, `.agent/`, `_agents/`, `_agent/` — its `rules/` and `agents/` prose, plugins, hooks, MCP servers and registries), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, Pi packages and project resources, native OpenClaw plugins (including optional theme and artwork declarations), APM packages, MCP server maps, and MCP Registry metadata.

@@ -124,6 +124,7 @@ nav:
     - Baseline: baseline.md
     - Configuration: configuration.md
     - Repository Types: repo-types.md
+    - Ruler and Rulesync: generators.md
     - CI Integration: ci.md
     - Pre-commit: pre-commit.md
     - CLI Reference: cli.md
@@ -156,6 +157,7 @@ nav:
     - OpenCode: rules/opencode.md
     - Pi: rules/pi.md
     - Promptfoo: rules/promptfoo.md
+    - Ruler and Rulesync: rules/generators.md
     - Security: rules/security.md
     - Vercel: rules/vercel.md
   - Changelog: changelog.md

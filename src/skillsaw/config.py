@@ -63,6 +63,8 @@ class LinterConfig:
     custom_rules: List[str] = field(default_factory=list)
     exclude_patterns: List[str] = field(default_factory=list)
     content_paths: List[str] = field(default_factory=list)
+    # Explicit ownership assertion for verified conventional Rulesync copies.
+    rulesync_generated: bool = False
     # Report diagnostics from externally sourced lint-tree nodes. Lock-managed
     # skills and APM packages produce the tag; autofix always stands down.
     lint_external_content: bool = True
@@ -102,6 +104,7 @@ class LinterConfig:
             "exclude",
             "content-paths",
             "lint-external-content",
+            "rulesync-generated",
             "strict",
             "fail-on",
             "plugins",
@@ -269,6 +272,12 @@ class LinterConfig:
                 f"got {type(raw_content_paths).__name__}"
             )
 
+        rulesync_generated = data.get("rulesync-generated", False)
+        if rulesync_generated is None:
+            rulesync_generated = False
+        if not isinstance(rulesync_generated, bool):
+            raise ValueError("'rulesync-generated' must be a boolean")
+
         raw_lint_external_content = data.get("lint-external-content")
         if raw_lint_external_content is None:
             lint_external_content = True
@@ -345,6 +354,7 @@ class LinterConfig:
             custom_rules=custom_rules,
             exclude_patterns=exclude_patterns,
             content_paths=content_paths,
+            rulesync_generated=rulesync_generated,
             lint_external_content=lint_external_content,
             strict=strict,
             fail_on=fail_on,
@@ -590,6 +600,7 @@ class LinterConfig:
         if self.content_paths:
             d["content-paths"] = self.content_paths
         d["lint-external-content"] = self.lint_external_content
+        d["rulesync-generated"] = self.rulesync_generated
         if not self.plugins_enabled or self.disabled_plugins:
             plugins: Dict[str, Any] = {}
             if not self.plugins_enabled:
@@ -673,6 +684,8 @@ class LinterConfig:
                     f.write(f'    # - "{pat}"\n')
             f.write("\n# Additional markdown files to run content rules on (glob format)\n")
             self._write_field(f, "content-paths", self.content_paths)
+            f.write("\n# Assert Rulesync owns its configured conventional modular rule outputs\n")
+            self._write_field(f, "rulesync-generated", self.rulesync_generated)
             f.write("\n# Report findings in external content (autofix never rewrites it)\n")
             f.write(f"lint-external-content: {self._yaml_value(self.lint_external_content)}\n")
             f.write("\n# Treat warnings as errors\n")

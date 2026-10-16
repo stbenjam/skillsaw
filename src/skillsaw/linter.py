@@ -53,6 +53,7 @@ from .rule import (
 )
 from .context import RepositoryContext
 from .config import LinterConfig
+from .generated import generator_copy_paths
 from .suppression import build_suppression_map_for_file, SuppressionMap
 from .utils import mkdir_parents_anchored, rename_path_anchored, write_text_preserving
 
@@ -245,6 +246,7 @@ class Linter:
         self._no_plugins = no_plugins
         self._plugin_load_violations: List[RuleViolation] = []
         self._vendor_managed_cache: Dict[Path, bool] = {}
+        self._generated_fix_paths: Set[Path] = set()
         self._external_source_path_cache: Dict[Path, bool] = {}
         self._stale_baseline_entries: List["BaselineEntry"] = []
         self._baseline_suppressed_count: int = 0
@@ -256,9 +258,11 @@ class Linter:
         # stale — but it
         # only narrows: it won't rediscover paths an earlier filter removed.
         if (
-            self.context.content_paths != self.config.content_paths
+            self.context.rulesync_generated != self.config.rulesync_generated
+            or self.context.content_paths != self.config.content_paths
             or self.context.exclude_patterns != self.config.exclude_patterns
         ):
+            self.context.rulesync_generated = self.config.rulesync_generated
             self.context.content_paths = self.config.content_paths
             self.context.exclude_patterns = self.config.exclude_patterns
             self.context.apply_excludes()
@@ -1107,6 +1111,57 @@ class Linter:
             return smap.is_explicitly_suppressed(violation.rule_id, file_line)
         return smap.is_suppressed(violation.rule_id, file_line)
 
+    def _generator_copies(self):
+        return generator_copy_paths(self.context.lint_tree)
+
+    def _generator_copy(self, violation):
+        if violation.file_path is None:
+            return None
+        return self._generator_copies().get(
+            safe_resolve(violation.file_path) or violation.file_path
+        )
+
+    def _protected_generated_path(self, path):
+        return path is not None and (safe_resolve(path) or path) in self._generated_fix_paths
+
+    @staticmethod
+    def _dedupe_source_editorial(violations):
+        """Keep the source's identical editorial finding on a shared file.
+
+        Native parser views remain complete. Line findings match their physical
+        location; whole-file findings also require identical prose views. A
+        different interpretation or a security/policy finding survives. This
+        confers no generated ownership.
+        """
+        from .blocks.generators import is_generator_source
+        from .blocks import ContentBlock
+        from .generated import EDITORIAL_COPY_RULES
+
+        def key(v):
+            if v.rule_id not in EDITORIAL_COPY_RULES or v.block is None:
+                return None
+            location = v.file_line
+            if location is None:
+                if not isinstance(v.block, ContentBlock):
+                    return None
+                body = v.block.read_body(strip_code_blocks=False)
+                if body is None:
+                    return None
+                location = (None, v.block.file_line(1), body)
+            return (
+                v.block.resolved_path,
+                location,
+                v.rule_id,
+                v.message,
+                v.severity,
+                v.fingerprint_discriminator,
+            )
+
+        sources = {key(v) for v in violations if is_generator_source(v.block)} - {None}
+        if not sources:
+            return violations
+        return [v for v in violations if is_generator_source(v.block) or key(v) not in sources]
+
     def _compiled_copy_paths(self) -> Set[Path]:
         """Resolved paths of every content-suppressed (compiled-copy) file.
 
@@ -1233,7 +1288,13 @@ class Linter:
                 symlink_status[file_path] = self._symlink_skip(file_path) is not None
             return symlink_status[file_path]
 
+        from .generated import EDITORIAL_COPY_RULES
+
         for v in violations:
+            generated = self._generator_copy(v)
+            if generated is not None:
+                v.generated_from = generated.sources
+                v.generator = generated.generator
             if self._is_excluded(v):
                 logger.info(
                     "Suppressed %-30s %s (global exclude)",
@@ -1259,6 +1320,8 @@ class Linter:
                     v.rule_id,
                     v.file_path or "(no file)",
                 )
+            elif generated is not None and v.rule_id in EDITORIAL_COPY_RULES:
+                logger.info("Suppressed %-30s %s (verified generator copy)", v.rule_id, v.file_path)
             elif _is_prose_duplicate_rule(v.rule_id) and self._is_on_compiled_copy(v):
                 # A compiled copy of a source read elsewhere: its prose-quality
                 # and budget findings would double the source's, so drop them.
@@ -1272,7 +1335,9 @@ class Linter:
                     v.file_path or "(no file)",
                 )
             elif (
-                self._is_on_external_source(v)
+                generated is not None
+                or self._protected_generated_path(v.file_path)
+                or self._is_on_external_source(v)
                 or self._is_vendor_managed(v.file_path)
                 or (v.block is not None and v.block.diagnostic_only)
                 or (not preserve_symlink_fixability and v.fixable and _is_symlink(v.file_path))
@@ -1296,6 +1361,7 @@ class Linter:
                 len(violations),
             )
 
+        kept = self._dedupe_source_editorial(kept)
         if self._baseline is not None:
             from .baseline import filter_baselined_violations
 
@@ -1400,6 +1466,7 @@ class Linter:
             Tuple of (remaining violations, autofix results)
         """
         threshold = "info" if severity_threshold is None else severity_threshold
+        self._generated_fix_paths.update(self._generator_copies())
         allowed_severities = severities_at_or_above(threshold)
 
         # Config warnings go through the same filter pipeline run() uses
@@ -1441,7 +1508,9 @@ class Linter:
                 fixable_input = [
                     v
                     for v in visible
-                    if (v.block is None or not v.block.diagnostic_only)
+                    if self._generator_copy(v) is None
+                    and not self._protected_generated_path(v.file_path)
+                    and (v.block is None or not v.block.diagnostic_only)
                     and not self._is_on_external_source(v)
                     and v.severity in allowed_severities
                 ]
@@ -1451,6 +1520,8 @@ class Linter:
                             f
                             for f in rule.fix(self.context, fixable_input)
                             if not self._is_vendor_managed(f.file_path)
+                            and not self._protected_generated_path(f.file_path)
+                            and not self._protected_generated_path(f.rename_from)
                             and not self._is_external_source_path(f.file_path)
                             and (
                                 f.rename_from is None
@@ -1522,6 +1593,7 @@ class Linter:
         dry_run: bool = False,
         progress: Optional[Callable[[int, int, str], None]] = None,
         severity_threshold: Optional[str] = None,
+        protected_generated_paths: Optional[Set[Path]] = None,
     ) -> tuple[List[AutofixResult], List[AutofixResult]]:
         """Fixed-point iteration over autofix passes with snapshot isolation.
 
@@ -1542,6 +1614,8 @@ class Linter:
             confidence: Minimum confidence level to apply.
             max_passes: Safety cap on iterations.
             dry_run: Return the first independent set without writing it.
+            protected_generated_paths: Optional command-wide write-protection
+                set shared with follow-up linters after resource renames.
             progress: Optional callback passed to each rule check.
             severity_threshold: Generate fixes at this severity or above.
                 ``None`` preserves the historical library behavior of
@@ -1556,6 +1630,13 @@ class Linter:
         self.fix_failures: List[Tuple[AutofixResult, str]] = []
         #: Selected paths refused by policy, separate from failed writes.
         self.fix_skips: List[Tuple[Path, str]] = []
+        # Source edits make old outputs cease to be exact copies. They still
+        # must not become writable later in this same fix command. The CLI
+        # shares this set with its fresh linter after a skill rename.
+        self._generated_fix_paths = (
+            protected_generated_paths if protected_generated_paths is not None else set()
+        )
+        self._generated_fix_paths.update(self._generator_copies())
         from .rules.builtin.utils import invalidate_read_caches
 
         all_applied: List[AutofixResult] = []

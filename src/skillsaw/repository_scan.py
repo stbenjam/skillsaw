@@ -222,6 +222,7 @@ class RepositoryScanMixin:
             self._repository_scan().tool_dirs,
             self._repository_scan().legacy_editor_files,
             self._repository_scan().skills_lock_files,
+            (p.generator for p in self.generator_projects()),
         )
 
     #: Alias for the one definition in discovery. Two copies of "which

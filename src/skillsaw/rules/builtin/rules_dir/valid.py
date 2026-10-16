@@ -2,41 +2,42 @@
 Rule for validating .claude/rules/ directory structure and content
 """
 
-import re
-from pathlib import Path
 from typing import List
 
 import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.blocks.claude_rules import ClaudeRuleFileNode
 from skillsaw.rules.builtin.utils import FRONTMATTER_RE_EMPTY_OK, read_text, frontmatter_key_line
+from skillsaw.utils import _SAFE_LOADER
 
 
 def _parse_frontmatter(content: str):
     """Parse YAML frontmatter from markdown content.
 
-    Returns (frontmatter_dict, error_message). If no frontmatter is present,
-    returns (None, None). If parsing fails, returns (None, error_string).
+    Returns (frontmatter_dict, error_message, error_line). Missing or malformed
+    boundaries have no invented key line; YAML syntax errors keep parser marks.
     """
     if not content.startswith("---"):
-        return None, None
+        return None, None, None
 
     match = FRONTMATTER_RE_EMPTY_OK.match(content)
     if not match:
-        return None, "Unterminated frontmatter (missing closing '---')"
+        return None, "Unterminated frontmatter (missing closing '---')", None
 
     raw = (match.group(1) or "").rstrip("\n")
     try:
-        data = yaml.safe_load(raw) if raw else None
+        data = yaml.load(raw, Loader=_SAFE_LOADER) if raw else None
     except (yaml.YAMLError, ValueError) as e:
-        return None, f"Invalid YAML in frontmatter: {e}"
+        mark = getattr(e, "problem_mark", None)
+        return None, f"Invalid YAML in frontmatter: {e}", mark.line + 2 if mark else None
 
     if data is None:
-        return {}, None
+        return {}, None, None
     if not isinstance(data, dict):
-        return None, "Frontmatter must be a YAML mapping"
-    return data, None
+        return None, "Frontmatter must be a YAML mapping", None
+    return data, None, None
 
 
 _VALID_FRONTMATTER_KEYS = {"paths"}
@@ -45,7 +46,7 @@ _VALID_FRONTMATTER_KEYS = {"paths"}
 class RulesValidRule(Rule):
     """Validate .claude/rules/ files: markdown extension, valid frontmatter, valid path globs"""
 
-    repo_types = {RepositoryType.DOT_CLAUDE}
+    repo_types = {RepositoryType.DOT_CLAUDE, RepositoryType.RULESYNC}
 
     aliases = ("rules-valid",)
 
@@ -60,23 +61,11 @@ class RulesValidRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.ERROR
 
-    def _find_rules_dir(self, context: RepositoryContext) -> Path:
-        claude_dir = context.root_path
-        if context.root_path.name != ".claude":
-            claude_dir = context.root_path / ".claude"
-        return claude_dir / "rules"
-
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 
-        rules_dir = self._find_rules_dir(context)
-        if not rules_dir.is_dir():
-            return violations
-
-        for file_path in sorted(rules_dir.rglob("*")):
-            if file_path.is_dir():
-                continue
-
+        for node in context.lint_tree.find(ClaudeRuleFileNode):
+            file_path = node.path
             if file_path.suffix.lower() != ".md":
                 violations.append(
                     self.violation(
@@ -95,9 +84,9 @@ class RulesValidRule(Rule):
                 )
                 continue
 
-            frontmatter, error = _parse_frontmatter(content)
+            frontmatter, error, error_line = _parse_frontmatter(content)
             if error:
-                violations.append(self.violation(error, file_path=file_path))
+                violations.append(self.violation(error, file_path=file_path, line=error_line))
                 continue
 
             if frontmatter is None:
@@ -105,7 +94,7 @@ class RulesValidRule(Rule):
 
             unknown_keys = set(frontmatter.keys()) - _VALID_FRONTMATTER_KEYS
             if unknown_keys:
-                for key in sorted(unknown_keys):
+                for key in sorted(unknown_keys, key=str):
                     violations.append(
                         self.violation(
                             f"Unknown frontmatter key '{key}'. " f"Only 'paths' is supported",

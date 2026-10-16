@@ -127,7 +127,7 @@ def _error_letters(errors: int) -> int:
 
 def compute_grade(violations: List[RuleViolation], content_tokens: int) -> Grade:
     """Grade a lint run. ``content_tokens`` is the summed token estimate
-    of every ContentBlock in the lint tree(s)."""
+    of distinct authored prose in the lint tree(s)."""
     errors = sum(1 for v in violations if v.severity == Severity.ERROR)
     warnings = sum(1 for v in violations if v.severity == Severity.WARNING)
     info = sum(1 for v in violations if v.severity == Severity.INFO)

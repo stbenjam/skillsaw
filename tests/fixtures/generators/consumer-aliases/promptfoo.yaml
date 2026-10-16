@@ -1,0 +1,4 @@
+prompts:
+  - "Review inventory\u200bpolicy and forbidden\u002dendpoint before deployment."
+providers:
+  - echo

@@ -28,6 +28,8 @@ class RepositoryType(Enum):
     AGENTSKILLS = "agentskills"  # agentskills.io skill repo
     DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
     CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
+    RULER = "ruler"  # Authored .ruler Markdown and ruler.toml
+    RULESYNC = "rulesync"  # Authored .rulesync/rules and rulesync.jsonc
     APM = "apm"  # Repository with .apm/ directory (Agent Package Manager)
     PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
     CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
@@ -120,6 +122,8 @@ TOOL_REPO_TYPES = frozenset(
         RepositoryType.CLAUDE_MD,
         RepositoryType.CODERABBIT,
         RepositoryType.SKILLS_LOCK,
+        RepositoryType.RULER,
+        RepositoryType.RULESYNC,
     }
 )
 

@@ -212,6 +212,14 @@ RULE_GROUPS = [
         "automatically when Devin repository context is present.",
     ),
     (
+        "Ruler and Rulesync",
+        "generators",
+        ["ruler-config-valid", "rulesync-source-valid"],
+        "Opt-in checks for local Ruler configuration and common Rulesync source fields. "
+        "Generate explicitly, then validate emitted files with their consumer rules. "
+        "See the [generator workflow](../generators.md) for copy attribution and limits.",
+    ),
+    (
         "Goose",
         "goose",
         ["goose-recipe-valid", "goose-subrecipe-references"],
@@ -958,6 +966,11 @@ GUIDES = [
         "the .skillsaw.yaml file: rules, severities, exclusions, suppression",
     ),
     ("Repository Types", "repo-types.md", "how skillsaw detects what it is linting"),
+    (
+        "Ruler and Rulesync",
+        "generators.md",
+        "author rules, generate explicitly, then lint sources and consumer outputs",
+    ),
     ("CI Integration", "ci.md", "GitHub Actions, GitLab CI, and PR review comments"),
     ("Pre-commit", "pre-commit.md", "run skillsaw as a pre-commit hook"),
     ("CLI Reference", "cli.md", "every command and flag"),
