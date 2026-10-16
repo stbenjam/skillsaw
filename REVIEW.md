@@ -69,7 +69,7 @@ Review every change against these surfaces: skillsaw reads untrusted repo conten
 - Check **custom-rule execution (T1)**: custom rules load via `exec_module` (arbitrary code by design). Ensure any change here preserves the `--no-custom-rules` gate, the Action's `--no-custom-rules` default, and the visible warning when custom rules load.
 - Check **CI gate integrity (T4, T12)**: rule exceptions are caught per-rule so one bad rule cannot abort the run — flag changes that could let a crash or a swallowed exception silently produce exit 0 (a false pass). Review edits to suppression, baseline, and exit-code logic.
 - Check **`GITHUB_TOKEN` handling (T9)**: in [action/review.py](action/review.py) the token is used only for comment API calls and never logged. Flag any code path that logs, echoes, or forwards it, or that broadens its use.
-- Review **secrets and command execution**: flag `subprocess` with `shell=True` on untrusted input, secrets written to logs or artifacts, and any new network call (skillsaw makes none of its own).
+- Review **secrets and command execution**: flag `subprocess` with `shell=True` on untrusted input, secrets written to logs or artifacts, and any new network call or process launch. The only ones are the opt-in MCP skills fetch (`mcp_client.py`, T20/T21); it must stay behind `--mcp-server`, `--mcp-config` or `pull` and keep its deadlines, byte budget and path containment.
 - Check **new dependencies**: flag added third-party dependencies — prefer the standard library; a new dependency expands the supply-chain surface (T8).
 - Check **GitHub Actions workflows**: flag unpinned actions (use commit SHAs), version ranges for pip installs in CI, and `pull_request_target` or other patterns that expose secrets to fork PRs.
 
