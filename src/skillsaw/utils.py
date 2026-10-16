@@ -1025,7 +1025,8 @@ def read_frontmatter_commented(
         if hasattr(error, "problem_mark") and error.problem_mark is not None:
             line = error.problem_mark.line + 1 + offset
         return None, str(error), line
-    except ValueError as error:
+    except (ValueError, TypeError) as error:
+        # Nested sequence mapping keys can raise a bare TypeError in ruamel.
         return None, str(error), None
     except RecursionError:
         return None, _TOO_DEEP, None

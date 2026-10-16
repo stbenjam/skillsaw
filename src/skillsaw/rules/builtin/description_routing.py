@@ -19,6 +19,7 @@ from skillsaw.rules.builtin.content_analysis import (
 from skillsaw.blocks import DevinSkillBlock
 from skillsaw.blocks.pi import PiPromptBlock, PiSkillBlock
 from skillsaw.blocks.cursor import CursorAgentBlock
+from skillsaw.blocks.kiro import KiroJsonAgentBlock, KiroMarkdownAgentBlock, KiroSteeringBlock
 from skillsaw.rules.builtin.utils import read_frontmatter_commented
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -95,9 +96,10 @@ class DescriptionRoutingRule(Rule):
     """Check whether descriptions provide useful routing or purpose signals."""
 
     since = "0.18.0"
-    surface_dependencies = ("copilot-agent-valid", "pi-skill-valid")
+    surface_dependencies = ("copilot-agent-valid", "pi-skill-valid", "kiro-agent-valid")
     repo_types = {
         RepositoryType.PI,
+        RepositoryType.KIRO,
         RepositoryType.PI_PACKAGE,
         RepositoryType.AGENTSKILLS,
         RepositoryType.CURSOR,
@@ -206,6 +208,9 @@ class DescriptionRoutingRule(Rule):
         violations: List[RuleViolation] = []
         for block_type in (
             PiSkillBlock,
+            KiroJsonAgentBlock,
+            KiroMarkdownAgentBlock,
+            KiroSteeringBlock,
             PiPromptBlock,
             SkillBlock,
             DevinSkillBlock,
@@ -219,6 +224,8 @@ class DescriptionRoutingRule(Rule):
             GrokCommandBlock,
         ):
             for block in self.dependency_scoped_find(context, block_type):
+                if block_type is KiroSteeringBlock and block.field_value("inclusion") != "auto":
+                    continue
                 if block.frontmatter_error:
                     continue
                 # Devin's native skill dialect makes frontmatter optional —
@@ -242,7 +249,12 @@ class DescriptionRoutingRule(Rule):
                     "pi-skill-valid"
                 )
                 if not block.has_frontmatter:
-                    if pi_owns_description:
+                    # A parsed JSON root without an object is a container
+                    # defect; the enabled Kiro structural rule owns it.
+                    if pi_owns_description or (
+                        block_type is KiroJsonAgentBlock
+                        and self.surface_rule_enabled("kiro-agent-valid")
+                    ):
                         continue
                     violations.append(
                         self.violation(
@@ -281,12 +293,17 @@ class DescriptionRoutingRule(Rule):
                     # content description here would emit two diagnoses for
                     # one defect. A bare `description:` key is null, which
                     # is not a type defect but an empty description, and
-                    # stays here. Other formats have no schema owner and
-                    # keep the established routing finding.
-                    if (
-                        block_type is CopilotAgentBlock
-                        and description is not None
-                        and self.surface_rule_enabled("copilot-agent-valid")
+                    # stays here. Kiro's structural rule owns the same type
+                    # defect when enabled.
+                    if description is not None and (
+                        (
+                            block_type is CopilotAgentBlock
+                            and self.surface_rule_enabled("copilot-agent-valid")
+                        )
+                        or (
+                            block_type in (KiroJsonAgentBlock, KiroMarkdownAgentBlock)
+                            and self.surface_rule_enabled("kiro-agent-valid")
+                        )
                     ):
                         continue
                     if pi_owns_description:

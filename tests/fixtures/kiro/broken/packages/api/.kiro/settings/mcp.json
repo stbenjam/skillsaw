@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "bad": {
+      "command": [
+        "uvx"
+      ],
+      "args": [
+        3
+      ],
+      "disabled": "yes"
+    },
+    "secret": {
+      "url": "https://mcp.example.com",
+      "env": {
+        "API_TOKEN": "ghp_1234567890abcdefghijklmnopqrstuvwxyz"
+      }
+    },
+    "workspace": {
+      "command": "forbidden-mcp"
+    }
+  }
+}

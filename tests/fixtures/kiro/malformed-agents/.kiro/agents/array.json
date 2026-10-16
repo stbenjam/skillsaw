@@ -1,0 +1,7 @@
+[
+  {
+    "name": "reviewer",
+    "description": "Use when reviewing API changes.",
+    "prompt": "Review request validation and authentication boundaries."
+  }
+]

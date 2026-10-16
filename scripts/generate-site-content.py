@@ -365,6 +365,15 @@ RULE_GROUPS = [
         "The metadata rule applies only when `metadata.openclaw` is present in SKILL.md.",
     ),
     (
+        "Kiro",
+        "kiro",
+        ["kiro-agent-valid", "kiro-mcp-valid", "kiro-references"],
+        "Opt-in checks for native Kiro JSON/Markdown agents, literal local references, "
+        "and workspace/agent MCP field types. Recursive steering and nested project "
+        "resources also receive shared content and MCP security checks. "
+        "See [Kiro support](../kiro.md) for CLI 2.x/V3 compatibility and runtime limits.",
+    ),
+    (
         "OpenCode",
         "opencode",
         ["opencode-config-valid"],
@@ -958,6 +967,7 @@ GUIDES = [
         "the .skillsaw.yaml file: rules, severities, exclusions, suppression",
     ),
     ("Repository Types", "repo-types.md", "how skillsaw detects what it is linting"),
+    ("Kiro Support", "kiro.md", "native Kiro formats, version boundaries, and static checks"),
     ("CI Integration", "ci.md", "GitHub Actions, GitLab CI, and PR review comments"),
     ("Pre-commit", "pre-commit.md", "run skillsaw as a pre-commit hook"),
     ("CLI Reference", "cli.md", "every command and flag"),

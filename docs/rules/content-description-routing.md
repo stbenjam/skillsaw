@@ -10,7 +10,7 @@ Skill and agent descriptions should guide routing; command descriptions should c
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.18.0 |
-| **Repo Types** | agentskills, antigravity, antigravity-plugin, apm, codex-marketplace, codex-plugin, copilot, cursor, cursor-marketplace, cursor-plugin, dot-claude, grok-marketplace, grok-plugin, grok-project, marketplace, openclaw-plugin, opencode, pi, pi-package, single-plugin |
+| **Repo Types** | agentskills, antigravity, antigravity-plugin, apm, codex-marketplace, codex-plugin, copilot, cursor, cursor-marketplace, cursor-plugin, dot-claude, grok-marketplace, grok-plugin, grok-project, kiro, marketplace, openclaw-plugin, opencode, pi, pi-package, single-plugin |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 
 Checks that skill and agent descriptions work as routing signals, while command descriptions clearly explain their picker-visible purpose.

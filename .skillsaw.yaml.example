@@ -564,6 +564,21 @@ rules:
     enabled: auto
     severity: warning
 
+  # Kiro JSON and Markdown agents must use valid syntax and documented field types
+  kiro-agent-valid:
+    enabled: false
+    severity: error
+
+  # Kiro workspace and agent MCP entries must use documented field types
+  kiro-mcp-valid:
+    enabled: false
+    severity: error
+
+  # Literal local Kiro prompt, resource, and steering references should exist
+  kiro-references:
+    enabled: false
+    severity: warning
+
   # Repository should not enable non-allowlisted MCP servers
   mcp-prohibited:
     enabled: false
