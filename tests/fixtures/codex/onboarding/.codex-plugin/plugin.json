@@ -1,0 +1,11 @@
+{
+  "name": "workspace-notes",
+  "version": "1.0.0",
+  "description": "Prepare a workspace for capturing and sharing meeting notes.",
+  "skills": "./skills/",
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/connect-account/SKILL.md"
+    }
+  }
+}

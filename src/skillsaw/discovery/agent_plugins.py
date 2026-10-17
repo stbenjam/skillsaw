@@ -8,7 +8,7 @@ from typing import Iterable, List, Optional, Set
 
 from skillsaw.discovery import exact_name_exists
 from skillsaw.formats.agent_plugins import is_agent_plugin_schema
-from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
+from skillsaw.paths import Resolver, contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.utils import read_json, read_text
 
 PLUGIN_MANIFEST = "plugin.json"
@@ -128,11 +128,13 @@ def discover_agent_plugins(
     return found
 
 
-def discover_agent_plugin_skills(package_root: Path) -> List[Path]:
+def discover_agent_plugin_skills(
+    package_root: Path, *, resolve: Resolver = safe_resolve
+) -> List[Path]:
     """Discover only immediate, contained ``skills/*/SKILL.md`` entries."""
-    root = safe_resolve(package_root)
+    root = resolve(package_root)
     skills_dir = package_root / "skills"
-    resolved_skills = contained_resolve(skills_dir, root) if root is not None else None
+    resolved_skills = contained_resolve(skills_dir, root, resolve) if root is not None else None
     if resolved_skills is None or not safe_is_dir(resolved_skills):
         return []
 
@@ -142,12 +144,12 @@ def discover_agent_plugin_skills(package_root: Path) -> List[Path]:
     except OSError:
         return found
     for child in children:
-        resolved_child = contained_resolve(child, root)
+        resolved_child = contained_resolve(child, root, resolve)
         if resolved_child is None or not safe_is_dir(resolved_child):
             continue
         if not exact_name_exists(child, "SKILL.md"):
             continue
-        entrypoint = contained_resolve(child / "SKILL.md", root)
+        entrypoint = contained_resolve(child / "SKILL.md", root, resolve)
         if entrypoint is None or not safe_is_file(entrypoint):
             continue
         found.append(child)

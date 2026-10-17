@@ -12,6 +12,10 @@ This rule checks the selected portable overlay's `hooks`, `apps`, and
 Paths escaping the plugin root or naming files that do not ship can leave
 hooks or assets unavailable.
 
+The optional `extensions.com.openai.onboardingSkill` names a bundled skill's
+`SKILL.md`. It is checked only in the selected manifest: an inline OpenAI
+object, including an empty one, hides the fallback's onboarding declaration.
+
 ## Examples
 
 **Bad:**
@@ -77,3 +81,49 @@ interface asset URLs are not resolved as local paths or checked for
 repository existence.
 
 `version` can be any valid version string; semver is recommended but not enforced.
+
+### Optional onboarding skill
+
+Both root portable `plugin.json` and legacy `.codex-plugin/plugin.json` use:
+
+```json
+{
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/get-started/SKILL.md"
+    }
+  }
+}
+```
+
+Omit the field when the plugin needs no onboarding workflow. When declared,
+it must be a non-empty string resolving from the plugin root to a bundled
+skill file. The skill can have any name; a directory path does not select
+its `SKILL.md` automatically. The `./` prefix is optional for this field.
+Absolute paths, parent traversal, and symlinks escaping the plugin are
+reported. `.//skills/...` is also invalid: the host removes one `./` prefix
+before checking for an absolute path. Contained aliases to a bundled skill
+file are accepted, including directory aliases across components. A symlink
+named `SKILL.md` does not itself establish membership; Codex skips file
+symlinks during skill discovery.
+
+Portable packages supply immediate, non-hidden `skills/*/SKILL.md` entries.
+Legacy packages use their declared skill roots, or the conventional `skills/`
+root when no valid path strings are declared. Their recursive scan skips
+hidden directories and continues below existing skills, up to six directory
+levels beneath each root. A missing declared directory does not restore the
+default root. An unrelated Markdown file or a
+skill outside those components cannot serve as onboarding. Set
+`check-paths-exist: false` to skip target existence and membership checks
+for files generated during packaging; type and containment checks remain.
+Findings use the rule's configured severity.
+
+These checks follow the [OpenAI packaging documentation](https://developers.openai.com/plugins/build/plugins#add-an-onboarding-skill)
+and the released [Codex 0.162.1 manifest resolver](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core-plugins/src/manifest.rs)
+and [skill matching](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core-plugins/src/manager.rs).
+Skill content remains covered by the Agent Skills rules. Runtime plugin/skill
+enablement, remote catalog names, and generated command migrations are outside
+this authored-reference check. A legacy scan interrupted by I/O errors or
+the limits on directory and entry counts produces no membership finding.
+Installed `.codex/plugins/` manifests retain the existing stand-down;
+installed content is never autofixed.

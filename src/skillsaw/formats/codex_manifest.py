@@ -19,6 +19,8 @@ from skillsaw.formats.agent_plugins import (
 from skillsaw.paths import (
     Resolver,
     contained_resolve,
+    has_parent_traversal,
+    is_absolute_path,
     safe_exists,
     safe_is_dir,
     safe_is_file,
@@ -146,3 +148,37 @@ def codex_manifest_view(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -
     }
     data.update({key: overlay[key] for key in OPENAI_OVERLAY_FIELDS if key in overlay})
     return CodexManifestView(path, data, portable=True, overlay_valid=overlay_valid)
+
+
+def codex_skill_component_roots(
+    plugin_dir: Path, *, resolve: Resolver = safe_resolve
+) -> list[Path]:
+    """Effective skill search roots, without discovering any directories.
+
+    Codex 0.162.1's ``plugin_skill_roots`` uses declared legacy paths in
+    place of the default. Portable packages always use ``skills/``. Keep
+    missing declared roots: they do not restore the conventional fallback.
+    """
+    view = codex_manifest_view(plugin_dir, resolve=resolve)
+    declared = view.data.get("skills")
+    values = [declared] if isinstance(declared, str) else declared
+    if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+        values = []
+    paths = [
+        plugin_dir / value
+        for value in values
+        if value.startswith("./")
+        and value[2:]
+        and not is_absolute_path(value[2:])
+        and not has_parent_traversal(value)
+    ]
+    if view.portable or not paths:
+        paths = [plugin_dir / "skills"]
+    root = resolve(plugin_dir)
+    if root is None:
+        return []
+    return [
+        contained
+        for path in paths
+        if (contained := contained_resolve(path, root, resolve)) is not None
+    ]

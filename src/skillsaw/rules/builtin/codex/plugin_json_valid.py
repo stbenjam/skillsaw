@@ -6,12 +6,17 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from skillsaw.formats.codex_manifest import OPENAI_OVERLAY_FIELDS, openai_extension
+from skillsaw.formats.codex_manifest import (
+    OPENAI_OVERLAY_FIELDS,
+    openai_extension,
+)
+from skillsaw.discovery.codex import codex_bundles_skill
+from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.lint_target import CodexPluginConfigNode
-from skillsaw.paths import safe_exists, safe_is_dir, safe_is_file
+from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file
 from skillsaw.rules.builtin.utils import read_json
 
 from ._helpers import (
@@ -78,7 +83,7 @@ class CodexPluginJsonValidRule(Rule):
             # Config loading does not enforce config_schema types; a scalar
             # here would crash the rule for every manifest.
             recommended_fields = self.DEFAULT_RECOMMENDED_FIELDS
-        check_paths_exist = self.config.get("check-paths-exist", True)
+        check_paths_exist = self.setting("check-paths-exist")
 
         for node in context.lint_tree.find(CodexPluginConfigNode):
             if context.is_codex_installed_plugin(node.plugin_dir):
@@ -115,6 +120,8 @@ class CodexPluginJsonValidRule(Rule):
                     self.violation("Expected JSON object in plugin.json", file_path=manifest)
                 )
                 continue
+
+            violations.extend(self._check_onboarding(data, node, context, check_paths_exist))
 
             if node.portable_overlay:
                 # Agent Plugins owns root identity and schema validation.
@@ -166,6 +173,59 @@ class CodexPluginJsonValidRule(Rule):
             violations.extend(self._check_paths(data, manifest, node.plugin_dir, check_paths_exist))
 
         return violations
+
+    def _check_onboarding(
+        self,
+        data: dict,
+        node: CodexPluginConfigNode,
+        context: RepositoryContext,
+        check_exists: bool,
+    ) -> List[RuleViolation]:
+        # The tree already selected the effective manifest. Both source
+        # formats spell this field under extensions.com.openai, before the
+        # portable presentation fields are flattened for other checks.
+        extension = openai_extension(data)
+        if extension is None or "onboardingSkill" not in extension:
+            return []
+        value = extension["onboardingSkill"]
+        field = "extensions.com.openai.onboardingSkill"
+
+        def problem(message: str) -> List[RuleViolation]:
+            return [self.violation(f"'{field}': {message}", file_path=node.path)]
+
+        if not isinstance(value, str) or not value.removeprefix("./"):
+            return problem("must be a non-empty path string to a bundled skill's SKILL.md")
+        # Remove exactly one optional prefix before validating. Pathlib
+        # would normalize './/skills/...' even though Codex rejects it.
+        path_error = path_problem(value.removeprefix("./"), "plugin root", node.plugin_dir)
+        if path_error:
+            return problem(path_error)
+        # Unlike legacy component paths, the released onboarding resolver
+        # explicitly accepts the spelling without './'.
+        if not check_exists:
+            return []
+        root = context.resolve_path(node.plugin_dir)
+        target = (
+            contained_resolve(node.plugin_dir / value, root, context.resolve_path)
+            if root is not None
+            else None
+        )
+        if target is None or not safe_is_file(target):
+            return problem(
+                f"'{safe_display(value)}' must point to an existing skill file (SKILL.md)"
+            )
+        if is_root_or_ancestor_excluded(target, root, context.is_path_excluded):
+            return []
+
+        membership = codex_bundles_skill(
+            node.plugin_dir, target, portable=node.portable_overlay, resolve=context.resolve_path
+        )
+        if membership is not False:
+            return []
+        return problem(
+            f"'{safe_display(value)}' is not a bundled skill's SKILL.md; "
+            "reference a skill included by the effective manifest"
+        )
 
     def _check_name(self, data: dict, manifest: Path) -> List[RuleViolation]:
         if "name" not in data:

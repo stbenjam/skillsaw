@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "workspace-notes",
+  "version": "1.0.0",
+  "description": "Prepare a workspace for capturing and sharing meeting notes.",
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/get-started/SKILL.md"
+    }
+  }
+}

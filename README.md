@@ -143,6 +143,10 @@ Codex portable plugins can place OpenAI metadata and hooks in
 `plugin.json` under `extensions.com.openai`. Skillsaw follows that overlay's
 precedence over `.codex-plugin/plugin.json`, validates its declared resources,
 and checks portable `skills/` and `mcp.json` through the Agent Plugins rules.
+The optional `extensions.com.openai.onboardingSkill` must reference a bundled
+skill's `SKILL.md`, relative to the plugin root (with or without `./`). The
+[manifest rule](https://skillsaw.org/rules/codex-plugin-json-valid/) checks its
+type, effective skill membership, and containment, including symlink escapes.
 Project `.codex/config.toml` files also get a [targeted warning](https://skillsaw.org/rules/codex-mcp-headers/)
 when an HTTP MCP server uses the ignored `headers` field instead of
 `http_headers` or `env_http_headers`.
