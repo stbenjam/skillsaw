@@ -34,8 +34,11 @@ def load_config(args, start_path: Path) -> tuple[LinterConfig, Path | None]:
         if not config_path.exists():
             print(f"Error: Config file not found: {config_path}", file=sys.stderr)
             sys.exit(1)
-    else:
+    elif not getattr(args, "scratch_paths", False):
         config_path = find_config(start_path)
+    # else: the paths are a directory skillsaw made, such as skills fetched
+    # from MCP servers, whose ancestors (/tmp) anyone may write to. Its caller
+    # already looked for a config where the user ran skillsaw.
 
     if config_path:
         try:

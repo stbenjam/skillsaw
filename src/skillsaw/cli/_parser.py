@@ -30,6 +30,16 @@ def _positive_int(value: str) -> int:
     return result
 
 
+def _seconds(value: str) -> float:
+    try:
+        result = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a number of seconds") from None
+    if not 0 < result <= 24 * 60 * 60:
+        raise argparse.ArgumentTypeError("must be more than 0 and at most 86400 seconds")
+    return result
+
+
 def _add_color_flag(subparser) -> None:
     subparser.add_argument(
         "--color",
@@ -37,6 +47,55 @@ def _add_color_flag(subparser) -> None:
         default=None,
         dest="color",
         help=_COLOR_HELP,
+    )
+
+
+def _add_mcp_server_args(group) -> None:
+    """The servers to fetch skills from, and the bounds on each, for lint, tree and pull."""
+    group.add_argument(
+        "--mcp-server",
+        action="append",
+        default=[],
+        dest="mcp_servers",
+        metavar="URL_OR_COMMAND",
+        help="An http(s) server URL, or a command line that starts a stdio server (repeatable)",
+    )
+    group.add_argument(
+        "--mcp-header",
+        action="append",
+        default=[],
+        dest="mcp_headers",
+        metavar="'NAME: VALUE'",
+        help="HTTP header for a single --mcp-server URL, e.g. an Authorization header "
+        "(repeatable)",
+    )
+    group.add_argument(
+        "--mcp-config",
+        type=Path,
+        metavar="FILE",
+        help="Every server in this MCP client config (.mcp.json, .vscode/mcp.json, ...), "
+        "with its headers and environment",
+    )
+    group.add_argument(
+        "--mcp-timeout",
+        type=_seconds,
+        default=30.0,
+        metavar="SECONDS",
+        help="Seconds to wait for each response (default: 30)",
+    )
+    group.add_argument(
+        "--mcp-max-skills",
+        type=_positive_int,
+        default=256,
+        metavar="N",
+        help="Skills listed and fetched per server (default: 256)",
+    )
+    group.add_argument(
+        "--mcp-max-bytes",
+        type=_positive_int,
+        default=64 * 1024 * 1024,
+        metavar="N",
+        help="Response bytes read from each server, listing included (default: 64 MiB)",
     )
 
 
@@ -74,7 +133,6 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "path",
         nargs="*",
         type=Path,
-        default=[Path.cwd()],
         help="Paths to skill, plugin, or marketplace directories/files (default: current directory)",
     )
     lint_parser.add_argument(
@@ -182,6 +240,37 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "(auto-disabled when stderr is not a terminal)",
     )
     _add_color_flag(lint_parser)
+    mcp_group = lint_parser.add_argument_group(
+        "skills served over MCP",
+        "Fetch the Agent Skills MCP servers serve (SEP-2640) and lint them instead of\n"
+        "local paths. A stdio server runs its command: start only servers you trust.",
+    )
+    _add_mcp_server_args(mcp_group)
+
+    # --- pull ---
+    pull_parser = subparsers.add_parser(
+        "pull",
+        help="Fetch the Agent Skills MCP servers serve into a directory",
+        description="Fetch the Agent Skills MCP servers serve (SEP-2640) into a directory to\n"
+        "commit, inspect or lint later. A stdio server runs its command: start only\n"
+        "servers you trust.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  skillsaw pull --mcp-server https://mcp.example.com/mcp -o mcp-skills/
+  skillsaw pull --mcp-config .mcp.json -o mcp-skills/
+  skillsaw lint mcp-skills/
+        """,
+    )
+    pull_parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        required=True,
+        metavar="DIR",
+        help="Directory for the skills, replacing an earlier pull there",
+    )
+    _add_mcp_server_args(pull_parser)
 
     # --- fix ---
     fix_parser = subparsers.add_parser(
@@ -437,7 +526,6 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "path",
         nargs="?",
         type=Path,
-        default=Path.cwd(),
         help="Path to repository (default: current directory)",
     )
     tree_parser.add_argument(
@@ -452,6 +540,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default="text",
         choices=["text", "dot"],
         help="Output format (default: text)",
+    )
+    _add_mcp_server_args(
+        tree_parser.add_argument_group(
+            "skills served over MCP",
+            "Fetch the Agent Skills MCP servers serve (SEP-2640) and show their tree instead\n"
+            "of a local path. A stdio server runs its command: start only servers you trust.",
+        )
     )
 
     # --- baseline ---

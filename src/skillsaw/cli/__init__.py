@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from ._parser import _build_parser
 
@@ -19,6 +20,7 @@ _SUBCOMMANDS = {
     "badge",
     "plugins",
     "port",
+    "pull",
 }
 
 _DEPRECATED_COMMANDS = frozenset({"add"})
@@ -69,6 +71,20 @@ def _tolerate_unencodable_output() -> None:
             pass
 
 
+def _served_skills(parser, args, *, paths_given: bool) -> bool:
+    """Whether the command runs over skills fetched from MCP servers."""
+    if args.mcp_servers or args.mcp_config:
+        if paths_given:
+            parser.error(
+                "--mcp-server and --mcp-config take the place of a path; "
+                "run local paths separately"
+            )
+        return True
+    if args.mcp_headers:
+        parser.error("--mcp-header needs a --mcp-server URL")
+    return False
+
+
 def main():
     from ._helpers import install_warning_display
 
@@ -104,6 +120,11 @@ def main():
     args = parser.parse_args()
 
     if args.command == "lint":
+        if _served_skills(parser, args, paths_given=bool(args.path)):
+            from ._mcp_skills import _run_lint_mcp_skills
+
+            _run_lint_mcp_skills(args)
+            return
         from ._lint import _run_lint
 
         _run_lint(args)
@@ -144,9 +165,22 @@ def main():
 
         _run_port(args)
     elif args.command == "tree":
+        if _served_skills(parser, args, paths_given=args.path is not None):
+            from ._mcp_skills import _run_tree_mcp_skills
+
+            _run_tree_mcp_skills(args)
+            return
         from ._tree import _run_tree
 
+        if args.path is None:
+            args.path = Path.cwd()
         _run_tree(args)
+    elif args.command == "pull":
+        if not (args.mcp_servers or args.mcp_config):
+            parser.error("pull needs --mcp-server or --mcp-config")
+        from ._mcp_skills import _run_pull
+
+        _run_pull(args)
 
 
 def claudelint_shim():

@@ -28,7 +28,7 @@ It understands Agent Skills,
 plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
 GEMINI.md, QWEN.md, Cursor plugins and marketplaces, Copilot, Cline, Devin, Kiro, OpenCode, Goose recipes, Muse Code, Pi,
 Grok Build, Google Antigravity, native OpenClaw plugins, hooks, agent configuration, MCP Registry
-`server.json` publisher metadata,
+`server.json` publisher metadata, Agent Skills served over MCP,
 Vercel skills CLI lockfiles, and eval formats. Safe structural fixes can be applied
 automatically; everything else comes with precise, agent-friendly guidance.
 
@@ -86,6 +86,19 @@ uvx skillsaw lint my-recipes --type goose --rule goose-recipe-valid --rule goose
 
 See [Goose recipe support](https://skillsaw.org/repo-types/#goose-recipes) for
 discovery, path resolution and validation limits.
+
+Skills an MCP server publishes through the Skills extension (SEP-2640) are
+Agent Skills, so skillsaw lints them in the server's repository like any other.
+To lint what a running server actually serves, fetch it:
+
+```bash
+uvx skillsaw lint --mcp-server https://mcp.example.com/mcp
+uvx skillsaw lint --mcp-config .mcp.json   # every server in an MCP client config
+uvx skillsaw tree --mcp-server https://mcp.example.com/mcp   # see what it serves
+uvx skillsaw pull --mcp-server https://mcp.example.com/mcp -o mcp-skills/   # fetch only
+```
+
+See [Skills over MCP](https://skillsaw.org/mcp-skills/).
 
 ## What it catches
 
