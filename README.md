@@ -133,6 +133,7 @@ being silently ignored.
 | Create project-specific checks | [Custom Rules](https://skillsaw.org/custom-rules/) |
 | Publish reusable rule packages | [Rule Plugins](https://skillsaw.org/plugins/) |
 | Inspect the typed parse tree | [Lint Tree](https://skillsaw.org/lint-tree/) |
+| Explain Codex instruction selection and its cumulative byte cap | [Codex project instructions](https://skillsaw.org/rules/codex-project-instructions/) |
 | Look up commands and flags | [CLI Reference](https://skillsaw.org/cli/) |
 | Feed the docs to an AI agent | [llms.txt](https://skillsaw.org/llms.txt) index, [llms-full.txt](https://skillsaw.org/llms-full.txt) full docs |
 

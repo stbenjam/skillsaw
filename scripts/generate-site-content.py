@@ -341,6 +341,7 @@ RULE_GROUPS = [
         [
             "codex-hooks-valid",
             "codex-mcp-headers",
+            "codex-project-instructions",
             "codex-openai-metadata",
             "codex-plugin-json-valid",
             "codex-plugin-structure",
@@ -355,7 +356,9 @@ RULE_GROUPS = [
         "rule auto-enables for Agent Skills; the plugin and marketplace rules "
         "auto-enable only when their Codex manifests are present. Project "
         "`.codex/config.toml` files also get a warning when an HTTP MCP server "
-        "uses the ignored `headers` field instead of Codex's `http_headers`.",
+        "uses the ignored `headers` field instead of Codex's `http_headers`. "
+        "The opt-in project instruction check explains selection and the cumulative "
+        "byte limit for a supplied root and working directory.",
     ),
     (
         "OpenClaw",

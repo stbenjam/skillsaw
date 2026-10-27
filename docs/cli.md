@@ -111,7 +111,9 @@ Display the repository lint tree
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
-| `--format` | Output format (default: text) (choices: text, dot) | `text` |
+| `--format` | Output format (default: text; json requires --codex-instructions) (choices: text, dot, json) | `text` |
+| `--codex-instructions` | Inspect Codex's selected project instruction chain and byte budget |  |
+| `--cwd` | Codex working directory relative to the supplied root (requires --codex-instructions) |  |
 
 ## `skillsaw baseline`
 

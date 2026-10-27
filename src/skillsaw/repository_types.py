@@ -136,7 +136,7 @@ PORTABLE_COMPONENT_REPO_TYPES = frozenset(
 
 # Repository types that may hold one of ``INSTRUCTION_FILES``. CLINE,
 # OPENCODE, MUSE, GROK_PROJECT and CODEX_PROJECT are deliberately absent:
-# the instruction-file rules only ever look at
+# the shared instruction-file rules only ever look at
 # AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose only marker is
 # ``.clinerules``, ``opencode.json``, ``.muse/hooks.json``, ``.grok/`` or
 # ``.codex/`` would auto-enable two rules structurally incapable of
@@ -144,6 +144,8 @@ PORTABLE_COMPONENT_REPO_TYPES = frozenset(
 # AGENTS.md — and when one is present AGENTS_MD enables them for it. Grok's
 # own always-on prose lives in ``.grok/rules/``, which the content rules
 # read as content rather than as an instruction file.
+# ``instruction-file-valid`` additionally enables CODEX_PROJECT for Codex
+# overrides and selected fallback prose; those do not use the @import grammar.
 INSTRUCTION_REPO_TYPES = frozenset(
     {
         RepositoryType.CURSOR,

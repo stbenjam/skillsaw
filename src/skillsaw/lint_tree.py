@@ -96,6 +96,7 @@ from .formats.codex import (
 from .formats.codex_manifest import codex_manifest_view
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.excludes import is_root_or_ancestor_excluded
+from .discovery.codex_instructions import probe_file
 from .discovery.opencode import contained_instruction_globs
 from .lint_target import OpenClawPluginNode, OpenClawPluginConfigNode, OpenClawPackageConfigNode
 from .blocks.json_config import OpenClawInlineMcpBlock
@@ -328,6 +329,14 @@ class _TreeBuildState:
         parent.children.append(block)
         return block
 
+    def add_codex_config(self, parent: LintTarget, path: Path) -> Optional[CodexConfigBlock]:
+        """Attach a project config with all of its structured roles."""
+        return _add_codex_config(self, parent, path)
+
+    def add_codex_hooks(self, parent: LintTarget, path: Path) -> None:
+        """Attach project JSON hooks under the shared ownership and deduplication rules."""
+        _add_project_hooks(self, parent, path, CodexHooksBlock)
+
     def _claim_parser_role(self, p: Path, block_cls: type) -> Optional[Path]:
         """Claim one parser role over *p*, or ``None`` if it is not ours.
 
@@ -474,7 +483,9 @@ def _add_project_hooks(
     state.add_parser_block(root, path, block_cls)
 
 
-def _add_codex_config(state: _TreeBuildState, root: LintTarget, path: Path) -> None:
+def _add_codex_config(
+    state: _TreeBuildState, root: LintTarget, path: Path
+) -> Optional[CodexConfigBlock]:
     """Attach a ``.codex/config.toml``, and its ``[hooks]`` tables under it.
 
     Two committed executable surfaces in one file. Codex reads lifecycle
@@ -496,6 +507,16 @@ def _add_codex_config(state: _TreeBuildState, root: LintTarget, path: Path) -> N
     report the failure on — a config Codex cannot read stops it starting in
     the project at all.
     """
+    candidate = probe_file(
+        path,
+        state.context.root_path,
+        resolve=state.context.resolve_path,
+        is_excluded=state.context.is_path_excluded,
+    )
+    if candidate is None or candidate.issue:
+        return
+    if not state.context.lint_external_content and state.context.is_externally_sourced(path):
+        return
     config = state.add_parser_block(root, path, CodexConfigBlock)
     if config is None:
         return
@@ -505,14 +526,15 @@ def _add_codex_config(state: _TreeBuildState, root: LintTarget, path: Path) -> N
     # twice. ``hooks.json`` and ``config.toml`` are two paths, so a directory
     # carrying both keeps a block for each — Codex merges them.
     if _attached_as_hooks(state, path):
-        return
+        return config
     data, error = config.raw_data, config.parse_error
     document = codex_config_hooks(data) if data is not None else None
     if error is None and document is None:
-        return
+        return config
     state.attach_prebuilt(
         config, CodexConfigHooksBlock(path=path, inline_data=document, toml_error=error)
     )
+    return config
 
 
 def _claim_attached_hooks(
@@ -894,12 +916,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if _contained(readme):
             state.add_block(parent, readme, ReadmeBlock, owner=owner)
 
-    # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
+    # --- Instruction files; defer semantic owners to their attachment passes ---
     # Only Devin Desktop reads ``agents.md`` case-insensitively, so that
     # spelling is an instruction file only where the repository carries other
     # Devin evidence; elsewhere ``docs/agents.md`` is a documentation page.
     devin_desktop = RepositoryType.DEVIN in context.repo_types
+    codex_overrides: list[Path] = []
     for f in context.instruction_files:
+        if f.name == "AGENTS.override.md":
+            candidate = probe_file(f, context.root_path, resolve=resolve, is_excluded=_is_excluded)
+            if candidate is None or candidate.issue:
+                continue
+            codex_overrides.append(f)
+            continue
         if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
             continue
         if not devin_desktop and devin.is_desktop_agents_spelling(f.name):
@@ -1088,8 +1117,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # ``RepositoryType.CODEX_PROJECT`` detection reads: detection agrees with
     # attachment.
     for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
-        _add_project_hooks(state, root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
-        _add_codex_config(state, root, codex_dir / CODEX_CONFIG_FILENAME)
+        state.add_codex_hooks(root, codex_dir / CODEX_HOOKS_FILENAME)
+        state.add_codex_config(root, codex_dir / CODEX_CONFIG_FILENAME)
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
@@ -1212,9 +1241,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         a connection, and the local checkout contains no stable content to
         inspect for them.
 
-        This runs after every ordinary content attachment. A configured glob
-        may select a skill, command, editor rule, or OpenCode agent, and its
-        structural owner must claim it before path-only content deduplication.
+        A configured glob may also select a skill, command, editor rule, or
+        OpenCode agent. Those structural owners attach first and keep their
+        roles through path-only content deduplication.
         """
         searched: Set[Tuple[Path, str]] = set()
         searches: List[Tuple[Path, str]] = []
@@ -2150,6 +2179,24 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # original semantic owner wins when a path is also a skill, command,
     # agent, editor rule, README, or plugin-contributed content block.
     _add_opencode_instructions()
+
+    # Overrides can also be plugin prose or configured OpenCode instructions.
+    # Let those existing roles attach first so they keep their parser and budget.
+    if codex_overrides:
+        from .codex_instructions_tree import attach_instruction_content
+
+        attach_instruction_content(
+            state,
+            codex_overrides,
+            suppressed=frozenset(
+                path for path in codex_overrides if _is_apm_compiled_github(path.parent)
+            ),
+        )
+
+    if context.codex_instructions is not None:
+        from .codex_instructions_tree import attach_codex_instructions
+
+        attach_codex_instructions(state)
 
     external_roots = context.externally_sourced_roots()
 
