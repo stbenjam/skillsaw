@@ -1,0 +1,28 @@
+{
+  "description": "Review service changes. Use when checking an API release.",
+  "prompt": "Check response compatibility and request validation.",
+  "permissions": {
+    "rules": [
+      {
+        "capability": "all",
+        "effect": "ask"
+      }
+    ]
+  },
+  "excludedTools": [
+    "future-tool"
+  ],
+  "includeMcpJson": true,
+  "includePowers": false,
+  "resources": [
+    {
+      "type": "knowledgeBase",
+      "source": "file://./docs"
+    }
+  ],
+  "tools": [
+    "read",
+    "@builtin",
+    "*"
+  ]
+}

@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **110** built-in rules organized into the following categories:
+skillsaw includes **113** built-in rules organized into the following categories:
 
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
@@ -24,6 +24,7 @@ skillsaw includes **110** built-in rules organized into the following categories
 - [Muse Code](muse.md) (1 rule)
 - [OpenAI Codex](codex.md) (7 rules)
 - [OpenClaw](openclaw.md) (4 rules)
+- [Kiro](kiro.md) (3 rules)
 - [OpenCode](opencode.md) (1 rule)
 - [Pi](pi.md) (4 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
@@ -131,6 +132,9 @@ skillsaw includes **110** built-in rules organized into the following categories
 | [`openclaw-manifest-valid`](openclaw-manifest-valid.md) | Native OpenClaw manifests must declare valid identity, configSchema, and themes | error (disabled) | - | OpenClaw |
 | [`openclaw-package-valid`](openclaw-package-valid.md) | OpenClaw package metadata must declare valid extension entries | error (disabled) | - | OpenClaw |
 | [`openclaw-resources`](openclaw-resources.md) | OpenClaw resources should resolve inside their package and exist when loaded | warning (disabled) | - | OpenClaw |
+| [`kiro-agent-valid`](kiro-agent-valid.md) | Kiro JSON and Markdown agents must use valid syntax and documented field types | error (disabled) | - | Kiro |
+| [`kiro-mcp-valid`](kiro-mcp-valid.md) | Kiro workspace and agent MCP entries must use documented field types | error (disabled) | - | Kiro |
+| [`kiro-references`](kiro-references.md) | Literal local Kiro prompt, resource, and steering references should exist | warning (disabled) | - | Kiro |
 | [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
 | [`pi-config-valid`](pi-config-valid.md) | Pi package and project resource declarations must have valid types | warning (auto) | - | Pi |
 | [`pi-skill-valid`](pi-skill-valid.md) | Pi skills need parseable frontmatter and a nonempty description | warning (auto) | - | Pi |

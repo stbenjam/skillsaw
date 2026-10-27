@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "workspace": {
+      "command": "uvx",
+      "args": [
+        "example-server"
+      ],
+      "env": {
+        "DOCS_TOKEN": "${DOCS_TOKEN}"
+      }
+    },
+    "disabled": {
+      "disabled": true
+    },
+    "overlay": {
+      "disabledTools": [
+        "delete_item"
+      ]
+    },
+    "remote": {
+      "url": "https://mcp.example.com",
+      "oauth": {
+        "clientSecret": "${CLIENT_SECRET}"
+      }
+    }
+  }
+}

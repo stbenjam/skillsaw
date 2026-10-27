@@ -193,11 +193,7 @@ class CursorPromptHookBlock(ContentBlock):
         same invisible codepoint) would then share a fingerprint, and
         baselining one would suppress the other.
         """
-        body = self.body or ""
-        lines = body.split("\n")
-        line_content = ""
-        if body_line is not None and 1 <= body_line <= len(lines):
-            line_content = lines[body_line - 1].strip()
+        line_content = self.markdown.line(body_line or 0).strip()
         # Length-prefixed so the identity is injective: both components can
         # legitimately contain the NUL separator (they come from decoded
         # JSON strings), and plain concatenation lets two different

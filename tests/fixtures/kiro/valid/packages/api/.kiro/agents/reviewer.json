@@ -1,0 +1,4 @@
+{
+  "description": "Review package tests. Use when verifying API fixtures.",
+  "prompt": "Check the request and expected status in every fixture."
+}

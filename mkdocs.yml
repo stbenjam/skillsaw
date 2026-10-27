@@ -124,6 +124,7 @@ nav:
     - Baseline: baseline.md
     - Configuration: configuration.md
     - Repository Types: repo-types.md
+    - Kiro Support: kiro.md
     - CI Integration: ci.md
     - Pre-commit: pre-commit.md
     - CLI Reference: cli.md
@@ -154,6 +155,7 @@ nav:
     - OpenAI Codex: rules/codex.md
     - OpenClaw: rules/openclaw.md
     - OpenCode: rules/opencode.md
+    - Kiro: rules/kiro.md
     - Pi: rules/pi.md
     - Promptfoo: rules/promptfoo.md
     - Security: rules/security.md

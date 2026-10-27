@@ -50,6 +50,7 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         ".vscode",
         ".opencode",
         ".goose",
+        ".kiro",
         *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
         codex.CODEX_DIR_NAME,
         grok.TOOL_DIR_NAME,
@@ -75,6 +76,7 @@ AGENT_TOOL_DIR_NAMES = frozenset(
 # ``discover_skills``. A name in only one of the two is a skill that is
 # counted but never linted, or found but never counted.
 NESTED_TOOL_SKILL_DIRS = (
+    ".kiro",
     *devin.TOOL_DIR_NAMES,
     grok.TOOL_DIR_NAME,
     *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
@@ -215,6 +217,10 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
 #: configured here, so a repository whose only Cursor artifact is
 #: ``hooks.json`` still activates the Cursor rules.
 _TOOL_EVIDENCE = {
+    "kiro": (
+        ".kiro",
+        (("steering", True), ("agents", True), ("skills", True), ("settings/mcp.json", False)),
+    ),
     "goose": (".goose", (("recipes", True),)),
     "pi": (
         ".pi",
@@ -510,7 +516,7 @@ def tool_types(
             "agents-md",
             any(path.name == "AGENTS.md" and not is_excluded(path) for path in files),
         ),
-        ("kiro", marker(".kiro", is_dir=True)),
+        ("kiro", tool_marker("kiro") or marker(".kiro", is_dir=True)),
         (
             "claude-md",
             any(path.name == "CLAUDE.md" and not is_excluded(path) for path in files),
