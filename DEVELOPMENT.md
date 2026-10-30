@@ -44,6 +44,17 @@ make lint         # check formatting (CI uses this)
 
 Black is configured for line-length 100 in `pyproject.toml`.
 
+## VS Code pilot
+
+The optional VS Code diagnostics pilot lives in `editors/vscode/`. Its
+dependency-free runtime invokes the installed CLI. With Node.js 22+, run
+`npm ci --ignore-scripts`, `npm run lint`, `npm test`, and
+`xvfb-run -a npm run test:host` there to check the bridge and real VS Code
+host; `npm run package` builds the locally installable VSIX. See the
+[pilot README](editors/vscode/README.md#development-and-verification) for
+the CLI override and supported limits. The publisher fixture is also covered
+by the Python suite.
+
 ## Benchmarking
 
 ```bash

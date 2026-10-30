@@ -1,0 +1,70 @@
+name: Editor pilot
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  vscode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - run: make venv VENV_EXTRAS=test
+      - run: npm ci --ignore-scripts
+        working-directory: editors/vscode
+      - run: npm run lint && npm test && npm run package
+        working-directory: editors/vscode
+      - run: xvfb-run -a npm run test:host
+        working-directory: editors/vscode
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: skillsaw-vscode-pilot
+          path: editors/vscode/*.vsix
+      # Some path fixtures intentionally use names that Windows rejects.
+      - name: Bundle the sources needed by Windows CLI tests
+        run: >-
+          git archive --format=zip --output="$RUNNER_TEMP/skillsaw-windows-inputs.zip"
+          HEAD pyproject.toml README.md LICENSE src editors/vscode
+          examples/editor-onboarding tests/fixtures/editor-slow-rule
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: skillsaw-windows-inputs
+          path: ${{ runner.temp }}/skillsaw-windows-inputs.zip
+  windows-cli:
+    runs-on: windows-latest
+    needs: vscode
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: skillsaw-windows-inputs
+      - run: Expand-Archive skillsaw-windows-inputs.zip -DestinationPath .
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Install the CLI with pip's Windows console launcher
+        shell: pwsh
+        run: |
+          & "$env:pythonLocation/python.exe" -m venv .venv
+          .venv/Scripts/python.exe -m pip install .
+          .venv/Scripts/python.exe -c "from pip._vendor import distlib; print('distlib launcher:', distlib.__version__)"
+      - name: Test the installed CLI and interpreter cancellation
+        run: node --test test/cli.test.js test/runner.test.js
+        working-directory: editors/vscode
