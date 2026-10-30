@@ -1,0 +1,6 @@
+{
+  // Generate only the consumers exercised by this fixture.
+  "targets": ["claudecode", "cursor"],
+  "features": ["rules"],
+  "outputRoots": ["."]
+}

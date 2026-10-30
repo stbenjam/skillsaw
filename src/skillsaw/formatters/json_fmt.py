@@ -53,6 +53,11 @@ def format_json(
             "line": v.file_line,
             "source": v.source,
         }
+        if v.generated_from:
+            entry["generated_from"] = [
+                relative_path(p, context.root_path) for p in v.generated_from
+            ]
+            entry["generator"] = v.generator
         # Additive: omitted when fixability is unknown (e.g. synthetic
         # violations); fix_confidence only accompanies fixable violations.
         if v.fixable is not None:

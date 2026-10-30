@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from skillsaw.blocks import ContentBlock
+from skillsaw.blocks.gather import gather_editorial_content_blocks
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     _required_literal,
-    gather_all_content_blocks,
 )
 
 
@@ -147,7 +147,7 @@ class ContentInconsistentTerminologyRule(Rule):
         return "\n".join(lines)
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        content_files = gather_all_content_blocks(context)
+        content_files = gather_editorial_content_blocks(context)
         if len(content_files) < self.MIN_FILES:
             return []
 

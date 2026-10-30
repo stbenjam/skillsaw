@@ -42,6 +42,7 @@ def _port_targets(path: Path, config: LinterConfig) -> list:
         exclude_patterns=config.exclude_patterns,
         content_paths=config.content_paths,
         lint_external_content=config.lint_external_content,
+        rulesync_generated=config.rulesync_generated,
     )
     targets = context.distinct_plugin_dirs()
     return targets or [path]
@@ -137,6 +138,7 @@ def _run_port(args):
                 target,
                 exclude_patterns=config.exclude_patterns,
                 lint_external_content=config.lint_external_content,
+                rulesync_generated=config.rulesync_generated,
             )
             linter = Linter(
                 context,
@@ -190,6 +192,7 @@ def _run_port(args):
                 base,
                 exclude_patterns=config.exclude_patterns,
                 lint_external_content=config.lint_external_content,
+                rulesync_generated=config.rulesync_generated,
             )
             linter = Linter(
                 context,

@@ -11,6 +11,7 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    ContentBlock,
     iter_frontmatter_strings,
     gather_all_content_blocks,
     patterns_matching_anywhere,
@@ -643,6 +644,8 @@ class ContentEmbeddedSecretsRule(Rule):
                     )
                 )
         for fld in context.lint_tree.find(FrontmatterField):
+            if isinstance(fld, ContentBlock):
+                continue  # Decoded prose fields were scanned above, even without a line.
             # Every embedded string once: str(value) renders a YAML alias DAG as
             # a tree, 9^levels leaves from a 430-byte frontmatter block.
             text = "\n".join(iter_frontmatter_strings(fld.value))

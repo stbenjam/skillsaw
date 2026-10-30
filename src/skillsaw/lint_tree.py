@@ -125,6 +125,7 @@ from .paths import (
     safe_exists,
     safe_is_dir,
     safe_is_file,
+    safe_is_symlink,
     safe_resolve,
 )
 from .formats.promptfoo import (
@@ -245,6 +246,12 @@ class _TreeBuildState:
     repo_root: Path
     seen: Set[Path] = field(default_factory=set)
     seen_roles: Set[Tuple[Path, type]] = field(default_factory=set)
+    # Native roles normally exclude extra prose for the physical file.
+    # Independent generator views reserve only their discovered path, so
+    # explicitly selected aliases can retain different raw/reference views.
+    extra_content_files: Set[Path] = field(default_factory=set)
+    extra_content_paths: Set[Path] = field(default_factory=set)
+    content_alias_files: Set[Path] = field(default_factory=set)
     # Two indexes over ``seen_roles``, written beside it: "is this file
     # already in the tree as hooks / as MCP" is asked once per plugin, and
     # scanning every role on each question is O(plugins x blocks) on a
@@ -280,13 +287,18 @@ class _TreeBuildState:
         resolved = self.resolve_repo_path(p)
         if (
             resolved is None
-            or resolved in self.seen
-            or not safe_exists(resolved)
+            or (
+                resolved in self.seen
+                and (resolved not in self.content_alias_files or p in self.extra_content_paths)
+            )
+            # Inventory nodes may represent directories (Pi extensions do),
+            # but special files must never reach a blocking prose read.
+            or not (safe_is_file(resolved) or safe_is_dir(resolved))
             or self.context.is_path_excluded(p)
         ):
             return
         self.seen.add(resolved)
-        self._record_role(resolved, block_cls)
+        self._record_role(resolved, block_cls, p)
         block = block_cls(path=p)
         block.plugin_owner = owner
         block.content_suppressed = content_suppressed
@@ -299,15 +311,35 @@ class _TreeBuildState:
         block_cls: type,
         owner: Path | None = None,
         content_suppressed: bool = False,
+        preserve_content_aliases: bool = False,
+        reserve_extra_content: bool = True,
+        file_inventory: bool = False,
     ) -> Optional[LintTarget]:
-        """Attach a structured document once for each parser role.
+        """Attach a document once for each parser role.
 
         A JSON document may legitimately contain both hooks and MCP servers.
         Path-only deduplication would hide whichever parser runs second, while
         role-aware deduplication still prevents duplicate findings when two
         discovery paths select the same parser.
+
+        ``preserve_content_aliases`` keeps separately configured prose views
+        available without reattaching this native path as generic prose.
+        An inventory-only role sets ``reserve_extra_content=False`` because
+        it does not replace a configured prose view of the file.
+        ``file_inventory`` preserves each lexical entry, including contained
+        dangling file links, so filename/read diagnostics survive aliases.
+        It does not admit other non-file entries.
         """
-        if self._claim_parser_role(p, block_cls) is None:
+        if (
+            self._claim_parser_role(
+                p,
+                block_cls,
+                preserve_content_aliases,
+                reserve_extra_content,
+                file_inventory,
+            )
+            is None
+        ):
             return None
         block = block_cls(path=p)
         block.plugin_owner = owner
@@ -328,32 +360,63 @@ class _TreeBuildState:
         parent.children.append(block)
         return block
 
-    def _claim_parser_role(self, p: Path, block_cls: type) -> Optional[Path]:
+    def _claim_parser_role(
+        self,
+        p: Path,
+        block_cls: type,
+        preserve_content_aliases: bool = False,
+        reserve_extra_content: bool = True,
+        file_inventory: bool = False,
+    ) -> Optional[Path]:
         """Claim one parser role over *p*, or ``None`` if it is not ours.
 
-        Containment, existence, exclusion and role deduplication, in that
+        Containment, exclusion, file kind and role deduplication, in that
         order — the contract both attachment paths share.
         """
         resolved = self.resolve_repo_path(p)
         if resolved is None:
             return None
-        role = (resolved, block_cls)
-        if (
-            role in self.seen_roles
-            or not safe_is_file(resolved)
-            or self.context.is_path_excluded(p)
+        role_path = p if file_inventory else resolved
+        role = (role_path, block_cls)
+        if self.context.is_path_excluded(p):
+            return None
+        if not safe_is_file(resolved) and not (
+            file_inventory and safe_is_symlink(p) and not safe_exists(resolved)
         ):
+            return None
+        if preserve_content_aliases:
+            # A source may already have a native instruction/config role.
+            # Keep every attached lexical path reserved, but release its
+            # physical identity so a configured alias can retain its own
+            # relative references and raw prose view.
+            self.content_alias_files.add(resolved)
+            self.extra_content_files.discard(resolved)
+        if reserve_extra_content:
+            self.extra_content_paths.add(p)
+        if role in self.seen_roles:
             return None
         # seen_roles only — never the path-only ``seen`` set: a manifest can
         # declare ``hooks``/``mcpServers`` at any in-plugin markdown file,
         # and poisoning ``seen`` would drop that file from every content
         # rule that attaches later.
-        self._record_role(resolved, block_cls)
+        self._record_role(resolved, block_cls, p, reserve_extra_content, role_path=role_path)
         return resolved
 
-    def _record_role(self, resolved: Path, block_cls: type) -> None:
-        """Record one attached role, and index it by the two roles asked about."""
-        self.seen_roles.add((resolved, block_cls))
+    def _record_role(
+        self,
+        resolved: Path,
+        block_cls: type,
+        path: Path,
+        reserve_extra_content: bool = True,
+        *,
+        role_path: Optional[Path] = None,
+    ) -> None:
+        """Index an attached role and the extra-prose view it replaces."""
+        self.seen_roles.add((role_path if role_path is not None else resolved, block_cls))
+        if reserve_extra_content:
+            self.extra_content_paths.add(path)
+            if resolved not in self.content_alias_files:
+                self.extra_content_files.add(resolved)
         # Antigravity's named-hook dialect must not suppress another host's
         # parser. Shared commands are deduplicated by the hook scanners.
         if issubclass(block_cls, HooksBlock) and block_cls is not AntigravityHooksBlock:
@@ -2119,6 +2182,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # Those semantic owners keep the single body and its parser role.
     attach_pi_prompts(state)
 
+    # Generator parser views must not replace native consumers, whose
+    # relative references and decoded content can differ from the source.
+    from .lint_tree_generators import (
+        attach_generator_configs,
+        attach_generator_sources,
+        attach_rulesync_claude_rules,
+    )
+
+    attach_rulesync_claude_rules(state, _readable_matches)
+    # Keep the root consumer's existing structural checks available even
+    # when APM owns its prose, and without independently walking it in a rule.
+    from .claude_tree import attach_claude_rule_files
+
+    claude_dir = (
+        context.root_path if context.root_path.name == ".claude" else context.root_path / ".claude"
+    )
+    attach_claude_rule_files(state, claude_dir / "rules", _readable_matches)
+    attach_generator_sources(state)
+    attach_generator_configs(state)
+
     # --- Extra content paths from config ---
     # User-configured content paths plus globs contributed by detected
     # plugin repo types; the ``seen`` set dedupes any overlap.
@@ -2137,9 +2220,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             if not extra.is_file():
                 continue
             extra_resolved = resolve(extra)
-            if extra_resolved is not None and any(
-                claimed == extra_resolved for claimed, _ in state.seen_roles
-            ):
+            if extra in state.extra_content_paths or extra_resolved in state.extra_content_files:
                 # Already attached under a structured parser role (hooks,
                 # MCP): re-attaching it as prose would make every
                 # content-quality rule lint structured config as text.
@@ -2183,6 +2264,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     )
     _tag_and_prune_external(root, root.externally_sourced)
     root.set_parents()
+    from .generator_copies import tag_generator_copies
+
+    tag_generator_copies(context, root)
     nodes = list(root.walk())
     logger.info("Built lint tree: %d nodes", len(nodes))
     return root

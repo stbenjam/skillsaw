@@ -236,6 +236,9 @@ def test_every_detected_tool_type_is_listed_in_tool_repo_types(tmp_path):
     (tmp_path / "CLAUDE.md").write_text("# Claude\n\nRun `make test`.\n")
     (tmp_path / ".coderabbit.yaml").write_text("reviews:\n  profile: chill\n")
     (tmp_path / "skills-lock.json").write_text('{"skills": {}}\n')
+    (tmp_path / ".ruler").mkdir()
+    (tmp_path / ".ruler" / "ruler.toml").write_text('default_agents = ["claude"]\n')
+    (tmp_path / "rulesync.jsonc").write_text('{"targets": ["claudecode"]}\n')
 
     context = RepositoryContext(tmp_path)
     scan = context._repository_scan()
@@ -250,6 +253,7 @@ def test_every_detected_tool_type_is_listed_in_tool_repo_types(tmp_path):
             scan.tool_dirs,
             scan.legacy_editor_files,
             scan.skills_lock_files,
+            (p.generator for p in context.generator_projects()),
         )
     }
 

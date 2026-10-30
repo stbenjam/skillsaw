@@ -17,6 +17,7 @@ from skillsaw.discovery.antigravity import (
     customization_root_declares_a_file,
     customization_root_is_marked,
 )
+from skillsaw.discovery.generators import GENERATOR_DIR_NAMES
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.formats import antigravity, codex, devin, grok, muse
@@ -90,7 +91,7 @@ NESTED_TOOL_SKILL_DIRS = (
 PLUGIN_MARKER_DIR_NAMES = frozenset({grok.PLUGIN_DIR_NAME, ".cursor-plugin"})
 
 #: Every directory name the walk records, from both sets above.
-SCANNED_DIR_NAMES = AGENT_TOOL_DIR_NAMES | PLUGIN_MARKER_DIR_NAMES
+SCANNED_DIR_NAMES = AGENT_TOOL_DIR_NAMES | PLUGIN_MARKER_DIR_NAMES | GENERATOR_DIR_NAMES
 
 
 @dataclass
@@ -110,6 +111,7 @@ class RepositoryScan:
     skills_lock_files: Tuple[Path, ...]
     promptfoo_named_files: Tuple[Path, ...]
     promptfoo_eval_files: Dict[Path, Tuple[Path, ...]]
+    generator_config_files: Tuple[Path, ...] = ()
     openclaw_manifest_files: Tuple[Path, ...] = ()
     walk_errors: Tuple[OSError, ...] = ()
 
@@ -131,6 +133,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     mcp_registry_files: List[Path] = []
     package_json_files: List[Path] = []
     openclaw_manifests: List[Path] = []
+    generator_configs: List[Path] = []
     skills_locks: List[Path] = []
     promptfoo_named: List[Path] = []
     promptfoo_evals: Dict[Path, List[Path]] = {}
@@ -177,6 +180,8 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
                 openclaw_manifests.append(here / OPENCLAW_MANIFEST)
             if "package.json" in filenames:
                 package_json_files.append(here / "package.json")
+            if "rulesync.jsonc" in filenames:
+                generator_configs.append(here / "rulesync.jsonc")
             if "skills-lock.json" in filenames:
                 skills_locks.append(here / "skills-lock.json")
         # The root copy has always been attached; a nested one is a new
@@ -192,6 +197,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
             if name in SCANNED_DIR_NAMES and not vendored:
                 tool_dirs[name].append(here / name)
     return RepositoryScan(
+        generator_config_files=tuple(sorted(generator_configs)),
         openclaw_manifest_files=tuple(sorted(openclaw_manifests)),
         walk_errors=tuple(walk_errors),
         instruction_files=tuple(sorted(found)),
@@ -346,6 +352,7 @@ def tool_types(
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
     legacy_editor_files: Optional[Mapping[str, Iterable[Path]]] = None,
     skills_lock_files: Optional[Iterable[Path]] = None,
+    generator_types: Iterable[str] = (),
 ) -> Set[str]:
     """Return ``RepositoryType`` values for the tools configured here.
 
@@ -474,7 +481,8 @@ def tool_types(
                     return True
         return False
 
-    found: Set[str] = set()
+    # Already contained and excluded by the shared source discovery helper.
+    found: Set[str] = set(generator_types)
     checks = (
         ("goose", tool_marker("goose")),
         ("pi", tool_marker("pi")),

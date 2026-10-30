@@ -7,9 +7,7 @@ from typing import Any, Dict, List
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.blocks import ContentBlock
-from skillsaw.rules.builtin.content_analysis import (
-    gather_all_content_blocks,
-)
+from skillsaw.blocks.gather import gather_editorial_content_blocks
 from skillsaw.paths import safe_resolve
 from skillsaw.utils import has_generated_marker
 
@@ -193,7 +191,7 @@ class ContentInstructionDriftRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         candidates = [
             cf
-            for cf in gather_all_content_blocks(context)
+            for cf in gather_editorial_content_blocks(context)
             if cf.category in _INSTRUCTION_CATEGORIES
         ]
         if self._ignore_generated:

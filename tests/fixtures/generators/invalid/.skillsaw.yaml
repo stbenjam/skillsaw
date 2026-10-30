@@ -1,0 +1,6 @@
+version: "0.21.1"
+rules:
+  ruler-config-valid:
+    enabled: true
+  rulesync-source-valid:
+    enabled: true

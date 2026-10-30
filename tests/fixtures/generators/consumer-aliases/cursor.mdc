@@ -1,0 +1,7 @@
+---
+description: Inventory release policy
+alwaysApply: true
+---
+# Inventory release
+
+Read [the release checklist](release-checklist.txt) before deploying the service.

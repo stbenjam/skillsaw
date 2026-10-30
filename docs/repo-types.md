@@ -685,6 +685,15 @@ see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
 
 Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files in `evals/` directories). Prompt strings in the config are treated as content blocks, so all `content-*` rules apply to them automatically. Dedicated `promptfoo-*` rules validate config structure, assertion coverage, and metadata.
 
+## Ruler and Rulesync
+
+Ruler's `.ruler/**/*.md` and `.ruler/ruler.toml`, and Rulesync's
+`.rulesync/rules/**/*.md` and `rulesync.jsonc`, are discovered automatically as
+authored generator sources. Both types coexist with the native consumer types
+detected from existing output. See the [generator workflow](generators.md) for
+source roles, optional configuration checks, copy attribution, pinned release
+evidence, and limits. skillsaw never runs either generator during lint.
+
 ## APM (Agent Package Manager)
 
 Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output. Package content under `apm_modules/` is externally sourced: it is linted but never autofixed by default, and `lint-external-content: false` omits it from the lint tree.

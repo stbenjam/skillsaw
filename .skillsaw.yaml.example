@@ -666,6 +666,16 @@ rules:
     enabled: auto
     severity: error
 
+  # Validate .ruler/ruler.toml against the Ruler 0.3.44 configuration shape
+  ruler-config-valid:
+    enabled: false
+    severity: error
+
+  # Validate common Rulesync 32.0.0 rule frontmatter and project configuration fields
+  rulesync-source-valid:
+    enabled: false
+    severity: error
+
   # Require an allowlist for dynamic context commands that execute shell code while loading agent context
   security-dynamic-context:
     enabled: auto
@@ -719,6 +729,9 @@ exclude:
 
 # Additional markdown files to run content rules on (glob format)
 content-paths: []
+
+# Assert Rulesync owns its configured conventional modular rule outputs
+rulesync-generated: false
 
 # Report findings in external content (autofix never rewrites it)
 lint-external-content: true

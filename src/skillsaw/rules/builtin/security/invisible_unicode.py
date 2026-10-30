@@ -20,6 +20,7 @@ from typing import Any, Dict, FrozenSet, Iterator, List, Optional, Set
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    ContentBlock,
     gather_all_content_blocks,
     FrontmatterField,
     iter_frontmatter_strings,
@@ -295,7 +296,10 @@ class SecurityInvisibleUnicodeRule(Rule):
             # ``finditer`` — non-string scalars cannot carry invisible
             # characters, so skipping them loses nothing.
             total: Counter = Counter()
-            for text in chain(_iter_strings(fld.name), _iter_strings(fld.value)):
+            # A prose field's value was scanned through ContentBlock above;
+            # its field name still needs this structured-data check.
+            values = () if isinstance(fld, ContentBlock) else _iter_strings(fld.value)
+            for text in chain(_iter_strings(fld.name), values):
                 if not text:
                     continue
                 by_line = self._hits_by_line(text, pattern, skip_leading_bom=False)
