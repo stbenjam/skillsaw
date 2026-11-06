@@ -1228,26 +1228,21 @@ def _marketplace_with_raw_json(temp_dir, marketplace_text):
 
 def test_marketplace_registration_fix_keeps_non_ascii_text(temp_dir):
     """The fix keeps unrelated non-ASCII text as written instead of escaping it."""
-    import json
-
     text = (
-        json.dumps(
-            {
-                "name": "café-tools",
-                "owner": {"name": "Zoë Müller"},
-                "plugins": [],
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-        + "\n"
+        "{\n"
+        '  "name": "café-tools",\n'
+        '  "owner": {"name": "Zoë Müller", "email": "\\ud800"},\n'
+        '  "plugins": []\n'
+        "}\n"
     )
     repo = _marketplace_with_raw_json(temp_dir, text)
     rule = MarketplaceRegistrationRule()
     context = RepositoryContext(repo)
     (fix,) = rule.fix(context, rule.check(context))
     assert '"name": "Zoë Müller"' in fix.fixed_content
-    assert "\\u" not in fix.fixed_content
+    # A lone surrogate cannot be written as UTF-8, so it stays escaped.
+    assert '"email": "\\ud800"' in fix.fixed_content
+    fix.fixed_content.encode("utf-8")
 
 
 def test_marketplace_registration_fix_registers_plugin(marketplace_repo):
