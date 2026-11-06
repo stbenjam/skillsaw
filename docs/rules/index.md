@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **112** built-in rules organized into the following categories:
+skillsaw includes **113** built-in rules organized into the following categories:
 
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
@@ -15,7 +15,6 @@ skillsaw includes **112** built-in rules organized into the following categories
 - [Copilot / VS Code](copilot.md) (1 rule)
 - [Cursor](cursor.md) (4 rules)
 - [Devin](devin.md) (2 rules)
-- [Ruler and Rulesync](generators.md) (2 rules)
 - [Goose](goose.md) (2 rules)
 - [Google Antigravity](antigravity.md) (4 rules)
 - [Grok Build](grok.md) (8 rules)
@@ -25,6 +24,7 @@ skillsaw includes **112** built-in rules organized into the following categories
 - [Muse Code](muse.md) (1 rule)
 - [OpenAI Codex](codex.md) (7 rules)
 - [OpenClaw](openclaw.md) (4 rules)
+- [Kiro](kiro.md) (3 rules)
 - [OpenCode](opencode.md) (1 rule)
 - [Pi](pi.md) (4 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
@@ -95,8 +95,6 @@ skillsaw includes **112** built-in rules organized into the following categories
 | [`cursor-marketplace-json-valid`](cursor-marketplace-json-valid.md) | Cursor marketplaces must contain valid entries with unique names and resolvable local sources | error (auto) | - | Cursor |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
-| [`ruler-config-valid`](ruler-config-valid.md) | Validate .ruler/ruler.toml against the Ruler 0.3.44 configuration shape | error (disabled) | - | Ruler and Rulesync |
-| [`rulesync-source-valid`](rulesync-source-valid.md) | Validate common Rulesync 32.0.0 rule frontmatter and project configuration fields | error (disabled) | - | Ruler and Rulesync |
 | [`goose-recipe-valid`](goose-recipe-valid.md) | Goose recipe metadata, parameters and extensions must have valid shapes | error (disabled) | - | Goose |
 | [`goose-subrecipe-references`](goose-subrecipe-references.md) | Literal local Goose subrecipe paths should exist inside the lint root | warning (disabled) | - | Goose |
 | [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must decode their paths and filters correctly | error (disabled) | - | Google Antigravity |
@@ -134,6 +132,9 @@ skillsaw includes **112** built-in rules organized into the following categories
 | [`openclaw-manifest-valid`](openclaw-manifest-valid.md) | Native OpenClaw manifests must declare valid identity, configSchema, and themes | error (disabled) | - | OpenClaw |
 | [`openclaw-package-valid`](openclaw-package-valid.md) | OpenClaw package metadata must declare valid extension entries | error (disabled) | - | OpenClaw |
 | [`openclaw-resources`](openclaw-resources.md) | OpenClaw resources should resolve inside their package and exist when loaded | warning (disabled) | - | OpenClaw |
+| [`kiro-agent-valid`](kiro-agent-valid.md) | Kiro JSON and Markdown agents must use valid syntax and documented field types | error (disabled) | - | Kiro |
+| [`kiro-mcp-valid`](kiro-mcp-valid.md) | Kiro workspace and agent MCP entries must use documented field types | error (disabled) | - | Kiro |
+| [`kiro-references`](kiro-references.md) | Literal local Kiro prompt, resource, and steering references should exist | warning (disabled) | - | Kiro |
 | [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
 | [`pi-config-valid`](pi-config-valid.md) | Pi package and project resource declarations must have valid types | warning (auto) | - | Pi |
 | [`pi-skill-valid`](pi-skill-valid.md) | Pi skills need parseable frontmatter and a nonempty description | warning (auto) | - | Pi |

@@ -97,6 +97,14 @@ from .formats.codex_manifest import codex_manifest_view
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
 from .discovery.excludes import is_root_or_ancestor_excluded
 from .discovery.opencode import contained_instruction_globs
+from .discovery.kiro import local_reference as kiro_local_reference
+from .blocks.kiro import (
+    KiroJsonAgentBlock,
+    KiroMarkdownAgentBlock,
+    KiroMcpBlock,
+    KiroPromptFileBlock,
+    KiroSteeringBlock,
+)
 from .lint_target import OpenClawPluginNode, OpenClawPluginConfigNode, OpenClawPackageConfigNode
 from .blocks.json_config import OpenClawInlineMcpBlock
 from .formats.openclaw import MANIFEST, contained_file, inline_mcp_servers
@@ -170,6 +178,8 @@ _CLINE_EXCLUDED_DIRS = frozenset({"workflows", "hooks", "skills"})
 # where to stand aside, so "which loop owns this file" has one answer rather
 # than two that can disagree — and disagreeing drops the file from the tree.
 _EDITOR_GLOBS = (
+    (".kiro", "steering", "**/*.md", "KiroSteeringBlock"),
+    (".kiro", "agents", "**/*.md", "KiroMarkdownAgentBlock"),
     (".cursor", "rules", "**/*.mdc", "CursorRuleBlock"),
     (".cursor", "commands", "**/*.md", "CursorCommandBlock"),
     (".cursor", "agents", "**/*.md", "CursorAgentBlock"),
@@ -1396,10 +1406,34 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             _add_glob(root, devin_dir / "rules", "**/*.md", DevinRuleBlock)
             state.add_block(root, devin_dir / "global_rules.md", DevinGlobalRuleBlock)
 
-    kiro_steering = context.root_path / ".kiro" / "steering"
-    if kiro_steering.is_dir():
-        for md in sorted(kiro_steering.glob("*.md")):
-            state.add_block(root, md, InstructionBlock)
+    def _kiro_prompt_file(agent: KiroJsonAgentBlock) -> Optional[Path]:
+        prompt = (agent.raw_data or {}).get("prompt")
+        if not isinstance(prompt, str) or not prompt.startswith("file://"):
+            return None
+        target = kiro_local_reference(
+            prompt[7:],
+            agent.path.parent,
+            repo_root,
+            resolve=context.resolve_path,
+            is_excluded=context.is_path_excluded,
+        )
+        return target if target is not None and safe_is_file(target) else None
+
+    kiro_agents = []
+    for kiro_dir in context.agent_tool_dirs(".kiro"):
+        _add_glob(root, kiro_dir / "steering", "**/*.md", KiroSteeringBlock)
+        for agent_file in _readable_matches(kiro_dir / "agents", "**/*.json"):
+            agent = state.add_parser_block(root, agent_file, KiroJsonAgentBlock)
+            if agent is not None:
+                kiro_agents.append(agent)
+        # A Markdown file a JSON agent names as its ``file://`` prompt is that
+        # agent's prompt, not an agent of its own; the prompt pass below
+        # attaches it once the specific content owners have claimed theirs.
+        prompt_files = {_kiro_prompt_file(agent) for agent in kiro_agents}
+        for match in _readable_matches(kiro_dir / "agents", "**/*.md"):
+            if context.resolve_path(match) not in prompt_files and safe_is_file(match):
+                state.add_block(root, match, KiroMarkdownAgentBlock)
+        state.add_parser_block(root, kiro_dir / "settings" / "mcp.json", KiroMcpBlock)
 
     state.add_block(root, context.root_path / ".windsurfrules", InstructionBlock)
 
@@ -2231,6 +2265,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # original semantic owner wins when a path is also a skill, command,
     # agent, editor rule, README, or plugin-contributed content block.
     _add_opencode_instructions()
+    # Specific content owners claim first, so a shared prompt already
+    # attached as steering/skill/instructions is never counted twice.
+    for agent in kiro_agents:
+        target = _kiro_prompt_file(agent)
+        if target is not None:
+            state.add_block(root, target, KiroPromptFileBlock)
 
     external_roots = context.externally_sourced_roots()
 

@@ -12,6 +12,8 @@ from skillsaw.rules.builtin.content_analysis import FrontmatterField, SkillBlock
 from skillsaw.utils import yaml_path_line_lookup
 
 VALID_OS_VALUES = {"darwin", "linux", "win32"}
+OS_ALIASES = {"macos": "darwin"}
+ALLOWED_OS_DISPLAY = sorted(VALID_OS_VALUES | OS_ALIASES.keys())
 VALID_INSTALL_KINDS = {"brew", "node", "go", "uv", "download"}
 VALID_ARCHIVE_TYPES = {"tar.gz", "tar.bz2", "zip"}
 
@@ -21,6 +23,14 @@ VALID_ARCHIVE_TYPES = {"tar.gz", "tar.bz2", "zip"}
 # a string, or that fails this pattern, makes openclaw drop the whole install
 # entry — the checksum is not merely ignored, the installer disappears.
 SHA256_DIGEST = re.compile(r"\A[a-f0-9]{64}\Z")
+
+
+def _valid_os(value: str) -> bool:
+    # openclaw trims, lowercases, and maps `macos` to `darwin` before matching
+    # (normalizeOsRequirementPlatform in src/shared/requirements.ts).
+    normalized = value.strip().lower()
+    return OS_ALIASES.get(normalized, normalized) in VALID_OS_VALUES
+
 
 # Known top-level keys under metadata.openclaw from OpenClaw and ClawHub. Used
 # only for typo detection — unknown keys are silently ignored by openclaw, so
@@ -165,12 +175,12 @@ class OpenclawMetadataRule(Rule):
                     )
                 )
             else:
-                invalid = [v for v in os_val if v not in VALID_OS_VALUES]
+                invalid = [v for v in os_val if not _valid_os(v)]
                 if invalid:
                     violations.append(
                         self.violation(
                             f"'metadata.openclaw.os' contains invalid values: {invalid} "
-                            f"(allowed: {sorted(VALID_OS_VALUES)})",
+                            f"(allowed: {ALLOWED_OS_DISPLAY})",
                             file_path=skill_md,
                             line=os_line,
                         )
@@ -372,12 +382,12 @@ class OpenclawMetadataRule(Rule):
                         )
                     )
                 else:
-                    invalid = [v for v in os_val if v not in VALID_OS_VALUES]
+                    invalid = [v for v in os_val if not _valid_os(v)]
                     if invalid:
                         violations.append(
                             self.violation(
                                 f"'metadata.openclaw.install[{i}].os' contains invalid values: "
-                                f"{invalid} (allowed: {sorted(VALID_OS_VALUES)})",
+                                f"{invalid} (allowed: {ALLOWED_OS_DISPLAY})",
                                 file_path=skill_md,
                                 line=os_line,
                             )

@@ -179,7 +179,7 @@ class TestOpenclawLineNumbers:
             "      - id: brew\n"  # 10
             "        kind: brew\n"  # 11
             "        os:\n"  # 12
-            "          - macos\n"  # 13  (invalid install os)
+            "          - freebsd\n"  # 13  (invalid install os)
             "---\n"
         )
         context = RepositoryContext(skill)

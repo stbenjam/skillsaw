@@ -16,10 +16,11 @@ def read(tmp_path, body):
 @pytest.mark.parametrize(
     "body",
     [
-        '{"name":"berth-tools","version":"1","version":"2"}',
+        '{"name":"berth-tools","license":"MIT","license":"Apache-2.0"}',
         '{"name":"berth-tools","author":{"name":"First","name":"Second"}}',
         '{"name":"berth-tools","metadata":[{"disabled":true,"disabled":false}]}',
         '{"name":"berth-tools","Name":42,"Description":42,"Disabled":42,"Logo":42}',
+        '{"name":"berth-tools","Version":42,"displayname":42,"DisplayName":42}',
         '{"name":"berth-tools","metadata":1e400}',
     ],
 )
@@ -29,13 +30,24 @@ def test_unknown_duplicates_and_cased_fields_are_accepted(tmp_path, body):
     assert data["name"] == "berth-tools"
 
 
-@pytest.mark.parametrize("field", ["name", "description", "disabled", "logo"])
+@pytest.mark.parametrize(
+    "field", ["name", "description", "disabled", "logo", "version", "displayName", "display_name"]
+)
 @pytest.mark.parametrize("values", ["null,null", 'null,"text"', '"text",null'])
 def test_duplicate_known_fields_reject_both_null_orders(tmp_path, field, values):
     first, second = values.split(",")
     data, error = read(tmp_path, '{"' + field + '":' + first + ',"' + field + '":' + second + "}")
     assert data is None
     assert error == f'duplicate JSON object key: "{field}"'
+
+
+@pytest.mark.parametrize(
+    "first,second", [("displayName", "display_name"), ("display_name", "displayName")]
+)
+def test_json_and_proto_names_are_one_field(tmp_path, first, second):
+    data, error = read(tmp_path, '{"' + first + '":"A","' + second + '":"B"}')
+    assert data is None
+    assert error == f'duplicate JSON object key: "{second}"'
 
 
 def test_escaped_known_key_is_the_same_field(tmp_path):

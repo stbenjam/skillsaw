@@ -7,12 +7,12 @@ Claude Code has several distinct formats. `.claude/` is NOT a plugin — it has 
 layout. Each format below maps to its own skillsaw rules.
 
 ## Upstream source(s)
-- Plugins: https://docs.claude.com/en/docs/claude-code/plugins-reference
-- Marketplaces: https://docs.claude.com/en/docs/claude-code/plugin-marketplaces
-- `.claude/` directory: https://docs.claude.com/en/docs/claude-code/claude-directory
-- Hooks: https://docs.claude.com/en/docs/claude-code/hooks
-- MCP servers: https://docs.claude.com/en/docs/claude-code/mcp
-- Skills / agents: https://docs.claude.com/en/docs/claude-code/skills
+- Plugins: https://code.claude.com/docs/en/plugins-reference
+- Marketplaces: https://code.claude.com/docs/en/plugin-marketplaces
+- `.claude/` directory: https://code.claude.com/docs/en/claude-directory
+- Hooks: https://code.claude.com/docs/en/hooks
+- MCP servers: https://code.claude.com/docs/en/mcp
+- Skills / agents: https://code.claude.com/docs/en/skills
 
 ## What to check
 - **Plugins**: new required fields in `plugin.json`; command format/frontmatter changes;
@@ -51,6 +51,21 @@ layout. Each format below maps to its own skillsaw rules.
   `claude plugin validate` accepts `v1`, `release-candidate`, `2026.10`, and
   `1.0.0garbage`, while numeric and null values fail. Keep the string type
   check in `claude-plugin-json-valid`; do not restore the former semver regex.
+- **Marketplace and entry names follow the plugin-id grammar.** The
+  [marketplace reference](https://code.claude.com/docs/en/plugins/marketplace-reference#top-level-fields)
+  requires letters, digits, `.`, `_`, and `-`, starting with a letter or
+  digit; only the marketplace `name` also forbids `..`. Verified on
+  2026-11-06 with Claude Code 2.1.319: `claude plugin validate` fails
+  `_p`, `-p`, `.p`, `a/b`, `ünï`, and names with spaces, fails a
+  marketplace named `a..b`, and passes an entry named `a..b` and names like
+  `my.market_1`. `claude-marketplace-json-valid` reports those as errors
+  and keeps the kebab-case warning only for installable names.
+- **Entry `hooks` must be an inline object.** Per
+  [hooks in an entry](https://code.claude.com/docs/en/plugins/marketplace-reference#hooks-in-an-entry),
+  `claude plugin validate` passes a path or array, but on 2.1.319 the
+  installed plugin fails to load with `the file-path and array forms are
+  not yet supported in a marketplace entry`. `claude-marketplace-json-valid`
+  reports both forms; drop the check if a later release loads them.
 - `plugin_structure.py` and `command_format.py` are backward-compat import shims — the
   real rules live in the `plugins/` and `commands/` packages. Do not re-add rules to the
   shims.

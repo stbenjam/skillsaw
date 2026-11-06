@@ -32,10 +32,14 @@ unread, and the only trace is one line in the debug log.
 That is why a type error here is an error rather than a style note: the cost
 is the whole package, not the field.
 
-The manifest is a protobuf JSON message with exactly four fields that carry
-meaning — `name`, `description`, `disabled`, `logo`. Every other key,
-`$schema` and `version` and `author` included, is discarded as unknown and
-the plugin still loads, so none of them is reported.
+The manifest is a protobuf JSON message with six fields that carry
+meaning — `name`, `description`, `disabled`, `logo`, `version` and
+`displayName` (also spelled `display_name`, its proto name). Measured
+against `agy` 1.3.6, `version` and `displayName` are typed: a number in
+either fails the plugin with `invalid value for string field version: 42`.
+Any string loads as `version`; semver is not enforced. Every other key,
+`$schema` and `author` included, is discarded as unknown and the plugin
+still loads, so none of them is reported.
 
 ## Severity
 
@@ -44,12 +48,14 @@ the plugin still loads, so none of them is reported.
 - `plugin.json` is missing, or is not a regular file.
 - Invalid JSON, including an unpaired Unicode surrogate escape in any
   string or key, even inside discarded metadata.
-- A repeated known root field (`name`, `description`, `disabled`, `logo`).
-  Neither copy wins, including when one or both values are `null`.
+- A repeated known root field (`name`, `description`, `disabled`, `logo`,
+  `version`, `displayName`). Neither copy wins, including when one or both
+  values are `null`. `displayName` beside `display_name` is a repeat too.
 - A UTF-8 byte-order mark (BOM). Remove it; the loader does not strip it.
 - A root that is not a JSON object.
-- A type error on one of the four fields: `name`, `description` and `logo`
-  must be strings, `disabled` a boolean.
+- A type error on one of the six fields: `name`, `description`, `logo`,
+  `version` and `displayName` / `display_name` must be strings, `disabled` a
+  boolean.
 
 **Warnings** — the plugin loads in place but cannot be installed:
 
@@ -66,8 +72,8 @@ the plugin still loads, so none of them is reported.
 
 ## What is not reported
 
-- **Unknown keys and their duplicates.** `$schema`, `version`, `author`, `homepage`, `license`,
-  `keywords`, `entrypoint` and everything else are discarded by the parser
+- **Unknown keys and their duplicates.** `$schema`, `author`, `homepage`, `license`,
+  `keywords`, `icon`, `repository`, `category`, `tags`, `entrypoint` and everything else are discarded by the parser
   and cost nothing. A package written to the portable Agent Plugins schema
   and dropped into `.agents/plugins/` is claimed and loaded by Antigravity
   unchanged, and this rule says nothing about it.
@@ -79,7 +85,7 @@ the plugin still loads, so none of them is reported.
   `description`, while `disabled` and `logo` load fine — so this rule
   follows the loader rather than the schema.
 - **Capitalized fields.** Runtime fields match exactly: `Description`,
-  `Disabled` and `Logo` are unknown metadata. This ProtoJSON behavior differs
+  `Disabled`, `Logo`, `Version` and `displayname` are unknown metadata. This ProtoJSON behavior differs
   from Antigravity's hooks, MCP and registry readers.
 - **`disabled: true`.** It is the documented way to keep a plugin in the
   tree without loading it.
@@ -118,6 +124,7 @@ the plugin still loads, so none of them is reported.
 - Give `description` a sentence saying when the plugin is worth loading —
   it is what a reader sees before the components.
 - Write `disabled` as a boolean, not `"no"` or `0`.
+- Quote `version` (`"1.2.0"`, not `1.2`) and `displayName`.
 - Remove repeated known root fields. A repeated `name`, for example, fails
   with `proto: duplicate field "name"`. Repeated unknown metadata is accepted.
 

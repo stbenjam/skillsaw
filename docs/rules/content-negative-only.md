@@ -78,7 +78,7 @@ instructions that tell the model what not to do."*
   Need](https://arxiv.org/abs/2312.16171) — Principle #4: "Employ affirmative
   directives"
 - [Anthropic Prompting Best
-  Practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct)
+  Practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
   — "Positive examples are more effective"
 
 

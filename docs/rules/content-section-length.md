@@ -88,7 +88,7 @@ comprehension. The threshold is configurable via the `max-tokens` parameter.
   Middle](https://arxiv.org/abs/2307.03172) — Attention degrades within long
   contiguous blocks
 - Chroma, [Context
-  Rot](https://research.trychroma.com/context-rot) — Attention dilution is
+  Rot](https://www.trychroma.com/research/context-rot) — Attention dilution is
   quadratic in token count
 - [Pinecone: Chunking Strategies for LLM
   Applications](https://www.pinecone.io/learn/chunking-strategies/) — 512 tokens

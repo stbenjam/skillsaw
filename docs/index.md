@@ -16,14 +16,14 @@ hide:
 skillsaw lints the files that steer your AI coding agents: skills, plugins,
 instructions, and tool configs across Claude Code, Codex, Copilot, Agent Skills,
 Google Antigravity, OpenCode, and more. It catches security risks, structural
-flaws, and unclear instructions with 112 rules, then applies deterministic
+flaws, and unclear instructions with 113 rules, then applies deterministic
 autofixes.
 </p>
 
 <p class="hero-badges" markdown>
 [![PyPI version](https://img.shields.io/pypi/v/skillsaw?label=PyPI&color=1f8a56)](https://pypi.org/project/skillsaw/)
 [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml)
-[![License](https://img.shields.io/badge/License-Apache%202.0-24476b.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License](https://img.shields.io/badge/License-Apache%202.0-24476b.svg)](https://opensource.org/license/Apache-2.0)
 [![skillsaw grade](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fstbenjam%2Fskillsaw%2Fmain%2F.skillsaw-badge.json)](https://github.com/stbenjam/skillsaw)
 </p>
 

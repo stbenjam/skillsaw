@@ -484,3 +484,11 @@ def test_rulesync_option_rejects_string(tmp_path):
     path.write_text("rulesync-generated: 'true'\n")
     with pytest.raises(ValueError, match="must be a boolean"):
         LinterConfig.from_file(path)
+
+
+def test_generator_types_do_not_displace_the_primary_repo_type(tmp_path):
+    # A generator authors content for other tools; the repository keeps the
+    # consuming tool as its reported primary type.
+    _, context = context_for("ruler", tmp_path)
+    assert RepositoryType.RULER in context.repo_types
+    assert context.repo_type == RepositoryType.CODEX_PROJECT

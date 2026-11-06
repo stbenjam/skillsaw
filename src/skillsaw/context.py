@@ -101,8 +101,6 @@ class RepositoryContext(
         # Tool configuration sorts below everything that describes how the
         # repository packages its content, so a marketplace that also ships
         # a `.cursor/` keeps `marketplace` as its primary type.
-        RepositoryType.RULER,
-        RepositoryType.RULESYNC,
         RepositoryType.PI,
         RepositoryType.CODEX_PROJECT,
         RepositoryType.MUSE,
@@ -120,6 +118,10 @@ class RepositoryContext(
         RepositoryType.AGENTS_MD,
         RepositoryType.GEMINI,
         RepositoryType.QWEN,
+        # Generators author content for the tools above, so a repository's
+        # consuming tool or instruction file stays its primary type.
+        RepositoryType.RULER,
+        RepositoryType.RULESYNC,
     ]
 
     # Compiled output directories that APM generates from .apm/ sources.

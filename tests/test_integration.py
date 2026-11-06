@@ -442,6 +442,67 @@ class TestHooksJson:
         assert found[0]["file_path"] == "hooks/hooks.json"
         assert "Unknown event type 'NotAClaudeEvent'" in found[0]["message"]
 
+    def test_on_failure_accepted_on_command_and_http(self, tmp_path):
+        # Claude Code 2.1.319 `claude plugin validate` accepts "continue" and
+        # "block" on both handler types; 2.1.295 introduced the field.
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+
+    @pytest.mark.parametrize("handler", [0, 1], ids=["command", "http"])
+    @pytest.mark.parametrize("value", ["explode", "Block", True, None, ["block"]])
+    def test_on_failure_invalid_value_is_an_error(self, tmp_path, value, handler):
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["PreToolUse"][0]["hooks"][handler]["onFailure"] = value
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["severity"] == "error"
+        assert found[0]["file_path"] == "hooks/hooks.json"
+        assert f"PreToolUse[0].hooks[{handler}]' field 'onFailure' has invalid value" in (
+            found[0]["message"]
+        )
+        assert "Valid values: continue, block" in found[0]["message"]
+
+    def test_on_failure_invalid_value_respects_severity_override(self, tmp_path):
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["PreToolUse"][0]["hooks"][0]["onFailure"] = "explode"
+        path.write_text(json.dumps(data))
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n  claude-hooks-valid:\n    severity: warning\n"
+        )
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["severity"] == "warning"
+        assert "field 'onFailure' has invalid value" in found[0]["message"]
+
+    @pytest.mark.parametrize("value", ["block", "explode"])
+    def test_on_failure_on_prompt_handler_warns(self, tmp_path, value):
+        # Claude Code accepts and ignores onFailure on a prompt hook, whatever
+        # its value, so an invalid value there is not an error.
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["PreToolUse"][0]["hooks"][0] = {
+            "type": "prompt",
+            "prompt": "Reject commands that delete files outside the project.",
+            "onFailure": value,
+        }
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["severity"] == "warning"
+        assert "field 'onFailure' is only valid on types: command, http" in (found[0]["message"])
+
     @pytest.mark.parametrize(
         "source_value,valid",
         [
@@ -853,6 +914,72 @@ class TestMarketplace:
         r = run_lint(repo)
         assert r["rc"] == 0
         assert "claude-marketplace-json-valid" not in rule_ids(r)
+
+    def test_uninstallable_names_error(self, tmp_path):
+        """Marketplace and entry names `claude plugin validate` fails are errors."""
+        repo = copy_fixture("marketplace/uninstallable-names", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        messages = [
+            v["message"] for v in violations(r) if v["rule_id"] == "claude-marketplace-json-valid"
+        ]
+        bad = [m for m in messages if "cannot be installed" in m]
+        assert len(bad) == 3, messages
+        assert any(m.startswith("Marketplace name 'acme tools'") for m in bad)
+        assert any(m.startswith("plugins[0] plugin name '_internal-metrics'") for m in bad)
+        assert any(m.startswith("plugins[1] plugin name 'Report Builder!'") for m in bad)
+        # One finding per defect: no kebab-case warning on top of the error.
+        assert not any("kebab-case" in m for m in messages)
+
+    def test_uninstallable_names_are_displayed_safely(self, tmp_path):
+        """Control characters in a reported name cannot reshape the output."""
+        repo = copy_fixture("marketplace/uninstallable-names", tmp_path)
+        path = repo / ".claude-plugin" / "marketplace.json"
+        data = json.loads(path.read_text())
+        data["name"] = "acme\ntools\x1b[31m"
+        data["plugins"][0]["name"] = "evil\u202ename"
+        path.write_text(json.dumps(data))
+        r = run_lint(repo)
+        bad = [
+            v["message"]
+            for v in violations(r)
+            if v["rule_id"] == "claude-marketplace-json-valid"
+            and "cannot be installed" in v["message"]
+        ]
+        assert len(bad) == 3, bad
+        for message in bad:
+            assert "\n" not in message and "\x1b" not in message and "\u202e" not in message
+
+    def test_installable_names_pass(self, tmp_path):
+        """Dots, underscores and capitals are installable; entry names may hold '..'."""
+        repo = copy_fixture("marketplace/installable-names", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        messages = [
+            v["message"] for v in violations(r) if v["rule_id"] == "claude-marketplace-json-valid"
+        ]
+        # Only the style nudge for the non-kebab marketplace name remains.
+        assert messages == [
+            "Marketplace name 'my.market_1' should be kebab-case "
+            "(lowercase letters, numbers, and hyphens)"
+        ]
+
+    def test_entry_hooks_path_and_array_error(self, tmp_path):
+        """Entry `hooks` as a path or array fails plugin load; an inline object passes."""
+        repo = copy_fixture("marketplace/entry-hooks-forms", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        hooks = [
+            v
+            for v in violations(r)
+            if v["rule_id"] == "claude-marketplace-json-valid" and ".hooks" in v["message"]
+        ]
+        assert [v["message"].split(",")[0] for v in hooks] == [
+            "plugins[0].hooks is a file path",
+            "plugins[1].hooks is an array",
+        ]
+        assert all(v["severity"] == "error" for v in hooks)
 
     def test_marketplace_stats(self, tmp_path):
         repo = copy_fixture("marketplace/clean", tmp_path)
@@ -5866,6 +5993,43 @@ class TestOutputFormats:
         quiet_info = [v for v in violations(quiet) if v["severity"] == "info"]
         assert len(verbose_info) > len(quiet_info)
 
+    def test_quiet_clean_run_prints_nothing(self, tmp_path):
+        repo = copy_fixture("single-plugin/clean", tmp_path)
+        report = tmp_path / "report.json"
+        r = run_lint(repo, "--quiet", "--output", str(report), verbose=False, fmt="text")
+        assert r["rc"] == 0
+        assert r["stdout"] == ""
+        # Report files are still written in full.
+        assert "violations" in json.loads(report.read_text())
+
+    def test_quiet_prints_findings_and_summary_only(self, tmp_path):
+        repo = copy_fixture("single-plugin/broken", tmp_path)
+        loud = run_lint(repo, verbose=False, fmt="text")
+        r = run_lint(repo, "-q", verbose=False, fmt="text")
+        assert r["rc"] == loud["rc"] == 1
+        assert "skillsaw " not in r["stdout"].splitlines()[0]
+        assert "Linting:" not in r["stdout"]
+        assert "Scanned:" not in r["stdout"]
+        assert "Errors:" in r["stdout"]
+        assert "Summary:" in r["stdout"]
+        finding_lines = [line for line in loud["stdout"].splitlines() if line.startswith("  ✗")]
+        assert finding_lines
+        assert all(line in r["stdout"] for line in finding_lines)
+
+    def test_quiet_with_verbose_shows_info_findings(self, tmp_path):
+        repo = copy_fixture("single-plugin/clean", tmp_path)
+        r = run_lint(repo, "-q", verbose=True, fmt="text")
+        assert r["rc"] == 0
+        assert "Info:" in r["stdout"]
+        assert "Scanned:" not in r["stdout"]
+        assert "All checks passed" in r["stdout"]
+
+    def test_quiet_leaves_json_output_unchanged(self, tmp_path):
+        repo = copy_fixture("single-plugin/clean", tmp_path)
+        r = run_lint(repo, "-q", verbose=False)
+        assert "stats" in r["out"]
+        assert "summary" in r["out"]
+
     def test_sarif_output(self, tmp_path):
         repo = copy_fixture("single-plugin/broken", tmp_path)
         sarif_path = tmp_path / "report.sarif"
@@ -6015,6 +6179,7 @@ BROKEN_FIXTURES = [
     "grok/index-parity-broken",
     "skills-lock/invalid",
     "antigravity/workspace-broken",
+    "kiro/broken",
 ]
 
 CLEAN_FIXTURES = [
@@ -6059,6 +6224,7 @@ CLEAN_FIXTURES = [
     "antigravity/workspace-clean",
     "antigravity/portable-manifest",
     "antigravity/codex-marketplace",
+    "kiro/valid",
 ]
 
 OPT_IN_RULES = {
@@ -10140,6 +10306,108 @@ class TestCodexRootWithClaudeMarketplace:
 
 
 @pytest.mark.integration
+class TestCodexOnboarding:
+    def test_legacy_nested_directory_alias_and_file_symlink_membership(self, tmp_path):
+        repo = copy_fixture("codex/onboarding", tmp_path)
+        (repo / "plugin.json").unlink()
+        manifest = repo / ".codex-plugin/plugin.json"
+        original = repo / "skills/get-started"
+        destination = repo / "resources/get-started"
+        destination.parent.mkdir()
+        original.rename(destination)
+        original.symlink_to("../resources/get-started", target_is_directory=True)
+        shutil.copytree(repo / "skills/connect-account", destination / "connect-account")
+        data = json.loads(manifest.read_text())
+        data["extensions"]["com.openai"][
+            "onboardingSkill"
+        ] = "./resources/get-started/connect-account/SKILL.md"
+        manifest.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 0 and result["out"]["violations"] == []
+
+        entrypoint = destination / "connect-account/SKILL.md"
+        entrypoint.rename(repo / "welcome.md")
+        entrypoint.symlink_to("../../../welcome.md")
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 1
+        findings = result["out"]["violations"]
+        assert len(findings) == 1
+        assert "not a bundled skill" in findings[0]["message"]
+
+    def test_skill_content_is_validated_by_existing_skill_rule(self, tmp_path):
+        repo = copy_fixture("codex/onboarding", tmp_path)
+        skill = repo / "skills/get-started/SKILL.md"
+        skill.write_text("# Get started\n\nChoose the folder for meeting notes.\n")
+        result = run_lint(repo, "--rule", "agentskill-valid")
+        assert result["rc"] == 1
+        assert any(
+            v["file_path"] == "skills/get-started/SKILL.md"
+            and "Missing YAML frontmatter" in v["message"]
+            for v in result["out"]["violations"]
+        )
+
+    @pytest.mark.parametrize("layout", ["portable", "fallback", "legacy"])
+    def test_effective_reference_and_diagnostic_location(self, tmp_path, layout):
+        repo = copy_fixture("codex/onboarding", tmp_path)
+        portable = repo / "plugin.json"
+        manifest = portable
+        if layout == "legacy":
+            portable.unlink()
+            manifest = repo / ".codex-plugin/plugin.json"
+        elif layout == "fallback":
+            data = json.loads(portable.read_text())
+            data.pop("extensions")
+            portable.write_text(json.dumps(data))
+            manifest = repo / ".codex-plugin/plugin.json"
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 0 and result["out"]["violations"] == []
+
+        data = json.loads(manifest.read_text())
+        data["extensions"]["com.openai"]["onboardingSkill"] = "./skills/missing/SKILL.md"
+        manifest.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 1
+        findings = result["out"]["violations"]
+        assert len(findings) == 1
+        assert findings[0]["file_path"] == manifest.relative_to(repo).as_posix()
+        assert "onboardingSkill" in findings[0]["message"]
+        assert "SKILL.md" in findings[0]["message"]
+        assert not findings[0]["fixable"]
+
+    def test_shadowed_invalid_reference_and_empty_inline_object(self, tmp_path):
+        repo = copy_fixture("codex/onboarding", tmp_path)
+        fallback = repo / ".codex-plugin/plugin.json"
+        data = json.loads(fallback.read_text())
+        data["extensions"]["com.openai"]["onboardingSkill"] = False
+        fallback.write_text(json.dumps(data))
+        portable = repo / "plugin.json"
+        data = json.loads(portable.read_text())
+        data["extensions"]["com.openai"] = {}
+        portable.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 0 and result["out"]["violations"] == []
+
+    def test_installed_plugin_remains_unmodified_by_fix(self, tmp_path):
+        source = copy_fixture("codex/onboarding", tmp_path)
+        manifest = source / "plugin.json"
+        data = json.loads(manifest.read_text())
+        data["extensions"]["com.openai"]["onboardingSkill"] = "../outside/SKILL.md"
+        manifest.write_text(json.dumps(data))
+        repo = tmp_path / "installed"
+        installed = repo / ".codex/plugins/workspace-notes"
+        installed.parent.mkdir(parents=True)
+        source.rename(installed)
+        before = {
+            p.relative_to(installed): p.read_bytes() for p in installed.rglob("*") if p.is_file()
+        }
+        result = _run_fix(repo, "--rule", "codex-plugin-json-valid")
+        assert result.returncode == 0, result.stderr
+        assert {
+            p.relative_to(installed): p.read_bytes() for p in installed.rglob("*") if p.is_file()
+        } == before
+
+
+@pytest.mark.integration
 class TestCodexPortableOverlay:
     @pytest.mark.parametrize("host_type", ["codex-plugin", "codex-marketplace"])
     @pytest.mark.parametrize("component", ["plugin.json", "mcp.json"])
@@ -12492,3 +12760,314 @@ class TestGeneratorWorkflows:
         assert [(v["file_path"], v["line"]) for v in result["out"]["violations"]] == [
             (".rulesync/rules/bad.md", 2),
         ]
+
+
+@pytest.mark.integration
+class TestKiro:
+    """Native Kiro resources, including nested monorepo workspaces."""
+
+    RULES = ("kiro-agent-valid", "kiro-mcp-valid", "kiro-references")
+
+    @staticmethod
+    def selected(repo, *rules):
+        return run_lint(repo, *(arg for rule in rules for arg in ("--rule", rule)))
+
+    def test_documented_json_markdown_and_legacy_permissions(self, tmp_path):
+        repo = copy_fixture("kiro/valid", tmp_path)
+        result = self.selected(
+            repo,
+            *self.RULES,
+            "mcp-valid-json",
+            "content-description-routing",
+            "content-broken-internal-reference",
+        )
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+
+    def test_nested_prose_and_config_are_separate(self, tmp_path):
+        repo = copy_fixture("kiro/broken", tmp_path)
+        result = self.selected(repo, "content-weak-language", "content-broken-internal-reference")
+        groups = by_rule(result)
+        expected = {
+            "packages/api/.kiro/steering/nested/policy.md": 6,
+            "packages/api/.kiro/agents/team/reviewer.md": 17,
+            "packages/api/.kiro/agents/inline.json": 0,
+        }
+        for rule in ("content-weak-language", "content-broken-internal-reference"):
+            found = groups[rule]
+            assert len(found) == 3
+            assert {v["file_path"] for v in found} == set(expected)
+        assert {v["file_path"]: v["line"] for v in groups["content-weak-language"]} == expected
+
+    def test_agent_prompt_files_are_prompts_not_agents(self, tmp_path):
+        """A Markdown file a JSON agent loads via ``file://`` is its prompt."""
+        repo = copy_fixture("kiro/agent-prompt-files", tmp_path)
+        result = self.selected(repo, "content-description-routing")
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+
+        from skillsaw.blocks.kiro import KiroMarkdownAgentBlock, KiroPromptFileBlock
+        from skillsaw.context import RepositoryContext
+
+        tree = RepositoryContext(repo).lint_tree
+        prompt = repo / ".kiro/agents/prompts/coder.md"
+        assert [b.path for b in tree.find(KiroPromptFileBlock)] == [prompt]
+        assert [b.path for b in tree.find(KiroMarkdownAgentBlock)] == [
+            repo / ".kiro/agents/reviewer.md"
+        ]
+
+    def test_malformed_data_and_missing_references(self, tmp_path):
+        repo = copy_fixture("kiro/broken", tmp_path)
+        result = self.selected(repo, *self.RULES)
+        assert result["rc"] == 1
+        groups = by_rule(result)
+        assert "rule-execution-error" not in groups
+        assert len(groups["kiro-agent-valid"]) == 5
+        assert len(groups["kiro-mcp-valid"]) == 5
+        references = groups["kiro-references"]
+        assert len(references) == 4
+        assert sorted(v["line"] for v in references if v["line"] is not None) == [5, 8, 8]
+        assert not any("example-only" in v["message"] for v in references)
+        md_mcp = [v for v in groups["kiro-mcp-valid"] if v["file_path"].endswith(".md")]
+        assert {v["line"] for v in md_mcp} == {8, 9}
+        assert all(
+            v["line"] is None
+            for v in groups["kiro-agent-valid"]
+            if v["file_path"].endswith(".json")
+        )
+
+    def test_shared_mcp_security_and_policy(self, tmp_path):
+        repo = copy_fixture("kiro/broken", tmp_path)
+        result = self.selected(repo, "mcp-valid-json", "mcp-prohibited")
+        groups = by_rule(result)
+        assert len(groups["mcp-valid-json"]) == 2, result
+        assert len(groups["mcp-prohibited"]) == 2
+        assert {v["line"] for v in groups["mcp-valid-json"]} == {None, 13}
+        assert all("ghp_" not in v["message"] for v in violations(result))
+        # The opt-in host shape rule stays off while credential checks run.
+        assert not set(self.RULES) & set(groups)
+
+    def test_new_rules_are_opt_in_and_respect_severity(self, tmp_path):
+        repo = copy_fixture("kiro/broken", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text('version: "99.0.0"\n')
+        assert not set(self.RULES) & rule_ids(run_lint(repo))
+        config.write_text(
+            'version: "99.0.0"\nrules:\n  kiro-agent-valid:\n    enabled: auto\n    severity: info\n'
+        )
+        found = by_rule(run_lint(repo))["kiro-agent-valid"]
+        assert len(found) == 5
+        assert {v["severity"] for v in found} == {"info"}
+
+    def test_nested_only_configuration_detects_kiro(self, tmp_path):
+        repo = copy_fixture("kiro/broken", tmp_path)
+        result = self.selected(repo, "kiro-agent-valid")
+        assert "kiro" in result["out"]["stats"]["repo_types"]
+        assert len(violations(result)) == 5
+
+    def test_json_prompt_fixes_leave_config_unchanged(self, tmp_path):
+        repo = copy_fixture("kiro/valid", tmp_path)
+        path = repo / ".kiro/agents/current.json"
+        target = path.parent / "references/review-guide.md"
+        target.parent.mkdir()
+        target.write_text("# Review guide\n\nInspect request validation and authentication.\n")
+        data = json.loads(path.read_text())
+        data["prompt"] = "Read ./references/review-guide.md before reviewing request handlers."
+        path.write_text(json.dumps(data))
+        prose = path.parent / "fixable.md"
+        prose.write_text(
+            "# Review\n\nRead ./references/review-guide.md before reviewing request handlers.\n"
+        )
+        original = path.read_bytes()
+        rule = "content-unlinked-internal-reference"
+        findings = violations(self.selected(repo, rule))
+        assert {v["file_path"]: v["fixable"] for v in findings} == {
+            ".kiro/agents/current.json": False,
+            ".kiro/agents/fixable.md": True,
+        }
+        _fix_widened(repo, "--rule", rule)
+        assert path.read_bytes() == original
+        assert "[./references/review-guide.md](./references/review-guide.md)" in prose.read_text()
+        fixed = prose.read_bytes()
+        _fix_widened(repo, "--rule", rule)
+        assert prose.read_bytes() == fixed
+        assert path.read_bytes() == original
+
+    def test_oauth_native_credentials_and_placeholders(self, tmp_path):
+        repo = copy_fixture("kiro/security", tmp_path)
+        result = self.selected(repo, "mcp-valid-json")
+        found = violations(result)
+        assert result["rc"] == 1
+        assert len(found) == 3
+        assert {v["file_path"]: v["line"] for v in found} == {
+            ".kiro/settings/mcp.json": None,
+            ".kiro/agents/reviewer.json": None,
+            ".kiro/agents/reviewer.md": 9,
+        }
+        assert {v["rule_id"] for v in found} == {"mcp-valid-json"}
+        assert all("zQ7mJ9" not in v["message"] for v in found)
+        assert all("placeholder-docs" not in v["message"] for v in found)
+
+    @pytest.mark.parametrize("structural_enabled", [False, True])
+    def test_mcp_syntax_and_container_diagnostic_ownership(self, tmp_path, structural_enabled):
+        repo = copy_fixture("kiro/malformed-mcp", tmp_path)
+        rules = ["mcp-valid-json"]
+        if structural_enabled:
+            rules.extend(("kiro-agent-valid", "kiro-mcp-valid"))
+        result = self.selected(repo, *rules)
+        assert result["rc"] == (1 if structural_enabled else 0)
+        groups = by_rule(result)
+        assert not {"repository-path-error", "rule-execution-error"} & set(groups)
+        if structural_enabled:
+            assert set(groups) == {"kiro-agent-valid", "kiro-mcp-valid"}
+            assert len(groups["kiro-mcp-valid"]) == 6
+            assert len(groups["kiro-agent-valid"]) == 2
+            md_findings = {
+                v["file_path"]: v["line"]
+                for v in violations(result)
+                if v["file_path"].endswith(".md")
+            }
+            assert md_findings == {
+                ".kiro/agents/map-array.md": 4,
+                ".kiro/agents/server-null.md": 5,
+            }
+        else:
+            # The host surface owns syntax as well as shape. Disabling it
+            # leaves the shared credential checks, covered separately.
+            assert violations(result) == []
+        assert all(
+            v["line"] is None for v in violations(result) if v["file_path"].endswith(".json")
+        )
+
+    def test_inline_prompt_has_one_security_scan_owner(self, tmp_path):
+        repo = copy_fixture("kiro/security", tmp_path)
+        result = self.selected(repo, "content-embedded-secrets", "security-invisible-unicode")
+        found = [v for v in violations(result) if v["file_path"] == ".kiro/agents/reviewer.json"]
+        assert len(found) == 2
+        assert {v["rule_id"] for v in found} == {
+            "content-embedded-secrets",
+            "security-invisible-unicode",
+        }
+        assert all(not v["line"] for v in found)
+
+    def test_malformed_field_types_and_yaml_locations(self, tmp_path):
+        repo = copy_fixture("kiro/malformed-fields", tmp_path)
+        result = self.selected(repo, "kiro-agent-valid", "kiro-mcp-valid", "mcp-valid-json")
+        assert result["rc"] == 1
+        groups = by_rule(result)
+        assert set(groups) == {"kiro-agent-valid", "kiro-mcp-valid"}
+        assert len(groups["kiro-agent-valid"]) == 6
+        assert len(groups["kiro-mcp-valid"]) == 9
+        for rule, lines in (("kiro-agent-valid", {4, 5, 6}), ("kiro-mcp-valid", {10, 11, 13})):
+            assert {v["line"] for v in groups[rule] if v["file_path"].endswith(".md")} == lines
+        assert all(
+            v["line"] is None for v in violations(result) if v["file_path"].endswith(".json")
+        )
+
+    @pytest.mark.parametrize("structural_enabled", [False, True])
+    def test_malformed_yaml_keeps_other_resources_linted(self, tmp_path, structural_enabled):
+        repo = copy_fixture("kiro/security", tmp_path)
+        rules = ["content-embedded-secrets"]
+        if structural_enabled:
+            rules.append("kiro-agent-valid")
+        result = self.selected(repo, *rules)
+        assert not {"repository-path-error", "rule-execution-error"} & rule_ids(result)
+        assert any(v["file_path"] == ".kiro/steering/policy.md" for v in violations(result))
+        if structural_enabled:
+            found = by_rule(result)["kiro-agent-valid"]
+            assert len(found) == 1
+            assert found[0]["file_path"] == ".kiro/agents/broken.md"
+            assert found[0]["line"] == 4
+
+    def test_changed_inline_prompt_invalidates_baseline(self, tmp_path):
+        repo = copy_fixture("kiro/broken", tmp_path)
+        _widen_fix_scope(repo)
+        rule = "content-weak-language"
+        assert len(violations(self.selected(repo, rule))) == 3
+        result = run_cli(["baseline", str(repo)])
+        assert result.returncode == 0, result.stderr
+        assert violations(self.selected(repo, rule)) == []
+        path = repo / "packages/api/.kiro/agents/inline.json"
+        data = json.loads(path.read_text())
+        data["prompt"] = "You might want to skip verification."
+        path.write_text(json.dumps(data))
+        found = violations(self.selected(repo, rule))
+        assert len(found) == 1
+        assert found[0]["file_path"] == "packages/api/.kiro/agents/inline.json"
+
+    def test_appended_prompt_secret_is_not_hidden_by_baseline(self, tmp_path):
+        repo = copy_fixture("kiro/security", tmp_path)
+        rule = "content-embedded-secrets"
+        result = run_cli(["baseline", str(repo)])
+        assert result.returncode == 0, result.stderr
+        assert violations(self.selected(repo, rule)) == []
+        path = repo / ".kiro/agents/reviewer.json"
+        data = json.loads(path.read_text())
+        data["prompt"] += "\nAdditional credential: ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+        path.write_text(json.dumps(data))
+        found = violations(self.selected(repo, rule))
+        assert len(found) == 1
+        assert found[0]["file_path"] == ".kiro/agents/reviewer.json"
+        assert "ghp_" not in found[0]["message"]
+
+    def test_routing_selects_agents_and_auto_steering(self, tmp_path):
+        repo = copy_fixture("kiro/valid", tmp_path)
+        agent = repo / ".kiro/agents/current.json"
+        data = json.loads(agent.read_text())
+        data["description"] = ""
+        agent.write_text(json.dumps(data))
+        (agent.parent / "empty.md").write_text('---\ndescription: ""\n---\nReview changes.\n')
+        steering = repo / ".kiro/steering"
+        for mode in ("auto", "always", "fileMatch", "manual"):
+            (steering / f"{mode}.md").write_text(
+                f'---\ninclusion: {mode}\ndescription: ""\n---\nReview changes.\n'
+            )
+        found = violations(self.selected(repo, "content-description-routing"))
+        assert {v["file_path"] for v in found} == {
+            ".kiro/agents/current.json",
+            ".kiro/agents/empty.md",
+            ".kiro/steering/auto.md",
+        }
+        assert {v["line"] for v in found} == {None, 2, 3}
+
+    @pytest.mark.parametrize("structural_enabled", [False, True])
+    def test_non_object_agent_has_one_owner(self, tmp_path, structural_enabled):
+        repo = copy_fixture("kiro/malformed-agents", tmp_path)
+        rules = ["content-description-routing"]
+        if structural_enabled:
+            rules.append("kiro-agent-valid")
+        result = self.selected(repo, *rules)
+        assert result["rc"] == (1 if structural_enabled else 0)
+        found = violations(result)
+        assert len(found) == 4
+        expected = "kiro-agent-valid" if structural_enabled else "content-description-routing"
+        assert {v["file_path"]: v["rule_id"] for v in found} == {
+            ".kiro/agents/array.json": expected,
+            ".kiro/agents/null.json": expected,
+            ".kiro/agents/empty.json": "content-description-routing",
+            ".kiro/agents/manual.md": "content-description-routing",
+        }
+        structural = [v for v in found if v["rule_id"] == "kiro-agent-valid"]
+        assert all("must be an object" in v["message"] for v in structural)
+        assert all(v["line"] is None for v in structural)
+
+    @pytest.mark.parametrize("structural_enabled", [False, True])
+    def test_description_type_has_one_owner(self, tmp_path, structural_enabled):
+        repo = copy_fixture("kiro/valid", tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\nrules:\n  kiro-agent-valid:\n    enabled: false\n'
+        )
+        agent = repo / ".kiro/agents/current.json"
+        data = json.loads(agent.read_text())
+        data["description"] = 42
+        agent.write_text(json.dumps(data))
+        (agent.parent / "bad-description.md").write_text(
+            "---\ndescription: 42\n---\nReview changes.\n"
+        )
+        rules = ["content-description-routing"]
+        if structural_enabled:
+            rules.append("kiro-agent-valid")
+        found = violations(self.selected(repo, *rules))
+        assert len(found) == 2
+        expected = "kiro-agent-valid" if structural_enabled else "content-description-routing"
+        assert {v["rule_id"] for v in found} == {expected}

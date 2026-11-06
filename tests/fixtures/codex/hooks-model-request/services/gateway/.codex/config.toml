@@ -1,0 +1,18 @@
+model = "gpt-5-codex"
+approval_policy = "on-request"
+
+[[hooks.PreModelRequest]]
+matcher = "gpt-5-codex"
+
+[[hooks.PreModelRequest.hooks]]
+type = "command"
+command = "./scripts/record-request.sh"
+timeout = 5
+
+[[hooks.PostModelRequest]]
+
+[[hooks.PostModelRequest.hooks]]
+type = "mcp_tool"
+server = "telemetry"
+tool = "record_usage"
+statusMessage = "Recording token usage"

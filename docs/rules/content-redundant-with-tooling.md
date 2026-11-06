@@ -72,11 +72,11 @@ instructions wastes context tokens and adds no reliability.
   Tokens](https://arxiv.org/abs/2402.14848) — Every redundant instruction
   consumes context budget
 - [Anthropic: Effective Context
-  Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  Engineering](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)
   — "One of the most common failure modes we see is bloated tool sets" — applies
   equally to bloated instructions
 - [Dotzlaw: Claude Code
-  Hooks](https://www.dotzlaw.com/insights/claude-hooks/) — "CLAUDE.md
+  Hooks](https://dotzlaw.com/insights/claude-hooks/) — "CLAUDE.md
   instructions are advisory… Hooks are enforcement"
 
 

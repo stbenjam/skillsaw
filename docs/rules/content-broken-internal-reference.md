@@ -90,14 +90,14 @@ template directories where placeholder links are expected.
 
 **References:**
 
-- [W3C: Link Checking](https://www.w3.org/QA/Tools/) — Broken links are a
+- [W3C: Link Checking](https://www.w3.org/developers/tools/) — Broken links are a
   recognized web quality defect; the same principle applies to interlinked
   instruction files
 - [Google style guide: Make headings into link
   targets](https://developers.google.com/style/headings-targets) — Keep old
   anchors when headings change so existing links keep working
 - [Anthropic: Effective Context
-  Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  Engineering](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)
   — Context that references missing information degrades agent performance
 
 

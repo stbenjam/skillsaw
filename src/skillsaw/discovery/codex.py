@@ -10,16 +10,23 @@ provenance verdicts over this evidence stay on ``RepositoryContext``
 
 from __future__ import annotations
 
+from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Set
 
 from skillsaw.formats.codex import CODEX_PLUGIN_MANIFEST, codex_local_source_path
-from skillsaw.formats.codex_manifest import declares_openai_extension, portable_manifest_is_usable
+from skillsaw.formats.codex_manifest import (
+    codex_skill_component_roots,
+    declares_openai_extension,
+    portable_manifest_is_usable,
+)
+from skillsaw.discovery.agent_plugins import discover_agent_plugin_skills
 from skillsaw.paths import (
     Resolver,
     contained_resolve,
     safe_exists,
     safe_is_dir,
+    safe_is_file,
     safe_is_symlink,
     safe_resolve,
 )
@@ -37,6 +44,72 @@ CODEX_MARKETPLACE_FILENAME = "marketplace.json"
 # Where Codex installs plugins a developer added to their own checkout,
 # as opposed to plugins the repository authors.
 CODEX_INSTALL_DIR = (".codex", "plugins")
+
+
+def codex_bundles_skill(
+    plugin_dir: Path, target: Path, *, portable: bool, resolve: Resolver = safe_resolve
+) -> Optional[bool]:
+    """Whether a canonical file is reachable through effective skill roots.
+
+    Codex 0.162.1 follows directory aliases but skips file symlinks and
+    hidden directories. Its legacy recursive scan continues below skills;
+    the shared content inventory stops there, so it cannot prove membership.
+    This probe visits only the selected plugin's components, never owners or
+    plugin directories. Incomplete scans return None instead of a false error.
+    """
+    if portable:
+        skills_root = resolve(plugin_dir / "skills")
+        return any(
+            not skill.name.startswith(".")
+            and resolve(skill) != skills_root
+            and not safe_is_symlink(skill / "SKILL.md")
+            and resolve(skill / "SKILL.md") == target
+            for skill in discover_agent_plugin_skills(plugin_dir, resolve=resolve)
+        )
+    root = resolve(plugin_dir)
+    if root is None:
+        return None
+    complete = True
+    for component in codex_skill_component_roots(plugin_dir, resolve=resolve):
+        queue = deque([(component, 0)])
+        seen = {component}
+        entries_seen = 0
+        while queue:
+            directory, depth = queue.popleft()
+            try:
+                children = sorted(directory.iterdir())
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+            except OSError:
+                complete = False
+                continue
+            for child in children:
+                # Match the released host's traversal bounds. Enumeration
+                # order and I/O can affect truncated inventories; do not
+                # diagnose absence when the complete scan is unavailable.
+                entries_seen += 1
+                if entries_seen > 20_000:
+                    return None
+                if (
+                    child.name == "SKILL.md"
+                    and not safe_is_symlink(child)
+                    and safe_is_file(child)
+                    and contained_resolve(child, root, resolve) == target
+                ):
+                    return True
+                if depth >= 6 or child.name.startswith(".") or not safe_is_dir(child):
+                    continue
+                resolved = contained_resolve(child, root, resolve)
+                if resolved is None:
+                    complete = False
+                    continue
+                if resolved in seen:
+                    continue
+                if len(seen) >= 2_000:
+                    return None
+                seen.add(resolved)
+                queue.append((child, depth + 1))
+    return False if complete else None
 
 
 def _is_marketplace_filename(name: str) -> bool:

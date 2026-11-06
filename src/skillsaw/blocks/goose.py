@@ -137,8 +137,7 @@ class GooseRecipeProseBlock(ContentBlock):
         return f"{self.field_name} ({self.category})"
 
     def fingerprint_identity(self, body_line):
-        lines = (self.body or "").split("\n")
-        content = lines[body_line - 1].strip() if body_line and 1 <= body_line <= len(lines) else ""
+        content = self.markdown.line(body_line or 0).strip()
         return f"{len(self.field_name)}:{self.field_name}\0{content}"
 
     def __eq__(self, other):

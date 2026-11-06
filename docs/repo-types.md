@@ -204,7 +204,7 @@ my-plugin/
 
 ## Marketplace (Multiple Plugins)
 
-skillsaw supports multiple marketplace structures per the [Claude Code specification](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces):
+skillsaw supports multiple marketplace structures per the [Claude Code specification](https://code.claude.com/docs/en/plugin-marketplaces):
 
 ### Traditional Structure (plugins/ directory)
 
@@ -328,9 +328,9 @@ checkouts Muse made for child agents and is skipped.
 Muse uses the nested hooks format Claude Code pioneered, with its own
 lifecycle events, matcher-group keys and handler fields.
 [`muse-hooks-valid`](rules/muse-hooks-valid.md) checks the file against them.
-This matters more than it sounds: Muse prints no diagnostic for anything it
-refuses, so a rejected file, a dropped matcher group and a skipped handler
-all look like a hook that had nothing to do. The commands themselves are
+This matters more than it sounds: Muse reports a refused file or entry only
+as a startup warning, so in a headless run a rejected file, a dropped matcher
+group and a skipped handler all look like a hook that had nothing to do. The commands themselves are
 scanned by [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md), including the
 `commandWindows` variant.
@@ -791,7 +791,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Devin CLI / Desktop** | `devin` | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/rules/`, `.windsurf/global_rules.md`, and `.windsurfrules` |
 | **Windsurf** | `devin` | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
 | **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
-| **Kiro** | `kiro` | `.kiro/steering/*.md` |
+| **Kiro** | `kiro` | Recursive steering, native JSON/Markdown agents, skills, and workspace MCP; see [Kiro support](kiro.md) |
 | **Google Antigravity** | `antigravity` | Inside `.agents/`, `.agent/`, `_agents/` or `_agent/`: `hooks.json`, `mcp_config.json`, the registries `{agents,plugins,skills,workflows}.json`, prose in `rules/**/*.md` and `agents/*.md`, and skills under `skills/`. A `plugins.json` or `agents.json` registry's `entries` are followed, so a plugin or agent directory it names elsewhere in the repository is linted too. Detection is narrower — see [Google Antigravity](#google-antigravity) |
 | **[Pi](#pi-packages-and-projects)** | `pi` | `.pi/`: Native skills, prompts, themes and extensions, `SYSTEM.md`, `APPEND_SYSTEM.md`, resource declarations in `settings.json` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
