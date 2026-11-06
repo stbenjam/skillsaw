@@ -13,6 +13,7 @@ from skillsaw.utils import yaml_path_line_lookup
 
 VALID_OS_VALUES = {"darwin", "linux", "win32"}
 OS_ALIASES = {"macos": "darwin"}
+ALLOWED_OS_DISPLAY = sorted(VALID_OS_VALUES | OS_ALIASES.keys())
 VALID_INSTALL_KINDS = {"brew", "node", "go", "uv", "download"}
 VALID_ARCHIVE_TYPES = {"tar.gz", "tar.bz2", "zip"}
 
@@ -179,7 +180,7 @@ class OpenclawMetadataRule(Rule):
                     violations.append(
                         self.violation(
                             f"'metadata.openclaw.os' contains invalid values: {invalid} "
-                            f"(allowed: {sorted(VALID_OS_VALUES)})",
+                            f"(allowed: {ALLOWED_OS_DISPLAY})",
                             file_path=skill_md,
                             line=os_line,
                         )
@@ -386,7 +387,7 @@ class OpenclawMetadataRule(Rule):
                         violations.append(
                             self.violation(
                                 f"'metadata.openclaw.install[{i}].os' contains invalid values: "
-                                f"{invalid} (allowed: {sorted(VALID_OS_VALUES)})",
+                                f"{invalid} (allowed: {ALLOWED_OS_DISPLAY})",
                                 file_path=skill_md,
                                 line=os_line,
                             )

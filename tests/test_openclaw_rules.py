@@ -264,6 +264,7 @@ def test_os_invalid_value_fails(temp_dir):
     context = RepositoryContext(skill)
     violations = OpenclawMetadataRule().check(context)
     assert any("invalid values" in v.message and "windows" in v.message for v in violations)
+    assert any("'macos'" in v.message for v in violations)
 
 
 # --- requires validation ---
@@ -689,6 +690,7 @@ def test_install_os_invalid_value_fails(temp_dir):
     context = RepositoryContext(skill)
     violations = OpenclawMetadataRule().check(context)
     assert any("invalid values" in v.message and "windows" in v.message for v in violations)
+    assert any("'macos'" in v.message for v in violations)
 
 
 # OpenClaw trims, lowercases, and accepts `macos` as an alias for `darwin`
