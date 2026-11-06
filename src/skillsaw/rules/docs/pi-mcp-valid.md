@@ -2,7 +2,7 @@
 
 Pi 0.99.0 introduced first-party MCP servers in project `.pi/mcp.json`.
 Invalid entries are reported and skipped while valid sibling servers remain
-available. This opt-in rule checks the field contract in Pi 1.0.0.
+available. This opt-in rule checks the field contract in Pi 1.5.0.
 
 ## Checks
 
@@ -18,9 +18,14 @@ available. This opt-in rule checks the field contract in Pi 1.0.0.
 - `oauth.authServerMetadataUrl` is a string. Pi requires HTTPS, with HTTP
   allowed on `localhost`, `127.0.0.1`, and `[::1]`; URI semantics remain
   delegated to its WHATWG parser.
+- `oauth.clientRegistration` is `auto`, `dcr`, or `cimd`, and `cimd` is not
+  combined with `oauth.clientId` or `oauth.clientName`.
+- An entry without `command`, `url`, or `type` overrides the global server of
+  the same name and may set only `enabled`, `exposure`, and `toolExposure`.
+  Whether that global server exists is outside the repository and unchecked.
 - Provider `auth` is unavailable in project HTTP definitions. Pi also rejects
   a truthy `auth` on stdio entries retaining a `url` property.
-- A UTF-8 BOM prevents Pi from reading the file.
+- A UTF-8 BOM is accepted; Pi strips it before parsing.
 
 Unknown fields and fields belonging to the unselected transport are ignored.
 An empty command, an omitted server map, and duplicate keys with the last value
@@ -35,7 +40,15 @@ reserves the name.
 
 Use a command and argument array for a process server, or an HTTP URL for a
 remote server. Replace SSE endpoints with the server's streamable HTTP endpoint.
-Keep provider-authenticated servers in the user-level configuration.
+Keep provider-authenticated servers in the user-level configuration. To
+change a global server for one project, list only the override fields:
+
+```json
+{"mcpServers": {"internal-tools": {"enabled": false}}}
+```
+
+Remove `clientId` and `clientName` when using `"clientRegistration": "cimd"`,
+or choose `dcr` to keep them.
 
 ```json
 {
@@ -71,6 +84,6 @@ servers are not loaded.
 
 ## Upstream reference
 
-The release-tagged [configuration loader](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/src/extensions/mcp/config.ts)
-and [field validator](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/src/core/mcp-servers.ts)
+The release-tagged [configuration loader](https://github.com/earendil-works/pi/blob/v1.5.0/packages/coding-agent/src/extensions/mcp/config.ts)
+and [field validator](https://github.com/earendil-works/pi/blob/v1.5.0/packages/coding-agent/src/core/mcp-servers.ts)
 define the checked contract. See the [Pi MCP documentation](https://pi.dev/docs/latest/mcp).

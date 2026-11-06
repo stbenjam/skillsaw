@@ -4,11 +4,13 @@
 
 - [Package documentation, v1.0.0](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/packages.md)
 - [Pinned loader source](https://github.com/earendil-works/pi/tree/v1.0.0/packages/coding-agent/src/core)
-- [MCP configuration loader, v1.0.0](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/src/extensions/mcp/config.ts)
-- [MCP field validator, v1.0.0](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/src/core/mcp-servers.ts)
+- [MCP configuration loader, v1.5.0](https://github.com/earendil-works/pi/blob/v1.5.0/packages/coding-agent/src/extensions/mcp/config.ts)
+- [MCP field validator, v1.5.0](https://github.com/earendil-works/pi/blob/v1.5.0/packages/coding-agent/src/core/mcp-servers.ts)
+- [Settings JSON Schema, v1.5.0](https://github.com/earendil-works/pi/blob/v1.5.0/packages/coding-agent/schemas/settings.schema.json)
 
 Compare `pi-manifest.ts`, `package-manager.ts`, and `skills.ts` against the
-release tag when updating support.
+release tag when updating support. Pi now publishes a settings JSON Schema;
+read it alongside `settings-manager.ts` when checking `.pi/settings.json`.
 
 ## Rules and discovery
 
@@ -18,13 +20,19 @@ The opt-in `pi-resource-paths` rule checks assembled local paths.
 
 Pi 0.99.0 introduced project `.pi/mcp.json`. It attaches as `PiMcpBlock`,
 including nested projects, so shared credential and server policy checks run.
-The opt-in `pi-mcp-valid` rule follows v1.0.0 field types and transport selection.
+The opt-in `pi-mcp-valid` rule follows v1.5.0 field types and transport selection.
 It remains opt-in pending the ten-repository accuracy survey.
 
 MCP sync points: exposure names and the `codemode-deferred` alias; HTTP-first
 selection when both command and URL are present; the unsupported SSE transport;
 server namespace collisions after replacing hyphens with underscores; project
-HTTP provider `auth` refusal; and OAuth field types and callback-port bounds.
+HTTP provider `auth` refusal; OAuth field types and callback-port bounds;
+`oauth.clientRegistration` values and the `cimd` exclusion of `clientId` and
+`clientName`; and `OVERRIDE_KEYS` with the `isOverride` test in `config.ts`.
+A project entry without `command`, `url`, or `type` overrides the global
+server of that name, so it may set only those keys and reserves no namespace.
+Whether the global server exists is user configuration and stays unchecked.
+Pi 1.4 strips a leading UTF-8 BOM before parsing either `mcp.json`.
 Pi 1.0 adds `oauth.authServerMetadataUrl`: a string naming an HTTPS metadata
 document, with HTTP permitted on `localhost`, `127.0.0.1`, and `[::1]`.
 The project `auth` guard also applies to stdio entries retaining any `url`
@@ -34,8 +42,8 @@ last value, and empty commands pass field validation. Shared credentials include
 `oauth.clientSecret`. Whole-value `!command` references are never executed and
 still receive structured-token detection.
 
-URI validation, including authorization metadata and OAuth callback URI
-semantics, is deliberately deferred to Pi's WHATWG parser. User configuration,
+URI validation, including authorization metadata, OAuth callback URI
+semantics, and the `cimd` callback path requirement, is deliberately deferred to Pi's WHATWG parser. User configuration,
 MCP connections, and extension code remain outside static discovery.
 Namespace checks admit stdio and ordinary ASCII DNS HTTP URLs without callback
 or authorization metadata URIs; uncertain HTTP entries cannot reserve names
@@ -86,3 +94,10 @@ installation and dependency resolution remain outside static discovery.
 Settings changes for fullscreen, quiet startup, default tools and codemode
 are outside the resource-only `pi-config-valid` contract. OAuth credential
 storage, issuer checks and incremental scope handling are runtime behavior.
+
+## Pi 1.5.0 MCP audit (2026-11-06)
+
+Compared the MCP loader and field validator at v1.5.0 against v1.0.0. The
+loader adds project overrides and BOM stripping; the validator adds
+`oauth.clientRegistration`. Moving the MCP extension into its own package
+happened on main after v1.5.0; re-check source paths at the next tag.

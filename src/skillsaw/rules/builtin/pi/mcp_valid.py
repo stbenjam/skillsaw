@@ -1,4 +1,4 @@
-"""Pi 1.0.0 MCP configuration types and transport selection."""
+"""Pi 1.5.0 MCP configuration types, transport selection, and project overrides."""
 
 import re
 from urllib.parse import urlsplit
@@ -8,9 +8,12 @@ from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.pi import (
     JS_TRIM_CHARS,
+    MCP_CLIENT_REGISTRATIONS,
+    MCP_DEFINITION_KEYS,
     MCP_EXPOSURES,
     MCP_HTTP_TYPES,
     MCP_OAUTH_STRING_FIELDS,
+    MCP_OVERRIDE_KEYS,
 )
 from skillsaw.rule import Rule, Severity
 
@@ -53,6 +56,11 @@ def _namespace_certain(server):
         return False
 
 
+def _is_override(server):
+    """A project entry with no command, url, or type overrides a global server."""
+    return isinstance(server, dict) and not any(key in server for key in MCP_DEFINITION_KEYS)
+
+
 def _strings(value):
     return isinstance(value, dict) and all(isinstance(v, str) for v in value.values())
 
@@ -65,6 +73,12 @@ def _problem(server):
     """
     if not isinstance(server, dict):
         return "expected a server object"
+    override = _is_override(server)
+    if override and any(key not in MCP_OVERRIDE_KEYS for key in server):
+        return (
+            f"an override can only set {', '.join(MCP_OVERRIDE_KEYS)}; "
+            "add command or url to define a project server"
+        )
     exposure = server.get("exposure")
     if "exposure" in server and (not isinstance(exposure, str) or exposure not in MCP_EXPOSURES):
         return "exposure must be codemode, deferred, direct, hidden, or codemode-deferred"
@@ -76,6 +90,9 @@ def _problem(server):
             return "toolExposure must map tool names to supported exposure values"
     if "enabled" in server and not isinstance(server["enabled"], bool):
         return "enabled must be a boolean"
+    if override:
+        # Whether a global server of this name exists is outside the project.
+        return None
     if "description" in server and not isinstance(server["description"], str):
         return "description must be a string"
     if "timeout" in server:
@@ -108,6 +125,18 @@ def _problem(server):
                     or int(port) != port
                 ):
                     return "oauth.callbackPort must be an integer from 1 to 65535"
+            if "clientRegistration" in oauth:
+                registration = oauth["clientRegistration"]
+                if (
+                    not isinstance(registration, str)
+                    or registration not in MCP_CLIENT_REGISTRATIONS
+                ):
+                    return 'oauth.clientRegistration must be "auto", "dcr", or "cimd"'
+                if registration == "cimd" and ("clientId" in oauth or "clientName" in oauth):
+                    return (
+                        'oauth.clientRegistration "cimd" cannot be combined with '
+                        "oauth.clientId or oauth.clientName"
+                    )
         if "auth" in server:
             return "auth is allowed only in the global mcp.json; use project OAuth or headers"
         return None
@@ -154,13 +183,6 @@ class PiMcpValidRule(Rule):
             if block.parse_error:
                 # The always-on shared MCP rule owns syntax errors.
                 continue
-            if block.has_utf8_bom():
-                violations.append(
-                    self.violation(
-                        "Remove the UTF-8 BOM; Pi cannot parse this MCP configuration", block=block
-                    )
-                )
-                continue
             data = block.raw_data
             if not isinstance(data, dict) or (
                 "mcpServers" in data and not isinstance(data["mcpServers"], dict)
@@ -186,7 +208,10 @@ class PiMcpValidRule(Rule):
                     else _problem(server)
                 )
                 namespace = name.replace("-", "_")
-                certain = problem is None and _namespace_certain(server)
+                # Overrides replace a global server by name and reserve nothing.
+                certain = (
+                    problem is None and not _is_override(server) and _namespace_certain(server)
+                )
                 if certain and namespace in seen:
                     problem = (
                         f"name conflicts with '{safe_display(seen[namespace])}'; "
