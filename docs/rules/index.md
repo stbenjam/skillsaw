@@ -22,7 +22,7 @@ skillsaw includes **114** built-in rules organized into the following categories
 - [Instruction Files](instruction-files.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (5 rules)
 - [Muse Code](muse.md) (1 rule)
-- [OpenAI Codex](codex.md) (7 rules)
+- [OpenAI Codex](codex.md) (8 rules)
 - [OpenClaw](openclaw.md) (4 rules)
 - [Kiro](kiro.md) (3 rules)
 - [OpenCode](opencode.md) (1 rule)
@@ -123,6 +123,7 @@ skillsaw includes **114** built-in rules organized into the following categories
 | [`muse-hooks-valid`](muse-hooks-valid.md) | .muse/hooks.json must use Muse's events, matcher groups and handler fields | error (disabled) | - | Muse Code |
 | [`codex-hooks-valid`](codex-hooks-valid.md) | Codex hooks files must use Codex's hook events, handler types, and fields | error (auto) | - | OpenAI Codex |
 | [`codex-mcp-headers`](codex-mcp-headers.md) | Codex HTTP MCP servers must use http_headers instead of ignored headers | warning (auto) | - | OpenAI Codex |
+| [`codex-project-instructions`](codex-project-instructions.md) | Diagnose Codex instruction selection and the cumulative project byte limit | warning (disabled) | - | OpenAI Codex |
 | [`codex-openai-metadata`](codex-openai-metadata.md) | Validate skill openai.yaml and catalog-compatible plugin metadata | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-json-valid`](codex-plugin-json-valid.md) | The selected Codex manifest or portable OpenAI overlay must be valid | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-structure`](codex-plugin-structure.md) | Only plugin.json belongs in .codex-plugin/ | warning (auto) | - | OpenAI Codex |

@@ -1,0 +1,17 @@
+{
+  "description": "Audit shell commands used in the payments service",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/audit-shell.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

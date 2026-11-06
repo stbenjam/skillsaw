@@ -18,6 +18,7 @@ from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_local_source_path,  # noqa: F401 - compatibility re-export
 )
+from .formats.codex_instructions import CodexInstructionOptions
 from .discovery import detect as detect_discovery
 from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import is_root_or_ancestor_excluded, path_matches_patterns
@@ -71,7 +72,13 @@ class RepositoryContext(
 ):
     """Detected repository metadata used during linting."""
 
-    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
+    _INSTRUCTION_FILENAMES = (
+        "AGENTS.md",
+        "AGENTS.override.md",
+        "CLAUDE.md",
+        "GEMINI.md",
+        "QWEN.md",
+    )
 
     _TYPE_PRIORITY = [
         RepositoryType.MARKETPLACE,
@@ -144,6 +151,7 @@ class RepositoryContext(
         exclude_patterns: Optional[List[str]] = None,
         content_paths: Optional[List[str]] = None,
         lint_external_content: bool = True,
+        codex_instructions: Optional[CodexInstructionOptions] = None,
     ):
         """
         Initialize repository context
@@ -167,6 +175,7 @@ class RepositoryContext(
         self._resolve_cache: Dict[Path, Optional[Path]] = {}
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
+        self.codex_instructions = codex_instructions
         self.goose_recipes_forced = repo_types is not None and RepositoryType.GOOSE in repo_types
         self.lint_external_content = lint_external_content
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
