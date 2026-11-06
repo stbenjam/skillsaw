@@ -200,19 +200,27 @@ class PiMcpValidRule(Rule):
                         "autoEnableCodemode must be a boolean; Pi ignores this setting", block=block
                     )
                 )
-            seen = {}
-            for name, server in block.server_entries():
+            entries = list(block.server_entries())
+            # A valid override keeps the global server of that exact name, which
+            # Pi loads before any project server, so its namespace is taken
+            # wherever the override sits in the file.
+            seen = {
+                name.replace("-", "_"): name
+                for name, server in entries
+                if _NAME.fullmatch(name) is not None and _is_override(server)
+            }
+            for name, server in entries:
                 problem = (
                     "use only letters, digits, underscores, and hyphens in the server name"
                     if _NAME.fullmatch(name) is None
                     else _problem(server)
                 )
                 namespace = name.replace("-", "_")
-                # Overrides replace a global server by name and reserve nothing.
+                # Overrides replace a global server by name; they are reserved above.
                 certain = (
                     problem is None and not _is_override(server) and _namespace_certain(server)
                 )
-                if certain and namespace in seen:
+                if certain and seen.get(namespace, name) != name:
                     problem = (
                         f"name conflicts with '{safe_display(seen[namespace])}'; "
                         "Pi treats hyphens and underscores as the same namespace"

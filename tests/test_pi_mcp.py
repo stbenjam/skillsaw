@@ -291,16 +291,21 @@ def test_override_requires_absent_definition_keys(config, override):
     assert (_problem(config) is None) is override
 
 
-def test_override_does_not_reserve_namespace(tmp_path):
+@pytest.mark.parametrize("override_first", [True, False])
+def test_override_reserves_namespace(tmp_path, override_first):
+    # A valid override keeps the global "docs-api" loaded before any project
+    # server, so "docs_api" conflicts with it wherever the override sits.
     root = copy_fixture("mcp-valid", tmp_path)
     path = root / ".pi/mcp.json"
-    path.write_text(
-        json.dumps(
-            {"mcpServers": {"docs-api": {"enabled": False}, "docs_api": {"command": "node"}}}
-        )
-    )
+    entries = [("docs-api", {"enabled": False}), ("docs_api", {"command": "node"})]
+    if not override_first:
+        entries.reverse()
+    path.write_text(json.dumps({"mcpServers": dict(entries)}))
     _, findings = lint(root, "--rule", "pi-mcp-valid")
-    assert findings == []
+    assert messages(findings) == {
+        "Pi skips MCP server 'docs_api': name conflicts with 'docs-api'; "
+        "Pi treats hyphens and underscores as the same namespace"
+    }
 
 
 def test_pi_1_5_oauth_client_registration_cli(tmp_path):
