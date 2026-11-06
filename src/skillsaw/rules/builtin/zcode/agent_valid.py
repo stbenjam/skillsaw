@@ -73,7 +73,11 @@ class ZCodeAgentValidRule(Rule):
             name = block.path.name
             if block.frontmatter_error:
                 loose = zcode_agent_line_values(block.read_frontmatter_text())
-                if all(loose.get(key) for key in REQUIRED_FIELDS):
+                if all(loose.get(key, ("",))[0] for key in REQUIRED_FIELDS):
+                    if "memory" in loose:
+                        value, line = loose["memory"]
+                        # The opening --- is file line 1.
+                        violations.extend(self._memory(name, block, value, line + 1))
                     continue
                 violations.append(
                     self.violation(
@@ -106,14 +110,20 @@ class ZCodeAgentValidRule(Rule):
                         )
                     )
             memory = block.field("memory")
-            if memory is not None and memory.value not in MEMORY_SCOPES:
-                violations.append(
-                    self.violation(
-                        f"Agent {name} 'memory' must be one of {', '.join(MEMORY_SCOPES)}; "
-                        "ZCode ignores the value",
-                        block=block,
-                        line=memory.field_line,
-                        severity=self.scope_severity(Severity.WARNING),
-                    )
-                )
+            if memory is not None:
+                violations.extend(self._memory(name, block, memory.value, memory.field_line))
         return violations
+
+    def _memory(self, name: str, block, value, line) -> List[RuleViolation]:
+        """A ``memory`` value ZCode ignores."""
+        if value in MEMORY_SCOPES:
+            return []
+        return [
+            self.violation(
+                f"Agent {name} 'memory' must be one of {', '.join(MEMORY_SCOPES)}; "
+                "ZCode ignores the value",
+                block=block,
+                line=line,
+                severity=self.scope_severity(Severity.WARNING),
+            )
+        ]

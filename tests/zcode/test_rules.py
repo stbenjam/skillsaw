@@ -203,6 +203,7 @@ class TestAgentValid:
             "---\n"
             "name: reviewer\n"
             "description: Use when: a pull request touches error handling\n"
+            "memory: team\n"
             "---\n\n"
             "Review the diff for swallowed exceptions and silent fallbacks.\n"
         )
@@ -212,9 +213,13 @@ class TestAgentValid:
             "---\n\n"
             "Label the issue and route it to the owning team.\n"
         )
-        (finding,) = findings(lint(tmp_path), "zcode-agent-valid")
-        assert finding["file_path"].endswith("triage.md")
-        assert "ZCode skips the agent" in finding["message"]
+        found = sorted(findings(lint(tmp_path), "zcode-agent-valid"), key=lambda v: v["file_path"])
+        memory, triage = found
+        assert memory["file_path"].endswith("reviewer.md")
+        assert "'memory' must be one of" in memory["message"]
+        assert (memory["line"], memory["severity"]) == (4, "warning")
+        assert triage["file_path"].endswith("triage.md")
+        assert "ZCode skips the agent" in triage["message"]
 
 
 class TestOfficialMarketplaceShape:

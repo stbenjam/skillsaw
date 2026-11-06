@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from skillsaw.paths import (
     Resolver,
@@ -380,11 +380,15 @@ def entry_local_source(entry: Dict[str, Any], base: Path) -> Optional[Path]:
     return None
 
 
-def zcode_agent_line_values(frontmatter: str) -> Dict[str, str]:
-    """Scalar ``key: value`` lines as ZCode's line reader sees them; the last one wins."""
-    values: Dict[str, str] = {}
-    for line in frontmatter.splitlines():
+def zcode_agent_line_values(frontmatter: str) -> Dict[str, Tuple[str, int]]:
+    """Scalar ``key: value`` lines as ZCode's line reader sees them.
+
+    Maps each key to its value and its 1-based line within *frontmatter*;
+    the last line for a key wins, as in ZCode.
+    """
+    values: Dict[str, Tuple[str, int]] = {}
+    for number, line in enumerate(frontmatter.splitlines(), start=1):
         match = _AGENT_FRONTMATTER_LINE_RE.match(line.rstrip())
         if match:
-            values[match.group(1)] = match.group(2).strip().strip("'\"").strip()
+            values[match.group(1)] = (match.group(2).strip().strip("'\"").strip(), number)
     return values
