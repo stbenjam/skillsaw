@@ -74,7 +74,8 @@ this does not assert that CLI 2.x discovers Markdown or nested agents. Recursive
 steering inspection covers the documented `file://.kiro/steering/**/*.md` resource
 pattern. Kiro's own steering discovery reads only the top level of
 `.kiro/steering/` ([kirodotdev/Kiro#10448](https://github.com/kirodotdev/Kiro/issues/10448));
-a nested file loads only through an agent's `resources` glob.
+a nested file loads only through an agent's `resources` entry, either a
+literal `file://` path or a glob.
 
 CLI 2.x's `allowedTools`, `toolsSettings`, `toolAliases`, and `keyboardShortcut`
 are left intact. V3's `permissions` and both versions' hook fields are left
