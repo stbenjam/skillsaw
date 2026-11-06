@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": ["Edit", "Write"],
+        "hooks": [
+          {"type": "command", "command": "make fmt"}
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {"type": "command", "command": "make check-generated"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": null,
+        "hooks": [
+          {"type": "command", "command": "make lint"}
+        ]
+      }
+    ]
+  }
+}

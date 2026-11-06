@@ -31,6 +31,19 @@ def is_valid_plugin_root(plugin_root: str) -> bool:
     )
 
 
+def _is_installable_local_source(source: str, plugin_root) -> bool:
+    """Whether Claude Code installs a relative string source as written.
+
+    Measured against ``claude plugin install`` 2.1.319: ``.`` and
+    ``./``-prefixed paths install; a bare directory name installs only
+    when ``metadata.pluginRoot`` is set; any other relative path, such as
+    ``plugins/foo``, is refused.
+    """
+    if source == "." or source.startswith("./"):
+        return True
+    return bool(plugin_root) and bool(source) and "/" not in source and "\\" not in source
+
+
 # Required fields for each object source type per the plugin-marketplaces
 # docs; unknown types get a warning rather than an error so a new source
 # type added upstream never breaks existing marketplaces.
@@ -339,15 +352,21 @@ class MarketplaceJsonValidRule(Rule):
                         file_path=marketplace_file,
                     )
                 )
-            elif not source.startswith("./") and not plugin_root:
-                # With metadata.pluginRoot set, bare names (e.g. "formatter")
-                # are the documented form, so no style nudge applies.
+            elif not _is_installable_local_source(source, plugin_root):
+                # Claude Code's marketplace schema refuses the entry at
+                # install time ("must start with './'"), so only that entry
+                # fails to install while the rest of the catalog loads.
+                bare_name = bool(source) and "/" not in source and "\\" not in source
+                problem = (
+                    f"bare name '{source}' needs metadata.pluginRoot"
+                    if bare_name
+                    else f"relative path '{source}' must start with './'"
+                )
                 violations.append(
                     self.violation(
-                        f"plugins[{idx}].source: relative path '{source}' should "
-                        "start with './'",
+                        f"plugins[{idx}].source: {problem} — Claude Code refuses to "
+                        "install this plugin",
                         file_path=marketplace_file,
-                        severity=Severity.INFO,
                     )
                 )
             return violations

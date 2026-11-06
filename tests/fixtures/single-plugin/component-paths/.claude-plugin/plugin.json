@@ -1,0 +1,15 @@
+{
+  "name": "incident-kit",
+  "description": "Open, track and close production incidents from Claude Code",
+  "version": "3.1.0",
+  "author": {"name": "Site Reliability"},
+  "commands": ["./commands/open-incident.md", "./commands/close-incident.md"],
+  "agents": "../shared/agents/scribe.md",
+  "userConfig": {
+    "pager_url": {
+      "type": "string",
+      "title": "Pager API URL",
+      "description": "Base URL of the paging service"
+    }
+  }
+}

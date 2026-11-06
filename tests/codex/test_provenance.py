@@ -687,17 +687,20 @@ class TestDualManifestBackwardCompat:
         assert context.lint_tree.find(CodexHooksBlock) == []
 
     def test_dual_manifest_hooks_keep_claude_results(self, tmp_path):
+        """Claude Code also ignores a non-string matcher, so Claude's rule
+        reports it — once, because Codex's rule finds no block of its own
+        here and says nothing about a file Claude's rule has judged."""
         repo, context, claude_hooks, codex_hooks, _ = self._fixture(tmp_path)
         found = messages(claude_hooks().check(context))
-        assert not any("matcher" in m and "must be a string" in m for m in found), found
-        # Codex's rule finds no block of its own here, so it says nothing
-        # at all about a file Claude's rule has already judged.
+        assert sum("matcher" in m and "must be a string" in m for m in found) == 1, found
         assert codex_hooks().check(context) == []
 
     def test_dual_manifest_mcp_keeps_claude_results(self, tmp_path):
+        """Claude's plugin loader drops a server with an empty command, so
+        the Claude-family block reports it in a dual plugin too."""
         repo, context, _, _, mcp_rule = self._fixture(tmp_path)
         found = messages(mcp_rule().check(context))
-        assert not any("non-empty string" in m for m in found), found
+        assert sum("non-empty string" in m for m in found) == 1, found
 
     def test_codex_only_twin_gets_the_tightened_checks(self, tmp_path):
         """The same directory minus `.claude-plugin/` crosses the gate:

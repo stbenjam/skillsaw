@@ -2,7 +2,6 @@
 Tests for builtin rules
 """
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -574,16 +573,39 @@ def test_marketplace_source_path_traversal_fails(temp_dir):
     assert traversal[0].severity == Severity.ERROR
 
 
-def test_marketplace_source_missing_dot_slash_info(temp_dir):
-    """A relative source without the ./ prefix gets a style nudge, not an error."""
+@pytest.mark.parametrize(
+    "plugin_root,source,installable",
+    [
+        # Measured with ``claude plugin install`` and ``claude plugin
+        # validate`` 2.1.319: the marketplace schema requires "./" except
+        # for "." and, under metadata.pluginRoot, a bare directory name.
+        (None, "./plugins/my-plugin", True),
+        (None, ".", True),
+        (None, "plugins/my-plugin", False),
+        (None, "my-plugin", False),
+        ("./plugins", "./plugins/my-plugin", True),
+        ("./plugins", "my-plugin", True),
+        ("./plugins", "plugins/my-plugin", False),
+        ("./plugins", "nested\\my-plugin", False),
+        ("./plugins", "", False),
+    ],
+)
+def test_marketplace_relative_source_must_be_installable(
+    temp_dir, plugin_root, source, installable
+):
+    """Claude Code refuses to install an entry whose source it cannot read."""
     repo = _marketplace_with(
         temp_dir,
-        plugins=[{"name": "my-plugin", "source": "plugins/my-plugin"}],
+        plugins=[{"name": "my-plugin", "source": source}],
+        **({"metadata": {"pluginRoot": plugin_root}} if plugin_root else {}),
     )
     violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
-    style = [v for v in violations if "start with './'" in v.message]
-    assert len(style) == 1
-    assert style[0].severity == Severity.INFO
+    refused = [v for v in violations if "refuses to install" in v.message]
+    if installable:
+        assert refused == []
+    else:
+        assert len(refused) == 1
+        assert refused[0].severity == Severity.ERROR
 
 
 def test_marketplace_plugin_root_bare_source_no_style_nudge(temp_dir):

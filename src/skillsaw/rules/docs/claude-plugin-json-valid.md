@@ -11,6 +11,16 @@ When present, `version` must be a string. Claude Code accepts release labels
 such as `"release-candidate"` and calendar versions such as `"2026.10"`
 as well as semantic versions.
 
+Component paths must resolve. A string path in `commands`, `agents`,
+`skills`, `hooks`, `mcpServers`, `outputStyles` or `lspServers` that does
+not exist, is absolute, or climbs out of the plugin with `..` fails to
+load. An MCP server that reads `${user_config.KEY}` needs `KEY` declared
+under `userConfig`. Otherwise Claude Code cannot resolve it on a fresh
+install and drops the server. The check reads the inline `mcpServers`
+map and the plugin's `.mcp.json`; it does not read a server's `channels`
+entry. `claude plugin validate` makes the same checks; skillsaw repeats
+them for CI runs and editors without Claude Code.
+
 ## Examples
 
 **Bad:**

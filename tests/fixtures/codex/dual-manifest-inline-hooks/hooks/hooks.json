@@ -2,7 +2,7 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": [],
+        "matcher": "Bash",
         "hooks": [
           {"type": "command", "command": "echo post-tool bookkeeping"}
         ]

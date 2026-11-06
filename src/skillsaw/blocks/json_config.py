@@ -1123,6 +1123,11 @@ class McpShapeDeferral:
         return not self.repo_types or not self.repo_types.isdisjoint(active_types)
 
 
+#: Every MCP connection field a server can name: a ``command`` to spawn or
+#: a remote ``url``.
+ALL_CONNECTION_FIELDS: FrozenSet[str] = frozenset({"command", "url"})
+
+
 class McpConfigRole:
     """Host-neutral interface shared by JSON and embedded-YAML MCP nodes."""
 
@@ -1150,13 +1155,14 @@ class McpConfigRole:
     #: reads; an editor that loads its own MCP config has no such built-ins,
     #: so shadowing is not a thing that can happen there.
     claude_builtins_reserved: ClassVar[bool] = True
-    #: Whether the connection field must be *usable* and not merely present.
+    #: Connection fields that must be *usable* and not merely present.
     #: ``{"command": []}`` names nothing a host can spawn, so the server
-    #: never starts. Left False for the Claude-family files, whose results
-    #: predate the check and are held stable (a Codex-only plugin opts in
-    #: separately, per-path); the editor locations are new surfaces with no
-    #: established results to preserve, so they require it from the start.
-    require_usable_connection: ClassVar[bool] = False
+    #: never starts. Empty for a host that loads such a server without
+    #: complaint. :class:`McpBlock` lists ``command`` for the Claude family:
+    #: its plugin loader drops a server whose command is empty or not a
+    #: string, while an empty ``url`` passes ``claude plugin validate`` and
+    #: is a common placeholder for a connector the user fills in.
+    usable_connection_fields: ClassVar[FrozenSet[str]] = frozenset()
     #: Per-server maps whose values may hold a committed credential, as
     #: ``(key, is_http_header)``. Declared on the block because the key names
     #: are the host's: every Claude-family host spells the environment map
@@ -1264,6 +1270,7 @@ class McpBlock(JsonConfigBlock, McpConfigRole):
     """JSON MCP configuration at a host-owned path or inline manifest field."""
 
     category: str = "mcp"
+    usable_connection_fields: ClassVar[FrozenSet[str]] = frozenset({"command"})
 
 
 @dataclass(eq=False)
@@ -1296,7 +1303,7 @@ class CursorMcpBlock(McpBlock):
 
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
-    require_usable_connection: ClassVar[bool] = True
+    usable_connection_fields: ClassVar[FrozenSet[str]] = ALL_CONNECTION_FIELDS
     strict_json: ClassVar[bool] = True
 
     def tree_label(self) -> str:
@@ -1326,7 +1333,7 @@ class GrokMcpBlock(McpBlock):
     """
 
     claude_builtins_reserved: ClassVar[bool] = False
-    require_usable_connection: ClassVar[bool] = True
+    usable_connection_fields: ClassVar[FrozenSet[str]] = ALL_CONNECTION_FIELDS
     #: Grok's parser refuses a bare ``NaN``/``Infinity`` token and a
     #: duplicated key — measured on a plugin manifest, which fails to load
     #: and takes the whole plugin with it. Only Grok reads this file, and it
@@ -1355,7 +1362,7 @@ class VsCodeMcpBlock(McpBlock):
     allow_bare_server_map: ClassVar[bool] = False
     non_server_keys: ClassVar[frozenset] = frozenset({"inputs", "sandbox"})
     claude_builtins_reserved: ClassVar[bool] = False
-    require_usable_connection: ClassVar[bool] = True
+    usable_connection_fields: ClassVar[FrozenSet[str]] = ALL_CONNECTION_FIELDS
     strict_json: ClassVar[bool] = True
 
     def tree_label(self) -> str:
@@ -1554,7 +1561,7 @@ class CopilotAgentMcpBlock(McpConfigRole, LintTarget):
     source_line: Optional[int] = None
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
-    require_usable_connection: ClassVar[bool] = True
+    usable_connection_fields: ClassVar[FrozenSet[str]] = ALL_CONNECTION_FIELDS
     surface_rule: ClassVar[Optional[str]] = "copilot-agent-valid"
     type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({"local": "stdio"})
 
@@ -1626,7 +1633,7 @@ class AntigravityMcpBlock(McpBlock):
     #: Measured: a server with neither ``command`` nor ``serverUrl`` loads
     #: without any ``agy`` complaint, so "unusable connection" is not a
     #: defect this host has.
-    require_usable_connection: ClassVar[bool] = False
+    usable_connection_fields: ClassVar[FrozenSet[str]] = frozenset()
     #: Measured: a comment or a trailing comma is exit 1, not a warning.
     strict_json: ClassVar[bool] = True
     #: Go accepts duplicate keys. Server fields also match without regard

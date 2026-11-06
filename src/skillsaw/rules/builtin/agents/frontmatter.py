@@ -2,7 +2,6 @@
 Rule for validating agent file frontmatter
 """
 
-import re
 from collections import defaultdict
 from pathlib import Path
 from typing import List
@@ -37,14 +36,16 @@ class AgentFrontmatterRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        project_dir = (
-            context.root_path
-            if context.root_path.name == ".claude"
-            else context.root_path / ".claude"
-        )
-        project_owner = context.resolve_path(project_dir)
-
         for block in self.scoped_find(context, AgentBlock):
+            # The project .claude directory also has a plugin owner. An
+            # explicit plugin declaration permits fallback even at that path.
+            owner = block.plugin_owner
+            plugin_agent = owner is not None and not context.is_project_claude_dir(owner)
+            # Claude Code skips a project agent with unparseable frontmatter
+            # or no description, but loads a plugin agent under its filename
+            # either way, so there the finding is about routing, not loading.
+            severity = self.scope_severity(Severity.WARNING) if plugin_agent else None
+
             if block.frontmatter_error:
                 # fix() only adds missing frontmatter/fields — malformed YAML
                 # needs a human.
@@ -53,6 +54,7 @@ class AgentFrontmatterRule(Rule):
                         block.frontmatter_error,
                         file_path=block.path,
                         line=block.frontmatter_error_line,
+                        severity=severity,
                         block=block,
                         fixable=False,
                     )
@@ -61,16 +63,12 @@ class AgentFrontmatterRule(Rule):
 
             if not block.has_frontmatter:
                 violations.append(
-                    self.violation("Missing frontmatter", file_path=block.path, block=block)
+                    self.violation(
+                        "Missing frontmatter", file_path=block.path, severity=severity, block=block
+                    )
                 )
                 continue
 
-            # The project .claude directory also has a plugin owner. An
-            # explicit plugin declaration permits fallback even at that path.
-            owner = block.plugin_owner
-            plugin_agent = owner is not None and (
-                owner != project_owner or context.provenance(owner).claude_plugin_declared
-            )
             if not plugin_agent and not block.field("name"):
                 violations.append(
                     self.violation(
@@ -81,7 +79,10 @@ class AgentFrontmatterRule(Rule):
             if not block.field("description"):
                 violations.append(
                     self.violation(
-                        "Missing 'description' in frontmatter", file_path=block.path, block=block
+                        "Missing 'description' in frontmatter",
+                        file_path=block.path,
+                        severity=severity,
+                        block=block,
                     )
                 )
 

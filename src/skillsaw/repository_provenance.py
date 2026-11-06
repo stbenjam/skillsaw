@@ -287,6 +287,22 @@ class RepositoryProvenanceMixin:
             resolved = self._resolve_cache[path] = safe_resolve(path)
             return resolved
 
+    def is_project_claude_dir(self, path: Path) -> bool:
+        """Whether *path* is the project's ``.claude/`` directory, not a plugin.
+
+        Discovery gives the project ``.claude/`` a plugin container so its
+        agents and commands have an owner, but Claude Code reads it as
+        project configuration: it needs no manifest, README or plugin name.
+        A ``.claude-plugin/`` marker inside it makes it a declared plugin.
+        """
+        project = self.root_path if self.root_path.name == ".claude" else self.root_path / ".claude"
+        resolved = self.resolve_path(path)
+        return (
+            resolved is not None
+            and resolved == self.resolve_path(project)
+            and not self.provenance(path).claude_plugin_declared
+        )
+
     def provenance(self, plugin_dir: Path) -> PluginProvenance:
         """The :class:`PluginProvenance` for *plugin_dir*, cached per path.
 

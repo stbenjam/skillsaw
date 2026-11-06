@@ -27,7 +27,10 @@ class CommandFrontmatterRule(Rule):
         return "Command files must have valid frontmatter with description"
 
     def default_severity(self) -> Severity:
-        return Severity.ERROR
+        # Claude Code loads a command without frontmatter; the description
+        # only feeds help text and routing (``claude plugin validate``
+        # reports it as a warning).
+        return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         from skillsaw.rules.builtin.content_analysis import CommandBlock

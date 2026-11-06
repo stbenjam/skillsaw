@@ -311,7 +311,7 @@ class TestSinglePlugin:
         assert "claude-agent-frontmatter" in ids
 
         s = summary(r)
-        assert s["errors"] >= 4
+        assert s["errors"] >= 2
         assert s["warnings"] >= 4
 
     def test_broken_plugin_violation_details(self, tmp_path):
@@ -1097,6 +1097,140 @@ class TestMarketplace:
         assert r["rc"] == 1
         assert "claude-marketplace-json-valid" in rule_ids(r)
         assert len(r["out"]["stats"]["plugins"]) == 0
+
+
+# ── Agreement with Claude Code's loader ──────────────────────────
+#
+# Each case was measured against Claude Code 2.1.319 (`claude plugin
+# validate`, `claude plugin install`, or a session's init event); see
+# docs/claude-validate.md and tests/claude_conformance.json.
+
+
+def _findings(r, rule_id):
+    return sorted(
+        (v["severity"], v["file_path"], v["message"]) for v in by_rule(r).get(rule_id, [])
+    )
+
+
+@pytest.mark.integration
+class TestClaudeLoaderAgreement:
+
+    def test_unprefixed_marketplace_sources_are_refused(self, tmp_path):
+        """`claude plugin install` refuses `plugins/x` and a bare name with
+        no pluginRoot; the `./` entry installs."""
+        repo = copy_fixture("marketplace/unprefixed-sources", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        catalog = ".claude-plugin/marketplace.json"
+        assert _findings(r, "claude-marketplace-json-valid") == [
+            (
+                "error",
+                catalog,
+                "plugins[1].source: relative path 'plugins/changelog-check' must start "
+                "with './' — Claude Code refuses to install this plugin",
+            ),
+            (
+                "error",
+                catalog,
+                "plugins[2].source: bare name 'version-bump' needs metadata.pluginRoot "
+                "— Claude Code refuses to install this plugin",
+            ),
+        ]
+
+    def test_non_string_hook_matchers_are_reported(self, tmp_path):
+        """Claude Code ignores an entry whose matcher is not a string."""
+        repo = copy_fixture("hooks/non-string-matcher", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        tail = " — Claude Code ignores this entry and runs none of its hooks"
+        assert _findings(r, "claude-hooks-valid") == [
+            (
+                "error",
+                "hooks/hooks.json",
+                "Event 'PostToolUse[0].matcher' must be a string, got array" + tail,
+            ),
+            (
+                "error",
+                "hooks/hooks.json",
+                "Event 'Stop[0].matcher' must be a string, got null" + tail,
+            ),
+        ]
+
+    def test_unusable_mcp_commands_are_reported(self, tmp_path):
+        """The plugin loader drops a server whose command is empty or an array."""
+        repo = copy_fixture("single-plugin/mcp-unusable-command", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert _findings(r, "mcp-valid-json") == [
+            ("error", ".mcp.json", "MCP server 'metrics' 'command' must be a non-empty string"),
+            ("error", ".mcp.json", "MCP server 'search' 'command' must be a non-empty string"),
+        ]
+
+    def test_project_agent_without_description_is_an_error(self, tmp_path):
+        """Claude Code skips the project agent but loads the command."""
+        repo = copy_fixture("dot-claude/frontmatter-loading", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert _findings(r, "claude-agent-frontmatter") == [
+            ("error", ".claude/agents/ledger-reviewer.md", "Missing 'description' in frontmatter")
+        ]
+        assert _findings(r, "claude-command-frontmatter") == [
+            ("warning", ".claude/commands/settle-dry-run.md", "Missing frontmatter")
+        ]
+
+    def test_plugin_agents_and_commands_without_frontmatter_warn(self, tmp_path):
+        """Claude Code loads plugin agents and commands without frontmatter."""
+        repo = copy_fixture("single-plugin/broken", tmp_path)
+        r = run_lint(repo)
+        assert _findings(r, "claude-agent-frontmatter") == [
+            ("warning", "agents/broken-agent.md", "Missing 'description' in frontmatter")
+        ]
+        assert _findings(r, "claude-command-frontmatter") == [
+            ("warning", "commands/BadName.md", "Missing frontmatter")
+        ]
+
+    def test_project_claude_dir_is_not_a_plugin(self, tmp_path):
+        """A single-plugin repository's own .claude/ is project configuration:
+        Claude Code needs no manifest, README or plugin name there."""
+        repo = copy_fixture("single-plugin/with-project-claude", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        plugin_rules = {
+            "claude-plugin-json-required",
+            "claude-plugin-naming",
+            "claude-plugin-readme",
+        }
+        assert [v for v in violations(r) if v["rule_id"] in plugin_rules] == []
+
+    def test_component_paths_and_user_config_must_resolve(self, tmp_path):
+        """A listed component that is missing or outside the plugin fails to
+        load, and an MCP server reading an undeclared user_config key is
+        dropped; the declared key and the existing command pass."""
+        repo = copy_fixture("single-plugin/component-paths", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        manifest = ".claude-plugin/plugin.json"
+        assert _findings(r, "claude-plugin-json-valid") == [
+            (
+                "error",
+                manifest,
+                "'agents' path '../shared/agents/scribe.md' leaves the plugin directory "
+                "— Claude Code does not load it",
+            ),
+            (
+                "error",
+                manifest,
+                "'commands' path './commands/close-incident.md' does not exist — "
+                "Claude Code reports a load failure",
+            ),
+            (
+                "error",
+                ".mcp.json",
+                "MCP configuration references user_config 'pager_token', which plugin.json "
+                "does not declare under 'userConfig' — Claude Code cannot resolve it on a "
+                "fresh install and drops the server",
+            ),
+        ]
 
 
 # ── Agentskills ──────────────────────────────────────────────────
@@ -3721,8 +3855,9 @@ class TestEditorTools:
             "MCP server 'empty' 'command' must be a non-empty string",
         ]
 
-    def test_an_unusable_command_in_mcp_json_keeps_the_established_result(self, tmp_path):
-        """The Claude-family presence check is unchanged — no new error on upgrade."""
+    def test_an_unusable_command_in_mcp_json_is_reported(self, tmp_path):
+        """Claude Code's plugin loader drops a server whose command is empty,
+        so the Claude-family file gets the usable-connection check too."""
         repo = self._mcp_repo(
             tmp_path,
             "unusableroot",
@@ -3730,7 +3865,10 @@ class TestEditorTools:
             {"mcpServers": {"blank": {"command": ""}}},
         )
 
-        assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == []
+        found = by_rule(run_lint(repo)).get("mcp-valid-json", [])
+        assert [(v["severity"], v["message"]) for v in found] == [
+            ("error", "MCP server 'blank' 'command' must be a non-empty string")
+        ]
 
     def test_mcp_prohibited_sanitizes_the_names_it_lists(self, tmp_path):
         """The policy rule is a second sink for the same author-controlled text."""
@@ -5759,7 +5897,6 @@ class TestCliOverrides:
 
         r = run_lint(repo, "--type", "single-plugin", "--rule", "claude-command-frontmatter")
 
-        assert r["rc"] == 1
         assert "claude-command-frontmatter" in rule_ids(r)
         assert any("foo.md" in v["file_path"] for v in by_rule(r)["claude-command-frontmatter"])
         assert r["out"]["stats"]["repo_types"] == ["single-plugin"]
@@ -10326,7 +10463,7 @@ class TestCodexRootWithClaudeMarketplace:
     def test_claude_entry_without_manifest_is_not_reported(self, tmp_path):
         """The Claude marketplace entry is the manifest when plugin.json is absent."""
         repo = copy_fixture("codex/root-plugin-claude-marketplace", tmp_path)
-        (repo / "plugins/claude-helper/.claude-plugin/plugin.json").unlink()
+        (repo / "plugins/review-helper/.claude-plugin/plugin.json").unlink()
 
         result = run_cli(
             [
@@ -13218,7 +13355,9 @@ class TestCodexInstructionSelection:
                 f"plugins: false\ncodex-instructions:\n  cwd: {path.parent.name}\n"
             )
         rule_id = f"claude-{kind}-frontmatter"
-        result = run_lint(repo, "--rule", rule_id)
+        # Plugin agents and commands load without a description, so the
+        # finding is a warning; --strict keeps it failing.
+        result = run_lint(repo, "--rule", rule_id, "--strict")
         assert result["rc"] == 1, result["stdout"] + result["stderr"]
         findings = violations(result)
         assert len(findings) == 1
