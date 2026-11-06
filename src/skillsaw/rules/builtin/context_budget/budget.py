@@ -17,6 +17,7 @@ from skillsaw.rules.builtin.content_analysis import (
     GrokCommandBlock,
     OpenCodeCommandBlock,
 )
+from skillsaw.blocks import ZCodeCommandBlock
 
 # Anthropic recommends keeping instruction files under ~5k tokens to avoid
 # attention degradation.  These defaults use 6k warn / 12k error for primary
@@ -152,6 +153,7 @@ class ContextBudgetRule(Rule):
             CopilotPromptBlock: "command-description",
             OpenCodeCommandBlock: "command-description",
             GrokCommandBlock: "command-description",
+            ZCodeCommandBlock: "command-description",
         }
         for block_type, category in desc_categories.items():
             warn_limit, error_limit = limits.get(category, (None, None))

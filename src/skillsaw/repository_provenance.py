@@ -121,6 +121,17 @@ class PluginProvenance:
         return "zcode" in self.ecosystems
 
     @property
+    def zcode_only(self) -> bool:
+        """ZCode claims the directory and Claude does not.
+
+        Same shape and purpose as :attr:`grok_only`: ZCode scans a plugin's
+        skills without following symbolic links and rejects component paths
+        that leave the plugin, so a ZCode-only package gets the containment
+        boundary, while a dual-manifest one keeps Claude's looser reading.
+        """
+        return self.zcode and not self.claude
+
+    @property
     def pi(self) -> bool:
         return "pi" in self.ecosystems
 
@@ -202,6 +213,8 @@ class RepositoryProvenanceMixin:
         def grok_plugin_roots(self) -> List[Path]: ...
 
         def grok_plugin_root_set(self) -> Set[Path]: ...
+
+        def zcode_plugin_roots(self) -> List[Path]: ...
 
         def is_codex_installed_plugin(self, plugin_dir: Path) -> bool: ...
 
@@ -553,6 +566,7 @@ class RepositoryProvenanceMixin:
                 | set(self.codex_plugin_roots())
                 | set(self._agent_plugin_root_set())
                 | {root for root in self.grok_plugin_roots() if self.provenance(root).grok_only}
+                | {root for root in self.zcode_plugin_roots() if self.provenance(root).zcode_only}
                 | {
                     root
                     for root in self.antigravity_plugin_roots()
@@ -599,6 +613,7 @@ class RepositoryProvenanceMixin:
             or bool(self._agent_plugin_root_set())
             or bool(self.openclaw_plugin_roots())
             or bool(self.grok_plugin_roots())
+            or bool(self.zcode_plugin_roots())
             or bool(self.antigravity_plugin_roots())
         )
 
@@ -621,6 +636,7 @@ class RepositoryProvenanceMixin:
         return (
             record.codex_only
             or record.grok_only
+            or record.zcode_only
             or record.antigravity_only
             or (record.openclaw and not record.claude)
             or record.cursor_only

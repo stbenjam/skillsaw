@@ -230,3 +230,54 @@ class TestClaudeStandsDown:
             "claude-hooks-valid",
             "claude-marketplace-json-valid",
         } & rule_ids(report)
+
+
+class TestReviewRegressions:
+    def test_zcode_only_plugin_declares_a_containment_boundary(self, tmp_path):
+        """ZCode rejects component paths that leave the plugin and scans its
+        skills without following symlinks, so a ZCode-only package gets the
+        boundary Grok-only and Codex packages get; a dual-manifest package
+        keeps Claude's looser reading."""
+        zcode_only = _plugin(tmp_path, "tide-charts")
+        dual = _plugin(tmp_path, "berth-notes")
+        write_json(dual / ".claude-plugin" / "plugin.json", MANIFEST)
+        context = RepositoryContext(tmp_path)
+        assert context.provenance(zcode_only).zcode_only
+        assert context.contained_plugin_owning(zcode_only / "skills") == zcode_only.resolve()
+        assert not context.provenance(dual).zcode_only
+        assert context.contained_plugin_owning(dual / "skills") is None
+
+    def test_excluding_the_catalog_keeps_skills_of_a_nested_zcode_plugin(self, tmp_path):
+        """Dropping a catalog claim prunes only skills no active plugin owns."""
+        outer = tmp_path / "packages" / "outer"
+        inner = outer / "inner"
+        write_json(inner / ".zcode-plugin" / "plugin.json", {"name": "inner"})
+        skill = inner / "skills" / "berth-log"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: berth-log\ndescription: Logs berth moves. Use when a vessel "
+            "changes berth.\n---\n\nAppend the move to the log.\n"
+        )
+        write_json(
+            tmp_path / "marketplace.json",
+            {"name": "harbor", "plugins": [{"name": "outer", "source": "./packages/outer"}]},
+        )
+        context = RepositoryContext(tmp_path)
+        assert skill in context.skills
+        # Narrowing an existing context is the path that prunes.
+        context.exclude_patterns.append("marketplace.json")
+        context.apply_excludes()
+        assert outer.resolve() not in context._zcode_claim_set()
+        assert skill in context.skills
+
+
+def test_long_zcode_command_description_is_budgeted(tmp_path):
+    command = tmp_path / ".zcode" / "commands" / "sync.md"
+    command.parent.mkdir(parents=True)
+    command.write_text("---\ndescription: " + "sync the branch " * 150 + "\n---\n\nSync.\n")
+    found = [
+        v
+        for v in lint(tmp_path)["violations"]
+        if v["rule_id"] == "context-budget" and "command-description" in v["message"]
+    ]
+    assert found and found[0]["file_path"].endswith("sync.md")

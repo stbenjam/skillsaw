@@ -29,6 +29,7 @@ class RepositoryZCodeMixin:
     if TYPE_CHECKING:
         root_path: Path
         plugins: List[Path]
+        codex_plugins: List[Path]
         skills: List[Path]
         zcode_plugins: List[Path]
         _zcode_catalog_paths: Optional[List[Path]]
@@ -41,6 +42,14 @@ class RepositoryZCodeMixin:
         def agent_tool_dirs(self, name: str) -> List[Path]: ...
 
         def is_path_excluded(self, path: Path) -> bool: ...
+
+        def agent_plugin_roots(self) -> List[Path]: ...
+
+        def grok_plugin_roots(self) -> List[Path]: ...
+
+        def antigravity_plugin_roots(self) -> List[Path]: ...
+
+        def pi_discovery_roots(self) -> List[Path]: ...
 
         @staticmethod
         def _under_any(path: Path, roots: Set[Path]) -> bool: ...
@@ -163,7 +172,22 @@ class RepositoryZCodeMixin:
             self.zcode_plugins = self._discover_zcode_plugins()
         dropped = before - self._zcode_claim_set()
         if dropped:
-            kept = {r for p in self.plugins if (r := safe_resolve(p)) is not None}
+            # Every still-active owner, as Grok's prune collects them: a
+            # skill under a nested ZCode plugin, or one another ecosystem
+            # also claims, keeps its owner and stays linted.
+            kept = {
+                r
+                for p in (
+                    *self.plugins,
+                    *self.codex_plugins,
+                    *self.agent_plugin_roots(),
+                    *self.grok_plugin_roots(),
+                    *self._zcode_claim_set(),
+                    *self.antigravity_plugin_roots(),
+                    *self.pi_discovery_roots(),
+                )
+                if (r := safe_resolve(p)) is not None
+            }
             self.skills = [
                 skill
                 for skill in self.skills
