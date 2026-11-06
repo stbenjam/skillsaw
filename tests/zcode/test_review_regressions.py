@@ -165,3 +165,27 @@ def test_plugin_agents_need_a_name_in_zcode_plugins_only(tmp_path):
     found = messages(lint(tmp_path), "zcode-agent-valid")
     assert any("tide-reviewer.md needs a non-empty 'name'" in m for m in found)
     assert not any("berth-reviewer.md" in m for m in found)
+
+
+def test_excluding_another_ecosystems_catalog_keeps_zcode_owned_skills(tmp_path):
+    """Every skill prune keeps skills a ZCode plugin still owns."""
+    shared = _plugin(tmp_path / "packages" / "shared", name="shared")
+    skill = shared / "skills" / "berth-log"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: berth-log\ndescription: Logs berth moves. Use when a vessel changes "
+        "berth.\n---\n\nAppend the move to the log.\n"
+    )
+    write_json(
+        tmp_path / ".grok-plugin" / "marketplace.json",
+        {
+            "name": "harbor",
+            "owner": {"name": "Harbor"},
+            "plugins": [{"name": "shared", "source": "./packages/shared"}],
+        },
+    )
+    context = RepositoryContext(tmp_path)
+    assert skill in context.skills
+    context.exclude_patterns.append(".grok-plugin/**")
+    context.apply_excludes()
+    assert skill in context.skills

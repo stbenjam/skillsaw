@@ -475,16 +475,7 @@ class RepositoryContext(
                 self._codex_roots = None
             if self.agent_plugins != agent_plugins_before or codex_catalog_changed:
                 self._agent_plugin_roots = None
-                active_roots = {
-                    root
-                    for p in (
-                        *self.agent_plugin_roots(),
-                        *self.codex_plugins,
-                        *self.plugins,
-                        *self.pi_discovery_roots(),
-                    )
-                    if (root := safe_resolve(p)) is not None
-                }
+                active_roots = self._live_plugin_roots()
                 dropped_roots = {
                     root
                     for p in agent_roots_before
@@ -694,6 +685,27 @@ class RepositoryContext(
             roots.update(self._agent_plugin_claim_set())
             self._agent_plugin_roots = roots
         return self._agent_plugin_roots
+
+    def _live_plugin_roots(self) -> Set[Path]:
+        """Every plugin root some ecosystem still claims, resolved.
+
+        The one owner set every skill prune keeps skills under. Each prune
+        used to list the owners itself, so a new ecosystem missing from one
+        list had its skills dropped when another ecosystem's claim went away.
+        """
+        return {
+            root
+            for p in (
+                *self.plugins,
+                *self.codex_plugins,
+                *self.agent_plugin_roots(),
+                *self._grok_claim_set(),
+                *self._zcode_claim_set(),
+                *self.antigravity_plugin_roots(),
+                *self.pi_discovery_roots(),
+            )
+            if (root := safe_resolve(p)) is not None
+        }
 
     def distinct_plugin_dirs(self) -> List[Path]:
         """Every discovered plugin directory, deduplicated across ecosystems.
