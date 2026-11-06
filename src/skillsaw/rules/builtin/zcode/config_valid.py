@@ -12,7 +12,8 @@ from typing import Any, Dict, List
 from skillsaw.blocks import ZCodeConfigHooksBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
-from skillsaw.formats.zcode import HOOK_EVENTS
+from skillsaw.formats.zcode import CONFIG_FILENAME, HOOK_EVENTS, TOOL_DIR_NAME
+from skillsaw.paths import contained_resolve, safe_exists, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import ZCODE_PROJECT_REPO_TYPES, is_positive_number, matcher_group_problems
@@ -105,6 +106,20 @@ class ZCodeConfigValidRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
+        root = safe_resolve(context.root_path)
+        for zcode_dir in context.agent_tool_dirs(TOOL_DIR_NAME):
+            config = zcode_dir / CONFIG_FILENAME
+            if root is not None and safe_exists(config) and contained_resolve(config, root) is None:
+                # ZCode follows the link and runs what it configures; the
+                # tree does not attach it, so say so instead of going quiet.
+                violations.append(
+                    self.violation(
+                        "config.json is a symlink out of the repository: ZCode loads its "
+                        "hooks and MCP servers, but skillsaw cannot lint them. Commit the "
+                        "file itself",
+                        config,
+                    )
+                )
         for block in context.lint_tree.find(ZCodeConfigHooksBlock):
             if block.parse_error:
                 violations.append(

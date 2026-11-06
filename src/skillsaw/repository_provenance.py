@@ -287,6 +287,8 @@ class RepositoryProvenanceMixin:
                 *self._grok_claim_set(),
                 *self._zcode_claim_set(),
                 *self.antigravity_plugin_roots(),
+                *self.cursor_plugin_roots(),
+                *self.openclaw_plugin_roots(),
                 *self.pi_discovery_roots(),
             )
             if (root := safe_resolve(p)) is not None

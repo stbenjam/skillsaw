@@ -266,6 +266,12 @@ class DescriptionRoutingRule(Rule):
                 # description owns that finding (``_DESCRIPTION_OWNERS``).
                 # Routing keeps the check when that rule is off.
                 owner_rule = _DESCRIPTION_OWNERS.get(block_type)
+                if owner_rule is None and block_type is AgentBlock:
+                    # A plugin agent is a shared AgentBlock; when ZCode owns
+                    # the plugin, zcode-agent-valid reports its description.
+                    owner_dir = block.provenance_dir()
+                    if owner_dir is not None and context.provenance(owner_dir).zcode:
+                        owner_rule = "zcode-agent-valid"
                 owns_description = owner_rule is not None and self.surface_rule_enabled(owner_rule)
                 if not block.has_frontmatter:
                     # A parsed JSON root without an object is a container

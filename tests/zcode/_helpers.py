@@ -46,3 +46,18 @@ def write_json(path: Path, data: Any) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n")
     return path
+
+
+def zcode_plugin(root: Path, name: str = "tide-charts", **manifest: Any) -> Path:
+    """Write ``<root>/.zcode-plugin/plugin.json`` and return *root*."""
+    write_json(root / ".zcode-plugin" / "plugin.json", {"name": name, **manifest})
+    return root
+
+
+def zcode_catalog(root: Path, entries: List[Dict[str, Any]]) -> Path:
+    """A root ``marketplace.json`` listing one valid plugin plus *entries*."""
+    zcode_plugin(root / "plugins" / "anchor", name="anchor")
+    return write_json(
+        root / "marketplace.json",
+        {"name": "harbor", "plugins": [{"name": "anchor", "source": "./plugins/anchor"}, *entries]},
+    )

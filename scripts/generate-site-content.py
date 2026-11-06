@@ -313,9 +313,13 @@ RULE_GROUPS = [
         "and security checks.\n\n"
         "A plugin that ships both `.zcode-plugin/` and `.claude-plugin/` "
         "manifests keeps its Claude Code results: Claude reads the shared "
-        "`hooks/hooks.json` and `.mcp.json` too. Project rules enable when a "
-        "`.zcode/` directory is present; plugin and marketplace rules enable "
-        "when a `.zcode-plugin/` manifest is detected.",
+        "`hooks/hooks.json` and `.mcp.json` too.\n\n"
+        "The rules enable on three separate conditions. Project rules need a "
+        "`.zcode/` directory holding `skills/`, `commands/`, `agents/`, "
+        "`workflows/` or `config.json`. Plugin rules need a "
+        "`.zcode-plugin/plugin.json`. Marketplace rules also need a "
+        "repository-root `marketplace.json` and no "
+        "`.claude-plugin/marketplace.json`.",
     ),
     (
         "Hooks",

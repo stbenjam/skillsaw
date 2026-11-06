@@ -806,6 +806,21 @@ class GrokInlineHooksBlock(_InlineJsonPayload, GrokPluginHooksBlock):
         return f"{self.path.name} (inline hooks)"
 
 
+def _zcode_events(events: Dict[str, List[HookEventConfig]]) -> Dict[str, List[HookEventConfig]]:
+    """*events* as ZCode runs them: a ``command`` handler takes no ``args``.
+
+    Only ``process`` handlers pass argv; ZCode's command schema drops an
+    ``args`` key, so scanning it would report text that never executes
+    (``core/src/hooks/workspace-hook-trust-records.ts:25`` in ``zai-org/ZCode``).
+    """
+    for configs in events.values():
+        for config in configs:
+            for handler in config.handlers:
+                if handler.type == "command":
+                    handler.args = None
+    return events
+
+
 @dataclass(eq=False)
 class ZCodePluginHooksBlock(HooksBlock):
     """A hooks file a ZCode plugin ships — its ``hooks/hooks.json``, or one
@@ -817,6 +832,10 @@ class ZCodePluginHooksBlock(HooksBlock):
     read by Claude too and keeps :class:`ClaudeHooksBlock`, so only a file
     ZCode alone loads arrives as this class.
     """
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        return _zcode_events(super().events)
 
     #: ZCode reads its files with ``JSON.parse``: a bare ``NaN`` or
     #: ``Infinity`` is a syntax error, and a repeated key keeps the last value.
@@ -854,7 +873,9 @@ class ZCodeConfigHooksBlock(HooksBlock):
     def events(self) -> Dict[str, List[HookEventConfig]]:
         data = self.raw_data
         hooks = data.get("hooks") if isinstance(data, dict) else None
-        return self._nested_events(hooks.get("events") if isinstance(hooks, dict) else None)
+        return _zcode_events(
+            self._nested_events(hooks.get("events") if isinstance(hooks, dict) else None)
+        )
 
     def tree_label(self) -> str:
         return f"{self.path.name} (zcode hooks)"

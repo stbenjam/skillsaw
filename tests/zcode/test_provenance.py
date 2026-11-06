@@ -232,7 +232,7 @@ class TestClaudeStandsDown:
         } & rule_ids(report)
 
 
-class TestReviewRegressions:
+class TestContainmentAndPruning:
     def test_zcode_only_plugin_declares_a_containment_boundary(self, tmp_path):
         """ZCode rejects component paths that leave the plugin and scans its
         skills without following symlinks, so a ZCode-only package gets the
@@ -281,3 +281,16 @@ def test_long_zcode_command_description_is_budgeted(tmp_path):
         if v["rule_id"] == "context-budget" and "command-description" in v["message"]
     ]
     assert found and found[0]["file_path"].endswith("sync.md")
+
+
+def test_live_plugin_roots_include_cursor_and_openclaw_plugins(tmp_path):
+    """Every skill prune keeps skills of plugins any ecosystem still claims."""
+    cursor = tmp_path / "plugins" / "cursor-tools"
+    write_json(cursor / ".cursor-plugin" / "plugin.json", {"name": "cursor-tools"})
+    openclaw = tmp_path / "plugins" / "claw-tools"
+    write_json(openclaw / "openclaw.plugin.json", {"id": "claw-tools", "configSchema": {}})
+    context = RepositoryContext(tmp_path)
+    live = context._live_plugin_roots()
+    assert set(context.cursor_plugin_roots()) <= live
+    assert set(context.openclaw_plugin_roots()) <= live
+    assert context.cursor_plugin_roots() and context.openclaw_plugin_roots()

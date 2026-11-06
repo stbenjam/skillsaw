@@ -98,7 +98,6 @@ class ZCodePluginJsonValidRule(Rule):
                     )
                 )
         plugin_dir = node.plugin_dir
-        plugin_root = safe_resolve(plugin_dir)
         for field in zcode.PATH_FIELDS:
             for raw in zcode.path_list(data.get(field)):
                 if zcode.lexically_escapes(raw):
@@ -109,11 +108,7 @@ class ZCodePluginJsonValidRule(Rule):
                             path,
                         )
                     )
-                elif (
-                    plugin_root is not None
-                    and safe_exists(plugin_dir / raw)
-                    and contained_resolve(plugin_dir / raw, plugin_root) is None
-                ):
+                elif self._escapes(plugin_dir, raw):
                     # ZCode's containment check is lexical, so it follows the
                     # symlink and loads the target; skillsaw does not, which
                     # would leave an executable hook or server unscanned.
@@ -148,6 +143,16 @@ class ZCodePluginJsonValidRule(Rule):
                             severity=Severity.WARNING,
                         )
                     )
+        for conventional in ("/".join(zcode.CONVENTIONAL_HOOKS), zcode.CONVENTIONAL_MCP):
+            if self._escapes(plugin_dir, conventional):
+                violations.append(
+                    self.violation(
+                        f"{conventional} is a symlink out of the plugin: ZCode loads it, but "
+                        "skillsaw cannot lint it, so its commands escape hooks-dangerous and "
+                        "mcp checks. Move the file into the plugin",
+                        path,
+                    )
+                )
         commands = data.get("commands")
         if isinstance(commands, dict):
             violations.extend(self._check_command_map(node, commands))
@@ -208,4 +213,29 @@ class ZCodePluginJsonValidRule(Rule):
                             node.path,
                         )
                     )
+                elif self._escapes(node.plugin_dir, relative):
+                    violations.append(
+                        self.violation(
+                            f"{label}: 'source' {safe_display(source)!r} is a symlink out of the "
+                            "plugin: ZCode loads it, but skillsaw cannot lint it. Move the file "
+                            "into the plugin",
+                            node.path,
+                            severity=Severity.WARNING,
+                        )
+                    )
         return violations
+
+    @staticmethod
+    def _escapes(plugin_dir, relative: str) -> bool:
+        """Whether an existing in-plugin path resolves outside the plugin.
+
+        ZCode's containment check is lexical, so it follows such a symlink
+        and loads the target; skillsaw does not, so the content goes unlinted.
+        """
+        root = safe_resolve(plugin_dir)
+        candidate = plugin_dir / relative
+        return (
+            root is not None
+            and safe_exists(candidate)
+            and contained_resolve(candidate, root) is None
+        )

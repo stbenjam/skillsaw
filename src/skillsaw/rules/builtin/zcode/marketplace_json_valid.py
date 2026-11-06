@@ -13,7 +13,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.formats import zcode
 from skillsaw.lint_target import ZCodeMarketplaceConfigNode
 from skillsaw.diagnostics import safe_display
-from skillsaw.paths import contained_resolve, safe_is_dir, safe_resolve
+from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.utils import read_json_strict
 
@@ -45,6 +45,13 @@ class ZCodeMarketplaceJsonValidRule(Rule):
         return violations
 
     def _check_catalog(self, path: Path) -> List[RuleViolation]:
+        if not safe_exists(path):
+            return [
+                self.violation(
+                    "No marketplace.json at the repository root; ZCode has no catalog to add",
+                    path,
+                )
+            ]
         # ``JSON.parse``: non-finite tokens are syntax errors, repeated keys are not.
         data, error = read_json_strict(path, allow_duplicate_keys=True)
         if error:
@@ -91,6 +98,16 @@ class ZCodeMarketplaceJsonValidRule(Rule):
         if not isinstance(name, str) or not name.strip():
             return [self.violation(f"plugins[{index}] has no 'name'; ZCode drops it", path)]
         label = f"Plugin {safe_display(name)!r}"
+        if not zcode.NAME_RE.match(name.strip()):
+            # The installed manifest must carry this name, and a manifest
+            # name has to match the pattern, so the entry can never install.
+            return [
+                self.violation(
+                    f"{label}: name must be 1-128 characters of lowercase letters, digits, "
+                    "'.', '_' or '-'; no ZCode plugin can match it, so it never installs",
+                    path,
+                )
+            ]
         source = entry.get("source")
         if isinstance(source, dict):
             kind = source.get("source")

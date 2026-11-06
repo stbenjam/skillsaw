@@ -59,8 +59,9 @@ def enumerate_zcode_catalogs(
     first is Claude's file, which the Claude marketplace rules own — and
     only in a repository carrying a ``.zcode-plugin`` marker: a bare
     ``marketplace.json`` is a generic filename no ecosystem reserves.
-    *seed_forced_primary* drops the marker requirement, so a forced
-    ``--type zcode-marketplace`` checks the file it was pointed at.
+    *seed_forced_primary* drops the marker requirement and seeds the path
+    even when the file is absent, so a forced ``--type zcode-marketplace``
+    reports a missing catalog instead of a clean run.
 
     Existence, not parseability: broken JSON must still reach the catalog
     rule rather than hide the very defect it reports.
@@ -70,7 +71,7 @@ def enumerate_zcode_catalogs(
         return []
     if safe_exists(root_path.joinpath(*CLAUDE_CATALOG)):
         return []
-    if not (safe_exists(primary) or safe_is_symlink(primary)):
+    if not (safe_exists(primary) or safe_is_symlink(primary)) and not seed_forced_primary:
         return []
     if contained_resolve(primary, containment_root) is None or is_excluded(primary):
         return []
