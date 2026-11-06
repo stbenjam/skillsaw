@@ -3,6 +3,7 @@
   "defaultProvider": "anthropic",
   "defaultThinkingLevel": "extreme",
   "quietStartup": "yes",
+  "outputPad": 2,
   "compaction": {
     "enabled": "true",
     "reserveTokens": -1

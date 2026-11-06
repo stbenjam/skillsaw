@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -84,13 +85,16 @@ def format_schema_error(error: ValidationError) -> str:
         error.validator == "anyOf"
         and all(isinstance(option, dict) and "const" in option for option in error.validator_value)
     ):
-        # Permitted values come from the schema, never from the document.
+        # Permitted values come from the schema, never from the document;
+        # JSON spelling keeps 0 distinct from "0".
         options = (
             error.validator_value
             if error.validator == "enum"
             else [option["const"] for option in error.validator_value]
         )
-        detail = "must be one of " + ", ".join(repr(safe_display(o)) for o in options)
+        detail = "must be one of " + ", ".join(
+            safe_display(json.dumps(option)) for option in options
+        )
     elif error.validator == "oneOf":
         detail = "must match exactly one permitted schema variant"
     elif error.validator == "not":

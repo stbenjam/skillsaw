@@ -21,6 +21,20 @@ def _validator() -> "Draft202012Validator":
     return Draft202012Validator(settings_schema())
 
 
+@lru_cache(maxsize=1)
+def _legacy_skills_validator() -> "Draft202012Validator":
+    """The schema's object branch for legacy ``skills``, under its own key.
+
+    Validating the whole document reports a malformed legacy object only as
+    an ``anyOf`` failure on ``skills``, which belongs to pi-config-valid.
+    """
+    from jsonschema import Draft202012Validator
+
+    branches = settings_schema()["properties"]["skills"]["anyOf"]
+    legacy = next(branch for branch in branches if branch.get("type") == "object")
+    return Draft202012Validator({"properties": {"skills": legacy}})
+
+
 class PiSettingsSchemaRule(Rule):
     """Check non-resource settings against the bundled Pi settings schema."""
 
@@ -53,6 +67,11 @@ class PiSettingsSchemaRule(Rule):
                 for error in _validator().iter_errors(data)
                 if not error.absolute_path or error.absolute_path[0] not in SETTINGS_RESOURCE_KEYS
             ]
+            skills = data.get("skills")
+            if isinstance(skills, dict):
+                # customDirectories is a resource list; the rest is ordinary settings.
+                options = {k: v for k, v in skills.items() if k != "customDirectories"}
+                errors += _legacy_skills_validator().iter_errors({"skills": options})
             if errors:
                 violations.append(
                     self.violation(

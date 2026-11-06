@@ -925,11 +925,23 @@ def test_settings_schema_reports_once_and_leaves_resources_to_config_valid(tmp_p
     assert "Pi 1.5.0 schema" in message
     assert "$.compaction.enabled: must be of type boolean" in message
     assert "$.compaction.reserveTokens: must be at least 0" in message
-    assert "$.defaultThinkingLevel: must be one of 'off'" in message
-    assert "$.quietStartup" in message
+    assert '$.defaultThinkingLevel: must be one of "off", "minimal"' in message
+    # Schema constants keep their JSON types: 0 is not "0".
+    assert "$.outputPad: must be one of 0, 1" in message
+    # Five errors, consolidated: the fifth ($.quietStartup) is counted.
+    assert message.endswith("and 1 more schema error")
     # The malformed resource field belongs to pi-config-valid alone.
     assert "skills" not in message
     assert "skills (expected an array of strings)" in by_rule["pi-config-valid"]["message"]
+
+
+def test_settings_schema_checks_legacy_skills_options(tmp_path):
+    root = copy_fixture("settings-schema-legacy", tmp_path)
+    _, violations = _cli_violations(root, "pi-settings-schema", "pi-config-valid")
+    assert [v["rule_id"] for v in violations] == ["pi-settings-schema"]
+    message = violations[0]["message"]
+    assert "$.skills.enableSkillCommands: must be of type boolean" in message
+    assert "customDirectories" not in message
 
 
 def test_settings_schema_is_opt_in(tmp_path):
