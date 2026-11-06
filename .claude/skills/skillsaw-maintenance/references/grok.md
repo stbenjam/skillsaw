@@ -10,8 +10,9 @@ lifecycle hooks, its subagent frontmatter, and the plugin and marketplace files 
 installer reads.
 
 ## Upstream source(s)
-- The user guide shipped with 1.0.13: `10-hooks.md` (events, the Cursor alias table,
-  handler fields, reserved environment variables, the matcher-per-event table),
+- The user guide shipped with 1.0.77: `10-hooks.md` (events, the Cursor alias table,
+  handler fields and "Unsupported Handler Fields", reserved environment variables,
+  the matcher-per-event table). The rest is from the 1.0.13 guide:
   `12-project-rules.md` (the `.grok/` layer), `07-mcp-servers.md` (MCP sources),
   `08-skills.md`, `04-slash-commands.md`, `16-subagents.md`, `26-config-reference.md`.
 - The shipped executable, whose hook loader is
@@ -21,16 +22,19 @@ installer reads.
   and `hook env: ignoring user-supplied value for runner-reserved key (the
   runner-injected value always wins)`.
 
-The docs name the events and the file locations, and everything below was verified
-against Grok Build 1.0.13 (`5e9a58528b76`, stable) rather than taken from them. Method:
-an isolated `GROK_HOME` (the real `~/.grok` untouched) with one hook file per case
-under `$GROK_HOME/hooks/` — user scope, always trusted, so no folder-trust gate — each
-handler carrying a unique `command` token, read back from `grok inspect --json`. Every
-case carries a canary handler in the same group and a canary group under a different
-event in the same file, so file, group and handler scopes are told apart rather than
-assumed. `grok inspect --json` reported `configWarnings: null` for every failing case:
-the runtime tells the author nothing, which is why `grok-hooks-valid` exists. Re-run
-that matrix before changing a rule here.
+The docs name the events and the file locations. The hooks matrix below was verified
+against Grok Build 1.0.77 (`50ca579fa996`, stable), and the rest of this page against
+1.0.13 (`5e9a58528b76`), rather than taken from the docs. Method: an isolated `HOME` and
+`GROK_HOME` (the real `~/.grok` untouched) with one hook file per case under
+`$GROK_HOME/hooks/` — user scope, always trusted, so no folder-trust gate — each
+handler carrying a unique `command` token, read back from `grok inspect --json`
+(`hooks` and `hookLoadErrors`). Run it with `GROK_FOLDER_TRUST=0` and the proxy
+variables pointed at a closed port, and never start a model turn. Every case carries a
+canary handler in the same group and a canary group under a different event in the
+same file, so file, group and handler scopes are told apart rather than assumed. Since
+1.0.77 every narrower failure is listed under `hookLoadErrors`, but only `grok
+inspect` and the `/hooks` tab show it; a headless run tells the author nothing, which
+is why `grok-hooks-valid` exists. Re-run that matrix before changing a rule here.
 
 ## What to check
 - **Hooks files**: `<project>/.grok/hooks/*.json`, read as a **flat glob** and merged.
@@ -43,27 +47,30 @@ that matrix before changing a rule here.
   unknown handler keys.
 - **Failure scope** is the thing to get right, because it is what the diagnostic is
   worth:
-  - *Whole file*: a UTF-8 byte-order mark at the start of the file (`grok inspect
-    --json` loaded zero hooks from an otherwise-correct file with a leading BOM;
-    skillsaw reads with `utf-8-sig` and would see a valid document, so this is
-    checked before anything else); malformed JSON; a bare `NaN`/`Infinity`/`-Infinity`;
-    no top-level `hooks` object, or one that is not an object; a recognized event
-    whose value is not an array; a matcher group that is not an object; a group with
-    no `hooks` key or
-    a non-array one; a `matcher` that is not a string, which never reaches the regex
-    compiler; a handler that is not an object; a handler with no `type`, or a `null`
-    one; any known handler field carrying the wrong JSON type — including a `timeout`
-    above `2**64-1`, the field's own `u64` ceiling, which fails the same way as a float
-    or a negative even though the value is a plain non-negative integer. A JSON `null`
-    is not one of those wrong types: Grok reads it as the key being absent, so `type`
-    is the only field whose `null` costs the file.
-  - *That group*: a `matcher` string that does not compile.
-  - *That event's entries*: a name outside the events and aliases below. Unknown
-    events are skipped before their values, groups or handlers are decoded.
-  - *That handler*: a `command` handler with no `command` or a `null` one, an `http`
-    handler with no `url` or a `null` one, a `type` outside `command`/`http`.
-  - *Tolerated*: a `null` `timeout`, `env` or `matcher`, and a `null` in any field the
-    handler's type does not require — each is the key being absent.
+  - *Whole file*: malformed JSON; a bare `NaN`/`Infinity`/`-Infinity`; a root that
+    is not an object; no top-level `hooks` object, or one that is not an object.
+    A UTF-8 byte-order mark is **not** a defect since 1.0.77, which loads a
+    BOM-prefixed file (1.0.13 refused it).
+  - *That event's entries*: a name outside the events and aliases below (skipped
+    before its values, groups or handlers are decoded), and a recognized event
+    whose value is not an array.
+  - *That group*: a group that is not an object; no `hooks` key, a `null` one or a
+    non-array one; a `matcher` that is not a string; a `matcher` string that does
+    not compile.
+  - *That handler*: a handler that is not an object; no `type` or a `null` one; a
+    `type` outside `command`/`http`; a `command` handler with no `command` or a
+    `null` one, an `http` handler with no `url` or a `null` one; any known handler
+    field carrying the wrong JSON type, including a `null` `failClosed`; both
+    `failClosed` and `fail_closed` (a duplicate field); and an `if` whose value asks
+    for something. 1.0.13 refused the whole file for the non-object handler, the
+    missing type, the wrong field types and every group- and event-level shape
+    defect; 1.0.77 narrowed each to the scope listed here.
+  - *Tolerated*: a `null` `timeout`, `env`, `args`, `onFailure` or `matcher`, and a
+    `null` in any field the handler's type does not require — each is the key being
+    absent. An `if` of `null`, `false`, `""`, `[]` or `{}` ("asks for nothing"; `0`
+    and `" "` do not). Claude Code's `async`, `asyncRewake`, `shell`,
+    `statusMessage` and `headers` are recorded as a hook load error, but the
+    handler loads and runs without them, so they are not reported.
 - **Events** (15): `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`,
   `PostToolUse`, `PostToolUseFailure`, `PermissionDenied`, `Stop`, `StopFailure`,
   `StopCancelled`, `Notification`, `SubagentStart`, `SubagentStop`, `PreCompact`,
@@ -79,12 +86,15 @@ that matrix before changing a rule here.
   `PostToolUse`; `beforeSubmitPrompt` → `UserPromptSubmit`).
 - **Handler types**: `command` (a shell command) and `http` (the event envelope POSTed
   to a URL).
-- **Handler fields**, with the JSON type each must carry: `type`, `command`, `url`
-  (strings); `timeout` (non-negative integer — a float, a negative, a bool and a
-  numeric string each refuse the file, while a large value is fine because `Stop` and
-  `SubagentStop` default to 600 seconds); `env` (an object of strings). A wrong type on
-  any of them refuses the file; a `null` is read as the key being absent; a key outside
-  the table is tolerated.
+- **Handler fields**, with the JSON type each must carry: `type`, `command`, `url`,
+  `onFailure` (strings; an unrecognized `onFailure` reads as `"continue"`); `args`
+  (an array of strings — `""` and `false` drop the handler, `[]` runs `command` as
+  one program); `timeout` (any non-negative number: `0`, `1.5`, `2**64` and `1e300`
+  load, `0` keeps the default, while a negative, a bool, an object and a numeric
+  string drop the handler); `failClosed` and its `fail_closed` spelling (booleans; a
+  `null` drops the handler); `env` (an object of strings). A wrong type drops that
+  handler; a `null` is otherwise read as the key being absent; a key outside the table
+  is tolerated, apart from `if`.
 - **Matchers**: compiled at load with Rust's `regex` crate — verified by loading
   `\p{L}+` and `[a-z&&[^aeiou]]`, which Python's `re` rejects, and by watching
   `(?<=x)y` and `(a)\1` drop their groups. `""` and `"*"` are catch-alls, not patterns.
@@ -391,6 +401,10 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   index placement. Selection uses the independent `.grok-plugin` then `.claude-plugin`
   fallback order above, not the catalog's directory. Legal shadowed copies and absent
   indexes are silent.
+- `grok-hooks-valid` severity follows scope: the whole-file cases above take the
+  rule's configured severity (ERROR by default); event, group and handler defects
+  default to WARNING through `scope_severity()`, so an explicitly configured severity
+  still applies to them; reserved `env` keys and an ignored matcher are INFO.
 - Vocabulary (events, aliases, handler fields, reserved env, failure scopes) — one
   module, `src/skillsaw/formats/grok.py`, so a behavior change is an edit there rather
   than a hunt through rule code.
@@ -441,9 +455,9 @@ user guide, or re-verify empirically with the canary matrix above:
 - `REQUIRED_FIELDS` = `("name", "description")` in `rules/builtin/grok/agent_valid.py` —
   the keys Grok's subagent loader requires; scalars, including empty/null values,
   register, while collections are rejected.
-- `TIMEOUT_MAX` = `2**64 - 1` in `formats/grok.py`, the `u64` ceiling `timeout`
-  deserializes into. It has to track Grok's timeout type: widen or narrow the field
-  upstream and the boundary this reports moves with it.
+- `timeout` has no upper bound: since 1.0.77 Grok reads it as a float (`f64`), so
+  `HANDLER_FIELDS` accepts any non-negative int or float. If Grok narrows the field to
+  an integer type again, restore a ceiling for it.
 - `PLUGIN_NAME_RE` = `\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\Z`, read with `.fullmatch()`
   so a trailing newline is refused as the loader refuses it, and
   `PLUGIN_NAME_MAX_LENGTH` = 64 in `formats/grok.py`, measured boundary by boundary:

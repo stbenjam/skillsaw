@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/summarize.sh",
+            "args": "--format json"
+          }
+        ]
+      }
+    ]
+  }
+}
