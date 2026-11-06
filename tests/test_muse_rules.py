@@ -975,8 +975,7 @@ def test_extra_events_accepts_an_event_newer_than_this_release(tmp_path) -> None
 
 @pytest.mark.parametrize("event", ["StopFailure", "PostToolBatch"])
 def test_events_documented_in_muse_1_4_14_produce_no_finding(tmp_path, event) -> None:
-    """Muse's docs list both events as of 1.4.14; skillsaw once flagged them
-    as undocumented."""
+    """Events documented as of Muse 1.4.14 are accepted without a finding."""
     repo = write_repo(tmp_path / event)
     (repo / ".muse").mkdir()
     (repo / ".muse" / "hooks.json").write_text(HOOKS_JSON.replace('"Stop"', f'"{event}"'))
