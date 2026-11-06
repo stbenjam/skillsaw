@@ -1,0 +1,96 @@
+{
+  "name": "skillsaw",
+  "displayName": "skillsaw (diagnostics pilot)",
+  "description": "Agent context diagnostics from your installed skillsaw CLI.",
+  "version": "0.1.0",
+  "publisher": "stbenjam",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stbenjam/skillsaw.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Linting runs an installed executable and may load workspace custom rules. Trust is required to run it.",
+      "restrictedConfigurations": [
+        "skillsaw.executable"
+      ]
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "The CLI needs a workspace on the extension host's filesystem."
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "skillsaw.lint",
+        "title": "skillsaw: Lint Workspaces"
+      },
+      {
+        "command": "skillsaw.showOutput",
+        "title": "skillsaw: Show Output"
+      }
+    ],
+    "configuration": {
+      "title": "skillsaw",
+      "properties": {
+        "skillsaw.executable": {
+          "type": "string",
+          "default": "skillsaw",
+          "scope": "resource",
+          "description": "Executable name on PATH or path to skillsaw (relative paths resolve from the workspace folder). Arguments, shell commands and variable expansion are not supported."
+        },
+        "skillsaw.runOnSave": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Lint the workspace on activation, document opens/closes, file saves, clean document reloads and editor file operations. Disable for command-only linting."
+        },
+        "skillsaw.debounceMs": {
+          "type": "integer",
+          "default": 600,
+          "minimum": 100,
+          "maximum": 10000,
+          "scope": "resource",
+          "description": "Delay after a save before linting the workspace."
+        },
+        "skillsaw.timeoutMs": {
+          "type": "integer",
+          "default": 30000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "scope": "resource",
+          "description": "Maximum duration of a CLI run in milliseconds."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "prettier --check src test package.json",
+    "format": "prettier --write src test package.json",
+    "test": "node --test test/*.test.js",
+    "test:host": "node test/run-host.js",
+    "package": "vsce package --no-dependencies --out skillsaw-0.1.0.vsix"
+  },
+  "devDependencies": {
+    "prettier": "3.9.10",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0"
+  }
+}
