@@ -53,6 +53,32 @@ def test_plugin_json_required_fails(temp_dir):
     assert violations[0].severity == Severity.ERROR
 
 
+def test_inline_mcp_servers_need_declared_user_config(temp_dir):
+    """Inline mcpServers read user_config like .mcp.json does; declared keys pass."""
+    import json
+
+    plugin_dir = temp_dir / "inline-mcp"
+    (plugin_dir / ".claude-plugin").mkdir(parents=True)
+    (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "inline-mcp",
+                "userConfig": {"region": {"type": "string", "title": "Region"}},
+                "mcpServers": {
+                    "api": {
+                        "command": "node",
+                        "env": {"REGION": "${user_config.region}", "KEY": "${user_config.key}"},
+                    }
+                },
+            }
+        )
+    )
+    violations = PluginJsonValidRule().check(RepositoryContext(plugin_dir))
+    found = [v for v in violations if "user_config" in v.message]
+    assert [(v.file_path.name, v.severity) for v in found] == [("plugin.json", Severity.ERROR)]
+    assert "'key'" in found[0].message and "'region'" not in found[0].message
+
+
 def test_plugin_json_valid_passes(valid_plugin):
     """Test that valid plugin.json passes validation"""
     context = RepositoryContext(valid_plugin)

@@ -242,6 +242,33 @@ def test_non_string_matcher_is_reported_once_by_claudes_rule(temp_dir):
     assert CodexHooksValidRule({}).check(context) == []
 
 
+@pytest.mark.parametrize(
+    "matcher,shown",
+    [(7, "number"), (1.5, "number"), (True, "boolean"), ({"tool": "Bash"}, "object")],
+)
+def test_non_string_matcher_names_its_json_type(temp_dir, matcher, shown):
+    plugin = temp_dir / "typed-matcher"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin" / "plugin.json").write_text('{"name": "typed-matcher"}')
+    (plugin / "hooks").mkdir()
+    (plugin / "hooks" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "Stop": [
+                        {"matcher": matcher, "hooks": [{"type": "command", "command": "true"}]}
+                    ]
+                }
+            }
+        )
+    )
+    violations = ClaudeHooksValidRule().check(RepositoryContext(plugin))
+    assert [v.message for v in violations] == [
+        f"Event 'Stop[0].matcher' must be a string, got {shown} — "
+        "Claude Code ignores this entry and runs none of its hooks"
+    ]
+
+
 def test_invalid_json(plugin_with_invalid_json):
     """Test that invalid JSON is detected"""
     context = RepositoryContext(plugin_with_invalid_json)
