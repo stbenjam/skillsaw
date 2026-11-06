@@ -139,6 +139,8 @@ CODEX_HOOK_EVENTS = frozenset(
         "SessionStart",
         "SessionEnd",
         "SubagentStart",
+        "PreModelRequest",
+        "PostModelRequest",
         "PreToolUse",
         "PermissionRequest",
         "PostToolUse",

@@ -94,7 +94,7 @@ rules:
 
 Codex adopted Claude Code's nested shape —
 `{hooks: {Event: [{matcher?, hooks: [{type, ...}]}]}}` — and kept its own
-vocabulary. It dispatches twelve lifecycle events, runs `command` and
+vocabulary. It dispatches fourteen lifecycle events, runs `command` and
 `mcp_tool` handlers, and parses `prompt` and `agent` handlers without ever
 running them. A file copied from a Claude plugin therefore loads without
 complaint and does less than it says, with nothing on the console to
@@ -278,7 +278,7 @@ matcher = "Bash"
 
 ## How to fix
 
-- Use one of the twelve event names Codex dispatches.
+- Use one of the fourteen event names Codex dispatches.
 - Rewrite `prompt` and `agent` handlers as `command` or `mcp_tool` handlers.
 - Give every command handler a `command`, and every MCP tool handler both
   `server` and `tool`. Keep handler-specific fields with their type:
