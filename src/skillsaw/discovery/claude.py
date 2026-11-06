@@ -15,6 +15,7 @@ from skillsaw.discovery import (
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.codex import codex_declared_skill_dirs
 from skillsaw.formats.grok import grok_declared_skill_dirs
+from skillsaw.formats.zcode import zcode_declared_skill_dirs
 from skillsaw.formats.openclaw import MANIFEST, contained_file, skill_roots
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.utils import read_json
@@ -258,6 +259,7 @@ def discover_skills(
     openclaw_exclusive_plugins: Iterable[Path] = (),
     additional_skill_dirs: Iterable[Path] = (),
     is_excluded: Callable[[Path], bool] = lambda _: False,
+    zcode_plugins: Iterable[Path] = (),
 ) -> List[Path]:
     """Discover contained Agent Skill directories across repository roots."""
     openclaw_packages = list(openclaw_plugins)
@@ -450,6 +452,8 @@ def discover_skills(
         contained_plugin_skills(plugin, codex_declared_skill_dirs(plugin))
     for plugin in grok_plugins:
         contained_plugin_skills(plugin, grok_declared_skill_dirs(plugin))
+    for plugin in zcode_plugins:
+        contained_plugin_skills(plugin, zcode_declared_skill_dirs(plugin))
     for plugin in antigravity_plugins:
         contained_plugin_skills(plugin, ())
     for plugin in agent_plugin_packages:

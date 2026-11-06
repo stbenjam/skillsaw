@@ -190,3 +190,52 @@ def escapes_root(value: str, root: Path) -> bool:
         # closed.
         return True
     return candidate != resolved_root and not candidate.is_relative_to(resolved_root)
+
+
+def marker_manifest_is_contained(
+    plugin_dir: Path, marker: str, manifest: str, *, resolve: Resolver = safe_resolve
+) -> bool:
+    """Whether *plugin_dir* carries ``<marker>/<manifest>`` of its own.
+
+    The authorship evidence an ecosystem's provenance claim rests on, asked
+    directly of the filesystem so a ``--type`` override cannot change it.
+    The marker directory and the manifest must both resolve inside the
+    plugin: a ``.codex-plugin`` or a ``plugin.json`` symlinked out of the
+    plugin is another plugin's manifest, and claiming on it would leave this
+    directory covered by no rule at all.
+    """
+    root = resolve(plugin_dir)
+    if root is None:
+        return False
+    marker_dir = plugin_dir / marker
+    if contained_resolve(marker_dir, root, resolve) is None:
+        return False
+    manifest_path = marker_dir / manifest
+    if contained_resolve(manifest_path, root, resolve) is None:
+        return False
+    return safe_is_file(manifest_path)
+
+
+def marker_escapes(
+    plugin_dir: Path, marker: str, manifest: str, *, resolve: Resolver = safe_resolve
+) -> bool:
+    """Whether *plugin_dir*'s *marker* directory points out of the plugin.
+
+    The containment half of :func:`marker_manifest_is_contained`, asked
+    without requiring the manifest to exist: a directory with no marker at
+    all does not escape, so a catalog claim over it still stands and the
+    ecosystem's manifest rule can report the missing file. A marker (or a
+    manifest inside it) that resolves elsewhere is another plugin's, and no
+    claim may adopt it.
+    """
+    root = resolve(plugin_dir)
+    if root is None:
+        # Containment cannot be proven, so fail closed.
+        return True
+    marker_dir = plugin_dir / marker
+    if not (safe_exists(marker_dir) or safe_is_symlink(marker_dir)):
+        return False
+    if contained_resolve(marker_dir, root, resolve) is None:
+        return True
+    manifest_path = marker_dir / manifest
+    return safe_exists(manifest_path) and contained_resolve(manifest_path, root, resolve) is None

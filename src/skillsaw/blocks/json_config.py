@@ -139,6 +139,16 @@ class HookHandler:
     #: blocks have no lines to give and leave it ``None``, as they should.
     type_line: Optional[int] = None
 
+    #: Handler types that run a local program. ``process`` is ZCode's
+    #: exec form — ``command`` plus ``args``, no shell — and runs code just
+    #: as surely as a shell ``command`` does, so the security rules scan it.
+    EXECUTABLE_TYPES: ClassVar[FrozenSet[str]] = frozenset({"command", "process"})
+
+    @property
+    def is_executable(self) -> bool:
+        """Whether this handler runs a local program the security rules scan."""
+        return self.type in self.EXECUTABLE_TYPES
+
     def iter_effective_commands(self) -> Iterator[Tuple[str, Optional[int]]]:
         """Yield each effective command and the line that declared it.
 
@@ -501,7 +511,11 @@ class HooksBlock(JsonConfigBlock):
         data = self.raw_data
         if data is None:
             return {}
-        hooks_obj = data.get("hooks", {})
+        return self._nested_events(data.get("hooks", {}))
+
+    @staticmethod
+    def _nested_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
+        """Render an ``{Event: [{matcher?, hooks: [...]}]}`` map as configs."""
         if not isinstance(hooks_obj, dict):
             return {}
         result: Dict[str, List[HookEventConfig]] = {}
@@ -790,6 +804,81 @@ class GrokInlineHooksBlock(_InlineJsonPayload, GrokPluginHooksBlock):
 
     def tree_label(self) -> str:
         return f"{self.path.name} (inline hooks)"
+
+
+def _zcode_events(events: Dict[str, List[HookEventConfig]]) -> Dict[str, List[HookEventConfig]]:
+    """*events* as ZCode runs them: a ``command`` handler takes no ``args``.
+
+    Only ``process`` handlers pass argv; ZCode's command schema drops an
+    ``args`` key, so scanning it would report text that never executes
+    (``core/src/hooks/workspace-hook-trust-records.ts:25`` in ``zai-org/ZCode``).
+    """
+    for configs in events.values():
+        for config in configs:
+            for handler in config.handlers:
+                if handler.type == "command":
+                    handler.args = None
+    return events
+
+
+@dataclass(eq=False)
+class ZCodePluginHooksBlock(HooksBlock):
+    """A hooks file a ZCode plugin ships — its ``hooks/hooks.json``, or one
+    the manifest names in ``hooks``.
+
+    Same nested shape as Claude's, with ZCode's seven events and its
+    ``command``/``process`` handler types; ``zcode-hooks-valid`` checks it
+    against that vocabulary. A dual-manifest plugin's conventional file is
+    read by Claude too and keeps :class:`ClaudeHooksBlock`, so only a file
+    ZCode alone loads arrives as this class.
+    """
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        return _zcode_events(super().events)
+
+    #: ZCode reads its files with ``JSON.parse``: a bare ``NaN`` or
+    #: ``Infinity`` is a syntax error, and a repeated key keeps the last value.
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (zcode plugin hooks)"
+
+
+@dataclass(eq=False)
+class ZCodeInlineHooksBlock(_InlineJsonPayload, ZCodePluginHooksBlock):
+    """Hooks written inline in a ZCode ``.zcode-plugin/plugin.json``."""
+
+    inline_data: Optional[Dict[str, Any]] = None
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (inline hooks)"
+
+
+@dataclass(eq=False)
+class ZCodeConfigHooksBlock(HooksBlock):
+    """The ``hooks`` section of a ZCode project ``.zcode/config.json``.
+
+    ZCode nests the event map one level deeper than a ``hooks.json``:
+    ``{"hooks": {"enabled": ..., "events": {Event: [...]}}}``. The same file
+    also carries MCP servers, which :class:`ZCodeConfigMcpBlock` reads as a
+    second parser role over it.
+    """
+
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        data = self.raw_data
+        hooks = data.get("hooks") if isinstance(data, dict) else None
+        return _zcode_events(
+            self._nested_events(hooks.get("events") if isinstance(hooks, dict) else None)
+        )
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (zcode hooks)"
 
 
 @dataclass(eq=False)
@@ -1545,6 +1634,81 @@ class GrokInlineMcpBlock(_InlineJsonPayload, GrokMcpBlock):
 
     def tree_label(self) -> str:
         return f"{self.path.name} (inline mcpServers)"
+
+
+@dataclass(eq=False)
+class ZCodeMcpBlock(McpBlock):
+    """A ``.mcp.json`` only ZCode reads.
+
+    A ZCode-only plugin's conventional file, or one its manifest names in
+    ``mcpServers``. A dual-manifest plugin's conventional file keeps the
+    shared :class:`McpBlock`, since two block classes over one file would
+    report each of its servers twice. Claude's built-in server names are not
+    reserved here, and a connection field must be usable: ZCode disables a
+    server whose ``command`` or ``url`` is not a non-empty string
+    (``adapters/src/plugins/mcp.ts:369-374`` in ``zai-org/ZCode``).
+    """
+
+    claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (zcode MCP)"
+
+
+@dataclass(eq=False)
+class ZCodeInlineMcpBlock(_InlineJsonPayload, ZCodeMcpBlock):
+    """MCP servers written inline in a ZCode ``.zcode-plugin/plugin.json``."""
+
+    inline_data: Optional[Dict[str, Any]] = None
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (inline mcpServers)"
+
+
+@dataclass(eq=False)
+class ZCodeConfigMcpBlock(McpBlock):
+    """The ``mcp.servers`` map of a ZCode project ``.zcode/config.json``.
+
+    The file is ZCode's whole project configuration, not an MCP document, so
+    the shared shape walk defers to ``zcode-config-valid``, which applies
+    ZCode's stricter per-transport schema; the credential and command-policy
+    checks still read every server here.
+    """
+
+    allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
+    shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
+        syntax_error_rule="zcode-config-valid",
+    )
+    #: ZCode renames ``environment`` to ``env`` and ``http_headers`` to
+    #: ``headers`` before validating a server, so a credential can live
+    #: under either spelling.
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = (
+        ("env", False),
+        ("environment", False),
+        ("headers", True),
+        ("http_headers", True),
+        ("oauth", False),
+    )
+    #: ZCode's OAuth fields are camelCase; the shared detector recognises
+    #: the snake_case spelling.
+    credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {"clientSecret": "client_secret"}
+    )
+
+    def server_entries(self) -> List[Tuple[str, Any]]:
+        data = self.raw_data
+        mcp = data.get("mcp") if isinstance(data, dict) else None
+        servers = mcp.get("servers") if isinstance(mcp, dict) else None
+        return list(servers.items()) if isinstance(servers, dict) else []
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (zcode MCP)"
 
 
 @dataclass(eq=False)

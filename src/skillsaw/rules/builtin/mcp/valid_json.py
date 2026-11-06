@@ -81,6 +81,7 @@ class McpValidJsonRule(Rule):
         "grok-config-valid",
         "goose-recipe-valid",
         "kiro-mcp-valid",
+        "zcode-config-valid",
     )
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a

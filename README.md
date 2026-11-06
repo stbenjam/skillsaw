@@ -27,7 +27,7 @@ It understands Agent Skills,
 [Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
 plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
 GEMINI.md, QWEN.md, Cursor plugins and marketplaces, Copilot, Cline, Devin, Kiro, OpenCode, Goose recipes, Muse Code, Pi,
-Grok Build, Google Antigravity, native OpenClaw plugins, hooks, agent configuration, MCP Registry
+Grok Build, ZCode, Google Antigravity, native OpenClaw plugins, hooks, agent configuration, MCP Registry
 `server.json` publisher metadata,
 Vercel skills CLI lockfiles, and eval formats. Safe structural fixes can be applied
 automatically; everything else comes with precise, agent-friendly guidance.
@@ -97,7 +97,7 @@ source checks, verified-copy attribution, and Rulesync's ownership opt-in.
 
 ## What it catches
 
-- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (project config, plugins & marketplaces), Cursor plugins & marketplaces, Grok Build (project config, plugins & marketplaces), Google Antigravity (configuration in any customization root — `.agents/`, `.agent/`, `_agents/`, `_agent/` — its `rules/` and `agents/` prose, plugins, hooks, MCP servers and registries), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, Pi packages and project resources, native OpenClaw plugins (including optional theme and artwork declarations), APM packages, MCP server maps, and MCP Registry metadata.
+- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (project config, plugins & marketplaces), Cursor plugins & marketplaces, Grok Build (project config, plugins & marketplaces), Z.ai ZCode (`.zcode/` agents, commands, skills and `config.json` hooks & MCP, plugins & marketplaces), Google Antigravity (configuration in any customization root — `.agents/`, `.agent/`, `_agents/`, `_agent/` — its `rules/` and `agents/` prose, plugins, hooks, MCP servers and registries), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, Pi packages and project resources, native OpenClaw plugins (including optional theme and artwork declarations), APM packages, MCP server maps, and MCP Registry metadata.
 - **Content quality & token economy:** research-backed rules detecting instruction drift across duplicate files, excessive instruction budgets, cognitive overload, section length violations, weak language, contradictions, and repetitive inline tool-call examples.
 - **Discovery & repository integrity:** unreferenced bundled files, broken internal file references, inconsistent terminology, missing stop conditions, and stale baselines.
 - **Security & supply chain:**

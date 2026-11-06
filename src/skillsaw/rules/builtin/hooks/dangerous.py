@@ -513,7 +513,7 @@ class HooksDangerousRule(Rule):
         for event_type, configs in events.items():
             for cfg in configs:
                 for handler in cfg.handlers:
-                    if handler.type != "command":
+                    if not handler.is_executable:
                         continue
                     for command, source_line in handler.iter_effective_commands():
                         if self._is_allowed(command):

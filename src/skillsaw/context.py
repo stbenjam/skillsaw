@@ -28,6 +28,7 @@ from .utils import read_yaml
 from .repository_external_content import RepositoryExternalContentMixin
 from .repository_openclaw import RepositoryOpenClawMixin
 from .repository_grok import RepositoryGrokMixin
+from .repository_zcode import RepositoryZCodeMixin
 from .repository_cursor import RepositoryCursorMixin
 from .repository_antigravity import RepositoryAntigravityMixin
 from .repository_mcp_registry import RepositoryMcpRegistryMixin
@@ -68,6 +69,7 @@ class RepositoryContext(
     RepositoryExternalContentMixin,
     RepositoryOpenClawMixin,
     RepositoryGrokMixin,
+    RepositoryZCodeMixin,
     RepositoryCursorMixin,
     RepositoryAntigravityMixin,
     RepositoryProvenanceMixin,
@@ -97,6 +99,8 @@ class RepositoryContext(
         RepositoryType.CURSOR_PLUGIN,
         RepositoryType.GROK_MARKETPLACE,
         RepositoryType.GROK_PLUGIN,
+        RepositoryType.ZCODE_MARKETPLACE,
+        RepositoryType.ZCODE_PLUGIN,
         RepositoryType.ANTIGRAVITY_PLUGIN,
         RepositoryType.AGENT_PLUGIN,
         RepositoryType.OPENCLAW_PLUGIN,
@@ -112,6 +116,7 @@ class RepositoryContext(
         RepositoryType.CODEX_PROJECT,
         RepositoryType.MUSE,
         RepositoryType.GROK_PROJECT,
+        RepositoryType.ZCODE_PROJECT,
         RepositoryType.CURSOR,
         RepositoryType.COPILOT,
         RepositoryType.CLINE,
@@ -246,6 +251,7 @@ class RepositoryContext(
         self._init_openclaw(repo_types)
         self._init_cursor(repo_types)
         self._init_grok(repo_types)
+        self._init_zcode(repo_types)
         self._init_antigravity(repo_types)
         # An explicit ``--type`` answers "how is this content packaged", and
         # ``_refresh_tool_types()`` keeps it authoritative for that half while
@@ -469,14 +475,9 @@ class RepositoryContext(
             if dropped:
                 # Prune skills owned by plugins that just left the Codex set;
                 # otherwise they attach as standalone nodes and keep linting
-                # the very content the exclusion removed. Skills of a
-                # dual-host plugin that remains an active Claude or Pi package still
-                # have a surviving owner and must not be pruned.
-                surviving_roots = {
-                    r
-                    for p in (*self.plugins, *self.pi_discovery_roots())
-                    if (r := safe_resolve(p)) is not None
-                }
+                # the very content the exclusion removed. Skills a plugin
+                # still owns through another ecosystem must not be pruned.
+                surviving_roots = self._live_plugin_roots()
                 self.skills = [
                     sk
                     for sk in self.skills
@@ -486,16 +487,7 @@ class RepositoryContext(
                 self._codex_roots = None
             if self.agent_plugins != agent_plugins_before or codex_catalog_changed:
                 self._agent_plugin_roots = None
-                active_roots = {
-                    root
-                    for p in (
-                        *self.agent_plugin_roots(),
-                        *self.codex_plugins,
-                        *self.plugins,
-                        *self.pi_discovery_roots(),
-                    )
-                    if (root := safe_resolve(p)) is not None
-                }
+                active_roots = self._live_plugin_roots()
                 dropped_roots = {
                     root
                     for p in agent_roots_before
@@ -516,6 +508,7 @@ class RepositoryContext(
         self._agent_plugin_roots = None
         self._reset_cursor()
         self._reset_grok_caches(filtering=bool(self.exclude_patterns))
+        self._reset_zcode_caches(filtering=bool(self.exclude_patterns))
         self._reset_antigravity_caches(filtering=bool(self.exclude_patterns))
         self._contained_plugin_roots = self._mcp_registry_paths = None
         self._provenance_cache.clear()
@@ -579,6 +572,10 @@ class RepositoryContext(
             types.add(RepositoryType.GROK_MARKETPLACE)
         if self.grok_plugins:
             types.add(RepositoryType.GROK_PLUGIN)
+        if self.zcode_marketplace_paths():
+            types.add(RepositoryType.ZCODE_MARKETPLACE)
+        if self.zcode_plugins:
+            types.add(RepositoryType.ZCODE_PLUGIN)
         if self.antigravity_plugin_roots():
             types.add(RepositoryType.ANTIGRAVITY_PLUGIN)
         if self.pi_package_roots():
@@ -713,6 +710,7 @@ class RepositoryContext(
             self.codex_plugins,
             self.agent_plugins,
             self.grok_plugins,
+            self.zcode_plugins,
             self.openclaw_plugin_roots(),
             self.cursor_plugin_roots(),
             # Both spellings: the direct list keeps its unresolved path for

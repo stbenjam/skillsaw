@@ -289,6 +289,39 @@ RULE_GROUPS = [
         "manifests or catalogs are detected.",
     ),
     (
+        "ZCode",
+        "zcode",
+        [
+            "zcode-agent-valid",
+            "zcode-config-valid",
+            "zcode-hooks-valid",
+            "zcode-marketplace-json-valid",
+            "zcode-plugin-json-valid",
+        ],
+        "Validates Z.ai ZCode project configuration and plugin packages "
+        "against ZCode's open-source loader. Project rules check subagent "
+        "frontmatter in `.zcode/agents/*.md` and the `hooks` and `mcp` "
+        "sections of `.zcode/config.json`, where a single misplaced hooks "
+        "key makes ZCode discard the whole file. Plugin rules check "
+        "`.zcode-plugin/plugin.json` manifests, the hooks a ZCode-only "
+        "plugin ships (ZCode runs seven events and `command`/`process` "
+        "handlers), and the root `marketplace.json` catalog of a ZCode "
+        "marketplace.\n\n"
+        "ZCode reads AGENTS.md for instructions, Agent Skills from "
+        "`.zcode/skills/` and `.agents/skills/`, and commands from "
+        "`.zcode/commands/`, all of which receive skillsaw's shared content "
+        "and security checks.\n\n"
+        "A plugin that ships both `.zcode-plugin/` and `.claude-plugin/` "
+        "manifests keeps its Claude Code results: Claude reads the shared "
+        "`hooks/hooks.json` and `.mcp.json` too.\n\n"
+        "The rules enable on three separate conditions. Project rules need a "
+        "`.zcode/` directory holding `skills/`, `commands/`, `agents/`, "
+        "`workflows/` or `config.json`. Plugin rules need a "
+        "`.zcode-plugin/plugin.json`. Marketplace rules also need a "
+        "repository-root `marketplace.json` and no "
+        "`.claude-plugin/marketplace.json`.",
+    ),
+    (
         "Hooks",
         "hooks",
         [
@@ -300,7 +333,8 @@ RULE_GROUPS = [
         "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
         "Codex's `.codex/hooks.json`, the `[hooks]` tables of its `.codex/config.toml`, "
         "and plugin hooks, Muse Code's `.muse/hooks.json`, "
-        "Grok Build's `.grok/hooks/*.json` and its plugin hooks, Cursor's "
+        "Grok Build's `.grok/hooks/*.json` and its plugin hooks, ZCode's "
+        "`.zcode/config.json` and plugin hooks, Cursor's "
         "`.cursor/hooks.json`, Google Antigravity's `hooks.json` in a customization "
         "root or plugin, and skill, "
         "Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain "

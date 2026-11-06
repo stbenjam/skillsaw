@@ -1,0 +1,57 @@
+## Why
+
+ZCode reads project hooks and MCP servers from `.zcode/config.json` in every
+directory from the session's working directory up to the git root. It
+validates the file's `hooks` section against one strict schema, so a single
+misplaced key makes ZCode discard the entire file: every project hook and
+every MCP server in it. A typical mistake is an event written directly under
+`hooks` instead of under `hooks.events`. An invalid MCP server is less
+costly: ZCode skips that server and loads the rest.
+
+Project hooks also need workspace trust before ZCode runs them. This rule
+checks only their shape.
+
+## Severity
+
+All findings are errors.
+
+**The whole file is ignored**:
+
+- Invalid JSON, or a file that is not an object.
+- A `hooks` key other than `enabled`, `timeoutMs`, `maxOutputBytes` and
+  `events`.
+- An event under `hooks.events` that ZCode does not run, or one that is not
+  an array.
+- A matcher group or handler ZCode cannot read: an empty `matcher`, no
+  `hooks` array, a `type` other than `command` or `process`, a missing
+  `command`, or a wrongly typed field.
+- An `mcp` value that is not an object.
+
+**One MCP server, or all of them, is skipped**:
+
+- `mcp.servers` that is not an object (all servers).
+- A server with no `type` and neither a `command` nor a `url`, a `type` other
+  than `stdio`, `http` or `sse`, a key that type does not accept, an empty
+  `command` or `url`, or `env`, `headers` or `args` of the wrong type.
+
+## How to fix
+
+Nest events under `hooks.events`, and give each MCP server one transport's
+keys:
+
+```json
+{
+  "hooks": {
+    "events": {
+      "PostToolUse": [
+        { "matcher": "Write|Edit", "hooks": [{ "type": "command", "command": "make fmt" }] }
+      ]
+    }
+  },
+  "mcp": {
+    "servers": {
+      "docs": { "type": "http", "url": "https://docs.example.com/mcp" }
+    }
+  }
+}
+```

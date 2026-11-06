@@ -702,6 +702,26 @@ class GrokAgentBlock(FrontmatteredBlock):
 
 
 @dataclass(eq=False)
+class ZCodeCommandBlock(FrontmatteredBlock):
+    """.zcode/commands/**/*.md — ZCode's project slash commands."""
+
+    category: str = "command"
+
+
+@dataclass(eq=False)
+class ZCodeAgentBlock(FrontmatteredBlock):
+    """.zcode/agents/*.md — ZCode's project subagents.
+
+    ZCode lists every subagent to the model as ``name: description`` and
+    routes on that line, so both fields are required; a file missing either
+    is skipped (``packages/shared/src/subagent-profile-parser.ts:33-58`` in
+    ``zai-org/ZCode``).
+    """
+
+    category: str = "agent"
+
+
+@dataclass(eq=False)
 class AntigravityAgentBlock(FrontmatteredBlock):
     """``<customization root>/agents/*.md`` — Antigravity's subagents.
 
