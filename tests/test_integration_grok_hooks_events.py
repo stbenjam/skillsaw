@@ -114,3 +114,28 @@ def test_dropped_scope_honors_a_configured_severity(tmp_path, configured, code):
     assert [(v["message"], v["severity"]) for v in findings] == [
         ("Hook event 'PreToolUse' must be an array of matcher groups", configured)
     ]
+
+
+@pytest.mark.parametrize("configured", ["error", "info"])
+def test_uncompilable_matcher_honors_a_configured_severity(tmp_path, configured):
+    repo, _ = fixture(tmp_path, "known-invalid")
+    hooks = repo / FILE
+    hooks.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash(",
+                            "hooks": [{"type": "command", "command": "/audit/recognized"}],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    (repo / ".skillsaw.yaml").write_text(f"rules:\n  {RULE}:\n    severity: {configured}\n")
+    _, findings = lint(repo)
+    assert len(findings) == 1
+    assert "does not compile" in findings[0]["message"]
+    assert findings[0]["severity"] == configured

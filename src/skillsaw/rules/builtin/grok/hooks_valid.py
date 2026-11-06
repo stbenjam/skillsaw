@@ -250,13 +250,13 @@ class _FileCheck:
 
         detail = rust_matcher_error(matcher)
         if detail is not None:
-            # A warning, not an error: Grok compiles matchers with Rust's
-            # regex engine, and the dialects differ at the edges.
+            # Grok drops the group. Rust's regex dialect differs from this
+            # check at the edges, which is one more reason the default is a
+            # warning rather than an error.
             return [
-                self._violation(
+                self._dropped(
                     f"Hook {where} 'matcher' {safe_display(repr(matcher))} does not "
-                    f"compile: {detail}",
-                    Severity.WARNING,
+                    f"compile: {detail}"
                 )
             ]
         return []

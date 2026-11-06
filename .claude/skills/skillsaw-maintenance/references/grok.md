@@ -402,8 +402,9 @@ auto-trusted counterpart `~/.grok/plugins/` is never in a checkout.
   fallback order above, not the catalog's directory. Legal shadowed copies and absent
   indexes are silent.
 - `grok-hooks-valid` severity follows scope: the whole-file cases above take the
-  rule's configured severity (ERROR by default); event, group and handler defects are
-  WARNING, reserved `env` keys and an ignored matcher INFO.
+  rule's configured severity (ERROR by default); event, group and handler defects
+  default to WARNING through `scope_severity()`, so an explicitly configured severity
+  still applies to them; reserved `env` keys and an ignored matcher are INFO.
 - Vocabulary (events, aliases, handler fields, reserved env, failure scopes) — one
   module, `src/skillsaw/formats/grok.py`, so a behavior change is an edit there rather
   than a hunt through rule code.
