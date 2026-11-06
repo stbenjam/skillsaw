@@ -1,0 +1,16 @@
+{
+  "name": "my.market_1",
+  "owner": {"name": "ACME Corp", "url": "https://acme.example.com"},
+  "plugins": [
+    {
+      "name": "Data.Tools_2",
+      "source": {"source": "github", "repo": "acme/data-tools"},
+      "description": "Query and export warehouse tables"
+    },
+    {
+      "name": "release..notes",
+      "source": {"source": "github", "repo": "acme/release-notes"},
+      "description": "Draft release notes from merged pull requests"
+    }
+  ]
+}

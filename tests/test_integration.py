@@ -442,6 +442,67 @@ class TestHooksJson:
         assert found[0]["file_path"] == "hooks/hooks.json"
         assert "Unknown event type 'NotAClaudeEvent'" in found[0]["message"]
 
+    def test_on_failure_accepted_on_command_and_http(self, tmp_path):
+        # Claude Code 2.1.319 `claude plugin validate` accepts "continue" and
+        # "block" on both handler types; 2.1.295 introduced the field.
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+
+    @pytest.mark.parametrize("handler", [0, 1], ids=["command", "http"])
+    @pytest.mark.parametrize("value", ["explode", "Block", True, None, ["block"]])
+    def test_on_failure_invalid_value_is_an_error(self, tmp_path, value, handler):
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["PreToolUse"][0]["hooks"][handler]["onFailure"] = value
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["severity"] == "error"
+        assert found[0]["file_path"] == "hooks/hooks.json"
+        assert f"PreToolUse[0].hooks[{handler}]' field 'onFailure' has invalid value" in (
+            found[0]["message"]
+        )
+        assert "Valid values: continue, block" in found[0]["message"]
+
+    def test_on_failure_invalid_value_respects_severity_override(self, tmp_path):
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["PreToolUse"][0]["hooks"][0]["onFailure"] = "explode"
+        path.write_text(json.dumps(data))
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n  claude-hooks-valid:\n    severity: warning\n"
+        )
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["severity"] == "warning"
+        assert "field 'onFailure' has invalid value" in found[0]["message"]
+
+    @pytest.mark.parametrize("value", ["block", "explode"])
+    def test_on_failure_on_prompt_handler_warns(self, tmp_path, value):
+        # Claude Code accepts and ignores onFailure on a prompt hook, whatever
+        # its value, so an invalid value there is not an error.
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["PreToolUse"][0]["hooks"][0] = {
+            "type": "prompt",
+            "prompt": "Reject commands that delete files outside the project.",
+            "onFailure": value,
+        }
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["severity"] == "warning"
+        assert "field 'onFailure' is only valid on types: command, http" in (found[0]["message"])
+
     @pytest.mark.parametrize(
         "source_value,valid",
         [
@@ -853,6 +914,72 @@ class TestMarketplace:
         r = run_lint(repo)
         assert r["rc"] == 0
         assert "claude-marketplace-json-valid" not in rule_ids(r)
+
+    def test_uninstallable_names_error(self, tmp_path):
+        """Marketplace and entry names `claude plugin validate` fails are errors."""
+        repo = copy_fixture("marketplace/uninstallable-names", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        messages = [
+            v["message"] for v in violations(r) if v["rule_id"] == "claude-marketplace-json-valid"
+        ]
+        bad = [m for m in messages if "cannot be installed" in m]
+        assert len(bad) == 3, messages
+        assert any(m.startswith("Marketplace name 'acme tools'") for m in bad)
+        assert any(m.startswith("plugins[0] plugin name '_internal-metrics'") for m in bad)
+        assert any(m.startswith("plugins[1] plugin name 'Report Builder!'") for m in bad)
+        # One finding per defect: no kebab-case warning on top of the error.
+        assert not any("kebab-case" in m for m in messages)
+
+    def test_uninstallable_names_are_displayed_safely(self, tmp_path):
+        """Control characters in a reported name cannot reshape the output."""
+        repo = copy_fixture("marketplace/uninstallable-names", tmp_path)
+        path = repo / ".claude-plugin" / "marketplace.json"
+        data = json.loads(path.read_text())
+        data["name"] = "acme\ntools\x1b[31m"
+        data["plugins"][0]["name"] = "evil\u202ename"
+        path.write_text(json.dumps(data))
+        r = run_lint(repo)
+        bad = [
+            v["message"]
+            for v in violations(r)
+            if v["rule_id"] == "claude-marketplace-json-valid"
+            and "cannot be installed" in v["message"]
+        ]
+        assert len(bad) == 3, bad
+        for message in bad:
+            assert "\n" not in message and "\x1b" not in message and "\u202e" not in message
+
+    def test_installable_names_pass(self, tmp_path):
+        """Dots, underscores and capitals are installable; entry names may hold '..'."""
+        repo = copy_fixture("marketplace/installable-names", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        messages = [
+            v["message"] for v in violations(r) if v["rule_id"] == "claude-marketplace-json-valid"
+        ]
+        # Only the style nudge for the non-kebab marketplace name remains.
+        assert messages == [
+            "Marketplace name 'my.market_1' should be kebab-case "
+            "(lowercase letters, numbers, and hyphens)"
+        ]
+
+    def test_entry_hooks_path_and_array_error(self, tmp_path):
+        """Entry `hooks` as a path or array fails plugin load; an inline object passes."""
+        repo = copy_fixture("marketplace/entry-hooks-forms", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        hooks = [
+            v
+            for v in violations(r)
+            if v["rule_id"] == "claude-marketplace-json-valid" and ".hooks" in v["message"]
+        ]
+        assert [v["message"].split(",")[0] for v in hooks] == [
+            "plugins[0].hooks is a file path",
+            "plugins[1].hooks is an array",
+        ]
+        assert all(v["severity"] == "error" for v in hooks)
 
     def test_marketplace_stats(self, tmp_path):
         repo = copy_fixture("marketplace/clean", tmp_path)

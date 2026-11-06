@@ -108,7 +108,7 @@ skillsaw detects repository types automatically and lints multiple formats in th
 Pi packages and `.pi/` project resources are supported, including native skills,
 prompt templates, manifest globs, local package references, and first-party
 `.pi/mcp.json` servers. Shared MCP credential and policy checks cover these
-servers; enable `pi-mcp-valid` for Pi 1.0 field validation, including
+servers; enable `pi-mcp-valid` for Pi 1.5 field validation, including
 `oauth.authServerMetadataUrl`, and `pi-settings-schema` to check
 `.pi/settings.json` against Pi's published 1.5.0 settings schema. See
 [Pi configuration checks](https://skillsaw.org/rules/pi-config-valid/),

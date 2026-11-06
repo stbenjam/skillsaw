@@ -82,12 +82,8 @@ class MuseHooksValidRule(Rule):
         return {item for item in value if isinstance(item, str)}
 
     def _known_events(self) -> Set[str]:
-        """Muse's documented events, its undocumented ones, and the project's."""
-        return (
-            set(muse.HOOK_EVENTS)
-            | set(muse.UNDOCUMENTED_HOOK_EVENTS)
-            | self._declared("extra-events")
-        )
+        """Muse's documented events and the project's."""
+        return set(muse.HOOK_EVENTS) | self._declared("extra-events")
 
     def _known_handler_fields(self) -> Set[str]:
         """Muse's handler fields plus any the project declares.
@@ -223,14 +219,6 @@ class _FileCheck:
     def _check_event_name(self, event: str) -> List[RuleViolation]:
         """An event Muse does not dispatch skips its entries; the file loads."""
         shown = safe_display(event)
-
-        if event in muse.UNDOCUMENTED_HOOK_EVENTS:
-            return [
-                self._violation(
-                    f"Hook event '{shown}' is not in Muse's documented event list",
-                    Severity.INFO,
-                )
-            ]
 
         if event in muse.RECOGNIZED_UNRUN_EVENTS:
             return [

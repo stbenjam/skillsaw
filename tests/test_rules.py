@@ -463,11 +463,73 @@ def test_marketplace_duplicate_plugin_names(temp_dir):
 
 
 def test_marketplace_name_not_kebab_case_warns(temp_dir):
-    repo = _marketplace_with(temp_dir, name="My Marketplace")
+    repo = _marketplace_with(temp_dir, name="My.Marketplace")
     violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
     kebab = [v for v in violations if "kebab-case" in v.message]
     assert len(kebab) == 1
     assert kebab[0].severity == Severity.WARNING
+    assert not [v for v in violations if "cannot be installed" in v.message]
+
+
+@pytest.mark.parametrize(
+    "name", ["My Marketplace", "_internal", "-tools", ".hidden", "a..b", "ünï"]
+)
+def test_marketplace_name_uninstallable_errors_without_kebab_warning(temp_dir, name):
+    """Names `claude plugin validate` fails get one ERROR, not also the kebab WARNING."""
+    repo = _marketplace_with(temp_dir, name=name)
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    name_violations = [v for v in violations if f"'{name}'" in v.message]
+    assert len(name_violations) == 1, violations
+    assert "cannot be installed" in name_violations[0].message
+    assert name_violations[0].severity == Severity.ERROR
+
+
+@pytest.mark.parametrize("name", ["_internal", "-tools", ".hidden", "Report Builder!", "a/b"])
+def test_marketplace_entry_name_uninstallable_errors(temp_dir, name):
+    repo = _marketplace_with(
+        temp_dir, plugins=[{"name": name, "source": {"source": "github", "repo": "o/r"}}]
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    bad = [v for v in violations if "cannot be installed" in v.message]
+    assert len(bad) == 1, violations
+    assert bad[0].message.startswith("plugins[0] plugin name")
+    assert bad[0].severity == Severity.ERROR
+
+
+@pytest.mark.parametrize("name", ["my-plugin", "My.Plugin_2", "release..notes", "ab."])
+def test_marketplace_entry_name_installable_passes(temp_dir, name):
+    """Entry names follow the same grammar but, unlike marketplace names, may contain '..'."""
+    repo = _marketplace_with(
+        temp_dir, plugins=[{"name": name, "source": {"source": "github", "repo": "o/r"}}]
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    assert not [v for v in violations if "cannot be installed" in v.message]
+
+
+@pytest.mark.parametrize(
+    "hooks, form",
+    [("./hooks/hooks.json", "a file path"), (["./hooks/a.json", {"Stop": []}], "an array")],
+)
+def test_marketplace_entry_hooks_path_or_array_errors(temp_dir, hooks, form):
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "p", "source": {"source": "github", "repo": "o/r"}, "hooks": hooks}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    bad = [v for v in violations if "plugins[0].hooks" in v.message]
+    assert len(bad) == 1, violations
+    assert f"is {form}" in bad[0].message
+    assert bad[0].severity == Severity.ERROR
+
+
+def test_marketplace_entry_hooks_inline_object_passes(temp_dir):
+    hooks = {"Stop": [{"hooks": [{"type": "command", "command": "npm run lint"}]}]}
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "p", "source": {"source": "github", "repo": "o/r"}, "hooks": hooks}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    assert not [v for v in violations if ".hooks" in v.message]
 
 
 def test_marketplace_local_bun_is_allowed_while_download_execution_errors(temp_dir):

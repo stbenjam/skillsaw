@@ -6,7 +6,8 @@ servers the agent can call. Each one is a process Antigravity spawns or an
 endpoint it connects to, so what the file says is what the agent can reach.
 
 Its two failure modes are far apart, and neither is visible from the file.
-Measured against `agy` 1.1.26:
+Measured against `agy` 1.1.26; the `enabledTools`, `timeoutSeconds` and
+`tools` checks against 1.3.6:
 
 - A **JSON syntax error, a non-null root that is not an object, or a
   non-null `mcpServers` value that is not an object** is startup-fatal.
@@ -51,7 +52,15 @@ goes unreported while this rule is off, because a user who pinned a
 - Non-null `disabled` that is not a boolean.
 - Non-null `args` that is not an array, or an element that is neither a string nor null.
 - Non-null `command`, `url`, `serverUrl` or `cwd` that is not a string.
-- Non-null `disabledTools` that is not an array of strings or null elements.
+- Non-null `disabledTools` or `enabledTools` that is not an array of strings
+  or null elements.
+- Non-null `timeoutSeconds` that is not a whole JSON number in the 64-bit
+  integer range. Negatives and `0` load; `"600"`, `1.5` and even `600.0`
+  drop the server.
+- Non-null `tools` that is not an object, or a tool entry that is neither an
+  object nor null. Inside a tool entry, a non-null `eager` must be a boolean
+  and a non-null `background` exactly `"off"` or `"always"` — `"ALWAYS"` and
+  `""` drop the server too. Unknown tool-entry keys are ignored.
 - An empty `command` with no `serverUrl` or `url`. The server loads, but has
   no command to start.
 - `authProviderType` with any value but the string `google_credentials` —
@@ -60,7 +69,9 @@ goes unreported while this rule is off, because a user who pinned a
   only the lowercase JSON alias parses.
 
 Server field names match without regard to case: `Command`, `serverURL`
-and `DisabledTools` use the same types as their canonical spellings.
+and `DisabledTools` use the same types as their canonical spellings, and so
+do a tool entry's `Eager` and `Background`. Tool names under `tools` are
+exact.
 OAuth's `clientId` and `clientSecret` also match this way. The top-level
 `mcpServers` wrapper, server names, and environment/header member names
 remain case-sensitive. Command and credential scans read the same normalized
@@ -149,6 +160,8 @@ says nothing:
 - Use `serverUrl` for a remote server, `command` plus `args` for a local
   one. Naming both is allowed; `serverUrl` is what runs.
 - Switch a server off with `"disabled": true`.
+- Write `timeoutSeconds` as a bare integer (`600`), and `tools.<name>.background`
+  as `"off"` or `"always"`.
 - Write `authProviderType` as `"google_credentials"`, or leave it out.
 - Keep credentials out of the file: reference an environment variable
   (`"${GTFS_FEED_TOKEN}"`) rather than pasting a token into `env`,
