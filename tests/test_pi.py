@@ -1021,3 +1021,16 @@ def test_changelog_path_symlink_escaping_package_is_outside(tmp_path):
     _, violations = _cli_violations(root, "pi-resource-paths")
     assert len(violations) == 1
     assert "(outside the package)" in violations[0]["message"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX symlinks")
+def test_changelog_path_collapses_dot_dot_before_symlinks(tmp_path):
+    """Pi resolves `link/..` lexically, as Node's path.resolve does."""
+    root = copy_fixture("changelog", tmp_path)
+    (tmp_path / "vendor" / "notes").mkdir(parents=True)
+    (root / "link").symlink_to(tmp_path / "vendor" / "notes")
+    manifest = json.loads((root / "package.json").read_text())
+    manifest["pi"]["changelogPath"] = "link/../docs/CHANGELOG.md"
+    (root / "package.json").write_text(json.dumps(manifest))
+    _, violations = _cli_violations(root, "pi-resource-paths")
+    assert not violations

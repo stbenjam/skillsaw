@@ -1,5 +1,7 @@
 """Optional checks for literal repository-local Pi resource declarations."""
 
+import os
+from pathlib import Path
 from typing import List
 
 from skillsaw.blocks.pi import PiPackageBlock, PiSettingsBlock
@@ -71,7 +73,8 @@ class PiResourcePathsRule(Rule):
                 changelog = None if settings else config.get("changelogPath")
                 if isinstance(changelog, str) and changelog:
                     root = context.resolve_path(block.path.parent)
-                    target = block.path.parent / changelog
+                    # Pi applies Node's lexical path.resolve before touching the disk.
+                    target = Path(os.path.abspath(block.path.parent / changelog))
                     shown = f"changelogPath: {safe_display(changelog)!r}"
                     # An absolute path, in either platform's spelling, cannot
                     # follow the package to wherever Pi installs it.
