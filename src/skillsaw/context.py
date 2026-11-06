@@ -854,7 +854,9 @@ class RepositoryContext(
 
     def get_plugin_name(self, plugin_path: Path) -> str:
         """Return the manifest, marketplace, or directory plugin name."""
-        return claude_discovery.plugin_name(plugin_path, self.plugin_metadata)
+        return claude_discovery.plugin_name(
+            plugin_path, self.plugin_metadata, self.marketplace_entries
+        )
 
     def is_registered_in_marketplace(self, plugin_name: str) -> bool:
         """Check if a plugin is registered in marketplace.json"""

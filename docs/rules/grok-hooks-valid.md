@@ -22,8 +22,10 @@ committed to the repository, they provide a reliable, shared mechanism for
 running checks and automations across your team.
 
 Grok Build reads all `*.json` files directly inside `.grok/hooks/` and merges
-their hook definitions. If a hook file has syntax or structural issues, Grok
-may skip the file or individual handlers quietly during headless sessions.
+their hook definitions. A syntax error skips the whole file; most other
+mistakes skip one event, matcher group or handler. Grok lists those as hook
+load errors in `grok inspect` and the `/hooks` tab, but a headless session
+or CI run shows nothing.
 This rule verifies your `.grok/hooks/*.json` files against Grok's supported
 events, handler types, and options so that your automations run reliably.
 
@@ -35,33 +37,37 @@ explicit allowlist with [`hooks-prohibited`](hooks-prohibited.md).
 
 Severity reflects how much of the hook configuration is affected by an issue:
 
-**Errors** — issues that prevent Grok Build from loading the hooks file:
+**Errors** — issues that prevent Grok Build from loading any hook in the file:
 
-- Invalid JSON syntax, non-finite numbers (`NaN`, `Infinity`, `-Infinity`), or
-  a file starting with a UTF-8 Byte Order Mark (BOM).
-- Missing top-level `hooks` object, or an object that is not a dictionary.
-- Recognized event values that are not arrays, matcher groups that are not objects, or
-  matcher groups missing their `hooks` array.
-- Handlers missing a `type` field.
-- A `matcher` that is not a string.
-- Handler fields with incompatible data types: `type`, `command`, and `url`
-  must be strings; `timeout` must be a non-negative integer; and `env` must be
-  an object with string values.
+- Invalid JSON syntax, or non-finite numbers (`NaN`, `Infinity`, `-Infinity`).
+- A root that is not an object, a missing top-level `hooks` object, or a
+  `hooks` value that is not an object.
 
-**Warnings** — the file loads, but specific events or handlers may not run:
+**Warnings** — the file loads, but an event, matcher group or handler does not:
 
 - Unrecognized hook event names. Grok skips their values before decoding
   groups or handlers, so their descendants do not produce shape errors.
   Declare a newer event in `extra-events` to enable its strict shape checks.
+- A recognized event whose value is not an array.
+- A matcher group that is not an object, has no `hooks` array, or has a
+  `matcher` that is not a string.
 - A regex `matcher` that does not compile under Rust's regex engine. Rust's
   regex syntax supports Unicode property classes (`\p{...}`) and set operations
   (`&&`, `--`, `~~`), but does not support lookarounds, backreferences, or
   conditional groups. Matchers longer than 1,000 characters are skipped to keep
   checks responsive.
+- A handler that is not an object, has no `type`, or uses an unsupported
+  `type` (supported types are `command` and `http`).
 - A `command` handler missing a `command` string, or an `http` handler missing
   a `url` string.
-- Handlers specifying an unsupported `type` (supported types are `command` and
-  `http`).
+- Handler fields with the wrong data type: `type`, `command`, `url` and
+  `onFailure` must be strings; `args` an array of strings; `timeout` a
+  non-negative number; `failClosed` (or `fail_closed`) a boolean, not `null`;
+  and `env` an object with string values. Setting both `failClosed` and
+  `fail_closed` also drops the handler.
+- A Claude Code `if` condition. Grok does not support it, so it skips the
+  handler rather than run it on every call. An `if` of `null`, `false`, `""`,
+  `[]` or `{}` asks for nothing and is not reported.
 - An empty `hooks` object or empty event array (valid JSON, but configures no
   actions).
 
@@ -94,7 +100,8 @@ include:
 
 ## Examples
 
-**Bad** — a string `timeout` prevents the file from loading:
+**Bad** — a string `timeout` drops the `SessionStart` handler, and the `if`
+condition makes Grok skip the `PreToolUse` one:
 
 ```json
 {
@@ -106,8 +113,13 @@ include:
         ]
       }
     ],
-    "Stop": [
-      { "hooks": [{ "type": "command", "command": "make lint" }] }
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "./scripts/check-push.sh", "if": "Bash(git push *)" }
+        ]
+      }
     ]
   }
 }
@@ -140,9 +152,13 @@ include:
 
 ## How to fix
 
-- Specify `timeout` as a non-negative integer of seconds (`30`, rather than
-  `30.0` or `"30"`). For longer tasks like test suites in `Stop` hooks, generous
-  timeouts (such as 600 seconds) work well.
+- Specify `timeout` as a non-negative number of seconds (`30` or `1.5`, not
+  `"30"`). `0` keeps the default. For longer tasks like test suites in `Stop`
+  hooks, generous timeouts (such as 600 seconds) work well.
+- Remove an `if` condition and move the check into the hook command, or narrow
+  the group's `matcher`.
+- Write `args` as an array of strings, one per argument, and `failClosed` as
+  `true` or `false`.
 - Provide each handler with `"type": "command"` and a `command` string, or
   `"type": "http"` and a `url` string.
 - Keep `env` values as strings. Variables provided by Grok's runner do not
@@ -168,13 +184,6 @@ Unclosed groups/classes and unsupported look-around/backreferences are still
 reported in the checked subset. Extended-mode (`x`) patterns are left
 unresolved because comments change tokenization. No finding is a complete
 Rust regex validation guarantee.
-
-## Numeric timeouts
-
-Write a timeout as an unsigned integer token, such as `0` or `30`. Grok
-rejects literal `-0`, decimal/exponent forms such as `0.0` and `0e0`, and
-integers above `18446744073709551615`. A wrong timeout type prevents the
-whole hooks file from loading.
 
 ## Configuration
 

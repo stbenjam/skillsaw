@@ -105,16 +105,28 @@ def is_valid_plugin_dir(path: Path, entry: Optional[Dict[str, Any]] = None) -> b
     )
 
 
-def plugin_name(path: Path, metadata: Dict[Path, Dict[str, Any]]) -> str:
-    """Return the manifest, marketplace, or directory name for a plugin."""
+def plugin_name(
+    path: Path,
+    metadata: Dict[Path, Dict[str, Any]],
+    entries: Dict[Path, Dict[str, Any]],
+) -> str:
+    """Return the manifest, marketplace, or directory name for a plugin.
+
+    Without a plugin.json the marketplace entry is the manifest, whatever its
+    ``strict`` value, so any entry registering the directory names it.
+    """
     manifest = path / ".claude-plugin" / "plugin.json"
     if manifest.exists():
         data, _error = read_json(manifest)
         name = data.get("name") if isinstance(data, dict) else None
         if isinstance(name, str) and name:
             return name
-    name = metadata.get(safe_resolve(path) or path, {}).get("name")
-    return name if isinstance(name, str) else path.name
+    resolved = safe_resolve(path) or path
+    for source in (metadata, entries):
+        name = source.get(resolved, {}).get("name")
+        if isinstance(name, str) and name:
+            return name
+    return path.name
 
 
 def plugin_metadata(
