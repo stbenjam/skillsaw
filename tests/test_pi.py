@@ -981,6 +981,7 @@ def test_invalid_changelog_path(fixture, rule, expected, tmp_path):
     assert expected in violations[0]["message"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX symlinks")
 def test_changelog_path_symlink_escaping_package_is_outside(tmp_path):
     root = copy_fixture("changelog", tmp_path)
     outside = tmp_path / "elsewhere.md"
