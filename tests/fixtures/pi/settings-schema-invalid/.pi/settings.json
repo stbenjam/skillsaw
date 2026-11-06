@@ -2,7 +2,6 @@
   "$schema": "https://pi.dev/schemas/settings.schema.json",
   "defaultProvider": "anthropic",
   "defaultThinkingLevel": "extreme",
-  "quietStartup": "yes",
   "outputPad": 2,
   "compaction": {
     "enabled": "true",

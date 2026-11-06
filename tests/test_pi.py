@@ -928,11 +928,24 @@ def test_settings_schema_reports_once_and_leaves_resources_to_config_valid(tmp_p
     assert '$.defaultThinkingLevel: must be one of "off", "minimal"' in message
     # Schema constants keep their JSON types: 0 is not "0".
     assert "$.outputPad: must be one of 0, 1" in message
-    # Five errors, consolidated: the fifth ($.quietStartup) is counted.
-    assert message.endswith("and 1 more schema error")
+    assert "more schema error" not in message
     # The malformed resource field belongs to pi-config-valid alone.
     assert "skills" not in message
     assert "skills (expected an array of strings)" in by_rule["pi-config-valid"]["message"]
+
+
+def test_settings_schema_counts_errors_beyond_the_sample(tmp_path):
+    """Thousands of invalid items yield a bounded summary and an exact count."""
+    root = copy_fixture("settings-schema-valid", tmp_path)
+    settings = root / ".pi" / "settings.json"
+    data = json.loads(settings.read_text())
+    data["enabledModels"] = list(range(5000))
+    settings.write_text(json.dumps(data))
+    _, violations = _cli_violations(root, "pi-settings-schema")
+    assert len(violations) == 1
+    message = violations[0]["message"]
+    assert message.count("$.enabledModels[") == 4
+    assert message.endswith("and 4996 more schema errors")
 
 
 def test_settings_schema_checks_legacy_skills_options(tmp_path):

@@ -1,6 +1,7 @@
 """Validate project .pi/settings.json against Pi's published settings schema."""
 
 from functools import lru_cache
+from itertools import chain
 from typing import TYPE_CHECKING, List
 
 from skillsaw.blocks.pi import PiSettingsBlock
@@ -62,21 +63,23 @@ class PiSettingsSchemaRule(Rule):
             # pi-config-valid reports parse errors and non-object documents.
             if block.parse_error or not isinstance(data, dict):
                 continue
-            errors = [
+            # Streamed: the summary keeps a bounded sample and counts the rest.
+            errors = (
                 error
                 for error in _validator().iter_errors(data)
                 if not error.absolute_path or error.absolute_path[0] not in SETTINGS_RESOURCE_KEYS
-            ]
+            )
             skills = data.get("skills")
             if isinstance(skills, dict):
                 # customDirectories is a resource list; the rest is ordinary settings.
                 options = {k: v for k, v in skills.items() if k != "customDirectories"}
-                errors += _legacy_skills_validator().iter_errors({"skills": options})
-            if errors:
+                errors = chain(errors, _legacy_skills_validator().iter_errors({"skills": options}))
+            summary = schema_error_summary(errors)
+            if summary:
                 violations.append(
                     self.violation(
                         f"Pi settings do not match the Pi {SETTINGS_SCHEMA_VERSION} schema: "
-                        f"{schema_error_summary(errors)}",
+                        f"{summary}",
                         block=block,
                     )
                 )
