@@ -5,7 +5,7 @@ from typing import List
 from skillsaw.blocks.pi import PiPackageBlock, PiSettingsBlock
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
-from skillsaw.paths import safe_exists
+from skillsaw.paths import contained_resolve, safe_exists, safe_is_file
 from skillsaw.discovery.pi import local_path
 from skillsaw.formats.pi import RESOURCE_FIELDS, REMOTE_PREFIXES, settings_resources, string_list
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -66,6 +66,20 @@ class PiResourcePathsRule(Rule):
                         and not safe_exists(path)
                     ):
                         missing.append(f"{key}: {safe_display(entry)!r}")
+                # Pi 1.5.0 shows a package changelog only from a file inside
+                # the package; an empty string turns the changelog off.
+                changelog = None if settings else config.get("changelogPath")
+                if isinstance(changelog, str) and changelog:
+                    root = context.resolve_path(block.path.parent)
+                    target = block.path.parent / changelog
+                    shown = f"changelogPath: {safe_display(changelog)!r}"
+                    if root is None or contained_resolve(target, root, context.resolve_path) in (
+                        None,
+                        root,
+                    ):
+                        missing.append(f"{shown} (outside the package)")
+                    elif not context.is_path_excluded(target) and not safe_is_file(target):
+                        missing.append(shown)
                 if missing:
                     violations.append(
                         self.violation(

@@ -1,7 +1,7 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
-version: "0.22.0"
+version: "0.22.1"
 
 rules:
 
@@ -640,6 +640,11 @@ rules:
 
   # Literal Pi resource paths should exist in the assembled checkout
   pi-resource-paths:
+    enabled: false
+    severity: warning
+
+  # Pi project settings should match the Pi 1.5.0 settings schema
+  pi-settings-schema:
     enabled: false
     severity: warning
 

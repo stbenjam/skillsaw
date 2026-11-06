@@ -77,6 +77,20 @@ def format_schema_error(error: ValidationError) -> str:
         detail = f"must contain at least {error.validator_value} character(s)"
     elif error.validator == "maxLength":
         detail = f"must contain at most {error.validator_value} character(s)"
+    elif error.validator in {"minimum", "maximum"}:
+        bound = "at least" if error.validator == "minimum" else "at most"
+        detail = f"must be {bound} {error.validator_value}"
+    elif error.validator == "enum" or (
+        error.validator == "anyOf"
+        and all(isinstance(option, dict) and "const" in option for option in error.validator_value)
+    ):
+        # Permitted values come from the schema, never from the document.
+        options = (
+            error.validator_value
+            if error.validator == "enum"
+            else [option["const"] for option in error.validator_value]
+        )
+        detail = "must be one of " + ", ".join(repr(safe_display(o)) for o in options)
     elif error.validator == "oneOf":
         detail = "must match exactly one permitted schema variant"
     elif error.validator == "not":

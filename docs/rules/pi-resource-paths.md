@@ -19,6 +19,11 @@ Pi resolves package resources relative to `package.json`, and project resource
 paths and local package sources relative to `.pi/settings.json`. A missing
 literal path can silently omit content.
 
+The rule also checks `pi.changelogPath`. Pi 1.5.0 shows a package's changelog
+after an update only when that path names a file inside the package; a missing
+file or a path outside the package, including through a symlink, silently shows
+nothing. An empty string turns the changelog off and is not checked.
+
 Project settings paths trim surrounding whitespace and accept local `file://`
 URLs within the repository. Package manifest paths retain their literal spelling.
 

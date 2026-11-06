@@ -1,0 +1,48 @@
+## Why
+
+Pi does not validate `settings.json`. A mistyped value, such as
+`"quietStartup": "yes"` or `"compaction": {"enabled": "true"}`, is read as
+written and misbehaves at runtime instead of producing an error. Pi 1.5.0
+generates a JSON Schema from its settings types and publishes it at
+`https://pi.dev/schemas/settings.schema.json`. This rule checks project
+`.pi/settings.json` against a copy of that schema bundled with skillsaw.
+
+## Checks
+
+- Known settings have the types, enumerated values, and numeric bounds that
+  the Pi 1.5.0 schema declares.
+- Unknown keys are accepted, as in Pi's schema.
+- The resource keys `extensions`, `skills`, `prompts`, `themes`, and
+  `packages` are left to `pi-config-valid`, which models Pi's loader more
+  closely (for example, `null` and legacy `skills.customDirectories`).
+- Parse errors and non-object documents are reported by `pi-config-valid`.
+
+Schema errors are consolidated into one finding per file. JSON parsing gives
+no positions, so the finding is reported at file level. A `$schema` key is
+accepted and never fetched.
+
+## Activation
+
+This rule is opt-in while it is checked against real projects. Enable it:
+
+```yaml
+rules:
+  pi-settings-schema:
+    enabled: true
+```
+
+User-level `~/.pi/agent/settings.json` and `models.json` are outside the
+repository and are not linted.
+
+## How to fix
+
+Correct the value at each reported path. For example:
+
+```json
+{
+  "$schema": "https://pi.dev/schemas/settings.schema.json",
+  "quietStartup": "header",
+  "defaultThinkingLevel": "medium",
+  "compaction": {"enabled": true, "reserveTokens": 16384}
+}
+```
