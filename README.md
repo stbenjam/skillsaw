@@ -32,6 +32,9 @@ Grok Build, Google Antigravity, native OpenClaw plugins, hooks, agent configurat
 Vercel skills CLI lockfiles, and eval formats. Safe structural fixes can be applied
 automatically; everything else comes with precise, agent-friendly guidance.
 
+[Kiro support](docs/kiro.md) includes recursive steering, native JSON/Markdown agents,
+and workspace/agent MCP, with explicit CLI 2.x and V3 compatibility boundaries.
+
 **[Get started](https://skillsaw.org/getting-started/)** |
 **[Browse the rules](https://skillsaw.org/rules/)** |
 **[Read the documentation](https://skillsaw.org/)**

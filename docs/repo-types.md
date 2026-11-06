@@ -782,7 +782,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Devin CLI / Desktop** | `devin` | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/rules/`, `.windsurf/global_rules.md`, and `.windsurfrules` |
 | **Windsurf** | `devin` | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
 | **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
-| **Kiro** | `kiro` | `.kiro/steering/*.md` |
+| **Kiro** | `kiro` | Recursive steering, native JSON/Markdown agents, skills, and workspace MCP; see [Kiro support](kiro.md) |
 | **Google Antigravity** | `antigravity` | Inside `.agents/`, `.agent/`, `_agents/` or `_agent/`: `hooks.json`, `mcp_config.json`, the registries `{agents,plugins,skills,workflows}.json`, prose in `rules/**/*.md` and `agents/*.md`, and skills under `skills/`. A `plugins.json` or `agents.json` registry's `entries` are followed, so a plugin or agent directory it names elsewhere in the repository is linted too. Detection is narrower — see [Google Antigravity](#google-antigravity) |
 | **[Pi](#pi-packages-and-projects)** | `pi` | `.pi/`: Native skills, prompts, themes and extensions, `SYSTEM.md`, `APPEND_SYSTEM.md`, resource declarations in `settings.json` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |

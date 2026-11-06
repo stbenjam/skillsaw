@@ -9,7 +9,7 @@ Pi project settings should match the Pi 1.5.0 settings schema
 |---|---|
 | **Severity** | warning (disabled) |
 | **Autofix** | - |
-| **Since** | v0.22.1 |
+| **Since** | v0.22.0 |
 | **Repo Types** | pi |
 | **Category** | [Pi](pi.md) |
 
