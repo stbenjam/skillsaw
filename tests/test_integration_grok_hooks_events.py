@@ -55,15 +55,16 @@ def test_unknown_values_emit_only_event_advisories(tmp_path):
     }
 
 
-def test_same_wrong_value_under_native_event_remains_fatal(tmp_path):
+def test_same_wrong_value_under_native_event_is_checked(tmp_path):
+    # Grok Build 1.0.77 drops only that event's entries, so it is a warning.
     repo, _ = fixture(tmp_path, "known-invalid")
     code, findings = lint(repo)
-    assert code == 1
+    assert code == 0
     assert len(findings) == 1
     assert (findings[0]["rule_id"], findings[0]["file_path"], findings[0]["severity"]) == (
         RULE,
         FILE,
-        "error",
+        "warning",
     )
     assert findings[0]["message"] == "Hook event 'PreToolUse' must be an array of matcher groups"
 
@@ -73,13 +74,13 @@ def test_extra_event_opt_in_enables_descendant_type_checks(tmp_path, event):
     repo, _ = fixture(tmp_path, "unknown")
     (repo / ".skillsaw.yaml").write_text(f"rules:\n  {RULE}:\n    extra-events: [{event}]\n")
     code, findings = lint(repo)
-    assert code == 1
+    assert code == 0
     assert len(findings) == 4
-    errors = [v for v in findings if v["severity"] == "error"]
-    assert len(errors) == 1
-    assert errors[0]["file_path"] == FILE
-    assert event in errors[0]["message"]
-    assert sum(v["severity"] == "warning" for v in findings) == 3
+    assert {v["severity"] for v in findings} == {"warning"}
+    shape = [v for v in findings if not v["message"].startswith("Unknown hook event")]
+    assert len(shape) == 1
+    assert shape[0]["file_path"] == FILE
+    assert event in shape[0]["message"]
 
 
 def test_shared_inventory_still_sees_unknown_event_commands(tmp_path):
@@ -102,3 +103,39 @@ def test_shared_inventory_still_sees_unknown_event_commands(tmp_path):
     assert all(v["file_path"] == FILE for v in policy)
     for command in commands:
         assert sum(command in v["message"] for v in policy) == 1
+
+
+@pytest.mark.parametrize(("configured", "code"), [("error", 1), ("info", 0)])
+def test_dropped_scope_honors_a_configured_severity(tmp_path, configured, code):
+    repo, _ = fixture(tmp_path, "known-invalid")
+    (repo / ".skillsaw.yaml").write_text(f"rules:\n  {RULE}:\n    severity: {configured}\n")
+    actual, findings = lint(repo)
+    assert actual == code
+    assert [(v["message"], v["severity"]) for v in findings] == [
+        ("Hook event 'PreToolUse' must be an array of matcher groups", configured)
+    ]
+
+
+@pytest.mark.parametrize("configured", ["error", "info"])
+def test_uncompilable_matcher_honors_a_configured_severity(tmp_path, configured):
+    repo, _ = fixture(tmp_path, "known-invalid")
+    hooks = repo / FILE
+    hooks.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash(",
+                            "hooks": [{"type": "command", "command": "/audit/recognized"}],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    (repo / ".skillsaw.yaml").write_text(f"rules:\n  {RULE}:\n    severity: {configured}\n")
+    _, findings = lint(repo)
+    assert len(findings) == 1
+    assert "does not compile" in findings[0]["message"]
+    assert findings[0]["severity"] == configured

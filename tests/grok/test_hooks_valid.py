@@ -1,10 +1,10 @@
 """``grok-hooks-valid`` — one verdict per defect, at the severity its scope earns.
 
-Every scope below was measured against Grok Build 1.0.13 with a canary
+Every scope below was measured against Grok Build 1.0.77 with a canary
 matrix: one hook file per case in an isolated ``GROK_HOME``'s ``hooks/``
 directory (user scope, always trusted, so no folder-trust gate), each
 handler carrying a unique command token, read back from ``grok inspect
---json``. Each case carries a canary handler in the same group and a canary
+--json`` (``hooks`` and ``hookLoadErrors``). Each case carries a canary handler in the same group and a canary
 group under a different event in the same file, so whole-file, group and
 handler scopes are told apart rather than assumed. ``skillsaw.formats.grok``
 records the matrix; re-run it before changing a verdict here.
@@ -117,23 +117,39 @@ def broken(tmp_path):
 
 
 #: Every finding the broken fixture makes, as (file, message, severity).
-#: Severity is the blast radius the canary matrix measured — a wrong-typed
-#: ``timeout`` costs every hook in the file, a missing ``command`` costs one
+#: Severity is the blast radius the canary matrix measured — malformed JSON
+#: costs every hook in the file, a wrong-typed ``timeout`` costs one
 #: handler — so each case pins its scope through the level it is filed at.
 #: The message states the defect and the place, and stops; the rule page
 #: carries the rest.
 @pytest.mark.parametrize(
     ("filename", "message", "severity"),
     [
-        # Whole file: serde refuses the document, so the `Stop` group in the
-        # same file never loads either.
+        # Whole file: nothing in the document loads.
+        ("hooks-list.json", "'hooks' must be a JSON object", Severity.ERROR),
+        # Handler scope: the `Stop` group in the same file still loads.
         (
             "bad-type.json",
-            "Hook SessionStart[0].hooks[0] 'timeout' must be a non-negative integer, got 'ten'",
-            Severity.ERROR,
+            "Hook SessionStart[0].hooks[0] 'timeout' must be a non-negative number, got 'ten'",
+            Severity.WARNING,
         ),
-        # `type` has no default; a handler without one refuses the document.
-        ("no-type.json", "Hook PostToolUse[0].hooks[0] is missing 'type'", Severity.ERROR),
+        ("no-type.json", "Hook PostToolUse[0].hooks[0] is missing 'type'", Severity.WARNING),
+        (
+            "claude-condition.json",
+            "Hook PreToolUse[0].hooks[0] sets 'if', which Grok does not support, "
+            "so it skips the handler",
+            Severity.WARNING,
+        ),
+        (
+            "args-string.json",
+            "Hook SubagentStop[0].hooks[0] 'args' must be an array of strings, got str",
+            Severity.WARNING,
+        ),
+        (
+            "fail-closed-string.json",
+            "Hook UserPromptSubmit[0].hooks[0] 'failClosed' must be a bool, got str",
+            Severity.WARNING,
+        ),
         # The event's entries are skipped; the rest of the file loads.
         ("unknown-event.json", "Unknown hook event 'PreToolUseFailure'", Severity.WARNING),
         # Handler scope: siblings in the same group still run.
@@ -178,10 +194,20 @@ def test_each_defect_is_reported_once(broken, filename, message, severity) -> No
     assert matched[0].file_path.name == filename
 
 
+def test_malformed_json_is_reported_once_at_file_scope(broken) -> None:
+    """The decoder's wording differs across Python versions, so only the
+    prefix is pinned."""
+    matched = [v for v in broken if v.file_path.name == "trailing-comma.json"]
+
+    assert len(matched) == 1, messages(broken)
+    assert matched[0].message.startswith("Invalid JSON: ")
+    assert matched[0].severity == Severity.ERROR
+
+
 def test_the_broken_fixture_reports_nothing_else(broken) -> None:
     """The counts are a noise gate: a new check must land in this fixture."""
     assert len(at(broken, Severity.ERROR)) == 2, messages(broken)
-    assert len(at(broken, Severity.WARNING)) == 5, messages(broken)
+    assert len(at(broken, Severity.WARNING)) == 10, messages(broken)
     assert len(at(broken, Severity.INFO)) == 2, messages(broken)
 
 
@@ -199,6 +225,7 @@ def test_a_sibling_handler_and_a_sibling_group_are_not_reported(broken) -> None:
     uncompilable matcher, are not findings."""
     assert not [m for m in messages(broken) if "PreCompact[0].hooks[1]" in m]
     assert not [m for m in messages(broken) if "PreToolUse[1]" in m]
+    assert not [m for m in messages(broken) if "PreToolUse[0].hooks[1]" in m]
 
 
 def test_the_cli_reports_every_finding_against_its_own_file(tmp_path) -> None:
@@ -237,9 +264,10 @@ def test_a_file_grok_cannot_load_is_an_error(tmp_path, body, expected) -> None:
     ("event", "group", "needle"),
     [
         ("Stop", '"not-a-group"', "Hook Stop[0] must be an object"),
-        # A group carrying only a matcher: `hooks` has no default, and serde
-        # refuses the document without it.
+        # A group carrying only a matcher: `hooks` has no default.
         ("PreToolUse", '{"matcher": "read_file"}', "Hook PreToolUse[0] is missing 'hooks'"),
+        # A `null` one is the key being absent: "missing field `hooks`".
+        ("PreToolUse", '{"hooks": null}', "Hook PreToolUse[0] is missing 'hooks'"),
         (
             "Stop",
             '{"hooks": {"type": "command", "command": "make lint"}}',
@@ -248,9 +276,10 @@ def test_a_file_grok_cannot_load_is_an_error(tmp_path, body, expected) -> None:
         ("Stop", '{"hooks": ["make lint"]}', "Hook Stop[0].hooks[0] must be an object"),
     ],
 )
-def test_a_malformed_group_shape_rejects_the_whole_file(tmp_path, event, group, needle) -> None:
-    """Each of these costs every other hook in the file, which is what the
-    ERROR level says; the message names the shape and the place."""
+def test_a_malformed_group_shape_costs_that_group_alone(tmp_path, event, group, needle) -> None:
+    """Grok Build 1.0.77 drops the group (or, for a non-object handler, the
+    handler) and loads the rest of the file, so this is a WARNING; the
+    message names the shape and the place."""
     repo = repo_with_hooks(
         tmp_path,
         f"group-{abs(hash(group))}",
@@ -261,10 +290,10 @@ def test_a_malformed_group_shape_rejects_the_whole_file(tmp_path, event, group, 
 
     assert len(violations) == 1, messages(violations)
     assert violations[0].message == needle
-    assert violations[0].severity == Severity.ERROR
+    assert violations[0].severity == Severity.WARNING
 
 
-def test_an_event_whose_value_is_not_an_array_rejects_the_whole_file(tmp_path) -> None:
+def test_an_event_whose_value_is_not_an_array_costs_that_event_alone(tmp_path) -> None:
     repo = repo_with_hooks(
         tmp_path,
         "event-not-array",
@@ -275,27 +304,43 @@ def test_an_event_whose_value_is_not_an_array_rejects_the_whole_file(tmp_path) -
 
     assert len(violations) == 1, messages(violations)
     assert violations[0].message == "Hook event 'Stop' must be an array of matcher groups"
-    assert violations[0].severity == Severity.ERROR
+    assert violations[0].severity == Severity.WARNING
 
 
 @pytest.mark.parametrize(
     ("field", "value", "expected"),
     [
-        ("timeout", "ten", "'timeout' must be a non-negative integer, got 'ten'"),
-        ("timeout", 1.5, "'timeout' must be a non-negative integer, got 1.5"),
-        ("timeout", -1, "'timeout' must be a non-negative integer, got -1"),
-        ("timeout", True, "'timeout' must be a non-negative integer, got True"),
+        ("timeout", "30", "'timeout' must be a non-negative number, got '30'"),
+        ("timeout", -1, "'timeout' must be a non-negative number, got -1"),
+        ("timeout", -0.5, "'timeout' must be a non-negative number, got -0.5"),
+        ("timeout", True, "'timeout' must be a non-negative number, got True"),
+        ("timeout", {}, "'timeout' must be a non-negative number, got {}"),
         ("command", 42, "'command' must be a str, got int"),
         ("url", 42, "'url' must be a str, got int"),
         ("env", "MY=1", "'env' must be an object, got str"),
+        ("env", ["MY"], "'env' must be an object, got list"),
         ("env", {"MY": 1}, "'env' value for 'MY' must be a string, got int"),
+        ("env", {"MY": None}, "'env' value for 'MY' must be a string, got null"),
+        ("args", "--fix", "'args' must be an array of strings, got str"),
+        ("args", "", "'args' must be an array of strings, got str"),
+        ("args", False, "'args' must be an array of strings, got bool"),
+        ("args", {}, "'args' must be an array of strings, got dict"),
+        ("args", ["--fix", 1], "'args' item 1 must be a string, got int"),
+        ("failClosed", "yes", "'failClosed' must be a bool, got str"),
+        ("failClosed", 0, "'failClosed' must be a bool, got int"),
+        ("failClosed", None, "'failClosed' must be a bool, got null"),
+        ("fail_closed", "yes", "'fail_closed' must be a bool, got str"),
+        ("fail_closed", None, "'fail_closed' must be a bool, got null"),
+        ("onFailure", 3, "'onFailure' must be a str, got int"),
+        ("onFailure", False, "'onFailure' must be a str, got bool"),
+        ("onFailure", [], "'onFailure' must be a str, got list"),
     ],
 )
-def test_a_known_field_of_the_wrong_type_rejects_the_whole_file(
+def test_a_known_field_of_the_wrong_type_drops_that_handler(
     tmp_path, field, value, expected
 ) -> None:
-    """Refused at parse time, before anything decides which handlers to keep,
-    which is what ERROR says here."""
+    """Grok Build 1.0.77 drops the handler and keeps its siblings — each case
+    measured — so the finding is the handler-scoped WARNING."""
     repo = repo_with_hooks(
         tmp_path,
         f"typed-{field}-{abs(hash(repr(value)))}",
@@ -306,13 +351,97 @@ def test_a_known_field_of_the_wrong_type_rejects_the_whole_file(
 
     assert len(violations) == 1, messages(violations)
     assert expected in violations[0].message
-    assert violations[0].severity == Severity.ERROR
+    assert violations[0].severity == Severity.WARNING
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("timeout", 0),
+        ("timeout", 1.5),
+        ("timeout", 2**64),
+        ("timeout", 1e300),
+        ("args", []),
+        ("args", ["--fix", "src/"]),
+        ("args", None),
+        ("failClosed", True),
+        ("fail_closed", False),
+        ("onFailure", "block"),
+        ("onFailure", ""),
+        ("onFailure", "explode"),
+        ("onFailure", None),
+    ],
+)
+def test_a_value_grok_loads_is_not_a_finding(tmp_path, field, value) -> None:
+    """Each loaded its handler in Grok Build 1.0.77. `timeout` is a number of
+    seconds now, fractional or huge; an unrecognized `onFailure` reads as
+    `"continue"`."""
+    repo = repo_with_hooks(
+        tmp_path,
+        f"loads-{field}-{abs(hash(repr(value)))}",
+        hooks_doc("PreToolUse", {"type": "command", "command": "./audit.sh", field: value}),
+    )
+
+    assert check(repo) == []
+
+
+def test_both_fail_closed_spellings_drop_the_handler(tmp_path) -> None:
+    """Grok reads `fail_closed` as `failClosed`, so setting both is a
+    duplicate field: measured, the handler dropped and its sibling loaded."""
+    repo = repo_with_hooks(
+        tmp_path,
+        "fail-closed-both",
+        hooks_doc(
+            "PreToolUse",
+            {"type": "command", "command": "./audit.sh", "failClosed": True, "fail_closed": True},
+        ),
+    )
+
+    violations = check(repo)
+
+    assert messages(violations) == [
+        "Hook PreToolUse[0].hooks[0] sets both 'failClosed' and 'fail_closed'"
+    ]
+    assert violations[0].severity == Severity.WARNING
+
+
+@pytest.mark.parametrize("value", ["Bash(git *)", " ", 0, 5, True, ["x"]])
+def test_an_if_condition_skips_the_handler(tmp_path, value) -> None:
+    """Grok will not run a handler without the condition its author wrote:
+    "field 'if' is not supported, so the hook is skipped". `0` and `" "`
+    are not values that ask for nothing."""
+    repo = repo_with_hooks(
+        tmp_path,
+        f"if-{abs(hash(repr(value)))}",
+        hooks_doc("PreToolUse", {"type": "command", "command": "./audit.sh", "if": value}),
+    )
+
+    violations = check(repo)
+
+    assert messages(violations) == [
+        "Hook PreToolUse[0].hooks[0] sets 'if', which Grok does not support, "
+        "so it skips the handler"
+    ]
+    assert violations[0].severity == Severity.WARNING
+
+
+@pytest.mark.parametrize("value", [None, False, "", [], {}])
+def test_an_if_that_asks_for_nothing_is_not_a_finding(tmp_path, value) -> None:
+    """`10-hooks.md`: "Grok does not report a field whose value asks for
+    nothing" — each loaded the handler in 1.0.77."""
+    repo = repo_with_hooks(
+        tmp_path,
+        f"if-empty-{abs(hash(repr(value)))}",
+        hooks_doc("PreToolUse", {"type": "command", "command": "./audit.sh", "if": value}),
+    )
+
+    assert check(repo) == []
 
 
 def test_a_non_string_type_is_one_finding_not_two(tmp_path) -> None:
     """A list `type` in a set membership test would raise and cost every
-    later finding. It is also a known field of the wrong type, which is a
-    whole-file verdict rather than a dropped handler."""
+    later finding. The field-type finding is the one verdict the handler
+    earns; its sibling's own defect is still reported."""
     repo = repo_with_hooks(
         tmp_path,
         "unhashable-type",
@@ -329,7 +458,7 @@ def test_a_non_string_type_is_one_finding_not_two(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("matcher", [["read_file"], {"tool": "read_file"}, 42])
-def test_a_non_string_matcher_rejects_the_whole_file(tmp_path, matcher) -> None:
+def test_a_non_string_matcher_drops_that_group(tmp_path, matcher) -> None:
     """An unhashable one must not reach the wildcard set membership test:
     `["x"] in frozenset(...)` raises, and a raising rule reports nothing."""
     repo = repo_with_hooks(
@@ -355,7 +484,7 @@ def test_a_non_string_matcher_rejects_the_whole_file(tmp_path, matcher) -> None:
     assert violations[0].message == (
         f"Hook PreToolUse[0] 'matcher' must be a string, got {type(matcher).__name__}"
     )
-    assert violations[0].severity == Severity.ERROR
+    assert violations[0].severity == Severity.WARNING
 
 
 def test_a_large_timeout_is_not_a_defect(tmp_path) -> None:
@@ -370,79 +499,28 @@ def test_a_large_timeout_is_not_a_defect(tmp_path) -> None:
     assert check(repo) == []
 
 
-def test_the_largest_timeout_grok_deserializes_is_accepted(tmp_path) -> None:
-    """`timeout` is a Rust `u64`, and JSON has no integer width, so the
-    boundary is exact. `18446744073709551615` loads in Grok Build 1.0.13."""
-    repo = repo_with_hooks(
-        tmp_path,
-        "u64-max",
-        hooks_doc("Stop", {"type": "command", "command": "make test", "timeout": 2**64 - 1}),
-    )
-
-    assert check(repo) == []
+# ── Bytes Python and Grok both accept ────────────────────────────
 
 
-def test_one_past_the_u64_ceiling_costs_the_whole_file(tmp_path) -> None:
-    """`18446744073709551616` refuses the document, the same as `30.0` — so
-    it earns the file-scoped ERROR and its own message, because "must be a
-    non-negative integer" would be true of it."""
-    repo = repo_with_hooks(
-        tmp_path,
-        "u64-overflow",
-        hooks_doc("Stop", {"type": "command", "command": "make test", "timeout": 2**64}),
-    )
-
-    violations = check(repo)
-
-    assert len(violations) == 1, messages(violations)
-    assert violations[0].severity == Severity.ERROR
-    assert violations[0].message == (
-        "Hook Stop[0].hooks[0] 'timeout' must be at most 18446744073709551615 "
-        "(Grok reads it as a 64-bit unsigned integer), got 18446744073709551616"
-    )
-
-
-# ── Bytes Python accepts and Grok's reader does not ──────────────
-
-
-def test_a_utf8_bom_rejects_the_whole_file(tmp_path) -> None:
-    """skillsaw reads with `utf-8-sig`, which strips the mark, so the parsed
-    document is valid and every shape check passes. Grok's reader does not
-    strip it: `grok inspect --json` loaded zero hooks from this file."""
+def test_a_utf8_bom_is_not_a_finding(tmp_path) -> None:
+    """Grok Build 1.0.77 loads a BOM-prefixed hooks file — both canaries in
+    the measured file ran — so the mark is no defect, and the document
+    under it is still checked."""
     repo = write_repo(tmp_path / "bom")
     path = write_hooks(repo, HOOKS_JSON)
     path.write_bytes(codecs.BOM_UTF8 + path.read_bytes())
 
-    violations = check(repo)
+    assert check(repo) == []
 
-    assert len(violations) == 1, messages(violations)
-    assert violations[0].severity == Severity.ERROR
-    assert violations[0].message == (
-        "hooks.json starts with a UTF-8 byte-order mark; Grok reads none of the file"
-    )
-    assert violations[0].line is None
-
-
-def test_a_utf8_bom_costs_every_other_finding_in_the_file(tmp_path) -> None:
-    """Grok never parses the document, so a shape finding under the mark
-    would be about a file it did not read."""
     repo = write_repo(tmp_path / "bom-and-more")
     path = write_hooks(
-        repo,
-        hooks_doc("Stop", {"type": "command", "command": "make lint", "timeout": "10"}),
+        repo, hooks_doc("Stop", {"type": "command", "command": "make lint", "timeout": "10"})
     )
     path.write_bytes(codecs.BOM_UTF8 + path.read_bytes())
 
-    assert [v.message for v in check(repo)] == [
-        "hooks.json starts with a UTF-8 byte-order mark; Grok reads none of the file"
+    assert messages(check(repo)) == [
+        "Hook Stop[0].hooks[0] 'timeout' must be a non-negative number, got '10'"
     ]
-
-
-def test_the_same_file_without_the_mark_is_clean(tmp_path) -> None:
-    """The mark is the whole defect — the bytes after it are a valid file."""
-    repo = repo_with_hooks(tmp_path, "no-bom", HOOKS_JSON)
-
-    assert check(repo) == []
 
 
 # ── Tokens Python accepts and Grok's parser does not ─────────────
@@ -491,21 +569,6 @@ def test_a_non_finite_token_costs_every_other_finding_in_the_file(tmp_path) -> N
 
     assert len(violations) == 1, messages(violations)
     assert "hooks.Stop[0].hooks[0].note" in violations[0].message
-
-
-def test_a_finite_float_is_left_to_the_field_type_check(tmp_path) -> None:
-    """The scan is about tokens JSON has no spelling for, not about floats:
-    ``30.0`` is valid JSON, and ``timeout`` refusing it is a field verdict."""
-    repo = repo_with_hooks(
-        tmp_path,
-        "finite-float",
-        hooks_doc("Stop", {"type": "command", "command": "make lint", "timeout": 30.0}),
-    )
-
-    violations = check(repo)
-
-    assert len(violations) == 1, messages(violations)
-    assert "'timeout' must be a non-negative integer, got 30.0" in violations[0].message
 
 
 # ── Event names and the alias table ──────────────────────────────
@@ -775,9 +838,8 @@ def test_a_catch_all_matcher_on_an_ignored_event_is_not_a_finding(tmp_path, matc
 
 
 def test_a_malformed_env_is_one_finding_not_two(tmp_path) -> None:
-    """A non-string value refuses the whole document, so nothing is stripped
-    and the reserved-name advisory would be describing a hook that never
-    runs."""
+    """A non-string value drops the handler, so nothing is stripped and the
+    reserved-name advisory would be describing a hook that never runs."""
     repo = repo_with_hooks(
         tmp_path,
         "malformed-env",
@@ -798,7 +860,7 @@ def test_a_malformed_env_is_one_finding_not_two(tmp_path) -> None:
         violations[0].message == "Hook SessionStart[0].hooks[0] 'env' value for 'GROK_SESSION_ID' "
         "must be a string, got int"
     )
-    assert violations[0].severity == Severity.ERROR
+    assert violations[0].severity == Severity.WARNING
 
 
 def test_the_ignored_matcher_advice_follows_the_alias_table(tmp_path) -> None:
@@ -938,10 +1000,11 @@ def test_reserved_env_names_are_reported_and_the_rest_are_not(tmp_path) -> None:
 # ── JSON `null` ──────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("field", ["timeout", "env", "url"])
+@pytest.mark.parametrize("field", ["timeout", "env", "url", "args", "onFailure"])
 def test_a_null_field_the_handler_does_not_need_is_not_a_finding(tmp_path, field) -> None:
     """Grok reads a `null` as the key being absent, not as a wrong type:
-    each of these loaded the handler and its sibling in 1.0.13."""
+    each of these loaded the handler and its sibling in 1.0.77. `failClosed`
+    is the exception, covered with the wrong types above."""
     repo = repo_with_hooks(
         tmp_path,
         f"null-{field}",
@@ -999,10 +1062,9 @@ def test_a_null_required_field_drops_that_handler_alone(tmp_path, handler, messa
     assert violations[0].severity == Severity.WARNING
 
 
-def test_a_null_type_costs_the_whole_file(tmp_path) -> None:
-    """Both handlers were dropped, the same as a missing `type`, so the
-    verdict is the file-scoped one and the sibling earns no finding of its
-    own."""
+def test_a_null_type_drops_that_handler_alone(tmp_path) -> None:
+    """The same as a missing `type`: Grok Build 1.0.77 dropped the handler
+    and ran its sibling, which earns no finding of its own."""
     repo = repo_with_hooks(
         tmp_path,
         "null-type",
@@ -1016,7 +1078,7 @@ def test_a_null_type_costs_the_whole_file(tmp_path) -> None:
     violations = check(repo)
 
     assert messages(violations) == ["Hook PostToolUse[0].hooks[0] is missing 'type'"]
-    assert violations[0].severity == Severity.ERROR
+    assert violations[0].severity == Severity.WARNING
 
 
 # ── extra-events ─────────────────────────────────────────────────
@@ -1066,7 +1128,7 @@ def test_extra_events_is_configurable_through_a_config_file(tmp_path) -> None:
     found = violations_for(lint_json(repo, returncode=1), "grok-hooks-valid")
 
     assert not [v for v in found if "PreToolUseFailure" in v["message"]]
-    assert [v for v in found if "must be a non-negative integer" in v["message"]]
+    assert [v for v in found if "must be a non-negative number" in v["message"]]
 
 
 # ── Configured severity ───────────────────────────────────────────
@@ -1083,7 +1145,7 @@ def test_a_configured_severity_moves_the_file_scoped_findings_only(tmp_path) -> 
 
     found = violations_for(lint_json(repo, returncode=1), "grok-hooks-valid")
 
-    # The two file-scope ERRORs join the five already-WARNING findings; the
+    # The two file-scope ERRORs join the ten already-WARNING findings; the
     # two hardcoded INFO findings are untouched.
     assert {v["severity"] for v in found} == {"warning", "info"}
     assert len([v for v in found if v["severity"] == "info"]) == 2

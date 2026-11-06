@@ -1,0 +1,9 @@
+{
+  "hooks": {
+    "PostCompact": [
+      {
+        "hooks": [{ "type": "command", "command": "./scripts/restore-notes.sh" }],
+      }
+    ]
+  }
+}

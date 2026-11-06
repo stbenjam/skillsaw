@@ -28,7 +28,6 @@ from typing import (
 )
 
 from skillsaw.formats import antigravity
-from skillsaw.formats.grok_hooks import read_hooks_json
 from skillsaw.formats.antigravity_registry import read_registry
 from skillsaw.blocks.antigravity_mcp import read_mcp_config
 from skillsaw.blocks.antigravity_hooks import read_hooks_config
@@ -577,19 +576,15 @@ class GrokHooksBlock(HooksBlock):
     say which of them a finding is about.
 
     Same nested shape as Claude's, with Grok's own events, alias table and
-    handler fields. Its loader refuses a whole file over one wrong-typed
-    field and reports nothing when it does, which is what
-    ``grok-hooks-valid`` exists to say.
+    handler fields. Its loader drops an event, group or handler over one
+    wrong-typed field and says so only in ``grok inspect`` and the
+    ``/hooks`` tab, which is what ``grok-hooks-valid`` exists to say.
 
     Lenient JSON parsing, deliberately, for the reason
     :class:`MuseHooksBlock` documents: Grok reads the file with
     ``serde_json``, which takes the last of two duplicate keys and runs it,
     and both security rules skip a block carrying a ``parse_error``.
     """
-
-    def _ensure_parsed(self) -> None:
-        if self._parsed is None:
-            self._parsed = read_hooks_json(self.path)
 
     def tree_label(self) -> str:
         return f"{self.path.name} (grok hooks)"
