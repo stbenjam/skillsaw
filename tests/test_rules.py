@@ -170,6 +170,19 @@ def test_user_config_in_channels_is_not_a_reference(temp_dir):
     assert _user_config_findings(plugin_dir) == []
 
 
+def test_a_server_named_channels_is_still_scanned(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {
+            ".mcp.json": '{"mcpServers": {"channels": {"command": "x", '
+            '"env": {"channels": "${user_config.token}"}}}}'
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
 def test_mcp_json_symlinked_outside_the_repository_is_not_read(temp_dir):
     outside = temp_dir / "outside.json"
     outside.write_text('{"mcpServers": {"s": {"command": "${user_config.token}"}}}')

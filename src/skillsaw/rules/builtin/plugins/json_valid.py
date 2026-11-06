@@ -36,17 +36,24 @@ _MAX_KEYS_SHOWN = 5
 _USER_CONFIG_REF = re.compile(r"\$\{user_config\.([A-Za-z0-9_.-]+)\}")
 
 
-def _without_channels(value):
-    """*value* with every ``channels`` entry removed.
+def _servers_without_channels(payload) -> dict:
+    """The server map in *payload*, minus each server's ``channels`` field.
 
-    A server's ``channels`` entry may name its own options, so a
-    ``${user_config.KEY}`` there is not an undeclared reference.
+    A server's ``channels`` entry may declare its own options, so a
+    ``${user_config.KEY}`` there is not an undeclared reference. Accepts a
+    ``{"mcpServers": {...}}`` document or a bare server map.
     """
-    if isinstance(value, dict):
-        return {k: _without_channels(v) for k, v in value.items() if k != "channels"}
-    if isinstance(value, list):
-        return [_without_channels(v) for v in value]
-    return value
+    servers = payload.get("mcpServers") if isinstance(payload, dict) else None
+    if not isinstance(servers, dict):
+        servers = payload if isinstance(payload, dict) else {}
+    return {
+        name: (
+            {k: v for k, v in server.items() if k != "channels"}
+            if isinstance(server, dict)
+            else server
+        )
+        for name, server in servers.items()
+    }
 
 
 def _component_paths(data: dict) -> Iterator[Tuple[str, str]]:
@@ -211,7 +218,7 @@ class PluginJsonValidRule(Rule):
 
         violations = []
         for path, payload in sources:
-            text = json.dumps(_without_channels(payload))
+            text = json.dumps(_servers_without_channels(payload))
             if "user_config" not in text:
                 continue
             missing = sorted(set(_USER_CONFIG_REF.findall(text)) - declared)
