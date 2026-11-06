@@ -103,3 +103,14 @@ def test_shared_inventory_still_sees_unknown_event_commands(tmp_path):
     assert all(v["file_path"] == FILE for v in policy)
     for command in commands:
         assert sum(command in v["message"] for v in policy) == 1
+
+
+@pytest.mark.parametrize(("configured", "code"), [("error", 1), ("info", 0)])
+def test_dropped_scope_honors_a_configured_severity(tmp_path, configured, code):
+    repo, _ = fixture(tmp_path, "known-invalid")
+    (repo / ".skillsaw.yaml").write_text(f"rules:\n  {RULE}:\n    severity: {configured}\n")
+    actual, findings = lint(repo)
+    assert actual == code
+    assert [(v["message"], v["severity"]) for v in findings] == [
+        ("Hook event 'PreToolUse' must be an array of matcher groups", configured)
+    ]

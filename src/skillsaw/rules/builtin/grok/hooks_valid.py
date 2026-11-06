@@ -112,8 +112,8 @@ class _FileCheck:
 
     Findings that cost the whole file take the rule's configured severity.
     Everything narrower — an event's entries, a matcher group, a handler —
-    is a WARNING: the rest of the file loads, and since 1.0.77 Grok lists
-    each one under ``hookLoadErrors``.
+    defaults to WARNING unless severity is configured: the rest of the file
+    loads, and since 1.0.77 Grok lists each one under ``hookLoadErrors``.
     """
 
     def __init__(self, rule: GrokHooksValidRule, block: GrokHooksBlock, events: Set[str]) -> None:
@@ -123,6 +123,10 @@ class _FileCheck:
 
     def _violation(self, message: str, severity: Optional[Severity] = None) -> RuleViolation:
         return self.rule.violation(message, file_path=self.block.path, severity=severity)
+
+    def _dropped(self, message: str) -> RuleViolation:
+        """An event, group or handler Grok drops: WARNING unless configured."""
+        return self._violation(message, self.rule.scope_severity(Severity.WARNING))
 
     # -- the walk -------------------------------------------------
 
@@ -163,9 +167,8 @@ class _FileCheck:
         """Each event holds an array of matcher groups, or the event is dropped."""
         if not isinstance(groups, list):
             return [
-                self._violation(
-                    f"Hook event '{safe_display(event)}' must be an array of matcher groups",
-                    Severity.WARNING,
+                self._dropped(
+                    f"Hook event '{safe_display(event)}' must be an array of matcher groups"
                 )
             ]
 
@@ -180,9 +183,7 @@ class _FileCheck:
         for index, group in enumerate(groups):
             where = f"{safe_display(event)}[{index}]"
             if not isinstance(group, dict):
-                violations.append(
-                    self._violation(f"Hook {where} must be an object", Severity.WARNING)
-                )
+                violations.append(self._dropped(f"Hook {where} must be an object"))
                 continue
             violations.extend(self._check_group(where, event, group))
         return violations
@@ -197,16 +198,12 @@ class _FileCheck:
 
         # A ``null`` ``hooks`` is the key being absent: "missing field".
         if group.get("hooks") is None:
-            violations.append(self._violation(f"Hook {where} is missing 'hooks'", Severity.WARNING))
+            violations.append(self._dropped(f"Hook {where} is missing 'hooks'"))
             return violations
 
         handlers = group["hooks"]
         if not isinstance(handlers, list):
-            violations.append(
-                self._violation(
-                    f"Hook {where} 'hooks' must be an array of handlers", Severity.WARNING
-                )
-            )
+            violations.append(self._dropped(f"Hook {where} 'hooks' must be an array of handlers"))
             return violations
 
         if not handlers:
@@ -227,9 +224,8 @@ class _FileCheck:
 
         if not isinstance(matcher, str):
             return [
-                self._violation(
-                    f"Hook {where} 'matcher' must be a string, got {type(matcher).__name__}",
-                    Severity.WARNING,
+                self._dropped(
+                    f"Hook {where} 'matcher' must be a string, got {type(matcher).__name__}"
                 )
             ]
 
@@ -273,7 +269,7 @@ class _FileCheck:
         are tolerated, so they are never reported.
         """
         if not isinstance(handler, dict):
-            return [self._violation(f"Hook {where} must be an object", Severity.WARNING)]
+            return [self._dropped(f"Hook {where} must be an object")]
 
         # A JSON ``null`` is mostly the key being absent, and costs whatever
         # omitting it costs: a null ``timeout``, ``env``, ``args`` or ``url``
@@ -290,14 +286,10 @@ class _FileCheck:
 
         if all(name in handler for name in grok.FAIL_CLOSED_FIELDS):
             first, second = grok.FAIL_CLOSED_FIELDS
-            violations.append(
-                self._violation(
-                    f"Hook {where} sets both '{first}' and '{second}'", Severity.WARNING
-                )
-            )
+            violations.append(self._dropped(f"Hook {where} sets both '{first}' and '{second}'"))
 
         if "type" not in handler:
-            violations.append(self._violation(f"Hook {where} is missing 'type'", Severity.WARNING))
+            violations.append(self._dropped(f"Hook {where} is missing 'type'"))
             return violations
 
         handler_type = handler["type"]
@@ -308,30 +300,23 @@ class _FileCheck:
 
         if handler_type not in grok.HOOK_HANDLER_TYPES:
             violations.append(
-                self._violation(
+                self._dropped(
                     f"Hook {where} 'type' must be {_ACCEPTED_TYPES}, got "
-                    f"{safe_display(repr(handler_type))}",
-                    Severity.WARNING,
+                    f"{safe_display(repr(handler_type))}"
                 )
             )
             return violations
 
         required = grok.HOOK_REQUIRED_FIELDS[handler_type]
         if required not in handler:
-            violations.append(
-                self._violation(
-                    f"Hook {where} is missing '{required}'",
-                    Severity.WARNING,
-                )
-            )
+            violations.append(self._dropped(f"Hook {where} is missing '{required}'"))
 
         for name in sorted(grok.SKIPPING_HANDLER_FIELDS):
             if name in handler and not grok.asks_for_nothing(handler[name]):
                 violations.append(
-                    self._violation(
+                    self._dropped(
                         f"Hook {where} sets '{name}', which Grok does not support, "
-                        "so it skips the handler",
-                        Severity.WARNING,
+                        "so it skips the handler"
                     )
                 )
 
@@ -347,9 +332,7 @@ class _FileCheck:
                 continue
             problem = _field_type_problem(name, value)
             if problem is not None:
-                violations.append(
-                    self._violation(f"Hook {where} '{name}' {problem}", Severity.WARNING)
-                )
+                violations.append(self._dropped(f"Hook {where} '{name}' {problem}"))
         return violations
 
     def _check_env(self, where: str, handler: Dict[str, Any]) -> List[RuleViolation]:

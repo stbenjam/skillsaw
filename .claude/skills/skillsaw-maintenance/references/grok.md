@@ -454,9 +454,9 @@ user guide, or re-verify empirically with the canary matrix above:
 - `REQUIRED_FIELDS` = `("name", "description")` in `rules/builtin/grok/agent_valid.py` —
   the keys Grok's subagent loader requires; scalars, including empty/null values,
   register, while collections are rejected.
-- `TIMEOUT_MAX` = `2**64 - 1` in `formats/grok.py`, the `u64` ceiling `timeout`
-  deserializes into. It has to track Grok's timeout type: widen or narrow the field
-  upstream and the boundary this reports moves with it.
+- `timeout` has no upper bound: since 1.0.77 Grok reads it as a float (`f64`), so
+  `HANDLER_FIELDS` accepts any non-negative int or float. If Grok narrows the field to
+  an integer type again, restore a ceiling for it.
 - `PLUGIN_NAME_RE` = `\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\Z`, read with `.fullmatch()`
   so a trailing newline is refused as the loader refuses it, and
   `PLUGIN_NAME_MAX_LENGTH` = 64 in `formats/grok.py`, measured boundary by boundary:
