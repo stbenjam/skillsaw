@@ -170,6 +170,13 @@ RULE_GROUPS = [
         "automatically when Devin repository context is present.",
     ),
     (
+        "Ruler and Rulesync",
+        ["ruler-config-valid", "rulesync-source-valid"],
+        "Opt-in checks for local Ruler configuration and common Rulesync source fields. "
+        "Generate explicitly, then validate emitted files with their consumer rules. "
+        "See the [generator workflow](docs/generators.md) for copy attribution and limits.",
+    ),
+    (
         "Goose",
         ["goose-recipe-valid", "goose-subrecipe-references"],
         "Opt-in checks for Goose recipe metadata, parameter and extension declarations, "

@@ -33,6 +33,7 @@ from .repository_antigravity import RepositoryAntigravityMixin
 from .repository_mcp_registry import RepositoryMcpRegistryMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 from .repository_scan import RepositoryScanMixin
+from .repository_generators import RepositoryGeneratorsMixin
 
 # Re-exported here: ``skillsaw.context`` has always been the import site for
 # the repository vocabulary, and rules and plugins read it from there.
@@ -61,6 +62,7 @@ _UNSET = object()
 
 
 class RepositoryContext(
+    RepositoryGeneratorsMixin,
     RepositoryScanMixin,
     RepositoryMcpRegistryMixin,
     RepositoryExternalContentMixin,
@@ -123,6 +125,10 @@ class RepositoryContext(
         RepositoryType.AGENTS_MD,
         RepositoryType.GEMINI,
         RepositoryType.QWEN,
+        # Generators author content for the tools above, so a repository's
+        # consuming tool or instruction file stays its primary type.
+        RepositoryType.RULER,
+        RepositoryType.RULESYNC,
     ]
 
     # Compiled output directories that APM generates from .apm/ sources.
@@ -151,6 +157,7 @@ class RepositoryContext(
         exclude_patterns: Optional[List[str]] = None,
         content_paths: Optional[List[str]] = None,
         lint_external_content: bool = True,
+        rulesync_generated: bool = False,
         codex_instructions: Optional[CodexInstructionOptions] = None,
     ):
         """
@@ -178,6 +185,7 @@ class RepositoryContext(
         self.codex_instructions = codex_instructions
         self.goose_recipes_forced = repo_types is not None and RepositoryType.GOOSE in repo_types
         self.lint_external_content = lint_external_content
+        self.rulesync_generated = rulesync_generated
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self._excluded_cache: Dict[Path, bool] = {}

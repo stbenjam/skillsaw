@@ -91,6 +91,9 @@ class RuleViolation:
     # Rule-owned strings needed to propose a fix. These are internal
     # evidence, not diagnostic identity or report fields.
     fix_data: Optional[Dict[str, str]] = field(default=None, repr=False, compare=False)
+    # File-level attribution only; consumer findings keep their output lines.
+    generated_from: Tuple[Path, ...] = ()
+    generator: Optional[str] = None
 
     def __post_init__(self):
         if self.block is None and self.file_path is not None:

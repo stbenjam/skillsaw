@@ -1,0 +1,4 @@
+reviews:
+  path_instructions:
+    - path: "src/**/*.ts"
+      instructions: "Review inventory\u200bpolicy and forbidden\u002dendpoint before deployment."
