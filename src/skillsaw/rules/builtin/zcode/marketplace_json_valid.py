@@ -106,6 +106,19 @@ class ZCodeMarketplaceJsonValidRule(Rule):
                         path,
                     )
                 ]
+            missing = [
+                field
+                for field in zcode.SOURCE_REQUIRED_FIELDS[kind]
+                if not (isinstance(source.get(field), str) and source[field])
+            ]
+            if missing:
+                return [
+                    self.violation(
+                        f"{label}: a {kind} source needs a non-empty "
+                        f"{' and '.join(repr(m) for m in missing)}; ZCode cannot install it",
+                        path,
+                    )
+                ]
             return []  # remote or absolute: nothing in this checkout to check
         if source is not None and not isinstance(source, str):
             return [self.violation(f"{label}: 'source' must be a string or an object", path)]

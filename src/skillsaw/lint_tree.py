@@ -2104,6 +2104,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                     for md in _readable_matches(declared_dir, pattern):
                         if _inside_plugin(md, resolved_plugin) and safe_is_file(md):
                             state.add_block(container, md, prose_cls, owner=resolved_plugin)
+            # Object-form ``commands`` names each command's ``source`` file,
+            # which ZCode materializes as a command; it is prose like any
+            # other. Inline ``content`` lives in the manifest JSON and is not
+            # attached.
+            for command_source in zcode.zcode_command_source_files(plugin_path):
+                if _inside_plugin(command_source, resolved_plugin):
+                    state.add_block(container, command_source, CommandBlock, owner=resolved_plugin)
             # Whichever host already reads the conventional files keeps its
             # block class: one block per file, so the security rules report
             # each command once, and a dual-manifest plugin's established

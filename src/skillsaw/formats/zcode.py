@@ -115,6 +115,15 @@ CLAUDE_CATALOG = (".claude-plugin", MARKETPLACE_FILENAME)
 #: (``adapters/src/plugins/marketplace.ts:1441-1447``). Remote kinds are
 #: fetched at install time and are outside a static lint.
 REMOTE_SOURCE_KINDS = frozenset({"github", "git", "url", "git-subdir"})
+#: The non-empty string fields each object source kind requires; a missing
+#: one fails the install (``adapters/src/plugins/marketplace.ts:1444-1498``).
+SOURCE_REQUIRED_FIELDS = {
+    "directory": ("path",),
+    "github": ("repo",),
+    "git": ("url",),
+    "url": ("url",),
+    "git-subdir": ("path", "url"),
+}
 #: Kinds ZCode recognises and refuses (``marketplace.ts:1501-1503``).
 UNSUPPORTED_SOURCE_KINDS = frozenset({"npm", "pip"})
 
@@ -236,6 +245,32 @@ def zcode_declared_paths(plugin_dir: Path, field: str, *, want_dir: bool) -> Lis
         seen.add(candidate)
         if safe_is_dir(candidate) if want_dir else safe_is_file(candidate):
             found.append(candidate)
+    return found
+
+
+def zcode_command_source_files(plugin_dir: Path) -> List[Path]:
+    """Contained ``source`` files of an object-form ``commands`` map.
+
+    ZCode reads each entry's ``source`` (one leading ``./`` stripped) and
+    writes it out as a command (``adapters/src/plugins/index.ts:716-811``).
+    """
+    commands = zcode_manifest(plugin_dir).get("commands")
+    root = safe_resolve(plugin_dir)
+    if not isinstance(commands, dict) or root is None:
+        return []
+    found: List[Path] = []
+    seen: Set[Path] = set()
+    for entry in commands.values():
+        source = entry.get("source") if isinstance(entry, dict) else None
+        if not isinstance(source, str) or not source:
+            continue
+        relative = source[2:] if source.startswith("./") else source
+        if lexically_escapes(relative):
+            continue
+        candidate = contained_resolve(plugin_dir / relative, root)
+        if candidate is not None and safe_is_file(candidate) and candidate not in seen:
+            seen.add(candidate)
+            found.append(plugin_dir / relative)
     return found
 
 

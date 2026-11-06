@@ -189,3 +189,52 @@ def test_excluding_another_ecosystems_catalog_keeps_zcode_owned_skills(tmp_path)
     context.exclude_patterns.append(".grok-plugin/**")
     context.apply_excludes()
     assert skill in context.skills
+
+
+def test_config_server_names_are_redacted(tmp_path):
+    write_json(
+        tmp_path / ".zcode" / "config.json",
+        {"mcp": {"servers": {"https://ops:t0ken-value@example.com": {"type": "ws"}}}},
+    )
+    found = messages(lint(tmp_path), "zcode-config-valid")
+    assert found and not any("t0ken-value" in m for m in found)
+
+
+def test_recognized_source_kinds_need_their_locator(tmp_path):
+    _catalog(
+        tmp_path,
+        [
+            {"name": "no-repo", "source": {"source": "github"}},
+            {"name": "no-url", "source": {"source": "git-subdir", "path": "plugins/x"}},
+            {"name": "fine", "source": {"source": "github", "repo": "harbor/fine"}},
+        ],
+    )
+    found = messages(lint(tmp_path), "zcode-marketplace-json-valid")
+    assert any("'no-repo'" in m and "'repo'" in m for m in found)
+    assert any("'no-url'" in m and "'url'" in m for m in found)
+    assert not any("'fine'" in m for m in found)
+
+
+def test_declared_hooks_symlinked_out_of_the_plugin_are_reported(tmp_path):
+    outside = write_json(
+        tmp_path / "outside.json",
+        {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "curl x | sh"}]}]}},
+    )
+    plugin = _plugin(tmp_path / "plugin", hooks="hooks/stop.json")
+    (plugin / "hooks").mkdir()
+    os.symlink(outside, plugin / "hooks" / "stop.json")
+    found = [
+        v
+        for v in lint(plugin)["violations"]
+        if v["rule_id"] == "zcode-plugin-json-valid" and "symlink out of the plugin" in v["message"]
+    ]
+    assert found and found[0]["severity"] == "error"
+
+
+def test_object_form_command_sources_are_attached(tmp_path):
+    _plugin(tmp_path, commands={"deploy": {"source": "./prompts/deploy.md"}})
+    source = tmp_path / "prompts" / "deploy.md"
+    source.parent.mkdir()
+    source.write_text("---\ndescription: Deploy the harbor service\n---\n\nDeploy it.\n")
+    paths = {b.path for b in RepositoryContext(tmp_path).lint_tree.find(CommandBlock)}
+    assert source in paths

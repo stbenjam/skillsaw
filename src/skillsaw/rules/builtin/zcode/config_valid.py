@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 from skillsaw.blocks import ZCodeConfigHooksBlock
 from skillsaw.context import RepositoryContext
+from skillsaw.diagnostics import safe_display
 from skillsaw.formats.zcode import HOOK_EVENTS
 from skillsaw.rule import Rule, RuleViolation, Severity
 
@@ -71,7 +72,7 @@ def _field_problem(server: Dict[str, Any]) -> str:
             return "'oauth.type' must be client_credentials or authorization_code"
         unknown = sorted(set(oauth) - _OAUTH_KEYS)
         if unknown:
-            return f"unknown 'oauth' key(s): {', '.join(unknown)}"
+            return f"unknown 'oauth' key(s): {', '.join(safe_display(k) for k in unknown)}"
         for key in _OAUTH_KEYS - {"type"}:
             if key in oauth and not isinstance(oauth[key], str):
                 return f"'oauth.{key}' must be a string"
@@ -134,7 +135,7 @@ class ZCodeConfigValidRule(Rule):
         problems: List[str] = []
         for key in sorted(set(hooks) - _HOOKS_KEYS):
             problems.append(
-                f"Unknown key 'hooks.{key}' (allowed: {', '.join(sorted(_HOOKS_KEYS))}); "
+                f"Unknown key 'hooks.{safe_display(key)}' (allowed: {', '.join(sorted(_HOOKS_KEYS))}); "
                 "hook events go under 'hooks.events'"
             )
         if "enabled" in hooks and not isinstance(hooks["enabled"], bool):
@@ -149,16 +150,18 @@ class ZCodeConfigValidRule(Rule):
         for event, groups in events.items():
             if event not in HOOK_EVENTS:
                 problems.append(
-                    f"Unknown event 'hooks.events.{event}' "
+                    f"Unknown event 'hooks.events.{safe_display(event)}' "
                     f"(ZCode's events: {', '.join(sorted(HOOK_EVENTS))})"
                 )
                 continue
             if not isinstance(groups, list):
-                problems.append(f"'hooks.events.{event}' must be an array of matcher groups")
+                problems.append(
+                    f"'hooks.events.{safe_display(event)}' must be an array of matcher groups"
+                )
                 continue
             for index, group in enumerate(groups):
                 for problem in matcher_group_problems(group, project=True):
-                    problems.append(f"hooks.events.{event}[{index}]: {problem}")
+                    problems.append(f"hooks.events.{safe_display(event)}[{index}]: {problem}")
         return problems
 
     def _mcp_violations(self, block: ZCodeConfigHooksBlock, mcp: Any) -> List[RuleViolation]:
@@ -183,7 +186,7 @@ class ZCodeConfigValidRule(Rule):
             if problem:
                 violations.append(
                     self.violation(
-                        f"MCP server '{name}': {problem}; ZCode skips this server",
+                        f"MCP server {safe_display(name)!r}: {problem}; ZCode skips this server",
                         file_path=block.path,
                     )
                 )
@@ -208,7 +211,7 @@ class ZCodeConfigValidRule(Rule):
             return f"'type' must be stdio, http or sse (got {kind!r})"
         unknown = sorted(set(server) - _SERVER_KEYS[kind] - _NORMALIZED_KEYS)
         if unknown:
-            return f"unknown key(s) for {_ARTICLE[kind]} {kind} server: {', '.join(unknown)}"
+            return f"unknown key(s) for {_ARTICLE[kind]} {kind} server: {', '.join(safe_display(k) for k in unknown)}"
         field = "command" if kind == "stdio" else "url"
         if not isinstance(server.get(field), str) or not server[field]:
             return f"{_ARTICLE[kind]} {kind} server needs a non-empty '{field}'"

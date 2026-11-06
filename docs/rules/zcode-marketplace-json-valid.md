@@ -37,7 +37,9 @@ or install.
 - Invalid JSON, a catalog that is not an object, or an invalid `name`.
 - `plugins` that is neither an array nor an object keyed by plugin name.
 - An entry that is not an object or has no `name`.
-- A `source` kind ZCode does not install (`npm`, `pip`, or an unknown kind).
+- A `source` kind ZCode does not install (`npm`, `pip`, or an unknown kind),
+  or a recognised kind missing its locator: `repo` for `github`, `url` for
+  `git` and `url`, `path` and `url` for `git-subdir`, `path` for `directory`.
 - A local `source` that leaves the marketplace directory or is not a
   directory. An entry with no `source` resolves to a directory named after
   the plugin.

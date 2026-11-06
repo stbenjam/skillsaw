@@ -35,6 +35,10 @@ that ZCode falls back to is linted by that ecosystem's rules.
 - A `skills`, `commands`, `agents`, `hooks` or `mcpServers` path that is
   absolute or contains `..` past the plugin root.
 - A `hooks` path that is not a file (a missing path, or a directory).
+- A `hooks` or `mcpServers` path that is a symlink out of the plugin. ZCode's
+  containment check is lexical, so it loads the target, but skillsaw cannot
+  lint it, so its commands go unscanned. The same symlink on `skills`,
+  `commands` or `agents` is a warning.
 - An object-form `commands` entry with an invalid name, or one that does not
   set exactly one of `source` and `content`, or whose `source` file is missing.
 

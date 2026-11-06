@@ -10,6 +10,7 @@ from typing import List
 
 from skillsaw.blocks import ZCodeInlineHooksBlock, ZCodePluginHooksBlock
 from skillsaw.context import RepositoryContext
+from skillsaw.diagnostics import safe_display
 from skillsaw.formats.zcode import HOOK_EVENTS
 from skillsaw.rule import Rule, RuleViolation, Severity
 
@@ -62,7 +63,7 @@ class ZCodeHooksValidRule(Rule):
                 if event not in HOOK_EVENTS:
                     violations.append(
                         self.violation(
-                            f"Event '{event}' in {source} is not one ZCode runs, so its hooks "
+                            f"Event {safe_display(event)!r} in {source} is not one ZCode runs, so its hooks "
                             f"are skipped. ZCode's events: {', '.join(sorted(HOOK_EVENTS))}",
                             file_path=block.path,
                             severity=Severity.WARNING,
@@ -72,7 +73,7 @@ class ZCodeHooksValidRule(Rule):
                 if not isinstance(groups, list):
                     violations.append(
                         self.violation(
-                            f"Event '{event}' in {source} must be an array of matcher groups; "
+                            f"Event {safe_display(event)!r} in {source} must be an array of matcher groups; "
                             "ZCode skips the event",
                             file_path=block.path,
                         )
@@ -83,7 +84,7 @@ class ZCodeHooksValidRule(Rule):
                     if problems:
                         violations.append(
                             self.violation(
-                                f"{event}[{index}] in {source}: {'; '.join(problems)}. "
+                                f"{safe_display(event)}[{index}] in {source}: {'; '.join(problems)}. "
                                 "ZCode drops this whole matcher group",
                                 file_path=block.path,
                             )

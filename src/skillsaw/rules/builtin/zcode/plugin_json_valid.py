@@ -13,7 +13,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.formats import zcode
 from skillsaw.lint_target import ZCodePluginConfigNode
 from skillsaw.diagnostics import safe_display
-from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
+from skillsaw.paths import contained_resolve, safe_exists, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.utils import read_json_strict
 
@@ -98,6 +98,7 @@ class ZCodePluginJsonValidRule(Rule):
                     )
                 )
         plugin_dir = node.plugin_dir
+        plugin_root = safe_resolve(plugin_dir)
         for field in zcode.PATH_FIELDS:
             for raw in zcode.path_list(data.get(field)):
                 if zcode.lexically_escapes(raw):
@@ -106,6 +107,29 @@ class ZCodePluginJsonValidRule(Rule):
                             f"'{field}' path {safe_display(raw)!r} is absolute or leaves the plugin "
                             "directory; ZCode ignores it",
                             path,
+                        )
+                    )
+                elif (
+                    plugin_root is not None
+                    and safe_exists(plugin_dir / raw)
+                    and contained_resolve(plugin_dir / raw, plugin_root) is None
+                ):
+                    # ZCode's containment check is lexical, so it follows the
+                    # symlink and loads the target; skillsaw does not, which
+                    # would leave an executable hook or server unscanned.
+                    executable = field in ("hooks", "mcpServers")
+                    violations.append(
+                        self.violation(
+                            f"'{field}' path {safe_display(raw)!r} is a symlink out of the "
+                            "plugin: ZCode loads it, but skillsaw cannot lint it"
+                            + (
+                                "; its commands escape hooks-dangerous and mcp checks"
+                                if executable
+                                else ""
+                            )
+                            + ". Move the file into the plugin",
+                            path,
+                            severity=None if executable else Severity.WARNING,
                         )
                     )
                 elif field == "hooks" and not safe_is_file(plugin_dir / raw):
