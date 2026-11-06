@@ -9,7 +9,7 @@ Kiro workspace and agent MCP entries must use documented field types
 |---|---|
 | **Severity** | error (disabled) |
 | **Autofix** | - |
-| **Since** | v0.21.1 |
+| **Since** | v0.22.0 |
 | **Repo Types** | kiro |
 | **Category** | [Kiro](kiro.md) |
 

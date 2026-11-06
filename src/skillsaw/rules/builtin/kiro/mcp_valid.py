@@ -10,7 +10,7 @@ from skillsaw.rule import Rule, Severity
 class KiroMcpValidRule(Rule):
     """A conservative subset allowing partial overlays and legacy records."""
 
-    since = "0.21.1"
+    since = "0.22.0"
     default_enabled = False
     repo_types = frozenset({RepositoryType.KIRO})
 

@@ -11333,6 +11333,23 @@ class TestKiro:
             assert {v["file_path"] for v in found} == set(expected)
         assert {v["file_path"]: v["line"] for v in groups["content-weak-language"]} == expected
 
+    def test_agent_prompt_files_are_prompts_not_agents(self, tmp_path):
+        """A Markdown file a JSON agent loads via ``file://`` is its prompt."""
+        repo = copy_fixture("kiro/agent-prompt-files", tmp_path)
+        result = self.selected(repo, "content-description-routing")
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+
+        from skillsaw.blocks.kiro import KiroMarkdownAgentBlock, KiroPromptFileBlock
+        from skillsaw.context import RepositoryContext
+
+        tree = RepositoryContext(repo).lint_tree
+        prompt = repo / ".kiro/agents/prompts/coder.md"
+        assert [b.path for b in tree.find(KiroPromptFileBlock)] == [prompt]
+        assert [b.path for b in tree.find(KiroMarkdownAgentBlock)] == [
+            repo / ".kiro/agents/reviewer.md"
+        ]
+
     def test_malformed_data_and_missing_references(self, tmp_path):
         repo = copy_fixture("kiro/broken", tmp_path)
         result = self.selected(repo, *self.RULES)

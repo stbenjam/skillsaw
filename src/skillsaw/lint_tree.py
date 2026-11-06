@@ -1343,14 +1343,33 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             _add_glob(root, devin_dir / "rules", "**/*.md", DevinRuleBlock)
             state.add_block(root, devin_dir / "global_rules.md", DevinGlobalRuleBlock)
 
+    def _kiro_prompt_file(agent: KiroJsonAgentBlock) -> Optional[Path]:
+        prompt = (agent.raw_data or {}).get("prompt")
+        if not isinstance(prompt, str) or not prompt.startswith("file://"):
+            return None
+        target = kiro_local_reference(
+            prompt[7:],
+            agent.path.parent,
+            repo_root,
+            resolve=context.resolve_path,
+            is_excluded=context.is_path_excluded,
+        )
+        return target if target is not None and safe_is_file(target) else None
+
     kiro_agents = []
     for kiro_dir in context.agent_tool_dirs(".kiro"):
         _add_glob(root, kiro_dir / "steering", "**/*.md", KiroSteeringBlock)
-        _add_glob(root, kiro_dir / "agents", "**/*.md", KiroMarkdownAgentBlock)
         for agent_file in _readable_matches(kiro_dir / "agents", "**/*.json"):
             agent = state.add_parser_block(root, agent_file, KiroJsonAgentBlock)
             if agent is not None:
                 kiro_agents.append(agent)
+        # A Markdown file a JSON agent names as its ``file://`` prompt is that
+        # agent's prompt, not an agent of its own; the prompt pass below
+        # attaches it once the specific content owners have claimed theirs.
+        prompt_files = {_kiro_prompt_file(agent) for agent in kiro_agents}
+        for match in _readable_matches(kiro_dir / "agents", "**/*.md"):
+            if context.resolve_path(match) not in prompt_files and safe_is_file(match):
+                state.add_block(root, match, KiroMarkdownAgentBlock)
         state.add_parser_block(root, kiro_dir / "settings" / "mcp.json", KiroMcpBlock)
 
     state.add_block(root, context.root_path / ".windsurfrules", InstructionBlock)
@@ -2168,17 +2187,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # Specific content owners claim first, so a shared prompt already
     # attached as steering/skill/instructions is never counted twice.
     for agent in kiro_agents:
-        prompt = (agent.raw_data or {}).get("prompt")
-        if not isinstance(prompt, str) or not prompt.startswith("file://"):
-            continue
-        target = kiro_local_reference(
-            prompt[7:],
-            agent.path.parent,
-            repo_root,
-            resolve=context.resolve_path,
-            is_excluded=context.is_path_excluded,
-        )
-        if target is not None and safe_is_file(target):
+        target = _kiro_prompt_file(agent)
+        if target is not None:
             state.add_block(root, target, KiroPromptFileBlock)
 
     external_roots = context.externally_sourced_roots()

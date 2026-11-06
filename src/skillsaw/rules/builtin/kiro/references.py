@@ -19,7 +19,7 @@ _LINE_SUFFIX = re.compile(r":\d+(?:-\d+)?$")
 class KiroReferencesRule(Rule):
     """Report missing literal files; globs and global paths are unresolved here."""
 
-    since = "0.21.1"
+    since = "0.22.0"
     default_enabled = False
     repo_types = frozenset({RepositoryType.KIRO})
 
