@@ -36,6 +36,19 @@ _MAX_KEYS_SHOWN = 5
 _USER_CONFIG_REF = re.compile(r"\$\{user_config\.([A-Za-z0-9_.-]+)\}")
 
 
+def _without_channels(value):
+    """*value* with every ``channels`` entry removed.
+
+    A server's ``channels`` entry may name its own options, so a
+    ``${user_config.KEY}`` there is not an undeclared reference.
+    """
+    if isinstance(value, dict):
+        return {k: _without_channels(v) for k, v in value.items() if k != "channels"}
+    if isinstance(value, list):
+        return [_without_channels(v) for v in value]
+    return value
+
+
 def _component_paths(data: dict) -> Iterator[Tuple[str, str]]:
     """(field, path) for every string path a component field lists."""
     for field in _COMPONENT_PATH_FIELDS:
@@ -198,7 +211,7 @@ class PluginJsonValidRule(Rule):
 
         violations = []
         for path, payload in sources:
-            text = json.dumps(payload)
+            text = json.dumps(_without_channels(payload))
             if "user_config" not in text:
                 continue
             missing = sorted(set(_USER_CONFIG_REF.findall(text)) - declared)

@@ -34,8 +34,9 @@ not exist, is absolute, or climbs out of the plugin with `..` fails to
 load. An MCP server that reads `${user_config.KEY}` needs `KEY` declared
 under `userConfig`. Otherwise Claude Code cannot resolve it on a fresh
 install and drops the server. The check reads the inline `mcpServers`
-map and the plugin's `.mcp.json`; it does not read a server's `channels`
-entry. `claude plugin validate` makes the same checks; skillsaw repeats
+map, the plugin's `.mcp.json`, and any MCP file `mcpServers` names by
+path; it skips a server's `channels` entry, which may declare its own
+options. `claude plugin validate` makes the same checks; skillsaw repeats
 them for CI runs and editors without Claude Code.
 
 ## Examples

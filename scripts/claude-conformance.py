@@ -2,12 +2,14 @@
 """Compare skillsaw with ``claude plugin validate`` on the Claude fixtures.
 
 Every directory under ``tests/fixtures/`` that holds a ``.claude-plugin/``
-is validated twice: by Claude Code's own validator, which stands in for the
-loader, and by ``skillsaw lint``. The results are compared with the manifest
+is validated twice: by Claude Code's own validator and by ``skillsaw lint``.
+This compares validator results, not install or runtime behavior: some files
+pass the validator and still fail to load. The results are compared with the
+manifest
 in ``tests/claude_conformance.json``, which records for each fixture:
 
-* ``official`` — what the validator says will not load: its errors, plus
-  the warnings that say an entry or server is dropped at load time.
+* ``official`` — the validator's errors, plus the warnings that say an
+  entry or server is dropped at load time.
   Advisory warnings (missing author, unquoted paths) are not recorded.
 * ``skillsaw`` — the rule ids skillsaw reports at error severity.
 * ``note`` — why the two differ, required when exactly one side is empty.
@@ -42,6 +44,9 @@ _LOAD_DROP = re.compile(r"ignored at runtime|drops? this server|dropped at load"
 
 LintFn = Callable[[Path], dict]
 
+# Keep the CLI at the version being tested: no updater runs mid-check.
+_CLAUDE_ENV = {**os.environ, "DISABLE_AUTOUPDATER": "1"}
+
 
 def fixture_dirs() -> List[str]:
     """Fixture directories, relative to tests/fixtures, that hold a .claude-plugin/."""
@@ -57,7 +62,9 @@ def claude_version(claude: str = "claude") -> Optional[str]:
     path = shutil.which(claude)
     if path is None:
         return None
-    out = subprocess.run([path, "--version"], capture_output=True, text=True, check=False)
+    out = subprocess.run(
+        [path, "--version"], capture_output=True, text=True, check=False, env=_CLAUDE_ENV
+    )
     match = re.match(r"\s*(\d+\.\d+\.\d+)", out.stdout)
     return match.group(1) if match else None
 
@@ -70,7 +77,7 @@ def official_failures(fixture: str, claude: str = "claude") -> List[str]:
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, "DISABLE_AUTOUPDATER": "1"},
+        env=_CLAUDE_ENV,
     )
     report = json.loads(out.stdout)
     found = set()
