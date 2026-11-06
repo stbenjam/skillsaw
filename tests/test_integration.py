@@ -450,12 +450,13 @@ class TestHooksJson:
         assert result["rc"] == 0, result
         assert violations(result) == []
 
+    @pytest.mark.parametrize("handler", [0, 1], ids=["command", "http"])
     @pytest.mark.parametrize("value", ["explode", "Block", True, None, ["block"]])
-    def test_on_failure_invalid_value_is_an_error(self, tmp_path, value):
+    def test_on_failure_invalid_value_is_an_error(self, tmp_path, value, handler):
         repo = copy_fixture("hooks-on-failure", tmp_path)
         path = repo / "hooks/hooks.json"
         data = json.loads(path.read_text())
-        data["hooks"]["PreToolUse"][0]["hooks"][0]["onFailure"] = value
+        data["hooks"]["PreToolUse"][0]["hooks"][handler]["onFailure"] = value
         path.write_text(json.dumps(data))
         result = run_lint(repo, "--rule", "claude-hooks-valid")
         assert result["rc"] == 1, result
@@ -463,10 +464,25 @@ class TestHooksJson:
         assert len(found) == 1, found
         assert found[0]["severity"] == "error"
         assert found[0]["file_path"] == "hooks/hooks.json"
-        assert "PreToolUse[0].hooks[0]' field 'onFailure' has invalid value" in (
+        assert f"PreToolUse[0].hooks[{handler}]' field 'onFailure' has invalid value" in (
             found[0]["message"]
         )
         assert "Valid values: continue, block" in found[0]["message"]
+
+    def test_on_failure_invalid_value_respects_severity_override(self, tmp_path):
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["PreToolUse"][0]["hooks"][0]["onFailure"] = "explode"
+        path.write_text(json.dumps(data))
+        (repo / ".skillsaw.yaml").write_text(
+            "rules:\n  claude-hooks-valid:\n    severity: warning\n"
+        )
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["severity"] == "warning"
+        assert "field 'onFailure' has invalid value" in found[0]["message"]
 
     @pytest.mark.parametrize("value", ["block", "explode"])
     def test_on_failure_on_prompt_handler_warns(self, tmp_path, value):
