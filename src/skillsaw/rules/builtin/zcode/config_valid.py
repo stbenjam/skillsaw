@@ -49,7 +49,14 @@ _ENUM_FIELDS = {
 #: OAuth grant types and the fields each requires
 #: (``adapters/src/config/schema.ts:56-75``).
 _OAUTH_REQUIRED = {"client_credentials": ("clientId", "clientSecret"), "authorization_code": ()}
-_OAUTH_KEYS = frozenset({"type", "clientId", "clientSecret", "clientName", "redirectPath", "scope"})
+#: Each grant is its own strict object: only ``authorization_code`` takes a
+#: ``redirectPath``.
+_OAUTH_KEYS = {
+    "client_credentials": frozenset({"type", "clientId", "clientSecret", "clientName", "scope"}),
+    "authorization_code": frozenset(
+        {"type", "clientId", "clientSecret", "clientName", "redirectPath", "scope"}
+    ),
+}
 
 
 def _field_problem(server: Dict[str, Any]) -> str:
@@ -71,10 +78,11 @@ def _field_problem(server: Dict[str, Any]) -> str:
         required = _OAUTH_REQUIRED.get(oauth["type"])
         if required is None:
             return "'oauth.type' must be client_credentials or authorization_code"
-        unknown = sorted(set(oauth) - _OAUTH_KEYS)
+        allowed = _OAUTH_KEYS[oauth["type"]]
+        unknown = sorted(set(oauth) - allowed)
         if unknown:
             return f"unknown 'oauth' key(s): {', '.join(safe_display(k) for k in unknown)}"
-        for key in _OAUTH_KEYS - {"type"}:
+        for key in sorted(allowed - {"type"}):
             if key in oauth and not isinstance(oauth[key], str):
                 return f"'oauth.{key}' must be a string"
         for key in required:
@@ -223,18 +231,23 @@ class ZCodeConfigValidRule(Rule):
             else:
                 return "has no 'type' and neither a 'command' nor a 'url' to infer one from"
         if kind not in _SERVER_KEYS:
-            return f"'type' must be stdio, http or sse (got {kind!r})"
+            return f"'type' must be stdio, http or sse (got {safe_display(kind)!r})"
         unknown = sorted(set(server) - _SERVER_KEYS[kind] - _NORMALIZED_KEYS)
         if unknown:
             return f"unknown key(s) for {_ARTICLE[kind]} {kind} server: {', '.join(safe_display(k) for k in unknown)}"
         field = "command" if kind == "stdio" else "url"
         if not isinstance(server.get(field), str) or not server[field]:
             return f"{_ARTICLE[kind]} {kind} server needs a non-empty '{field}'"
+        # A legacy alias is read only when its canonical key is absent, and
+        # ``http_headers`` only on a remote server; otherwise ZCode deletes it
+        # unread (``adapters/src/config/schema.ts:360-412``).
         string_maps: Dict[str, Any] = {
-            key: server[key]
-            for key in ("env", "environment", "headers", "http_headers")
-            if key in server
+            key: server[key] for key in ("env", "headers") if key in server
         }
+        if "environment" in server and "env" not in server:
+            string_maps["environment"] = server["environment"]
+        if "http_headers" in server and "headers" not in server and kind != "stdio":
+            string_maps["http_headers"] = server["http_headers"]
         for key, value in string_maps.items():
             if not isinstance(value, dict) or not all(isinstance(v, str) for v in value.values()):
                 return f"'{key}' must be an object of string values"

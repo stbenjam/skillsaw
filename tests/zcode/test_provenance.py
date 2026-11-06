@@ -219,7 +219,7 @@ class TestLintTree:
 
 
 class TestClaudeStandsDown:
-    """The false positives ZCode's own marketplace produced before ZCode was an ecosystem."""
+    """ZCode-only plugins receive no Claude plugin or marketplace findings."""
 
     def test_zcode_only_plugins_are_not_claude_plugins(self, tmp_path):
         repo = copy_fixture("zcode/marketplace-clean", tmp_path)

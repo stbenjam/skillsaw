@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, List
 
 from skillsaw.context import RepositoryType
+from skillsaw.diagnostics import safe_display
 from skillsaw.formats.zcode import HOOK_TYPES
 from skillsaw.utils import is_finite_number
 
@@ -48,6 +49,15 @@ def matcher_group_problems(group: Any, *, project: bool) -> List[str]:
     if not isinstance(group, dict):
         return ["a matcher group must be an object"]
     problems: List[str] = []
+    if project:
+        # The config-file matcher group is a strict object
+        # (``adapters/src/config/schema.ts:264-269``); the plugin one is not.
+        unknown = sorted(set(group) - {"matcher", "hooks"})
+        if unknown:
+            problems.append(
+                f"unknown key(s) {', '.join(repr(safe_display(k)) for k in unknown)}; "
+                "a matcher group takes only 'matcher' and 'hooks'"
+            )
     matcher = group.get("matcher")
     if "matcher" in group and (not isinstance(matcher, str) or (project and not matcher)):
         problems.append(
@@ -66,7 +76,7 @@ def matcher_group_problems(group: Any, *, project: bool) -> List[str]:
         kind = handler.get("type")
         if kind not in HOOK_TYPES:
             problems.append(
-                f"{where}.type must be one of {', '.join(HOOK_TYPES)} (got {kind!r}); "
+                f"{where}.type must be one of {', '.join(HOOK_TYPES)} (got {safe_display(kind)!r}); "
                 "ZCode has no prompt, agent, http or mcp_tool handlers"
             )
             continue

@@ -272,11 +272,11 @@ class RepositoryProvenanceMixin:
         )
 
     def _live_plugin_roots(self) -> Set[Path]:
-        """Every plugin root some ecosystem still claims, resolved.
+        """Every resolved plugin root a currently active ecosystem claims.
 
-        The one owner set every skill prune keeps skills under. Each prune
-        used to list the owners itself, so a new ecosystem missing from one
-        list had its skills dropped when another ecosystem's claim went away.
+        Each skill prune keeps the skills beneath this shared owner set, so
+        dropping one ecosystem's claim never removes skills another
+        ecosystem still owns.
         """
         return {
             root

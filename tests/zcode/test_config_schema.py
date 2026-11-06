@@ -43,3 +43,37 @@ def test_accepted_server_fields_are_type_checked(tmp_path):
     assert any("'flag'" in m and "'enabled' must be a boolean" in m for m in found)
     assert any("'auth'" in m and "'oauth' must be an object" in m for m in found)
     assert any("'grant'" in m and "'oauth.clientSecret' is required" in m for m in found)
+
+
+def test_matcher_group_keys_oauth_grants_and_shadowed_aliases(tmp_path):
+    write_json(
+        tmp_path / ".zcode" / "config.json",
+        {
+            "hooks": {
+                "events": {
+                    "Stop": [{"match": "Bash", "hooks": [{"type": "command", "command": "make"}]}]
+                }
+            },
+            "mcp": {
+                "servers": {
+                    "grant": {
+                        "url": "https://e.com/mcp",
+                        "oauth": {
+                            "type": "client_credentials",
+                            "clientId": "a",
+                            "clientSecret": "${SECRET}",
+                            "redirectPath": "/cb",
+                        },
+                    },
+                    "imported": {"command": "db-mcp", "env": {"A": "b"}, "environment": "old"},
+                    "badtype": {"type": "https://ops:t0ken-value@e.com", "url": "x"},
+                }
+            },
+        },
+    )
+    found = messages(lint(tmp_path), "zcode-config-valid")
+    assert any("unknown key(s) 'match'" in m for m in found)
+    assert any("'grant'" in m and "redirectPath" in m for m in found)
+    assert not any("'imported'" in m for m in found)
+    assert any("'badtype'" in m for m in found)
+    assert not any("t0ken-value" in m for m in found)

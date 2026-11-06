@@ -126,7 +126,7 @@ class ZCodeMarketplaceJsonValidRule(Rule):
             missing = [
                 field
                 for field in zcode.SOURCE_REQUIRED_FIELDS[kind]
-                if not (isinstance(source.get(field), str) and source[field])
+                if not (isinstance(source.get(field), str) and source[field].strip())
             ]
             if missing:
                 return [
@@ -136,6 +136,25 @@ class ZCodeMarketplaceJsonValidRule(Rule):
                         path,
                     )
                 ]
+            if kind == "url":
+                # A non-string ``type`` reads as empty, which is git
+                # (``adapters/src/plugins/marketplace.ts:1468-1484``).
+                url_type = source.get("type") if isinstance(source.get("type"), str) else ""
+                if url_type == "zip" and not isinstance(source.get("sha256"), str):
+                    return [
+                        self.violation(
+                            f"{label}: a zip url source needs a 'sha256'; ZCode cannot install it",
+                            path,
+                        )
+                    ]
+                if url_type not in ("", "git", "zip"):
+                    return [
+                        self.violation(
+                            f"{label}: url source 'type' must be git or zip "
+                            f"(got {safe_display(url_type)!r}); ZCode cannot install it",
+                            path,
+                        )
+                    ]
             return []  # remote or absolute: nothing in this checkout to check
         if source is not None and not isinstance(source, str):
             return [self.violation(f"{label}: 'source' must be a string or an object", path)]

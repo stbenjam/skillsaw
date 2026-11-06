@@ -42,3 +42,29 @@ def test_invalid_entry_name_is_reported_for_remote_sources(tmp_path):
     )
     found = messages(lint(tmp_path), "zcode-marketplace-json-valid")
     assert any("'Bad Plugin!'" in m and "never installs" in m for m in found)
+
+
+def test_source_locators_and_url_subtypes_follow_the_resolver(tmp_path):
+    zcode_catalog(
+        tmp_path,
+        [
+            {"name": "blank-url", "source": {"source": "git", "url": "   "}},
+            {
+                "name": "zip-no-digest",
+                "source": {"source": "url", "url": "https://e.com/p.zip", "type": "zip"},
+            },
+            {
+                "name": "odd-type",
+                "source": {"source": "url", "url": "https://e.com/p", "type": "tarball"},
+            },
+            {
+                "name": "git-url",
+                "source": {"source": "url", "url": "https://e.com/p.git", "type": 7},
+            },
+        ],
+    )
+    found = messages(lint(tmp_path), "zcode-marketplace-json-valid")
+    assert any("'blank-url'" in m and "'url'" in m for m in found)
+    assert any("'zip-no-digest'" in m and "'sha256'" in m for m in found)
+    assert any("'odd-type'" in m and "must be git or zip" in m for m in found)
+    assert not any("'git-url'" in m for m in found)
