@@ -14,7 +14,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.formats.zcode import HOOK_EVENTS
 from skillsaw.rule import Rule, RuleViolation, Severity
 
-from ._helpers import ZCODE_PROJECT_REPO_TYPES, matcher_group_problems
+from ._helpers import ZCODE_PROJECT_REPO_TYPES, is_positive_number, matcher_group_problems
 
 #: Keys the project ``hooks`` object accepts; it is a strict object
 #: (``adapters/src/config/schema.ts:271-289`` in ``zai-org/ZCode``).
@@ -39,11 +39,49 @@ _NORMALIZED_KEYS = frozenset(
 #: The article each transport name takes in a message.
 _ARTICLE = {"stdio": "a", "http": "an", "sse": "an"}
 
+#: Enumerated base fields (``adapters/src/config/schema.ts:46-54``).
+_ENUM_FIELDS = {
+    "isolation": ("session", "workspace"),
+    "protocolVersion": ("auto", "legacy", "2026-07-28"),
+}
+#: OAuth grant types and the fields each requires
+#: (``adapters/src/config/schema.ts:56-75``).
+_OAUTH_REQUIRED = {"client_credentials": ("clientId", "clientSecret"), "authorization_code": ()}
+_OAUTH_KEYS = frozenset({"type", "clientId", "clientSecret", "clientName", "redirectPath", "scope"})
+
+
+def _field_problem(server: Dict[str, Any]) -> str:
+    """Type errors in the accepted fields beyond the connection itself."""
+    for key in ("alwaysLoad", "enabled"):
+        if key in server and not isinstance(server[key], bool):
+            return f"'{key}' must be a boolean"
+    for key, allowed in _ENUM_FIELDS.items():
+        if key in server and server[key] not in allowed:
+            return f"'{key}' must be one of {', '.join(allowed)}"
+    if "timeoutMs" in server and not is_positive_number(server["timeoutMs"]):
+        return "'timeoutMs' must be a positive number"
+    if "cwd" in server and not (isinstance(server["cwd"], str) and server["cwd"]):
+        return "'cwd' must be a non-empty string"
+    if "oauth" in server:
+        oauth = server["oauth"]
+        if not isinstance(oauth, dict) or not isinstance(oauth.get("type"), str):
+            return "'oauth' must be an object with a 'type'"
+        required = _OAUTH_REQUIRED.get(oauth["type"])
+        if required is None:
+            return "'oauth.type' must be client_credentials or authorization_code"
+        unknown = sorted(set(oauth) - _OAUTH_KEYS)
+        if unknown:
+            return f"unknown 'oauth' key(s): {', '.join(unknown)}"
+        for key in _OAUTH_KEYS - {"type"}:
+            if key in oauth and not isinstance(oauth[key], str):
+                return f"'oauth.{key}' must be a string"
+        for key in required:
+            if not oauth.get(key):
+                return f"'oauth.{key}' is required for {oauth['type']}"
+    return ""
+
+
 _WHOLE_FILE = "ZCode rejects the whole file, so none of its hooks or MCP servers load"
-
-
-def _positive(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
 
 
 class ZCodeConfigValidRule(Rule):
@@ -102,7 +140,7 @@ class ZCodeConfigValidRule(Rule):
         if "enabled" in hooks and not isinstance(hooks["enabled"], bool):
             problems.append("'hooks.enabled' must be a boolean")
         for key in ("timeoutMs", "maxOutputBytes"):
-            if key in hooks and not _positive(hooks[key]):
+            if key in hooks and not is_positive_number(hooks[key]):
                 problems.append(f"'hooks.{key}' must be a positive number")
         events = hooks.get("events", {})
         if not isinstance(events, dict):
@@ -187,4 +225,4 @@ class ZCodeConfigValidRule(Rule):
             or not all(isinstance(a, str) for a in server["args"])
         ):
             return "'args' must be an array of strings"
-        return ""
+        return _field_problem(server)

@@ -8,11 +8,11 @@ project configuration share.
 
 from __future__ import annotations
 
-import math
 from typing import Any, List
 
 from skillsaw.context import RepositoryType
 from skillsaw.formats.zcode import HOOK_TYPES
+from skillsaw.utils import is_finite_number
 
 # A ZCode marketplace repository contains the plugins it catalogs, so the
 # plugin rules fire there too — the reason the Grok and Codex sets carry
@@ -22,13 +22,9 @@ ZCODE_MARKETPLACE_REPO_TYPES = frozenset({RepositoryType.ZCODE_MARKETPLACE})
 ZCODE_PROJECT_REPO_TYPES = frozenset({RepositoryType.ZCODE_PROJECT})
 
 
-def _is_positive_number(value: Any) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-        and value > 0
-    )
+def is_positive_number(value: Any) -> bool:
+    """A finite JSON number above zero; overflow-safe for huge integers."""
+    return is_finite_number(value) and value > 0
 
 
 def _is_positive_int(value: Any) -> bool:
@@ -61,7 +57,7 @@ def matcher_group_problems(group: Any, *, project: bool) -> List[str]:
     if not isinstance(handlers, list) or not handlers:
         problems.append("'hooks' must be a non-empty array of handlers")
         return problems
-    timeout_ms_ok = _is_positive_number if project else _is_positive_int
+    timeout_ms_ok = is_positive_number if project else _is_positive_int
     for index, handler in enumerate(handlers):
         where = f"hooks[{index}]"
         if not isinstance(handler, dict):
@@ -104,6 +100,6 @@ def matcher_group_problems(group: Any, *, project: bool) -> List[str]:
             shell = handler["shell"]
             if shell is not True and not (isinstance(shell, str) and shell):
                 problems.append(f"{where}.shell must be true or a non-empty string")
-        if "timeout" in handler and not _is_positive_number(handler["timeout"]):
+        if "timeout" in handler and not is_positive_number(handler["timeout"]):
             problems.append(f"{where}.timeout must be a positive number")
     return problems

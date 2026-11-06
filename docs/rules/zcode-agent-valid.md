@@ -3,22 +3,25 @@
 
 # zcode-agent-valid
 
-.zcode/agents/*.md must declare a name and a description in frontmatter
+ZCode subagents must declare a name and a description in frontmatter
 
 | | |
 |---|---|
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.22.0 |
-| **Repo Types** | zcode-project |
+| **Repo Types** | zcode-marketplace, zcode-plugin, zcode-project |
 | **Category** | [ZCode](zcode.md) |
 
 ## Why
 
 ZCode loads project subagents from the Markdown files directly inside
-`.zcode/agents/`. It lists each subagent to the model as `name: description`
-and uses that line to decide when to delegate. A file with no frontmatter,
-or no non-empty `name` and `description`, is skipped.
+`.zcode/agents/`, and plugin subagents from a ZCode plugin's `agents/`
+directory. It lists each subagent to the model as `name: description` and
+uses that line to decide when to delegate. A file with no frontmatter, or no
+non-empty `name` and `description`, is skipped. Plugin agents get no
+filename fallback for `name`, unlike Claude Code's, so a plugin that ships
+both a ZCode and a Claude manifest needs `name` for ZCode to load it.
 
 ## Severity
 

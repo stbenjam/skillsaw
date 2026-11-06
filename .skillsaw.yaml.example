@@ -715,7 +715,7 @@ rules:
     severity: error
     # extra-source-types: []
 
-  # .zcode/agents/*.md must declare a name and a description in frontmatter
+  # ZCode subagents must declare a name and a description in frontmatter
   zcode-agent-valid:
     enabled: auto
     severity: error

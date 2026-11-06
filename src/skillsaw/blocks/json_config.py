@@ -140,6 +140,16 @@ class HookHandler:
     #: blocks have no lines to give and leave it ``None``, as they should.
     type_line: Optional[int] = None
 
+    #: Handler types that run a local program. ``process`` is ZCode's
+    #: exec form — ``command`` plus ``args``, no shell — and runs code just
+    #: as surely as a shell ``command`` does, so the security rules scan it.
+    EXECUTABLE_TYPES: ClassVar[FrozenSet[str]] = frozenset({"command", "process"})
+
+    @property
+    def is_executable(self) -> bool:
+        """Whether this handler runs a local program the security rules scan."""
+        return self.type in self.EXECUTABLE_TYPES
+
     def iter_effective_commands(self) -> Iterator[Tuple[str, Optional[int]]]:
         """Yield each effective command and the line that declared it.
 
@@ -813,6 +823,11 @@ class ZCodePluginHooksBlock(HooksBlock):
     ZCode alone loads arrives as this class.
     """
 
+    #: ZCode reads its files with ``JSON.parse``: a bare ``NaN`` or
+    #: ``Infinity`` is a syntax error, and a repeated key keeps the last value.
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
+
     def tree_label(self) -> str:
         return f"{self.path.name} (zcode plugin hooks)"
 
@@ -836,6 +851,9 @@ class ZCodeConfigHooksBlock(HooksBlock):
     also carries MCP servers, which :class:`ZCodeConfigMcpBlock` reads as a
     second parser role over it.
     """
+
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
 
     @property
     def events(self) -> Dict[str, List[HookEventConfig]]:
@@ -1610,6 +1628,8 @@ class ZCodeMcpBlock(McpBlock):
 
     claude_builtins_reserved: ClassVar[bool] = False
     require_usable_connection: ClassVar[bool] = True
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
 
     def tree_label(self) -> str:
         return f"{self.path.name} (zcode MCP)"
@@ -1637,8 +1657,19 @@ class ZCodeConfigMcpBlock(McpBlock):
 
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
     shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
         syntax_error_rule="zcode-config-valid",
+    )
+    #: ZCode renames ``environment`` to ``env`` and ``http_headers`` to
+    #: ``headers`` before validating a server, so a credential can live
+    #: under either spelling.
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = (
+        ("env", False),
+        ("environment", False),
+        ("headers", True),
+        ("http_headers", True),
     )
 
     def server_entries(self) -> List[Tuple[str, Any]]:

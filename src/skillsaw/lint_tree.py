@@ -1997,14 +1997,18 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             node.plugin_owner = resolved_plugin
             # Declared ``commands`` and ``agents`` directories load *in
             # addition to* the conventional pair ``_add_plugin_prose``
-            # attached above; commands are read recursively, agents flat.
+            # attached above. ZCode reads commands recursively, so the
+            # conventional ``commands/`` is walked again for its nested files;
+            # ``add_block`` dedupes the flat ones. Agents are read flat.
             for field_name, prose_cls, pattern in (
                 ("commands", CommandBlock, "**/*.md"),
                 ("agents", AgentBlock, "*.md"),
             ):
-                for declared_dir in zcode.zcode_declared_paths(
-                    plugin_path, field_name, want_dir=True
-                ):
+                roots = zcode.zcode_declared_paths(plugin_path, field_name, want_dir=True)
+                conventional = plugin_path / field_name
+                if field_name == "commands" and safe_is_dir(conventional):
+                    roots = [conventional, *roots]
+                for declared_dir in roots:
                     for md in _readable_matches(declared_dir, pattern):
                         if _inside_plugin(md, resolved_plugin) and safe_is_file(md):
                             state.add_block(container, md, prose_cls, owner=resolved_plugin)

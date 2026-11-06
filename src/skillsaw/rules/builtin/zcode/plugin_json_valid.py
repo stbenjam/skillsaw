@@ -12,9 +12,10 @@ from typing import Any, Dict, List
 from skillsaw.context import RepositoryContext
 from skillsaw.formats import zcode
 from skillsaw.lint_target import ZCodePluginConfigNode
-from skillsaw.paths import safe_exists, safe_is_file
+from skillsaw.diagnostics import safe_display
+from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.utils import read_json
+from skillsaw.utils import read_json_strict
 
 from ._helpers import ZCODE_PLUGIN_REPO_TYPES
 
@@ -39,17 +40,38 @@ class ZCodePluginJsonValidRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
+        # A catalog-listed directory without a manifest is the catalog rule's
+        # finding: it names the entry, and ``strict: false`` excuses it.
+        listed = set(context.zcode_local_source_dirs())
         for node in context.lint_tree.find(ZCodePluginConfigNode):
             # Only ZCode's own spelling. A Claude or Codex manifest ZCode
             # falls back to is that ecosystem's file, and its rules own it.
-            if node.path.parent.name != zcode.PLUGIN_DIR_NAME or not safe_is_file(node.path):
+            if node.path.parent.name != zcode.PLUGIN_DIR_NAME:
                 continue
-            violations.extend(self._check_manifest(node))
+            if safe_is_file(node.path):
+                violations.extend(self._check_manifest(node))
+            elif safe_exists(node.path):
+                violations.append(
+                    self.violation(
+                        "plugin.json is not a regular file; ZCode skips this plugin", node.path
+                    )
+                )
+            elif safe_resolve(node.plugin_dir) not in listed:
+                # Reached under a forced ``--type zcode-plugin``: ZCode
+                # refuses a plugin with no manifest (``plugin_manifest_not_found``).
+                violations.append(
+                    self.violation(
+                        "No .zcode-plugin/plugin.json (or Claude or Codex manifest); "
+                        "ZCode skips this plugin",
+                        node.path,
+                    )
+                )
         return violations
 
     def _check_manifest(self, node: ZCodePluginConfigNode) -> List[RuleViolation]:
         path = node.path
-        data, error = read_json(path)
+        # ``JSON.parse``: non-finite tokens are syntax errors, repeated keys are not.
+        data, error = read_json_strict(path, allow_duplicate_keys=True)
         if error:
             return [self.violation(f"Invalid JSON: {error}; ZCode skips this plugin", path)]
         if not isinstance(data, dict):
@@ -60,7 +82,7 @@ class ZCodePluginJsonValidRule(Rule):
         if not zcode.NAME_RE.match(trimmed):
             violations.append(
                 self.violation(
-                    f"Invalid plugin name {name!r}: ZCode requires 1-128 characters of "
+                    f"Invalid plugin name {safe_display(name)!r}: ZCode requires 1-128 characters of "
                     "lowercase letters, digits, '.', '_' or '-', starting with a letter or "
                     "digit; ZCode skips this plugin",
                     path,
@@ -81,7 +103,7 @@ class ZCodePluginJsonValidRule(Rule):
                 if zcode.lexically_escapes(raw):
                     violations.append(
                         self.violation(
-                            f"'{field}' path {raw!r} is absolute or leaves the plugin "
+                            f"'{field}' path {safe_display(raw)!r} is absolute or leaves the plugin "
                             "directory; ZCode ignores it",
                             path,
                         )
@@ -89,7 +111,7 @@ class ZCodePluginJsonValidRule(Rule):
                 elif field == "hooks" and not safe_is_file(plugin_dir / raw):
                     violations.append(
                         self.violation(
-                            f"'hooks' names {raw!r}, which is not a file; ZCode reports a "
+                            f"'hooks' names {safe_display(raw)!r}, which is not a file; ZCode reports a "
                             "hooks read error and loads nothing from it",
                             path,
                         )
@@ -97,7 +119,7 @@ class ZCodePluginJsonValidRule(Rule):
                 elif field == "skills" and not safe_exists(plugin_dir / raw):
                     violations.append(
                         self.violation(
-                            f"'skills' names {raw!r}, which does not exist",
+                            f"'skills' names {safe_display(raw)!r}, which does not exist",
                             path,
                             severity=Severity.WARNING,
                         )
@@ -119,7 +141,7 @@ class ZCodePluginJsonValidRule(Rule):
         """
         violations: List[RuleViolation] = []
         for raw_name, entry in commands.items():
-            label = f"Command '{raw_name}'"
+            label = f"Command {safe_display(raw_name)!r}"
             normalized = raw_name.strip().lstrip("/").lower()
             if not zcode.COMMAND_NAME_RE.match(normalized):
                 violations.append(
@@ -150,7 +172,7 @@ class ZCodePluginJsonValidRule(Rule):
                 if zcode.lexically_escapes(relative):
                     violations.append(
                         self.violation(
-                            f"{label}: 'source' {source!r} leaves the plugin directory; "
+                            f"{label}: 'source' {safe_display(source)!r} leaves the plugin directory; "
                             "ZCode skips it",
                             node.path,
                         )
@@ -158,7 +180,7 @@ class ZCodePluginJsonValidRule(Rule):
                 elif not safe_is_file(node.plugin_dir / relative):
                     violations.append(
                         self.violation(
-                            f"{label}: 'source' {source!r} does not exist; ZCode skips it",
+                            f"{label}: 'source' {safe_display(source)!r} does not exist; ZCode skips it",
                             node.path,
                         )
                     )

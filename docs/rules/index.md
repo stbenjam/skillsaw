@@ -110,7 +110,7 @@ skillsaw includes **118** built-in rules organized into the following categories
 | [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md) | .grok-plugin/marketplace.json must be valid JSON with installable entries | error (auto) | - | Grok Build |
 | [`grok-plugin-json-valid`](grok-plugin-json-valid.md) | .grok-plugin/plugin.json must be valid JSON with a name Grok's loader accepts | error (auto) | - | Grok Build |
 | [`grok-plugin-structure`](grok-plugin-structure.md) | A Grok plugin directory needs a manifest or a component Grok installs | warning (auto) | - | Grok Build |
-| [`zcode-agent-valid`](zcode-agent-valid.md) | .zcode/agents/*.md must declare a name and a description in frontmatter | error (auto) | - | ZCode |
+| [`zcode-agent-valid`](zcode-agent-valid.md) | ZCode subagents must declare a name and a description in frontmatter | error (auto) | - | ZCode |
 | [`zcode-config-valid`](zcode-config-valid.md) | ZCode .zcode/config.json hooks and MCP servers must match ZCode's schema | error (auto) | - | ZCode |
 | [`zcode-hooks-valid`](zcode-hooks-valid.md) | ZCode plugin hooks must use ZCode's events and command/process handlers | error (auto) | - | ZCode |
 | [`zcode-marketplace-json-valid`](zcode-marketplace-json-valid.md) | A ZCode marketplace.json must parse, be named, and list installable local plugins | error (auto) | - | ZCode |

@@ -561,8 +561,9 @@ layer in every directory from the session's working directory up to the git
 root, so skillsaw attaches a subpackage's `.zcode/` as well as the root's.
 
 - `.zcode/skills/**/SKILL.md` are Agent Skills and get the full skill rule
-  set. ZCode also reads `.agents/skills/` and `.agents/commands/`, which
-  skillsaw already covers.
+  set. ZCode also reads the portable `.agents/skills/`, which skillsaw
+  already covers. It reads `.agents/commands/` too, which skillsaw does not
+  attach yet.
 - `.zcode/commands/**/*.md` (read recursively) and `.zcode/agents/*.md`
   (read flat) get the shared content and security rules.
   [`zcode-agent-valid`](rules/zcode-agent-valid.md) checks that each agent
@@ -605,7 +606,10 @@ plugin, and keeps its Claude results for the files both hosts read
 Manifest-declared `skills`, `commands`, `agents`, `hooks` and `mcpServers`
 are added to the conventional locations, never substituted for them. Inline
 `hooks` and `mcpServers` objects are followed too, so their commands reach
-the security rules. [`zcode-plugin-json-valid`](rules/zcode-plugin-json-valid.md)
+the security rules. A plugin's `commands/` is read recursively, as ZCode
+reads it. [`zcode-agent-valid`](rules/zcode-agent-valid.md) also checks the
+`agents/*.md` a ZCode plugin ships.
+[`zcode-plugin-json-valid`](rules/zcode-plugin-json-valid.md)
 checks the manifest, and [`zcode-hooks-valid`](rules/zcode-hooks-valid.md)
 checks the hooks of a ZCode-only plugin against ZCode's seven events and its
 `command` and `process` handler types.

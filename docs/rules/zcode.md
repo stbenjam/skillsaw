@@ -11,7 +11,7 @@ A plugin that ships both `.zcode-plugin/` and `.claude-plugin/` manifests keeps 
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`zcode-agent-valid`](zcode-agent-valid.md) | .zcode/agents/*.md must declare a name and a description in frontmatter | error (auto) | - |
+| [`zcode-agent-valid`](zcode-agent-valid.md) | ZCode subagents must declare a name and a description in frontmatter | error (auto) | - |
 | [`zcode-config-valid`](zcode-config-valid.md) | ZCode .zcode/config.json hooks and MCP servers must match ZCode's schema | error (auto) | - |
 | [`zcode-hooks-valid`](zcode-hooks-valid.md) | ZCode plugin hooks must use ZCode's events and command/process handlers | error (auto) | - |
 | [`zcode-marketplace-json-valid`](zcode-marketplace-json-valid.md) | A ZCode marketplace.json must parse, be named, and list installable local plugins | error (auto) | - |
