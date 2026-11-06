@@ -9,7 +9,7 @@ Validate common Rulesync 32.0.0 rule frontmatter and project configuration field
 |---|---|
 | **Severity** | error (disabled) |
 | **Autofix** | - |
-| **Since** | v0.21.1 |
+| **Since** | v0.22.0 |
 | **Repo Types** | rulesync |
 | **Category** | [Ruler and Rulesync](generators.md) |
 

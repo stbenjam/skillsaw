@@ -46,8 +46,11 @@ def test_sources_have_native_roles(name, kind, block_cls, config_cls, count, tmp
         name, tmp_path, content_paths=["**/*.md", "**/*.toml", "**/*.jsonc"]
     )
     assert kind in context.repo_types
-    # The mixed Rulesync fixture also has Claude's native .claude layout.
-    assert context.repo_type == (RepositoryType.DOT_CLAUDE if name == "rulesync" else kind)
+    # A generator authors content for other tools, so the consuming tool stays
+    # the primary type: Ruler's fixture has .codex/, Rulesync's has .claude/.
+    assert context.repo_type == (
+        RepositoryType.DOT_CLAUDE if name == "rulesync" else RepositoryType.CODEX_PROJECT
+    )
     sources = context.lint_tree.find(block_cls)
     assert len(sources) == count
     assert all(s.category == "instruction" for s in sources)
@@ -484,11 +487,3 @@ def test_rulesync_option_rejects_string(tmp_path):
     path.write_text("rulesync-generated: 'true'\n")
     with pytest.raises(ValueError, match="must be a boolean"):
         LinterConfig.from_file(path)
-
-
-def test_generator_types_do_not_displace_the_primary_repo_type(tmp_path):
-    # A generator authors content for other tools; the repository keeps the
-    # consuming tool as its reported primary type.
-    _, context = context_for("ruler", tmp_path)
-    assert RepositoryType.RULER in context.repo_types
-    assert context.repo_type == RepositoryType.CODEX_PROJECT
