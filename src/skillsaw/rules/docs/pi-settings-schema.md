@@ -14,7 +14,9 @@ generates a JSON Schema from its settings types and publishes it at
 - Unknown keys are accepted, as in Pi's schema.
 - The resource keys `extensions`, `skills`, `prompts`, `themes`, and
   `packages` are left to `pi-config-valid`, which models Pi's loader more
-  closely (for example, `null` and legacy `skills.customDirectories`).
+  closely (for example, `null` and legacy `skills.customDirectories`). Other
+  members of a legacy `skills` object, such as `enableSkillCommands`, are
+  still checked against the schema.
 - Parse errors and non-object documents are reported by `pi-config-valid`.
 
 Schema errors are consolidated into one finding per file. JSON parsing gives
