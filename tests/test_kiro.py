@@ -156,3 +156,20 @@ def test_instruction_suffix_keeps_native_metadata_owner(tmp_path):
     assert any(block.path.name == "reviewer.instructions.md" for block in agents)
     counts = Counter(block.path for block in tree.find(ContentBlock))
     assert max(counts.values()) == 1
+
+
+def test_steering_references_skip_placeholders_and_stay_linear(tmp_path):
+    import time
+
+    from skillsaw.rules.builtin.kiro.references import _REFERENCE
+
+    repo = copy_fixture("kiro/valid", tmp_path)
+    (repo / ".kiro/steering/templates.md").write_text(
+        "# Reference template\n\n" "Pull a spec into context with #[[file:<relative_file_name>]].\n"
+    )
+    result = run_lint(repo, "--rule", "kiro-references")
+    assert violations(result) == []
+    line = "#[[file:" * 20_000
+    started = time.perf_counter()
+    assert _REFERENCE.findall(line) == []
+    assert time.perf_counter() - started < 1

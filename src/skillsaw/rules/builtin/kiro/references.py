@@ -12,7 +12,7 @@ from skillsaw.rule import Rule, Severity
 from skillsaw.utils import commented_item_line
 
 # Kiro's own reference syntax inside AST-provided prose, not a Markdown parser.
-_REFERENCE = re.compile(r"#\[\[(file|folder):([^\]\n]+)\]\]")
+_REFERENCE = re.compile(r"#\[\[(file|folder):([^\[\]\n]+)\]\]")
 _LINE_SUFFIX = re.compile(r":\d+(?:-\d+)?$")
 
 

@@ -1227,7 +1227,8 @@ class TestClaudeLoaderAgreement:
                 "error",
                 ".mcp.json",
                 "MCP configuration references user_config 'pager_token', which plugin.json "
-                "does not declare under 'userConfig' — Claude Code cannot resolve it on a "
+                "does not declare under 'userConfig' or in the 'userConfig' of a top-level "
+                "'channels' entry naming the server — Claude Code cannot resolve it on a "
                 "fresh install and drops the server",
             ),
         ]

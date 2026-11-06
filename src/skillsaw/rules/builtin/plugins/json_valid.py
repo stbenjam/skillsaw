@@ -36,24 +36,36 @@ _MAX_KEYS_SHOWN = 5
 _USER_CONFIG_REF = re.compile(r"\$\{user_config\.([A-Za-z0-9_.-]+)\}")
 
 
-def _servers_without_channels(payload) -> dict:
-    """The server map in *payload*, minus each server's ``channels`` field.
+# The server fields Claude Code substitutes ``${user_config.KEY}`` into;
+# a reference anywhere else is never resolved, so never checked.
+_USER_CONFIG_FIELDS = ("command", "args", "env", "url", "headers")
 
-    A server's ``channels`` entry may declare its own options, so a
-    ``${user_config.KEY}`` there is not an undeclared reference. Accepts a
-    ``{"mcpServers": {...}}`` document or a bare server map.
-    """
+
+def _server_map(payload) -> dict:
+    """The server map in a ``{"mcpServers": {...}}`` document or a bare map."""
     servers = payload.get("mcpServers") if isinstance(payload, dict) else None
     if not isinstance(servers, dict):
         servers = payload if isinstance(payload, dict) else {}
-    return {
-        name: (
-            {k: v for k, v in server.items() if k != "channels"}
-            if isinstance(server, dict)
-            else server
-        )
-        for name, server in servers.items()
-    }
+    return servers
+
+
+def _declared_keys(options) -> set:
+    """Option keys a ``userConfig`` map declares; Claude Code rejects a non-object option."""
+    if not isinstance(options, dict):
+        return set()
+    return {key for key, option in options.items() if isinstance(option, dict)}
+
+
+def _channel_keys(data: dict) -> dict:
+    """Server name -> user_config keys its top-level ``channels`` entries declare."""
+    keys: dict = {}
+    channels = data.get("channels")
+    for channel in channels if isinstance(channels, list) else ():
+        if isinstance(channel, dict) and isinstance(channel.get("server"), str):
+            keys.setdefault(channel["server"], set()).update(
+                _declared_keys(channel.get("userConfig"))
+            )
+    return keys
 
 
 def _component_paths(data: dict) -> Iterator[Tuple[str, str]]:
@@ -209,28 +221,47 @@ class PluginJsonValidRule(Rule):
         Reads the inline ``mcpServers`` map and the plugin's MCP files from
         the lint tree, so excluded or escaping files are never read.
         """
-        declared = data.get("userConfig")
-        declared = set(declared) if isinstance(declared, dict) else set()
+        declared = _declared_keys(data.get("userConfig"))
+        channel_keys = _channel_keys(data)
+        # The inline map is already a server map; only files may wrap theirs.
         sources = []
         if isinstance(data.get("mcpServers"), dict):
             sources.append((plugin_json, data["mcpServers"]))
-        sources.extend((block.path, block.raw_data) for block in mcp_blocks)
+        sources.extend((block.path, _server_map(block.raw_data)) for block in mcp_blocks)
 
         violations = []
-        for path, payload in sources:
-            text = json.dumps(_servers_without_channels(payload))
-            if "user_config" not in text:
-                continue
-            missing = sorted(set(_USER_CONFIG_REF.findall(text)) - declared)
+        for path, servers in sources:
+            missing = set()
+            for name, server in servers.items():
+                if not isinstance(server, dict):
+                    continue
+                helper = server.get("headersHelper")
+                if isinstance(helper, str) and _USER_CONFIG_REF.search(helper):
+                    violations.append(
+                        self.violation(
+                            f"MCP server '{safe_display(name)}' references user_config in "
+                            "'headersHelper' — Claude Code never substitutes it there (the "
+                            "value would reach a shell); read the value inside the helper, "
+                            "for example from the server's 'env'",
+                            file_path=path,
+                        )
+                    )
+                text = json.dumps([server.get(field) for field in _USER_CONFIG_FIELDS])
+                if "user_config" not in text:
+                    continue
+                allowed = declared | channel_keys.get(name, set())
+                missing.update(set(_USER_CONFIG_REF.findall(text)) - allowed)
             if not missing:
                 continue
+            missing = sorted(missing)
             keys = ", ".join(f"'{safe_display(key)}'" for key in missing[:_MAX_KEYS_SHOWN])
             if len(missing) > _MAX_KEYS_SHOWN:
                 keys += f" and {len(missing) - _MAX_KEYS_SHOWN} more"
             violations.append(
                 self.violation(
                     f"MCP configuration references user_config {keys}, which "
-                    "plugin.json does not declare under 'userConfig' — Claude Code "
+                    "plugin.json does not declare under 'userConfig' or in the 'userConfig' "
+                    "of a top-level 'channels' entry naming the server — Claude Code "
                     "cannot resolve it on a fresh install and drops the server",
                     file_path=path,
                 )

@@ -17,15 +17,17 @@ def local_reference(
 ) -> Optional[Path]:
     """Resolve a literal relative path, including a missing contained target.
 
-    No HOME expansion, interpolation, glob expansion, or machine-absolute
-    paths: these depend on state outside the repository. Resolving a path
+    No HOME expansion, interpolation, glob expansion, machine-absolute
+    paths, or ``<placeholder>`` paths such as Kiro's documented
+    ``#[[file:<relative_file_name>]]``: these depend on state outside the
+    repository or name no file. Resolving a path
     proves containment before any caller reads its contents.
     """
     if (
         not text
         or text.startswith("~")
         or is_absolute_path(text)
-        or any(char in text for char in "*?[]{}$\x00")
+        or any(char in text for char in "*?[]{}<>$\x00")
     ):
         return None
     path = base / text

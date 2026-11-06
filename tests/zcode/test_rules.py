@@ -195,6 +195,40 @@ class TestAgentValid:
         assert memory["severity"] == "warning"
         assert memory["line"] == 3
 
+    def test_frontmatter_zcode_reads_line_by_line_is_accepted(self, tmp_path):
+        """ZCode's line reader loads a description YAML rejects for its bare colon."""
+        agents = tmp_path / ".zcode" / "agents"
+        agents.mkdir(parents=True)
+        (agents / "reviewer.md").write_text(
+            "---\n"
+            "name: reviewer\n"
+            "description: Use when: a pull request touches error handling\n"
+            "memory: team\n"
+            "---\n\n"
+            "Review the diff for swallowed exceptions and silent fallbacks.\n"
+        )
+        (agents / "boolean-name.md").write_text(
+            "---\n"
+            "name: true\n"
+            "description: Use when: a deploy needs a second reviewer\n"
+            "---\n\n"
+            "Check the rollout plan before approving.\n"
+        )
+        (agents / "triage.md").write_text(
+            "---\n"
+            "description: Use when: a new issue arrives\n"
+            "---\n\n"
+            "Label the issue and route it to the owning team.\n"
+        )
+        found = sorted(findings(lint(tmp_path), "zcode-agent-valid"), key=lambda v: v["file_path"])
+        boolean_name, memory, triage = found
+        assert boolean_name["file_path"].endswith("boolean-name.md")
+        assert memory["file_path"].endswith("reviewer.md")
+        assert "'memory' must be one of" in memory["message"]
+        assert (memory["line"], memory["severity"]) == (4, "warning")
+        assert triage["file_path"].endswith("triage.md")
+        assert "ZCode skips the agent" in triage["message"]
+
 
 class TestOfficialMarketplaceShape:
     def test_inline_mcp_servers_reach_the_credential_scan(self, tmp_path):

@@ -66,7 +66,7 @@ class ZCodeHooksValidRule(Rule):
                             f"Event {safe_display(event)!r} in {source} is not one ZCode runs, so its hooks "
                             f"are skipped. ZCode's events: {', '.join(sorted(HOOK_EVENTS))}",
                             file_path=block.path,
-                            severity=Severity.WARNING,
+                            severity=self.scope_severity(Severity.WARNING),
                         )
                     )
                     continue

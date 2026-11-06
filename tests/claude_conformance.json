@@ -423,6 +423,18 @@
         "mcp-valid-json"
       ]
     },
+    "single-plugin/user-config-channel": {
+      "official": [],
+      "skillsaw": []
+    },
+    "single-plugin/user-config-other-channel": {
+      "official": [
+        ".claude-plugin/plugin.json: mcpServers.telegram.env.TELEGRAM_BOT_TOKEN"
+      ],
+      "skillsaw": [
+        "claude-plugin-json-valid"
+      ]
+    },
     "single-plugin/version-number": {
       "official": [
         ".claude-plugin/plugin.json: version"

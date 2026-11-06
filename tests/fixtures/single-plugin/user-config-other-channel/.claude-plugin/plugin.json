@@ -1,0 +1,39 @@
+{
+  "name": "user-config-other-channel",
+  "version": "1.0.0",
+  "description": "Telegram channel whose bot token is declared only for another server's channel",
+  "author": {
+    "name": "Example Maintainers"
+  },
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/server.js"
+      ],
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "${user_config.bot_token}"
+      }
+    },
+    "discord": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/discord.js"
+      ]
+    }
+  },
+  "channels": [
+    {
+      "server": "discord",
+      "displayName": "Discord",
+      "userConfig": {
+        "bot_token": {
+          "type": "string",
+          "title": "Bot token",
+          "description": "Token from @BotFather",
+          "sensitive": true
+        }
+      }
+    }
+  ]
+}

@@ -158,16 +158,89 @@ def test_mcp_json_symlinked_to_portable_mcp_json_is_read(temp_dir):
     assert len(found) == 1 and "'token'" in found[0].message
 
 
-def test_user_config_in_channels_is_not_a_reference(temp_dir):
+_TOKEN_SERVER = '{"mcpServers": {"tg": {"command": "x", "env": {"T": "${user_config.token}"}}}}'
+_TOKEN_DECLARATION = {"token": {"type": "string", "title": "Token", "description": "t"}}
+
+
+def test_user_config_declared_in_the_servers_channel_entry_is_accepted(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "channels": [{"server": "tg", "userConfig": _TOKEN_DECLARATION}]},
+        {".mcp.json": _TOKEN_SERVER},
+    )
+    assert _user_config_findings(plugin_dir) == []
+
+
+def test_user_config_declared_for_another_servers_channel_is_reported(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "channels": [{"server": "other", "userConfig": _TOKEN_DECLARATION}]},
+        {".mcp.json": _TOKEN_SERVER},
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_user_config_under_a_per_server_channels_key_declares_nothing(temp_dir):
     plugin_dir = _claude_plugin(
         temp_dir,
         {"name": "p"},
         {
-            ".mcp.json": '{"mcpServers": {"s": {"command": "x", '
-            '"channels": [{"options": {"token": "${user_config.token}"}}]}}}'
+            ".mcp.json": '{"mcpServers": {"tg": {"command": "x", "env": {"T": '
+            '"${user_config.token}"}, "channels": [{"userConfig": {"token": {}}}]}}}'
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_user_config_outside_substituted_fields_is_not_a_reference(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {
+            ".mcp.json": '{"mcpServers": {"s": {"command": "x", "cwd": "${user_config.dir}", '
+            '"foo": [{"options": {"token": "${user_config.token}"}}]}}}'
         },
     )
     assert _user_config_findings(plugin_dir) == []
+
+
+@pytest.mark.parametrize("where", ["top-level", "channel"])
+def test_a_non_object_user_config_option_declares_nothing(temp_dir, where):
+    manifest = {"name": "p"}
+    if where == "top-level":
+        manifest["userConfig"] = {"token": None}
+    else:
+        manifest["channels"] = [{"server": "tg", "userConfig": {"token": None}}]
+    plugin_dir = _claude_plugin(temp_dir, manifest, {".mcp.json": _TOKEN_SERVER})
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_an_inline_server_named_mcp_servers_is_scanned(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {
+            "name": "p",
+            "mcpServers": {"mcpServers": {"command": "x", "env": {"T": "${user_config.token}"}}},
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_user_config_in_headers_helper_is_reported_even_when_declared(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "userConfig": _TOKEN_DECLARATION},
+        {
+            ".mcp.json": '{"mcpServers": {"api": {"type": "http", "url": "https://api.example.com",'
+            ' "headersHelper": "./auth-header.sh ${user_config.token}"}}}'
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'headersHelper'" in finding.message
 
 
 def test_a_server_named_channels_is_still_scanned(temp_dir):
@@ -1188,6 +1261,25 @@ def _marketplace_with_raw_json(temp_dir, marketplace_text):
     (claude_dir / "marketplace.json").write_text(marketplace_text)
     _add_unregistered_plugin(temp_dir, "plugin-one")
     return temp_dir
+
+
+def test_marketplace_registration_fix_keeps_non_ascii_text(temp_dir):
+    """The fix keeps unrelated non-ASCII text as written instead of escaping it."""
+    text = (
+        "{\n"
+        '  "name": "café-tools",\n'
+        '  "owner": {"name": "Zoë Müller", "email": "\\ud800"},\n'
+        '  "plugins": []\n'
+        "}\n"
+    )
+    repo = _marketplace_with_raw_json(temp_dir, text)
+    rule = MarketplaceRegistrationRule()
+    context = RepositoryContext(repo)
+    (fix,) = rule.fix(context, rule.check(context))
+    assert '"name": "Zoë Müller"' in fix.fixed_content
+    # A lone surrogate cannot be written as UTF-8, so it stays escaped.
+    assert '"email": "\\ud800"' in fix.fixed_content
+    fix.fixed_content.encode("utf-8")
 
 
 def test_marketplace_registration_fix_registers_plugin(marketplace_repo):

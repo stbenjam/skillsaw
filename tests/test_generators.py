@@ -487,3 +487,29 @@ def test_rulesync_option_rejects_string(tmp_path):
     path.write_text("rulesync-generated: 'true'\n")
     with pytest.raises(ValueError, match="must be a boolean"):
         LinterConfig.from_file(path)
+
+
+def test_ruler_agents_md_findings_are_reported_once(tmp_path):
+    """.ruler/AGENTS.md is both a Ruler source and an AGENTS.md; each finding appears once."""
+    from tests.cli_runner import run_cli
+
+    repo = copy_fixture("generators/ruler", tmp_path)
+    steps = "".join(
+        f"- Step {i}: run the migration validator against staging shard {i} and keep "
+        "the output in the release log so auditors can review it.\n"
+        for i in range(40)
+    )
+    with (repo / ".ruler" / "AGENTS.md").open("a") as fh:
+        fh.write("\nSee [the setup guide](docs/setup-guide.md) before the first run.\n")
+        fh.write("\n## Release steps\n\n" + steps)
+    result = run_cli(
+        ["lint", "--format", "json", "--no-progress", "-v", "--fail-on", "info", str(repo)]
+    )
+    found = [
+        (v["rule_id"], v.get("line"), v["message"])
+        for v in json.loads(result.stdout)["violations"]
+        if v["file_path"] == ".ruler/AGENTS.md"
+    ]
+    rules = {rule for rule, _, _ in found}
+    assert {"content-broken-internal-reference", "content-section-length"} <= rules
+    assert len(found) == len(set(found)), found

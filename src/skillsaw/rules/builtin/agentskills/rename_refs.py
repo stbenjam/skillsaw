@@ -9,6 +9,7 @@ from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence,
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.markdown_doc import splice
+from skillsaw.utils import dump_json_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
     patterns_matching_anywhere,
@@ -182,7 +183,7 @@ class AgentSkillRenameRefsRule(Rule):
                     sk = data.get("skill_name", "")
                     if sk in rename_map:
                         data["skill_name"] = rename_map[sk]
-                        fixed = json.dumps(data, indent=2) + "\n"
+                        fixed = dump_json_text(data)
                     else:
                         continue
                 except (json.JSONDecodeError, KeyError):
