@@ -20,10 +20,16 @@ The docs name the events and the file locations but publish no example of a hook
 file, so the shape and the failure scopes below were verified against Muse Code 1.0.2
 (`1.0.2-R2040.1`) with a 73-case canary matrix: one scratch workspace per case, each
 `.muse/hooks.json` carrying a single variation, every handler writing a token to a log
-file, run under `muse exec --provider echo`. The loader emits no diagnostic in headless
-runs — a rejected file, group, event or handler simply never fires — which is why
-`muse-hooks-valid` exists. This historical matrix is not current-version conformance;
-see the evidence limits below before changing the rule.
+file, run under `muse exec --provider echo`. In those headless runs a rejected file,
+group, event or handler simply never fired, which is why `muse-hooks-valid` exists.
+This historical matrix is not current-version conformance; see the evidence limits
+below before changing the rule.
+
+The docs, last checked against Muse Code 1.4.14 (`1.4.14-R7309.1`), now say Muse
+validates hooks at session startup: a malformed project or managed hook file
+contributes no handlers from that source and produces a startup warning, and an
+unsupported event, matcher or handler skips that entry with a source-specific
+warning. A malformed user settings file fails settings validation.
 
 ## Matcher evidence and coverage limits
 
@@ -63,16 +69,15 @@ false-positive rate, and these samples do not meet the ten-repository auto-rule 
     `if`/`condition`/`shell`/`rewakeMessage`/`rewakeSummary` with a string value;
     `once: true` or `asyncRewake: true`. `once: false`, `asyncRewake: false` and
     `silent` with any value are accepted silently.
-- **Events** (15 documented): `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
-  `PermissionRequest`, `PostToolUse`, `PreLLMCall`, `PostLLMCall`, `PreCompact`,
-  `PostCompact`, `SubagentStart`, `SubagentStop`, `Stop`, `SessionEnd`,
-  `Notification`, `PostToolUseFailure`. The last two joined the official lifecycle
-  list by 2026-09-18; their documentation status is confirmed, not their runtime
-  dispatch. Two more — `StopFailure`, `PostToolBatch` — are in the
-  binary's `HookEventKind` enum but not the documented list and could not be exercised
-  headlessly, so skillsaw reports them at `info`. `Setup` is a Claude Code event the
-  binary recognises and deliberately does not run ("Claude hook event `Setup` is
-  recognized but is not run by Muse").
+- **Events** (17 documented as of Muse Code 1.4.14): `SessionStart`,
+  `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`,
+  `PostToolUseFailure`, `PostToolBatch`, `PreLLMCall`, `PostLLMCall`, `PreCompact`,
+  `PostCompact`, `SubagentStart`, `SubagentStop`, `Notification`, `Stop`,
+  `StopFailure`, `SessionEnd`. `Notification`, `PostToolUseFailure`, `PostToolBatch`
+  and `StopFailure` joined the documented list after the runtime matrix; their
+  documentation status is confirmed, not their runtime dispatch. `Setup` is a Claude
+  Code event the binary recognises and deliberately does not run ("Claude hook event
+  `Setup` is recognized but is not run by Muse").
 - **Handler type**: `command` only — Muse "binds a shell command to a lifecycle
   event." No `mcp_tool`, `prompt`, or `agent` handlers.
 - **Handler fields Muse accepts**, with the JSON type each must carry: `type`,
@@ -116,9 +121,9 @@ false-positive rate, and these samples do not meet the ten-repository auto-rule 
 ## Sync notes
 Hand-copied value sets that drift — re-check each against the docs, or re-verify
 empirically if the docs still omit an example:
-- `HOOK_EVENTS` (15 documented events, above) in `formats/muse.py`.
-- `UNDOCUMENTED_HOOK_EVENTS` and `RECOGNIZED_UNRUN_EVENTS` — the enum names and the
-  `Setup` diagnostic, both read out of the binary rather than the docs.
+- `HOOK_EVENTS` (17 documented events, above) in `formats/muse.py`.
+- `RECOGNIZED_UNRUN_EVENTS` — the `Setup` diagnostic, read out of the binary rather
+  than the docs.
 - `HOOK_HANDLER_TYPES` = `{"command"}`.
 - `MATCHER_GROUP_FIELDS` = `{"matcher", "hooks"}` — any other key at that level drops
   the group.
