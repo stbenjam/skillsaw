@@ -2,7 +2,7 @@
 Rule: codex-hooks-valid
 
 Codex adopted Claude Code's nested hooks shape and gave it its own
-vocabulary: twelve events, two handler types it runs and two it parses and
+vocabulary: an event list, two handler types it runs and two it parses and
 skips, and per-handler fields of its own. The vocabulary lives in
 ``skillsaw.formats.codex`` — this rule reads it and never restates it.
 Severity carries the blast radius — what each defect costs, and how to fix

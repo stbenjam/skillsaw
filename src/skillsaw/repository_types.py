@@ -53,7 +53,7 @@ class RepositoryType(Enum):
     GROK_PROJECT = "grok-project"
     GROK_PLUGIN = "grok-plugin"  # Grok Build plugin (.grok-plugin/plugin.json)
     GROK_MARKETPLACE = "grok-marketplace"  # .grok-plugin/marketplace.json
-    KIRO = "kiro"  # Repository with `.kiro/` steering files
+    KIRO = "kiro"  # Kiro steering, native agents, skills, or workspace MCP
     GEMINI = "gemini"  # Repository with a GEMINI.md
     QWEN = "qwen"  # Repository with a QWEN.md
     AGENTS_MD = "agents-md"  # Repository with an AGENTS.md

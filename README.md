@@ -32,6 +32,9 @@ Grok Build, Google Antigravity, native OpenClaw plugins, hooks, agent configurat
 Vercel skills CLI lockfiles, and eval formats. Safe structural fixes can be applied
 automatically; everything else comes with precise, agent-friendly guidance.
 
+[Kiro support](docs/kiro.md) includes recursive steering, native JSON/Markdown agents,
+and workspace/agent MCP, with explicit CLI 2.x and V3 compatibility boundaries.
+
 **[Get started](https://skillsaw.org/getting-started/)** |
 **[Browse the rules](https://skillsaw.org/rules/)** |
 **[Read the documentation](https://skillsaw.org/)**
@@ -105,7 +108,7 @@ skillsaw detects repository types automatically and lints multiple formats in th
 Pi packages and `.pi/` project resources are supported, including native skills,
 prompt templates, manifest globs, local package references, and first-party
 `.pi/mcp.json` servers. Shared MCP credential and policy checks cover these
-servers; enable `pi-mcp-valid` for Pi 1.0 field validation, including
+servers; enable `pi-mcp-valid` for Pi 1.5 field validation, including
 `oauth.authServerMetadataUrl`. See
 [Pi configuration checks](https://skillsaw.org/rules/pi-config-valid/) and
 [Pi MCP checks](https://skillsaw.org/rules/pi-mcp-valid/).

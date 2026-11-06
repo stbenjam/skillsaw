@@ -155,12 +155,14 @@ def test_valid_source_paths_need_not_exist(tmp_path, source):
     assert theme_error(tmp_path, source=source) is None
 
 
-@pytest.mark.parametrize("kind", ["hats", "critters"])
-def test_artwork_container_and_id_boundaries(tmp_path, kind):
-    value = "hat.svg" if kind == "hats" else {"source": "critter.svg"}
+@pytest.mark.parametrize(
+    "kind,builtin", [("icons", "claw"), ("hats", "fedora"), ("critters", "fedora")]
+)
+def test_artwork_container_and_id_boundaries(tmp_path, kind, builtin):
+    value = {"source": "critter.svg"} if kind == "critters" else "art.svg"
     for invalid in (None, [], "artwork"):
         assert kind in theme_error(tmp_path, **{kind: invalid})
-    for key in ("", "Upper", "-start", "hat.svg", "x" * 33, "fedora"):
+    for key in ("", "Upper", "-start", "hat.svg", "x" * 33, builtin):
         assert kind in theme_error(tmp_path, **{kind: {key: value}})
     entries = {str(i) + "x" * 31: value for i in range(8)}
     assert theme_error(tmp_path, **{kind: entries}) is None
@@ -172,6 +174,8 @@ def test_artwork_container_and_id_boundaries(tmp_path, kind):
 @pytest.mark.parametrize(
     "kind,identifier",
     [
+        ("icons", "claw"),
+        ("icons", "mark"),
         ("hats", "crown"),
         ("hats", "santa"),
         ("hats", "party"),
@@ -180,7 +184,7 @@ def test_artwork_container_and_id_boundaries(tmp_path, kind):
     ],
 )
 def test_builtin_artwork_collisions(tmp_path, kind, identifier):
-    value = "art.svg" if kind == "hats" else {"source": "art.svg"}
+    value = {"source": "art.svg"} if kind == "critters" else "art.svg"
     assert "built-in" in theme_error(tmp_path, **{kind: {identifier: value}})
 
 
@@ -188,6 +192,7 @@ def test_builtin_artwork_collisions(tmp_path, kind, identifier):
     "source", [None, "../a.svg", "/a.svg", "a//b.svg", "a\\b.svg", "a.png", "a.svg?x=1"]
 )
 def test_invalid_artwork_paths(tmp_path, source):
+    assert "SVG" in theme_error(tmp_path, icons={"icon": source})
     assert "SVG" in theme_error(tmp_path, hats={"hat": source})
     assert "SVG" in theme_error(tmp_path, critters={"critter": {"source": source}})
 
@@ -230,9 +235,9 @@ def test_valid_critter_timing(tmp_path, crossing):
     )
 
 
-@pytest.mark.parametrize("kind", ["hats", "critters"])
+@pytest.mark.parametrize("kind", ["icons", "hats", "critters"])
 def test_duplicate_artwork_json_and_json5(tmp_path, kind):
-    value = '"a.svg"' if kind == "hats" else '{"source":"a.svg"}'
+    value = '{"source":"a.svg"}' if kind == "critters" else '"a.svg"'
     for index, artwork in enumerate(
         (
             f'"{kind}":{{"beret":{value},"b\\u0065ret":{value}}}',

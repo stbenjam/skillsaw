@@ -951,3 +951,46 @@ class TestCodexHooksThroughTheCli:
     def test_the_clean_fixture_reports_nothing_through_the_cli(self, tmp_path):
         repo = copy_fixture("codex/hooks-clean", tmp_path)
         assert [v for v in self._run(repo) if v["rule_id"] == "codex-hooks-valid"] == []
+
+
+# ── Model request events ────────────────────────────────────────
+
+
+class TestModelRequestEvents:
+    """``PreModelRequest`` and ``PostModelRequest``, added in Codex rust-v0.164.0.
+
+    ``codex/hooks-model-request`` declares both in a project ``hooks.json``
+    and in a nested ``config.toml`` ``[hooks]`` table, with one ``matcher``
+    in each file. Codex runs both events for every model request attempt and
+    ignores ``matcher`` on them (``matcher_pattern_for_event`` in
+    ``codex-rs/hooks/src/events/common.rs``).
+    """
+
+    def test_both_events_load_from_both_files(self, tmp_path):
+        repo = copy_fixture("codex/hooks-model-request", tmp_path)
+        blocks = RepositoryContext(repo).lint_tree.find(CodexHooksBlock)
+        events = {(b.path.name, event) for b in blocks for event in b.events}
+
+        assert events == {
+            ("hooks.json", "PreModelRequest"),
+            ("hooks.json", "PostModelRequest"),
+            ("config.toml", "PreModelRequest"),
+            ("config.toml", "PostModelRequest"),
+        }
+
+    def test_only_the_ignored_matchers_are_reported(self, tmp_path):
+        repo = copy_fixture("codex/hooks-model-request", tmp_path)
+        found = sorted((v.file_path.name, v.message, v.severity.value) for v in _findings(repo))
+
+        assert found == [
+            (
+                "config.toml",
+                "Hook PreModelRequest[0].matcher has no effect on PreModelRequest",
+                Severity.INFO.value,
+            ),
+            (
+                "hooks.json",
+                "Hook PostModelRequest[0].matcher has no effect on PostModelRequest",
+                Severity.INFO.value,
+            ),
+        ], messages(_findings(repo))

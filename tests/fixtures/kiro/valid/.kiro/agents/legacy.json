@@ -1,0 +1,43 @@
+{
+  "name": "kiro_default",
+  "description": "Review legacy services. Use when maintaining existing service integrations.",
+  "prompt": "file://../prompts/review.md",
+  "model": "deployment-specific-model",
+  "allowedTools": [
+    "fs_read",
+    "@docs/read"
+  ],
+  "toolsSettings": {
+    "execute_bash": {
+      "allowedCommands": [
+        "^git status$"
+      ],
+      "denyByDefault": false
+    }
+  },
+  "keyboardShortcut": "ctrl+r",
+  "toolAliases": {
+    "@docs/read": "read_docs"
+  },
+  "resources": [
+    "file://docs/api.md",
+    "file://.kiro/steering/**/*.md",
+    "file://~/personal.md"
+  ],
+  "mcpServers": {
+    "docs": {
+      "type": "http",
+      "url": "https://docs.example.com/mcp",
+      "command": "",
+      "env": null,
+      "oauth": null
+    }
+  },
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "git status"
+      }
+    ]
+  }
+}

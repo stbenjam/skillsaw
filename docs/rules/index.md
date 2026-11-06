@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **111** built-in rules organized into the following categories:
+skillsaw includes **113** built-in rules organized into the following categories:
 
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
@@ -22,8 +22,9 @@ skillsaw includes **111** built-in rules organized into the following categories
 - [Instruction Files](instruction-files.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (5 rules)
 - [Muse Code](muse.md) (1 rule)
-- [OpenAI Codex](codex.md) (8 rules)
+- [OpenAI Codex](codex.md) (7 rules)
 - [OpenClaw](openclaw.md) (4 rules)
+- [Kiro](kiro.md) (3 rules)
 - [OpenCode](opencode.md) (1 rule)
 - [Pi](pi.md) (4 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
@@ -122,7 +123,6 @@ skillsaw includes **111** built-in rules organized into the following categories
 | [`muse-hooks-valid`](muse-hooks-valid.md) | .muse/hooks.json must use Muse's events, matcher groups and handler fields | error (disabled) | - | Muse Code |
 | [`codex-hooks-valid`](codex-hooks-valid.md) | Codex hooks files must use Codex's hook events, handler types, and fields | error (auto) | - | OpenAI Codex |
 | [`codex-mcp-headers`](codex-mcp-headers.md) | Codex HTTP MCP servers must use http_headers instead of ignored headers | warning (auto) | - | OpenAI Codex |
-| [`codex-project-instructions`](codex-project-instructions.md) | Diagnose Codex instruction selection and the cumulative project byte limit | warning (disabled) | - | OpenAI Codex |
 | [`codex-openai-metadata`](codex-openai-metadata.md) | Validate skill openai.yaml and catalog-compatible plugin metadata | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-json-valid`](codex-plugin-json-valid.md) | The selected Codex manifest or portable OpenAI overlay must be valid | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-structure`](codex-plugin-structure.md) | Only plugin.json belongs in .codex-plugin/ | warning (auto) | - | OpenAI Codex |
@@ -132,6 +132,9 @@ skillsaw includes **111** built-in rules organized into the following categories
 | [`openclaw-manifest-valid`](openclaw-manifest-valid.md) | Native OpenClaw manifests must declare valid identity, configSchema, and themes | error (disabled) | - | OpenClaw |
 | [`openclaw-package-valid`](openclaw-package-valid.md) | OpenClaw package metadata must declare valid extension entries | error (disabled) | - | OpenClaw |
 | [`openclaw-resources`](openclaw-resources.md) | OpenClaw resources should resolve inside their package and exist when loaded | warning (disabled) | - | OpenClaw |
+| [`kiro-agent-valid`](kiro-agent-valid.md) | Kiro JSON and Markdown agents must use valid syntax and documented field types | error (disabled) | - | Kiro |
+| [`kiro-mcp-valid`](kiro-mcp-valid.md) | Kiro workspace and agent MCP entries must use documented field types | error (disabled) | - | Kiro |
+| [`kiro-references`](kiro-references.md) | Literal local Kiro prompt, resource, and steering references should exist | warning (disabled) | - | Kiro |
 | [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
 | [`pi-config-valid`](pi-config-valid.md) | Pi package and project resource declarations must have valid types | warning (auto) | - | Pi |
 | [`pi-skill-valid`](pi-skill-valid.md) | Pi skills need parseable frontmatter and a nonempty description | warning (auto) | - | Pi |

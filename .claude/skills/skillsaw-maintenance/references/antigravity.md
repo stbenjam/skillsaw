@@ -21,8 +21,8 @@ configuration, its plugin manifests, and its customization registries.
   `plugins/<name>/mcp_config.json`.
 - https://antigravity.google/docs/hooks/ — the events and the `matcher` spellings.
 
-The initial loader checks used `agy` 1.1.25; additional checks with 1.1.26 are
-recorded below. Method: an isolated `HOME` (the real `~/.gemini` never read or written),
+The initial loader checks used `agy` 1.1.25; additional checks with 1.1.26 and
+1.3.6 are recorded below. Method: an isolated `HOME` (the real `~/.gemini` never read or written),
 outbound proxies pointed at a dead port, one fixture per case, read back from
 `agy agents`, `agy mcp list`, `agy plugin validate`, `agy plugin install` and the
 `--log-file` diagnostics (`hooks_manager.go:33`, `discovery.go:551`, `plugins.go:117`).
@@ -81,15 +81,18 @@ changing a rule here.
   problem drops that server *silently*: non-object server, non-string/non-null `env` values
   or `args` elements, non-string/non-null `command`, `url`, `serverUrl` or `cwd`,
   bad `disabledTools` type, an
-  `authProviderType` other than `"google_credentials"`. `serverUrl` wins over
+  `authProviderType` other than `"google_credentials"`, and (1.3.6) a mistyped
+  `enabledTools`, `timeoutSeconds` (int64) or `tools` entry (`eager` boolean,
+  `background` `"off"`/`"always"`). `serverUrl` wins over
   `command`; `url` + `type` is a third shape; a server with neither loads without
   complaint. `disabled` is the toggle — `enabled` is not a key. Credential-bearing
   fields: `env`, `headers`, `clientId`/`clientSecret`, `oauth.clientId`/`clientSecret`.
   Null `disabledTools` elements are accepted. A mistyped `type` is also tolerated.
 - **Plugin manifest**: `plugins/<n>/plugin.json`, direct children only, parsed by
-  **protojson** with four meaningful fields — `name`, `description`, `disabled`,
-  `logo`. Every other key including `$schema`, `version` and `author` is discarded and
-  the plugin loads. `name` is optional for discovery (it defaults to the directory
+  **protojson** with six meaningful fields — `name`, `description`, `disabled`,
+  `logo`, and since 1.3.6 `version` and `displayName` (proto name `display_name`
+  also accepted; both together is a duplicate). Every other key including `$schema`
+  and `author` is discarded and the plugin loads. `name` is optional for discovery (it defaults to the directory
   name) and required by `agy plugin validate` / `install`, which also enforce
   `[A-Za-z0-9_-]` with no leading dot. A duplicate `name` key is an error. The manifest
   schema **is published**, inline under "Full JSON Schema" at
@@ -168,6 +171,23 @@ The following cases were run again with an isolated home and no model turn:
 | Repeated `env`, `headers` or `oauth` objects | `agy mcp disable probe`, then read the isolated config it rewrites | Object members merge. An empty second object preserves earlier members; null clears the map. The probe used ordinary `COLOR` and `X-Color` strings, not credentials. |
 | Repeated `mcpServers` wrapper or server name | Same isolated rewrite; `agy mcp list` | The second object replaces the first, including servers named `env`, `headers` or `oauth`. These are not merged maps. |
 
+### Rechecked with agy 1.3.6 (2026-11-06)
+
+Same method. Plugin cases read `agy agents` for a probe agent inside the plugin
+and the `plugins.go:195` log line; MCP cases read `agy mcp list` beside a clean
+control server.
+
+| Input | Observable | Result |
+| --- | --- | --- |
+| `version: 42`, `displayName: 42`, `display_name: 42`, `version: true` | `agy agents`, `plugins.go` | Plugin absent: `invalid value for string field version: 42` / `string field displayName: 42` (the proto spelling reports the JSON name). |
+| `version: "not-semver"`, `displayName` / `display_name` strings, `version: null` | `agy agents` | Plugin loads. |
+| `displayName` beside `display_name`; repeated `version` | `plugins.go` | `proto: duplicate field`; plugin absent. Repeated `license` still loads. |
+| `Version: 42`, `displayname: 42`; numeric `author`, `keywords`, `homepage`, `icon`, `license`, `repository`, `category`, `tags` | `agy agents` | Plugin loads: exact-match fields, the rest discarded. |
+| `enabledTools: "a"` or `[1]` | `agy mcp list` | Server absent. `["a", null]` and `null` load. |
+| `timeoutSeconds` `"600"`, `1.5`, `600.0`, `6e2`, `true`, `2^63`, `-2^63-1` | `agy mcp list` | Server absent. `-5`, `0`, `2^63-1`, `-2^63`, `null` load. |
+| `tools` `5` or `[]`; `tools.a` `5` | `agy mcp list` | Server absent. `tools: null`, `tools.a: null` and unknown tool-entry keys load. |
+| `tools.a.eager: "yes"`; `background` `"sometimes"`, `"ALWAYS"`, `""`, `1` | `agy mcp list` | Server absent. `EAGER`/`BACKGROUND` key spellings bind case-insensitively. |
+
 These are loader observations. They do not demonstrate hook dispatch or MCP
 connections. Shared-file scanner tests separately verify that commands and
 prompts remain visible once when several hosts read the same file.
@@ -202,8 +222,12 @@ the docs:
   the Go unmarshal error back — it names the struct field and its type.
 - `PLUGIN_MESSAGE_FIELDS`. Probe the same way; a protojson error reads
   `proto: (line 1:9): invalid value for string field name: 42`.
+- `PLUGIN_FIELD_ALIASES` (proto names protojson also accepts).
 - `MCP_STRING_FIELDS` (`command`, `url`, `serverUrl`, `cwd`); unlike these,
   a mistyped `type` is tolerated.
+- `MCP_SERVER_FIELDS`, `MCP_TOOL_FIELDS`, `MCP_TOOL_BACKGROUND_MODES` and the
+  `timeoutSeconds` int64 bounds. The public MCP docs' "MCP configuration
+  properties" list is the place new fields appear first.
 - `MCP_CREDENTIAL_MAPS` and `MCP_CREDENTIAL_KEY_ALIASES`. The alias table exists only
   so the shared credential-*name* detector sees `clientSecret` as `client_secret`.
 - The one accepted `authProviderType` value, in

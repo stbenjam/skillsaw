@@ -1,0 +1,8 @@
+version: "99.0.0"
+rules:
+  kiro-agent-valid:
+    enabled: true
+  kiro-mcp-valid:
+    enabled: true
+  kiro-references:
+    enabled: true
