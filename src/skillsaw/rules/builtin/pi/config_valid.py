@@ -55,6 +55,7 @@ class PiConfigValidRule(Rule):
                     continue
                 bad = []
                 bad_autoload = []
+                bad_changelog = []
 
                 def lists(mapping, prefix, allow_null):
                     for key in RESOURCE_FIELDS:
@@ -68,6 +69,10 @@ class PiConfigValidRule(Rule):
                 # absent in both. A null package filter is not: Pi passes it
                 # to the filter and the package is silently dropped.
                 lists(config, "" if settings else "pi.", allow_null=True)
+                # Pi 1.5.0 readPiManifest keeps changelogPath only when it is a string.
+                changelog = None if settings else config.get("changelogPath")
+                if changelog is not None and not isinstance(changelog, str):
+                    bad_changelog.append("pi.changelogPath (expected a string)")
                 if settings and config.get("packages") is not None:
                     packages = config["packages"]
                     if not isinstance(packages, list):
@@ -91,8 +96,8 @@ class PiConfigValidRule(Rule):
                                     bad_autoload.append(f"{prefix}.autoload (expected a boolean)")
                             else:
                                 bad.append(f"{prefix} (expected a source string or object)")
-                if bad or bad_autoload:
-                    found = bad + bad_autoload
+                if bad or bad_autoload or bad_changelog:
+                    found = bad + bad_autoload + bad_changelog
                     detail = "; ".join(found[:5])
                     if len(found) > 5:
                         detail += f"; and {len(found) - 5} more"
@@ -107,6 +112,8 @@ class PiConfigValidRule(Rule):
                         # Pi never crashes on autoload; anything but `false`
                         # simply loads the package as if autoload were on.
                         consequences.append("a non-boolean autoload is treated as enabled")
+                    if bad_changelog:
+                        consequences.append("Pi ignores it and reads CHANGELOG.md instead")
                     consequence = "; ".join(consequences)
                     violations.append(
                         self.violation(

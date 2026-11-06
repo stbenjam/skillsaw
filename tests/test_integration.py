@@ -6457,6 +6457,9 @@ class TestRuleCoverage:
         repo = copy_fixture("pi/mcp-invalid", tmp_path / "pi_mcp_invalid")
         fired |= rule_ids(run_lint(repo, "--rule", "pi-mcp-valid"))
 
+        repo = copy_fixture("pi/settings-schema-invalid", tmp_path / "pi_settings_schema")
+        fired |= rule_ids(run_lint(repo, "--rule", "pi-settings-schema"))
+
         repo = copy_fixture("goose/broken", tmp_path / "goose_broken")
         fired |= rule_ids(
             run_lint(repo, "--rule", "goose-recipe-valid", "--rule", "goose-subrecipe-references")

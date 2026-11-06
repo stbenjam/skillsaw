@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 
 from skillsaw.context import RepositoryType
 from skillsaw.diagnostics import safe_display
@@ -77,6 +78,23 @@ def format_schema_error(error: ValidationError) -> str:
         detail = f"must contain at least {error.validator_value} character(s)"
     elif error.validator == "maxLength":
         detail = f"must contain at most {error.validator_value} character(s)"
+    elif error.validator in {"minimum", "maximum"}:
+        bound = "at least" if error.validator == "minimum" else "at most"
+        detail = f"must be {bound} {error.validator_value}"
+    elif error.validator == "enum" or (
+        error.validator == "anyOf"
+        and all(isinstance(option, dict) and "const" in option for option in error.validator_value)
+    ):
+        # Permitted values come from the schema, never from the document;
+        # JSON spelling keeps 0 distinct from "0".
+        options = (
+            error.validator_value
+            if error.validator == "enum"
+            else [option["const"] for option in error.validator_value]
+        )
+        detail = "must be one of " + ", ".join(
+            safe_display(json.dumps(option)) for option in options
+        )
     elif error.validator == "oneOf":
         detail = "must match exactly one permitted schema variant"
     elif error.validator == "not":
@@ -96,13 +114,21 @@ def stable_key(value: object) -> str:
     return hashlib.sha256(str(value).encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
-def schema_error_summary(errors: list[ValidationError], *, limit: int = 4) -> str:
-    """Summarize schema errors without flooding one malformed document."""
-    ordered = sorted(
-        errors, key=lambda error: (tuple(map(str, error.absolute_path)), error.message)
-    )
-    rendered = [format_schema_error(error) for error in ordered[:limit]]
-    remaining = len(ordered) - len(rendered)
+def schema_error_summary(errors: Iterable[ValidationError], *, limit: int = 4) -> str:
+    """Summarize an error stream with bounded memory and deterministic order.
+
+    A hostile document can yield one error per array item; only ``limit``
+    are kept, the rest are counted.
+    """
+    sample = []
+    count = 0
+    for error in errors:
+        count += 1
+        if len(sample) < limit:
+            sample.append(error)
+    sample.sort(key=lambda error: (tuple(map(str, error.absolute_path)), error.message))
+    rendered = [format_schema_error(error) for error in sample]
+    remaining = count - len(rendered)
     if remaining:
         rendered.append(f"and {remaining} more schema error{'s' if remaining != 1 else ''}")
     return "; ".join(rendered)

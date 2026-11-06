@@ -663,6 +663,11 @@ rules:
     enabled: false
     severity: warning
 
+  # Pi project settings should match the Pi 1.5.0 settings schema
+  pi-settings-schema:
+    enabled: false
+    severity: warning
+
   # Pi skills need parseable frontmatter and a nonempty description
   pi-skill-valid:
     enabled: auto

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://pi.dev/schemas/settings.schema.json",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-5-5",
+  "defaultThinkingLevel": "medium",
+  "quietStartup": "header",
+  "tuiMode": "regular",
+  "collapseChangelog": true,
+  "defaultTools": ["+grep", "-bash"],
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 5
+  },
+  "skills": ["../skills"],
+  "packages": ["npm:@acme/pi-review"],
+  "teamNotes": "Unknown keys are allowed by Pi's schema."
+}

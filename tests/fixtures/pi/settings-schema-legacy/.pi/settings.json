@@ -1,0 +1,7 @@
+{
+  "defaultProvider": "openai",
+  "skills": {
+    "enableSkillCommands": "false",
+    "customDirectories": ["../team-skills"]
+  }
+}

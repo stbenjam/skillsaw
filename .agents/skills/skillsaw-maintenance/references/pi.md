@@ -104,3 +104,24 @@ Compared the MCP loader and field validator at v1.5.0 against v1.0.0. The
 loader adds project overrides and BOM stripping; the validator adds
 `oauth.clientRegistration`. Moving the MCP extension into its own package
 happened on main after v1.5.0; re-check source paths at the next tag.
+
+## Pi 1.5.0 settings and changelog audit (2026-11-06)
+
+Pi 1.5.0 publishes JSON Schemas for `settings.json`, `models.json`,
+`keybindings.json`, and theme files under `https://pi.dev/schemas/`. The
+opt-in `pi-settings-schema` rule validates project `.pi/settings.json`
+against the tagged `settings.schema.json` bundled in
+`src/skillsaw/schemas/pi/v1_5_0/`; its `SCHEMA-SOURCE.md` records the commit.
+Re-copy the schema from the release tag, not pi.dev: on the audit date pi.dev
+still served the 1.4.0 build. The settings loader validates nothing, so a
+mistyped value is used as written. Resource keys stay with `pi-config-valid`.
+
+`models.json` is read only from the user's agent directory
+(`~/.pi/agent/models.json`), never from a project, so it stays out of scope.
+Keybindings and themes have no project schema contract either.
+
+`package.json#pi.changelogPath` is kept only when it is a string; `""`
+disables the changelog. Pi shows the changelog only when the canonical path
+is a file strictly inside the package root, and silently shows nothing
+otherwise. `pi-config-valid` checks the type and `pi-resource-paths` checks
+existence and containment.
