@@ -204,7 +204,7 @@ my-plugin/
 
 ## Marketplace (Multiple Plugins)
 
-skillsaw supports multiple marketplace structures per the [Claude Code specification](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces):
+skillsaw supports multiple marketplace structures per the [Claude Code specification](https://code.claude.com/docs/en/plugin-marketplaces):
 
 ### Traditional Structure (plugins/ directory)
 

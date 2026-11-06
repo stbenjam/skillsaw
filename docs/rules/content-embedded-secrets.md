@@ -111,7 +111,7 @@ Credentials), mapping to OWASP Top Ten 2021 A07.
 - [OWASP Secrets Management Cheat
   Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)
 - [Claude Code
-  Security](https://docs.anthropic.com/en/docs/claude-code/security) —
+  Security](https://code.claude.com/docs/en/security) —
   Instruction files are loaded into context every session
 
 

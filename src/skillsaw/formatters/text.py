@@ -65,6 +65,7 @@ def format_text(
     hyperlinks: bool = False,
     # Kept last so existing positional callers keep their bindings.
     fix_level: str = "warning",
+    quiet: bool = False,
 ) -> str:
     show_info = should_show_info(verbose, fail_level)
     red = "\033[91m" if color else ""
@@ -123,6 +124,12 @@ def format_text(
             f"{terminal_safe(v.message)}"
         )
 
+    shown = errors_list + warnings_list + (info_list if show_info else [])
+    # Quiet is for CI logs: a clean run says nothing, and a dirty one keeps
+    # only what the reader must act on.
+    if quiet and not shown:
+        return ""
+
     output = []
 
     if errors_list:
@@ -140,7 +147,6 @@ def format_text(
         for v in info_list:
             output.append(f"  {fmt_violation(v)}")
 
-    shown = errors_list + warnings_list + (info_list if show_info else [])
     documented = sorted({v.rule_id for v in shown if v.rule_id in builtin_ids})
     if documented:
         if hyperlinks:
@@ -154,14 +160,15 @@ def format_text(
             for rule_id in documented:
                 output.append(f"  {rule_doc_url(rule_id)}")
 
-    output.append(f"\n{bold}Scanned:{reset}")
-    repo_types_str = ", ".join(context.repo_type_names(include_unknown=False))
-    output.append(f"  Repo type: {repo_types_str or 'unknown'}")
-    output.append(f"  Plugins:   {len(context.distinct_plugin_dirs())}")
-    output.append(f"  Skills:    {context.skill_count}")
-    output.append(f"  Rules run: {len(rules)}")
-    if duration is not None:
-        output.append(f"  Took:      {format_duration(duration)}")
+    if not quiet:
+        output.append(f"\n{bold}Scanned:{reset}")
+        repo_types_str = ", ".join(context.repo_type_names(include_unknown=False))
+        output.append(f"  Repo type: {repo_types_str or 'unknown'}")
+        output.append(f"  Plugins:   {len(context.distinct_plugin_dirs())}")
+        output.append(f"  Skills:    {context.skill_count}")
+        output.append(f"  Rules run: {len(rules)}")
+        if duration is not None:
+            output.append(f"  Took:      {format_duration(duration)}")
 
     output.append(f"\n{bold}Summary:{reset}")
     output.append(f"  {red}Errors:   {errors}{reset}")

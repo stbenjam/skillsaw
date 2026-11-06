@@ -89,7 +89,10 @@ def _run_lint(args):
 
     paths = _resolve_lint_paths(valid_raw_paths)
 
-    if args.fmt == "text":
+    # Quiet trims the text report's chrome; machine formats are unaffected.
+    chatty = args.fmt == "text" and not args.quiet
+
+    if chatty:
         print(f"skillsaw {cli_version}")
         print(f"Linting: {', '.join(str(p) for p in paths)}\n")
 
@@ -109,7 +112,7 @@ def _run_lint(args):
 
     config, config_path = load_config(args, paths[0])
 
-    if config_path and args.verbose and args.fmt == "text":
+    if config_path and args.verbose and chatty:
         print(f"Using config: {config_path}\n")
 
     fail_level = resolve_fail_level(args, config)
@@ -124,7 +127,7 @@ def _run_lint(args):
         if baseline_path:
             try:
                 baseline = load_baseline(baseline_path)
-                if args.verbose and args.fmt == "text":
+                if args.verbose and chatty:
                     print(
                         f"Using baseline: {baseline_path}"
                         f" ({len(baseline.violations)} entries)\n"
@@ -199,7 +202,7 @@ def _run_lint(args):
         all_rules.extend(linter.rules)
         baseline_suppressed += linter.baseline_suppressed_count
 
-        if baseline and args.fmt == "text":
+        if baseline and chatty:
             stale = linter.stale_baseline_entries
             if stale:
                 print(
@@ -257,6 +260,7 @@ def _run_lint(args):
         fix_level=fix_level,
         color=color,
         hyperlinks=hyperlinks_enabled(sys.stdout, color),
+        quiet=args.quiet,
     )
     # Write the requested report files before printing: a stdout the
     # console cannot render must not cost the files the user asked for.
@@ -284,7 +288,8 @@ def _run_lint(args):
             print(f"Error: Failed to write report to '{out_path}': {e}", file=sys.stderr)
             sys.exit(1)
 
-    print(stdout_output)
+    if stdout_output:
+        print(stdout_output)
 
     # Advisory violations (deprecation notices) display like warnings but
     # never affect the exit code — a skillsaw upgrade must not break strict
