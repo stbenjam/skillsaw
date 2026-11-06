@@ -35,7 +35,9 @@ load. An MCP server that reads `${user_config.KEY}` in its `command`,
 `args`, `env`, `url` or `headers` needs `KEY` declared under the top-level
 `userConfig`, or under the `userConfig` of a top-level `channels` entry
 whose `server` names that server. Otherwise Claude Code cannot resolve it
-on a fresh install and drops the server. The check reads the inline
+on a fresh install and drops the server. A `${user_config.KEY}` in
+`headersHelper` is never substituted, because the value would reach a
+shell, so it is reported even when declared. The check reads the inline
 `mcpServers` map, the plugin's `.mcp.json`, and any MCP file `mcpServers`
 names by path. `claude plugin validate` makes the same checks; skillsaw repeats
 them for CI runs and editors without Claude Code.

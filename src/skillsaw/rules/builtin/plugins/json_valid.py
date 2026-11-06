@@ -229,6 +229,17 @@ class PluginJsonValidRule(Rule):
             for name, server in _server_map(payload).items():
                 if not isinstance(server, dict):
                     continue
+                helper = server.get("headersHelper")
+                if isinstance(helper, str) and _USER_CONFIG_REF.search(helper):
+                    violations.append(
+                        self.violation(
+                            f"MCP server '{safe_display(name)}' references user_config in "
+                            "'headersHelper' — Claude Code never substitutes it there (the "
+                            "value would reach a shell); read the value inside the helper, "
+                            "for example from the server's 'env'",
+                            file_path=path,
+                        )
+                    )
                 text = json.dumps([server.get(field) for field in _USER_CONFIG_FIELDS])
                 if "user_config" not in text:
                     continue

@@ -206,6 +206,19 @@ def test_user_config_outside_substituted_fields_is_not_a_reference(temp_dir):
     assert _user_config_findings(plugin_dir) == []
 
 
+def test_user_config_in_headers_helper_is_reported_even_when_declared(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "userConfig": _TOKEN_DECLARATION},
+        {
+            ".mcp.json": '{"mcpServers": {"api": {"type": "http", "url": "https://api.example.com",'
+            ' "headersHelper": "./auth-header.sh ${user_config.token}"}}}'
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'headersHelper'" in finding.message
+
+
 def test_a_server_named_channels_is_still_scanned(temp_dir):
     plugin_dir = _claude_plugin(
         temp_dir,
