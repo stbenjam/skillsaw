@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "keywords": ["pi-package"],
   "pi": {
-    "skills": ["./skills", "*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*b"]
+    "skills": ["./skills", "*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*b"]
   }
 }

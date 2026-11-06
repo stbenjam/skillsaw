@@ -87,6 +87,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "-v", "--verbose", action="store_true", help="Show info-level messages"
     )
     lint_parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Text output only: print nothing when no findings are shown, and "
+        "only the findings and summary otherwise (no banner or scan stats)",
+    )
+    lint_parser.add_argument(
         "--strict",
         action="store_true",
         help="Treat warnings as errors (equivalent to --fail-on warning; "

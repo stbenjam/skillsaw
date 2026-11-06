@@ -1097,14 +1097,38 @@ class TestMcpRegistrySchemaRule:
 
         assert lint_rules(repo, VALID_RULE) == []
 
+    @pytest.mark.parametrize("version", sorted(MCP_REGISTRY_SCHEMA_VERSIONS))
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://gitlab.com/group/weather",
+            "https://gitlab.com/group/subgroup/weather",
+            "https://www.gitlab.com/org/team/sub/weather.git/",
+        ],
+    )
+    def test_gitlab_repository_url_accepts_nested_groups(self, tmp_path, version, url):
+        # The registry accepts GitLab subgroups since v1.8.5 (registry PR #1361).
+        repo = copy_fixture(f"mcp-registry/schema-versions/{version}", tmp_path)
+        path, data = _load_server(repo)
+        data["repository"] = {"source": "gitlab", "url": url}
+        _write_server(path, data)
+
+        assert lint_rules(repo, VALID_RULE) == []
+
     @pytest.mark.parametrize(
         ("source", "url"),
         [
             ("github", "https://gitlab.com/example/weather"),
             ("gitlab", "https://github.com/example/weather"),
             ("bitbucket", "https://bitbucket.org/example/weather"),
-            ("gitlab", "https://gitlab.com/group/subgroup/weather"),
             ("github", "https://github.com/example/weather/issues"),
+            ("github", "https://github.com/org/team/weather"),
+            ("gitlab", "https://gitlab.com/group/weather/-/tree/main"),
+            ("gitlab", "https://gitlab.com/group/weather/-"),
+            ("gitlab", "https://gitlab.com/group//weather"),
+            ("gitlab", "https://gitlab.com/group/weather?tab=readme"),
+            ("gitlab", "https://gitlab.com/group/weather#readme"),
+            ("gitlab", "https://gitlab.com/weather"),
             ("github", "https://github.com/example/weather?tab=readme"),
         ],
     )

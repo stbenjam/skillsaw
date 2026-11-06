@@ -15,6 +15,7 @@ Lint agent skills, plugins, and AI coding assistant context
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover from the first path) |  |
 | `-v`, `--verbose` | Show info-level messages |  |
+| `-q`, `--quiet` | Text output only: print nothing when no findings are shown, and only the findings and summary otherwise (no banner or scan stats) |  |
 | `--strict` | Treat warnings as errors (equivalent to --fail-on warning; overrides the config file's strict/fail-on settings) |  |
 | `--fail-on` | Fail on violations at this severity or above (default: error; --strict is equivalent to --fail-on warning). Overrides the config file's strict/fail-on settings. (choices: error, warning, info) |  |
 | `--format` | Output format for stdout (default: text) (choices: text, json, sarif, html, code-climate, gitlab) | `text` |

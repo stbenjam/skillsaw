@@ -118,7 +118,7 @@ as the action. Set `version` to install a specific PyPI release instead:
 ```yaml
 - uses: stbenjam/skillsaw@v0
   with:
-    version: '0.21.0'
+    version: '0.22.0'
 ```
 
 ### Outputs
@@ -258,8 +258,20 @@ card can appear stale for a while after pushing.
 skillsaw supports several machine-readable output formats — `--format`
 (stdout) and `--output` (file) accept `text`, `json`, `sarif`, `html`,
 `code-climate`, and `gitlab` — including [SARIF
-2.1.0](https://sarifweb.azurewebsites.net/) for tools that ingest it.
+2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) for tools that ingest it.
 See the [CLI reference](cli.md) for details.
+
+## Quiet logs
+
+`skillsaw lint --quiet` (`-q`) keeps CI logs short. A clean run prints
+nothing to stdout. A run with findings prints the findings and the summary
+without the banner or scan stats. The flag changes only the text report on
+stdout, so files requested with `--output` are written in full and the exit
+code is unchanged:
+
+```bash
+skillsaw lint --quiet --output skillsaw-summary.html .
+```
 
 ## GitLab CI
 
@@ -269,7 +281,7 @@ Quality report, available since skillsaw 0.11.3):
 ```yaml
 skillsaw:
   script:
-    - pip install skillsaw==0.21.1
+    - pip install skillsaw==0.22.0
     - skillsaw lint --output gitlab:gl-code-quality-report.json .
   artifacts:
     reports:

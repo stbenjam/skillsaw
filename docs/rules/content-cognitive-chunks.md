@@ -87,10 +87,10 @@ Markdown headings are the idiomatic delimiter for instruction files.
   Processing](https://www.nngroup.com/articles/chunking/) — "Presenting content
   in chunks makes scanning easier and improves comprehension"
 - [OpenAI Prompt Engineering
-  Guide](https://platform.openai.com/docs/guides/prompt-engineering) — "Use
+  Guide](https://developers.openai.com/api/docs/guides/prompt-engineering) — "Use
   delimiters to clearly indicate distinct parts"
 - [Claude Code Best
-  Practices](https://docs.anthropic.com/en/docs/claude-code/best-practices) —
+  Practices](https://code.claude.com/docs/en/best-practices) —
   Recommends progressive disclosure with clear headings
 
 

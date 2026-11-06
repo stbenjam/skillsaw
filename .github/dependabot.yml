@@ -1,5 +1,15 @@
 version: 2
 updates:
+  - package-ecosystem: npm
+    directory: /editors/vscode
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      editor-tools:
+        patterns: ["*"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -21,7 +21,8 @@ class _RuleProgress:
 
     Inactive unless stderr is a terminal, so JSON/SARIF stdout, shell
     pipelines, and CI logs are never polluted.  Verbose mode also disables
-    it — info-level log lines share stderr and would interleave.
+    it — info-level log lines share stderr and would interleave — and so
+    does quiet mode.
     """
 
     def __init__(self, args) -> None:
@@ -29,6 +30,7 @@ class _RuleProgress:
             sys.stderr.isatty()
             and not getattr(args, "no_progress", False)
             and not getattr(args, "verbose", False)
+            and not getattr(args, "quiet", False)
         )
 
     def __call__(self, index: int, total: int, rule_id: str) -> None:

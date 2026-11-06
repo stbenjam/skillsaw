@@ -103,7 +103,7 @@ and supports user-defined patterns via the `banned` config key.
   LLM-based Code](https://yebof.github.io/assets/pdf/wang2025icse.pdf) (ICSE
   2025) — 70–90% deprecated API usage rates with outdated context
 - [OpenAI
-  Deprecations](https://platform.openai.com/docs/deprecations) —
+  Deprecations](https://developers.openai.com/api/docs/deprecations) —
   Ongoing model and API churn
 - [Fern: Documentation Maintenance
   Guide](https://buildwithfern.com/post/documentation-maintenance-best-practices)

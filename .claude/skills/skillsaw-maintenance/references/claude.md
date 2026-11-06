@@ -7,12 +7,12 @@ Claude Code has several distinct formats. `.claude/` is NOT a plugin — it has 
 layout. Each format below maps to its own skillsaw rules.
 
 ## Upstream source(s)
-- Plugins: https://docs.claude.com/en/docs/claude-code/plugins-reference
-- Marketplaces: https://docs.claude.com/en/docs/claude-code/plugin-marketplaces
-- `.claude/` directory: https://docs.claude.com/en/docs/claude-code/claude-directory
-- Hooks: https://docs.claude.com/en/docs/claude-code/hooks
-- MCP servers: https://docs.claude.com/en/docs/claude-code/mcp
-- Skills / agents: https://docs.claude.com/en/docs/claude-code/skills
+- Plugins: https://code.claude.com/docs/en/plugins-reference
+- Marketplaces: https://code.claude.com/docs/en/plugin-marketplaces
+- `.claude/` directory: https://code.claude.com/docs/en/claude-directory
+- Hooks: https://code.claude.com/docs/en/hooks
+- MCP servers: https://code.claude.com/docs/en/mcp
+- Skills / agents: https://code.claude.com/docs/en/skills
 
 ## What to check
 - **Plugins**: new required fields in `plugin.json`; command format/frontmatter changes;

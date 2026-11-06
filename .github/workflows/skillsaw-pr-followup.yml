@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload PR data
         if: steps.activity.outputs.prs != '[]'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-data
           path: /tmp/pr-*.json
@@ -144,7 +144,7 @@ jobs:
           persist-credentials: false
 
       - name: Download PR data
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: pr-data
           path: /tmp
@@ -163,7 +163,7 @@ jobs:
       # with GITHUB_TOKEN: those pushes would not trigger the pull_request
       # workflow verified below. The post-step fails closed if a changed PR
       # head was not pushed locally or did not trigger unprivileged tests.
-      - uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790 # v1.0.235
+      - uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
         with:
           prompt: |
             Use the skillsaw-pr-followup skill. Follow every step in the skill.
@@ -237,7 +237,7 @@ jobs:
 
       - name: Upload execution log
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: claude-execution-log-pr-${{ matrix.pr.number }}-${{ github.run_id }}
           path: /home/runner/work/_temp/claude-execution-output.json
