@@ -19,7 +19,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790 # v1.0.235
+      - uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:
           prompt: |
             Use the skillsaw-maintenance skill. Follow every step in the skill.
@@ -32,7 +32,7 @@ jobs:
 
       - name: Upload execution log
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: claude-execution-log-${{ github.run_id }}
           path: /home/runner/work/_temp/claude-execution-output.json
