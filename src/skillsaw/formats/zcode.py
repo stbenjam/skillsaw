@@ -22,7 +22,6 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from skillsaw.formats.codex import inline_documents
 from skillsaw.paths import (
     Resolver,
     contained_resolve,
@@ -294,19 +293,28 @@ def zcode_inline_hooks(plugin_dir: Path) -> List[Dict[str, Any]]:
 
     ZCode reads an inline ``hooks`` object as the event map itself, with no
     ``hooks`` wrapper (``adapters/src/plugins/hook-sources.ts:94-98``,
-    ``index.ts:502-506``); :func:`inline_documents` wraps it so it reads like
-    a ``hooks.json``.
+    ``index.ts:502-506``), so each object is wrapped as-is: an event that
+    happens to be named ``hooks`` stays an (unsupported) event.
     """
-    return inline_documents(zcode_manifest(plugin_dir).get("hooks"), "hooks")
+    declared = zcode_manifest(plugin_dir).get("hooks")
+    items = declared if isinstance(declared, list) else [declared]
+    return [{"hooks": item} for item in items if isinstance(item, dict)]
 
 
 def zcode_inline_mcp(plugin_dir: Path) -> List[Dict[str, Any]]:
     """MCP servers written inline in the manifest.
 
     A bare server map or a ``{"mcpServers": {...}}`` wrapper, alone or in an
-    array (``adapters/src/plugins/mcp.ts:93-139``).
+    array. ZCode takes a nested ``mcpServers`` object whenever there is one,
+    whatever its siblings (``adapters/src/plugins/mcp.ts:121-139``).
     """
-    return inline_documents(zcode_manifest(plugin_dir).get("mcpServers"), "mcpServers")
+    declared = zcode_manifest(plugin_dir).get("mcpServers")
+    items = declared if isinstance(declared, list) else [declared]
+    return [
+        {"mcpServers": item["mcpServers"] if isinstance(item.get("mcpServers"), dict) else item}
+        for item in items
+        if isinstance(item, dict)
+    ]
 
 
 def catalog_plugin_base(marketplace_root: Path, data: Dict[str, Any]) -> Path:

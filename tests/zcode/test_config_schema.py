@@ -87,3 +87,32 @@ def test_environment_on_a_remote_server_is_rejected_as_env(tmp_path):
     )
     found = messages(lint(tmp_path), "zcode-config-valid")
     assert any("'docs'" in m and "env" in m for m in found)
+
+
+def test_empty_oauth_fields_and_explicit_nulls(tmp_path):
+    write_json(
+        tmp_path / ".zcode" / "config.json",
+        {
+            "mcp": {
+                "servers": {
+                    "grant": {
+                        "url": "https://e.com/mcp",
+                        "oauth": {"type": "authorization_code", "clientName": ""},
+                    }
+                }
+            }
+        },
+    )
+    assert any(
+        "'oauth.clientName' must be a non-empty string" in m
+        for m in messages(lint(tmp_path), "zcode-config-valid")
+    )
+    write_json(tmp_path / ".zcode" / "config.json", {"mcp": None})
+    assert any(
+        "'mcp' must be an object" in m for m in messages(lint(tmp_path), "zcode-config-valid")
+    )
+    write_json(tmp_path / ".zcode" / "config.json", {"mcp": {"servers": None}})
+    assert any(
+        "'mcp.servers' must be an object" in m
+        for m in messages(lint(tmp_path), "zcode-config-valid")
+    )

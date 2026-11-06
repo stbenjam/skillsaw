@@ -42,7 +42,20 @@ class ZCodePluginJsonValidRule(Rule):
         violations: List[RuleViolation] = []
         # A catalog-listed directory without a manifest is the catalog rule's
         # finding: it names the entry, and ``strict: false`` excuses it.
-        listed = set(context.zcode_local_source_dirs())
+        listed = set(context.zcode_listed_source_dirs())
+        # A ``.zcode-plugin`` (or its manifest) symlinked out of the plugin
+        # claims nothing, so no node exists for it; ZCode still follows the
+        # link and loads the manifest, inline hooks and servers included.
+        for marker in context.agent_tool_dirs(zcode.PLUGIN_DIR_NAME):
+            if zcode.zcode_marker_escapes(marker.parent):
+                violations.append(
+                    self.violation(
+                        f"{zcode.PLUGIN_DIR_NAME} is a symlink out of the plugin: ZCode loads "
+                        "the manifest it points to, but skillsaw cannot lint it or anything it "
+                        "declares. Commit the manifest inside the plugin",
+                        marker,
+                    )
+                )
         for node in context.lint_tree.find(ZCodePluginConfigNode):
             # Only ZCode's own spelling. A Claude or Codex manifest ZCode
             # falls back to is that ecosystem's file, and its rules own it.

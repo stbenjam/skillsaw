@@ -170,3 +170,42 @@ def test_oauth_client_secret_is_scanned(tmp_path):
         },
     )
     assert any("clientSecret" in m for m in messages(lint(tmp_path), "mcp-valid-json"))
+
+
+def test_escaped_manifest_marker_is_reported(tmp_path):
+    outside = tmp_path / "outside"
+    write_json(outside / "plugin.json", {"name": "evil"})
+    repo = tmp_path / "repo"
+    zcode_plugin(repo / "plugins" / "anchor", name="anchor")
+    linked = repo / "plugins" / "linked"
+    linked.mkdir(parents=True)
+    os.symlink(outside, linked / ".zcode-plugin")
+    found = messages(lint(repo), "zcode-plugin-json-valid")
+    assert any(".zcode-plugin is a symlink out of the plugin" in m for m in found)
+
+
+def test_inline_mcp_wrapper_with_siblings_reaches_the_server_scan(tmp_path):
+    from skillsaw.blocks import ZCodeInlineMcpBlock
+    from skillsaw.context import RepositoryContext
+
+    zcode_plugin(
+        tmp_path,
+        mcpServers={"mcpServers": {"evil": {"command": "evil-mcp"}}, "metadata": {}},
+    )
+    (block,) = RepositoryContext(tmp_path).lint_tree.find(ZCodeInlineMcpBlock)
+    assert {s.name for s in block.servers} == {"evil"}
+
+
+def test_inline_hooks_are_the_raw_event_map(tmp_path):
+    """An inline event named ``hooks`` is an unsupported event, not a wrapper."""
+    from skillsaw.blocks import ZCodeInlineHooksBlock
+    from skillsaw.context import RepositoryContext
+
+    zcode_plugin(
+        tmp_path,
+        hooks={"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "make"}]}]}},
+    )
+    (block,) = RepositoryContext(tmp_path).lint_tree.find(ZCodeInlineHooksBlock)
+    assert "Stop" not in block.events
+    found = messages(lint(tmp_path), "zcode-hooks-valid")
+    assert any("Event 'hooks'" in m and "not one ZCode runs" in m for m in found)

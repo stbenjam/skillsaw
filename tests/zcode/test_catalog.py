@@ -93,3 +93,34 @@ def test_non_regular_catalog_is_not_read(tmp_path):
     os.mkfifo(tmp_path / "marketplace.json")
     found = messages(lint(tmp_path), "zcode-marketplace-json-valid")
     assert any("not a regular file" in m for m in found)
+
+
+def test_catalog_without_plugins_is_a_warning(tmp_path):
+    zcode_plugin(tmp_path / "plugins" / "anchor", name="anchor")
+    write_json(tmp_path / "marketplace.json", {"name": "harbor"})
+    found = [
+        v for v in lint(tmp_path)["violations"] if v["rule_id"] == "zcode-marketplace-json-valid"
+    ]
+    assert [v["severity"] for v in found] == ["warning"]
+
+
+def test_absolute_string_source_is_external(tmp_path):
+    zcode_catalog(tmp_path, [{"name": "elsewhere", "source": "/opt/zcode/plugins/elsewhere"}])
+    assert not any(
+        "'elsewhere'" in m for m in messages(lint(tmp_path), "zcode-marketplace-json-valid")
+    )
+
+
+def test_strict_false_entries_are_excused_under_a_forced_marketplace(tmp_path):
+    loose = tmp_path / "plugins" / "loose"
+    (loose / "commands").mkdir(parents=True)
+    write_json(
+        tmp_path / "marketplace.json",
+        {
+            "name": "harbor",
+            "plugins": [{"name": "loose", "source": "./plugins/loose", "strict": False}],
+        },
+    )
+    report = lint(tmp_path, "--type", "zcode-marketplace", "--type", "zcode-plugin")
+    assert not messages(report, "zcode-plugin-json-valid")
+    assert not messages(report, "zcode-marketplace-json-valid")

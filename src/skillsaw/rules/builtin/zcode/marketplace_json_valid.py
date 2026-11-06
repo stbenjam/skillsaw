@@ -76,11 +76,13 @@ class ZCodeMarketplaceJsonValidRule(Rule):
                 )
             )
         if not isinstance(data.get("plugins"), (list, dict)):
+            # ZCode still adds the marketplace, with no plugins in it.
             violations.append(
                 self.violation(
                     "'plugins' must be an array of entries (or an object keyed by plugin name); "
-                    "ZCode lists no plugins from this marketplace",
+                    "ZCode adds this marketplace with no plugins",
                     path,
+                    severity=Severity.WARNING,
                 )
             )
             return violations
@@ -164,6 +166,10 @@ class ZCodeMarketplaceJsonValidRule(Rule):
         plugin_dir = zcode.entry_local_source(entry, base)
         if plugin_dir is None:
             if isinstance(source, str) and source in ("filesystem", "sea"):
+                return []
+            if isinstance(source, str) and Path(source).is_absolute():
+                # ZCode falls back to the path as given, on the machine
+                # installing it, so this checkout cannot judge it.
                 return []
             return [
                 self.violation(

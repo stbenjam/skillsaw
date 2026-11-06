@@ -111,6 +111,12 @@ class RepositoryZCodeMixin:
         """Resolved plugin directories the ZCode catalog lists as local sources."""
         return zcode_discovery.zcode_local_sources(self._zcode_catalog_files())
 
+    def zcode_listed_source_dirs(self) -> List[Path]:
+        """Local sources of every catalog being linted, a forced one included."""
+        return zcode_discovery.zcode_local_sources(
+            [*self._zcode_catalog_files(), *self.zcode_marketplace_paths()]
+        )
+
     def _discover_zcode_plugins(self) -> List[Path]:
         """Directories declaring a ZCode plugin (see ``discovery.zcode``)."""
         return [
@@ -120,9 +126,7 @@ class RepositoryZCodeMixin:
                 self._zcode_marker_dirs(),
                 # A forced ``--type zcode-marketplace`` lints a catalog no
                 # marker declares; its local plugins come with it.
-                zcode_discovery.zcode_local_sources(
-                    [*self._zcode_catalog_files(), *self.zcode_marketplace_paths()]
-                ),
+                self.zcode_listed_source_dirs(),
                 forced=self._zcode_plugin_forced,
             )
             if not self.is_path_excluded(path)

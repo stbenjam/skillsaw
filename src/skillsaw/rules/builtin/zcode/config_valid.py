@@ -83,8 +83,10 @@ def _field_problem(server: Dict[str, Any]) -> str:
         if unknown:
             return f"unknown 'oauth' key(s): {', '.join(safe_display(k) for k in unknown)}"
         for key in sorted(allowed - {"type"}):
-            if key in oauth and not isinstance(oauth[key], str):
-                return f"'oauth.{key}' must be a string"
+            value = oauth.get(key)
+            # Every field but ``scope`` is ``z.string().min(1)``.
+            if key in oauth and not (isinstance(value, str) and (value or key == "scope")):
+                return f"'oauth.{key}' must be a non-empty string"
         for key in required:
             if not oauth.get(key):
                 return f"'oauth.{key}' is required for {oauth['type']}"
@@ -148,7 +150,8 @@ class ZCodeConfigValidRule(Rule):
                 continue
             for problem in self._hooks_problems(data.get("hooks", {})):
                 violations.append(self.violation(f"{problem}; {_WHOLE_FILE}", file_path=block.path))
-            violations.extend(self._mcp_violations(block, data.get("mcp")))
+            if "mcp" in data:
+                violations.extend(self._mcp_violations(block, data["mcp"]))
         return violations
 
     @staticmethod
@@ -188,13 +191,11 @@ class ZCodeConfigValidRule(Rule):
         return problems
 
     def _mcp_violations(self, block: ZCodeConfigHooksBlock, mcp: Any) -> List[RuleViolation]:
-        if mcp is None:
-            return []
         if not isinstance(mcp, dict):
             return [self.violation(f"'mcp' must be an object; {_WHOLE_FILE}", file_path=block.path)]
-        servers = mcp.get("servers")
-        if servers is None:
+        if "servers" not in mcp:
             return []
+        servers = mcp["servers"]
         if not isinstance(servers, dict):
             return [
                 self.violation(
