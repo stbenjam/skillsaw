@@ -452,10 +452,11 @@ RULE_GROUPS = [
     (
         "Pi",
         "pi",
-        ["pi-config-valid", "pi-skill-valid", "pi-resource-paths", "pi-mcp-valid"],
+        ["pi-config-valid", "pi-skill-valid", "pi-resource-paths", "pi-mcp-valid", "pi-settings-schema"],
         "Discovers Pi packages and `.pi/` project resources, validates resource "
         "arrays and native skill metadata, and exposes prompts and flat skills "
-        "to content checks. Literal resource-path checks are opt-in. "
+        "to content checks. Literal resource-path and settings schema checks "
+        "are opt-in. "
         "Extensions are never executed and remote packages are not installed.",
     ),
     (

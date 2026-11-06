@@ -1,12 +1,20 @@
-"""Pi's authored resource contract (upstream v1.0.0, 2026-10-01; MCP v1.5.0, 2026-11-02).
+"""Pi's authored resource contract (upstream v1.0.0, 2026-10-01; MCP, settings
+schema and changelogPath v1.5.0, 2026-11-02).
 
 See https://pi.dev/docs/latest/packages and packages/coding-agent/src/core/{pi-manifest,
 package-manager,skills}.ts in https://github.com/earendil-works/pi.
 """
 
+import json
+from functools import lru_cache
+from importlib import resources
+
 RESOURCE_FIELDS = ("extensions", "skills", "prompts", "themes")
 TOOL_DIR_NAME = ".pi"
 REMOTE_PREFIXES = ("npm:", "git:", "https://", "http://", "ssh://", "git://")
+# Top-level settings keys whose shape pi-config-valid owns.
+SETTINGS_RESOURCE_KEYS = (*RESOURCE_FIELDS, "packages")
+SETTINGS_SCHEMA_VERSION = "1.5.0"
 
 # Pi 1.5.0, packages/coding-agent/src/core/mcp-servers.ts.
 MCP_EXPOSURES = frozenset({"codemode", "deferred", "direct", "hidden", "codemode-deferred"})
@@ -52,3 +60,11 @@ def settings_resources(settings: dict) -> dict:
     else:
         effective.pop("skills")
     return effective
+
+
+@lru_cache(maxsize=1)
+def settings_schema() -> dict:
+    """The bundled Pi settings schema; linting never fetches pi.dev."""
+    resource = resources.files("skillsaw.schemas.pi.v1_5_0").joinpath("settings.schema.json")
+    with resource.open("r", encoding="utf-8") as stream:
+        return json.load(stream)
