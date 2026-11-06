@@ -28,6 +28,12 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
+| `--mcp-server` | An http(s) server URL, or a command line that starts a stdio server (repeatable) |  |
+| `--mcp-header` | HTTP header for a single --mcp-server URL, e.g. an Authorization header (repeatable) |  |
+| `--mcp-config` | Every server in this MCP client config (.mcp.json, .vscode/mcp.json, ...), with its headers and environment |  |
+| `--mcp-timeout` | Seconds to wait for each response (default: 30) | `30.0` |
+| `--mcp-max-skills` | Skills listed and fetched per server (default: 256) | `256` |
+| `--mcp-max-bytes` | Response bytes read from each server, listing included (default: 64 MiB) | `67108864` |
 
 ### Path arguments
 
@@ -37,6 +43,20 @@ to the directory that owns it — never further out, so `lint` reads and
 from a plugin's root, so to run them name the plugin's root directory
 rather than a manifest file inside it. Duplicate paths and paths
 nested inside another named path are dropped.
+
+## `skillsaw pull`
+
+Fetch the Agent Skills MCP servers serve into a directory
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-o`, `--output` | Directory for the skills, replacing an earlier pull there |  |
+| `--mcp-server` | An http(s) server URL, or a command line that starts a stdio server (repeatable) |  |
+| `--mcp-header` | HTTP header for a single --mcp-server URL, e.g. an Authorization header (repeatable) |  |
+| `--mcp-config` | Every server in this MCP client config (.mcp.json, .vscode/mcp.json, ...), with its headers and environment |  |
+| `--mcp-timeout` | Seconds to wait for each response (default: 30) | `30.0` |
+| `--mcp-max-skills` | Skills listed and fetched per server (default: 256) | `256` |
+| `--mcp-max-bytes` | Response bytes read from each server, listing included (default: 64 MiB) | `67108864` |
 
 ## `skillsaw fix`
 
@@ -112,6 +132,12 @@ Display the repository lint tree
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
 | `--format` | Output format (default: text) (choices: text, dot) | `text` |
+| `--mcp-server` | An http(s) server URL, or a command line that starts a stdio server (repeatable) |  |
+| `--mcp-header` | HTTP header for a single --mcp-server URL, e.g. an Authorization header (repeatable) |  |
+| `--mcp-config` | Every server in this MCP client config (.mcp.json, .vscode/mcp.json, ...), with its headers and environment |  |
+| `--mcp-timeout` | Seconds to wait for each response (default: 30) | `30.0` |
+| `--mcp-max-skills` | Skills listed and fetched per server (default: 256) | `256` |
+| `--mcp-max-bytes` | Response bytes read from each server, listing included (default: 64 MiB) | `67108864` |
 
 ## `skillsaw baseline`
 

@@ -958,6 +958,7 @@ GUIDES = [
         "the .skillsaw.yaml file: rules, severities, exclusions, suppression",
     ),
     ("Repository Types", "repo-types.md", "how skillsaw detects what it is linting"),
+    ("Skills over MCP", "mcp-skills.md", "fetch and lint the skills an MCP server serves"),
     ("CI Integration", "ci.md", "GitHub Actions, GitLab CI, and PR review comments"),
     ("Pre-commit", "pre-commit.md", "run skillsaw as a pre-commit hook"),
     ("CLI Reference", "cli.md", "every command and flag"),

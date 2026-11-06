@@ -15,6 +15,9 @@ see also `references/claude.md`.
 - Registry repo and documentation: https://github.com/modelcontextprotocol/registry.
 - Versioned Registry schemas: https://static.modelcontextprotocol.io/schemas/,
   sourced from https://github.com/modelcontextprotocol/static/tree/main/schemas.
+- Skills extension (SEP-2640, `io.modelcontextprotocol/skills`):
+  https://github.com/modelcontextprotocol/ext-skills — the spec page is
+  `specification/stable/skills.mdx`.
 
 ## What to check
 - Transport types and their names (skillsaw validates against
@@ -30,6 +33,14 @@ see also `references/claude.md`.
   predecessor: required fields, formats, package and transport enums, URL shapes,
   identifier constraints, JSON Schema dialect, local versus remote `$ref` targets,
   and other semantics enforced outside JSON Schema.
+- Changes to what `--mcp-server` (on `lint`, `tree` and `pull`) relies on to fetch served skills.
+  In the Skills extension: `skill://` URI rules, the `Skill` entry shape
+  (`frontmatter`, `resources`, `"dynamic"`), digests, the per-skill limits and
+  `resources/directory/read` (constants in `src/skillsaw/formats/mcp_skills.py`,
+  checks in `src/skillsaw/mcp_skills_pull.py`). In the base protocol: the
+  `server/discover` probe, the `initialize` fallback, modern error codes and the
+  Streamable HTTP request headers (`src/skillsaw/mcp_client.py`). Served skills
+  are plain Agent Skills, so no rule maps to the extension itself.
 
 ## skillsaw rules that map
 Package `src/skillsaw/rules/builtin/mcp/`:

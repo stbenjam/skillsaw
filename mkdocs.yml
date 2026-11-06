@@ -124,6 +124,7 @@ nav:
     - Baseline: baseline.md
     - Configuration: configuration.md
     - Repository Types: repo-types.md
+    - Skills over MCP: mcp-skills.md
     - CI Integration: ci.md
     - Pre-commit: pre-commit.md
     - CLI Reference: cli.md
