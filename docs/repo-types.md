@@ -694,7 +694,8 @@ Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files 
 
 ## Ruler and Rulesync
 
-Ruler's `.ruler/**/*.md` and `.ruler/ruler.toml`, and Rulesync's
+Ruler's `.ruler/**/*.md` (except its separately propagated top-level `skills/`
+and `agents/` trees) and `.ruler/ruler.toml`, and Rulesync's
 `.rulesync/rules/**/*.md` and `rulesync.jsonc`, are discovered automatically as
 authored generator sources. Both types coexist with the native consumer types
 detected from existing output. See the [generator workflow](generators.md) for

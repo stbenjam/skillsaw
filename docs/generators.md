@@ -138,7 +138,7 @@ Rulesync copy recognition supports array-form `targets` and `features`, the
 default input tree, and the project output root (`outputRoots: ["."]` or omitted).
 It stands down for custom roots, global mode, object-form selections, and local
 config/source overlays. Rulesync root files, folded rules, and its fetched
-`.curated` tree are outside this first increment. Those generated consumer
+`.curated` tree are not recognized as generated copies. Those generated consumer
 files are still linted when their native locations are supported by skillsaw.
 
 `skillsaw tree` labels recognized copies with their source paths. JSON output
