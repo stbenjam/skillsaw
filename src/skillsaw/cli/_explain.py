@@ -138,6 +138,7 @@ def _run_explain(args):
         content_paths=config.content_paths,
         lint_external_content=config.lint_external_content,
         rulesync_generated=config.rulesync_generated,
+        codex_instructions=config.codex_instructions,
     )
     config_label = str(config_path) if config_path else "builtin defaults"
 

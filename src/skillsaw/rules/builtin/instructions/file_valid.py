@@ -4,8 +4,11 @@ Rule: instruction-file-valid
 
 from typing import List
 
+from skillsaw.blocks import CodexInstructionBlock
+from skillsaw.codex_instructions import CodexInstructionFileNode
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, INSTRUCTION_REPO_TYPES
+from skillsaw.repository_types import RepositoryType
 from skillsaw.rules.builtin.content_analysis import DevinGlobalRuleBlock, InstructionBlock
 from skillsaw.rules.builtin.utils import read_text
 
@@ -15,7 +18,7 @@ from ._helpers import is_instruction_filename
 class InstructionFileValidRule(Rule):
     """Check that instruction files are valid UTF-8 and non-empty"""
 
-    repo_types = INSTRUCTION_REPO_TYPES
+    repo_types = INSTRUCTION_REPO_TYPES | {RepositoryType.CODEX_PROJECT}
 
     @property
     def rule_id(self) -> str:
@@ -33,12 +36,20 @@ class InstructionFileValidRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-
-        for block in context.lint_tree.find(InstructionBlock):
-            if not isinstance(block, DevinGlobalRuleBlock) and not is_instruction_filename(
-                block.path.name
+        tree = context.lint_tree
+        blocks = [*tree.find(InstructionBlock), *tree.find(CodexInstructionFileNode)]
+        seen = set()
+        for block in blocks:
+            if not (
+                isinstance(
+                    block, (CodexInstructionBlock, CodexInstructionFileNode, DevinGlobalRuleBlock)
+                )
+                or is_instruction_filename(block.path.name)
             ):
                 continue
+            if block.resolved_path in seen:
+                continue
+            seen.add(block.resolved_path)
 
             content = read_text(block.path)
             if content is None:

@@ -368,9 +368,10 @@ Three things in that layer are Grok's own structure, on top of the shared
 rules above. [`grok-hooks-valid`](rules/grok-hooks-valid.md) validates every
 `.grok/hooks/*.json` — Grok merges the whole directory, so a repository may
 have several — against Grok's events, alias table and handler fields. This
-matters more than it sounds: Grok refuses a whole file over one wrong-typed
-field and reports nothing when it does, so a rejected file, a dropped matcher
-group and a skipped handler all look like a hook that had nothing to do. The
+matters more than it sounds: Grok drops an event, matcher group or handler
+over one wrong-typed field and reports it only in `grok inspect` and the
+`/hooks` tab, so in a headless run a rejected file, a dropped matcher group
+and a skipped handler all look like a hook that had nothing to do. The
 commands themselves are scanned by
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md).
@@ -654,6 +655,9 @@ project layer Codex reads. This is distinct from a Codex plugin
 checkout rather than packaging anything, so it is never treated as a plugin
 claim and never exempts the repository from another ecosystem's rules.
 
+An `AGENTS.override.md` file also identifies a Codex project and receives
+instruction content checks. The cumulative project byte diagnostic is opt-in.
+
 Codex reads the layer of every directory between the repository root and the
 one a session starts in, so a package's own `.codex/` is live configuration
 and every one in the checkout is linted.
@@ -675,8 +679,11 @@ not.
 [`mcp-valid-json`](rules/mcp-valid-json.md) applies its dialect-neutral
 checks, such as a committed credential in an `env` or `http_headers` table.
 No rule validates a server table's shape: Codex names the server and the
-field and exits 1 over a malformed one itself. Everything else in the file is
-Codex settings skillsaw reads nothing from.
+field and exits 1 over a malformed one itself. The opt-in
+[Codex instruction projection](rules/codex-project-instructions.md) also reads
+`project_doc_max_bytes` and `project_doc_fallback_filenames` from project
+configuration layers on the supplied root-to-cwd chain. Other settings are
+outside these checks.
 
 `.codex/plugins/` is an install location rather than project configuration —
 see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
@@ -796,7 +803,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **[Pi](#pi-packages-and-projects)** | `pi` | `.pi/`: Native skills, prompts, themes and extensions, `SYSTEM.md`, `APPEND_SYSTEM.md`, resource declarations in `settings.json` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
 | **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
-| **OpenAI Codex** | `codex-project` | `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
+| **OpenAI Codex** | `codex-project` | `AGENTS.override.md`, `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
 | **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
 
 `.agents/memory/` is the one row with no type of its own: the convention

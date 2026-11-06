@@ -36,7 +36,7 @@ class TestInstructionFileValidRule:
         rule = InstructionFileValidRule()
         assert rule.rule_id == "instruction-file-valid"
         assert rule.default_severity() == Severity.WARNING
-        assert rule.repo_types == INSTRUCTION_REPO_TYPES
+        assert rule.repo_types == INSTRUCTION_REPO_TYPES | {RepositoryType.CODEX_PROJECT}
 
     def test_no_instruction_files_passes(self, temp_dir):
         context = RepositoryContext(temp_dir)

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from skillsaw.paths import safe_resolve
+from skillsaw.formats.codex_instructions import CodexInstructionOptions
 from skillsaw.utils import commented_key_line, read_yaml_commented
 
 if TYPE_CHECKING:
@@ -65,6 +66,7 @@ class LinterConfig:
     content_paths: List[str] = field(default_factory=list)
     # Explicit ownership assertion for verified conventional Rulesync copies.
     rulesync_generated: bool = False
+    codex_instructions: Optional[CodexInstructionOptions] = None
     # Report diagnostics from externally sourced lint-tree nodes. Lock-managed
     # skills and APM packages produce the tag; autofix always stands down.
     lint_external_content: bool = True
@@ -103,6 +105,7 @@ class LinterConfig:
             "custom-rules",
             "exclude",
             "content-paths",
+            "codex-instructions",
             "lint-external-content",
             "rulesync-generated",
             "strict",
@@ -355,6 +358,11 @@ class LinterConfig:
             exclude_patterns=exclude_patterns,
             content_paths=content_paths,
             rulesync_generated=rulesync_generated,
+            codex_instructions=(
+                CodexInstructionOptions.from_mapping(data["codex-instructions"])
+                if data.get("codex-instructions") is not None
+                else None
+            ),
             lint_external_content=lint_external_content,
             strict=strict,
             fail_on=fail_on,
@@ -599,6 +607,8 @@ class LinterConfig:
         d["fail-on"] = self.fail_on
         if self.content_paths:
             d["content-paths"] = self.content_paths
+        if self.codex_instructions is not None:
+            d["codex-instructions"] = self.codex_instructions.to_dict()
         d["lint-external-content"] = self.lint_external_content
         d["rulesync-generated"] = self.rulesync_generated
         if not self.plugins_enabled or self.disabled_plugins:
@@ -686,6 +696,9 @@ class LinterConfig:
             self._write_field(f, "content-paths", self.content_paths)
             f.write("\n# Assert Rulesync owns its configured conventional modular rule outputs\n")
             self._write_field(f, "rulesync-generated", self.rulesync_generated)
+            if self.codex_instructions is not None:
+                f.write("\n# Explicit Codex project instruction analysis inputs\n")
+                self._write_field(f, "codex-instructions", self.codex_instructions.to_dict())
             f.write("\n# Report findings in external content (autofix never rewrites it)\n")
             f.write(f"lint-external-content: {self._yaml_value(self.lint_external_content)}\n")
             f.write("\n# Treat warnings as errors\n")

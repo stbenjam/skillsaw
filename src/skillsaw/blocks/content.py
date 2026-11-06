@@ -45,6 +45,13 @@ class AgentsMdBlock(InstructionBlock):
 
 
 @dataclass(eq=False)
+class CodexInstructionBlock(InstructionBlock):
+    """Codex override or fallback prose, with the AGENTS.md token budget."""
+
+    category: str = "agents-md"
+
+
+@dataclass(eq=False)
 class GeminiMdBlock(InstructionBlock):
     """GEMINI.md instruction file."""
 

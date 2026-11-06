@@ -251,7 +251,7 @@ class LintTarget:
         if getattr(self, "show_tokens", True):
             tokens = self.estimate_tokens()
             token_str = f" ({self._format_tokens(tokens)} tokens)"
-        if root_path and self.path == root_path:
+        if root_path and self.path == root_path and not _prefix:
             label = f"{safe_display(self.path.name)}/{token_str}"
         else:
             # A label can carry author text — a Cursor hook event key becomes
@@ -333,7 +333,7 @@ class LintTarget:
             return text.replace("\\", "\\\\").replace('"', '\\"')
 
         def _dot_label(node: "LintTarget") -> str:
-            if root_path and node.path == root_path:
+            if root_path and node is self and node.path == root_path:
                 name = f"{node.path.name}/"
             else:
                 name = safe_display(node.tree_label())
