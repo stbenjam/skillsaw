@@ -31,7 +31,7 @@ MEMORY_SCOPES = ("user", "project", "local")
 class ZCodeAgentValidRule(Rule):
     """Validate the frontmatter of a ZCode subagent"""
 
-    since = "0.22.0"
+    since = "0.23.0"
 
     repo_types = ZCODE_PROJECT_REPO_TYPES | ZCODE_PLUGIN_REPO_TYPES
 

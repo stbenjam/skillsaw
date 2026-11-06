@@ -30,7 +30,7 @@ from ._helpers import ZCODE_MARKETPLACE_REPO_TYPES
 class ZCodeMarketplaceJsonValidRule(Rule):
     """Check that a ZCode marketplace catalog lists plugins ZCode can install"""
 
-    since = "0.22.0"
+    since = "0.23.0"
 
     repo_types = ZCODE_MARKETPLACE_REPO_TYPES
 

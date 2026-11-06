@@ -23,7 +23,7 @@ from ._helpers import ZCODE_PLUGIN_REPO_TYPES
 class ZCodePluginJsonValidRule(Rule):
     """Check that a ZCode plugin manifest loads"""
 
-    since = "0.22.0"
+    since = "0.23.0"
 
     repo_types = ZCODE_PLUGIN_REPO_TYPES
 

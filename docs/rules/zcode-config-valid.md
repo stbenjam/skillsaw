@@ -9,7 +9,7 @@ ZCode .zcode/config.json hooks and MCP servers must match ZCode's schema
 |---|---|
 | **Severity** | error (auto) |
 | **Autofix** | - |
-| **Since** | v0.22.0 |
+| **Since** | v0.23.0 |
 | **Repo Types** | zcode-project |
 | **Category** | [ZCode](zcode.md) |
 

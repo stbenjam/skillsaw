@@ -39,7 +39,7 @@ def _legacy_skills_validator() -> "Draft202012Validator":
 class PiSettingsSchemaRule(Rule):
     """Check non-resource settings against the bundled Pi settings schema."""
 
-    since = "0.22.0"
+    since = "0.23.0"
     default_enabled = False
     repo_types = frozenset({RepositoryType.PI})
 
