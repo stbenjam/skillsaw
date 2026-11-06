@@ -198,6 +198,13 @@ class RepositoryProvenanceMixin:
 
         def _grok_claim_set(self) -> Set[Path]: ...
 
+        plugins: List[Path]
+        codex_plugins: List[Path]
+
+        def agent_plugin_roots(self) -> List[Path]: ...
+
+        def pi_discovery_roots(self) -> List[Path]: ...
+
         def _zcode_claim_set(self) -> Set[Path]: ...
 
         def zcode_root_catalog_exists(self) -> bool: ...
@@ -263,6 +270,27 @@ class RepositoryProvenanceMixin:
             not (provenance := self.provenance(item)).ecosystems or provenance.claude
             for item in children
         )
+
+    def _live_plugin_roots(self) -> Set[Path]:
+        """Every plugin root some ecosystem still claims, resolved.
+
+        The one owner set every skill prune keeps skills under. Each prune
+        used to list the owners itself, so a new ecosystem missing from one
+        list had its skills dropped when another ecosystem's claim went away.
+        """
+        return {
+            root
+            for p in (
+                *self.plugins,
+                *self.codex_plugins,
+                *self.agent_plugin_roots(),
+                *self._grok_claim_set(),
+                *self._zcode_claim_set(),
+                *self.antigravity_plugin_roots(),
+                *self.pi_discovery_roots(),
+            )
+            if (root := safe_resolve(p)) is not None
+        }
 
     def _agent_plugin_claim_set(self) -> Set[Path]:
         """Filesystem-declared portable plugin roots, independent of ``--type``."""

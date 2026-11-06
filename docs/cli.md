@@ -20,7 +20,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--fail-on` | Fail on violations at this severity or above (default: error; --strict is equivalent to --fail-on warning). Overrides the config file's strict/fail-on settings. (choices: error, warning, info) |  |
 | `--format` | Output format for stdout (default: text) (choices: text, json, sarif, html, code-climate, gitlab) | `text` |
 | `--output` | Write output to FILE. Format is inferred from extension (.htm, .html, .json, .sarif, .txt) or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). Use the prefix when an extension is ambiguous (e.g. .json could be json or gitlab/code-climate). Can be specified multiple times. |  |
-| `--type` | Replace packaging-type detection (repeatable). Tool types are always detected from the checkout, and plugin-contributed types too. Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit, apm, promptfoo, codex-plugin, codex-marketplace, codex-project, agent-plugin, mcp-registry, cursor-plugin, cursor-marketplace, cursor, copilot, cline, devin, opencode, goose, muse, grok-project, grok-plugin, grok-marketplace, zcode-project, zcode-plugin, zcode-marketplace, kiro, gemini, qwen, agents-md, claude-md, skills-lock, antigravity-plugin, antigravity, openclaw-plugin, pi-package, pi. |  |
+| `--type` | Replace packaging-type detection (repeatable). Tool types are always detected from the checkout, and plugin-contributed types too. Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit, ruler, rulesync, apm, promptfoo, codex-plugin, codex-marketplace, codex-project, agent-plugin, mcp-registry, cursor-plugin, cursor-marketplace, cursor, copilot, cline, devin, opencode, goose, muse, grok-project, grok-plugin, grok-marketplace, zcode-project, zcode-plugin, zcode-marketplace, kiro, gemini, qwen, agents-md, claude-md, skills-lock, antigravity-plugin, antigravity, openclaw-plugin, pi-package, pi. |  |
 | `--rule` | Only run these rules and their validation dependencies (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-baseline` | Ignore baseline file even if .skillsaw-baseline.json exists |  |
@@ -111,7 +111,9 @@ Display the repository lint tree
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
-| `--format` | Output format (default: text) (choices: text, dot) | `text` |
+| `--format` | Output format (default: text; json requires --codex-instructions) (choices: text, dot, json) | `text` |
+| `--codex-instructions` | Inspect Codex's selected project instruction chain and byte budget |  |
+| `--cwd` | Codex working directory relative to the supplied root (requires --codex-instructions) |  |
 
 ## `skillsaw baseline`
 

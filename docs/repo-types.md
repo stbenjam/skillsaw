@@ -741,6 +741,9 @@ project layer Codex reads. This is distinct from a Codex plugin
 checkout rather than packaging anything, so it is never treated as a plugin
 claim and never exempts the repository from another ecosystem's rules.
 
+An `AGENTS.override.md` file also identifies a Codex project and receives
+instruction content checks. The cumulative project byte diagnostic is opt-in.
+
 Codex reads the layer of every directory between the repository root and the
 one a session starts in, so a package's own `.codex/` is live configuration
 and every one in the checkout is linted.
@@ -762,8 +765,11 @@ not.
 [`mcp-valid-json`](rules/mcp-valid-json.md) applies its dialect-neutral
 checks, such as a committed credential in an `env` or `http_headers` table.
 No rule validates a server table's shape: Codex names the server and the
-field and exits 1 over a malformed one itself. Everything else in the file is
-Codex settings skillsaw reads nothing from.
+field and exits 1 over a malformed one itself. The opt-in
+[Codex instruction projection](rules/codex-project-instructions.md) also reads
+`project_doc_max_bytes` and `project_doc_fallback_filenames` from project
+configuration layers on the supplied root-to-cwd chain. Other settings are
+outside these checks.
 
 `.codex/plugins/` is an install location rather than project configuration —
 see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
@@ -771,6 +777,16 @@ see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
 ## Promptfoo
 
 Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files in `evals/` directories). Prompt strings in the config are treated as content blocks, so all `content-*` rules apply to them automatically. Dedicated `promptfoo-*` rules validate config structure, assertion coverage, and metadata.
+
+## Ruler and Rulesync
+
+Ruler's `.ruler/**/*.md` (except its separately propagated top-level `skills/`
+and `agents/` trees) and `.ruler/ruler.toml`, and Rulesync's
+`.rulesync/rules/**/*.md` and `rulesync.jsonc`, are discovered automatically as
+authored generator sources. Both types coexist with the native consumer types
+detected from existing output. See the [generator workflow](generators.md) for
+source roles, optional configuration checks, copy attribution, pinned release
+evidence, and limits. skillsaw never runs either generator during lint.
 
 ## APM (Agent Package Manager)
 
@@ -874,7 +890,7 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **[Pi](#pi-packages-and-projects)** | `pi` | `.pi/`: Native skills, prompts, themes and extensions, `SYSTEM.md`, `APPEND_SYSTEM.md`, resource declarations in `settings.json` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
 | **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
-| **OpenAI Codex** | `codex-project` | `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
+| **OpenAI Codex** | `codex-project` | `AGENTS.override.md`, `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
 | **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
 
 `.agents/memory/` is the one row with no type of its own: the convention

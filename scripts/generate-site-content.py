@@ -217,6 +217,14 @@ RULE_GROUPS = [
         "automatically when Devin repository context is present.",
     ),
     (
+        "Ruler and Rulesync",
+        "generators",
+        ["ruler-config-valid", "rulesync-source-valid"],
+        "Opt-in checks for local Ruler configuration and common Rulesync source fields. "
+        "Generate explicitly, then validate emitted files with their consumer rules. "
+        "See the [generator workflow](../generators.md) for copy attribution and limits.",
+    ),
+    (
         "Goose",
         "goose",
         ["goose-recipe-valid", "goose-subrecipe-references"],
@@ -376,6 +384,7 @@ RULE_GROUPS = [
         [
             "codex-hooks-valid",
             "codex-mcp-headers",
+            "codex-project-instructions",
             "codex-openai-metadata",
             "codex-plugin-json-valid",
             "codex-plugin-structure",
@@ -390,7 +399,9 @@ RULE_GROUPS = [
         "rule auto-enables for Agent Skills; the plugin and marketplace rules "
         "auto-enable only when their Codex manifests are present. Project "
         "`.codex/config.toml` files also get a warning when an HTTP MCP server "
-        "uses the ignored `headers` field instead of Codex's `http_headers`.",
+        "uses the ignored `headers` field instead of Codex's `http_headers`. "
+        "The opt-in project instruction check explains selection and the cumulative "
+        "byte limit for a supplied root and working directory.",
     ),
     (
         "OpenClaw",
@@ -1006,6 +1017,11 @@ GUIDES = [
         "the .skillsaw.yaml file: rules, severities, exclusions, suppression",
     ),
     ("Repository Types", "repo-types.md", "how skillsaw detects what it is linting"),
+    (
+        "Ruler and Rulesync",
+        "generators.md",
+        "author rules, generate explicitly, then lint sources and consumer outputs",
+    ),
     ("Kiro Support", "kiro.md", "native Kiro formats, version boundaries, and static checks"),
     ("CI Integration", "ci.md", "GitHub Actions, GitLab CI, and PR review comments"),
     ("Editor Diagnostics", "editor.md", "install and use the VS Code diagnostics pilot"),

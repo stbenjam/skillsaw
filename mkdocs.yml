@@ -124,6 +124,7 @@ nav:
     - Baseline: baseline.md
     - Configuration: configuration.md
     - Repository Types: repo-types.md
+    - Ruler and Rulesync: generators.md
     - Kiro Support: kiro.md
     - CI Integration: ci.md
     - Editor Diagnostics: editor.md
@@ -159,6 +160,7 @@ nav:
     - Kiro: rules/kiro.md
     - Pi: rules/pi.md
     - Promptfoo: rules/promptfoo.md
+    - Ruler and Rulesync: rules/generators.md
     - Security: rules/security.md
     - Vercel: rules/vercel.md
     - ZCode: rules/zcode.md

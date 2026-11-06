@@ -90,6 +90,11 @@ uvx skillsaw lint my-recipes --type goose --rule goose-recipe-valid --rule goose
 See [Goose recipe support](https://skillsaw.org/repo-types/#goose-recipes) for
 discovery, path resolution and validation limits.
 
+Ruler `.ruler/` and Rulesync `.rulesync/rules/` sources are discovered
+automatically. Generate explicitly, then lint the native consumer files with
+skillsaw. See the [generator workflow](https://skillsaw.org/generators/) for
+source checks, verified-copy attribution, and Rulesync's ownership opt-in.
+
 ## What it catches
 
 - **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (project config, plugins & marketplaces), Cursor plugins & marketplaces, Grok Build (project config, plugins & marketplaces), Z.ai ZCode (`.zcode/` agents, commands, skills and `config.json` hooks & MCP, plugins & marketplaces), Google Antigravity (configuration in any customization root — `.agents/`, `.agent/`, `_agents/`, `_agent/` — its `rules/` and `agents/` prose, plugins, hooks, MCP servers and registries), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, Pi packages and project resources, native OpenClaw plugins (including optional theme and artwork declarations), APM packages, MCP server maps, and MCP Registry metadata.
@@ -137,6 +142,7 @@ being silently ignored.
 | Create project-specific checks | [Custom Rules](https://skillsaw.org/custom-rules/) |
 | Publish reusable rule packages | [Rule Plugins](https://skillsaw.org/plugins/) |
 | Inspect the typed parse tree | [Lint Tree](https://skillsaw.org/lint-tree/) |
+| Explain Codex instruction selection and its cumulative byte cap | [Codex project instructions](https://skillsaw.org/rules/codex-project-instructions/) |
 | Look up commands and flags | [CLI Reference](https://skillsaw.org/cli/) |
 | Feed the docs to an AI agent | [llms.txt](https://skillsaw.org/llms.txt) index, [llms-full.txt](https://skillsaw.org/llms-full.txt) full docs |
 

@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **118** built-in rules organized into the following categories:
+skillsaw includes **121** built-in rules organized into the following categories:
 
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
@@ -15,6 +15,7 @@ skillsaw includes **118** built-in rules organized into the following categories
 - [Copilot / VS Code](copilot.md) (1 rule)
 - [Cursor](cursor.md) (4 rules)
 - [Devin](devin.md) (2 rules)
+- [Ruler and Rulesync](generators.md) (2 rules)
 - [Goose](goose.md) (2 rules)
 - [Google Antigravity](antigravity.md) (4 rules)
 - [Grok Build](grok.md) (8 rules)
@@ -23,7 +24,7 @@ skillsaw includes **118** built-in rules organized into the following categories
 - [Instruction Files](instruction-files.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (5 rules)
 - [Muse Code](muse.md) (1 rule)
-- [OpenAI Codex](codex.md) (7 rules)
+- [OpenAI Codex](codex.md) (8 rules)
 - [OpenClaw](openclaw.md) (4 rules)
 - [Kiro](kiro.md) (3 rules)
 - [OpenCode](opencode.md) (1 rule)
@@ -96,6 +97,8 @@ skillsaw includes **118** built-in rules organized into the following categories
 | [`cursor-marketplace-json-valid`](cursor-marketplace-json-valid.md) | Cursor marketplaces must contain valid entries with unique names and resolvable local sources | error (auto) | - | Cursor |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
+| [`ruler-config-valid`](ruler-config-valid.md) | Validate .ruler/ruler.toml against the Ruler 0.3.44 configuration shape | error (disabled) | - | Ruler and Rulesync |
+| [`rulesync-source-valid`](rulesync-source-valid.md) | Validate common Rulesync 32.0.0 rule frontmatter and project configuration fields | error (disabled) | - | Ruler and Rulesync |
 | [`goose-recipe-valid`](goose-recipe-valid.md) | Goose recipe metadata, parameters and extensions must have valid shapes | error (disabled) | - | Goose |
 | [`goose-subrecipe-references`](goose-subrecipe-references.md) | Literal local Goose subrecipe paths should exist inside the lint root | warning (disabled) | - | Goose |
 | [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must decode their paths and filters correctly | error (disabled) | - | Google Antigravity |
@@ -129,6 +132,7 @@ skillsaw includes **118** built-in rules organized into the following categories
 | [`muse-hooks-valid`](muse-hooks-valid.md) | .muse/hooks.json must use Muse's events, matcher groups and handler fields | error (disabled) | - | Muse Code |
 | [`codex-hooks-valid`](codex-hooks-valid.md) | Codex hooks files must use Codex's hook events, handler types, and fields | error (auto) | - | OpenAI Codex |
 | [`codex-mcp-headers`](codex-mcp-headers.md) | Codex HTTP MCP servers must use http_headers instead of ignored headers | warning (auto) | - | OpenAI Codex |
+| [`codex-project-instructions`](codex-project-instructions.md) | Diagnose Codex instruction selection and the cumulative project byte limit | warning (disabled) | - | OpenAI Codex |
 | [`codex-openai-metadata`](codex-openai-metadata.md) | Validate skill openai.yaml and catalog-compatible plugin metadata | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-json-valid`](codex-plugin-json-valid.md) | The selected Codex manifest or portable OpenAI overlay must be valid | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-structure`](codex-plugin-structure.md) | Only plugin.json belongs in .codex-plugin/ | warning (auto) | - | OpenAI Codex |

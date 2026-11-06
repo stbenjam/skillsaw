@@ -16,7 +16,7 @@ hide:
 skillsaw lints the files that steer your AI coding agents: skills, plugins,
 instructions, and tool configs across Claude Code, Codex, Copilot, Agent Skills,
 Google Antigravity, OpenCode, and more. It catches security risks, structural
-flaws, and unclear instructions with 118 rules, then applies deterministic
+flaws, and unclear instructions with 121 rules, then applies deterministic
 autofixes.
 </p>
 
@@ -51,7 +51,7 @@ autofixes.
     ---
 
     Schema and syntax validation across [supported ecosystems](repo-types.md): Agent Skills,
-    Claude Code, OpenAI Codex, Grok Build, ZCode, Google Antigravity, native OpenClaw plugins, Agent Plugins v1, Copilot custom agents, OpenCode, Muse Code, Pi, APM, and MCP Registry.
+    Claude Code, OpenAI Codex, Grok Build, Google Antigravity, native OpenClaw plugins, Agent Plugins v1, Copilot custom agents, OpenCode, Muse Code, Pi, APM, and MCP Registry.
 
 -   :wrench:{ .lg .middle } **Deterministic Autofixes**
 

@@ -28,6 +28,8 @@ class RepositoryType(Enum):
     AGENTSKILLS = "agentskills"  # agentskills.io skill repo
     DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
     CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
+    RULER = "ruler"  # Authored .ruler Markdown and ruler.toml
+    RULESYNC = "rulesync"  # Authored .rulesync/rules and rulesync.jsonc
     APM = "apm"  # Repository with .apm/ directory (Agent Package Manager)
     PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
     CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
@@ -130,6 +132,8 @@ TOOL_REPO_TYPES = frozenset(
         RepositoryType.CLAUDE_MD,
         RepositoryType.CODERABBIT,
         RepositoryType.SKILLS_LOCK,
+        RepositoryType.RULER,
+        RepositoryType.RULESYNC,
     }
 )
 
@@ -146,7 +150,7 @@ PORTABLE_COMPONENT_REPO_TYPES = frozenset(
 
 # Repository types that may hold one of ``INSTRUCTION_FILES``. CLINE,
 # OPENCODE, MUSE, GROK_PROJECT, ZCODE_PROJECT and CODEX_PROJECT are
-# deliberately absent: the instruction-file rules only ever look at
+# deliberately absent: the shared instruction-file rules only ever look at
 # AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose only marker is
 # ``.clinerules``, ``opencode.json``, ``.muse/hooks.json``, ``.grok/``,
 # ``.zcode/`` or ``.codex/`` would auto-enable two rules structurally
@@ -155,6 +159,8 @@ PORTABLE_COMPONENT_REPO_TYPES = frozenset(
 # for it. Grok's
 # own always-on prose lives in ``.grok/rules/``, which the content rules
 # read as content rather than as an instruction file.
+# ``instruction-file-valid`` additionally enables CODEX_PROJECT for Codex
+# overrides and selected fallback prose; those do not use the @import grammar.
 INSTRUCTION_REPO_TYPES = frozenset(
     {
         RepositoryType.CURSOR,

@@ -18,6 +18,7 @@ from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_local_source_path,  # noqa: F401 - compatibility re-export
 )
+from .formats.codex_instructions import CodexInstructionOptions
 from .discovery import detect as detect_discovery
 from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import is_root_or_ancestor_excluded, path_matches_patterns
@@ -33,6 +34,7 @@ from .repository_antigravity import RepositoryAntigravityMixin
 from .repository_mcp_registry import RepositoryMcpRegistryMixin
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 from .repository_scan import RepositoryScanMixin
+from .repository_generators import RepositoryGeneratorsMixin
 
 # Re-exported here: ``skillsaw.context`` has always been the import site for
 # the repository vocabulary, and rules and plugins read it from there.
@@ -61,6 +63,7 @@ _UNSET = object()
 
 
 class RepositoryContext(
+    RepositoryGeneratorsMixin,
     RepositoryScanMixin,
     RepositoryMcpRegistryMixin,
     RepositoryExternalContentMixin,
@@ -73,7 +76,13 @@ class RepositoryContext(
 ):
     """Detected repository metadata used during linting."""
 
-    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
+    _INSTRUCTION_FILENAMES = (
+        "AGENTS.md",
+        "AGENTS.override.md",
+        "CLAUDE.md",
+        "GEMINI.md",
+        "QWEN.md",
+    )
 
     _TYPE_PRIORITY = [
         RepositoryType.MARKETPLACE,
@@ -121,6 +130,10 @@ class RepositoryContext(
         RepositoryType.AGENTS_MD,
         RepositoryType.GEMINI,
         RepositoryType.QWEN,
+        # Generators author content for the tools above, so a repository's
+        # consuming tool or instruction file stays its primary type.
+        RepositoryType.RULER,
+        RepositoryType.RULESYNC,
     ]
 
     # Compiled output directories that APM generates from .apm/ sources.
@@ -149,6 +162,8 @@ class RepositoryContext(
         exclude_patterns: Optional[List[str]] = None,
         content_paths: Optional[List[str]] = None,
         lint_external_content: bool = True,
+        rulesync_generated: bool = False,
+        codex_instructions: Optional[CodexInstructionOptions] = None,
     ):
         """
         Initialize repository context
@@ -172,8 +187,10 @@ class RepositoryContext(
         self._resolve_cache: Dict[Path, Optional[Path]] = {}
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
+        self.codex_instructions = codex_instructions
         self.goose_recipes_forced = repo_types is not None and RepositoryType.GOOSE in repo_types
         self.lint_external_content = lint_external_content
+        self.rulesync_generated = rulesync_generated
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self._excluded_cache: Dict[Path, bool] = {}
@@ -685,27 +702,6 @@ class RepositoryContext(
             roots.update(self._agent_plugin_claim_set())
             self._agent_plugin_roots = roots
         return self._agent_plugin_roots
-
-    def _live_plugin_roots(self) -> Set[Path]:
-        """Every plugin root some ecosystem still claims, resolved.
-
-        The one owner set every skill prune keeps skills under. Each prune
-        used to list the owners itself, so a new ecosystem missing from one
-        list had its skills dropped when another ecosystem's claim went away.
-        """
-        return {
-            root
-            for p in (
-                *self.plugins,
-                *self.codex_plugins,
-                *self.agent_plugin_roots(),
-                *self._grok_claim_set(),
-                *self._zcode_claim_set(),
-                *self.antigravity_plugin_roots(),
-                *self.pi_discovery_roots(),
-            )
-            if (root := safe_resolve(p)) is not None
-        }
 
     def distinct_plugin_dirs(self) -> List[Path]:
         """Every discovered plugin directory, deduplicated across ecosystems.
