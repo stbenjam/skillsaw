@@ -79,6 +79,77 @@ def test_inline_mcp_servers_need_declared_user_config(temp_dir):
     assert "'key'" in found[0].message and "'region'" not in found[0].message
 
 
+def _claude_plugin(temp_dir, manifest, files=None):
+    """A Claude plugin with *manifest* and extra ``{relative path: text}`` files."""
+    import json
+
+    plugin_dir = temp_dir / "plugin"
+    (plugin_dir / ".claude-plugin").mkdir(parents=True)
+    (plugin_dir / ".claude-plugin" / "plugin.json").write_text(json.dumps(manifest))
+    for rel, text in (files or {}).items():
+        (plugin_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (plugin_dir / rel).write_text(text)
+    return plugin_dir
+
+
+def _user_config_findings(plugin_dir):
+    violations = PluginJsonValidRule().check(RepositoryContext(plugin_dir))
+    return [v for v in violations if "user_config" in v.message]
+
+
+def test_declared_mcp_file_needs_declared_user_config(temp_dir):
+    """A file plugin.json names in mcpServers is read like .mcp.json."""
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "mcpServers": "./config/servers.json"},
+        {"config/servers.json": '{"mcpServers": {"s": {"command": "${user_config.token}"}}}'},
+    )
+    found = _user_config_findings(plugin_dir)
+    assert [v.file_path.relative_to(plugin_dir).as_posix() for v in found] == [
+        "config/servers.json"
+    ]
+
+
+def test_declared_user_config_keys_pass(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "userConfig": {"token": {"type": "string", "title": "Token"}}},
+        {".mcp.json": '{"mcpServers": {"s": {"command": "x", "args": ["${user_config.token}"]}}}'},
+    )
+    assert _user_config_findings(plugin_dir) == []
+
+
+def test_mcp_json_symlinked_outside_the_repository_is_not_read(temp_dir):
+    outside = temp_dir / "outside.json"
+    outside.write_text('{"mcpServers": {"s": {"command": "${user_config.token}"}}}')
+    plugin_dir = _claude_plugin(temp_dir, {"name": "p"})
+    (plugin_dir / ".mcp.json").symlink_to(outside)
+    assert _user_config_findings(plugin_dir) == []
+
+
+def test_undeclared_user_config_keys_are_bounded_in_the_message(temp_dir):
+    refs = ", ".join(f'"k{i}": "${{user_config.key{i}}}"' for i in range(8))
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {".mcp.json": '{"mcpServers": {"s": {"command": "x", "env": {' + refs + "}}}}"},
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'key0', 'key1', 'key2', 'key3', 'key4' and 3 more" in finding.message
+
+
+def test_overlong_component_path_is_reported_not_raised(temp_dir):
+    plugin_dir = _claude_plugin(temp_dir, {"name": "p", "commands": "./" + "x" * 5000 + ".md"})
+    violations = PluginJsonValidRule().check(RepositoryContext(plugin_dir))
+    assert any("does not exist" in v.message for v in violations)
+
+
+def test_plugin_name_must_be_a_string(temp_dir):
+    plugin_dir = _claude_plugin(temp_dir, {"name": 123})
+    violations = PluginJsonValidRule().check(RepositoryContext(plugin_dir))
+    assert [v.message for v in violations if "'name'" in v.message] == ["'name' must be a string"]
+
+
 def test_plugin_json_valid_passes(valid_plugin):
     """Test that valid plugin.json passes validation"""
     context = RepositoryContext(valid_plugin)
@@ -632,6 +703,17 @@ def test_marketplace_relative_source_must_be_installable(
     else:
         assert len(refused) == 1
         assert refused[0].severity == Severity.ERROR
+
+
+def test_refused_marketplace_source_redacts_credentials(temp_dir):
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "my-plugin", "source": "https://user:sup3rsecret@example.com/x"}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    refused = [v for v in violations if "refuses to install" in v.message]
+    assert len(refused) == 1
+    assert "sup3rsecret" not in refused[0].message
 
 
 def test_marketplace_plugin_root_bare_source_no_style_nudge(temp_dir):

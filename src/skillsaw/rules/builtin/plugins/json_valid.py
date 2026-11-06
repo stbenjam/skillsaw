@@ -4,13 +4,15 @@ Rule: plugin-json-valid
 
 import json
 import re
+from collections import defaultdict
 from pathlib import Path
-from typing import Iterator, List, Tuple
+from typing import Dict, Iterator, List, Tuple
 
+from skillsaw.blocks import McpBlock
 from skillsaw.diagnostics import safe_display
-from skillsaw.paths import has_parent_traversal, is_absolute_path
+from skillsaw.paths import has_parent_traversal, is_absolute_path, safe_exists
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import read_json, read_text
+from skillsaw.rules.builtin.utils import read_json
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import PluginNode
 
@@ -27,6 +29,9 @@ _COMPONENT_PATH_FIELDS = (
     "outputStyles",
     "lspServers",
 )
+
+# How many undeclared keys one finding names before summarizing the rest.
+_MAX_KEYS_SHOWN = 5
 
 _USER_CONFIG_REF = re.compile(r"\$\{user_config\.([A-Za-z0-9_.-]+)\}")
 
@@ -74,6 +79,17 @@ class PluginJsonValidRule(Rule):
         if not isinstance(recommended_fields, list):
             recommended_fields = self.config_schema["recommended-fields"]["default"]
 
+        # Claude's MCP files for each plugin: the conventional .mcp.json and
+        # the files plugin.json declares, attached by the lint tree as plain
+        # McpBlocks (other hosts' MCP files are subclasses). A repo-root
+        # plugin's .mcp.json is attached before the plugin pass, without an
+        # owner, so it falls back to its directory.
+        mcp_blocks: Dict[Path, List[McpBlock]] = defaultdict(list)
+        for block in context.lint_tree.find(McpBlock):
+            if type(block) is McpBlock:
+                owner = block.plugin_owner or context.resolve_path(block.path.parent)
+                mcp_blocks[owner].append(block)
+
         for plugin_node in context.lint_tree.find(PluginNode):
             plugin_path = plugin_node.path
             plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
@@ -100,6 +116,9 @@ class PluginJsonValidRule(Rule):
                     violations.append(
                         self.violation(f"Missing required field '{field}'", file_path=plugin_json)
                     )
+
+            if "name" in data and not isinstance(data["name"], str):
+                violations.append(self.violation("'name' must be a string", file_path=plugin_json))
 
             # Check recommended fields (warning)
             for field in recommended_fields:
@@ -134,7 +153,8 @@ class PluginJsonValidRule(Rule):
                     )
 
             violations.extend(self._check_component_paths(data, plugin_path, plugin_json))
-            violations.extend(self._check_user_config_refs(data, plugin_path, plugin_json))
+            owned = mcp_blocks.get(context.resolve_path(plugin_path), [])
+            violations.extend(self._check_user_config_refs(data, owned, plugin_json))
 
         return violations
 
@@ -150,7 +170,7 @@ class PluginJsonValidRule(Rule):
                     f"'{field}' path '{shown}' leaves the plugin directory — "
                     "Claude Code does not load it"
                 )
-            elif not (plugin_path / entry).exists():
+            elif not safe_exists(plugin_path / entry):
                 message = (
                     f"'{field}' path '{shown}' does not exist — Claude Code "
                     "reports a load failure"
@@ -161,36 +181,37 @@ class PluginJsonValidRule(Rule):
         return violations
 
     def _check_user_config_refs(
-        self, data: dict, plugin_path: Path, plugin_json: Path
+        self, data: dict, mcp_blocks: List[McpBlock], plugin_json: Path
     ) -> List[RuleViolation]:
         """An MCP server that reads an undeclared user_config key is dropped.
 
-        Reads the inline ``mcpServers`` map and the plugin's ``.mcp.json``,
-        the two places servers are declared in nearly every plugin.
+        Reads the inline ``mcpServers`` map and the plugin's MCP files from
+        the lint tree, so excluded or escaping files are never read.
         """
         declared = data.get("userConfig")
         declared = set(declared) if isinstance(declared, dict) else set()
         sources = []
         if isinstance(data.get("mcpServers"), dict):
-            sources.append((plugin_json, json.dumps(data["mcpServers"])))
-        mcp_json = plugin_path / ".mcp.json"
-        text = read_text(mcp_json) if mcp_json.is_file() else None
-        if text:
-            sources.append((mcp_json, text))
+            sources.append((plugin_json, data["mcpServers"]))
+        sources.extend((block.path, block.raw_data) for block in mcp_blocks if block.raw_data)
 
         violations = []
-        for path, text in sources:
+        for path, payload in sources:
+            text = json.dumps(payload)
             if "user_config" not in text:
                 continue
             missing = sorted(set(_USER_CONFIG_REF.findall(text)) - declared)
-            if missing:
-                keys = ", ".join(f"'{key}'" for key in missing)
-                violations.append(
-                    self.violation(
-                        f"MCP configuration references user_config {keys}, which "
-                        "plugin.json does not declare under 'userConfig' — Claude Code "
-                        "cannot resolve it on a fresh install and drops the server",
-                        file_path=path,
-                    )
+            if not missing:
+                continue
+            keys = ", ".join(f"'{safe_display(key)}'" for key in missing[:_MAX_KEYS_SHOWN])
+            if len(missing) > _MAX_KEYS_SHOWN:
+                keys += f" and {len(missing) - _MAX_KEYS_SHOWN} more"
+            violations.append(
+                self.violation(
+                    f"MCP configuration references user_config {keys}, which "
+                    "plugin.json does not declare under 'userConfig' — Claude Code "
+                    "cannot resolve it on a fresh install and drops the server",
+                    file_path=path,
                 )
+            )
         return violations

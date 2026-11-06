@@ -357,10 +357,11 @@ class MarketplaceJsonValidRule(Rule):
                 # install time ("must start with './'"), so only that entry
                 # fails to install while the rest of the catalog loads.
                 bare_name = bool(source) and "/" not in source and "\\" not in source
+                shown = safe_display(source)
                 problem = (
-                    f"bare name '{source}' needs metadata.pluginRoot"
+                    f"bare name '{shown}' needs metadata.pluginRoot"
                     if bare_name
-                    else f"relative path '{source}' must start with './'"
+                    else f"relative path '{shown}' must start with './'"
                 )
                 violations.append(
                     self.violation(

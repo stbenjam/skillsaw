@@ -95,6 +95,7 @@ from .formats.codex import (
 )
 from .formats.codex_manifest import codex_manifest_view
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
+from .discovery.claude import claude_declared_mcp_files
 from .discovery.excludes import is_root_or_ancestor_excluded
 from .discovery.codex_instructions import probe_file
 from .discovery.opencode import contained_instruction_globs
@@ -1833,6 +1834,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             native_mcp = plugin_path / ".mcp.json"
             if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
                 state.add_block(container, native_mcp, McpBlock, owner=resolved_plugin)
+            for declared_mcp in claude_declared_mcp_files(plugin_path):
+                if not _shadowed_by_agent_plugin_mcp(declared_mcp, agent_plugin_mcp):
+                    state.add_parser_block(container, declared_mcp, McpBlock, owner=resolved_plugin)
         # settings.json is Claude-side configuration with no Codex
         # counterpart: attached only for Claude-style directories, keeping
         # the generic attachment path away from content a hostile

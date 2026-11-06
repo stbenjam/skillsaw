@@ -1,9 +1,13 @@
 # skillsaw and `claude plugin validate`
 
-Claude Code ships its own validator, `claude plugin validate <dir>`. It is
-the reference for whether a Claude plugin or marketplace loads. skillsaw
-checks the same files, plus content, security, and other hosts. This page
-says where the two overlap and how skillsaw stays in agreement.
+Claude Code ships its own validator, `claude plugin validate <dir>`. It
+checks plugin and marketplace files against the schema and many of the
+loader's rules, so skillsaw treats it as the reference for what a file must
+look like. A clean result is not a load guarantee: some files pass
+validation and still fail at install or load time (see the entry `hooks`
+row below). skillsaw checks the same files, plus content, security, and
+other hosts. This page says where the two overlap and how skillsaw stays in
+agreement.
 
 Run both if you can. The official validator knows the loader's exact
 behavior for the Claude Code version you run. skillsaw adds checks the
@@ -47,8 +51,10 @@ reports it as a warning. A project agent with no `description` is
 skipped, so skillsaw reports it as an error.
 
 skillsaw keeps the overlapping checks for CI runs and editors without
-Claude Code. It does not add checks that only repeat the validator's
-advisory warnings.
+Claude Code. That includes some advisory warnings it already had, such as
+missing recommended fields, kebab-case names and a missing README. New
+skillsaw checks added to match the validator cover load failures only, and
+the conformance manifest below compares errors only.
 
 ## Conformance check
 
@@ -66,8 +72,8 @@ the lockfile in `.github/claude-code/`. Locally, with the pinned version
 installed:
 
 ```bash
-scripts/claude-conformance.py            # compare; exit 1 on drift
-scripts/claude-conformance.py --write    # re-record after an intended change
+.venv/bin/python3 scripts/claude-conformance.py           # compare; exit 1 on drift
+.venv/bin/python3 scripts/claude-conformance.py --write   # re-record after an intended change
 ```
 
 When Claude Code releases a version that changes the validator, install it

@@ -12,11 +12,11 @@ in ``tests/claude_conformance.json``, which records for each fixture:
 * ``skillsaw`` — the rule ids skillsaw reports at error severity.
 * ``note`` — why the two differ, required when exactly one side is empty.
 
-Usage::
+Usage (with the project virtualenv, which has skillsaw installed)::
 
-    scripts/claude-conformance.py            # check; exit 1 on drift
-    scripts/claude-conformance.py --write    # re-record (keeps notes)
-    scripts/claude-conformance.py --skillsaw-only
+    .venv/bin/python3 scripts/claude-conformance.py            # check; exit 1 on drift
+    .venv/bin/python3 scripts/claude-conformance.py --write    # re-record (keeps notes)
+    .venv/bin/python3 scripts/claude-conformance.py --skillsaw-only
 
 The validator half needs the ``claude`` CLI at the pinned version; see
 docs/claude-validate.md.
