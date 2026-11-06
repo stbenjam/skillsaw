@@ -2149,8 +2149,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             ):
                 _add_contained_plugin_block(node, native_mcp, mcp_cls, owner=resolved_plugin)
             for declared_mcp in zcode.zcode_declared_mcp_files(plugin_path):
-                if not _inside_plugin(declared_mcp, resolved_plugin) or _attached_as_mcp(
-                    state, declared_mcp
+                if (
+                    not _inside_plugin(declared_mcp, resolved_plugin)
+                    or _shadowed_by_agent_plugin_mcp(declared_mcp, agent_plugin_mcp)
+                    or _attached_as_mcp(state, declared_mcp)
                 ):
                     continue
                 state.add_parser_block(node, declared_mcp, ZCodeMcpBlock, owner=resolved_plugin)

@@ -238,3 +238,25 @@ def test_object_form_command_sources_are_attached(tmp_path):
     source.write_text("---\ndescription: Deploy the harbor service\n---\n\nDeploy it.\n")
     paths = {b.path for b in RepositoryContext(tmp_path).lint_tree.find(CommandBlock)}
     assert source in paths
+
+
+def test_declared_agent_plugin_mcp_is_attached_once(tmp_path):
+    """A ZCode manifest naming the Agent Plugins ``mcp.json`` must not add a
+    second parser role over it, or every server is reported twice."""
+    from skillsaw.blocks import McpBlock
+
+    write_json(
+        tmp_path / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "tide-charts",
+            "version": "1.0.0",
+            "description": "Tide charts.",
+        },
+    )
+    write_json(tmp_path / "mcp.json", {"mcpServers": {"tides": {"command": "tides-mcp"}}})
+    _plugin(tmp_path, mcpServers="mcp.json")
+    mcp = [
+        b for b in RepositoryContext(tmp_path).lint_tree.find(McpBlock) if b.path.name == "mcp.json"
+    ]
+    assert len(mcp) == 1
