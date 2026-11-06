@@ -61,8 +61,9 @@ advisory warnings.
 - `note`: why they differ, required when only one side reports an error.
 
 The pytest suite checks the skillsaw half on every run. The validator half
-runs in the `claude-conformance` CI job, which installs the Claude Code
-version the manifest pins. Locally, with that version installed:
+runs in the `claude-conformance` CI job, which installs Claude Code from
+the lockfile in `.github/claude-code/`. Locally, with the pinned version
+installed:
 
 ```bash
 scripts/claude-conformance.py            # compare; exit 1 on drift
@@ -70,5 +71,7 @@ scripts/claude-conformance.py --write    # re-record after an intended change
 ```
 
 When Claude Code releases a version that changes the validator, install it
-and run `--write`, which also moves the pin to that version. Review the
-diff, then fix any new disagreement in a skillsaw rule or fixture.
+and run `--write`, which moves the manifest's pin to that version. Set the
+same version in `.github/claude-code/package.json` and refresh its lockfile
+(`npm install --package-lock-only` in that directory). Review the diff, then
+fix any new disagreement in a skillsaw rule or fixture.

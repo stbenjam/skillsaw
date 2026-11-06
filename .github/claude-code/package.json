@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Claude Code version for the claude-conformance CI job; keep in step with tests/claude_conformance.json",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.319"
+  }
+}

@@ -32,7 +32,9 @@ Code version pinned in `tests/claude_conformance.json`; the
 `claude-conformance` CI job does the same.
 
 - When a new Claude Code release changes the validator, install it and run
-  `scripts/claude-conformance.py --write`, which moves the pin. Treat each
+  `scripts/claude-conformance.py --write`, which moves the pin; set the
+  same version in `.github/claude-code/package.json` and refresh its
+  lockfile with `npm install --package-lock-only`. Treat each
   changed fixture as a finding: fix the skillsaw rule or the fixture, or add
   a `note` saying why the two differ.
 - Probe anything new with `claude plugin validate`, then confirm load

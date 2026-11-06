@@ -98,15 +98,14 @@ jobs:
         run: make venv VENV_EXTRAS=test
 
       - name: Install the pinned Claude Code CLI
-        run: |
-          version="$(jq -r .claude_code_version tests/claude_conformance.json)"
-          npm install --global "@anthropic-ai/claude-code@${version}"
-          claude --version
+        # The lockfile pins the version and integrity hashes; the script
+        # fails if it differs from the manifest's claude_code_version.
+        run: npm ci --prefix .github/claude-code --no-audit --no-fund
 
       - name: Compare with claude plugin validate
         env:
           DISABLE_AUTOUPDATER: "1"
-        run: .venv/bin/python scripts/claude-conformance.py
+        run: .venv/bin/python scripts/claude-conformance.py --claude .github/claude-code/node_modules/.bin/claude
 
   lint:
     runs-on: ubuntu-latest
