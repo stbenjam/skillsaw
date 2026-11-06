@@ -368,9 +368,10 @@ Three things in that layer are Grok's own structure, on top of the shared
 rules above. [`grok-hooks-valid`](rules/grok-hooks-valid.md) validates every
 `.grok/hooks/*.json` — Grok merges the whole directory, so a repository may
 have several — against Grok's events, alias table and handler fields. This
-matters more than it sounds: Grok refuses a whole file over one wrong-typed
-field and reports nothing when it does, so a rejected file, a dropped matcher
-group and a skipped handler all look like a hook that had nothing to do. The
+matters more than it sounds: Grok drops an event, matcher group or handler
+over one wrong-typed field and reports it only in `grok inspect` and the
+`/hooks` tab, so in a headless run a rejected file, a dropped matcher group
+and a skipped handler all look like a hook that had nothing to do. The
 commands themselves are scanned by
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md).

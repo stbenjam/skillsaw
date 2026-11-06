@@ -55,15 +55,16 @@ def test_unknown_values_emit_only_event_advisories(tmp_path):
     }
 
 
-def test_same_wrong_value_under_native_event_remains_fatal(tmp_path):
+def test_same_wrong_value_under_native_event_is_checked(tmp_path):
+    # Grok Build 1.0.77 drops only that event's entries, so it is a warning.
     repo, _ = fixture(tmp_path, "known-invalid")
     code, findings = lint(repo)
-    assert code == 1
+    assert code == 0
     assert len(findings) == 1
     assert (findings[0]["rule_id"], findings[0]["file_path"], findings[0]["severity"]) == (
         RULE,
         FILE,
-        "error",
+        "warning",
     )
     assert findings[0]["message"] == "Hook event 'PreToolUse' must be an array of matcher groups"
 
@@ -73,13 +74,13 @@ def test_extra_event_opt_in_enables_descendant_type_checks(tmp_path, event):
     repo, _ = fixture(tmp_path, "unknown")
     (repo / ".skillsaw.yaml").write_text(f"rules:\n  {RULE}:\n    extra-events: [{event}]\n")
     code, findings = lint(repo)
-    assert code == 1
+    assert code == 0
     assert len(findings) == 4
-    errors = [v for v in findings if v["severity"] == "error"]
-    assert len(errors) == 1
-    assert errors[0]["file_path"] == FILE
-    assert event in errors[0]["message"]
-    assert sum(v["severity"] == "warning" for v in findings) == 3
+    assert {v["severity"] for v in findings} == {"warning"}
+    shape = [v for v in findings if not v["message"].startswith("Unknown hook event")]
+    assert len(shape) == 1
+    assert shape[0]["file_path"] == FILE
+    assert event in shape[0]["message"]
 
 
 def test_shared_inventory_still_sees_unknown_event_commands(tmp_path):

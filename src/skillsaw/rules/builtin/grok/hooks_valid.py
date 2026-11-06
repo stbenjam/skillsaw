@@ -69,22 +69,8 @@ class GrokHooksValidRule(Rule):
         known_events = self._known_events()
 
         for block in context.lint_tree.find(GrokHooksBlock):
-            # First, and instead of everything below. skillsaw reads with
-            # ``utf-8-sig`` and sees a valid document; Grok's reader does
-            # not strip the mark and refuses the file whole — ``grok inspect
-            # --json`` loaded zero hooks from a BOM-prefixed file that was
-            # otherwise correct. Every shape finding under it would be about
-            # a document Grok never parsed.
-            if block.has_utf8_bom():
-                violations.append(
-                    self.violation(
-                        f"{block.path.name} starts with a UTF-8 byte-order mark; "
-                        "Grok reads none of the file",
-                        file_path=block.path,
-                    )
-                )
-                continue
-
+            # No byte-order-mark check: Grok Build 1.0.77 loads a
+            # BOM-prefixed hooks file, as skillsaw's ``utf-8-sig`` read does.
             if block.parse_error:
                 violations.append(
                     self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)
@@ -122,7 +108,13 @@ class GrokHooksValidRule(Rule):
 
 
 class _FileCheck:
-    """One hooks file, walked once."""
+    """One hooks file, walked once.
+
+    Findings that cost the whole file take the rule's configured severity.
+    Everything narrower — an event's entries, a matcher group, a handler —
+    is a WARNING: the rest of the file loads, and since 1.0.77 Grok lists
+    each one under ``hookLoadErrors``.
+    """
 
     def __init__(self, rule: GrokHooksValidRule, block: GrokHooksBlock, events: Set[str]) -> None:
         self.rule = rule
@@ -168,11 +160,12 @@ class _FileCheck:
         return [self._violation(f"Unknown hook event '{safe_display(event)}'", Severity.WARNING)]
 
     def _check_groups(self, event: str, groups: Any) -> List[RuleViolation]:
-        """Each event holds an array of matcher groups, or the file is refused."""
+        """Each event holds an array of matcher groups, or the event is dropped."""
         if not isinstance(groups, list):
             return [
                 self._violation(
-                    f"Hook event '{safe_display(event)}' must be an array of matcher groups"
+                    f"Hook event '{safe_display(event)}' must be an array of matcher groups",
+                    Severity.WARNING,
                 )
             ]
 
@@ -187,7 +180,9 @@ class _FileCheck:
         for index, group in enumerate(groups):
             where = f"{safe_display(event)}[{index}]"
             if not isinstance(group, dict):
-                violations.append(self._violation(f"Hook {where} must be an object"))
+                violations.append(
+                    self._violation(f"Hook {where} must be an object", Severity.WARNING)
+                )
                 continue
             violations.extend(self._check_group(where, event, group))
         return violations
@@ -200,13 +195,18 @@ class _FileCheck:
         """
         violations = self._check_matcher(where, event, group)
 
-        if "hooks" not in group:
-            violations.append(self._violation(f"Hook {where} is missing 'hooks'"))
+        # A ``null`` ``hooks`` is the key being absent: "missing field".
+        if group.get("hooks") is None:
+            violations.append(self._violation(f"Hook {where} is missing 'hooks'", Severity.WARNING))
             return violations
 
         handlers = group["hooks"]
         if not isinstance(handlers, list):
-            violations.append(self._violation(f"Hook {where} 'hooks' must be an array of handlers"))
+            violations.append(
+                self._violation(
+                    f"Hook {where} 'hooks' must be an array of handlers", Severity.WARNING
+                )
+            )
             return violations
 
         if not handlers:
@@ -220,7 +220,7 @@ class _FileCheck:
         return violations
 
     def _check_matcher(self, where: str, event: str, group: Dict[str, Any]) -> List[RuleViolation]:
-        """``matcher`` is optional; ``null`` omits it, any other non-string refuses the file."""
+        """``matcher`` is optional; ``null`` omits it, any other non-string drops the group."""
         matcher = group.get("matcher")
         if matcher is None:
             return []
@@ -228,7 +228,8 @@ class _FileCheck:
         if not isinstance(matcher, str):
             return [
                 self._violation(
-                    f"Hook {where} 'matcher' must be a string, got {type(matcher).__name__}"
+                    f"Hook {where} 'matcher' must be a string, got {type(matcher).__name__}",
+                    Severity.WARNING,
                 )
             ]
 
@@ -265,33 +266,44 @@ class _FileCheck:
         return []
 
     def _check_handler(self, where: str, handler: Any) -> List[RuleViolation]:
-        """One handler: its type, the field that type needs, and its ``env``.
+        """One handler: its type, the field that type needs, its field types,
+        the Claude Code condition Grok skips it for, and its ``env``.
 
-        Keys Grok does not know are tolerated, so they are never reported.
+        Every defect here drops this handler alone. Keys Grok does not know
+        are tolerated, so they are never reported.
         """
         if not isinstance(handler, dict):
-            return [self._violation(f"Hook {where} must be an object")]
+            return [self._violation(f"Hook {where} must be an object", Severity.WARNING)]
 
-        # A JSON ``null`` is the key being absent, and costs whatever
-        # omitting it costs: verified against Grok Build 1.0.13, where a null
-        # ``timeout``, ``env`` or ``url`` loaded the handler, a null
-        # ``command`` dropped that handler alone, and a null ``type`` cost
-        # every handler in the file. Dropping them here gives all three
-        # verdicts to the checks below, which already own them.
-        handler = {key: value for key, value in handler.items() if value is not None}
+        # A JSON ``null`` is mostly the key being absent, and costs whatever
+        # omitting it costs: a null ``timeout``, ``env``, ``args`` or ``url``
+        # loads the handler, a null ``command`` or ``type`` drops it.
+        # ``failClosed`` is the exception — Grok wants a boolean and drops the
+        # handler for a null — so its nulls stay for the type check.
+        handler = {
+            key: value
+            for key, value in handler.items()
+            if value is not None or key in grok.FAIL_CLOSED_FIELDS
+        }
 
         violations = self._check_field_types(where, handler)
 
+        if all(name in handler for name in grok.FAIL_CLOSED_FIELDS):
+            first, second = grok.FAIL_CLOSED_FIELDS
+            violations.append(
+                self._violation(
+                    f"Hook {where} sets both '{first}' and '{second}'", Severity.WARNING
+                )
+            )
+
         if "type" not in handler:
-            # ``type`` has no default: serde refuses the document without it,
-            # so this costs every hook in the file.
-            violations.append(self._violation(f"Hook {where} is missing 'type'"))
+            violations.append(self._violation(f"Hook {where} is missing 'type'", Severity.WARNING))
             return violations
 
         handler_type = handler["type"]
         if not isinstance(handler_type, str):
-            # A known field of the wrong type, already reported above as the
-            # whole-file defect it is. Nothing runnable is left to judge.
+            # A known field of the wrong type, already reported above.
+            # Nothing runnable is left to judge.
             return violations
 
         if handler_type not in grok.HOOK_HANDLER_TYPES:
@@ -313,11 +325,21 @@ class _FileCheck:
                 )
             )
 
+        for name in sorted(grok.SKIPPING_HANDLER_FIELDS):
+            if name in handler and not grok.asks_for_nothing(handler[name]):
+                violations.append(
+                    self._violation(
+                        f"Hook {where} sets '{name}', which Grok does not support, "
+                        "so it skips the handler",
+                        Severity.WARNING,
+                    )
+                )
+
         violations.extend(self._check_env(where, handler))
         return violations
 
     def _check_field_types(self, where: str, handler: Dict[str, Any]) -> List[RuleViolation]:
-        """A known field carrying the wrong JSON type refuses the whole file."""
+        """A known field carrying the wrong JSON type drops the handler."""
         violations: List[RuleViolation] = []
         for key, value in handler.items():
             name = str(key)
@@ -325,15 +347,17 @@ class _FileCheck:
                 continue
             problem = _field_type_problem(name, value)
             if problem is not None:
-                violations.append(self._violation(f"Hook {where} '{name}' {problem}"))
+                violations.append(
+                    self._violation(f"Hook {where} '{name}' {problem}", Severity.WARNING)
+                )
         return violations
 
     def _check_env(self, where: str, handler: Dict[str, Any]) -> List[RuleViolation]:
         """Values the hook runner overwrites, whatever the file says.
 
         Only for an ``env`` of the right shape. A non-mapping one, or one
-        holding a non-string value, refuses the whole document — so nothing
-        is stripped, and the field-type check above already reported the one
+        holding a non-string value, drops the handler — so nothing is
+        stripped, and the field-type check above already reported the one
         defect the handler has.
         """
         env = handler.get("env")
@@ -349,39 +373,38 @@ class _FileCheck:
         ]
 
 
+def _type_name(value: Any) -> str:
+    return "null" if value is None else type(value).__name__
+
+
 def _field_type_problem(key: str, value: Any) -> Optional[str]:
     """How *value* fails the JSON type Grok accepts for *key*, if it does."""
     expected = grok.HANDLER_FIELDS[key]
-    if expected is int:
-        # ``bool`` is an ``int`` subclass, and ``timeout: true`` is not a
-        # duration however permissively you read it. A float, a numeric
-        # string and a negative are not durations either — Grok refuses the
-        # file for each. A large value is fine, up to the ``u64`` the field
-        # deserializes into: ``Stop`` and ``SubagentStop`` default to 600
-        # seconds and gates run test suites, but JSON has no integer width,
-        # so one digit past :data:`grok.TIMEOUT_MAX` costs the whole file
-        # exactly as a float does.
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            if value <= grok.TIMEOUT_MAX:
-                return None
-            # Its own message: "must be a non-negative integer" would be
-            # true of this value and send the author looking for a defect
-            # that is not there.
-            return (
-                f"must be at most {grok.TIMEOUT_MAX} (Grok reads it as a "
-                f"64-bit unsigned integer), got {safe_display(repr(value))}"
-            )
-        return f"must be a non-negative integer, got {safe_display(repr(value))}"
+    if expected is float:
+        # Any non-negative number of seconds, ``1.5`` included. ``bool`` is
+        # an ``int`` subclass, and ``timeout: true`` is not a duration.
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+            return None
+        return f"must be a non-negative number, got {safe_display(repr(value))}"
     if expected is dict:
         if not isinstance(value, dict):
-            return f"must be an object, got {type(value).__name__}"
+            return f"must be an object, got {_type_name(value)}"
         for name, item in value.items():
             if not isinstance(item, str):
                 return (
                     f"value for '{safe_display(str(name))}' must be a string, "
-                    f"got {type(item).__name__}"
+                    f"got {_type_name(item)}"
                 )
         return None
+    if expected is list:
+        if not isinstance(value, list):
+            return f"must be an array of strings, got {_type_name(value)}"
+        for index, item in enumerate(value):
+            if not isinstance(item, str):
+                return f"item {index} must be a string, got {_type_name(item)}"
+        return None
+    if expected is bool:
+        return None if isinstance(value, bool) else f"must be a bool, got {_type_name(value)}"
     if isinstance(value, expected) and not isinstance(value, bool):
         return None
-    return f"must be a {expected.__name__}, got {type(value).__name__}"
+    return f"must be a {expected.__name__}, got {_type_name(value)}"
