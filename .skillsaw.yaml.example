@@ -247,6 +247,11 @@ rules:
     enabled: auto
     severity: warning
 
+  # Diagnose Codex instruction selection and the cumulative project byte limit
+  codex-project-instructions:
+    enabled: false
+    severity: warning
+
   # Detect banned or deprecated model names, APIs, and custom patterns
   content-banned-references:
     enabled: auto

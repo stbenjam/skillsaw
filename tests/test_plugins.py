@@ -869,6 +869,45 @@ def test_tree_contributor_crash_surfaces_violation(fake_plugin, acme_repo):
     assert second == []
 
 
+@pytest.mark.parametrize(
+    "flags",
+    [
+        [],
+        ["--format", "dot"],
+        ["--codex-instructions"],
+        ["--codex-instructions", "--format", "json"],
+    ],
+)
+def test_tree_contributor_crash_warns_in_every_inspection_mode(fake_plugin, tmp_path, flags):
+    import json
+
+    from tests.cli_runner import run_cli
+    from tests.test_integration import copy_fixture
+
+    repo = copy_fixture("codex-instructions", tmp_path)
+    config = repo / ".skillsaw.yaml"
+    config.write_text(config.read_text().replace("plugins: false", "plugins: true"))
+
+    def contribute(context, root):
+        raise RuntimeError("repository extension unavailable")
+
+    fake_plugin(
+        "fake_tree_inspection_crash",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    result = run_cli(["tree", repo, *flags])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stderr.count("tree contributor failed") == 1
+    assert "RuntimeError: repository extension unavailable" in result.stderr
+    assert "Warning:" not in result.stdout
+    if "json" in flags:
+        report = json.loads(result.stdout)
+        assert report["complete"]
+        assert [entry["path"] for entry in report["selected"]] == ["AGENTS.md", "service/AGENTS.md"]
+    else:
+        assert "AGENTS.md" in result.stdout
+
+
 def test_tree_contributor_returning_non_node_surfaces_violation(fake_plugin, acme_repo):
     def contribute(context, root):
         return [42]
