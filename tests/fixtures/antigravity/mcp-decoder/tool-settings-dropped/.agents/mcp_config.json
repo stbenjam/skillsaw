@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "control": {"command": "/audit/not-an-executable"},
+    "enabled-string": {"command": "/audit/not-an-executable", "enabledTools": "list_sailings"},
+    "enabled-number": {"command": "/audit/not-an-executable", "EnabledTools": [1]},
+    "timeout-string": {"command": "/audit/not-an-executable", "timeoutSeconds": "600"},
+    "timeout-fraction": {"command": "/audit/not-an-executable", "timeoutSeconds": 1.5},
+    "timeout-decimal": {"command": "/audit/not-an-executable", "timeoutSeconds": 600.0},
+    "timeout-overflow": {"command": "/audit/not-an-executable", "TimeoutSeconds": 9223372036854775808},
+    "tools-number": {"command": "/audit/not-an-executable", "tools": 5},
+    "tool-number": {"command": "/audit/not-an-executable", "tools": {"list_sailings": 5}},
+    "tool-eager": {"command": "/audit/not-an-executable", "tools": {"list_sailings": {"eager": "yes"}}},
+    "tool-background": {"command": "/audit/not-an-executable", "tools": {"list_sailings": {"background": "sometimes"}}},
+    "tool-background-case": {"command": "/audit/not-an-executable", "tools": {"list_sailings": {"Background": "ALWAYS"}}}
+  }
+}

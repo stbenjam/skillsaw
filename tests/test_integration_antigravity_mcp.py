@@ -123,3 +123,38 @@ def test_shape_rule_off_keeps_case_normalized_policy_visibility(tmp_path):
     assert any("user information" in v["message"] for v in findings)
     assert any("non-allowlisted MCP servers defined: timetable" in v["message"] for v in findings)
     assert _block(repo).servers[0].command == "/audit/not-an-executable"
+
+
+def test_documented_tool_settings_load_clean(tmp_path):
+    repo = copy_fixture("antigravity/mcp-decoder/tool-settings-accepted", tmp_path)
+    assert _lint(repo, "--rule", RULE, "--strict") == (0, [])
+    assert set(_block(repo).server_names) == {"timetable", "berths", "manifests"}
+
+
+def test_mistyped_tool_settings_drop_their_server(tmp_path):
+    # Every server but ``control`` is absent from ``agy mcp list`` (agy 1.3.6).
+    repo = copy_fixture("antigravity/mcp-decoder/tool-settings-dropped", tmp_path)
+    code, findings = _lint(repo, "--rule", RULE, "--strict")
+    assert code == 1
+    expected = {
+        "enabled-string": "'enabledTools' must be an array of strings",
+        "enabled-number": "'EnabledTools' must be an array of strings",
+        "timeout-string": "'timeoutSeconds' must be a whole number of seconds",
+        "timeout-fraction": "'timeoutSeconds' must be a whole number of seconds",
+        "timeout-decimal": "'timeoutSeconds' must be a whole number of seconds",
+        "timeout-overflow": "'TimeoutSeconds' must be a whole number of seconds",
+        "tools-number": "'tools' must be an object",
+        "tool-number": "'tools.list_sailings' must be an object",
+        "tool-eager": "'tools.list_sailings.eager' must be a boolean or null",
+        "tool-background": "'tools.list_sailings.background' must be 'always' or 'off'",
+        "tool-background-case": "'tools.list_sailings.Background' must be 'always' or 'off'",
+    }
+    assert len(findings) == len(expected)
+    assert {(v["rule_id"], v["severity"], v["file_path"]) for v in findings} == {
+        (RULE, "warning", FILE)
+    }
+    for name, problem in expected.items():
+        assert (
+            sum(v["message"].startswith(f"MCP server '{name}': {problem};") for v in findings) == 1
+        ), name
+    assert all("drops the server silently" in v["message"] for v in findings)

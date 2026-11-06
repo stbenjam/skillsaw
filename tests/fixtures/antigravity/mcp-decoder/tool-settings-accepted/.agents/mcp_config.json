@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "timetable": {
+      "serverUrl": "https://feeds.example.invalid/mcp",
+      "EnabledTools": ["list_sailings", null],
+      "timeoutSeconds": -5,
+      "Tools": {
+        "list_sailings": {"eager": true, "background": "always"},
+        "publish_sailing": {"Eager": false, "BACKGROUND": "off", "notes": 5},
+        "reserve_berth": null,
+        "cancel_berth": {"eager": null, "background": null}
+      }
+    },
+    "berths": {
+      "command": "/audit/not-an-executable",
+      "enabledTools": null,
+      "timeoutSeconds": 9223372036854775807,
+      "tools": null
+    },
+    "manifests": {
+      "command": "/audit/not-an-executable",
+      "timeoutSeconds": 0,
+      "tools": {}
+    }
+  }
+}
