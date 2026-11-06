@@ -2,8 +2,15 @@ name: Editor pilot
 on:
   push:
     branches: [main]
+  # Pull requests run this only when they touch the editor pilot; pushes to
+  # main run it unconditionally, so CLI changes that break it still surface.
   pull_request:
     branches: [main]
+    paths:
+      - editors/vscode/**
+      - examples/editor-onboarding/**
+      - tests/fixtures/editor-slow-rule/**
+      - .github/workflows/test-editor.yml
 permissions:
   contents: read
 concurrency:
