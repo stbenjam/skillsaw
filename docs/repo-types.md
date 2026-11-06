@@ -552,6 +552,88 @@ Both Grok packaging types are independent of the Claude and Codex types — a
 repository commonly ships more than one catalog or manifest, and skillsaw
 detects each.
 
+## ZCode
+
+Repositories with a `.zcode/` project layer: `skills/`, `commands/`,
+`agents/` or `config.json` under `.zcode/` (`zcode-project`). An empty
+`.zcode/` is not detected. [ZCode](https://github.com/zai-org/ZCode) reads the
+layer in every directory from the session's working directory up to the git
+root, so skillsaw attaches a subpackage's `.zcode/` as well as the root's.
+
+- `.zcode/skills/**/SKILL.md` are Agent Skills and get the full skill rule
+  set. ZCode also reads `.agents/skills/` and `.agents/commands/`, which
+  skillsaw already covers.
+- `.zcode/commands/**/*.md` (read recursively) and `.zcode/agents/*.md`
+  (read flat) get the shared content and security rules.
+  [`zcode-agent-valid`](rules/zcode-agent-valid.md) checks that each agent
+  has the `name` and `description` ZCode needs to load it.
+- `.zcode/config.json` carries project hooks under `hooks.events` and MCP
+  servers under `mcp.servers`. [`hooks-dangerous`](rules/hooks-dangerous.md)
+  and [`mcp-valid-json`](rules/mcp-valid-json.md) scan both, and
+  [`zcode-config-valid`](rules/zcode-config-valid.md) checks them against
+  ZCode's schema. One misplaced hooks key makes ZCode discard the whole file.
+
+ZCode's instructions file is `AGENTS.md`, which has its own repository type.
+`zcode.json`, which ZCode also reads as project configuration, is
+deliberately not attached: the filename is generic, and unrelated tools
+commit files called that.
+
+## ZCode Plugin
+
+Directories with a `.zcode-plugin/plugin.json` manifest, plus every local
+source a ZCode catalog lists (`zcode-plugin`):
+
+```text
+my-plugin/
+├── .zcode-plugin/
+│   └── plugin.json       # The marker skillsaw claims
+├── skills/
+├── commands/
+├── agents/
+├── hooks/
+│   └── hooks.json        # Optional
+└── .mcp.json             # Optional: bundled MCP servers
+```
+
+ZCode resolves a manifest from `.zcode-plugin/plugin.json`, then
+`.claude-plugin/plugin.json`, then `.codex-plugin/plugin.json`. Only the
+first claims a directory for ZCode. A directory with only a Claude manifest
+stays Claude's. A directory with both is both a Claude plugin and a ZCode
+plugin, and keeps its Claude results for the files both hosts read
+(`hooks/hooks.json` and `.mcp.json`).
+
+Manifest-declared `skills`, `commands`, `agents`, `hooks` and `mcpServers`
+are added to the conventional locations, never substituted for them. Inline
+`hooks` and `mcpServers` objects are followed too, so their commands reach
+the security rules. [`zcode-plugin-json-valid`](rules/zcode-plugin-json-valid.md)
+checks the manifest, and [`zcode-hooks-valid`](rules/zcode-hooks-valid.md)
+checks the hooks of a ZCode-only plugin against ZCode's seven events and its
+`command` and `process` handler types.
+
+## ZCode Marketplace
+
+A repository-root `marketplace.json` in a repository that ships at least
+one `.zcode-plugin` plugin and has no `.claude-plugin/marketplace.json`
+(`zcode-marketplace`):
+
+```text
+marketplace/
+├── marketplace.json
+└── plugins/
+    ├── plugin-one/
+    │   └── .zcode-plugin/plugin.json
+    └── plugin-two/
+        └── .zcode-plugin/plugin.json
+```
+
+ZCode reads `.claude-plugin/marketplace.json` first, and that file stays
+Claude's. A bare `marketplace.json` is a generic filename, so it counts as a
+ZCode catalog only alongside a ZCode plugin, or under `--type
+zcode-marketplace`. [`zcode-marketplace-json-valid`](rules/zcode-marketplace-json-valid.md)
+checks the catalog and each local plugin it lists. A string `source`
+resolves against the repository root, or against `metadata.pluginRoot` when
+that is set; an entry with no `source` resolves to `<root>/<name>`.
+
 ## Google Antigravity
 
 Repositories that configure Google Antigravity's CLI, `agy`. Configuration

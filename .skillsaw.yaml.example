@@ -715,6 +715,31 @@ rules:
     severity: error
     # extra-source-types: []
 
+  # .zcode/agents/*.md must declare a name and a description in frontmatter
+  zcode-agent-valid:
+    enabled: auto
+    severity: error
+
+  # ZCode .zcode/config.json hooks and MCP servers must match ZCode's schema
+  zcode-config-valid:
+    enabled: auto
+    severity: error
+
+  # ZCode plugin hooks must use ZCode's events and command/process handlers
+  zcode-hooks-valid:
+    enabled: auto
+    severity: error
+
+  # A ZCode marketplace.json must parse, be named, and list installable local plugins
+  zcode-marketplace-json-valid:
+    enabled: auto
+    severity: error
+
+  # A .zcode-plugin/plugin.json must be a manifest ZCode's loader accepts
+  zcode-plugin-json-valid:
+    enabled: auto
+    severity: error
+
 # Load custom rules from these files
 custom-rules: []
 

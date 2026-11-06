@@ -91,10 +91,10 @@ from skillsaw.formats.grok_mcp import decode_mcp_server
 from skillsaw.paths import (
     Resolver,
     contained_resolve,
-    safe_exists,
+    marker_escapes,
+    marker_manifest_is_contained,
     safe_is_dir,
     safe_is_file,
-    safe_is_symlink,
     safe_resolve,
 )
 from skillsaw.utils import read_json
@@ -808,16 +808,9 @@ def grok_manifest_is_contained(plugin_dir: Path, *, resolve: Resolver = safe_res
     Containment is checked the way discovery checks it, so a marker or a
     manifest symlinked out of the plugin is not this plugin's.
     """
-    root = resolve(plugin_dir)
-    if root is None:
-        return False
-    marker = plugin_dir / PLUGIN_DIR_NAME
-    if contained_resolve(marker, root, resolve) is None:
-        return False
-    manifest = marker / PLUGIN_MANIFEST
-    if contained_resolve(manifest, root, resolve) is None:
-        return False
-    return safe_is_file(manifest)
+    return marker_manifest_is_contained(
+        plugin_dir, PLUGIN_DIR_NAME, PLUGIN_MANIFEST, resolve=resolve
+    )
 
 
 def grok_marker_escapes(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> bool:
@@ -829,14 +822,4 @@ def grok_marker_escapes(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -
     marker (or a ``plugin.json`` inside it) that resolves elsewhere is
     another plugin's, and no claim may adopt it.
     """
-    root = resolve(plugin_dir)
-    if root is None:
-        # Containment cannot be proven, so fail closed.
-        return True
-    marker = plugin_dir / PLUGIN_DIR_NAME
-    if not (safe_exists(marker) or safe_is_symlink(marker)):
-        return False
-    if contained_resolve(marker, root, resolve) is None:
-        return True
-    manifest = marker / PLUGIN_MANIFEST
-    return safe_exists(manifest) and contained_resolve(manifest, root, resolve) is None
+    return marker_escapes(plugin_dir, PLUGIN_DIR_NAME, PLUGIN_MANIFEST, resolve=resolve)

@@ -1,0 +1,17 @@
+{
+  "name": "release-notes",
+  "version": "1.2.0",
+  "description": "Draft release notes from merged pull requests.",
+  "author": { "name": "Harbor Labs" },
+  "license": "MIT",
+  "keywords": ["release", "changelog"],
+  "skills": "./skills",
+  "commands": "commands",
+  "mcpServers": {
+    "changelog": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${ZCODE_PLUGIN_ROOT}/server/changelog.mjs"]
+    }
+  }
+}

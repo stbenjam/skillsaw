@@ -161,5 +161,6 @@ nav:
     - Promptfoo: rules/promptfoo.md
     - Security: rules/security.md
     - Vercel: rules/vercel.md
+    - ZCode: rules/zcode.md
   - Changelog: changelog.md
   - Research: research.md

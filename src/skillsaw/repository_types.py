@@ -53,6 +53,12 @@ class RepositoryType(Enum):
     GROK_PROJECT = "grok-project"
     GROK_PLUGIN = "grok-plugin"  # Grok Build plugin (.grok-plugin/plugin.json)
     GROK_MARKETPLACE = "grok-marketplace"  # .grok-plugin/marketplace.json
+    # Repository with a `.zcode/` project layer — skills, commands, agents,
+    # and `config.json` hooks and MCP servers. ZCode plugins and marketplaces
+    # are separate packaging concerns and are not this type.
+    ZCODE_PROJECT = "zcode-project"
+    ZCODE_PLUGIN = "zcode-plugin"  # Z.ai ZCode plugin (.zcode-plugin/plugin.json)
+    ZCODE_MARKETPLACE = "zcode-marketplace"  # Root marketplace.json listing ZCode plugins
     KIRO = "kiro"  # Kiro steering, native agents, skills, or workspace MCP
     GEMINI = "gemini"  # Repository with a GEMINI.md
     QWEN = "qwen"  # Repository with a QWEN.md
@@ -76,7 +82,8 @@ class RepositoryType(Enum):
 # CODEX_PROJECT does not: ``.codex/`` is the project configuration layer, and
 # the skills Codex loads live in a plugin. The Grok plugin types are here for
 # the same reason as the Codex ones; GROK_PROJECT is not, because ``.grok/``
-# earns its skills through ``CONVENTIONAL_SKILL_DIRS`` instead.
+# earns its skills through ``CONVENTIONAL_SKILL_DIRS`` instead. The ZCode
+# types follow the Grok split exactly.
 SKILL_REPO_TYPES = {
     RepositoryType.OPENCLAW_PLUGIN,
     RepositoryType.PI_PACKAGE,
@@ -92,6 +99,8 @@ SKILL_REPO_TYPES = {
     RepositoryType.CURSOR_MARKETPLACE,
     RepositoryType.GROK_PLUGIN,
     RepositoryType.GROK_MARKETPLACE,
+    RepositoryType.ZCODE_PLUGIN,
+    RepositoryType.ZCODE_MARKETPLACE,
     RepositoryType.ANTIGRAVITY_PLUGIN,
 }
 
@@ -111,6 +120,7 @@ TOOL_REPO_TYPES = frozenset(
         RepositoryType.GOOSE,
         RepositoryType.MUSE,
         RepositoryType.GROK_PROJECT,
+        RepositoryType.ZCODE_PROJECT,
         RepositoryType.CODEX_PROJECT,
         RepositoryType.ANTIGRAVITY,
         RepositoryType.KIRO,
@@ -135,13 +145,14 @@ PORTABLE_COMPONENT_REPO_TYPES = frozenset(
 )
 
 # Repository types that may hold one of ``INSTRUCTION_FILES``. CLINE,
-# OPENCODE, MUSE, GROK_PROJECT and CODEX_PROJECT are deliberately absent:
-# the instruction-file rules only ever look at
+# OPENCODE, MUSE, GROK_PROJECT, ZCODE_PROJECT and CODEX_PROJECT are
+# deliberately absent: the instruction-file rules only ever look at
 # AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose only marker is
-# ``.clinerules``, ``opencode.json``, ``.muse/hooks.json``, ``.grok/`` or
-# ``.codex/`` would auto-enable two rules structurally incapable of
-# finding anything. OpenCode, Muse Code, Grok Build and Codex do read
-# AGENTS.md — and when one is present AGENTS_MD enables them for it. Grok's
+# ``.clinerules``, ``opencode.json``, ``.muse/hooks.json``, ``.grok/``,
+# ``.zcode/`` or ``.codex/`` would auto-enable two rules structurally
+# incapable of finding anything. OpenCode, Muse Code, Grok Build, ZCode and
+# Codex do read AGENTS.md — and when one is present AGENTS_MD enables them
+# for it. Grok's
 # own always-on prose lives in ``.grok/rules/``, which the content rules
 # read as content rather than as an instruction file.
 INSTRUCTION_REPO_TYPES = frozenset(

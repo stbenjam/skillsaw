@@ -61,6 +61,14 @@ from .blocks import (
     GrokPluginHooksBlock,
     GrokRuleBlock,
     HooksBlock,
+    ZCodeAgentBlock,
+    ZCodeCommandBlock,
+    ZCodeConfigHooksBlock,
+    ZCodeConfigMcpBlock,
+    ZCodeInlineHooksBlock,
+    ZCodeInlineMcpBlock,
+    ZCodeMcpBlock,
+    ZCodePluginHooksBlock,
     InstructionBlock,
     McpBlock,
     McpRegistryNpmPackageBlock,
@@ -112,7 +120,7 @@ from .blocks.pi import PiPackageNode, PiPackageBlock
 from .discovery.pi import package_resources
 from .pi_tree import attach_pi_resources, attach_pi_projects, attach_pi_prompts
 from .goose_tree import attach_goose_recipes
-from .formats import antigravity, devin, grok, muse, cursor
+from .formats import antigravity, devin, grok, muse, cursor, zcode
 from .blocks.cursor import (
     CursorAgentBlock,
     CursorPluginNode,
@@ -156,6 +164,9 @@ from .lint_target import (
     GrokMarketplaceIndexNode,
     GrokPluginConfigNode,
     GrokPluginNode,
+    ZCodeMarketplaceConfigNode,
+    ZCodePluginConfigNode,
+    ZCodePluginNode,
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
@@ -823,6 +834,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         parent: (
             CodexPluginConfigNode
             | GrokPluginConfigNode
+            | ZCodePluginConfigNode
             | AgentPluginConfigNode
             | AntigravityPluginConfigNode
         ),
@@ -1128,6 +1140,20 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # there is no ``.grok/mcp.json`` — so it is attached under its own
         # parser role rather than as prose, and one block per resolved file.
         state.add_parser_block(root, grok_dir / grok.CONFIG_FILENAME, GrokConfigBlock)
+
+    # ZCode reads ``.zcode/`` in every directory from the session's working
+    # directory up to the git root, so a package's own layer is live and the
+    # walk-backed lookup finds it. Commands are read recursively and agents
+    # flat; ``skills/`` arrives through ``CONVENTIONAL_SKILL_DIRS`` and
+    # ``NESTED_TOOL_SKILL_DIRS``. ``config.json`` is one file carrying two
+    # parser roles, hooks and MCP servers.
+    for zcode_dir in context.agent_tool_dirs(zcode.TOOL_DIR_NAME):
+        _add_glob(root, zcode_dir / zcode.COMMANDS_DIR_NAME, "**/*.md", ZCodeCommandBlock)
+        for pattern in zcode.AGENT_GLOBS:
+            _add_glob(root, zcode_dir / zcode.AGENTS_DIR_NAME, pattern, ZCodeAgentBlock)
+        config_json = zcode_dir / zcode.CONFIG_FILENAME
+        state.add_parser_block(root, config_json, ZCodeConfigHooksBlock)
+        state.add_parser_block(root, config_json, ZCodeConfigMcpBlock)
 
     # Antigravity reads a customization root — ``.agents/``, ``.agent/``,
     # ``_agents/`` or ``_agent/`` — walking *up* from the directory it was
@@ -1462,12 +1488,17 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for catalog in context.cursor_marketplace_paths():
         root.children.append(CursorMarketplaceBlock(path=catalog))
 
+    for catalog in context.zcode_marketplace_paths():
+        if not _is_excluded(catalog):
+            root.children.append(ZCodeMarketplaceConfigNode(path=catalog))
+
     # --- Plugins (build first so skills can nest inside them) ---
     cursor_plugin_nodes = {}
     plugin_nodes: dict[Path, PluginNode] = {}
     codex_plugin_nodes: dict[Path, CodexPluginNode] = {}
     openclaw_plugin_nodes: dict[Path, OpenClawPluginNode] = {}
     grok_plugin_nodes: dict[Path, GrokPluginNode] = {}
+    zcode_plugin_nodes: dict[Path, ZCodePluginNode] = {}
     antigravity_plugin_nodes: dict[Path, AntigravityPluginNode] = {}
     pi_package_nodes: dict[Path, PiPackageNode] = {}
     agent_plugin_nodes: dict[Path, AgentPluginNode] = {}
@@ -1492,6 +1523,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *context.plugins,
         *context.codex_plugins,
         *context.grok_plugins,
+        *context.zcode_plugins,
         *context.openclaw_plugin_roots(),
         *context.cursor_plugin_roots(),
         *context.antigravity_plugins,
@@ -1499,6 +1531,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *context.pi_discovery_roots(),
         *sorted(p for p in context._codex_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._grok_claim_set() if not context.is_path_excluded(p)),
+        *sorted(p for p in context._zcode_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._antigravity_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._agent_plugin_claim_set() if not context.is_path_excluded(p)),
     ):
@@ -1529,7 +1562,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # ``.agents/plugins/<name>/`` would be discarded as generated output
         # in every APM repository with a Codex target.
         if _is_in_compiled_dir(plugin_path) and not (
-            prov.codex or prov.grok or prov.antigravity or prov.openclaw or is_cursor
+            prov.codex or prov.grok or prov.zcode or prov.antigravity or prov.openclaw or is_cursor
         ):
             continue
         resolved_plugin = resolve(plugin_path)
@@ -1552,6 +1585,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         elif resolved_plugin == root.resolved_path and (
             prov.codex
             or prov.grok
+            or prov.zcode
             or prov.antigravity
             or is_openclaw
             or is_agent_plugin
@@ -1568,6 +1602,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         elif prov.grok:
             container = GrokPluginNode(path=plugin_path)
             grok_plugin_nodes[resolved_plugin] = container
+        elif prov.zcode:
+            container = ZCodePluginNode(path=plugin_path)
+            zcode_plugin_nodes[resolved_plugin] = container
         elif prov.antigravity:
             container = AntigravityPluginNode(path=plugin_path)
             antigravity_plugin_nodes[resolved_plugin] = container
@@ -1948,6 +1985,78 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 node.children.append(inline_mcp_block)
             container.children.append(node)
 
+        # ZCode manifest cluster, for any directory ZCode claims (dual
+        # directories hang it off their PluginNode). Not gated on the
+        # manifest existing: a catalog may list a directory without one, and
+        # the node is still where the manifest rule looks.
+        if prov.zcode:
+            manifest = zcode.zcode_manifest_path(plugin_path) or plugin_path.joinpath(
+                zcode.PLUGIN_DIR_NAME, zcode.PLUGIN_MANIFEST
+            )
+            node = ZCodePluginConfigNode(path=manifest)
+            node.plugin_owner = resolved_plugin
+            # Declared ``commands`` and ``agents`` directories load *in
+            # addition to* the conventional pair ``_add_plugin_prose``
+            # attached above; commands are read recursively, agents flat.
+            for field_name, prose_cls, pattern in (
+                ("commands", CommandBlock, "**/*.md"),
+                ("agents", AgentBlock, "*.md"),
+            ):
+                for declared_dir in zcode.zcode_declared_paths(
+                    plugin_path, field_name, want_dir=True
+                ):
+                    for md in _readable_matches(declared_dir, pattern):
+                        if _inside_plugin(md, resolved_plugin) and safe_is_file(md):
+                            state.add_block(container, md, prose_cls, owner=resolved_plugin)
+            # Whichever host already reads the conventional files keeps its
+            # block class: one block per file, so the security rules report
+            # each command once, and a dual-manifest plugin's established
+            # results stand.
+            if prov.claude:
+                hooks_cls, mcp_cls = ClaudeHooksBlock, McpBlock
+            elif prov.codex:
+                hooks_cls, mcp_cls = CodexHooksBlock, McpBlock
+            elif prov.grok:
+                hooks_cls, mcp_cls = GrokPluginHooksBlock, GrokMcpBlock
+            else:
+                hooks_cls, mcp_cls = ZCodePluginHooksBlock, ZCodeMcpBlock
+            conventional_hooks = plugin_path.joinpath(*zcode.CONVENTIONAL_HOOKS)
+            if not _attached_as_hooks(state, conventional_hooks):
+                _add_contained_plugin_block(
+                    node, conventional_hooks, hooks_cls, owner=resolved_plugin
+                )
+            # A declared file or an inline payload is ZCode's whatever else
+            # claims the directory: only the ZCode manifest names it.
+            for declared_hooks in zcode.zcode_declared_hook_files(plugin_path):
+                if not _inside_plugin(declared_hooks, resolved_plugin):
+                    continue
+                if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
+                    continue
+                state.add_parser_block(
+                    node, declared_hooks, ZCodePluginHooksBlock, owner=resolved_plugin
+                )
+            for inline_hooks in zcode.zcode_inline_hooks(plugin_path):
+                inline_hooks_block = ZCodeInlineHooksBlock(path=manifest, inline_data=inline_hooks)
+                inline_hooks_block.plugin_owner = resolved_plugin
+                node.children.append(inline_hooks_block)
+            native_mcp = plugin_path / zcode.CONVENTIONAL_MCP
+            if not (
+                _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp)
+                or _attached_as_mcp(state, native_mcp)
+            ):
+                _add_contained_plugin_block(node, native_mcp, mcp_cls, owner=resolved_plugin)
+            for declared_mcp in zcode.zcode_declared_mcp_files(plugin_path):
+                if not _inside_plugin(declared_mcp, resolved_plugin) or _attached_as_mcp(
+                    state, declared_mcp
+                ):
+                    continue
+                state.add_parser_block(node, declared_mcp, ZCodeMcpBlock, owner=resolved_plugin)
+            for inline_mcp in zcode.zcode_inline_mcp(plugin_path):
+                inline_mcp_block = ZCodeInlineMcpBlock(path=manifest, inline_data=inline_mcp)
+                inline_mcp_block.plugin_owner = resolved_plugin
+                node.children.append(inline_mcp_block)
+            container.children.append(node)
+
         # Agent Plugins manifest cluster. A forced ``--type agent-plugin``
         # seeds this even when plugin.json is absent, so the validity rule can
         # report the missing entrypoint. The optional mcp.json is attached
@@ -2031,6 +2140,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 or plugin_nodes.get(candidate)
                 or codex_plugin_nodes.get(candidate)
                 or grok_plugin_nodes.get(candidate)
+                or zcode_plugin_nodes.get(candidate)
                 or openclaw_plugin_nodes.get(candidate)
                 or antigravity_plugin_nodes.get(candidate)
                 or pi_package_nodes.get(candidate)

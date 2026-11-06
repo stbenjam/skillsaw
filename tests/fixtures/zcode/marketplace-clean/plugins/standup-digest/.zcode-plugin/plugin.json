@@ -1,0 +1,6 @@
+{
+  "name": "standup-digest",
+  "version": "0.3.1",
+  "description": "Summarise yesterday's merged work for stand-up.",
+  "author": { "name": "Harbor Labs" }
+}

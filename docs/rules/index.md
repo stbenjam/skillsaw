@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **113** built-in rules organized into the following categories:
+skillsaw includes **118** built-in rules organized into the following categories:
 
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [agentskills.io](agentskills.md) (8 rules)
@@ -18,6 +18,7 @@ skillsaw includes **113** built-in rules organized into the following categories
 - [Goose](goose.md) (2 rules)
 - [Google Antigravity](antigravity.md) (4 rules)
 - [Grok Build](grok.md) (8 rules)
+- [ZCode](zcode.md) (5 rules)
 - [Hooks](hooks.md) (3 rules)
 - [Instruction Files](instruction-files.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (5 rules)
@@ -109,6 +110,11 @@ skillsaw includes **113** built-in rules organized into the following categories
 | [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md) | .grok-plugin/marketplace.json must be valid JSON with installable entries | error (auto) | - | Grok Build |
 | [`grok-plugin-json-valid`](grok-plugin-json-valid.md) | .grok-plugin/plugin.json must be valid JSON with a name Grok's loader accepts | error (auto) | - | Grok Build |
 | [`grok-plugin-structure`](grok-plugin-structure.md) | A Grok plugin directory needs a manifest or a component Grok installs | warning (auto) | - | Grok Build |
+| [`zcode-agent-valid`](zcode-agent-valid.md) | .zcode/agents/*.md must declare a name and a description in frontmatter | error (auto) | - | ZCode |
+| [`zcode-config-valid`](zcode-config-valid.md) | ZCode .zcode/config.json hooks and MCP servers must match ZCode's schema | error (auto) | - | ZCode |
+| [`zcode-hooks-valid`](zcode-hooks-valid.md) | ZCode plugin hooks must use ZCode's events and command/process handlers | error (auto) | - | ZCode |
+| [`zcode-marketplace-json-valid`](zcode-marketplace-json-valid.md) | A ZCode marketplace.json must parse, be named, and list installable local plugins | error (auto) | - | ZCode |
+| [`zcode-plugin-json-valid`](zcode-plugin-json-valid.md) | A .zcode-plugin/plugin.json must be a manifest ZCode's loader accepts | error (auto) | - | ZCode |
 | [`claude-hooks-valid`](claude-hooks-valid.md) | Claude Code hooks.json must be valid JSON with proper hook configuration structure | error | - | Hooks |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that chain a download into execution (curl\|sh), obfuscate their payload (eval/base64), or perform network requests | error (auto) | - | Hooks |
 | [`hooks-prohibited`](hooks-prohibited.md) | All hooks are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Hooks |

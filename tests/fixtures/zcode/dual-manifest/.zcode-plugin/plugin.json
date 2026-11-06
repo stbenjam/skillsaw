@@ -1,0 +1,7 @@
+{
+  "name": "tide-report",
+  "version": "1.0.0",
+  "description": "Posts the daily tide report for the harbour.",
+  "author": { "name": "Harbor Labs" },
+  "hooks": "hooks/zcode-session.json"
+}

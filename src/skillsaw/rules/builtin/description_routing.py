@@ -16,11 +16,19 @@ from skillsaw.rules.builtin.content_analysis import (
     OpenCodeCommandBlock,
     SkillBlock,
 )
-from skillsaw.blocks import DevinSkillBlock
+from skillsaw.blocks import DevinSkillBlock, ZCodeAgentBlock, ZCodeCommandBlock
 from skillsaw.blocks.pi import PiPromptBlock, PiSkillBlock
 from skillsaw.blocks.cursor import CursorAgentBlock
 from skillsaw.blocks.kiro import KiroJsonAgentBlock, KiroMarkdownAgentBlock, KiroSteeringBlock
 from skillsaw.rules.builtin.utils import read_frontmatter_commented
+
+#: Block types whose host's structural rule already reports a missing or
+#: empty description, because the host skips the file without one. When
+#: that rule is enabled it owns the finding, so one defect gets one report.
+_DESCRIPTION_OWNERS = {
+    PiSkillBlock: "pi-skill-valid",
+    ZCodeAgentBlock: "zcode-agent-valid",
+}
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 # A selection clause at the start of a sentence: an optional subject
@@ -96,7 +104,12 @@ class DescriptionRoutingRule(Rule):
     """Check whether descriptions provide useful routing or purpose signals."""
 
     since = "0.18.0"
-    surface_dependencies = ("copilot-agent-valid", "pi-skill-valid", "kiro-agent-valid")
+    surface_dependencies = (
+        "copilot-agent-valid",
+        "pi-skill-valid",
+        "kiro-agent-valid",
+        "zcode-agent-valid",
+    )
     repo_types = {
         RepositoryType.PI,
         RepositoryType.KIRO,
@@ -128,6 +141,12 @@ class DescriptionRoutingRule(Rule):
         # the ``GrokAgentBlock`` and ``GrokCommandBlock`` traversals below
         # would never run on a repository configured only through `.grok/`.
         RepositoryType.GROK_PROJECT,
+        # ZCode lists each subagent to the model as ``name: description``
+        # and routes on it, and its plugins' prose attaches through the
+        # shared plugin pass, as Grok's does.
+        RepositoryType.ZCODE_PROJECT,
+        RepositoryType.ZCODE_PLUGIN,
+        RepositoryType.ZCODE_MARKETPLACE,
         # An Antigravity plugin's ``agents/`` and ``commands/`` prose and its
         # ``skills/`` attach through the same shared plugin pass a Codex or
         # Grok plugin's do, so a repository detected only as Antigravity
@@ -218,10 +237,12 @@ class DescriptionRoutingRule(Rule):
             CopilotAgentBlock,
             OpenCodeAgentBlock,
             GrokAgentBlock,
+            ZCodeAgentBlock,
             CursorAgentBlock,
             CommandBlock,
             OpenCodeCommandBlock,
             GrokCommandBlock,
+            ZCodeCommandBlock,
         ):
             for block in self.dependency_scoped_find(context, block_type):
                 if block_type is KiroSteeringBlock and block.field_value("inclusion") != "auto":
@@ -241,17 +262,15 @@ class DescriptionRoutingRule(Rule):
                     continue
                 if block_type is PiPromptBlock and block.field("description") is None:
                     continue
-                # pi-skill-valid owns a missing or empty description on a
-                # native Pi skill: Pi skips the skill outright, so one
-                # finding per defect is enough. Routing keeps the check when
-                # that rule is off.
-                pi_owns_description = block_type is PiSkillBlock and self.surface_rule_enabled(
-                    "pi-skill-valid"
-                )
+                # A host rule that skips the file over a missing or empty
+                # description owns that finding (``_DESCRIPTION_OWNERS``).
+                # Routing keeps the check when that rule is off.
+                owner_rule = _DESCRIPTION_OWNERS.get(block_type)
+                owns_description = owner_rule is not None and self.surface_rule_enabled(owner_rule)
                 if not block.has_frontmatter:
                     # A parsed JSON root without an object is a container
                     # defect; the enabled Kiro structural rule owns it.
-                    if pi_owns_description or (
+                    if owns_description or (
                         block_type is KiroJsonAgentBlock
                         and self.surface_rule_enabled("kiro-agent-valid")
                     ):
@@ -267,7 +286,7 @@ class DescriptionRoutingRule(Rule):
                     continue
                 description_field = block.field("description")
                 if description_field is None:
-                    if pi_owns_description:
+                    if owns_description:
                         continue
                     violations.append(
                         self.violation(
@@ -306,7 +325,7 @@ class DescriptionRoutingRule(Rule):
                         )
                     ):
                         continue
-                    if pi_owns_description:
+                    if owns_description:
                         continue
                     violations.append(
                         self.violation(
@@ -318,7 +337,7 @@ class DescriptionRoutingRule(Rule):
                     )
                     continue
                 if not description.strip():
-                    if pi_owns_description:
+                    if owns_description:
                         continue
                     violations.append(
                         self.violation(
@@ -345,6 +364,7 @@ class DescriptionRoutingRule(Rule):
                         CopilotAgentBlock,
                         OpenCodeCommandBlock,
                         GrokCommandBlock,
+                        ZCodeCommandBlock,
                     )
                     and not self._is_user_selected_agent(block_type, block)
                     and self.setting("require-trigger-phrasing")

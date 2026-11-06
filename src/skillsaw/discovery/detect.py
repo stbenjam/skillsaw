@@ -19,7 +19,7 @@ from skillsaw.discovery.antigravity import (
 )
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
-from skillsaw.formats import antigravity, codex, devin, grok, muse
+from skillsaw.formats import antigravity, codex, devin, grok, muse, zcode
 from skillsaw.formats.openclaw import MANIFEST as OPENCLAW_MANIFEST
 from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
@@ -54,6 +54,7 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
         codex.CODEX_DIR_NAME,
         grok.TOOL_DIR_NAME,
+        zcode.TOOL_DIR_NAME,
         muse.TOOL_DIR_NAME,
         *devin.TOOL_DIR_NAMES,
     }
@@ -79,6 +80,9 @@ NESTED_TOOL_SKILL_DIRS = (
     ".kiro",
     *devin.TOOL_DIR_NAMES,
     grok.TOOL_DIR_NAME,
+    # ZCode reads ``.zcode/skills`` in every directory from the session's
+    # working directory up to the git root, so a package's copy is live.
+    zcode.TOOL_DIR_NAME,
     *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
 )
 
@@ -89,7 +93,7 @@ NESTED_TOOL_SKILL_DIRS = (
 # second traversal. Recorded in the same ``tool_dirs`` mapping and read
 # through ``agent_tool_dirs``; kept a separate name so the editor-tool
 # vocabulary above keeps meaning editor tools.
-PLUGIN_MARKER_DIR_NAMES = frozenset({grok.PLUGIN_DIR_NAME, ".cursor-plugin"})
+PLUGIN_MARKER_DIR_NAMES = frozenset({grok.PLUGIN_DIR_NAME, zcode.PLUGIN_DIR_NAME, ".cursor-plugin"})
 
 #: Every directory name the walk records, from both sets above.
 SCANNED_DIR_NAMES = AGENT_TOOL_DIR_NAMES | PLUGIN_MARKER_DIR_NAMES
@@ -326,6 +330,21 @@ _TOOL_EVIDENCE = {
             (grok.SANDBOX_FILENAME, False),
         ),
     ),
+    # ZCode reads skills, commands and agents from ``.zcode/`` and project
+    # hooks and MCP servers from ``.zcode/config.json``; any one of them
+    # makes this a ZCode project. ``workflows/`` is evidence too, though
+    # nothing attaches it. Everything else ZCode writes there — plans,
+    # agent memory, workflow runs — is runtime state, not authored content.
+    "zcode-project": (
+        zcode.TOOL_DIR_NAME,
+        (
+            (zcode.SKILLS_DIR_NAME, True),
+            (zcode.COMMANDS_DIR_NAME, True),
+            (zcode.AGENTS_DIR_NAME, True),
+            (zcode.CONFIG_FILENAME, False),
+            ("workflows", True),
+        ),
+    ),
     # ``hooks.json`` and ``config.toml`` are the committed project-layer
     # files skillsaw reads from ``.codex/``: Codex loads hooks from both and
     # merges them, and a config declares this project's MCP servers, so
@@ -508,6 +527,9 @@ def tool_types(
         # carry their own types, so ``.grok/`` itself is the only marker
         # that is Grok Build's alone.
         ("grok-project", tool_marker("grok-project")),
+        # ZCode's own instructions are ``AGENTS.md``, which carries its own
+        # type, so ``.zcode/`` is the only marker that is ZCode's alone.
+        ("zcode-project", tool_marker("zcode-project")),
         ("codex-project", tool_marker("codex-project")),
         ("antigravity", antigravity_marker()),
         ("gemini", marker("GEMINI.md")),

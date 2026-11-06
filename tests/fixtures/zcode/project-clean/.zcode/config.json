@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "timeoutMs": 30000,
+    "events": {
+      "PostToolUse": [
+        {
+          "matcher": "Write|Edit",
+          "hooks": [{ "type": "command", "command": "make fmt", "statusMessage": "Formatting" }]
+        }
+      ],
+      "Stop": [
+        { "hooks": [{ "type": "process", "command": "make", "args": ["lint"], "timeoutMs": 60000 }] }
+      ]
+    }
+  },
+  "mcp": {
+    "servers": {
+      "docs": { "type": "http", "url": "https://docs.example.com/mcp" },
+      "db": { "command": "uvx", "args": ["tidewater-db-mcp"], "env": { "DB_URL": "${DB_URL}" } }
+    }
+  }
+}

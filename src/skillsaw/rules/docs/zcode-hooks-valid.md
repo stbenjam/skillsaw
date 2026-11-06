@@ -1,0 +1,62 @@
+## Why
+
+A ZCode plugin ships hooks in `hooks/hooks.json`, in files the manifest names
+in `hooks`, or inline in the manifest's `hooks` object. ZCode runs seven
+events (`SessionStart`, `UserPromptSubmit`, `PreToolUse`,
+`PermissionRequest`, `PostToolUse`, `PostToolUseFailure` and `Stop`) and two
+handler types: `command`, which runs through a shell, and `process`, which
+runs an executable with `args` and no shell. Claude Code's `prompt`, `agent`,
+`http` and `mcp_tool` handlers do not exist in ZCode. A matcher group holding
+any handler ZCode cannot read is dropped whole.
+
+This rule checks hooks files that only ZCode loads. When a plugin also has a
+`.claude-plugin/plugin.json`, Claude Code reads the same `hooks/hooks.json`,
+and `claude-hooks-valid` checks it instead.
+
+Commands in these files are also scanned by
+[`hooks-dangerous`](hooks-dangerous.md) and
+[`hooks-prohibited`](hooks-prohibited.md).
+
+## Severity
+
+**Errors**:
+
+- Invalid JSON, or a file without a top-level `hooks` object. ZCode skips
+  every hook in the file.
+- An event value that is not an array. ZCode skips the event.
+- A matcher group that is not an object, has a non-string `matcher`, or has
+  no non-empty `hooks` array.
+- A handler whose `type` is not `command` or `process`, or that has no
+  non-empty `command`, or whose fields have the wrong types. Examples are a
+  `timeoutMs` that is not a positive integer, `args` that is not an array of
+  strings, or an `onError` that is not `allow` or `deny`. ZCode drops the
+  whole group.
+
+**Warnings**: an event ZCode does not run. Its hooks are skipped.
+
+## How to fix
+
+Use ZCode's events and handler types:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/pre-tool-use.mjs"],
+            "timeoutMs": 3000
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+If the plugin targets Claude Code too, declare it with a
+`.claude-plugin/plugin.json` and keep to handlers both hosts accept.

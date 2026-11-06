@@ -1,0 +1,15 @@
+{
+  "name": "dockside-tools",
+  "description": "Dockside's ZCode plugins.",
+  "plugins": [
+    "tide-charts",
+    { "description": "An entry someone forgot to name", "source": "./plugins/renamed" },
+    { "name": "buoy-feed", "source": { "source": "npm", "package": "@dockside/buoy-feed" } },
+    { "name": "harbor-map", "source": "../harbor-map" },
+    { "name": "ghost-pier", "source": "./plugins/ghost-pier" },
+    { "name": "no-manifest", "source": "./plugins/no-manifest" },
+    { "name": "loose", "source": "./plugins/loose", "strict": false, "description": "Installed from the entry alone" },
+    { "name": "berth-log", "source": "./plugins/renamed" },
+    { "name": "remote-cranes", "source": { "source": "github", "repo": "dockside/cranes" } }
+  ]
+}

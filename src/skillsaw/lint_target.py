@@ -389,6 +389,18 @@ class GrokPluginNode(LintTarget):
 
 
 @dataclass(eq=False)
+class ZCodePluginNode(LintTarget):
+    """A ZCode-only plugin directory.
+
+    Not a ``PluginNode`` subclass, for the reason :class:`CodexPluginNode`
+    documents: Claude plugin rules select ``PluginNode`` targets.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name}/ [zcode plugin]"
+
+
+@dataclass(eq=False)
 class AgentPluginNode(LintTarget):
     """A portable Agent Plugins package nested below the lint root."""
 
@@ -534,6 +546,38 @@ class GrokPluginConfigNode(LintTarget):
 
     def tree_label(self) -> str:
         return "plugin.json [grok]"
+
+
+@dataclass(eq=False)
+class ZCodeMarketplaceConfigNode(LintTarget):
+    """A repository-root ``marketplace.json`` that ZCode reads as its catalog.
+
+    ZCode prefers ``.claude-plugin/marketplace.json``, which stays owned by
+    ``MarketplaceConfigNode``; this node exists only when that file is
+    absent and the repository ships ZCode plugins.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} [zcode]"
+
+
+@dataclass(eq=False)
+class ZCodePluginConfigNode(LintTarget):
+    """The manifest ZCode loads for a plugin directory.
+
+    ZCode resolves it from ``.zcode-plugin/``, ``.claude-plugin/`` or
+    ``.codex-plugin/`` in that order, so :attr:`plugin_dir` is always the
+    grandparent. When no manifest exists the path is the conventional
+    ``.zcode-plugin/plugin.json`` and does not exist.
+    """
+
+    @property
+    def plugin_dir(self) -> Path:
+        """The plugin directory that owns this manifest."""
+        return self.path.parent.parent
+
+    def tree_label(self) -> str:
+        return "plugin.json [zcode]"
 
 
 @dataclass(eq=False)
