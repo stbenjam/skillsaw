@@ -119,6 +119,45 @@ def test_declared_user_config_keys_pass(temp_dir):
     assert _user_config_findings(plugin_dir) == []
 
 
+def test_codex_only_mcp_file_is_not_claudes(temp_dir):
+    """A file only the Codex manifest declares is not one Claude Code reads."""
+    import json
+
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {"codex/servers.json": '{"mcpServers": {"s": {"command": "${user_config.token}"}}}'},
+    )
+    (plugin_dir / ".codex-plugin").mkdir()
+    (plugin_dir / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "p", "mcpServers": "./codex/servers.json"})
+    )
+    assert _user_config_findings(plugin_dir) == []
+
+
+def test_mcp_json_symlinked_to_portable_mcp_json_is_read(temp_dir):
+    """Claude Code reads .mcp.json even when it links Agent Plugins' mcp.json."""
+    import json
+
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {"mcp.json": '{"mcpServers": {"s": {"command": "x", "args": ["${user_config.token}"]}}}'},
+    )
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "p",
+                "version": "1.0.0",
+            }
+        )
+    )
+    (plugin_dir / ".mcp.json").symlink_to("mcp.json")
+    found = _user_config_findings(plugin_dir)
+    assert len(found) == 1 and "'token'" in found[0].message
+
+
 def test_mcp_json_symlinked_outside_the_repository_is_not_read(temp_dir):
     outside = temp_dir / "outside.json"
     outside.write_text('{"mcpServers": {"s": {"command": "${user_config.token}"}}}')

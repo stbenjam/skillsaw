@@ -4,12 +4,12 @@ Rule: plugin-json-valid
 
 import json
 import re
-from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple
 
 from skillsaw.blocks import McpBlock
 from skillsaw.diagnostics import safe_display
+from skillsaw.discovery.claude import claude_declared_mcp_files
 from skillsaw.paths import has_parent_traversal, is_absolute_path, safe_exists
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.utils import read_json
@@ -79,16 +79,13 @@ class PluginJsonValidRule(Rule):
         if not isinstance(recommended_fields, list):
             recommended_fields = self.config_schema["recommended-fields"]["default"]
 
-        # Claude's MCP files for each plugin: the conventional .mcp.json and
-        # the files plugin.json declares, attached by the lint tree as plain
-        # McpBlocks (other hosts' MCP files are subclasses). A repo-root
-        # plugin's .mcp.json is attached before the plugin pass, without an
-        # owner, so it falls back to its directory.
-        mcp_blocks: Dict[Path, List[McpBlock]] = defaultdict(list)
+        # MCP documents in the lint tree by resolved path. The tree holds
+        # only contained, non-excluded files, so this never reads outside it.
+        mcp_by_path: Dict[Path, McpBlock] = {}
         for block in context.lint_tree.find(McpBlock):
-            if type(block) is McpBlock:
-                owner = block.plugin_owner or context.resolve_path(block.path.parent)
-                mcp_blocks[owner].append(block)
+            resolved = context.resolve_path(block.path)
+            if resolved is not None and block.raw_data:
+                mcp_by_path.setdefault(resolved, block)
 
         for plugin_node in context.lint_tree.find(PluginNode):
             plugin_path = plugin_node.path
@@ -153,7 +150,11 @@ class PluginJsonValidRule(Rule):
                     )
 
             violations.extend(self._check_component_paths(data, plugin_path, plugin_json))
-            owned = mcp_blocks.get(context.resolve_path(plugin_path), [])
+            # The files Claude Code reads servers from, matched by path: the
+            # block class says which host's rules apply, not which file this is.
+            claude_mcp = [plugin_path / ".mcp.json", *claude_declared_mcp_files(plugin_path)]
+            resolved_mcp = dict.fromkeys(context.resolve_path(path) for path in claude_mcp)
+            owned = [mcp_by_path[path] for path in resolved_mcp if path in mcp_by_path]
             violations.extend(self._check_user_config_refs(data, owned, plugin_json))
 
         return violations
@@ -193,7 +194,7 @@ class PluginJsonValidRule(Rule):
         sources = []
         if isinstance(data.get("mcpServers"), dict):
             sources.append((plugin_json, data["mcpServers"]))
-        sources.extend((block.path, block.raw_data) for block in mcp_blocks if block.raw_data)
+        sources.extend((block.path, block.raw_data) for block in mcp_blocks)
 
         violations = []
         for path, payload in sources:
