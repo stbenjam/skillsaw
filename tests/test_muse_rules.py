@@ -1,9 +1,10 @@
 """Tests for Muse Code's repository configuration: ``.muse/hooks.json``.
 
-Muse's loader is silent about everything it refuses — a rejected file, a
-rejected matcher group, a skipped event and a dropped handler all look like
-a hook that had nothing to do — so these tests pin each verdict and its
-scope individually rather than counting findings in bulk. The scopes come
+Muse reports what it refuses only as a startup warning — in a headless run
+a rejected file, a rejected matcher group, a skipped event and a dropped
+handler all look like a hook that had nothing to do — so these tests pin
+each verdict and its scope individually rather than counting findings in
+bulk. The scopes come
 from a canary matrix run against Muse Code 1.0.2; ``skillsaw.formats.muse``
 records it.
 
@@ -315,9 +316,6 @@ def broken(tmp_path) -> List[RuleViolation]:
 @pytest.mark.parametrize(
     ("message", "severity"),
     [
-        # An event in Muse's enum but not its documented list: parsed, but
-        # unproven, so advisory rather than a warning.
-        ("Hook event 'StopFailure' is not in Muse's documented event list", Severity.INFO),
         # Event names are case-sensitive, so this is not `SessionStart`.
         ("Unknown hook event 'sessionstart'", Severity.WARNING),
         ("Hook event 'PostCompact' has an empty array", Severity.WARNING),
@@ -373,7 +371,7 @@ def test_the_broken_fixture_reports_nothing_else(broken) -> None:
     """The counts are a noise gate: a new check must land in this fixture."""
     assert len(at(broken, Severity.ERROR)) == 12, messages(broken)
     assert len(at(broken, Severity.WARNING)) == 4, messages(broken)
-    assert len(at(broken, Severity.INFO)) == 1, messages(broken)
+    assert len(at(broken, Severity.INFO)) == 0, messages(broken)
 
 
 def test_every_finding_names_the_hooks_file_and_no_line(broken) -> None:
@@ -971,8 +969,18 @@ def test_extra_events_accepts_an_event_newer_than_this_release(tmp_path) -> None
     silenced = check(repo, {"extra-events": ["sessionstart"]})
 
     assert not [m for m in messages(silenced) if "'sessionstart'" in m]
-    # Only the named event is accepted; the undocumented one still shows.
-    assert only(silenced, "Hook event 'StopFailure' is not in Muse's documented event list")
+    # Only the named event is accepted; other findings still show.
+    assert only(silenced, "Hook event 'PostCompact' has an empty array")
+
+
+@pytest.mark.parametrize("event", ["StopFailure", "PostToolBatch"])
+def test_events_documented_in_muse_1_4_14_produce_no_finding(tmp_path, event) -> None:
+    """Events documented as of Muse 1.4.14 are accepted without a finding."""
+    repo = write_repo(tmp_path / event)
+    (repo / ".muse").mkdir()
+    (repo / ".muse" / "hooks.json").write_text(HOOKS_JSON.replace('"Stop"', f'"{event}"'))
+
+    assert check(repo) == []
 
 
 def test_an_accepted_event_keeps_its_entries_shape_checked(tmp_path) -> None:
@@ -1263,7 +1271,7 @@ def test_the_cli_reports_every_finding_against_the_hooks_file(tmp_path) -> None:
     )
 
     assert {v["file_path"] for v in found} == {".muse/hooks.json"}
-    assert {v["severity"] for v in found} == {"error", "warning", "info"}
+    assert {v["severity"] for v in found} == {"error", "warning"}
     assert all(v["fixable"] is False for v in found)
 
 

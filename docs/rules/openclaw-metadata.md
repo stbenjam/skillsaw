@@ -31,7 +31,7 @@ the authoritative field list.
 | Field | Values |
 |---|---|
 | `install[].kind` | `brew`, `node`, `go`, `uv`, `download` |
-| `os`, `install[].os` | `darwin`, `linux`, `win32` |
+| `os`, `install[].os` | `darwin`, `linux`, `win32`, or the `macos` alias for `darwin` (case-insensitive) |
 | `install[].archive` | `tar.gz`, `tar.bz2`, `zip` |
 | `requires` keys | `bins`, `anyBins`, `env`, `config` |
 | `install[].sha256` | 64 hex digits, `download` entries only |

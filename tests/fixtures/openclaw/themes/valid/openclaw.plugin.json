@@ -7,6 +7,9 @@
       "name": "Night",
       "description": "A dark palette with custom artwork.",
       "source": "./themes/night.JSON",
+      "icons": {
+        "lantern": "assets/lantern.svg"
+      },
       "hats": {
         "beret": "./assets/beret.SVG"
       },

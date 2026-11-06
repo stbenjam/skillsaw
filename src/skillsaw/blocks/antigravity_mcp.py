@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, NoReturn, Optional, Tuple
 
-from skillsaw.formats.antigravity import mcp_field_name
+from skillsaw.formats.antigravity import MCP_OAUTH_FIELD_NAMES, mcp_field_name
 from skillsaw.utils import read_text
 
 
@@ -37,7 +37,9 @@ def _server(value: Any) -> Any:
             # These maps merge across repeated fields; null clears them.
             # Env/header names are arbitrary, case-sensitive map keys.
             if key == "oauth":
-                child = {mcp_field_name(k, oauth=True): v for k, v in field_occurrences(child)}
+                child = {
+                    mcp_field_name(k, MCP_OAUTH_FIELD_NAMES): v for k, v in field_occurrences(child)
+                }
             else:
                 child = dict(child)
             previous = result.get(key)
