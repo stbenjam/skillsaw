@@ -912,6 +912,27 @@ class TestMarketplace:
         assert "claude-plugin-json-required" not in rule_ids(r)
         assert len(r["out"]["stats"]["plugins"]) == 3
 
+    def test_marketplace_entry_is_the_manifest_regardless_of_strict(self, tmp_path):
+        """Without plugin.json the marketplace entry is the manifest, so a
+        default-strict entry and a ``strict: true`` entry both pass."""
+        repo = copy_fixture("marketplace/entry-as-manifest", tmp_path)
+        assert not list(repo.glob("plugins/*/.claude-plugin/plugin.json"))
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        assert "claude-plugin-json-required" not in rule_ids(r)
+        assert len(r["out"]["stats"]["plugins"]) == 2
+
+    def test_unregistered_plugin_without_manifest_is_reported(self, tmp_path):
+        """A plugin directory no marketplace entry registers still needs
+        plugin.json."""
+        repo = copy_fixture("marketplace/entry-as-manifest", tmp_path)
+        orphan = repo / "plugins" / "orphan"
+        shutil.copytree(repo / "plugins" / "data-fetcher", orphan)
+        r = run_lint(repo)
+        found = [v for v in violations(r) if v["rule_id"] == "claude-plugin-json-required"]
+        assert [v["file_path"] for v in found] == ["plugins/orphan/.claude-plugin/plugin.json"]
+
     def test_marketplace_plugin_root_prefixed_sources_resolve(self, tmp_path):
         """Sources that already include the pluginRoot prefix still resolve.
 
@@ -6063,6 +6084,7 @@ CLEAN_FIXTURES = [
     "marketplace/archive-source",
     "marketplace/plugin-root",
     "marketplace/plugin-root-prefixed",
+    "marketplace/entry-as-manifest",
     "agentskills/clean",
     "agentskills/unreferenced-clean",
     "dot-claude/clean",
@@ -10156,7 +10178,8 @@ class TestCodexRootWithClaudeMarketplace:
         assert result.returncode == 0, result.stdout + result.stderr
         assert json.loads(result.stdout)["violations"] == []
 
-    def test_missing_manifest_in_claude_entry_is_still_reported(self, tmp_path):
+    def test_claude_entry_without_manifest_is_not_reported(self, tmp_path):
+        """The Claude marketplace entry is the manifest when plugin.json is absent."""
         repo = copy_fixture("codex/root-plugin-claude-marketplace", tmp_path)
         (repo / "plugins/claude-helper/.claude-plugin/plugin.json").unlink()
 
@@ -10170,11 +10193,8 @@ class TestCodexRootWithClaudeMarketplace:
                 "claude-plugin-json-required",
             ]
         )
-        assert result.returncode == 1, result.stdout + result.stderr
-        findings = json.loads(result.stdout)["violations"]
-        assert len(findings) == 1
-        assert findings[0]["rule_id"] == "claude-plugin-json-required"
-        assert findings[0]["file_path"] == "plugins/claude-helper/.claude-plugin/plugin.json"
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["violations"] == []
 
 
 @pytest.mark.integration

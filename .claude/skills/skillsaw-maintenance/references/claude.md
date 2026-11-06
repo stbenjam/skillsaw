@@ -51,6 +51,18 @@ layout. Each format below maps to its own skillsaw rules.
   `claude plugin validate` accepts `v1`, `release-candidate`, `2026.10`, and
   `1.0.0garbage`, while numeric and null values fail. Keep the string type
   check in `claude-plugin-json-valid`; do not restore the former semver regex.
+- **A marketplace entry is the manifest when `plugin.json` is absent.** The
+  [marketplace reference](https://code.claude.com/docs/en/plugins/marketplace-reference#how-an-entry-combines-with-plugin-json)
+  says "**No `plugin.json`**: the entry is the manifest regardless of
+  `strict`", and the [manifest reference](https://code.claude.com/docs/en/plugins-reference#manifest-file)
+  says "The manifest is optional." Verified on 2026-11-06 with released
+  Claude Code 2.1.319: entries with default and `strict: true` pointing at
+  directories without `plugin.json` pass `claude plugin validate`, install,
+  and are enabled. `claude-plugin-json-required` skips every directory a
+  local Claude marketplace entry registers; do not restore the former
+  `strict: false`-only exemption. It still reports a Claude plugin directory
+  no entry registers: `claude plugin validate <dir>` fails there with
+  "No manifest found in directory".
 - `plugin_structure.py` and `command_format.py` are backward-compat import shims — the
   real rules live in the `plugins/` and `commands/` packages. Do not re-add rules to the
   shims.
