@@ -105,10 +105,15 @@ def test_catalog_without_plugins_is_a_warning(tmp_path):
 
 
 def test_absolute_string_source_is_external(tmp_path):
-    zcode_catalog(tmp_path, [{"name": "elsewhere", "source": "/opt/zcode/plugins/elsewhere"}])
-    assert not any(
-        "'elsewhere'" in m for m in messages(lint(tmp_path), "zcode-marketplace-json-valid")
+    zcode_catalog(
+        tmp_path,
+        [
+            {"name": "elsewhere", "source": "/opt/zcode/plugins/elsewhere"},
+            {"name": "on-windows", "source": "C:\\zcode\\plugins\\on-windows"},
+        ],
     )
+    found = messages(lint(tmp_path), "zcode-marketplace-json-valid")
+    assert not any("'elsewhere'" in m or "'on-windows'" in m for m in found)
 
 
 def test_strict_false_entries_are_excused_under_a_forced_marketplace(tmp_path):

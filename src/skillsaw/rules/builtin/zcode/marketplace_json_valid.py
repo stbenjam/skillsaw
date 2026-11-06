@@ -13,7 +13,14 @@ from skillsaw.context import RepositoryContext
 from skillsaw.formats import zcode
 from skillsaw.lint_target import ZCodeMarketplaceConfigNode
 from skillsaw.diagnostics import safe_display
-from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
+from skillsaw.paths import (
+    contained_resolve,
+    is_absolute_path,
+    safe_exists,
+    safe_is_dir,
+    safe_is_file,
+    safe_resolve,
+)
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.utils import read_json_strict
 
@@ -167,7 +174,7 @@ class ZCodeMarketplaceJsonValidRule(Rule):
         if plugin_dir is None:
             if isinstance(source, str) and source in ("filesystem", "sea"):
                 return []
-            if isinstance(source, str) and Path(source).is_absolute():
+            if isinstance(source, str) and is_absolute_path(source):
                 # ZCode falls back to the path as given, on the machine
                 # installing it, so this checkout cannot judge it.
                 return []
