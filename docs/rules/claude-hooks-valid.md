@@ -17,6 +17,11 @@ Claude Code hooks.json must be valid JSON with proper hook configuration structu
 Claude Code model-change hooks `PreModelSwitch` and `PostModelSwitch` are
 recognized alongside the existing events (available since Claude Code 2.1.251).
 
+The `onFailure` field on `command` and `http` handlers must be `"continue"` or
+`"block"` (available since Claude Code 2.1.295). Any other value is an error,
+because Claude Code rejects the file; on any other handler type the field is
+ignored, which is reported as a warning.
+
 ## Why
 
 A Claude Code `hooks.json` configures commands that run automatically on
