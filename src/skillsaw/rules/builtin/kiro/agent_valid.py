@@ -10,7 +10,7 @@ from skillsaw.utils import read_frontmatter_commented
 class KiroAgentValidRule(Rule):
     """Validate common shapes without mixing permission or hook contracts."""
 
-    since = "0.22.0"
+    since = "0.23.0"
     default_enabled = False
     repo_types = frozenset({RepositoryType.KIRO})
 

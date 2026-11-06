@@ -99,7 +99,7 @@ _WHOLE_FILE = "ZCode rejects the whole file, so none of its hooks or MCP servers
 class ZCodeConfigValidRule(Rule):
     """Check the hooks and MCP sections of a ZCode project config.json"""
 
-    since = "0.22.0"
+    since = "0.23.0"
 
     repo_types = ZCODE_PROJECT_REPO_TYPES
 

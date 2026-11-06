@@ -9,7 +9,7 @@ ZCode plugin hooks must use ZCode's events and command/process handlers
 |---|---|
 | **Severity** | error (auto) |
 | **Autofix** | - |
-| **Since** | v0.22.0 |
+| **Since** | v0.23.0 |
 | **Repo Types** | zcode-marketplace, zcode-plugin |
 | **Category** | [ZCode](zcode.md) |
 

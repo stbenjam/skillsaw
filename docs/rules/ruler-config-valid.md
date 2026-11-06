@@ -9,7 +9,7 @@ Validate .ruler/ruler.toml against the Ruler 0.3.44 configuration shape
 |---|---|
 | **Severity** | error (disabled) |
 | **Autofix** | - |
-| **Since** | v0.22.0 |
+| **Since** | v0.23.0 |
 | **Repo Types** | ruler |
 | **Category** | [Ruler and Rulesync](generators.md) |
 

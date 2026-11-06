@@ -20,7 +20,7 @@ from ._helpers import ZCODE_PLUGIN_REPO_TYPES, matcher_group_problems
 class ZCodeHooksValidRule(Rule):
     """Check that ZCode plugin hooks use events and handlers ZCode runs"""
 
-    since = "0.22.0"
+    since = "0.23.0"
 
     repo_types = ZCODE_PLUGIN_REPO_TYPES
 

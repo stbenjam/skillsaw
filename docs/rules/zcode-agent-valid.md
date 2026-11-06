@@ -9,7 +9,7 @@ ZCode subagents must declare a name and a description in frontmatter
 |---|---|
 | **Severity** | error (auto) |
 | **Autofix** | - |
-| **Since** | v0.22.0 |
+| **Since** | v0.23.0 |
 | **Repo Types** | zcode-marketplace, zcode-plugin, zcode-project |
 | **Category** | [ZCode](zcode.md) |
 

@@ -9,7 +9,7 @@ A ZCode marketplace.json must parse, be named, and list installable local plugin
 |---|---|
 | **Severity** | error (auto) |
 | **Autofix** | - |
-| **Since** | v0.22.0 |
+| **Since** | v0.23.0 |
 | **Repo Types** | zcode-marketplace |
 | **Category** | [ZCode](zcode.md) |
 

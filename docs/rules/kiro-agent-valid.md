@@ -9,7 +9,7 @@ Kiro JSON and Markdown agents must use valid syntax and documented field types
 |---|---|
 | **Severity** | error (disabled) |
 | **Autofix** | - |
-| **Since** | v0.22.0 |
+| **Since** | v0.23.0 |
 | **Repo Types** | kiro |
 | **Category** | [Kiro](kiro.md) |
 
