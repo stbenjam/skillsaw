@@ -73,7 +73,7 @@ class ZCodeAgentValidRule(Rule):
             name = block.path.name
             if block.frontmatter_error:
                 loose = zcode_agent_line_values(block.read_frontmatter_text())
-                if all(loose.get(key, ("",))[0] for key in REQUIRED_FIELDS):
+                if all((loose.get(key, (None,))[0] or "").strip() for key in REQUIRED_FIELDS):
                     if "memory" in loose:
                         value, line = loose["memory"]
                         # The opening --- is file line 1.

@@ -380,15 +380,43 @@ def entry_local_source(entry: Dict[str, Any], base: Path) -> Optional[Path]:
     return None
 
 
-def zcode_agent_line_values(frontmatter: str) -> Dict[str, Tuple[str, int]]:
+def _strip_inline_comment(value: str) -> str:
+    """Drop a ``#`` comment that follows whitespace outside quotes."""
+    quote = None
+    for index, char in enumerate(value):
+        if char in "\"'" and (index == 0 or value[index - 1] != "\\"):
+            quote = None if quote == char else (quote or char)
+        if not quote and char == "#" and index > 0 and value[index - 1].isspace():
+            return value[:index].rstrip()
+    return value
+
+
+def _zcode_string_scalar(raw: str) -> Optional[str]:
+    """The string ZCode's line reader makes of *raw*, or None for a non-string.
+
+    Mirrors ``parseScalarValue`` (``subagent-profile-frontmatter.ts:156-204``):
+    ``true``, ``false``, digits, ``[...]`` and ``{...}`` become other types, and
+    an empty value starts a list.
+    """
+    value = _strip_inline_comment(raw.strip())
+    if not value or value in ("true", "false") or value.isdigit():
+        return None
+    if (value[0], value[-1]) in (("[", "]"), ("{", "}")):
+        return None
+    if len(value) > 1 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return value
+
+
+def zcode_agent_line_values(frontmatter: str) -> Dict[str, Tuple[Optional[str], int]]:
     """Scalar ``key: value`` lines as ZCode's line reader sees them.
 
-    Maps each key to its value and its 1-based line within *frontmatter*;
-    the last line for a key wins, as in ZCode.
+    Maps each key to its string value (None when ZCode reads another type)
+    and its 1-based line within *frontmatter*; the last line for a key wins.
     """
-    values: Dict[str, Tuple[str, int]] = {}
+    values: Dict[str, Tuple[Optional[str], int]] = {}
     for number, line in enumerate(frontmatter.splitlines(), start=1):
         match = _AGENT_FRONTMATTER_LINE_RE.match(line.rstrip())
         if match:
-            values[match.group(1)] = (match.group(2).strip().strip("'\"").strip(), number)
+            values[match.group(1)] = (_zcode_string_scalar(match.group(2)), number)
     return values
