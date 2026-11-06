@@ -14,12 +14,13 @@ as well as semantic versions.
 Component paths must resolve. A string path in `commands`, `agents`,
 `skills`, `hooks`, `mcpServers`, `outputStyles` or `lspServers` that does
 not exist, is absolute, or climbs out of the plugin with `..` fails to
-load. An MCP server that reads `${user_config.KEY}` needs `KEY` declared
-under `userConfig`. Otherwise Claude Code cannot resolve it on a fresh
-install and drops the server. The check reads the inline `mcpServers`
-map, the plugin's `.mcp.json`, and any MCP file `mcpServers` names by
-path; it skips a server's `channels` entry, which may declare its own
-options. `claude plugin validate` makes the same checks; skillsaw repeats
+load. An MCP server that reads `${user_config.KEY}` in its `command`,
+`args`, `env`, `url` or `headers` needs `KEY` declared under the top-level
+`userConfig`, or under the `userConfig` of a top-level `channels` entry
+whose `server` names that server. Otherwise Claude Code cannot resolve it
+on a fresh install and drops the server. The check reads the inline
+`mcpServers` map, the plugin's `.mcp.json`, and any MCP file `mcpServers`
+names by path. `claude plugin validate` makes the same checks; skillsaw repeats
 them for CI runs and editors without Claude Code.
 
 ## Examples

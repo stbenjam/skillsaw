@@ -158,13 +158,49 @@ def test_mcp_json_symlinked_to_portable_mcp_json_is_read(temp_dir):
     assert len(found) == 1 and "'token'" in found[0].message
 
 
-def test_user_config_in_channels_is_not_a_reference(temp_dir):
+_TOKEN_SERVER = '{"mcpServers": {"tg": {"command": "x", "env": {"T": "${user_config.token}"}}}}'
+_TOKEN_DECLARATION = {"token": {"type": "string", "title": "Token", "description": "t"}}
+
+
+def test_user_config_declared_in_the_servers_channel_entry_is_accepted(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "channels": [{"server": "tg", "userConfig": _TOKEN_DECLARATION}]},
+        {".mcp.json": _TOKEN_SERVER},
+    )
+    assert _user_config_findings(plugin_dir) == []
+
+
+def test_user_config_declared_for_another_servers_channel_is_reported(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "channels": [{"server": "other", "userConfig": _TOKEN_DECLARATION}]},
+        {".mcp.json": _TOKEN_SERVER},
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_user_config_under_a_per_server_channels_key_declares_nothing(temp_dir):
     plugin_dir = _claude_plugin(
         temp_dir,
         {"name": "p"},
         {
-            ".mcp.json": '{"mcpServers": {"s": {"command": "x", '
-            '"channels": [{"options": {"token": "${user_config.token}"}}]}}}'
+            ".mcp.json": '{"mcpServers": {"tg": {"command": "x", "env": {"T": '
+            '"${user_config.token}"}, "channels": [{"userConfig": {"token": {}}}]}}}'
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_user_config_outside_substituted_fields_is_not_a_reference(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {
+            ".mcp.json": '{"mcpServers": {"s": {"command": "x", "cwd": "${user_config.dir}", '
+            '"foo": [{"options": {"token": "${user_config.token}"}}]}}}'
         },
     )
     assert _user_config_findings(plugin_dir) == []

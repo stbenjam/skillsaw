@@ -36,24 +36,30 @@ _MAX_KEYS_SHOWN = 5
 _USER_CONFIG_REF = re.compile(r"\$\{user_config\.([A-Za-z0-9_.-]+)\}")
 
 
-def _servers_without_channels(payload) -> dict:
-    """The server map in *payload*, minus each server's ``channels`` field.
+# The server fields Claude Code substitutes ``${user_config.KEY}`` into;
+# a reference anywhere else is never resolved, so never checked.
+_USER_CONFIG_FIELDS = ("command", "args", "env", "url", "headers")
 
-    A server's ``channels`` entry may declare its own options, so a
-    ``${user_config.KEY}`` there is not an undeclared reference. Accepts a
-    ``{"mcpServers": {...}}`` document or a bare server map.
-    """
+
+def _server_map(payload) -> dict:
+    """The server map in a ``{"mcpServers": {...}}`` document or a bare map."""
     servers = payload.get("mcpServers") if isinstance(payload, dict) else None
     if not isinstance(servers, dict):
         servers = payload if isinstance(payload, dict) else {}
-    return {
-        name: (
-            {k: v for k, v in server.items() if k != "channels"}
-            if isinstance(server, dict)
-            else server
-        )
-        for name, server in servers.items()
-    }
+    return servers
+
+
+def _channel_keys(data: dict) -> dict:
+    """Server name -> user_config keys its top-level ``channels`` entries declare."""
+    keys: dict = {}
+    channels = data.get("channels")
+    for channel in channels if isinstance(channels, list) else ():
+        if not isinstance(channel, dict) or not isinstance(channel.get("server"), str):
+            continue
+        declared = channel.get("userConfig")
+        if isinstance(declared, dict):
+            keys.setdefault(channel["server"], set()).update(declared)
+    return keys
 
 
 def _component_paths(data: dict) -> Iterator[Tuple[str, str]]:
@@ -211,6 +217,7 @@ class PluginJsonValidRule(Rule):
         """
         declared = data.get("userConfig")
         declared = set(declared) if isinstance(declared, dict) else set()
+        channel_keys = _channel_keys(data)
         sources = []
         if isinstance(data.get("mcpServers"), dict):
             sources.append((plugin_json, data["mcpServers"]))
@@ -218,19 +225,26 @@ class PluginJsonValidRule(Rule):
 
         violations = []
         for path, payload in sources:
-            text = json.dumps(_servers_without_channels(payload))
-            if "user_config" not in text:
-                continue
-            missing = sorted(set(_USER_CONFIG_REF.findall(text)) - declared)
+            missing = set()
+            for name, server in _server_map(payload).items():
+                if not isinstance(server, dict):
+                    continue
+                text = json.dumps([server.get(field) for field in _USER_CONFIG_FIELDS])
+                if "user_config" not in text:
+                    continue
+                allowed = declared | channel_keys.get(name, set())
+                missing.update(set(_USER_CONFIG_REF.findall(text)) - allowed)
             if not missing:
                 continue
+            missing = sorted(missing)
             keys = ", ".join(f"'{safe_display(key)}'" for key in missing[:_MAX_KEYS_SHOWN])
             if len(missing) > _MAX_KEYS_SHOWN:
                 keys += f" and {len(missing) - _MAX_KEYS_SHOWN} more"
             violations.append(
                 self.violation(
                     f"MCP configuration references user_config {keys}, which "
-                    "plugin.json does not declare under 'userConfig' — Claude Code "
+                    "plugin.json does not declare under 'userConfig' or in the "
+                    "server's 'channels' entry — Claude Code "
                     "cannot resolve it on a fresh install and drops the server",
                     file_path=path,
                 )
