@@ -3,7 +3,7 @@
 
 # Pi
 
-Discovers Pi packages and `.pi/` project resources, validates resource arrays and native skill metadata, and exposes prompts and flat skills to content checks. Literal resource-path checks are opt-in. Extensions are never executed and remote packages are not installed.
+Discovers Pi packages and `.pi/` project resources, validates resource arrays and native skill metadata, and exposes prompts and flat skills to content checks. Literal resource-path and settings schema checks are opt-in. Extensions are never executed and remote packages are not installed.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
@@ -11,4 +11,5 @@ Discovers Pi packages and `.pi/` project resources, validates resource arrays an
 | [`pi-skill-valid`](pi-skill-valid.md) | Pi skills need parseable frontmatter and a nonempty description | warning (auto) | - |
 | [`pi-resource-paths`](pi-resource-paths.md) | Literal Pi resource paths should exist in the assembled checkout | warning (disabled) | - |
 | [`pi-mcp-valid`](pi-mcp-valid.md) | Pi MCP servers must use supported field types and transports | warning (disabled) | - |
+| [`pi-settings-schema`](pi-settings-schema.md) | Pi project settings should match the Pi 1.5.0 settings schema | warning (disabled) | - |
 

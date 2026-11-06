@@ -1,0 +1,11 @@
+{
+  "$schema": "https://pi.dev/schemas/settings.schema.json",
+  "defaultProvider": "anthropic",
+  "defaultThinkingLevel": "extreme",
+  "outputPad": 2,
+  "compaction": {
+    "enabled": "true",
+    "reserveTokens": -1
+  },
+  "skills": "../skills"
+}
