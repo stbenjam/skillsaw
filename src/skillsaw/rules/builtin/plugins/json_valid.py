@@ -49,16 +49,22 @@ def _server_map(payload) -> dict:
     return servers
 
 
+def _declared_keys(options) -> set:
+    """Option keys a ``userConfig`` map declares; Claude Code rejects a non-object option."""
+    if not isinstance(options, dict):
+        return set()
+    return {key for key, option in options.items() if isinstance(option, dict)}
+
+
 def _channel_keys(data: dict) -> dict:
     """Server name -> user_config keys its top-level ``channels`` entries declare."""
     keys: dict = {}
     channels = data.get("channels")
     for channel in channels if isinstance(channels, list) else ():
-        if not isinstance(channel, dict) or not isinstance(channel.get("server"), str):
-            continue
-        declared = channel.get("userConfig")
-        if isinstance(declared, dict):
-            keys.setdefault(channel["server"], set()).update(declared)
+        if isinstance(channel, dict) and isinstance(channel.get("server"), str):
+            keys.setdefault(channel["server"], set()).update(
+                _declared_keys(channel.get("userConfig"))
+            )
     return keys
 
 
@@ -215,18 +221,18 @@ class PluginJsonValidRule(Rule):
         Reads the inline ``mcpServers`` map and the plugin's MCP files from
         the lint tree, so excluded or escaping files are never read.
         """
-        declared = data.get("userConfig")
-        declared = set(declared) if isinstance(declared, dict) else set()
+        declared = _declared_keys(data.get("userConfig"))
         channel_keys = _channel_keys(data)
+        # The inline map is already a server map; only files may wrap theirs.
         sources = []
         if isinstance(data.get("mcpServers"), dict):
             sources.append((plugin_json, data["mcpServers"]))
-        sources.extend((block.path, block.raw_data) for block in mcp_blocks)
+        sources.extend((block.path, _server_map(block.raw_data)) for block in mcp_blocks)
 
         violations = []
-        for path, payload in sources:
+        for path, servers in sources:
             missing = set()
-            for name, server in _server_map(payload).items():
+            for name, server in servers.items():
                 if not isinstance(server, dict):
                     continue
                 helper = server.get("headersHelper")
@@ -254,8 +260,8 @@ class PluginJsonValidRule(Rule):
             violations.append(
                 self.violation(
                     f"MCP configuration references user_config {keys}, which "
-                    "plugin.json does not declare under 'userConfig' or in the "
-                    "server's 'channels' entry — Claude Code "
+                    "plugin.json does not declare under 'userConfig' or in the 'userConfig' "
+                    "of a top-level 'channels' entry naming the server — Claude Code "
                     "cannot resolve it on a fresh install and drops the server",
                     file_path=path,
                 )

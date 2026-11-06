@@ -206,6 +206,30 @@ def test_user_config_outside_substituted_fields_is_not_a_reference(temp_dir):
     assert _user_config_findings(plugin_dir) == []
 
 
+@pytest.mark.parametrize("where", ["top-level", "channel"])
+def test_a_non_object_user_config_option_declares_nothing(temp_dir, where):
+    manifest = {"name": "p"}
+    if where == "top-level":
+        manifest["userConfig"] = {"token": None}
+    else:
+        manifest["channels"] = [{"server": "tg", "userConfig": {"token": None}}]
+    plugin_dir = _claude_plugin(temp_dir, manifest, {".mcp.json": _TOKEN_SERVER})
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_an_inline_server_named_mcp_servers_is_scanned(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {
+            "name": "p",
+            "mcpServers": {"mcpServers": {"command": "x", "env": {"T": "${user_config.token}"}}},
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
 def test_user_config_in_headers_helper_is_reported_even_when_declared(temp_dir):
     plugin_dir = _claude_plugin(
         temp_dir,
