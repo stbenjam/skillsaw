@@ -12,7 +12,10 @@ both a ZCode and a Claude manifest needs `name` for ZCode to load it.
 
 **Errors**: ZCode skips the agent.
 
-- Missing or malformed frontmatter.
+- Missing frontmatter, or frontmatter that is neither valid YAML nor has
+  `name:` and `description:` lines. ZCode reads frontmatter one `key: value`
+  line at a time, so a value YAML rejects, such as an unquoted colon in
+  `description: Use when: reviewing a PR`, still loads.
 - A missing or empty `name` or `description`, or one that is a list or a
   mapping.
 

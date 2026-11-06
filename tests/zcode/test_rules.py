@@ -195,6 +195,27 @@ class TestAgentValid:
         assert memory["severity"] == "warning"
         assert memory["line"] == 3
 
+    def test_frontmatter_zcode_reads_line_by_line_is_accepted(self, tmp_path):
+        """ZCode's line reader loads a description YAML rejects for its bare colon."""
+        agents = tmp_path / ".zcode" / "agents"
+        agents.mkdir(parents=True)
+        (agents / "reviewer.md").write_text(
+            "---\n"
+            "name: reviewer\n"
+            "description: Use when: a pull request touches error handling\n"
+            "---\n\n"
+            "Review the diff for swallowed exceptions and silent fallbacks.\n"
+        )
+        (agents / "triage.md").write_text(
+            "---\n"
+            "description: Use when: a new issue arrives\n"
+            "---\n\n"
+            "Label the issue and route it to the owning team.\n"
+        )
+        (finding,) = findings(lint(tmp_path), "zcode-agent-valid")
+        assert finding["file_path"].endswith("triage.md")
+        assert "ZCode skips the agent" in finding["message"]
+
 
 class TestOfficialMarketplaceShape:
     def test_inline_mcp_servers_reach_the_credential_scan(self, tmp_path):

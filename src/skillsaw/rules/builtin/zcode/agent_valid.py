@@ -14,6 +14,7 @@ from typing import List
 
 from skillsaw.blocks import AgentBlock, ZCodeAgentBlock
 from skillsaw.context import RepositoryContext
+from skillsaw.formats.zcode import zcode_agent_line_values
 from skillsaw.lint_target import ZCodePluginConfigNode
 from skillsaw.paths import safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -71,9 +72,13 @@ class ZCodeAgentValidRule(Rule):
         for block in self._agents(context):
             name = block.path.name
             if block.frontmatter_error:
+                loose = zcode_agent_line_values(block.read_frontmatter_text())
+                if all(loose.get(key) for key in REQUIRED_FIELDS):
+                    continue
                 violations.append(
                     self.violation(
-                        f"Agent {name} has invalid frontmatter: {block.frontmatter_error}",
+                        f"Agent {name}: {block.frontmatter_error}; ZCode skips the agent "
+                        "unless it finds 'name' and 'description' lines",
                         block=block,
                         line=block.frontmatter_error_line,
                     )

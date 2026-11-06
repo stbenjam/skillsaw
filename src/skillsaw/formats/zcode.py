@@ -140,6 +140,10 @@ COMMANDS_DIR_NAME = "commands"
 #: ``:302-318``).
 AGENTS_DIR_NAME = "agents"
 AGENT_GLOBS = ("*.md", "*.markdown")
+#: ZCode reads subagent frontmatter one ``key: value`` line at a time, not
+#: as YAML, so frontmatter a YAML parser rejects can still load
+#: (``packages/shared/src/subagent-profile-frontmatter.ts:80-95``).
+_AGENT_FRONTMATTER_LINE_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)$")
 #: Project configuration (``packages/shared/src/workspace-hook-config.ts:178-183``).
 #: Its sibling ``zcode.json`` is deliberately not read: the name is generic
 #: enough that unrelated tools commit files called that.
@@ -374,3 +378,13 @@ def entry_local_source(entry: Dict[str, Any], base: Path) -> Optional[Path]:
         if isinstance(name, str) and name.strip() and not lexically_escapes(name.strip()):
             return base / name.strip()
     return None
+
+
+def zcode_agent_line_values(frontmatter: str) -> Dict[str, str]:
+    """Scalar ``key: value`` lines as ZCode's line reader sees them; the last one wins."""
+    values: Dict[str, str] = {}
+    for line in frontmatter.splitlines():
+        match = _AGENT_FRONTMATTER_LINE_RE.match(line.rstrip())
+        if match:
+            values[match.group(1)] = match.group(2).strip().strip("'\"").strip()
+    return values
