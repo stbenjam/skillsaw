@@ -461,6 +461,10 @@
     "suppression/single-rule": {
       "official": [],
       "skillsaw": []
+    },
+    "zcode/dual-manifest": {
+      "official": [],
+      "skillsaw": []
     }
   }
 }
