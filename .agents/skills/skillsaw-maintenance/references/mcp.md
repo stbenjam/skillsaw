@@ -65,3 +65,9 @@ Package `src/skillsaw/rules/builtin/mcp_registry/`:
   semantics by the parsed schema version rather than changing behavior globally, and
   add fixtures proving both the new behavior and retained behavior for every older
   supported version.
+- `mcp_registry/server_json_valid.py` hand-copies the registry's repository URL
+  validators (`_REPOSITORY_URLS`) from `internal/validators/utils.go` in
+  `modelcontextprotocol/registry`. Those run on every publish regardless of schema
+  version, so apply changes to all versions. Verified against registry v1.8.8:
+  GitHub takes exactly `owner/repo`; GitLab takes nested groups (v1.8.5, PR #1361)
+  but rejects any `/-/` segment.
