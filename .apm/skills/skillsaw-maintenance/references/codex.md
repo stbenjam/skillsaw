@@ -15,8 +15,9 @@ hedge (see Sync notes).
   the rendered HTML page summarizes poorly and has produced invented constraints
   (an `ON_FIRST_USE` value that appears nowhere in either source).
 - Field-level spec: `codex-rs/skills/src/assets/samples/plugin-creator/references/plugin-json-spec.md`
-  in https://github.com/openai/codex. Shipped inside the `plugin-creator` skill rather
-  than on the docs site, so it is easy to miss — and it is stricter than the prose spec:
+  in https://github.com/openai/codex at `rust-v0.154.0`. The `plugin-creator` sample
+  (this spec and `scripts/validate_plugin.py`) is gone from `rust-v0.159.0` onward, so
+  read it at that pinned tag; it is stricter than the prose spec:
   it enumerates `policy.authentication` as `ON_INSTALL` / `ON_USE`, documents `logoDark`,
   and requires strict semver for `version`. Check it on every sync; the two can drift
   apart from each other. Read the field guide and validator at the supported release
@@ -27,10 +28,12 @@ hedge (see Sync notes).
   https://github.com/openai/codex, again inside bundled skills rather than on the docs
   site: `codex-rs/skills/src/assets/samples/skill-creator/references/openai_yaml.md`
   gives the field-by-field descriptions, and
-  `codex-rs/skills/src/assets/samples/plugin-creator/scripts/validate_plugin.py` is the
-  executable validator — the actual origin of constraints the prose never states, such
-  as the `#RRGGBB` brand-color format (`HEX_COLOR_RE` at `validate_plugin.py:25`,
-  applied at `:522-527`). Check all three; each documents things the others omit.
+  `codex-rs/skills/src/assets/samples/plugin-creator/scripts/validate_plugin.py` at
+  `rust-v0.154.0` (removed in later releases) is the bundled validator, stricter than
+  the loader. The released loader states the `#RRGGBB` brand-color format:
+  `resolve_color_str` in `codex-rs/skills/src/interface.rs` at `rust-v0.167.0` drops a
+  `brand_color` that is not `#` plus six hex digits, with a warning. Check all three;
+  each documents things the others omit.
 - Reference corpus: https://github.com/openai/plugins — the official catalog (roughly
   180 plugins across `marketplace.json` and `api_marketplace.json`; the count moves).
   Use it to detect regressions, then assess findings against the applicable spec.
@@ -51,8 +54,8 @@ hedge (see Sync notes).
   Agent Plugins schema owns identity and the fixed `skills/` and `mcp.json` paths.
   An object-valued `extensions.com.openai` replaces the entire compatibility
   overlay, including when empty. Missing or non-object extensions fall back to
-  `.codex-plugin/plugin.json`. Only `apps`, `hooks`, and `interface` are taken from
-  either overlay; its identity, `skills`, and `mcpServers` do not override or add
+  `.codex-plugin/plugin.json`. Only `apps`, `hooks`, `onboarding_skill`, and
+  `interface` are taken from either overlay; its identity, `skills`, and `mcpServers` do not override or add
   portable components. Confirmed against Codex 0.154.0's
   [`agent_plugin_manifest.rs`](https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/core-plugins/src/agent_plugin_manifest.rs).
   `formats/codex_manifest.py` owns the selection used by discovery, rules and docs.
@@ -83,14 +86,16 @@ hedge (see Sync notes).
 - **`agents/openai.yaml`**: the `interface`, `policy`, and `dependencies` schema for
   skill metadata (and the observed plugin-root form). Re-check `_INTERFACE_STRINGS`,
   the `dependencies.tools` entry keys, and `_BRAND_COLOR` against `openai_yaml.md`
-  and `validate_plugin.py` — see the Sync notes.
+  and `interface.rs` — see the Sync notes.
 - **Hooks**: where Codex loads them from — `~/.codex/hooks.json`, inline `[hooks]`
   tables in `~/.codex/config.toml`, `<repo>/.codex/hooks.json`, `<repo>/.codex/config.toml`,
   and a plugin's `hooks/hooks.json` (or a manifest `hooks` entry: a `./`-prefixed path,
-  an array of such paths, an inline hooks object, or an array of inline objects). The 12
-  events: `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`, `PreToolUse`,
-  `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `UserPromptSubmit`,
-  `Stop`, `Interrupt`. `command` and `mcp_tool` handlers run; `prompt` and `agent` are
+  an array of such paths, an inline hooks object, or an array of inline objects). The 14
+  events, verified against `codex-rs/protocol/src/hooks.rs` at `rust-v0.167.0`:
+  `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`, `PreModelRequest`,
+  `PostModelRequest`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`,
+  `PostCompact`, `UserPromptSubmit`, `Stop`, `Interrupt`. `PreModelRequest` and
+  `PostModelRequest` (added in `rust-v0.164.0`) ignore `matcher`. `command` and `mcp_tool` handlers run; `prompt` and `agent` are
   parsed and skipped.
 - **Hook handler fields**: `command` handlers require `command` and take
   `commandWindows`, `timeout` (seconds, default `600`), `statusMessage`,
@@ -134,8 +139,8 @@ hedge (see Sync notes).
   and a `hooks.json` is dropped with the same message. Only on a handler type
   that owns the field — an `mcp_tool` handler carrying both spellings loads,
   because neither is a field of that variant.
-  Also confirmed against the binary in the same pass: the 12 event names as the
-  complete enum, the four handler types, the required fields per type, the
+  Also confirmed against the binary in the same pass: the 12 event names as
+  0.153.0's complete enum (two were added in `rust-v0.164.0`), the four handler types, the required fields per type, the
   `mcp_tool`-on-`SessionEnd` rejection, and the 3s `SessionEnd` clamp. Not
   measured, carried from the docs: the 1s default timeout, and the `matcher`
   semantics of the events that need a model turn.
@@ -254,15 +259,16 @@ Hand-copied value sets that drift — re-check each against upstream:
   a real file inside the plugin. Watch for fields being added to that list.
 - `_INTERFACE_STRINGS` in `codex/openai_metadata.py` = `display_name`,
   `short_description`, `icon_small`, `icon_large`, `brand_color`, `default_prompt`.
-  Must match `openai_yaml.md`'s field list and `validate_plugin.py`'s interface
-  allow-list — both change without a schema publication.
+  Must match `openai_yaml.md`'s field list and the `rust-v0.154.0` `validate_plugin.py`
+  interface allow-list — both change without a schema publication.
 - `dependencies.tools` entry keys in `codex/openai_metadata.py` = `type`, `value`,
   `description`, `transport`, `url` (each checked as a string). Hand-copied from
   `openai_yaml.md`.
 - `_BRAND_COLOR` in `codex/openai_metadata.py`: `#RRGGBB`, six hex digits, no
-  shorthand, no CSS keywords. Transcribed from `validate_plugin.py:25`
-  (`HEX_COLOR_RE`), applied at `:522-527` — the validator publishes no schema, so
-  this regex is the only statement of the rule and can drift silently.
+  shorthand, no CSS keywords. Matches `resolve_color_str` in
+  `codex-rs/skills/src/interface.rs` at `rust-v0.167.0`, which ignores any other value
+  with a warning; `rust-v0.154.0`'s `validate_plugin.py` (`HEX_COLOR_RE`, line 30)
+  agreed. No schema publishes the rule, so it can drift silently.
 - The `CODEX_HOOK_*` constants in `formats/codex.py` (events, handler types,
   required/optional per-handler fields, which events honor `matcher`, which reject
   `mcp_tool`, and the `SessionEnd`/`Interrupt` short-timeout events), read by
@@ -327,7 +333,7 @@ upstream requires and why skillsaw does not enforce it.
 - `default_prompt` is not required to mention `$skill-name`, though `openai_yaml.md`
   asks for it. A phrasing convention for the picker UI, not a correctness rule.
 - The plugin-root `agents/openai.yaml` form appears in the official catalog but in no
-  spec — `validate_plugin.py:454` reads only the skill-root path. skillsaw supports it
+  spec — `rust-v0.154.0`'s `validate_plugin.py:476` reads only the skill-root path. skillsaw supports it
   as observed catalog compatibility; do not tighten it to skill-root semantics without
   upstream documenting it.
 
