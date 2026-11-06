@@ -870,6 +870,25 @@ class TestMarketplace:
         # One finding per defect: no kebab-case warning on top of the error.
         assert not any("kebab-case" in m for m in messages)
 
+    def test_uninstallable_names_are_displayed_safely(self, tmp_path):
+        """Control characters in a reported name cannot reshape the output."""
+        repo = copy_fixture("marketplace/uninstallable-names", tmp_path)
+        path = repo / ".claude-plugin" / "marketplace.json"
+        data = json.loads(path.read_text())
+        data["name"] = "acme\ntools\x1b[31m"
+        data["plugins"][0]["name"] = "evil\u202ename"
+        path.write_text(json.dumps(data))
+        r = run_lint(repo)
+        bad = [
+            v["message"]
+            for v in violations(r)
+            if v["rule_id"] == "claude-marketplace-json-valid"
+            and "cannot be installed" in v["message"]
+        ]
+        assert len(bad) == 3, bad
+        for message in bad:
+            assert "\n" not in message and "\x1b" not in message and "\u202e" not in message
+
     def test_installable_names_pass(self, tmp_path):
         """Dots, underscores and capitals are installable; entry names may hold '..'."""
         repo = copy_fixture("marketplace/installable-names", tmp_path)

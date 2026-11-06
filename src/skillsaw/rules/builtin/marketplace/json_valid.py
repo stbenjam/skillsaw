@@ -10,6 +10,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 from skillsaw.rules.builtin.hooks.dangerous import dangerous_command_descriptions
+from skillsaw.diagnostics import safe_display
 from skillsaw.rules.builtin.utils import read_json
 
 _KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -180,7 +181,7 @@ class MarketplaceJsonValidRule(Rule):
             if not _PLUGIN_ID_PART.fullmatch(name) or ".." in name:
                 violations.append(
                     self.violation(
-                        f"Marketplace name '{name}' cannot be installed by "
+                        f"Marketplace name '{safe_display(name)}' cannot be installed by "
                         f"Claude Code: {_NAME_CHARS_HINT}, and do not use '..'",
                         file_path=marketplace_file,
                     )
@@ -188,7 +189,7 @@ class MarketplaceJsonValidRule(Rule):
             elif not _KEBAB_CASE.match(name):
                 violations.append(
                     self.violation(
-                        f"Marketplace name '{name}' should be kebab-case "
+                        f"Marketplace name '{safe_display(name)}' should be kebab-case "
                         "(lowercase letters, numbers, and hyphens)",
                         file_path=marketplace_file,
                         severity=Severity.WARNING,
@@ -273,7 +274,7 @@ class MarketplaceJsonValidRule(Rule):
                     if name in seen_names:
                         violations.append(
                             self.violation(
-                                f"plugins[{idx}] duplicate plugin name '{name}' "
+                                f"plugins[{idx}] duplicate plugin name '{safe_display(name)}' "
                                 f"(first defined at plugins[{seen_names[name]}])",
                                 file_path=marketplace_file,
                             )
@@ -283,7 +284,7 @@ class MarketplaceJsonValidRule(Rule):
                     if not _PLUGIN_ID_PART.fullmatch(name):
                         violations.append(
                             self.violation(
-                                f"plugins[{idx}] plugin name '{name}' cannot be installed "
+                                f"plugins[{idx}] plugin name '{safe_display(name)}' cannot be installed "
                                 f"by Claude Code: {_NAME_CHARS_HINT}",
                                 file_path=marketplace_file,
                             )
