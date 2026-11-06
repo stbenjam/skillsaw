@@ -17,10 +17,11 @@ Pi project settings should match the Pi 1.5.0 settings schema
 
 Pi does not validate `settings.json`. A mistyped value, such as
 `"quietStartup": "yes"` or `"compaction": {"enabled": "true"}`, is read as
-written and misbehaves at runtime instead of producing an error. Pi 1.5.0
-generates a JSON Schema from its settings types and publishes it at
-`https://pi.dev/schemas/settings.schema.json`. This rule checks project
-`.pi/settings.json` against a copy of that schema bundled with skillsaw.
+written and misbehaves at runtime instead of producing an error. Pi generates
+a JSON Schema from its settings types. This rule checks project
+`.pi/settings.json` against the schema from the Pi 1.5.0 release tag, bundled
+with skillsaw. Pi also hosts the schema at
+`https://pi.dev/schemas/settings.schema.json`, but that copy can lag a release.
 
 ## Checks
 
