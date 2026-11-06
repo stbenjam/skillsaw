@@ -958,6 +958,23 @@ def test_settings_schema_skips_parse_errors(tmp_path):
     assert [v["rule_id"] for v in violations] == ["pi-config-valid"]
 
 
+@pytest.mark.parametrize(
+    "value", ["C:\\outside\\CHANGELOG.md", "C:CHANGELOG.md", "\\\\server\\share\\CHANGELOG.md"]
+)
+def test_windows_absolute_changelog_path_is_outside_on_any_host(value, tmp_path):
+    root = copy_fixture("changelog", tmp_path)
+    if os.name != "nt":
+        # On POSIX the backslashes are filename characters; a namesake file
+        # must not make the Windows path look contained.
+        (root / value).write_text("# Changelog\n")
+    manifest = json.loads((root / "package.json").read_text())
+    manifest["pi"]["changelogPath"] = value
+    (root / "package.json").write_text(json.dumps(manifest))
+    _, violations = _cli_violations(root, "pi-resource-paths")
+    assert len(violations) == 1
+    assert "(outside the package)" in violations[0]["message"]
+
+
 def test_changelog_path_inside_package_is_valid(tmp_path):
     root = copy_fixture("changelog", tmp_path)
     result, violations = _cli_violations(root, "pi-config-valid", "pi-resource-paths")

@@ -5,7 +5,7 @@ from typing import List
 from skillsaw.blocks.pi import PiPackageBlock, PiSettingsBlock
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
-from skillsaw.paths import contained_resolve, safe_exists, safe_is_file
+from skillsaw.paths import contained_resolve, is_absolute_path, safe_exists, safe_is_file
 from skillsaw.discovery.pi import local_path
 from skillsaw.formats.pi import RESOURCE_FIELDS, REMOTE_PREFIXES, settings_resources, string_list
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -73,9 +73,12 @@ class PiResourcePathsRule(Rule):
                     root = context.resolve_path(block.path.parent)
                     target = block.path.parent / changelog
                     shown = f"changelogPath: {safe_display(changelog)!r}"
-                    if root is None or contained_resolve(target, root, context.resolve_path) in (
-                        None,
-                        root,
+                    # An absolute path, in either platform's spelling, cannot
+                    # follow the package to wherever Pi installs it.
+                    if (
+                        root is None
+                        or is_absolute_path(changelog)
+                        or contained_resolve(target, root, context.resolve_path) in (None, root)
                     ):
                         missing.append(f"{shown} (outside the package)")
                     elif not context.is_path_excluded(target) and not safe_is_file(target):
