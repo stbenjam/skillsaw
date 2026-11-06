@@ -10,7 +10,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 
 
 class CodexProjectInstructionsRule(Rule):
-    since = "0.21.1"
+    since = "0.22.0"
     default_enabled = False
     repo_types = frozenset({RepositoryType.AGENTS_MD, RepositoryType.CODEX_PROJECT})
 

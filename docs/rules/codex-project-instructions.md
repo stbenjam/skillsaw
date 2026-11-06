@@ -9,7 +9,7 @@ Diagnose Codex instruction selection and the cumulative project byte limit
 |---|---|
 | **Severity** | warning (disabled) |
 | **Autofix** | - |
-| **Since** | v0.21.1 |
+| **Since** | v0.22.0 |
 | **Repo Types** | agents-md, codex-project |
 | **Category** | [OpenAI Codex](codex.md) |
 
