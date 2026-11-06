@@ -54,10 +54,12 @@ hedge (see Sync notes).
   Agent Plugins schema owns identity and the fixed `skills/` and `mcp.json` paths.
   An object-valued `extensions.com.openai` replaces the entire compatibility
   overlay, including when empty. Missing or non-object extensions fall back to
-  `.codex-plugin/plugin.json`. Only `apps`, `hooks`, `onboarding_skill`, and
-  `interface` are taken from either overlay; its identity, `skills`, and `mcpServers` do not override or add
+  `.codex-plugin/plugin.json`. Only `apps`, `hooks`, and `interface` are taken from
+  either overlay; its identity, `skills`, and `mcpServers` do not override or add
   portable components. Confirmed against Codex 0.154.0's
   [`agent_plugin_manifest.rs`](https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/core-plugins/src/agent_plugin_manifest.rs).
+  The overlay also supplies `onboardingSkill` since the
+  [Codex 0.162.1 manifest resolver](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core-plugins/src/manifest.rs).
   `formats/codex_manifest.py` owns the selection used by discovery, rules and docs.
   Its `CODEX_PORTABLE_SCHEMA_VERSIONS` is `1.0.0` for Codex 0.154.0, from
   `codex-rs/utils/plugins/src/plugin_namespace.rs`; the bundled Agent Plugins
@@ -105,8 +107,9 @@ hedge (see Sync notes).
   1-second timeout and cap configured timeouts at 3 seconds; `SessionEnd` rejects
   `mcp_tool` handlers. `matcher` is honored on `PermissionRequest`, `PostToolUse`,
   `PreToolUse`, `PreCompact`/`PostCompact` (compaction trigger), `SessionStart`,
-  `SubagentStart`/`SubagentStop`, and `SessionEnd`; `UserPromptSubmit`, `Stop`, and
-  `Interrupt` ignore any configured `matcher`.
+  `SubagentStart`/`SubagentStop`, and `SessionEnd`; `UserPromptSubmit`, `Stop`,
+  `Interrupt`, `PreModelRequest`, and `PostModelRequest` ignore any configured
+  `matcher`.
 - **Hook failure scopes** — measured against codex-cli 0.153.0 (canary hooks in a
   trusted project, offline). Three scopes, and they are what `codex-hooks-valid`'s
   severities and messages encode:
