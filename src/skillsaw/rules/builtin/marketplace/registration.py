@@ -192,7 +192,7 @@ class MarketplaceRegistrationRule(Rule):
             fixed_violations.append(v)
 
         if fixed_violations:
-            fixed = json.dumps(data, indent=2) + "\n"
+            fixed = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
             results.append(
                 AutofixResult(
                     rule_id=self.rule_id,

@@ -1226,6 +1226,30 @@ def _marketplace_with_raw_json(temp_dir, marketplace_text):
     return temp_dir
 
 
+def test_marketplace_registration_fix_keeps_non_ascii_text(temp_dir):
+    """The fix keeps unrelated non-ASCII text as written instead of escaping it."""
+    import json
+
+    text = (
+        json.dumps(
+            {
+                "name": "café-tools",
+                "owner": {"name": "Zoë Müller"},
+                "plugins": [],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
+    repo = _marketplace_with_raw_json(temp_dir, text)
+    rule = MarketplaceRegistrationRule()
+    context = RepositoryContext(repo)
+    (fix,) = rule.fix(context, rule.check(context))
+    assert '"name": "Zoë Müller"' in fix.fixed_content
+    assert "\\u" not in fix.fixed_content
+
+
 def test_marketplace_registration_fix_registers_plugin(marketplace_repo):
     """fix() appends an entry using the plugin's repo-relative path as source,
     preserves existing registrations, and resolves the violation on re-lint."""

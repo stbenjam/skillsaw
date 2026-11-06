@@ -182,7 +182,7 @@ class AgentSkillRenameRefsRule(Rule):
                     sk = data.get("skill_name", "")
                     if sk in rename_map:
                         data["skill_name"] = rename_map[sk]
-                        fixed = json.dumps(data, indent=2) + "\n"
+                        fixed = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
                     else:
                         continue
                 except (json.JSONDecodeError, KeyError):
