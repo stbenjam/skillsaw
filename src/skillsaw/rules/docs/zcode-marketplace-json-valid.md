@@ -16,11 +16,9 @@ in three cases:
 
 ## Severity
 
-All findings are errors: each one is a marketplace or plugin ZCode cannot add
-or install.
+**Errors**: each one is a marketplace or plugin ZCode cannot add or install.
 
 - Invalid JSON, a catalog that is not an object, or an invalid `name`.
-- `plugins` that is neither an array nor an object keyed by plugin name.
 - An entry that is not an object or has no `name`.
 - A `source` kind ZCode does not install (`npm`, `pip`, or an unknown kind),
   or a recognised kind missing its locator: `repo` for `github`, `url` for
@@ -30,6 +28,9 @@ or install.
   the plugin.
 - A listed plugin with no manifest and no `"strict": false`.
 - A listed plugin whose manifest `name` differs from the entry's `name`.
+
+**Warnings**: `plugins` that is neither an array nor an object keyed by
+plugin name. ZCode still adds the marketplace, with no plugins in it.
 
 Remote sources (`github`, `git`, `url`, `git-subdir`) and absolute
 `directory` sources are not checked, because they do not resolve inside the

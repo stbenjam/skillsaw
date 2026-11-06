@@ -89,7 +89,7 @@ class ZCodeMarketplaceJsonValidRule(Rule):
                     "'plugins' must be an array of entries (or an object keyed by plugin name); "
                     "ZCode adds this marketplace with no plugins",
                     path,
-                    severity=Severity.WARNING,
+                    severity=self.scope_severity(Severity.WARNING),
                 )
             )
             return violations

@@ -113,7 +113,7 @@ class ZCodeAgentValidRule(Rule):
                         "ZCode ignores the value",
                         block=block,
                         line=memory.field_line,
-                        severity=Severity.WARNING,
+                        severity=self.scope_severity(Severity.WARNING),
                     )
                 )
         return violations

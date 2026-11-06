@@ -107,7 +107,7 @@ class ZCodePluginJsonValidRule(Rule):
                     self.violation(
                         f"'{key}' is not loaded by ZCode; the component is ignored",
                         path,
-                        severity=Severity.WARNING,
+                        severity=self.scope_severity(Severity.WARNING),
                     )
                 )
         plugin_dir = node.plugin_dir
@@ -137,7 +137,7 @@ class ZCodePluginJsonValidRule(Rule):
                             )
                             + ". Move the file into the plugin",
                             path,
-                            severity=None if executable else Severity.WARNING,
+                            severity=None if executable else self.scope_severity(Severity.WARNING),
                         )
                     )
                 elif field == "hooks" and not safe_is_file(plugin_dir / raw):
@@ -162,7 +162,7 @@ class ZCodePluginJsonValidRule(Rule):
                                 else "is not a file; ZCode reports an MCP read error"
                             ),
                             path,
-                            severity=Severity.WARNING if missing else None,
+                            severity=self.scope_severity(Severity.WARNING) if missing else None,
                         )
                     )
                 elif field == "skills" and not safe_exists(plugin_dir / raw):
@@ -170,7 +170,7 @@ class ZCodePluginJsonValidRule(Rule):
                         self.violation(
                             f"'skills' names {safe_display(raw)!r}, which does not exist",
                             path,
-                            severity=Severity.WARNING,
+                            severity=self.scope_severity(Severity.WARNING),
                         )
                     )
         for conventional in ("/".join(zcode.CONVENTIONAL_HOOKS), zcode.CONVENTIONAL_MCP):
@@ -250,7 +250,7 @@ class ZCodePluginJsonValidRule(Rule):
                             "plugin: ZCode loads it, but skillsaw cannot lint it. Move the file "
                             "into the plugin",
                             node.path,
-                            severity=Severity.WARNING,
+                            severity=self.scope_severity(Severity.WARNING),
                         )
                     )
         return violations
