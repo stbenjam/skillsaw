@@ -148,3 +148,25 @@ def test_project_config_symlinked_out_of_the_repository_is_reported(tmp_path):
     os.symlink(outside, repo / ".zcode" / "config.json")
     found = messages(lint(repo), "zcode-config-valid")
     assert any("symlink out of the repository" in m for m in found)
+
+
+def test_oauth_client_secret_is_scanned(tmp_path):
+    write_json(
+        tmp_path / ".zcode" / "config.json",
+        {
+            "mcp": {
+                "servers": {
+                    "api": {
+                        "type": "http",
+                        "url": "https://api.example.com/mcp",
+                        "oauth": {
+                            "type": "client_credentials",
+                            "clientId": "harbor",
+                            "clientSecret": "s3cr3t-live-client-value-9f8e7d6c",
+                        },
+                    }
+                }
+            }
+        },
+    )
+    assert any("clientSecret" in m for m in messages(lint(tmp_path), "mcp-valid-json"))

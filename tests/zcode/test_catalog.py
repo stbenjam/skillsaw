@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from ._helpers import lint, messages, rule_ids, zcode_catalog
+from ._helpers import lint, messages, rule_ids, write_json, zcode_catalog, zcode_plugin
 
 
 def test_unhashable_source_kind_is_a_finding_not_a_crash(tmp_path):
@@ -68,3 +68,28 @@ def test_source_locators_and_url_subtypes_follow_the_resolver(tmp_path):
     assert any("'zip-no-digest'" in m and "'sha256'" in m for m in found)
     assert any("'odd-type'" in m and "must be git or zip" in m for m in found)
     assert not any("'git-url'" in m for m in found)
+
+
+def test_forced_marketplace_type_attaches_listed_plugins(tmp_path):
+    """No marker declares the catalog, so the forced type brings its plugins."""
+    from skillsaw.context import RepositoryContext, RepositoryType
+    from skillsaw.lint_target import ZCodePluginConfigNode
+
+    plugin = tmp_path / "plugins" / "tide-charts"
+    (plugin / "commands").mkdir(parents=True)
+    write_json(
+        tmp_path / "marketplace.json",
+        {"name": "harbor", "plugins": [{"name": "tide-charts", "source": "./plugins/tide-charts"}]},
+    )
+    context = RepositoryContext(tmp_path, repo_types={RepositoryType.ZCODE_MARKETPLACE})
+    dirs = {n.plugin_dir for n in context.lint_tree.find(ZCodePluginConfigNode)}
+    assert plugin in dirs
+
+
+def test_non_regular_catalog_is_not_read(tmp_path):
+    import os
+
+    zcode_plugin(tmp_path / "plugins" / "anchor", name="anchor")
+    os.mkfifo(tmp_path / "marketplace.json")
+    found = messages(lint(tmp_path), "zcode-marketplace-json-valid")
+    assert any("not a regular file" in m for m in found)

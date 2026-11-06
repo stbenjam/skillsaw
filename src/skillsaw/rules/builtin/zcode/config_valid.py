@@ -232,7 +232,10 @@ class ZCodeConfigValidRule(Rule):
                 return "has no 'type' and neither a 'command' nor a 'url' to infer one from"
         if kind not in _SERVER_KEYS:
             return f"'type' must be stdio, http or sse (got {safe_display(kind)!r})"
-        unknown = sorted(set(server) - _SERVER_KEYS[kind] - _NORMALIZED_KEYS)
+        keys = set(server)
+        if "environment" in keys and "env" not in keys:
+            keys.add("env")  # ZCode renames it before validating
+        unknown = sorted(keys - _SERVER_KEYS[kind] - _NORMALIZED_KEYS)
         if unknown:
             return f"unknown key(s) for {_ARTICLE[kind]} {kind} server: {', '.join(safe_display(k) for k in unknown)}"
         field = "command" if kind == "stdio" else "url"

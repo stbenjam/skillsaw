@@ -13,7 +13,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.formats import zcode
 from skillsaw.lint_target import ZCodeMarketplaceConfigNode
 from skillsaw.diagnostics import safe_display
-from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
+from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.utils import read_json_strict
 
@@ -52,6 +52,9 @@ class ZCodeMarketplaceJsonValidRule(Rule):
                     path,
                 )
             ]
+        if not safe_is_file(path):
+            # A directory, FIFO or device: reading it could hang the lint.
+            return [self.violation("marketplace.json is not a regular file", path)]
         # ``JSON.parse``: non-finite tokens are syntax errors, repeated keys are not.
         data, error = read_json_strict(path, allow_duplicate_keys=True)
         if error:

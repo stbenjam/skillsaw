@@ -1686,6 +1686,12 @@ class ZCodeConfigMcpBlock(McpBlock):
         ("environment", False),
         ("headers", True),
         ("http_headers", True),
+        ("oauth", False),
+    )
+    #: ZCode's OAuth fields are camelCase; the shared detector recognises
+    #: the snake_case spelling.
+    credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {"clientSecret": "client_secret"}
     )
 
     def server_entries(self) -> List[Tuple[str, Any]]:

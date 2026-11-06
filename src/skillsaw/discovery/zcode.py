@@ -33,6 +33,7 @@ from skillsaw.paths import (
     contained_resolve,
     safe_exists,
     safe_is_dir,
+    safe_is_file,
     safe_is_symlink,
     safe_resolve,
 )
@@ -89,8 +90,8 @@ def zcode_local_sources(catalog_files: Iterable[Path]) -> List[Path]:
     resolved: List[Path] = []
     for catalog in catalog_files:
         marketplace_root = safe_resolve(catalog.parent)
-        if marketplace_root is None:
-            continue
+        if marketplace_root is None or not safe_is_file(catalog):
+            continue  # a FIFO or device would block the read
         data, error = read_json(catalog)
         if error or not isinstance(data, dict):
             continue

@@ -115,3 +115,25 @@ def test_routing_leaves_zcode_plugin_agent_descriptions_to_the_agent_rule(tmp_pa
         for v in report["violations"]
         if v["rule_id"] == "content-description-routing"
     )
+
+
+def test_missing_and_directory_mcp_paths_are_reported(tmp_path):
+    zcode_plugin(tmp_path, mcpServers=["servers.json", "config"])
+    (tmp_path / "config").mkdir()
+    found = {
+        v["message"]: v["severity"]
+        for v in lint(tmp_path)["violations"]
+        if v["rule_id"] == "zcode-plugin-json-valid" and "'mcpServers'" in v["message"]
+    }
+    assert any("'servers.json'" in m and s == "warning" for m, s in found.items())
+    assert any("'config'" in m and s == "error" for m, s in found.items())
+
+
+def test_marker_backed_plugin_stays_in_the_tree_under_a_type_override(tmp_path):
+    from skillsaw.context import RepositoryContext, RepositoryType
+    from skillsaw.lint_target import ZCodePluginConfigNode
+
+    plugin = zcode_plugin(tmp_path / "packages" / "tide-charts")
+    context = RepositoryContext(tmp_path, repo_types={RepositoryType.AGENTSKILLS})
+    dirs = {n.plugin_dir for n in context.lint_tree.find(ZCodePluginConfigNode)}
+    assert plugin in dirs

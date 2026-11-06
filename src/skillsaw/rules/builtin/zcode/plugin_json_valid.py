@@ -135,6 +135,23 @@ class ZCodePluginJsonValidRule(Rule):
                             path,
                         )
                     )
+                elif field == "mcpServers" and not safe_is_file(plugin_dir / raw):
+                    # A missing file loads no servers silently; anything else
+                    # unreadable is a ``plugin_mcp_read_failed`` error
+                    # (``adapters/src/plugins/mcp.ts:99-119`` in ``zai-org/ZCode``).
+                    missing = not safe_exists(plugin_dir / raw)
+                    violations.append(
+                        self.violation(
+                            f"'mcpServers' names {safe_display(raw)!r}, which "
+                            + (
+                                "does not exist; ZCode loads no servers from it"
+                                if missing
+                                else "is not a file; ZCode reports an MCP read error"
+                            ),
+                            path,
+                            severity=Severity.WARNING if missing else None,
+                        )
+                    )
                 elif field == "skills" and not safe_exists(plugin_dir / raw):
                     violations.append(
                         self.violation(

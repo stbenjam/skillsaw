@@ -77,3 +77,13 @@ def test_matcher_group_keys_oauth_grants_and_shadowed_aliases(tmp_path):
     assert not any("'imported'" in m for m in found)
     assert any("'badtype'" in m for m in found)
     assert not any("t0ken-value" in m for m in found)
+
+
+def test_environment_on_a_remote_server_is_rejected_as_env(tmp_path):
+    """ZCode renames ``environment`` to ``env``, which a remote server rejects."""
+    write_json(
+        tmp_path / ".zcode" / "config.json",
+        {"mcp": {"servers": {"docs": {"url": "https://e.com/mcp", "environment": {"A": "b"}}}}},
+    )
+    found = messages(lint(tmp_path), "zcode-config-valid")
+    assert any("'docs'" in m and "env" in m for m in found)

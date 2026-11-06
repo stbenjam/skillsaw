@@ -475,14 +475,9 @@ class RepositoryContext(
             if dropped:
                 # Prune skills owned by plugins that just left the Codex set;
                 # otherwise they attach as standalone nodes and keep linting
-                # the very content the exclusion removed. Skills of a
-                # dual-host plugin that remains an active Claude or Pi package still
-                # have a surviving owner and must not be pruned.
-                surviving_roots = {
-                    r
-                    for p in (*self.plugins, *self.pi_discovery_roots())
-                    if (r := safe_resolve(p)) is not None
-                }
+                # the very content the exclusion removed. Skills a plugin
+                # still owns through another ecosystem must not be pruned.
+                surviving_roots = self._live_plugin_roots()
                 self.skills = [
                     sk
                     for sk in self.skills

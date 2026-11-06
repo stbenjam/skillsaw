@@ -118,7 +118,11 @@ class RepositoryZCodeMixin:
             for path in zcode_discovery.discover_zcode_plugins(
                 self.root_path,
                 self._zcode_marker_dirs(),
-                self.zcode_local_source_dirs(),
+                # A forced ``--type zcode-marketplace`` lints a catalog no
+                # marker declares; its local plugins come with it.
+                zcode_discovery.zcode_local_sources(
+                    [*self._zcode_catalog_files(), *self.zcode_marketplace_paths()]
+                ),
                 forced=self._zcode_plugin_forced,
             )
             if not self.is_path_excluded(path)
@@ -135,6 +139,15 @@ class RepositoryZCodeMixin:
         if self._zcode_claims is None:
             claims = {r for r in (safe_resolve(p) for p in self.zcode_plugins) if r is not None}
             claims.update(self.zcode_local_source_dirs())
+            # Marker-backed roots are declarations, so they stay claimed when
+            # a ``--type`` override switches discovery off.
+            claims.update(
+                r
+                for p in zcode_discovery.discover_zcode_plugins(
+                    self.root_path, self._zcode_marker_dirs(), ()
+                )
+                if (r := safe_resolve(p)) is not None
+            )
             self._zcode_claims = claims
         return self._zcode_claims
 
