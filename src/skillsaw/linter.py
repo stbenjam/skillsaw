@@ -1140,19 +1140,19 @@ class Linter:
 
     @staticmethod
     def _dedupe_source_editorial(violations):
-        """Keep the source's identical editorial finding on a shared file.
+        """Keep the source's copy of a finding a shared file reports twice.
 
-        Native parser views remain complete. Line findings match their physical
-        location; whole-file findings also require identical prose views. A
-        different interpretation or a security/policy finding survives. This
-        confers no generated ownership.
+        A file that is both a generator source and a native file (such as
+        ``.ruler/AGENTS.md``) is linted through both views. Line findings match
+        their physical location; whole-file findings also require identical
+        prose views. A finding that differs in rule, message, severity or
+        fingerprint survives. This confers no generated ownership.
         """
         from .blocks.generators import is_generator_source
         from .blocks import ContentBlock
-        from .generated import EDITORIAL_COPY_RULES
 
         def key(v):
-            if v.rule_id not in EDITORIAL_COPY_RULES or v.block is None:
+            if v.block is None:
                 return None
             location = v.file_line
             if location is None:

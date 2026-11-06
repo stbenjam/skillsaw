@@ -37,6 +37,7 @@ EDITORIAL_COPY_RULES = frozenset(
         "content-negative-only",
         "content-progressive-disclosure",
         "content-repeated-directive",
+        "content-section-length",
         "content-tautological",
         "content-weak-language",
     }
