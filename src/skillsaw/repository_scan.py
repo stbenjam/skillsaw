@@ -238,6 +238,7 @@ class RepositoryScanMixin:
             self._repository_scan().tool_dirs,
             self._repository_scan().legacy_editor_files,
             self._repository_scan().skills_lock_files,
+            (p.generator for p in self.generator_projects()),
             resolve=self.resolve_path,
         )
         if self.codex_instructions is not None:

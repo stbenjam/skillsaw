@@ -13,6 +13,7 @@ from typing import Iterator, List, Tuple
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    ContentBlock,
     iter_frontmatter_strings,
     gather_all_content_blocks,
     FrontmatterField,
@@ -333,6 +334,8 @@ class SecurityEncodedPayloadRule(Rule):
                     )
                 )
         for fld in context.lint_tree.find(FrontmatterField):
+            if isinstance(fld, ContentBlock):
+                continue  # Prose field values were scanned above.
             # Every embedded string once: str(value) renders a YAML alias DAG as
             # a tree, 9^levels leaves from a 430-byte frontmatter block.
             text = "\n".join(iter_frontmatter_strings(fld.value))

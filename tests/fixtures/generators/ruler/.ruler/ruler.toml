@@ -1,0 +1,15 @@
+default_agents = ["codex", "claude"]
+
+[gitignore]
+enabled = false
+[backup]
+enabled = false
+[skills]
+enabled = false
+[agents]
+enabled = false
+
+[mcp_servers.docs]
+url = "https://docs.example.com/mcp"
+[mcp_servers.docs.headers]
+X-Project = "inventory"

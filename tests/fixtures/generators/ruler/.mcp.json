@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "docs": {
+      "url": "https://docs.example.com/mcp",
+      "headers": {
+        "X-Project": "inventory"
+      },
+      "type": "http"
+    }
+  }
+}
