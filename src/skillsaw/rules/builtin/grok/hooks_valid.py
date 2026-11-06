@@ -5,6 +5,7 @@ Validates lifecycle hooks in `.grok/hooks/*.json` against Grok Build's
 supported events, alias tables, and handler fields.
 """
 
+import sys
 from typing import Any, Dict, List, Optional, Set
 
 from skillsaw.blocks import json_token
@@ -367,6 +368,9 @@ def _field_type_problem(key: str, value: Any) -> Optional[str]:
         # Any non-negative number of seconds, ``1.5`` included. ``bool`` is
         # an ``int`` subclass, and ``timeout: true`` is not a duration.
         if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+            # Grok decodes into an f64; Python keeps an integer of any size.
+            if isinstance(value, int) and value > sys.float_info.max:
+                return "must be a non-negative number within the f64 range"
             return None
         return f"must be a non-negative number, got {safe_display(repr(value))}"
     if expected is dict:

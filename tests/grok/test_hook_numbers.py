@@ -25,6 +25,7 @@ from tests.test_integration import copy_fixture
         ("1e-300", True),
         ("null", True),
         ("18446744073709551616", True),
+        ("1" + "0" * 309, False),
         ("-1", False),
         ("-0.5", False),
         ("true", False),
