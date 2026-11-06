@@ -163,7 +163,7 @@ jobs:
       # with GITHUB_TOKEN: those pushes would not trigger the pull_request
       # workflow verified below. The post-step fails closed if a changed PR
       # head was not pushed locally or did not trigger unprivileged tests.
-      - uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+      - uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
         with:
           prompt: |
             Use the skillsaw-pr-followup skill. Follow every step in the skill.

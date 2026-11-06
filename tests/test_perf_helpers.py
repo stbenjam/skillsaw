@@ -443,6 +443,39 @@ class TestFindCache:
 class TestAdversarialInputStaysLinear:
     """Shapes a repository can contain that used to cost seconds to hours."""
 
+    @pytest.mark.parametrize("host", ["kiro", "cursor", "goose"])
+    def test_embedded_identities_reuse_lines_and_refresh_after_edits(self, tmp_path, host):
+        from skillsaw.blocks.content import CursorPromptHookBlock
+        from skillsaw.blocks.goose import GooseRecipeProseBlock
+        from skillsaw.blocks.kiro import KiroInlinePromptBlock
+
+        class CountingText(str):
+            splits = 0
+
+            def split(self, *args, **kwargs):
+                self.splits += 1
+                return super().split(*args, **kwargs)
+
+        block_type = {
+            "kiro": KiroInlinePromptBlock,
+            "cursor": CursorPromptHookBlock,
+            "goose": GooseRecipeProseBlock,
+        }[host]
+        text = CountingText("\n".join(f"Inspect request {index}." for index in range(200)))
+        block = block_type(path=tmp_path / "prompt.json", body=text)
+        original_doc = block.markdown
+        splits = text.splits
+        identities = [block.fingerprint_identity(line) for line in range(1, 201)]
+        assert len(set(identities)) == 200
+        assert text.splits == splits
+
+        block.body = CountingText("Updated request validation.\nInspect permissions.")
+        assert block.fingerprint_identity(1) != identities[0]
+        assert block.markdown is not original_doc
+        changed_splits = block.body.splits
+        assert "Inspect permissions." in block.fingerprint_identity(2)
+        assert block.body.splits == changed_splits
+
     def test_imperative_regex_is_linear_on_a_whitespace_run(self):
         """A 20 KB single-line HTML comment is blanked to spaces for prose; the
         old `^\\s*[-*]?\\s*` backtracked O(n^2) on it (54 s per line)."""

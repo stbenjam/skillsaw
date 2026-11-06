@@ -186,7 +186,12 @@ RULE_GROUPS = [
     (
         "Cursor",
         "cursor",
-        ["cursor-rules-valid", "cursor-hooks-valid", "cursor-plugin-json-valid", "cursor-marketplace-json-valid"],
+        [
+            "cursor-rules-valid",
+            "cursor-hooks-valid",
+            "cursor-plugin-json-valid",
+            "cursor-marketplace-json-valid",
+        ],
         "Validates native `.cursor-plugin` manifests, marketplaces and component "
         "paths. It also validates Cursor configuration under every `.cursor/` "
         "directory in the repository, the root one and any in a monorepo "
@@ -360,9 +365,23 @@ RULE_GROUPS = [
     (
         "OpenClaw",
         "openclaw",
-        ["openclaw-metadata", "openclaw-manifest-valid", "openclaw-package-valid", "openclaw-resources"],
+        [
+            "openclaw-metadata",
+            "openclaw-manifest-valid",
+            "openclaw-package-valid",
+            "openclaw-resources",
+        ],
         "Native plugin manifests, package entrypoints, resource paths, and skill metadata. "
         "The metadata rule applies only when `metadata.openclaw` is present in SKILL.md.",
+    ),
+    (
+        "Kiro",
+        "kiro",
+        ["kiro-agent-valid", "kiro-mcp-valid", "kiro-references"],
+        "Opt-in checks for native Kiro JSON/Markdown agents, literal local references, "
+        "and workspace/agent MCP field types. Recursive steering and nested project "
+        "resources also receive shared content and MCP security checks. "
+        "See [Kiro support](../kiro.md) for CLI 2.x/V3 compatibility and runtime limits.",
     ),
     (
         "OpenCode",
@@ -431,7 +450,6 @@ RULE_GROUPS = [
         "and paths that remain portable across machines. Lockfiles are discovered "
         "recursively for monorepos and the rule auto-enables when one is present.",
     ),
-
 ]
 
 CONTENT_RULE_IDS = [
@@ -958,7 +976,9 @@ GUIDES = [
         "the .skillsaw.yaml file: rules, severities, exclusions, suppression",
     ),
     ("Repository Types", "repo-types.md", "how skillsaw detects what it is linting"),
+    ("Kiro Support", "kiro.md", "native Kiro formats, version boundaries, and static checks"),
     ("CI Integration", "ci.md", "GitHub Actions, GitLab CI, and PR review comments"),
+    ("Editor Diagnostics", "editor.md", "install and use the VS Code diagnostics pilot"),
     ("Pre-commit", "pre-commit.md", "run skillsaw as a pre-commit hook"),
     ("CLI Reference", "cli.md", "every command and flag"),
     ("Custom Rules", "custom-rules.md", "write project-local rules in Python"),
@@ -1389,6 +1409,12 @@ def main():
     # Inject stats into index
     inject_stats(docs_dir / "index.md", rules_data)
     print("  index.md (stats injected)")
+
+    # Keep the packaged extension README and the site/llms guides in sync.
+    (docs_dir / "editor.md").write_text(
+        GENERATED_HEADER + (ROOT / "editors/vscode/README.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
     # llms.txt endpoints — generated last: llms-full.txt reads the pages the
     # steps above just wrote to disk.
