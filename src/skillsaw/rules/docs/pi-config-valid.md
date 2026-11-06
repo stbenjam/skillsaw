@@ -24,8 +24,9 @@ This rule names the field and the expected type before Pi runs.
   A `null` package filter still warns, because Pi drops that package.
 - Pi only tests `autoload === false`, so a non-boolean `autoload` warns: Pi
   loads that package as if autoload were on.
-- `pi.changelogPath` must be a string when present. Pi 1.5.0 ignores any other
-  value and reads `CHANGELOG.md` from the package root.
+- `pi.changelogPath` must be a string or `null`. Pi 1.5.0 ignores any other
+  value and reads `CHANGELOG.md` from the package root; `null` is accepted
+  because it behaves exactly like an absent key.
 
 Unknown npm fields, Pi gallery metadata, and unrelated settings are accepted;
 enable `pi-settings-schema` to check other settings against Pi's schema.
