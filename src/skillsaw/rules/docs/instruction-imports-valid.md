@@ -25,7 +25,7 @@ supposed to provide are missing, and no error is surfaced.
 
 Both line-start imports (`@docs/guidelines.md`) and mid-line references
 (`Review @docs/checklist.md`) are validated, matching the
-[Claude Code import semantics](https://docs.anthropic.com/en/docs/claude-code/memory#imports)
+[Claude Code import semantics](https://code.claude.com/docs/en/memory#imports)
 where `@path` references are resolved regardless of position in the line.
 
 The exact local override names `CLAUDE.local.md` and `AGENTS.local.md` may be

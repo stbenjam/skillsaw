@@ -182,6 +182,9 @@ skillsaw init
 # Verbose output (includes info-level findings)
 skillsaw -v
 
+# Quiet output for CI logs: silent when clean, findings and summary otherwise
+skillsaw -q
+
 # Strict mode (warnings become errors)
 skillsaw --strict
 

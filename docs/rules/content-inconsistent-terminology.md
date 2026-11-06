@@ -111,7 +111,7 @@ two different terms refer to the same concept from broader context.
 - [Curse of Instructions](https://openreview.net/forum?id=R6q67CDBCH) (ICLR
   2025) — Contradictions compound multiplicatively
 - [TextUnited: Why Consistent Terminology Matters in Technical
-  Documentation](https://textunited.com/en/blog/why-consistent-terminology-is-critical-for-technical-documentation)
+  Documentation](https://www.textunited.com/en/blog/why-consistent-terminology-is-critical-for-technical-documentation)
   — "Inconsistent terminology can confuse readers, forcing them to guess whether
   different terms refer to the same concept"
 

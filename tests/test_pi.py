@@ -634,7 +634,10 @@ def test_deterministic_compile_failure_is_cached(monkeypatch):
     pi_patterns.reset_pattern_state()
 
 
-_CATASTROPHIC = "*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*b"
+# wcmatch 11.2+ wraps the span between two plain stars in an atomic group,
+# which makes "*a*a...*b" linear; an extglob group in each span opts out of
+# that, so this stays catastrophic on every supported wcmatch.
+_CATASTROPHIC = "*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*b"
 _FILLER = "a" * 41
 
 

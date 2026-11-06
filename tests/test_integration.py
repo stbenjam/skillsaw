@@ -5866,6 +5866,43 @@ class TestOutputFormats:
         quiet_info = [v for v in violations(quiet) if v["severity"] == "info"]
         assert len(verbose_info) > len(quiet_info)
 
+    def test_quiet_clean_run_prints_nothing(self, tmp_path):
+        repo = copy_fixture("single-plugin/clean", tmp_path)
+        report = tmp_path / "report.json"
+        r = run_lint(repo, "--quiet", "--output", str(report), verbose=False, fmt="text")
+        assert r["rc"] == 0
+        assert r["stdout"] == ""
+        # Report files are still written in full.
+        assert "violations" in json.loads(report.read_text())
+
+    def test_quiet_prints_findings_and_summary_only(self, tmp_path):
+        repo = copy_fixture("single-plugin/broken", tmp_path)
+        loud = run_lint(repo, verbose=False, fmt="text")
+        r = run_lint(repo, "-q", verbose=False, fmt="text")
+        assert r["rc"] == loud["rc"] == 1
+        assert "skillsaw " not in r["stdout"].splitlines()[0]
+        assert "Linting:" not in r["stdout"]
+        assert "Scanned:" not in r["stdout"]
+        assert "Errors:" in r["stdout"]
+        assert "Summary:" in r["stdout"]
+        finding_lines = [line for line in loud["stdout"].splitlines() if line.startswith("  ✗")]
+        assert finding_lines
+        assert all(line in r["stdout"] for line in finding_lines)
+
+    def test_quiet_with_verbose_shows_info_findings(self, tmp_path):
+        repo = copy_fixture("single-plugin/clean", tmp_path)
+        r = run_lint(repo, "-q", verbose=True, fmt="text")
+        assert r["rc"] == 0
+        assert "Info:" in r["stdout"]
+        assert "Scanned:" not in r["stdout"]
+        assert "All checks passed" in r["stdout"]
+
+    def test_quiet_leaves_json_output_unchanged(self, tmp_path):
+        repo = copy_fixture("single-plugin/clean", tmp_path)
+        r = run_lint(repo, "-q", verbose=False)
+        assert "stats" in r["out"]
+        assert "summary" in r["out"]
+
     def test_sarif_output(self, tmp_path):
         repo = copy_fixture("single-plugin/broken", tmp_path)
         sarif_path = tmp_path / "report.sarif"
@@ -10138,6 +10175,108 @@ class TestCodexRootWithClaudeMarketplace:
         assert len(findings) == 1
         assert findings[0]["rule_id"] == "claude-plugin-json-required"
         assert findings[0]["file_path"] == "plugins/claude-helper/.claude-plugin/plugin.json"
+
+
+@pytest.mark.integration
+class TestCodexOnboarding:
+    def test_legacy_nested_directory_alias_and_file_symlink_membership(self, tmp_path):
+        repo = copy_fixture("codex/onboarding", tmp_path)
+        (repo / "plugin.json").unlink()
+        manifest = repo / ".codex-plugin/plugin.json"
+        original = repo / "skills/get-started"
+        destination = repo / "resources/get-started"
+        destination.parent.mkdir()
+        original.rename(destination)
+        original.symlink_to("../resources/get-started", target_is_directory=True)
+        shutil.copytree(repo / "skills/connect-account", destination / "connect-account")
+        data = json.loads(manifest.read_text())
+        data["extensions"]["com.openai"][
+            "onboardingSkill"
+        ] = "./resources/get-started/connect-account/SKILL.md"
+        manifest.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 0 and result["out"]["violations"] == []
+
+        entrypoint = destination / "connect-account/SKILL.md"
+        entrypoint.rename(repo / "welcome.md")
+        entrypoint.symlink_to("../../../welcome.md")
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 1
+        findings = result["out"]["violations"]
+        assert len(findings) == 1
+        assert "not a bundled skill" in findings[0]["message"]
+
+    def test_skill_content_is_validated_by_existing_skill_rule(self, tmp_path):
+        repo = copy_fixture("codex/onboarding", tmp_path)
+        skill = repo / "skills/get-started/SKILL.md"
+        skill.write_text("# Get started\n\nChoose the folder for meeting notes.\n")
+        result = run_lint(repo, "--rule", "agentskill-valid")
+        assert result["rc"] == 1
+        assert any(
+            v["file_path"] == "skills/get-started/SKILL.md"
+            and "Missing YAML frontmatter" in v["message"]
+            for v in result["out"]["violations"]
+        )
+
+    @pytest.mark.parametrize("layout", ["portable", "fallback", "legacy"])
+    def test_effective_reference_and_diagnostic_location(self, tmp_path, layout):
+        repo = copy_fixture("codex/onboarding", tmp_path)
+        portable = repo / "plugin.json"
+        manifest = portable
+        if layout == "legacy":
+            portable.unlink()
+            manifest = repo / ".codex-plugin/plugin.json"
+        elif layout == "fallback":
+            data = json.loads(portable.read_text())
+            data.pop("extensions")
+            portable.write_text(json.dumps(data))
+            manifest = repo / ".codex-plugin/plugin.json"
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 0 and result["out"]["violations"] == []
+
+        data = json.loads(manifest.read_text())
+        data["extensions"]["com.openai"]["onboardingSkill"] = "./skills/missing/SKILL.md"
+        manifest.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 1
+        findings = result["out"]["violations"]
+        assert len(findings) == 1
+        assert findings[0]["file_path"] == manifest.relative_to(repo).as_posix()
+        assert "onboardingSkill" in findings[0]["message"]
+        assert "SKILL.md" in findings[0]["message"]
+        assert not findings[0]["fixable"]
+
+    def test_shadowed_invalid_reference_and_empty_inline_object(self, tmp_path):
+        repo = copy_fixture("codex/onboarding", tmp_path)
+        fallback = repo / ".codex-plugin/plugin.json"
+        data = json.loads(fallback.read_text())
+        data["extensions"]["com.openai"]["onboardingSkill"] = False
+        fallback.write_text(json.dumps(data))
+        portable = repo / "plugin.json"
+        data = json.loads(portable.read_text())
+        data["extensions"]["com.openai"] = {}
+        portable.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "codex-plugin-json-valid")
+        assert result["rc"] == 0 and result["out"]["violations"] == []
+
+    def test_installed_plugin_remains_unmodified_by_fix(self, tmp_path):
+        source = copy_fixture("codex/onboarding", tmp_path)
+        manifest = source / "plugin.json"
+        data = json.loads(manifest.read_text())
+        data["extensions"]["com.openai"]["onboardingSkill"] = "../outside/SKILL.md"
+        manifest.write_text(json.dumps(data))
+        repo = tmp_path / "installed"
+        installed = repo / ".codex/plugins/workspace-notes"
+        installed.parent.mkdir(parents=True)
+        source.rename(installed)
+        before = {
+            p.relative_to(installed): p.read_bytes() for p in installed.rglob("*") if p.is_file()
+        }
+        result = _run_fix(repo, "--rule", "codex-plugin-json-valid")
+        assert result.returncode == 0, result.stderr
+        assert {
+            p.relative_to(installed): p.read_bytes() for p in installed.rglob("*") if p.is_file()
+        } == before
 
 
 @pytest.mark.integration

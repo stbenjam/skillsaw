@@ -75,10 +75,10 @@ line must earn its place."*
   Tokens](https://arxiv.org/abs/2402.14848) (arXiv:2402.14848, ACL 2024) —
   Reasoning degrades at ~3,000 prompt tokens
 - [Anthropic: Effective Context Engineering for AI
-  Agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  Agents](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)
   (2025) — "Keep your context informative, yet tight"
 - [Claude Code Best
-  Practices](https://docs.anthropic.com/en/docs/claude-code/best-practices) —
+  Practices](https://code.claude.com/docs/en/best-practices) —
   "Every line must earn its place"
 
 

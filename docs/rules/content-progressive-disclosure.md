@@ -109,7 +109,7 @@ rules:
 ```
 
 Ref: [The new rules of context engineering for Claude 5 generation
-models](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models)
+models](https://claude.dev/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models/)
 
 ## Configuration
 
