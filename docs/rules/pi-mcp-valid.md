@@ -37,12 +37,15 @@ available. This opt-in rule checks the field contract in Pi 1.5.0.
   combined with `oauth.clientId` or `oauth.clientName`.
 - An entry without `command`, `url`, or `type` overrides the global server of
   the same name and may set only `enabled`, `exposure`, and `toolExposure`.
-  Whether that global server exists is outside the repository and unchecked.
+  That global server keeps its namespace, so a project server or second
+  override differing only in `-`/`_` conflicts with it. Whether that global
+  server exists is outside the repository and unchecked.
 - Provider `auth` is unavailable in project HTTP definitions. Pi also rejects
   a truthy `auth` on stdio entries retaining a `url` property.
 - A UTF-8 BOM is accepted; Pi strips it before parsing.
 
-Unknown fields and fields belonging to the unselected transport are ignored.
+In a full server definition, unknown fields and fields belonging to the
+unselected transport are ignored; an override rejects any key beyond its three.
 An empty command, an omitted server map, and duplicate keys with the last value
 winning match Pi's parser behavior. URI parsing and OAuth callback URI semantics
 remain with Pi's WHATWG URL parser.

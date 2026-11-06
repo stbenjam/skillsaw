@@ -30,8 +30,11 @@ HTTP provider `auth` refusal; OAuth field types and callback-port bounds;
 `oauth.clientRegistration` values and the `cimd` exclusion of `clientId` and
 `clientName`; and `OVERRIDE_KEYS` with the `isOverride` test in `config.ts`.
 A project entry without `command`, `url`, or `type` overrides the global
-server of that name, so it may set only those keys and reserves no namespace.
-Whether the global server exists is user configuration and stays unchecked.
+server of that name, so it may set only those keys. A valid override keeps
+that global server, which Pi loads first, so its normalized namespace stays
+taken: a project server differing only in `-`/`_`, or a second such override,
+conflicts. Whether the global server exists is user configuration and stays
+unchecked.
 Pi 1.4 strips a leading UTF-8 BOM before parsing either `mcp.json`.
 Pi 1.0 adds `oauth.authServerMetadataUrl`: a string naming an HTTPS metadata
 document, with HTTP permitted on `localhost`, `127.0.0.1`, and `[::1]`.

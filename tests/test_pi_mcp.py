@@ -308,6 +308,30 @@ def test_override_reserves_namespace(tmp_path, override_first):
     }
 
 
+def test_invalid_override_reserves_no_namespace(tmp_path):
+    root = copy_fixture("mcp-valid", tmp_path)
+    path = root / ".pi/mcp.json"
+    path.write_text(
+        json.dumps({"mcpServers": {"docs-api": {"enabled": "no"}, "docs_api": {"command": "node"}}})
+    )
+    _, findings = lint(root, "--rule", "pi-mcp-valid")
+    assert messages(findings) == {"Pi skips MCP server 'docs-api': enabled must be a boolean"}
+
+
+def test_overrides_in_one_namespace_conflict(tmp_path):
+    # Global names cannot clash, so only one override can match a global server.
+    root = copy_fixture("mcp-valid", tmp_path)
+    path = root / ".pi/mcp.json"
+    path.write_text(
+        json.dumps({"mcpServers": {"docs-api": {"enabled": False}, "docs_api": {"enabled": True}}})
+    )
+    _, findings = lint(root, "--rule", "pi-mcp-valid")
+    assert messages(findings) == {
+        "Pi skips MCP server 'docs_api': name conflicts with 'docs-api'; "
+        "Pi treats hyphens and underscores as the same namespace"
+    }
+
+
 def test_pi_1_5_oauth_client_registration_cli(tmp_path):
     root = copy_fixture("mcp-client-registration", tmp_path)
     _, findings = lint(root, "--rule", "pi-mcp-valid", "--rule", "mcp-valid-json")

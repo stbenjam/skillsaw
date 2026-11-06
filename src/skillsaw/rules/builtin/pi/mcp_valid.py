@@ -203,12 +203,17 @@ class PiMcpValidRule(Rule):
             entries = list(block.server_entries())
             # A valid override keeps the global server of that exact name, which
             # Pi loads before any project server, so its namespace is taken
-            # wherever the override sits in the file.
-            seen = {
-                name.replace("-", "_"): name
-                for name, server in entries
-                if _NAME.fullmatch(name) is not None and _is_override(server)
-            }
+            # wherever the override sits in the file. Global names cannot clash
+            # with one another, so of two overrides in one namespace only the
+            # first can refer to a surviving global server.
+            seen = {}
+            for name, server in entries:
+                if (
+                    _NAME.fullmatch(name) is not None
+                    and _is_override(server)
+                    and _problem(server) is None
+                ):
+                    seen.setdefault(name.replace("-", "_"), name)
             for name, server in entries:
                 problem = (
                     "use only letters, digits, underscores, and hyphens in the server name"
@@ -216,10 +221,8 @@ class PiMcpValidRule(Rule):
                     else _problem(server)
                 )
                 namespace = name.replace("-", "_")
-                # Overrides replace a global server by name; they are reserved above.
-                certain = (
-                    problem is None and not _is_override(server) and _namespace_certain(server)
-                )
+                override = _is_override(server)
+                certain = problem is None and (override or _namespace_certain(server))
                 if certain and seen.get(namespace, name) != name:
                     problem = (
                         f"name conflicts with '{safe_display(seen[namespace])}'; "
