@@ -5,8 +5,8 @@ Every vocabulary below is Claude Code's: the event list (``Setup``,
 ``InstructionsLoaded``, ``PermissionDenied``, ``TeammateIdle`` and the rest),
 the handler types (``command``, ``http``, ``mcp_tool``, ``prompt``,
 ``agent``), and the per-handler fields (``url``, ``headers``,
-``allowedEnvVars``, ``asyncRewake``, ``model``). No other host reads that
-set — Codex runs only ``command`` and ``mcp_tool`` handlers on a shorter
+``allowedEnvVars``, ``asyncRewake``, ``onFailure``, ``model``). No other
+host reads that set — Codex runs only ``command`` and ``mcp_tool`` handlers on a shorter
 event list, Muse Code, Cursor and Grok Build have their own — so the rule
 iterates :class:`ClaudeHooksBlock` and leaves each of those to its own rule
 (``codex-hooks-valid``, ``muse-hooks-valid``, ``cursor-hooks-valid``,
@@ -77,6 +77,7 @@ _TYPE_SPECIFIC_FIELDS = {
     "async": {"command"},
     "asyncRewake": {"command"},
     "shell": {"command"},
+    "onFailure": {"command", "http"},
     "url": {"http"},
     "headers": {"http"},
     "allowedEnvVars": {"http"},
@@ -100,6 +101,11 @@ _OPTIONAL_FIELD_TYPES = {
     "headers": dict,
     "allowedEnvVars": list,
     "input": dict,
+}
+
+# Optional fields restricted to a fixed set of string values
+_OPTIONAL_FIELD_CHOICES = {
+    "onFailure": ("continue", "block"),
 }
 
 
@@ -318,6 +324,21 @@ class ClaudeHooksValidRule(Rule):
                                     self.violation(
                                         f"Event '{hook_path}' field '{field}' "
                                         f"must be a {type_name}",
+                                        file_path=block.path,
+                                    )
+                                )
+
+                        for field, choices in _OPTIONAL_FIELD_CHOICES.items():
+                            # Claude Code ignores the field on other handler types.
+                            if field not in hook or hook_type not in _TYPE_SPECIFIC_FIELDS[field]:
+                                continue
+                            value = hook[field]
+                            if not isinstance(value, str) or value not in choices:
+                                violations.append(
+                                    self.violation(
+                                        f"Event '{hook_path}' field '{field}' has "
+                                        f"invalid value '{safe_display(value)}'. "
+                                        f"Valid values: {', '.join(choices)}",
                                         file_path=block.path,
                                     )
                                 )

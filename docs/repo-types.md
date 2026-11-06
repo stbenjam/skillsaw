@@ -328,9 +328,9 @@ checkouts Muse made for child agents and is skipped.
 Muse uses the nested hooks format Claude Code pioneered, with its own
 lifecycle events, matcher-group keys and handler fields.
 [`muse-hooks-valid`](rules/muse-hooks-valid.md) checks the file against them.
-This matters more than it sounds: Muse prints no diagnostic for anything it
-refuses, so a rejected file, a dropped matcher group and a skipped handler
-all look like a hook that had nothing to do. The commands themselves are
+This matters more than it sounds: Muse reports a refused file or entry only
+as a startup warning, so in a headless run a rejected file, a dropped matcher
+group and a skipped handler all look like a hook that had nothing to do. The commands themselves are
 scanned by [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md), including the
 `commandWindows` variant.

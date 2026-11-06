@@ -28,6 +28,14 @@ consume the marketplace cannot list or install plugins.
 Fix the JSON syntax error or add the missing required fields reported
 in the violation message.
 
+Claude Code installs a plugin by its id, `plugin@marketplace`, so both
+names must use only letters, digits, `.`, `_`, and `-`, and start with a
+letter or digit. The marketplace `name` must also not contain `..`.
+`claude plugin validate` fails any other name, and Claude Code can't
+install from it, so this rule reports it at the rule's severity. A name
+that is installable but not kebab-case, such as `my.market_1`, gets only
+a kebab-case warning.
+
 Plugin entries are also validated: every entry needs a unique `name`
 and a `source`. A string source is a path relative to the marketplace
 root — it should start with `./` and must not be an absolute path or
@@ -42,6 +50,12 @@ Code's reviewability constraints: printable ASCII, at most 500 characters,
 and no run of four spaces. Its optional `timeout` is a whole number from 1
 through 600 and `mode` is `copy` or `link`. Download-and-execute,
 obfuscation, and other dangerous command patterns are errors.
+
+Write an entry's `hooks` as an inline object that maps hook event names
+to matcher arrays. `claude plugin validate` accepts a file path or an
+array there, but the plugin then fails to load with a `not yet supported
+in a marketplace entry` error. Put file-based hooks in the plugin's own
+`hooks/hooks.json` or `plugin.json` instead.
 
 When `metadata.pluginRoot` is set, it is prepended to relative
 sources, so bare names like `"formatter"` are valid and the `./`

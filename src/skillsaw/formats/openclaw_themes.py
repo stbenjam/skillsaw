@@ -1,4 +1,4 @@
-"""Native theme declarations from OpenClaw v2026.9.7's manifest-themes.ts.
+"""Native theme declarations from OpenClaw v2026.11.1's manifest-themes.ts.
 
 Only declarations belong to the manifest loading contract. Missing or invalid
 theme JSON/SVG files omit a theme with a warning, rather than rejecting a plugin.
@@ -18,8 +18,10 @@ from skillsaw.utils import cached_file_read
 
 MAX_THEMES = 32
 MAX_ARTWORK = 8
-THEME_FIELDS = frozenset({"id", "name", "description", "source", "hats", "critters"})
+THEME_FIELDS = frozenset({"id", "name", "description", "source", "icons", "hats", "critters"})
+ARTWORK_KINDS = ("icons", "hats", "critters")
 CRITTER_FIELDS = frozenset({"source", "title", "crossMs"})
+BUILTIN_ICONS = frozenset({"claw", "mark"})
 BUILTIN_HATS = frozenset({"fedora", "crown", "santa", "party", "pumpkin"})
 BUILTIN_CRITTERS = frozenset({"penguin", "fedora"})
 LOCAL_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
@@ -51,7 +53,11 @@ def _display_text(value: object, limit: int) -> bool:
 
 
 def _artwork_error(theme: dict, label: str) -> str | None:
-    for kind, builtin in (("hats", BUILTIN_HATS), ("critters", BUILTIN_CRITTERS)):
+    for kind, builtin in (
+        ("icons", BUILTIN_ICONS),
+        ("hats", BUILTIN_HATS),
+        ("critters", BUILTIN_CRITTERS),
+    ):
         if kind not in theme:
             continue
         entries = theme[kind]
@@ -60,7 +66,7 @@ def _artwork_error(theme: dict, label: str) -> str | None:
         for identifier, value in entries.items():
             if ARTWORK_ID.fullmatch(identifier) is None or identifier in builtin:
                 return f"'{label}.{kind}' needs lowercase artwork IDs of 1–32 characters outside the built-in catalog"
-            if kind == "hats":
+            if kind != "critters":
                 source = value
             else:
                 if not isinstance(value, dict) or value.keys() - CRITTER_FIELDS:
@@ -119,7 +125,7 @@ def _duplicate_artwork_error(path: Path) -> str | None:
             if not isinstance(theme, _Pairs):
                 continue
             for kind, entries in theme:
-                if kind not in {"hats", "critters"} or not isinstance(entries, _Pairs):
+                if kind not in ARTWORK_KINDS or not isinstance(entries, _Pairs):
                     continue
                 seen = set()
                 for identifier, _ in entries:
@@ -155,7 +161,9 @@ def theme_manifest_error(data: dict, path: Path) -> str | None:
         if not isinstance(theme, dict):
             return f"'{label}' must be an object"
         if theme.keys() - THEME_FIELDS:
-            return f"'{label}' supports only id, name, description, source, hats, and critters"
+            return (
+                f"'{label}' supports only id, name, description, source, icons, hats, and critters"
+            )
         local_id = theme.get("id")
         if not isinstance(local_id, str) or LOCAL_ID.fullmatch(local_id) is None or local_id in ids:
             return f"'{label}.id' must be a unique lowercase ID of 1–64 letters, digits, underscores, or hyphens, starting with a letter or digit"
@@ -168,5 +176,5 @@ def theme_manifest_error(data: dict, path: Path) -> str | None:
         error = _artwork_error(theme, label)
         if error:
             return error
-        has_artwork = has_artwork or "hats" in theme or "critters" in theme
+        has_artwork = has_artwork or any(kind in theme for kind in ARTWORK_KINDS)
     return _duplicate_artwork_error(path) if has_artwork else None

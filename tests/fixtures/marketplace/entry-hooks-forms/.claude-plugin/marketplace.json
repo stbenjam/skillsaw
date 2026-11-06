@@ -1,0 +1,28 @@
+{
+  "name": "acme-hooks",
+  "owner": {"name": "ACME Corp", "url": "https://acme.example.com"},
+  "plugins": [
+    {
+      "name": "format-on-save",
+      "source": {"source": "github", "repo": "acme/format-on-save"},
+      "description": "Run the project formatter after every edit",
+      "hooks": "./hooks/hooks.json"
+    },
+    {
+      "name": "audit-trail",
+      "source": {"source": "github", "repo": "acme/audit-trail"},
+      "description": "Record tool calls to an audit log",
+      "hooks": ["./hooks/pre.json", "./hooks/post.json"]
+    },
+    {
+      "name": "lint-guard",
+      "source": {"source": "github", "repo": "acme/lint-guard"},
+      "description": "Lint changed files before the session ends",
+      "hooks": {
+        "Stop": [
+          {"hooks": [{"type": "command", "command": "npm run lint"}]}
+        ]
+      }
+    }
+  ]
+}
