@@ -32,6 +32,11 @@ file counts as invalid JSON: Claude Code's parser rejects the whole file.
 A legal numeric literal such as `1e400` in ignored extension metadata is
 accepted, as are quoted strings containing the words `NaN` or `Infinity`.
 
+A `matcher` must be a string. Claude Code ignores an entry whose `matcher`
+is an array, object, number or `null`, so none of its hooks run. Write
+alternatives as one regular expression (`"Edit|Write"`), or omit `matcher`
+to match everything.
+
 The event names, the handler types (`command`, `http`, `mcp_tool`,
 `prompt`, `agent`) and the per-handler fields checked here are Claude
 Code's. Codex, Muse Code and Grok Build read the same nested shape with

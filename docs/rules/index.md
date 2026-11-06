@@ -54,7 +54,7 @@ skillsaw includes **117** built-in rules organized into the following categories
 | [`claude-plugin-naming`](claude-plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - | Claude Code |
 | [`claude-plugin-readme`](claude-plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - | Claude Code |
 | [`claude-command-naming`](claude-command-naming.md) | Command files should use kebab-case naming | warning | auto | Claude Code |
-| [`claude-command-frontmatter`](claude-command-frontmatter.md) | Command files must have valid frontmatter with description | error | auto | Claude Code |
+| [`claude-command-frontmatter`](claude-command-frontmatter.md) | Command files must have valid frontmatter with description | warning | auto | Claude Code |
 | [`claude-command-sections`](claude-command-sections.md) | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - | Claude Code |
 | [`claude-command-name-format`](claude-command-name-format.md) | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - | Claude Code |
 | [`claude-agent-frontmatter`](claude-agent-frontmatter.md) | Agent files need valid frontmatter and description; project agents also need name | error | auto | Claude Code |

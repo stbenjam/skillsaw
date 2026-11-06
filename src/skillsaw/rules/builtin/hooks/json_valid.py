@@ -116,6 +116,18 @@ def _check_field_type(value, expected_type):
     return isinstance(value, expected_type) and not isinstance(value, bool)
 
 
+# JSON type names for parsed values, for messages.
+_JSON_TYPE_NAMES = {
+    type(None): "null",
+    bool: "boolean",
+    int: "number",
+    float: "number",
+    str: "string",
+    list: "array",
+    dict: "object",
+}
+
+
 def _format_type_name(expected_type):
     """Format expected type for error messages."""
     if isinstance(expected_type, tuple):
@@ -222,6 +234,20 @@ class ClaudeHooksValidRule(Rule):
                             )
                         )
                         continue
+
+                    if "matcher" in hook_config and not isinstance(hook_config["matcher"], str):
+                        # Claude Code drops the whole entry, so none of its
+                        # handlers run (`claude plugin validate`: "entry
+                        # ignored at runtime"). Omit `matcher` to match all.
+                        got = _JSON_TYPE_NAMES.get(type(hook_config["matcher"]), "value")
+                        violations.append(
+                            self.violation(
+                                f"Event '{event_type}[{idx}].matcher' must be a string, "
+                                f"got {got} — Claude Code ignores this entry and runs "
+                                "none of its hooks",
+                                file_path=block.path,
+                            )
+                        )
 
                     if "hooks" not in hook_config:
                         violations.append(

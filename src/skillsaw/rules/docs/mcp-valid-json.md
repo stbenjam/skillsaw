@@ -66,13 +66,15 @@ or a clearly recognizable placeholder instead.
 {"mcpServers": {"my-server": {"type": "gopher", "command": "x"}}}
 ```
 
-An empty `command` is a narrower case: the key is present, so the
-presence-only check passes it in a Claude-family file. The editor files
-(`.cursor/mcp.json`, `.vscode/mcp.json`), Codex-only plugins, and every
-Grok plugin surface require the value to name something spawnable: a
-non-empty `command` string or `url`. Grok's surfaces are its manifest's
-`mcpServers` path and inline map, which only Grok reads whatever else
-claims the directory, and a Grok-only plugin's conventional `.mcp.json`.
+A present but unusable `command` is also reported: `"command": ""` or
+`"command": []` names nothing a host can spawn, and Claude Code's plugin
+loader drops the server without an error. An empty `url` is reported only
+where the host requires one: the editor files (`.cursor/mcp.json`,
+`.vscode/mcp.json`), Codex-only plugins and Grok plugins. In a
+Claude-family file, `"url": ""` passes `claude plugin validate` and is a
+common placeholder for a connector the user configures. Google Antigravity
+loads a server with no connection field, so its `mcp_config.json` is
+exempt.
 
 **Good:**
 

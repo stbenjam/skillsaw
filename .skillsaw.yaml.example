@@ -113,7 +113,7 @@ rules:
   # Command files must have valid frontmatter with description
   claude-command-frontmatter:
     enabled: true
-    severity: error
+    severity: warning
 
   # Command Name section should be 'plugin-name:command-name'
   claude-command-name-format:

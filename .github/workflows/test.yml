@@ -76,6 +76,37 @@ jobs:
           fail_ci_if_error: false
           use_oidc: true
 
+  claude-conformance:
+    # Compares the Claude fixtures with Claude Code's own validator at the
+    # version pinned in tests/claude_conformance.json (docs/claude-validate.md).
+    # The script fails rather than skips when the CLI is missing or differs.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Install package and dependencies
+        run: make venv VENV_EXTRAS=test
+
+      - name: Install the pinned Claude Code CLI
+        # The lockfile pins the version and integrity hashes; the script
+        # fails if it differs from the manifest's claude_code_version.
+        run: npm ci --prefix .github/claude-code --no-audit --no-fund
+
+      - name: Compare with claude plugin validate
+        env:
+          DISABLE_AUTOUPDATER: "1"
+        run: .venv/bin/python scripts/claude-conformance.py --claude .github/claude-code/node_modules/.bin/claude
+
   lint:
     runs-on: ubuntu-latest
 

@@ -2,14 +2,68 @@
 Rule: plugin-json-valid
 """
 
-from typing import List
+import json
+import re
+from pathlib import Path
+from typing import Dict, Iterator, List, Tuple
 
+from skillsaw.blocks import McpBlock
+from skillsaw.diagnostics import safe_display
+from skillsaw.discovery.claude import claude_declared_mcp_files
+from skillsaw.paths import has_parent_traversal, is_absolute_path, safe_exists
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.utils import read_json
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import PluginNode
 
 from ._helpers import PLUGIN_REPO_TYPES
+
+# Manifest fields whose string values are paths to plugin components.
+# `claude plugin validate` 2.1.319 checks each for '..' and existence.
+_COMPONENT_PATH_FIELDS = (
+    "commands",
+    "agents",
+    "skills",
+    "hooks",
+    "mcpServers",
+    "outputStyles",
+    "lspServers",
+)
+
+# How many undeclared keys one finding names before summarizing the rest.
+_MAX_KEYS_SHOWN = 5
+
+_USER_CONFIG_REF = re.compile(r"\$\{user_config\.([A-Za-z0-9_.-]+)\}")
+
+
+def _servers_without_channels(payload) -> dict:
+    """The server map in *payload*, minus each server's ``channels`` field.
+
+    A server's ``channels`` entry may declare its own options, so a
+    ``${user_config.KEY}`` there is not an undeclared reference. Accepts a
+    ``{"mcpServers": {...}}`` document or a bare server map.
+    """
+    servers = payload.get("mcpServers") if isinstance(payload, dict) else None
+    if not isinstance(servers, dict):
+        servers = payload if isinstance(payload, dict) else {}
+    return {
+        name: (
+            {k: v for k, v in server.items() if k != "channels"}
+            if isinstance(server, dict)
+            else server
+        )
+        for name, server in servers.items()
+    }
+
+
+def _component_paths(data: dict) -> Iterator[Tuple[str, str]]:
+    """(field, path) for every string path a component field lists."""
+    for field in _COMPONENT_PATH_FIELDS:
+        value = data.get(field)
+        values = [value] if isinstance(value, str) else value if isinstance(value, list) else []
+        for entry in values:
+            if isinstance(entry, str):
+                yield field, entry
 
 
 class PluginJsonValidRule(Rule):
@@ -45,6 +99,14 @@ class PluginJsonValidRule(Rule):
         if not isinstance(recommended_fields, list):
             recommended_fields = self.config_schema["recommended-fields"]["default"]
 
+        # MCP documents in the lint tree by resolved path. The tree holds
+        # only contained, non-excluded files, so this never reads outside it.
+        mcp_by_path: Dict[Path, McpBlock] = {}
+        for block in context.lint_tree.find(McpBlock):
+            resolved = context.resolve_path(block.path)
+            if resolved is not None and block.raw_data:
+                mcp_by_path.setdefault(resolved, block)
+
         for plugin_node in context.lint_tree.find(PluginNode):
             plugin_path = plugin_node.path
             plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
@@ -71,6 +133,9 @@ class PluginJsonValidRule(Rule):
                     violations.append(
                         self.violation(f"Missing required field '{field}'", file_path=plugin_json)
                     )
+
+            if "name" in data and not isinstance(data["name"], str):
+                violations.append(self.violation("'name' must be a string", file_path=plugin_json))
 
             # Check recommended fields (warning)
             for field in recommended_fields:
@@ -104,4 +169,70 @@ class PluginJsonValidRule(Rule):
                         )
                     )
 
+            violations.extend(self._check_component_paths(data, plugin_path, plugin_json))
+            # The files Claude Code reads servers from, matched by path: the
+            # block class says which host's rules apply, not which file this is.
+            claude_mcp = [plugin_path / ".mcp.json", *claude_declared_mcp_files(plugin_path)]
+            resolved_mcp = dict.fromkeys(context.resolve_path(path) for path in claude_mcp)
+            owned = [mcp_by_path[path] for path in resolved_mcp if path in mcp_by_path]
+            violations.extend(self._check_user_config_refs(data, owned, plugin_json))
+
+        return violations
+
+    def _check_component_paths(
+        self, data: dict, plugin_path: Path, plugin_json: Path
+    ) -> List[RuleViolation]:
+        """A component path outside the plugin or missing fails to load."""
+        violations = []
+        for field, entry in _component_paths(data):
+            shown = safe_display(entry)
+            if is_absolute_path(entry) or has_parent_traversal(entry):
+                message = (
+                    f"'{field}' path '{shown}' leaves the plugin directory — "
+                    "Claude Code does not load it"
+                )
+            elif not safe_exists(plugin_path / entry):
+                message = (
+                    f"'{field}' path '{shown}' does not exist — Claude Code "
+                    "reports a load failure"
+                )
+            else:
+                continue
+            violations.append(self.violation(message, file_path=plugin_json))
+        return violations
+
+    def _check_user_config_refs(
+        self, data: dict, mcp_blocks: List[McpBlock], plugin_json: Path
+    ) -> List[RuleViolation]:
+        """An MCP server that reads an undeclared user_config key is dropped.
+
+        Reads the inline ``mcpServers`` map and the plugin's MCP files from
+        the lint tree, so excluded or escaping files are never read.
+        """
+        declared = data.get("userConfig")
+        declared = set(declared) if isinstance(declared, dict) else set()
+        sources = []
+        if isinstance(data.get("mcpServers"), dict):
+            sources.append((plugin_json, data["mcpServers"]))
+        sources.extend((block.path, block.raw_data) for block in mcp_blocks)
+
+        violations = []
+        for path, payload in sources:
+            text = json.dumps(_servers_without_channels(payload))
+            if "user_config" not in text:
+                continue
+            missing = sorted(set(_USER_CONFIG_REF.findall(text)) - declared)
+            if not missing:
+                continue
+            keys = ", ".join(f"'{safe_display(key)}'" for key in missing[:_MAX_KEYS_SHOWN])
+            if len(missing) > _MAX_KEYS_SHOWN:
+                keys += f" and {len(missing) - _MAX_KEYS_SHOWN} more"
+            violations.append(
+                self.violation(
+                    f"MCP configuration references user_config {keys}, which "
+                    "plugin.json does not declare under 'userConfig' — Claude Code "
+                    "cannot resolve it on a fresh install and drops the server",
+                    file_path=path,
+                )
+            )
         return violations

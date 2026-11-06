@@ -995,6 +995,11 @@ GUIDES = [
     ),
     ("Kiro Support", "kiro.md", "native Kiro formats, version boundaries, and static checks"),
     ("CI Integration", "ci.md", "GitHub Actions, GitLab CI, and PR review comments"),
+    (
+        "Claude Code Validator",
+        "claude-validate.md",
+        "where skillsaw overlaps `claude plugin validate`, and the conformance check",
+    ),
     ("Editor Diagnostics", "editor.md", "install and use the VS Code diagnostics pilot"),
     ("Pre-commit", "pre-commit.md", "run skillsaw as a pre-commit hook"),
     ("CLI Reference", "cli.md", "every command and flag"),

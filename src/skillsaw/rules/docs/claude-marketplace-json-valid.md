@@ -38,8 +38,10 @@ a kebab-case warning.
 
 Plugin entries are also validated: every entry needs a unique `name`
 and a `source`. A string source is a path relative to the marketplace
-root — it should start with `./` and must not be an absolute path or
-escape the repository with `..`. An object source declares its type via the `source` field
+root. It must start with `./` (or be `.`), and it must not be an
+absolute path or escape the repository with `..`. Claude Code refuses to
+install an entry whose source is `plugins/foo` rather than
+`./plugins/foo`, though the rest of the catalog still loads. An object source declares its type via the `source` field
 (`github`, `url`, `git-subdir`, `npm`, `archive`, or `command`) and must carry
 that type's required fields (`repo`, `url`, `url` + `path`, `package`,
 `url`, or `command` respectively). An `archive` source may also pin the download
@@ -58,8 +60,9 @@ in a marketplace entry` error. Put file-based hooks in the plugin's own
 `hooks/hooks.json` or `plugin.json` instead.
 
 When `metadata.pluginRoot` is set, it is prepended to relative
-sources, so bare names like `"formatter"` are valid and the `./`
-style nudge does not apply. The plugin root itself must be a string
+sources, so bare directory names like `"formatter"` are valid. A bare
+name needs `pluginRoot`, and a path with a `/` still needs the `./`
+prefix. The plugin root itself must be a string
 and, like sources, must not be an absolute path (values like
 `/tmp/plugins` are invalid) and must not escape the repository with
 `..`.

@@ -138,6 +138,7 @@ being silently ignored.
 | Review the security model | [Supply Chain Protection](https://skillsaw.org/supply-chain-protection/) |
 | Supported ecosystems and tools | [Repository Types](https://skillsaw.org/repo-types/) |
 | Add checks to pull requests & CI | [CI Integration](https://skillsaw.org/ci/) |
+| Compare with `claude plugin validate` | [Claude Code validator overlap](https://skillsaw.org/claude-validate/) |
 | See diagnostics in VS Code | [Editor pilot](editors/vscode/README.md) and [publisher onboarding](examples/editor-onboarding/README.md) |
 | Understand and apply fixes | [Autofixing](https://skillsaw.org/autofixing/) |
 | Convert plugins to Agent Plugins v1 | [Porting to Agent Plugins](https://skillsaw.org/porting/) |

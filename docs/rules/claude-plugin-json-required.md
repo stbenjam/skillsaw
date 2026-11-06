@@ -32,6 +32,9 @@ without needing a Claude manifest. An actual Claude manifest, an empty
 `.claude-plugin/` marker, or an explicit local entry in the Claude catalog
 still declares a Claude plugin.
 
+A repository's own `.claude/` directory is project configuration, not a
+plugin, so it needs no manifest unless it holds a `.claude-plugin/` marker.
+
 ## Examples
 
 **Bad:**

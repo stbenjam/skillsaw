@@ -1,0 +1,466 @@
+{
+  "claude_code_version": "2.1.319",
+  "fixtures": {
+    "agent-plugins/dual-ecosystem": {
+      "official": [],
+      "skillsaw": []
+    },
+    "agent-plugins/missing-portable": {
+      "official": [],
+      "skillsaw": []
+    },
+    "autofix/agent-top-level-displayname": {
+      "official": [],
+      "skillsaw": [
+        "claude-agent-frontmatter"
+      ],
+      "note": "Validator gap: a project agent under .claude/agents with no `name` is skipped by Claude Code (docs: 'Subagent files Claude Code skips'), and `claude plugin validate` does not check agent names."
+    },
+    "autofix/agent-top-level-nested": {
+      "official": [],
+      "skillsaw": [
+        "claude-agent-frontmatter"
+      ],
+      "note": "Validator gap: a project agent under .claude/agents with no `name` is skipped by Claude Code (docs: 'Subagent files Claude Code skips'), and `claude plugin validate` does not check agent names."
+    },
+    "autofix/agent-top-level-note": {
+      "official": [],
+      "skillsaw": [
+        "claude-agent-frontmatter"
+      ],
+      "note": "Validator gap: a project agent under .claude/agents with no `name` is skipped by Claude Code (docs: 'Subagent files Claude Code skips'), and `claude plugin validate` does not check agent names."
+    },
+    "autofix/case-only-command": {
+      "official": [],
+      "skillsaw": []
+    },
+    "autofix/fixable-accuracy-marketplace-json": {
+      "official": [
+        ".claude-plugin/marketplace.json: json"
+      ],
+      "skillsaw": [
+        "claude-marketplace-json-valid",
+        "claude-marketplace-registration"
+      ]
+    },
+    "autofix/fixable-accuracy-marketplace-json/plugins/log-analyzer": {
+      "official": [],
+      "skillsaw": []
+    },
+    "autofix/fixable-accuracy-marketplace-root": {
+      "official": [],
+      "skillsaw": [
+        "claude-marketplace-registration"
+      ],
+      "note": "skillsaw-only: a plugin directory the catalog does not list is repository hygiene, not a load failure."
+    },
+    "autofix/fixable-accuracy-marketplace-root/pkgs/doc-checker": {
+      "official": [],
+      "skillsaw": []
+    },
+    "autofix/fixable-accuracy-marketplace-root/plugins/deploy-helper": {
+      "official": [],
+      "skillsaw": []
+    },
+    "autofix/safe-idempotency": {
+      "official": [
+        "skills/flow-name/SKILL.md: metadata",
+        "skills/multiline-name/SKILL.md: name"
+      ],
+      "skillsaw": [
+        "agentskill-name",
+        "agentskill-valid",
+        "claude-agent-frontmatter",
+        "cursor-rules-valid"
+      ]
+    },
+    "codex/dual-manifest": {
+      "official": [
+        ".mcp.json: mcpServers.legacy.command",
+        "hooks/hooks.json: hooks"
+      ],
+      "skillsaw": [
+        "claude-hooks-valid",
+        "mcp-valid-json"
+      ],
+      "note": "Deliberately invalid for both Claude and Codex; pins that one finding per defect comes from Claude's rules in a dual-manifest plugin."
+    },
+    "codex/dual-manifest-declared-hooks": {
+      "official": [],
+      "skillsaw": [
+        "hooks-dangerous"
+      ],
+      "note": "skillsaw-only security check: a hook that downloads and runs remote code loads fine."
+    },
+    "codex/dual-manifest-inline-hooks": {
+      "official": [],
+      "skillsaw": []
+    },
+    "codex/root-plugin-claude-marketplace": {
+      "official": [],
+      "skillsaw": []
+    },
+    "codex/root-plugin-claude-marketplace/plugins/review-helper": {
+      "official": [],
+      "skillsaw": []
+    },
+    "config/content-paths": {
+      "official": [],
+      "skillsaw": []
+    },
+    "config/disable-rules": {
+      "official": [],
+      "skillsaw": []
+    },
+    "config/exclude-test": {
+      "official": [],
+      "skillsaw": []
+    },
+    "config/fail-on-info": {
+      "official": [],
+      "skillsaw": []
+    },
+    "config/info-only": {
+      "official": [],
+      "skillsaw": []
+    },
+    "config/opt-in-rules": {
+      "official": [],
+      "skillsaw": [
+        "antigravity-config-json-valid",
+        "claude-settings-dangerous",
+        "hooks-prohibited",
+        "mcp-prohibited",
+        "muse-hooks-valid"
+      ],
+      "note": "skillsaw-only: opt-in policy rules (hooks-prohibited, mcp-prohibited), settings risk checks, and other hosts' files (Antigravity, Muse)."
+    },
+    "config/per-rule-exclude": {
+      "official": [],
+      "skillsaw": []
+    },
+    "config/strict-mode": {
+      "official": [],
+      "skillsaw": []
+    },
+    "content-unclosed-fence/skill-hides-violations": {
+      "official": [],
+      "skillsaw": []
+    },
+    "cursor-plugins/dual-claude-hooks": {
+      "official": [],
+      "skillsaw": []
+    },
+    "cursor-plugins/marketplace-claude-hooks/plugins/guard": {
+      "official": [],
+      "skillsaw": []
+    },
+    "cursor-plugins/skill-alias": {
+      "official": [],
+      "skillsaw": []
+    },
+    "custom-rule-config/plugins/my-plugin": {
+      "official": [],
+      "skillsaw": []
+    },
+    "grok/dual-manifest": {
+      "official": [],
+      "skillsaw": []
+    },
+    "hooks-directory-added": {
+      "official": [],
+      "skillsaw": []
+    },
+    "hooks-json-number-syntax": {
+      "official": [],
+      "skillsaw": []
+    },
+    "hooks-model-switch": {
+      "official": [],
+      "skillsaw": []
+    },
+    "hooks-on-failure": {
+      "official": [],
+      "skillsaw": []
+    },
+    "hooks/bun-download": {
+      "official": [],
+      "skillsaw": [
+        "hooks-dangerous"
+      ],
+      "note": "skillsaw-only security check: a hook that downloads and runs remote code loads fine."
+    },
+    "hooks/bun-local": {
+      "official": [],
+      "skillsaw": []
+    },
+    "hooks/non-string-matcher": {
+      "official": [
+        "hooks/hooks.json: hooks"
+      ],
+      "skillsaw": [
+        "claude-hooks-valid"
+      ]
+    },
+    "marketplace/archive-source": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/broken": {
+      "official": [
+        ".claude-plugin/marketplace.json: owner.name"
+      ],
+      "skillsaw": [
+        "claude-marketplace-json-valid",
+        "claude-marketplace-registration",
+        "claude-plugin-json-required"
+      ]
+    },
+    "marketplace/broken/plugins/orphan-tool": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/broken/plugins/widget-maker": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/clean": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/clean/plugins/data-fetcher": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/clean/plugins/log-analyzer": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/clean/plugins/widget-maker": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/entry-as-manifest": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/entry-hooks-forms": {
+      "official": [],
+      "skillsaw": [
+        "claude-marketplace-json-valid"
+      ],
+      "note": "Validator gap: `claude plugin validate` accepts an entry `hooks` written as a path or array, but the installed plugin then fails to load (#672)."
+    },
+    "marketplace/escaping-plugin-dir/outside/shared-tools": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/escaping-plugin-dir/repo": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/escaping-plugin-dir/repo/plugins/reporter": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/installable-names": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/nonstring-name": {
+      "official": [
+        ".claude-plugin/marketplace.json: plugins.1.name"
+      ],
+      "skillsaw": [
+        "claude-marketplace-json-valid",
+        "claude-marketplace-registration"
+      ]
+    },
+    "marketplace/nonstring-name/plugins/report-builder": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/plugin-root": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/plugin-root-escape": {
+      "official": [
+        ".claude-plugin/marketplace.json: plugins.0.source",
+        ".claude-plugin/marketplace.json: plugins[0].source"
+      ],
+      "skillsaw": [
+        "claude-marketplace-json-valid"
+      ]
+    },
+    "marketplace/plugin-root-prefixed": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/plugin-root-prefixed/plugins/deploy-helper": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/plugin-root-prefixed/plugins/doc-checker": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/plugin-root/plugins/log-analyzer": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/plugin-root/plugins/widget-maker": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/uninstallable-names": {
+      "official": [
+        ".claude-plugin/marketplace.json: name",
+        ".claude-plugin/marketplace.json: plugins.1.name",
+        ".claude-plugin/marketplace.json: plugins[0].name",
+        ".claude-plugin/marketplace.json: plugins[1].name"
+      ],
+      "skillsaw": [
+        "claude-marketplace-json-valid"
+      ]
+    },
+    "marketplace/unprefixed-sources": {
+      "official": [
+        ".claude-plugin/marketplace.json: plugins.1.source",
+        ".claude-plugin/marketplace.json: plugins.2.source",
+        ".claude-plugin/marketplace.json: plugins[2].source"
+      ],
+      "skillsaw": [
+        "claude-marketplace-json-valid"
+      ]
+    },
+    "marketplace/unprefixed-sources/plugins/changelog-check": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/unprefixed-sources/plugins/release-notes": {
+      "official": [],
+      "skillsaw": []
+    },
+    "marketplace/unprefixed-sources/plugins/version-bump": {
+      "official": [],
+      "skillsaw": []
+    },
+    "pi/dual": {
+      "official": [],
+      "skillsaw": [
+        "hooks-dangerous"
+      ],
+      "note": "skillsaw-only security check: a hook that downloads and runs remote code loads fine."
+    },
+    "port/conflicting": {
+      "official": [],
+      "skillsaw": []
+    },
+    "port/marketplace": {
+      "official": [],
+      "skillsaw": []
+    },
+    "port/marketplace/plugins/release-notes": {
+      "official": [],
+      "skillsaw": []
+    },
+    "single-plugin/agent-filenames": {
+      "official": [],
+      "skillsaw": [
+        "claude-agent-frontmatter"
+      ],
+      "note": "Validator gap: a project agent under .claude/agents with no `name` is skipped by Claude Code (docs: 'Subagent files Claude Code skips'), and `claude plugin validate` does not check agent names."
+    },
+    "single-plugin/broken": {
+      "official": [],
+      "skillsaw": [
+        "agentskill-valid",
+        "promptfoo-valid"
+      ],
+      "note": "skillsaw-only: the Agent Skills spec requires a skill `name` (Claude Code falls back to the directory name), and promptfoo eval config is outside Claude Code."
+    },
+    "single-plugin/clean": {
+      "official": [],
+      "skillsaw": []
+    },
+    "single-plugin/component-paths": {
+      "official": [
+        ".claude-plugin/plugin.json: agents",
+        ".claude-plugin/plugin.json: agents[0]",
+        ".claude-plugin/plugin.json: commands[1]",
+        ".mcp.json: mcpServers.pager.env.PAGER_TOKEN"
+      ],
+      "skillsaw": [
+        "claude-plugin-json-valid"
+      ]
+    },
+    "single-plugin/content-violations": {
+      "official": [],
+      "skillsaw": []
+    },
+    "single-plugin/context-budget": {
+      "official": [],
+      "skillsaw": [
+        "context-budget"
+      ],
+      "note": "skillsaw-only: context-budget limits on command size."
+    },
+    "single-plugin/mcp-broken": {
+      "official": [
+        ".mcp.json: json"
+      ],
+      "skillsaw": [
+        "mcp-valid-json"
+      ]
+    },
+    "single-plugin/mcp-unusable-command": {
+      "official": [
+        ".mcp.json: mcpServers.metrics.command",
+        ".mcp.json: mcpServers.search.command"
+      ],
+      "skillsaw": [
+        "mcp-valid-json"
+      ]
+    },
+    "single-plugin/version-number": {
+      "official": [
+        ".claude-plugin/plugin.json: version"
+      ],
+      "skillsaw": [
+        "claude-plugin-json-valid"
+      ]
+    },
+    "single-plugin/version-string": {
+      "official": [],
+      "skillsaw": []
+    },
+    "single-plugin/with-project-claude": {
+      "official": [],
+      "skillsaw": []
+    },
+    "single-plugin/with-secrets": {
+      "official": [],
+      "skillsaw": [
+        "content-embedded-secrets"
+      ],
+      "note": "skillsaw-only: committed credential detection."
+    },
+    "suppression/all-rules": {
+      "official": [],
+      "skillsaw": []
+    },
+    "suppression/multi-rule": {
+      "official": [],
+      "skillsaw": []
+    },
+    "suppression/next-line": {
+      "official": [],
+      "skillsaw": []
+    },
+    "suppression/single-rule": {
+      "official": [],
+      "skillsaw": []
+    }
+  }
+}

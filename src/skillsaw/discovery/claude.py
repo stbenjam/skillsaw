@@ -16,7 +16,7 @@ from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.codex import codex_declared_skill_dirs
 from skillsaw.formats.grok import grok_declared_skill_dirs
 from skillsaw.formats.openclaw import MANIFEST, contained_file, skill_roots
-from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
+from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.utils import read_json
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,30 @@ def resolve_plugin_source(
     else:
         logger.info("Plugin '%s' has unknown source format. Skipping.", name)
     return None
+
+
+def claude_declared_mcp_files(plugin_dir: Path) -> List[Path]:
+    """Contained MCP config files a Claude plugin.json names in ``mcpServers``.
+
+    The field takes a path, a list of paths, or an inline map; this resolves
+    the path forms. Paths escaping the plugin are dropped, since
+    ``claude-plugin-json-valid`` reports them and the lint tree must not
+    follow them out.
+    """
+    data, _error = read_json(plugin_dir / ".claude-plugin" / "plugin.json")
+    declared = data.get("mcpServers") if isinstance(data, dict) else None
+    candidates = declared if isinstance(declared, list) else [declared]
+    root = safe_resolve(plugin_dir)
+    if root is None:
+        return []
+    found: List[Path] = []
+    for item in candidates:
+        if not isinstance(item, str) or not item:
+            continue
+        candidate = contained_resolve(plugin_dir / item, root)
+        if candidate is not None and candidate != root and safe_is_file(candidate):
+            found.append(candidate)
+    return found
 
 
 def is_valid_plugin_dir(path: Path, entry: Optional[Dict[str, Any]] = None) -> bool:

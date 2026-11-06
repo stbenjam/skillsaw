@@ -127,6 +127,7 @@ nav:
     - Ruler and Rulesync: generators.md
     - Kiro Support: kiro.md
     - CI Integration: ci.md
+    - Claude Code Validator: claude-validate.md
     - Editor Diagnostics: editor.md
     - Pre-commit: pre-commit.md
     - CLI Reference: cli.md

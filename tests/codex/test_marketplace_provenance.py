@@ -23,7 +23,7 @@ def test_catalog_does_not_claim_its_codex_parent(tmp_path, repo_types):
     context = RepositoryContext(repo, repo_types=repo_types)
 
     assert context.provenance(repo).codex_only
-    assert context.provenance(repo / "plugins/claude-helper").claude
+    assert context.provenance(repo / "plugins/review-helper").claude
     assert all(node.path != repo for node in context.lint_tree.find(PluginNode))
     if repo_types is None or RepositoryType.CODEX_PLUGIN in repo_types:
         assert any(
@@ -41,7 +41,7 @@ def test_claude_marketplace_without_codex_does_not_discover_root(tmp_path):
     context = RepositoryContext(repo)
 
     assert [node.path for node in context.lint_tree.find(PluginNode)] == [
-        repo / "plugins/claude-helper"
+        repo / "plugins/review-helper"
     ]
     assert MarketplaceRegistrationRule({}).check(context) == []
 

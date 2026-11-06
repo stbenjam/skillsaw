@@ -2,6 +2,6 @@
   "name": "workspace-plugins",
   "owner": {"name": "Example"},
   "plugins": [
-    {"name": "claude-helper", "source": "./plugins/claude-helper"}
+    {"name": "review-helper", "source": "./plugins/review-helper"}
   ]
 }

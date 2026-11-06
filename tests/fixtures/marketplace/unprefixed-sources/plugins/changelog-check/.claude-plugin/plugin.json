@@ -1,0 +1,6 @@
+{
+  "name": "changelog-check",
+  "description": "Check that every merged PR has a changelog entry",
+  "version": "1.2.0",
+  "author": {"name": "Release Engineering"}
+}

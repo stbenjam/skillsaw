@@ -109,6 +109,7 @@ python_functions = ["test_*"]
 addopts = "-v"
 markers = [
     "integration: end-to-end CLI integration tests",
+    "claude_conformance: compares fixtures with `claude plugin validate`; skipped without the pinned claude CLI",
 ]
 
 [tool.coverage.run]
