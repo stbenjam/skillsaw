@@ -854,6 +854,53 @@ class TestMarketplace:
         assert r["rc"] == 0
         assert "claude-marketplace-json-valid" not in rule_ids(r)
 
+    def test_uninstallable_names_error(self, tmp_path):
+        """Marketplace and entry names `claude plugin validate` fails are errors."""
+        repo = copy_fixture("marketplace/uninstallable-names", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        messages = [
+            v["message"] for v in violations(r) if v["rule_id"] == "claude-marketplace-json-valid"
+        ]
+        bad = [m for m in messages if "cannot be installed" in m]
+        assert len(bad) == 3, messages
+        assert any(m.startswith("Marketplace name 'acme tools'") for m in bad)
+        assert any(m.startswith("plugins[0] plugin name '_internal-metrics'") for m in bad)
+        assert any(m.startswith("plugins[1] plugin name 'Report Builder!'") for m in bad)
+        # One finding per defect: no kebab-case warning on top of the error.
+        assert not any("kebab-case" in m for m in messages)
+
+    def test_installable_names_pass(self, tmp_path):
+        """Dots, underscores and capitals are installable; entry names may hold '..'."""
+        repo = copy_fixture("marketplace/installable-names", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        messages = [
+            v["message"] for v in violations(r) if v["rule_id"] == "claude-marketplace-json-valid"
+        ]
+        # Only the style nudge for the non-kebab marketplace name remains.
+        assert messages == [
+            "Marketplace name 'my.market_1' should be kebab-case "
+            "(lowercase letters, numbers, and hyphens)"
+        ]
+
+    def test_entry_hooks_path_and_array_error(self, tmp_path):
+        """Entry `hooks` as a path or array fails plugin load; an inline object passes."""
+        repo = copy_fixture("marketplace/entry-hooks-forms", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        hooks = [
+            v
+            for v in violations(r)
+            if v["rule_id"] == "claude-marketplace-json-valid" and ".hooks" in v["message"]
+        ]
+        assert [v["message"].split(",")[0] for v in hooks] == [
+            "plugins[0].hooks is a file path",
+            "plugins[1].hooks is an array",
+        ]
+        assert all(v["severity"] == "error" for v in hooks)
+
     def test_marketplace_stats(self, tmp_path):
         repo = copy_fixture("marketplace/clean", tmp_path)
         r = run_lint(repo)
