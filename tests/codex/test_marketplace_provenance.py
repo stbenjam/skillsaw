@@ -78,8 +78,8 @@ def test_catalog_explicitly_listing_root_keeps_claude_provenance(tmp_path, stric
     context = RepositoryContext(repo)
 
     assert context.provenance(repo).claude
-    violations = PluginJsonRequiredRule({}).check(context)
-    assert len(violations) == int(strict)
+    # Without plugin.json the entry is the manifest, whatever ``strict`` says.
+    assert PluginJsonRequiredRule({}).check(context) == []
     assert MarketplaceRegistrationRule({}).check(context) == []
 
 

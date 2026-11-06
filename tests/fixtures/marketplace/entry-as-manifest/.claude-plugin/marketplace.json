@@ -1,0 +1,21 @@
+{
+  "name": "acme-tools",
+  "owner": {"name": "ACME Corp", "url": "https://acme.example.com"},
+  "plugins": [
+    {
+      "name": "data-fetcher",
+      "source": "./plugins/data-fetcher",
+      "description": "Fetch data from external REST and GraphQL APIs",
+      "version": "1.0.3",
+      "author": {"name": "Data Team"}
+    },
+    {
+      "name": "widget-maker",
+      "source": "./plugins/widget-maker",
+      "description": "Build and manage widgets",
+      "version": "2.1.0",
+      "author": {"name": "Widget Team"},
+      "strict": true
+    }
+  ]
+}

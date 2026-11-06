@@ -438,13 +438,10 @@ class TestClaudeRulesStandDown:
         violations = PluginJsonRequiredRule({}).check(RepositoryContext(tmp_path))
         assert messages(violations) == ["Missing plugin.json"]
 
-    def test_a_plugin_the_claude_marketplace_lists_still_needs_its_manifest(self, tmp_path):
-        """The exemption must not override an author's own declaration.
-
-        Listing a directory in .claude-plugin/marketplace.json declares it a
-        Claude plugin; shipping a Codex manifest alongside does not retract
-        that. `strict: false` is the designed opt-out.
-        """
+    def test_a_plugin_the_claude_marketplace_lists_uses_the_entry_as_manifest(self, tmp_path):
+        """Listing a directory in .claude-plugin/marketplace.json declares it
+        a Claude plugin, and without plugin.json the entry is its manifest,
+        whatever `strict` says."""
         (tmp_path / ".claude-plugin").mkdir()
         (tmp_path / ".claude-plugin" / "marketplace.json").write_text(
             json.dumps(
@@ -469,8 +466,7 @@ class TestClaudeRulesStandDown:
         context = RepositoryContext(tmp_path)
         assert context.provenance(tmp_path / "plugins" / "dual").claude_plugin_declared is True
         assert context.provenance(tmp_path).claude_plugin_declared is False
-        violations = PluginJsonRequiredRule({}).check(context)
-        assert messages(violations) == ["Missing plugin.json"]
+        assert PluginJsonRequiredRule({}).check(context) == []
 
 
 class TestCatalogClaimContainment:
