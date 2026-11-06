@@ -923,6 +923,22 @@ class TestMarketplace:
         assert "claude-plugin-json-required" not in rule_ids(r)
         assert len(r["out"]["stats"]["plugins"]) == 2
 
+    @pytest.mark.parametrize("strict", [None, True])
+    def test_manifestless_entry_names_its_plugin(self, tmp_path, strict):
+        """The entry's name, not the directory's, names a manifestless plugin."""
+        repo = copy_fixture("marketplace/entry-as-manifest", tmp_path)
+        path = repo / ".claude-plugin" / "marketplace.json"
+        data = json.loads(path.read_text())
+        entry = data["plugins"][0]
+        entry["name"] = "acme-data-fetcher"
+        entry.pop("strict", None)
+        if strict is not None:
+            entry["strict"] = strict
+        path.write_text(json.dumps(data))
+        r = run_lint(repo)
+        assert r["rc"] == 0, violations(r)
+        assert "claude-marketplace-registration" not in rule_ids(r)
+
     def test_unregistered_plugin_without_manifest_is_reported(self, tmp_path):
         """A plugin directory no marketplace entry registers still needs
         plugin.json."""
