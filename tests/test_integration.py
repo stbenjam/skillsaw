@@ -442,6 +442,51 @@ class TestHooksJson:
         assert found[0]["file_path"] == "hooks/hooks.json"
         assert "Unknown event type 'NotAClaudeEvent'" in found[0]["message"]
 
+    def test_on_failure_accepted_on_command_and_http(self, tmp_path):
+        # Claude Code 2.1.319 `claude plugin validate` accepts "continue" and
+        # "block" on both handler types; 2.1.295 introduced the field.
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert result["rc"] == 0, result
+        assert violations(result) == []
+
+    @pytest.mark.parametrize("value", ["explode", "Block", True, None, ["block"]])
+    def test_on_failure_invalid_value_is_an_error(self, tmp_path, value):
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["PreToolUse"][0]["hooks"][0]["onFailure"] = value
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        assert result["rc"] == 1, result
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["severity"] == "error"
+        assert found[0]["file_path"] == "hooks/hooks.json"
+        assert "PreToolUse[0].hooks[0]' field 'onFailure' has invalid value" in (
+            found[0]["message"]
+        )
+        assert "Valid values: continue, block" in found[0]["message"]
+
+    @pytest.mark.parametrize("value", ["block", "explode"])
+    def test_on_failure_on_prompt_handler_warns(self, tmp_path, value):
+        # Claude Code accepts and ignores onFailure on a prompt hook, whatever
+        # its value, so an invalid value there is not an error.
+        repo = copy_fixture("hooks-on-failure", tmp_path)
+        path = repo / "hooks/hooks.json"
+        data = json.loads(path.read_text())
+        data["hooks"]["PreToolUse"][0]["hooks"][0] = {
+            "type": "prompt",
+            "prompt": "Reject commands that delete files outside the project.",
+            "onFailure": value,
+        }
+        path.write_text(json.dumps(data))
+        result = run_lint(repo, "--rule", "claude-hooks-valid")
+        found = violations(result)
+        assert len(found) == 1, found
+        assert found[0]["severity"] == "warning"
+        assert "field 'onFailure' is only valid on types: command, http" in (found[0]["message"])
+
     @pytest.mark.parametrize(
         "source_value,valid",
         [

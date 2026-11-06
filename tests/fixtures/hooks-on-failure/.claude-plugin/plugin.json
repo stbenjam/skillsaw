@@ -1,0 +1,8 @@
+{
+  "name": "command-policy-gate",
+  "version": "1.0.0",
+  "description": "Block Bash commands when the policy checks cannot run",
+  "author": {
+    "name": "Example Platform Team"
+  }
+}
