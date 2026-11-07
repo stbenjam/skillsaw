@@ -233,6 +233,53 @@ test('Choose Executable recovers a missing CLI for the affected folder in comman
   assert(h.logs.some((line) => line.includes('skillsaw 0.21.1')));
 });
 
+test('permission failures offer executable selection and report failed settings writes', async (t) => {
+  const h = harness(t, true, ['one']);
+  h.window.errorChoice = 'Choose Executable';
+  h.window.selectedFiles = [h.uri('/installed/skillsaw')];
+  const getConfiguration = h.workspace.getConfiguration;
+  h.workspace.getConfiguration = (...args) => ({
+    ...getConfiguration(...args),
+    update: async () => {
+      throw new Error('Settings file is read-only');
+    },
+  });
+  await until(() => h.runs.length === 1);
+  h.runs[0].reject(Object.assign(new Error('Permission denied'), { code: 'EACCES' }));
+  await until(() => h.errors.length === 2);
+  assert(h.prompts[0].actions.includes('Choose Executable'));
+  assert.match(h.errors[1], /setup failed: Settings file is read-only.*folder settings/);
+  assert(h.logs.some((line) => line.includes('Setup failed: Settings file is read-only')));
+  h.commands['skillsaw.lint']();
+  await until(() => h.runs.length === 2);
+});
+
+test('executable setup coalesces configuration events while a settings write is pending', async (t) => {
+  const h = harness(t, true, ['one']);
+  await until(() => h.runs.length === 1);
+  h.complete(0);
+  await until(() => h.logs.some((line) => line.includes('exit 0')));
+  h.window.selectedFiles = [h.uri('/installed/skillsaw')];
+  const getConfiguration = h.workspace.getConfiguration;
+  h.workspace.getConfiguration = (...args) => {
+    const settings = getConfiguration(...args);
+    return {
+      ...settings,
+      update: async (...values) => {
+        await settings.update(...values);
+        await delay(200);
+        assert.equal(h.runs.length, 1, 'do not start lint before settings finish writing');
+      },
+    };
+  };
+  await h.commands['skillsaw.chooseExecutable']();
+  await until(() => h.runs.length === 2);
+  assert.equal(h.runs[1].executable, path.resolve('/installed/skillsaw'));
+  h.complete(1);
+  await delay(150);
+  assert.equal(h.runs.length, 2);
+});
+
 test('executable picker scopes settings to the chosen root and respects cancellation and trust', async (t) => {
   const h = harness(t, false);
   h.window.selectedFolder = h.workspace.workspaceFolders[1];

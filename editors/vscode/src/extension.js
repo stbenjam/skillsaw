@@ -58,10 +58,9 @@ function activate(context) {
     output.appendLine(`[${state.folder.name}] ${error.message}`);
     if (state.error !== error.message) {
       state.error = error.message;
-      const actions =
-        error.code === 'ENOENT'
-          ? ['Installation Instructions', 'Choose Executable', 'Show Output']
-          : ['Show Output'];
+      const actions = ['ENOENT', 'EACCES'].includes(error.code)
+        ? ['Installation Instructions', 'Choose Executable', 'Show Output']
+        : ['Show Output'];
       void vscode.window
         .showErrorMessage(`skillsaw (${state.folder.name}): ${error.message}`, ...actions)
         .then(async (choice) => {
@@ -69,7 +68,12 @@ function activate(context) {
           if (choice === 'Installation Instructions') await showInstallation();
           if (choice === 'Choose Executable') await chooseExecutable(state.folder);
         })
-        .catch((error) => output.appendLine(`Setup failed: ${error.message}`));
+        .catch((error) => {
+          output.appendLine(`Setup failed: ${error.message}`);
+          void vscode.window.showErrorMessage(
+            `skillsaw setup failed: ${error.message}. Check the folder settings and run skillsaw: Lint Workspace again.`,
+          );
+        });
     }
   }
   function showInstallation() {
@@ -106,14 +110,19 @@ function activate(context) {
     });
     if (!selected?.length || !vscode.workspace.isTrusted || !folders.has(folder.uri.toString()))
       return;
-    await config(folder).update(
-      'executable',
-      selected[0].fsPath,
-      vscode.ConfigurationTarget.WorkspaceFolder,
-    );
-    // Also validate the selection in command-only mode.
     const state = folders.get(folder.uri.toString());
-    if (state) request(state, true);
+    state.configuringExecutable = (state.configuringExecutable ?? 0) + 1;
+    try {
+      await config(folder).update(
+        'executable',
+        selected[0].fsPath,
+        vscode.ConfigurationTarget.WorkspaceFolder,
+      );
+    } finally {
+      state.configuringExecutable--;
+    }
+    // Coalesce events from writing settings, including in command-only mode.
+    if (folders.get(folder.uri.toString()) === state) request(state, true);
   }
   async function remap(state) {
     if (!state.report) return;
@@ -166,7 +175,7 @@ function activate(context) {
   }
   function request(state, explicit = false) {
     invalidate(state);
-    if (!vscode.workspace.isTrusted) return;
+    if (!vscode.workspace.isTrusted || state.configuringExecutable) return;
     const settings = config(state.folder);
     if (!explicit && !settings.get('runOnSave', true)) return;
     scheduler.request(
