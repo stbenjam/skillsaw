@@ -185,6 +185,22 @@ class TestConfigValid:
 
 
 class TestAgentValid:
+    def test_valid_yaml_uses_zcode_scalar_semantics(self, tmp_path):
+        """ZCode reads each field's own line, regardless of valid YAML syntax."""
+        report = lint(copy_fixture("zcode/agent-line-values", tmp_path))
+        found = findings(report, "zcode-agent-valid")
+        assert {(v["file_path"], v["line"], v["severity"]) for v in found} == {
+            (".zcode/agents/numeric-name.md", 2, "error"),
+            (".zcode/agents/boolean-name.md", 2, "error"),
+            (".zcode/agents/continued-description.md", 3, "error"),
+            (".zcode/agents/invalid-memory.md", 4, "warning"),
+        }
+        assert len(found) == 4
+        for finding in found:
+            if finding["severity"] == "error":
+                field = "description" if "continued-description" in finding["file_path"] else "name"
+                assert f"needs a non-empty '{field}'" in finding["message"]
+
     def test_broken_agents(self, tmp_path):
         report = lint(copy_fixture("zcode/project-broken", tmp_path))
         found = {v["message"]: v for v in findings(report, "zcode-agent-valid")}

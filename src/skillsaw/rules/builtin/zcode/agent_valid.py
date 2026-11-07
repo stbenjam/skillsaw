@@ -71,24 +71,7 @@ class ZCodeAgentValidRule(Rule):
         violations: List[RuleViolation] = []
         for block in self._agents(context):
             name = block.path.name
-            if block.frontmatter_error:
-                loose = zcode_agent_line_values(block.read_frontmatter_text())
-                if all((loose.get(key, (None,))[0] or "").strip() for key in REQUIRED_FIELDS):
-                    if "memory" in loose:
-                        value, line = loose["memory"]
-                        # The opening --- is file line 1.
-                        violations.extend(self._memory(name, block, value, line + 1))
-                    continue
-                violations.append(
-                    self.violation(
-                        f"Agent {name}: {block.frontmatter_error}; ZCode skips the agent "
-                        "unless it finds 'name' and 'description' lines",
-                        block=block,
-                        line=block.frontmatter_error_line,
-                    )
-                )
-                continue
-            if not block.has_frontmatter:
+            if not block.has_frontmatter and not block.frontmatter_error:
                 violations.append(
                     self.violation(
                         f"Agent {name} has no frontmatter, so ZCode skips it; add 'name' "
@@ -97,21 +80,22 @@ class ZCodeAgentValidRule(Rule):
                     )
                 )
                 continue
+            values = zcode_agent_line_values(block.read_frontmatter_text())
             for key in REQUIRED_FIELDS:
-                field = block.field(key)
-                value = field.value if field is not None else None
-                if value is None or isinstance(value, (dict, list, set)) or not str(value).strip():
+                value, line = values.get(key, (None, None))
+                if not value or not value.strip():
                     violations.append(
                         self.violation(
                             f"Agent {name} needs a non-empty '{key}'; ZCode skips the agent "
                             "without one",
                             block=block,
-                            line=field.field_line if field is not None else None,
+                            line=line + 1 if line is not None else None,
                         )
                     )
-            memory = block.field("memory")
-            if memory is not None:
-                violations.extend(self._memory(name, block, memory.value, memory.field_line))
+            if "memory" in values:
+                value, line = values["memory"]
+                # The opening --- is file line 1.
+                violations.extend(self._memory(name, block, value, line + 1))
         return violations
 
     def _memory(self, name: str, block, value, line) -> List[RuleViolation]:

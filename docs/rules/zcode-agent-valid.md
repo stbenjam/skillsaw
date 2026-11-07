@@ -27,12 +27,14 @@ both a ZCode and a Claude manifest needs `name` for ZCode to load it.
 
 **Errors**: ZCode skips the agent.
 
-- Missing frontmatter, or frontmatter that is neither valid YAML nor has
-  `name:` and `description:` lines. ZCode reads frontmatter one `key: value`
-  line at a time, so a value YAML rejects, such as an unquoted colon in
-  `description: Use when: reviewing a PR`, still loads.
-- A missing or empty `name` or `description`, or one that is a list or a
-  mapping.
+- Missing frontmatter or a missing, empty or non-string `name` or
+  `description`. ZCode reads frontmatter one `key: value` line at a time,
+  regardless of YAML validity. A value must be on the key's line:
+  an indented continuation is not read as the description.
+- Numeric or boolean values such as `name: 2024` or `name: true` are not
+  strings. Quote them to use them as names. The literal `null` is a string
+  in ZCode, and an unquoted colon in
+  `description: Use when: reviewing a PR` also loads.
 
 **Warnings**: a `memory` value other than `user`, `project` or `local`. ZCode
 ignores the value and loads the agent without memory.
