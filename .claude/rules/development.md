@@ -19,7 +19,7 @@ Follow these checks before opening a PR:
 
 - Check whether documentation is up to date for the changes on this branch.
     - Example: you add a new feature, flag, or lint type.
-      Action: update `README.md` to include this.
+      Action: document it in `docs/`; keep `README.md` minimal.
     - Example: you encounter a problem during development you must keep for later.
       Action: update `.apm/instructions` and run `make update`.
 - Verify test coverage on a new feature, flag, lint type or bug fix is complete.
