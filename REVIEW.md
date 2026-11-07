@@ -77,5 +77,5 @@ Review every change against these surfaces: skillsaw reads untrusted repo conten
 
 - Ensure new rules, flags, features, and lint types include integration test coverage in [tests/test_integration.py](tests/test_integration.py) **with static fixtures** under `tests/fixtures/` (realistic content, not one-liner stubs). Bug fixes need a regression test.
 - Verify autofix tests assert: fix scoped to the violation's line, line count unchanged, idempotent on a second run, and zero remaining violations on re-lint.
-- Ensure user-facing changes (a new flag, rule, or lint type) update `README.md`. Docs restructures must not break published URLs — flag moved or renamed doc pages that lack an mkdocs-redirects entry.
+- Ensure user-facing changes (a new flag, rule, or lint type) are documented in `docs/`. Flag per-feature usage sections added to `README.md`; it stays minimal. Docs restructures must not break published URLs — flag moved or renamed doc pages that lack an mkdocs-redirects entry.
 - Ensure Python runs through the project venv (`.venv/bin/...`) and `make` targets — flag bare `python` / `python3` invocations in scripts or CI.
