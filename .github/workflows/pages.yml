@@ -12,7 +12,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A release run's ref is its tag, and the github-pages environment only
+  # deploys from main. Re-run this workflow on main so the site changelog
+  # picks up the release.
+  redeploy-on-main:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch a deploy from main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+
   build:
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: read
