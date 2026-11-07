@@ -97,7 +97,7 @@ async function overlappingFolders(one, doc, canonical) {
 
 async function run() {
   const extension = vscode.extensions.getExtension('stbenjam.skillsaw');
-  assert(extension, 'pilot installed in the extension host');
+  assert(extension, 'extension installed in the extension host');
   await extension.activate();
   const [one, two] = vscode.workspace.workspaceFolders;
   const skill = (folder) => vscode.Uri.joinPath(folder.uri, 'skills/release-notes/SKILL.md');

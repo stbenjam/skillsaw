@@ -4,7 +4,7 @@ This small Agent Skills repository ships a release-notes skill, its reference
 checklist, root lint configuration and a GitHub Actions workflow. It starts
 with zero findings and uses the same skillsaw engine in the editor and CI.
 
-1. [Install the VS Code pilot](https://github.com/stbenjam/skillsaw/tree/main/editors/vscode#install) and set
+1. [Install the VS Code extension](https://github.com/stbenjam/skillsaw/tree/main/editors/vscode#install) and set
    `skillsaw.executable` to the installed CLI. Copy this entire directory,
    including its dotfiles, outside the skillsaw checkout and open the copy as
    a VS Code workspace. For example, from the skillsaw repository root:
@@ -51,5 +51,5 @@ choices demonstrate that the editor uses the CLI's repository configuration,
 including content outside conventional agent directories.
 
 The walkthrough is regression-tested by `tests/test_editor_onboarding.py`
-and the pilot's real extension-host test. The checked-in fixture stays clean;
+and the extension's real extension-host test. The checked-in fixture stays clean;
 tests introduce the bad name only in temporary copies.

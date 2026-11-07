@@ -19,6 +19,9 @@ function harness(t, trusted = true, roots = ['one', 'two']) {
     commands = {},
     runs = [],
     errors = [],
+    prompts = [],
+    openedUrls = [],
+    updates = [],
     logs = [],
     collections = [];
   const uri = (file) => ({
@@ -41,6 +44,13 @@ function harness(t, trusted = true, roots = ['one', 'two']) {
     getConfiguration: (_, resource) => ({
       get: (key, fallback) =>
         settings.get(resource.toString())?.[key] ?? (key === 'debounceMs' ? 100 : fallback),
+      update: async (key, value, target) => {
+        updates.push({ resource, key, value, target });
+        settings.set(resource.toString(), { ...settings.get(resource.toString()), [key]: value });
+        events.onDidChangeConfiguration({
+          affectsConfiguration: (_, uri) => uri.toString() === resource.toString(),
+        });
+      },
     }),
   };
   for (const name of [
@@ -58,7 +68,14 @@ function harness(t, trusted = true, roots = ['one', 'two']) {
     workspace[name] = register(name);
   const vscode = {
     workspace,
-    Uri: { file: uri },
+    Uri: { file: uri, parse: (value) => value },
+    env: {
+      openExternal: async (value) => {
+        openedUrls.push(value);
+        return true;
+      },
+    },
+    ConfigurationTarget: { WorkspaceFolder: 3 },
     DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2 },
     Range: class {
       constructor(line) {
@@ -82,9 +99,13 @@ function harness(t, trusted = true, roots = ['one', 'two']) {
         show() {},
         dispose() {},
       }),
-      showErrorMessage: async (message) => {
+      showErrorMessage: async (message, ...actions) => {
         errors.push(message);
+        prompts.push({ message, actions });
+        return vscode.window.errorChoice;
       },
+      showOpenDialog: async () => vscode.window.selectedFiles,
+      showWorkspaceFolderPick: async () => vscode.window.selectedFolder,
       showWarningMessage: async (message) => {
         errors.push(message);
       },
@@ -151,6 +172,10 @@ function harness(t, trusted = true, roots = ['one', 'two']) {
     commands,
     runs,
     errors,
+    prompts,
+    openedUrls,
+    updates,
+    window: vscode.window,
     logs,
     collections,
     workspace,
@@ -167,6 +192,64 @@ const finding = {
   file_path: 'skills/release-notes/SKILL.md',
   line: 2,
 };
+
+test('missing CLI offers installation and executable selection without repeating the prompt', async (t) => {
+  const h = harness(t, true, ['one']);
+  h.window.errorChoice = 'Installation Instructions';
+  await until(() => h.runs.length === 1);
+  const missing = () =>
+    Object.assign(new Error('Cannot find skillsaw executable'), { code: 'ENOENT' });
+  h.runs[0].reject(missing());
+  await until(() => h.openedUrls.length === 1);
+  assert.deepEqual(h.prompts[0].actions, [
+    'Installation Instructions',
+    'Choose Executable',
+    'Show Output',
+  ]);
+  assert.equal(h.openedUrls[0], 'https://skillsaw.org/editor/#install');
+  h.commands['skillsaw.lint']();
+  await until(() => h.runs.length === 2);
+  h.runs[1].reject(missing());
+  await delay(20);
+  assert.equal(h.prompts.length, 1);
+});
+
+test('Choose Executable recovers a missing CLI for the affected folder in command-only mode', async (t) => {
+  const h = harness(t, true, ['one']);
+  h.settings.set(h.uri('one').toString(), { runOnSave: false });
+  h.window.errorChoice = 'Choose Executable';
+  h.window.selectedFiles = [h.uri('/installed with spaces/skillsaw')];
+  await until(() => h.runs.length === 1);
+  h.runs[0].reject(Object.assign(new Error('Missing CLI'), { code: 'ENOENT' }));
+  await until(() => h.runs.length === 2);
+  assert.equal(h.updates[0].resource.toString(), h.uri('one').toString());
+  assert.equal(h.updates[0].target, 3);
+  assert.equal(h.runs[1].executable, path.resolve('/installed with spaces/skillsaw'));
+  h.complete(1, [finding]);
+  await until(() => h.collections[0].entries.length === 1);
+  assert(
+    h.logs.some((line) => line.includes('Executable:') && line.includes('installed with spaces')),
+  );
+  assert(h.logs.some((line) => line.includes('skillsaw 0.21.1')));
+});
+
+test('executable picker scopes settings to the chosen root and respects cancellation and trust', async (t) => {
+  const h = harness(t, false);
+  h.window.selectedFolder = h.workspace.workspaceFolders[1];
+  h.window.selectedFiles = [h.uri('/installed/skillsaw')];
+  await h.commands['skillsaw.chooseExecutable']();
+  assert.equal(h.updates.length, 0);
+  h.workspace.isTrusted = true;
+  await h.commands['skillsaw.chooseExecutable']();
+  assert.equal(h.updates.length, 1);
+  assert.equal(h.updates[0].resource.toString(), h.uri('two').toString());
+  h.window.selectedFiles = undefined;
+  await h.commands['skillsaw.chooseExecutable']();
+  assert.equal(h.updates.length, 1);
+  h.window.selectedFolder = undefined;
+  await h.commands['skillsaw.chooseExecutable']();
+  assert.equal(h.updates.length, 1);
+});
 
 test('trust blocks activation, save, configuration and command paths until granted', async (t) => {
   const h = harness(t, false);

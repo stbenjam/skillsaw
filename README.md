@@ -122,7 +122,7 @@ being silently ignored.
 | Supported ecosystems and tools | [Repository Types](https://skillsaw.org/repo-types/) |
 | Add checks to pull requests & CI | [CI Integration](https://skillsaw.org/ci/) |
 | Compare with `claude plugin validate` | [Claude Code validator overlap](https://skillsaw.org/claude-validate/) |
-| See diagnostics in VS Code | [Editor pilot](editors/vscode/README.md) and [publisher onboarding](examples/editor-onboarding/README.md) |
+| See diagnostics in VS Code | [VS Code extension](editors/vscode/README.md) and [publisher onboarding](examples/editor-onboarding/README.md) |
 | Understand and apply fixes | [Autofixing](https://skillsaw.org/autofixing/) |
 | Convert plugins to Agent Plugins v1 | [Porting to Agent Plugins](https://skillsaw.org/porting/) |
 | Create project-specific checks | [Custom Rules](https://skillsaw.org/custom-rules/) |

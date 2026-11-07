@@ -1035,7 +1035,7 @@ GUIDES = [
         "claude-validate.md",
         "where skillsaw overlaps `claude plugin validate`, and the conformance check",
     ),
-    ("Editor Diagnostics", "editor.md", "install and use the VS Code diagnostics pilot"),
+    ("Editor Diagnostics", "editor.md", "install and use the VS Code extension"),
     ("Pre-commit", "pre-commit.md", "run skillsaw as a pre-commit hook"),
     ("CLI Reference", "cli.md", "every command and flag"),
     ("Custom Rules", "custom-rules.md", "write project-local rules in Python"),

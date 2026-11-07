@@ -1,8 +1,10 @@
 const vscode = require('vscode');
+const path = require('node:path');
 const { runCli } = require('./runner');
 const { parseReport, within } = require('./report');
 const { matchDocuments } = require('./documents');
 const { Scheduler } = require('./scheduler');
+const INSTALL_URL = 'https://skillsaw.org/editor/#install';
 
 function activate(context) {
   const output = vscode.window.createOutputChannel('skillsaw');
@@ -19,6 +21,10 @@ function activate(context) {
     async (options) => {
       if (!vscode.workspace.isTrusted)
         throw new Error('Trust the workspace before running skillsaw.');
+      const executable = /[/\\]/.test(options.executable)
+        ? path.resolve(options.cwd, options.executable)
+        : `${options.executable} (from PATH)`;
+      output.appendLine(`[${options.cwd}] Executable: ${executable}`);
       const result = await runCli(options);
       if (result.stderr) output.appendLine(`[${options.cwd}] ${result.stderr}`);
       let report;
@@ -52,12 +58,62 @@ function activate(context) {
     output.appendLine(`[${state.folder.name}] ${error.message}`);
     if (state.error !== error.message) {
       state.error = error.message;
+      const actions =
+        error.code === 'ENOENT'
+          ? ['Installation Instructions', 'Choose Executable', 'Show Output']
+          : ['Show Output'];
       void vscode.window
-        .showErrorMessage(`skillsaw (${state.folder.name}): ${error.message}`, 'Show Output')
-        .then((choice) => {
+        .showErrorMessage(`skillsaw (${state.folder.name}): ${error.message}`, ...actions)
+        .then(async (choice) => {
           if (choice === 'Show Output') output.show();
-        });
+          if (choice === 'Installation Instructions') await showInstallation();
+          if (choice === 'Choose Executable') await chooseExecutable(state.folder);
+        })
+        .catch((error) => output.appendLine(`Setup failed: ${error.message}`));
     }
+  }
+  function showInstallation() {
+    return vscode.env.openExternal(vscode.Uri.parse(INSTALL_URL));
+  }
+  async function chooseExecutable(folder) {
+    if (!vscode.workspace.isTrusted) {
+      void vscode.window.showWarningMessage('Trust the workspace before configuring skillsaw.');
+      return;
+    }
+    if (!folder) {
+      const available = [...folders.values()].map((state) => state.folder);
+      if (!available.length) {
+        void vscode.window.showWarningMessage(
+          'Open a workspace folder before configuring skillsaw.',
+        );
+        return;
+      }
+      folder =
+        available.length === 1
+          ? available[0]
+          : await vscode.window.showWorkspaceFolderPick({
+              placeHolder: 'Choose the workspace folder to configure skillsaw for',
+            });
+      if (!folder) return;
+    }
+    const selected = await vscode.window.showOpenDialog({
+      title: 'Choose the installed skillsaw executable',
+      openLabel: 'Use skillsaw',
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      defaultUri: folder.uri,
+    });
+    if (!selected?.length || !vscode.workspace.isTrusted || !folders.has(folder.uri.toString()))
+      return;
+    await config(folder).update(
+      'executable',
+      selected[0].fsPath,
+      vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    // Also validate the selection in command-only mode.
+    const state = folders.get(folder.uri.toString());
+    if (state) request(state, true);
   }
   async function remap(state) {
     if (!state.report) return;
@@ -183,6 +239,8 @@ function activate(context) {
       },
     },
     vscode.commands.registerCommand('skillsaw.showOutput', () => output.show()),
+    vscode.commands.registerCommand('skillsaw.installationInstructions', showInstallation),
+    vscode.commands.registerCommand('skillsaw.chooseExecutable', () => chooseExecutable()),
     vscode.commands.registerCommand('skillsaw.lint', () => {
       if (!vscode.workspace.isTrusted) {
         void vscode.window.showWarningMessage('Trust the workspace before running skillsaw.');
