@@ -424,7 +424,8 @@ RULE_GROUPS = [
         "kiro",
         ["kiro-agent-valid", "kiro-mcp-valid", "kiro-references"],
         "Opt-in checks for native Kiro JSON/Markdown agents, literal local references, "
-        "and workspace/agent MCP field types. Recursive steering and nested project "
+        "and workspace/agent MCP field types. Steering (including nested files an agent's "
+        "`resources` loads) and nested project "
         "resources also receive shared content and MCP security checks. "
         "See [Kiro support](../kiro.md) for CLI 2.x/V3 compatibility and runtime limits.",
     ),
