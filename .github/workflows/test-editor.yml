@@ -1,8 +1,8 @@
-name: Editor pilot
+name: VS Code extension
 on:
   push:
     branches: [main]
-  # Pull requests run this only when they touch the editor pilot; pushes to
+  # Pull requests run this only when they touch the VS Code extension; pushes to
   # main run it unconditionally, so CLI changes that break it still surface.
   pull_request:
     branches: [main]
@@ -11,6 +11,7 @@ on:
       - examples/editor-onboarding/**
       - tests/fixtures/editor-slow-rule/**
       - .github/workflows/test-editor.yml
+      - .github/workflows/release-vscode.yml
 permissions:
   contents: read
 concurrency:
@@ -40,7 +41,7 @@ jobs:
         working-directory: editors/vscode
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: skillsaw-vscode-pilot
+          name: skillsaw-vscode
           path: editors/vscode/*.vsix
       # Some path fixtures intentionally use names that Windows rejects.
       - name: Bundle the sources needed by Windows CLI tests

@@ -1,7 +1,7 @@
 {
   "name": "skillsaw",
-  "displayName": "skillsaw (diagnostics pilot)",
-  "description": "Agent context diagnostics from your installed skillsaw CLI.",
+  "displayName": "skillsaw",
+  "description": "Lint AI agent skills, instructions, hooks and tool configuration with the skillsaw CLI.",
   "version": "0.1.0",
   "publisher": "stbenjam",
   "license": "Apache-2.0",
@@ -45,6 +45,14 @@
       {
         "command": "skillsaw.showOutput",
         "title": "skillsaw: Show Output"
+      },
+      {
+        "command": "skillsaw.chooseExecutable",
+        "title": "skillsaw: Choose Executable"
+      },
+      {
+        "command": "skillsaw.installationInstructions",
+        "title": "skillsaw: Installation Instructions"
       }
     ],
     "configuration": {
@@ -86,11 +94,25 @@
     "format": "prettier --write src test package.json",
     "test": "node --test test/*.test.js",
     "test:host": "node test/run-host.js",
-    "package": "vsce package --no-dependencies --out skillsaw-0.1.0.vsix"
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
     "prettier": "3.9.10",
     "@vscode/test-electron": "3.1.0",
     "@vscode/vsce": "4.1.0"
-  }
+  },
+  "icon": "images/icon.png",
+  "homepage": "https://skillsaw.org/editor/",
+  "bugs": {
+    "url": "https://github.com/stbenjam/skillsaw/issues"
+  },
+  "keywords": [
+    "skillsaw",
+    "agent skills",
+    "SKILL.md",
+    "AGENTS.md",
+    "Claude",
+    "Codex",
+    "linter"
+  ]
 }

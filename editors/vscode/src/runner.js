@@ -85,10 +85,13 @@ function runCli({ executable, cwd, timeoutMs, signal, maxBytes = MAX_OUTPUT_BYTE
     child.stderr.on('data', (data) => collect(stderr, data));
     child.on('error', (error) =>
       finish(
-        new Error(
-          error.code === 'ENOENT'
-            ? `Cannot find skillsaw executable: ${executable}. Install skillsaw or set skillsaw.executable.`
-            : `Cannot run skillsaw: ${error.message}`,
+        Object.assign(
+          new Error(
+            error.code === 'ENOENT'
+              ? `Cannot find skillsaw executable: ${executable}. Install skillsaw or set skillsaw.executable.`
+              : `Cannot run skillsaw: ${error.message}`,
+          ),
+          { code: error.code },
         ),
       ),
     );

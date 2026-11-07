@@ -21,11 +21,14 @@ test('missing executable and invalid executable settings are meaningful failures
     timeoutMs: 1000,
     signal: new AbortController().signal,
   };
-  await assert.rejects(runCli(options), /Cannot find skillsaw executable/);
+  await assert.rejects(runCli(options), {
+    code: 'ENOENT',
+    message: /Cannot find skillsaw executable/,
+  });
   await assert.rejects(runCli({ ...options, executable: '' }), /Set skillsaw.executable/);
 });
 
-// These fake entry points need POSIX shebang support. On Windows the pilot
+// These fake entry points need POSIX shebang support. On Windows the extension
 // invokes the skillsaw.exe installed by pip instead.
 test(
   'fixed argv and cwd survive spaces and shell metacharacters; exit 1 is a result',
@@ -37,7 +40,10 @@ test(
     );
     const result = await runCli(options);
     assert.equal(result.code, 1);
-    assert.deepEqual(JSON.parse(result.stdout), { argv: LINT_ARGS, cwd: options.cwd });
+    assert.deepEqual(JSON.parse(result.stdout), {
+      argv: LINT_ARGS,
+      cwd: await fs.realpath(options.cwd),
+    });
     assert.equal(result.stderr, 'notice');
   },
 );
