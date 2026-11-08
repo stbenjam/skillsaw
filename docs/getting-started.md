@@ -87,6 +87,12 @@ versions in GitHub Actions workflows, Makefile targets, and pre-commit hooks.
     pip install skillsaw
     ```
 
+=== "Homebrew"
+
+    ```bash
+    brew install stbenjam/tap/skillsaw
+    ```
+
 === "From source"
 
     ```bash
