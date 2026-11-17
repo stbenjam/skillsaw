@@ -18,23 +18,12 @@ A linter for the files that steer AI coding agents.
 </td>
 </tr></table>
 
-Agent instructions behave like code, but most teams still review them like
-prose. skillsaw gives them a linter. It validates structure across every major
-AI coding ecosystem, guards against many supply-chain attacks, and applies content
-and context rules backed by research and frontier lab guidance.
-
-It understands Agent Skills,
-[Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
-plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
-GEMINI.md, QWEN.md, Cursor plugins and marketplaces, Copilot, Cline, Devin, Kiro, OpenCode, Goose recipes, Muse Code, Pi,
-Grok Build, ZCode, Google Antigravity, native OpenClaw plugins, hooks, agent configuration, MCP Registry
-`server.json` publisher metadata,
-Vercel skills CLI lockfiles, and eval formats. Safe structural fixes can be applied
-automatically; everything else comes with precise, agent-friendly guidance.
-
-[Kiro support](docs/kiro.md) includes steering (nested files too, which an
-agent's `resources` can load), native JSON/Markdown agents, and workspace/agent MCP,
-with explicit CLI 2.x and V3 compatibility boundaries.
+skillsaw covers skills, plugins, instruction files (`CLAUDE.md`,
+`AGENTS.md`), hooks, and MCP configs. It checks their structure across every
+major agent ecosystem, flags supply-chain risks, and reviews their content
+against research and frontier-lab guidance. Safe fixes can be applied
+automatically; everything else comes with guidance an agent can act on. See
+the [supported ecosystems](https://skillsaw.org/repo-types/).
 
 **[Get started](https://skillsaw.org/getting-started/)** |
 **[Browse the rules](https://skillsaw.org/rules/)** |
