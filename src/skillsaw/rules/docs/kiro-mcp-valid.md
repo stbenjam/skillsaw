@@ -12,4 +12,4 @@ variables and headers, and a boolean for `disabled`.
 
 Partial server overrides are accepted. The rule does not require every record to
 supply a command or URL, select a transport, or validate OAuth negotiation,
-permissions or live server behavior. See the [Kiro support boundaries](../kiro.md).
+permissions or live server behavior. See the [Kiro support boundaries](https://skillsaw.org/kiro/).

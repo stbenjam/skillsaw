@@ -94,6 +94,21 @@ def replace_contributors(readme: str, rendered: str) -> str:
     return "".join(lines[:start_line] + generated + lines[end_line - 1 :])
 
 
+def github_get(path: str, token: Optional[str] = None) -> object:
+    """Fetch and decode one GitHub REST API resource."""
+    request = Request(
+        f"{GITHUB_API}/{path}",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "skillsaw-contributor-updater",
+            "X-GitHub-Api-Version": "2022-11-28",
+            **({"Authorization": f"Bearer {token}"} if token else {}),
+        },
+    )
+    with urlopen(request, timeout=30) as response:
+        return json.load(response)
+
+
 def fetch_pages(
     repository: str,
     resource: str,
@@ -108,17 +123,7 @@ def fetch_pages(
     page = 1
     while True:
         query = urlencode({**parameters, "per_page": 100, "page": page})
-        request = Request(
-            f"{GITHUB_API}/repos/{repository}/{resource}?{query}",
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "skillsaw-contributor-updater",
-                "X-GitHub-Api-Version": "2022-11-28",
-                **({"Authorization": f"Bearer {token}"} if token else {}),
-            },
-        )
-        with urlopen(request, timeout=30) as response:
-            page_items = json.load(response)
+        page_items = github_get(f"repos/{repository}/{resource}?{query}", token)
         if not isinstance(page_items, list):
             raise ValueError(f"GitHub {resource} API returned a non-list response")
         records.extend(page_items)
@@ -150,10 +155,25 @@ def fetch_community_contributors(repository: str, token: Optional[str] = None) -
     ]
 
 
-def update_readme(path: Path, contributors: Iterable[object]) -> bool:
+def profile_exists(login: str, token: Optional[str] = None) -> bool:
+    """Report whether a GitHub profile still resolves.
+
+    Deleted or suspended accounts still author their old issues, but their
+    profile pages return 404, so linking them breaks the README.
+    """
+    try:
+        github_get(f"users/{login}", token)
+    except HTTPError as error:
+        if error.code == 404:
+            return False
+        raise
+    return True
+
+
+def update_readme(path: Path, logins: Iterable[str]) -> bool:
     """Update the README contributor block and report whether it changed."""
     original = path.read_text(encoding="utf-8")
-    rendered = render_contributors(human_logins(contributors))
+    rendered = render_contributors(logins)
     updated = replace_contributors(original, rendered)
     if updated == original:
         return False
@@ -175,7 +195,8 @@ def main() -> int:
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     try:
         contributors = fetch_community_contributors(args.repository, token)
-        changed = update_readme(args.readme, contributors)
+        logins = [login for login in human_logins(contributors) if profile_exists(login, token)]
+        changed = update_readme(args.readme, logins)
     except (HTTPError, URLError, OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

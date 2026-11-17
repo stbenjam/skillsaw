@@ -15,4 +15,4 @@ interpolation, resource globs, knowledge bases, and `skill://` are left unresolv
 Steering line-range suffixes do not change the file existence check.
 
 Markdown links use `content-broken-internal-reference`. See the
-[Kiro support boundaries](../kiro.md) for version and runtime limits.
+[Kiro support boundaries](https://skillsaw.org/kiro/) for version and runtime limits.

@@ -28,7 +28,7 @@ for inclusion flags. Resource objects remain accepted without deeper validation.
 
 Legacy CLI 2.x permission fields and current V3 `permissions` are not validated
 or migrated. Unknown fields are accepted. Hooks and Powers are outside this rule.
-See the [Kiro support boundaries](../kiro.md) for formats, versions and sources.
+See the [Kiro support boundaries](https://skillsaw.org/kiro/) for formats, versions and sources.
 
 ## Configuration
 
