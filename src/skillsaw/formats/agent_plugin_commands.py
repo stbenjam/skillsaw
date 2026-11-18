@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from skillsaw.paths import contained_resolve, is_absolute_path, safe_is_dir
+from skillsaw.paths import (
+    Resolver,
+    contained_resolve,
+    is_absolute_path,
+    safe_is_dir,
+    safe_resolve,
+)
 
 
 def is_control_character(char: str) -> bool:
@@ -35,7 +41,9 @@ def normalized_parts(value: str) -> Optional[List[str]]:
     return parts
 
 
-def command_problem(command: str, plugin_dir: Path, plugin_root: Path) -> Optional[str]:
+def command_problem(
+    command: str, plugin_dir: Path, plugin_root: Path, *, resolve: Resolver = safe_resolve
+) -> Optional[str]:
     """Why *command* is not a portable executable token, or ``None``."""
     # A control character in an executable token is either a mis-encoded
     # value or an attempt to smuggle one token past a naive reader; it is
@@ -44,7 +52,7 @@ def command_problem(command: str, plugin_dir: Path, plugin_root: Path) -> Option
         return "'command' must not contain control characters"
     if command.startswith("./"):
         suffix = command[2:]
-        resolved = contained_resolve(plugin_dir / command, plugin_root)
+        resolved = contained_resolve(plugin_dir / command, plugin_root, resolve)
         parts = normalized_parts(suffix)
         if is_absolute_path(suffix) or parts is None or resolved is None:
             return "'command' resolves outside the plugin root"

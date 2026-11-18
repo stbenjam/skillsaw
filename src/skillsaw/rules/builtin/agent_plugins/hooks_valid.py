@@ -12,6 +12,7 @@ from skillsaw.diagnostics import safe_display
 from skillsaw.formats.agent_plugin_commands import command_problem
 from skillsaw.formats.agent_plugins import HOOKS_VERSION, load_agent_plugin_schema
 from skillsaw.lint_target import AgentPluginConfigNode
+from skillsaw.paths import Resolver
 from skillsaw.repository_types import PORTABLE_COMPONENT_REPO_TYPES
 from skillsaw.rule import Rule, RuleViolation, Severity
 
@@ -62,7 +63,7 @@ class AgentPluginHooksValidRule(Rule):
         for block in context.lint_tree.find(AgentPluginHooksBlock):
             block_owners = owners.get(context.resolve_path(block.path), [])
             seen = set()
-            for location, message in self._problems(block, block_owners):
+            for location, message in self._problems(block, block_owners, context.resolve_path):
                 if (location, message) in seen:
                     continue
                 seen.add((location, message))
@@ -75,7 +76,7 @@ class AgentPluginHooksValidRule(Rule):
 
     @staticmethod
     def _problems(
-        block: AgentPluginHooksBlock, owners: List[Tuple[Path, Path]]
+        block: AgentPluginHooksBlock, owners: List[Tuple[Path, Path]], resolve: Resolver
     ) -> Iterator[Tuple[str, str]]:
         if block.parse_error:
             yield "hooks:json", f"Invalid JSON: {safe_display(block.parse_error)}"
@@ -110,7 +111,7 @@ class AgentPluginHooksValidRule(Rule):
                     [problem]
                     if problem
                     else [
-                        command_problem(entry["command"], plugin_dir, plugin_root)
+                        command_problem(entry["command"], plugin_dir, plugin_root, resolve=resolve)
                         for plugin_dir, plugin_root in owners
                     ]
                 )

@@ -25,6 +25,7 @@ from skillsaw.formats.agent_plugins import (
 )
 from skillsaw.lint_target import AgentPluginConfigNode
 from skillsaw.paths import (
+    Resolver,
     contained_resolve,
     is_absolute_path,
     safe_exists,
@@ -105,10 +106,10 @@ class AgentPluginMcpValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         for node in context.lint_tree.find(AgentPluginConfigNode):
-            violations.extend(self._check_mcp(node))
+            violations.extend(self._check_mcp(node, context.resolve_path))
         return violations
 
-    def _check_mcp(self, node: AgentPluginConfigNode) -> List[RuleViolation]:
+    def _check_mcp(self, node: AgentPluginConfigNode, resolve: Resolver) -> List[RuleViolation]:
         mcp_path = node.plugin_dir / "mcp.json"
         if not (safe_exists(mcp_path) or safe_is_symlink(mcp_path)):
             return []
@@ -248,7 +249,7 @@ class AgentPluginMcpValidRule(Rule):
                 )
                 continue
             assert isinstance(server, dict)
-            problem = self._semantic_problem(server, node.plugin_dir, plugin_root)
+            problem = self._semantic_problem(server, node.plugin_dir, plugin_root, resolve)
             if problem:
                 violations.append(
                     self.violation(
@@ -262,11 +263,11 @@ class AgentPluginMcpValidRule(Rule):
         return violations
 
     def _semantic_problem(
-        self, server: Dict[str, Any], plugin_dir: Path, plugin_root: Path
+        self, server: Dict[str, Any], plugin_dir: Path, plugin_root: Path, resolve: Resolver
     ) -> Optional[str]:
         server_type = server["type"]
         if server_type == "stdio":
-            problem = command_problem(server["command"], plugin_dir, plugin_root)
+            problem = command_problem(server["command"], plugin_dir, plugin_root, resolve=resolve)
             if problem:
                 return problem
             env_problem = self._mapped_secret_problem(server.get("env", {}), header=False)
