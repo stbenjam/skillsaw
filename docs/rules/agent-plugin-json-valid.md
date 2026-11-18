@@ -18,7 +18,7 @@ canonical `plugin.json`. This rule validates the portable manifest and the
 fixed component locations defined by the
 [Agent Plugins 1.0.0 specification](https://agent-plugins.org/specification)
 and the
-[1.1.0 working draft](https://github.com/agentplugins/agent-plugins-spec/blob/ff8ab5e392cc87bd88d87c060815a87490e51003/spec/1.1.0.md).
+[1.1.0 working draft](https://github.com/agentplugins/agent-plugins-spec/blob/6395e8906b30e2f333b792bfaa981d790993d56f/spec/1.1.0.md).
 
 ## What is checked
 
@@ -41,9 +41,9 @@ and the
   Each one is then checked by the existing Agent Skills rules. Deeper
   `SKILL.md` files are not discovered through this format.
 
-Unknown top-level manifest fields and a non-object `extensions` field are
-reported as warnings and ignored, as required by the normative prose. Other
-manifest schema violations are errors. A missing optional component location
+Unknown top-level manifest fields receive a warning. The 1.1.0 draft accepts a
+string `displayName` and rejects a non-object `extensions` field. Version 1.0.0
+warns about and ignores a non-object `extensions` field. A missing optional component location
 is valid.
 
 ## Detection and explicit linting

@@ -57,12 +57,6 @@ def mcp_validators() -> dict:
     return {version: Draft202012Validator(schema) for version, schema in mcp_schemas().items()}
 
 
-@lru_cache(maxsize=None)
-def manifest_fields() -> frozenset:
-    """The portable fields, currently identical across supported versions."""
-    return frozenset().union(*(schema["properties"] for schema in plugin_schemas().values()))
-
-
 def format_schema_error(error: ValidationError) -> str:
     """Render a compact schema failure without echoing the invalid value."""
     path = "$"

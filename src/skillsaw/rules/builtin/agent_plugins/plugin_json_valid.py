@@ -26,7 +26,7 @@ from skillsaw.paths import (
 from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import (
-    manifest_fields,
+    plugin_schemas,
     plugin_validators,
     schema_error_summary,
     stable_key,
@@ -129,7 +129,10 @@ class AgentPluginJsonValidRule(Rule):
             ]
 
         violations: List[RuleViolation] = []
-        fields = manifest_fields()
+        declared_schema = data.get("$schema")
+        schema_version = supported_agent_plugin_schema_version(declared_schema, "plugin")
+        validation_version = schema_version or SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]
+        fields = plugin_schemas()[validation_version]["properties"].keys()
         unknown = sorted(set(data) - fields)
         for field in unknown:
             violations.append(
@@ -141,12 +144,8 @@ class AgentPluginJsonValidRule(Rule):
                 )
             )
 
-        # The spec makes these two schema failures non-fatal. Validate a
-        # sanitized view so they are reported once at warning severity while
-        # all other schema failures remain fatal errors.
+        # Clients ignore unknown top-level fields in both versions.
         checked = {key: value for key, value in data.items() if key in fields}
-        declared_schema = checked.get("$schema")
-        schema_version = supported_agent_plugin_schema_version(declared_schema, "plugin")
         if "$schema" in checked and schema_version is None:
             version = agent_plugin_schema_version(declared_schema, "plugin")
             message = (
@@ -168,9 +167,12 @@ class AgentPluginJsonValidRule(Rule):
             )
             # Suppress the schema's duplicate const error. The dedicated
             # diagnostic above remains fatal and is clearer about support.
-            schema_version = SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]
-            checked["$schema"] = agent_plugin_schema_id(schema_version, "plugin")
-        if "extensions" in checked and not isinstance(checked["extensions"], dict):
+            checked["$schema"] = agent_plugin_schema_id(validation_version, "plugin")
+        if (
+            validation_version == "1.0.0"
+            and "extensions" in checked
+            and not isinstance(checked["extensions"], dict)
+        ):
             violations.append(
                 self.violation(
                     "Non-object 'extensions' is ignored by Agent Plugins",
@@ -181,7 +183,7 @@ class AgentPluginJsonValidRule(Rule):
             )
             checked.pop("extensions")
 
-        validator = plugin_validators()[schema_version or SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]]
+        validator = plugin_validators()[validation_version]
         schema_errors = list(validator.iter_errors(checked))
         if schema_errors:
             violations.append(

@@ -159,6 +159,26 @@ class TestManifestSchema:
         assert extensions
         assert {item.severity for item in extensions} == {Severity.WARNING}
 
+    @pytest.mark.parametrize(
+        ("version", "field", "value", "severity"),
+        [
+            ("1.0.0", "displayName", "Release tools", Severity.WARNING),
+            ("1.1.0", "displayName", 42, Severity.ERROR),
+            ("1.1.0", "extensions", [], Severity.ERROR),
+        ],
+    )
+    def test_version_specific_metadata(self, tmp_path, version, field, value, severity):
+        _write_manifest(
+            tmp_path,
+            **{
+                "$schema": f"https://agent-plugins.org/schemas/{version}/plugin.schema.json",
+                field: value,
+            },
+        )
+        (finding,) = lint_rules(tmp_path, PLUGIN_JSON_RULE)
+        assert finding.severity is severity
+        assert field in finding.message
+
     def test_unknown_extension_namespace_object_contents_are_opaque(self, tmp_path):
         manifest = {
             "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
