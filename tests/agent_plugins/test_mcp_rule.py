@@ -393,6 +393,66 @@ class TestMcpServerEntries:
         assert _contains(findings, "unsupported-variant")
 
 
+def _write_versioned_plugin(root, version, servers):
+    """Write a plugin whose manifest and mcp.json both declare *version*."""
+    base = f"https://agent-plugins.org/schemas/{version}"
+    _write_plugin(root, servers, mcp_schema=f"{base}/mcp.schema.json", manifest=False)
+    (root / "plugin.json").write_text(
+        json.dumps({"$schema": f"{base}/plugin.schema.json", "name": "fixture-plugin"}),
+        encoding="utf-8",
+    )
+    return root
+
+
+class TestVersionedServerFields:
+    @pytest.mark.parametrize(
+        ("version", "server", "extensions", "valid"),
+        [
+            ("1.0.0", _stdio("uvx"), {"com.example": {}}, False),
+            ("1.1.0", _stdio("uvx"), {"com.example": {}}, True),
+            ("1.1.0", _remote("https://mcp.example.com/mcp"), {"com.example": {}}, True),
+            (
+                "1.1.0",
+                {"server": {"type": "sse", "url": "https://mcp.example.com/sse"}},
+                {"com.example": {}},
+                True,
+            ),
+            ("1.1.0", _stdio("uvx"), {"com.example": "release"}, False),
+            ("1.1.0", _stdio("uvx"), [], False),
+        ],
+    )
+    def test_server_extensions(self, tmp_path, version, server, extensions, valid):
+        server["server"]["extensions"] = extensions
+        _write_versioned_plugin(tmp_path, version, server)
+        findings = lint_rules(tmp_path, MCP_RULE)
+        if valid:
+            assert findings == []
+        else:
+            assert _contains(findings, "server", "extensions"), messages_lower(findings)
+
+    @pytest.mark.parametrize(
+        ("cwd", "valid"),
+        [
+            ("${PLUGIN_ROOT}", True),
+            ("${PLUGIN_DATA}", True),
+            ("${PLUGIN_DATA}/cache", True),
+            ("./work", True),
+            ("${PLUGIN_ROOT}x", False),
+            ("/srv/work", False),
+        ],
+    )
+    def test_1_1_0_cwd_forms(self, tmp_path, cwd, valid):
+        (tmp_path / "work").mkdir()
+        _write_versioned_plugin(tmp_path, "1.1.0", _stdio("uvx", cwd=cwd))
+        findings = lint_rules(tmp_path, MCP_RULE)
+        if valid:
+            assert findings == []
+        else:
+            assert _contains(
+                findings, "cwd", "does not match the required pattern"
+            ), messages_lower(findings)
+
+
 class TestStdioCommandToken:
     @pytest.mark.parametrize(
         ("command", "needle"),
