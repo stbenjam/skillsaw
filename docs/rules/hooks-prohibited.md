@@ -25,7 +25,7 @@ copy, `.claude/settings*.json`, **skill/agent frontmatter** (`hooks:` key),
 `<repo>/.codex/hooks.json` and any package's `.codex/hooks.json`, the
 `[hooks]` tables of a `.codex/config.toml`,
 `.muse/hooks.json`, Grok Build's `.grok/hooks/*.json`, Cursor's
-`.cursor/hooks.json`, and Google Antigravity's `hooks.json` in a
+`.cursor/hooks.json`, Google Antigravity's `hooks.json` in a
 customization root (`.agents/`, `.agent/`, `_agents/`, `_agent/`) or in one
 of its plugins, and an Agent Plugins 1.1.0 package's root `hooks.json`.
 
