@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Iterator
 
 from skillsaw.blocks.agent_plugin_hooks import AgentPluginHooksBlock
@@ -40,13 +41,25 @@ class AgentPluginHooksValidRule(Rule):
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> list[RuleViolation]:
+        nodes = context.lint_tree.find(AgentPluginConfigNode)
         findings = [
             self.violation(node.hooks_location_error, file_path=node.plugin_dir / "hooks.json")
-            for node in context.lint_tree.find(AgentPluginConfigNode)
+            for node in nodes
             if node.hooks_location_error
         ]
+        # A symlink can share one hooks file between nested plugins. It is
+        # attached once, so collect every declaring plugin as an owner.
+        owners: dict[Path, list[tuple[Path, Path]]] = {}
+        for node in nodes:
+            if node.hooks_file is not None and node.plugin_owner is not None:
+                owners.setdefault(node.hooks_file, []).append((node.plugin_dir, node.plugin_owner))
         for block in context.lint_tree.find(AgentPluginHooksBlock):
-            for location, message in self._problems(block):
+            block_owners = owners.get(context.resolve_path(block.path), [])
+            seen = set()
+            for location, message in self._problems(block, block_owners):
+                if (location, message) in seen:
+                    continue
+                seen.add((location, message))
                 findings.append(
                     self.violation(
                         message, file_path=block.path, fingerprint_discriminator=location
@@ -55,7 +68,9 @@ class AgentPluginHooksValidRule(Rule):
         return findings
 
     @staticmethod
-    def _problems(block: AgentPluginHooksBlock) -> Iterator[tuple[str, str]]:
+    def _problems(
+        block: AgentPluginHooksBlock, owners: list[tuple[Path, Path]]
+    ) -> Iterator[tuple[str, str]]:
         if block.parse_error:
             yield "json", f"Invalid JSON: {safe_display(block.parse_error)}"
             return
@@ -72,7 +87,7 @@ class AgentPluginHooksValidRule(Rule):
         if problem:
             yield "document", f"Invalid portable hooks configuration: {problem}"
             return
-        assert isinstance(hooks, dict) and block.plugin_owner is not None
+        assert isinstance(hooks, dict)
         for event, entries in hooks.items():
             label = safe_display(event)
             location = stable_key(event)
@@ -84,9 +99,13 @@ class AgentPluginHooksValidRule(Rule):
                 continue
             for index, entry in enumerate(entries):
                 problem = schema_error_summary(handler_validator.iter_errors(entry))
-                if not problem:
-                    problem = command_problem(
-                        entry["command"], block.path.parent, block.plugin_owner
-                    )
-                if problem:
+                problems = (
+                    [problem]
+                    if problem
+                    else [
+                        command_problem(entry["command"], plugin_dir, plugin_root)
+                        for plugin_dir, plugin_root in owners
+                    ]
+                )
+                for problem in filter(None, problems):
                     yield f"{location}:{index}", f"Invalid handler '{label}[{index}]': {problem}"

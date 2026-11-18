@@ -114,3 +114,25 @@ def test_contained_hook_file_symlink_resolves_commands_from_package_root(package
     (package / "bin").symlink_to(package.parent, target_is_directory=True)
     (message,) = lint(package)
     assert "Stop[0]" in message and "outside the plugin root" in message
+
+
+def test_malformed_args_keep_the_command_visible_to_security_rules(package):
+    hooks(package, {"Stop": [{"command": "release-review", "args": [42, "--fast"]}]})
+    (message,) = lint(package)
+    assert "Stop[0]" in message
+    assert any("release-review --fast" in message for message in lint(package, "hooks-prohibited"))
+
+
+def test_shared_hooks_file_checks_commands_against_each_plugin_root(package):
+    inner = package / "plugins" / "inner"
+    inner.mkdir(parents=True)
+    (inner / "plugin.json").write_text((package / "plugin.json").read_text())
+    hooks(package, {"Stop": [{"command": "./bin/run"}, {"command": "./../escape"}]})
+    (package / "hooks.json").rename(inner / "hooks.json")
+    (package / "hooks.json").symlink_to(Path("plugins") / "inner" / "hooks.json")
+    # Inside the outer root, but outside the inner plugin that declares it.
+    (inner / "bin").symlink_to(package, target_is_directory=True)
+    messages = lint(package)
+    assert len(messages) == 2
+    assert any("Stop[0]" in message and "outside" in message for message in messages)
+    assert any("Stop[1]" in message and "outside" in message for message in messages)

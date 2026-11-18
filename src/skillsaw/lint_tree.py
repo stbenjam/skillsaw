@@ -2196,6 +2196,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                         "hooks.json must resolve to a regular file inside the plugin root"
                     )
                 else:
+                    # A nested plugin can share this file through a symlink;
+                    # the block attaches once, but each declaring plugin's
+                    # commands are checked against its own root.
+                    node.hooks_file = resolved_hooks
                     state.add_parser_block(
                         node, hooks_path, AgentPluginHooksBlock, owner=resolved_plugin
                     )
