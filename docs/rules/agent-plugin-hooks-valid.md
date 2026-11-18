@@ -30,9 +30,9 @@ ignored.
   An empty `hooks` object is valid.
 - Each handler has a `command` that names one executable, optional
   string-array `args`, and an optional `extensions` object; no other handler
-  keys are allowed. A command beginning with `./` resolves
-  inside the plugin root. Bare commands may refer to programs provided by the
-  runtime environment.
+  keys are allowed. A command beginning with `./` must resolve inside the
+  plugin root. Bare commands may refer to programs provided by the runtime
+  environment.
 
 A malformed document makes clients ignore the whole hooks component, so it
 is reported once and its events are not inspected. A malformed event or

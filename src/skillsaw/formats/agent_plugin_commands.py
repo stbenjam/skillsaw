@@ -36,6 +36,7 @@ def normalized_parts(value: str) -> Optional[List[str]]:
 
 
 def command_problem(command: str, plugin_dir: Path, plugin_root: Path) -> Optional[str]:
+    """Why *command* is not a portable executable token, or ``None``."""
     # A control character in an executable token is either a mis-encoded
     # value or an attempt to smuggle one token past a naive reader; it is
     # never part of a real program name, in either accepted form.
@@ -62,7 +63,5 @@ def command_problem(command: str, plugin_dir: Path, plugin_root: Path) -> Option
     # Only whitespace is rejected: shell metacharacters are legal in file
     # names, and rejecting them would fail valid single-token commands.
     if any(char.isspace() for char in command):
-        return (
-            "'command' must be a single executable token; " "arguments must be supplied via 'args'"
-        )
+        return "'command' must be a single executable token; arguments must be supplied via 'args'"
     return None

@@ -18,17 +18,19 @@ of its plugins, and an Agent Plugins 1.1.0 package's root `hooks.json`.
 Not every hook spawns a process. Claude Code also dispatches `http`,
 `mcp_tool`, `prompt` and `agent` handlers, and Codex dispatches `mcp_tool`
 ones; each fires on the same lifecycle events and each is inventoried here.
-In the nested shape Claude Code defines, a handler is inventoried whichever
+In every dialect with handler types, a handler is inventoried whichever
 host's file it sits in — an `http` handler in `.muse/hooks.json` is reported
 even though Muse runs only `command` handlers, because the entry is in the
 repository and a reviewer reads the file. Whether a given host actually
 dispatches it is what that host's shape rule (`muse-hooks-valid`,
 `grok-hooks-valid`, `cursor-hooks-valid`, `antigravity-hooks-valid`)
-reports. An Agent Plugins `hooks.json` has no handler types: each entry's
-`command` and `args` are inventoried, and other keys are left to
-`agent-plugin-hooks-valid`. When another host also reads that file — a Codex
-plugin that declares it, say — that host's reading is inventoried as well,
-and a handler both readings expose is reported once.
+reports.
+
+An Agent Plugins `hooks.json` has no handler types: each entry's `command`
+and `args` are inventoried, and other keys are left to
+`agent-plugin-hooks-valid`. When another host also reads the file, such as a
+Codex plugin that declares it, that host's reading is inventoried too, and a
+handler both readings expose is reported once.
 
 A prompt handler is named by its text: `prompt:<text>` in the nested shape
 Claude Code defines, and the same spelling for a Cursor `type: "prompt"`

@@ -530,9 +530,10 @@ def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
 
     Every hooks class is read by the same security rules, so which one a
     file arrived under does not matter here — a second block for it would
-    report each of its commands twice. A ``distinct_dialect`` class is not
-    indexed: its reading covers no other host's, so it never answers yes. The generic root attach and the
-    Claude branch both run before a Codex manifest's declared files, and a
+    report each of its commands twice. A ``distinct_dialect`` class is
+    not indexed: its reading stands in for no other host's, so this never
+    returns True for it. The generic root attach and the Claude branch both
+    run before a Codex manifest's declared files, and a
     manifest may name any of the files they placed: the project layer's
     ``.codex/hooks.json``, the conventional ``hooks/hooks.json``, or
     another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``.
@@ -561,11 +562,11 @@ def _add_project_hooks(
     path: Path,
     block_cls: type,
 ) -> None:
-    """Keep the first conventional parser and Antigravity's distinct reading.
+    """Keep the first conventional parser, plus any ``distinct_dialect`` reading.
 
     Symlinked files can serve several hosts. Conventional readers retain
-    their first-host ownership; Antigravity also attaches because its named
-    hooks can expose additional handlers. The security rules scan the union
+    their first-host ownership; a distinct dialect (Antigravity's named
+    hooks) also attaches because it can expose additional handlers. The security rules scan the union
     of those readings and report shared handlers once.
     """
     if not block_cls.distinct_dialect and _attached_as_hooks(state, path):

@@ -93,7 +93,8 @@ class AgentPluginHooksValidRule(Rule):
         if problem:
             yield "document", f"Invalid portable hooks configuration: {problem}"
             return
-        assert isinstance(hooks, dict)
+        if not isinstance(hooks, dict):
+            return
         for event, entries in hooks.items():
             label = safe_display(event)
             location = stable_key(event)
