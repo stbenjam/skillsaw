@@ -3,9 +3,9 @@
 
 # Rules Reference
 
-skillsaw includes **122** built-in rules organized into the following categories:
+skillsaw includes **123** built-in rules organized into the following categories:
 
-- [Agent Plugins](agent-plugins.md) (3 rules)
+- [Agent Plugins](agent-plugins.md) (4 rules)
 - [agentskills.io](agentskills.md) (8 rules)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
 - [Claude Code](claude.md) (13 rules)
@@ -37,6 +37,7 @@ skillsaw includes **122** built-in rules organized into the following categories
 
 | Rule ID | Description | Default Severity | Autofix | Category |
 |---------|-------------|------------------|---------|----------|
+| [`agent-plugin-hooks-valid`](agent-plugin-hooks-valid.md) | Portable hooks.json must declare supported events and valid command handlers | error (disabled) | - | Agent Plugins |
 | [`agent-plugin-json-valid`](agent-plugin-json-valid.md) | Agent Plugins plugin.json and skills location must conform to a supported schema | error (auto) | - | Agent Plugins |
 | [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md) | Agent Plugins mcp.json must conform to a supported schema and semantics | error (auto) | - | Agent Plugins |
 | [`agent-plugin-required`](agent-plugin-required.md) | Plugins must also be available as vendor-neutral Agent Plugins v1 packages, with shared manifest metadata in sync | warning (disabled) | auto | Agent Plugins |

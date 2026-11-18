@@ -1,0 +1,5 @@
+{
+  "name": "release-review",
+  "version": "1.2.0",
+  "description": "Release review hooks shared by the portable package and its Codex reviewer."
+}

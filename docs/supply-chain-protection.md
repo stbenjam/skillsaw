@@ -177,6 +177,7 @@ be defined:
 | Copilot / VS Code agent `hooks:` frontmatter | hooks-dangerous, hooks-prohibited |
 | Copilot cloud/shared agent `mcp-servers:` frontmatter | mcp-prohibited, mcp-valid-json |
 | Agent Plugin `mcp.json` | mcp-prohibited, agent-plugin-mcp-valid |
+| Agent Plugin `hooks.json` (1.1.0 manifests) | hooks-dangerous, hooks-prohibited, agent-plugin-hooks-valid (opt-in) |
 | `.apm/hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | `.apm/settings.json` | hooks-dangerous, hooks-prohibited, claude-settings-dangerous |
 

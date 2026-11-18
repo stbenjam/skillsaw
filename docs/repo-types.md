@@ -135,7 +135,8 @@ my-plugin/
 ├── skills/               # Optional
 │   └── my-skill/         # Immediate child directory
 │       └── SKILL.md      # Agent Skills specification
-└── mcp.json              # Optional: portable MCP server configuration
+├── mcp.json              # Optional: portable MCP server configuration
+└── hooks.json            # Optional (1.1.0 draft): portable lifecycle hooks
 ```
 
 Each skill must be an immediate child of `skills/`; deeper descendants are not
@@ -143,6 +144,9 @@ discovered as additional skills. `plugin.json` and, when present, `mcp.json`
 must use the canonical Agent Plugins v1 schema identifiers. The
 `agent-plugin-json-valid` and `agent-plugin-mcp-valid` rules validate those
 files, while the `agentskill-*` rules validate discovered `SKILL.md` files.
+When the manifest declares 1.1.0, the opt-in `agent-plugin-hooks-valid` rule
+validates `hooks.json`, and `hooks-dangerous` and `hooks-prohibited` inspect
+its commands.
 
 Automatic detection is deliberately strict. A `plugin.json` at the lint root,
 or at an immediate `plugins/*` child, must declare a canonical Agent Plugins

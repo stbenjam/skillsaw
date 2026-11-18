@@ -5,6 +5,11 @@ version: "0.23.0"
 
 rules:
 
+  # Portable hooks.json must declare supported events and valid command handlers
+  agent-plugin-hooks-valid:
+    enabled: false
+    severity: error
+
   # Agent Plugins plugin.json and skills location must conform to a supported schema
   agent-plugin-json-valid:
     enabled: auto

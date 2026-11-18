@@ -20,6 +20,7 @@ from .blocks import (
     AgentBlock,
     AgentMemoryBlock,
     AgentMemoryIndexBlock,
+    AgentPluginHooksBlock,
     AgentPluginMcpBlock,
     AgentsMdBlock,
     AntigravityAgentBlock,
@@ -118,6 +119,8 @@ from .blocks.kiro import (
 from .lint_target import OpenClawPluginNode, OpenClawPluginConfigNode, OpenClawPackageConfigNode
 from .blocks.json_config import OpenClawInlineMcpBlock
 from .formats.openclaw import MANIFEST, contained_file, inline_mcp_servers
+from .discovery.agent_plugins import declared_schema
+from .formats.agent_plugins import HOOKS_VERSION, agent_plugin_schema_id
 from .blocks.pi import PiPackageNode, PiPackageBlock
 from .discovery.pi import package_resources
 from .pi_tree import attach_pi_resources, attach_pi_projects, attach_pi_prompts
@@ -448,9 +451,10 @@ class _TreeBuildState:
             self.extra_content_paths.add(path)
             if resolved not in self.content_alias_files:
                 self.extra_content_files.add(resolved)
-        # Antigravity's named-hook dialect must not suppress another host's
-        # parser. Shared commands are deduplicated by the hook scanners.
-        if issubclass(block_cls, HooksBlock) and block_cls is not AntigravityHooksBlock:
+        # A distinct dialect (Antigravity's named hooks, Agent Plugins'
+        # flat commands) must not suppress another host's parser. Shared
+        # commands are deduplicated by the hook scanners.
+        if issubclass(block_cls, HooksBlock) and not block_cls.distinct_dialect:
             self.hooks_paths.add(resolved)
         elif issubclass(block_cls, McpBlock):
             self.mcp_paths.add(resolved)
@@ -526,8 +530,10 @@ def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
 
     Every hooks class is read by the same security rules, so which one a
     file arrived under does not matter here — a second block for it would
-    report each of its commands twice. The generic root attach and the
-    Claude branch both run before a Codex manifest's declared files, and a
+    report each of its commands twice. A ``distinct_dialect`` class is
+    not indexed: its reading stands in for no other host's, so this never
+    returns True for it. The generic root attach and the Claude branch both
+    run before a Codex manifest's declared files, and a
     manifest may name any of the files they placed: the project layer's
     ``.codex/hooks.json``, the conventional ``hooks/hooks.json``, or
     another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``.
@@ -556,14 +562,14 @@ def _add_project_hooks(
     path: Path,
     block_cls: type,
 ) -> None:
-    """Keep the first conventional parser and Antigravity's distinct reading.
+    """Keep the first conventional parser, plus any ``distinct_dialect`` reading.
 
     Symlinked files can serve several hosts. Conventional readers retain
-    their first-host ownership; Antigravity also attaches because its named
-    hooks can expose additional handlers. The security rules scan the union
+    their first-host ownership; a distinct dialect (Antigravity's named
+    hooks) also attaches because it can expose additional handlers. The security rules scan the union
     of those readings and report shared handlers once.
     """
-    if block_cls is not AntigravityHooksBlock and _attached_as_hooks(state, path):
+    if not block_cls.distinct_dialect and _attached_as_hooks(state, path):
         return
     state.add_parser_block(root, path, block_cls)
 
@@ -2180,6 +2186,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 AgentPluginMcpBlock,
                 owner=resolved_plugin,
             )
+            hooks_path = plugin_path / "hooks.json"
+            if (
+                (safe_exists(hooks_path) or safe_is_symlink(hooks_path))
+                and not context.is_path_excluded(hooks_path)
+                and declared_schema(node.path, plugin_path, "plugin", resolve=resolve)
+                == agent_plugin_schema_id(HOOKS_VERSION, "plugin")
+            ):
+                resolved_hooks = contained_resolve(hooks_path, resolved_plugin, resolve)
+                if resolved_hooks is None or not safe_is_file(resolved_hooks):
+                    node.hooks_location_error = (
+                        "hooks.json must resolve to a regular file inside the plugin root"
+                    )
+                else:
+                    # A nested plugin can share this file through a symlink;
+                    # the block attaches once, but each declaring plugin's
+                    # commands are checked against its own root.
+                    node.hooks_file = resolved_hooks
+                    state.add_parser_block(
+                        node, hooks_path, AgentPluginHooksBlock, owner=resolved_plugin
+                    )
             container.children.append(node)
 
         # Antigravity manifest cluster, for any directory Antigravity

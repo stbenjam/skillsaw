@@ -632,6 +632,12 @@ class OpenClawPackageConfigNode(OpenClawConfigNode):
 class AgentPluginConfigNode(LintTarget):
     """The root ``plugin.json`` manifest for a portable Agent Plugin."""
 
+    # Set by the tree builder for a 1.1.0 manifest's root hooks.json and read
+    # by ``agent-plugin-hooks-valid``: why the file cannot be read, or the
+    # resolved file whose commands this plugin's root must contain.
+    hooks_location_error: Optional[str] = None
+    hooks_file: Optional[Path] = None
+
     @property
     def plugin_dir(self) -> Path:
         return self.path.parent

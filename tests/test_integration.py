@@ -6461,6 +6461,9 @@ class TestRuleCoverage:
         )
         fired |= rule_ids(r)
 
+        repo = copy_fixture("agent-plugins/hooks-invalid", tmp_path / "agent_plugin_hooks_invalid")
+        fired |= rule_ids(run_lint(repo, "--rule", "agent-plugin-hooks-valid"))
+
         repo = copy_fixture("pi/mcp-invalid", tmp_path / "pi_mcp_invalid")
         fired |= rule_ids(run_lint(repo, "--rule", "pi-mcp-valid"))
 

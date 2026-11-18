@@ -3,6 +3,7 @@
 import pytest
 
 from skillsaw.formats.agent_plugins import (
+    HOOKS_VERSION,
     SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS,
     agent_plugin_schema_id,
     load_agent_plugin_schema,
@@ -24,6 +25,11 @@ def test_supported_schema_ids_match_the_bundled_documents(version, kind):
 def test_schema_id_rejects_an_unsupported_version():
     with pytest.raises(ValueError, match="schema version"):
         agent_plugin_schema_id("9.9.9", "plugin")
+
+
+def test_bundled_hooks_schema_is_the_draft():
+    schema = load_agent_plugin_schema("hooks.schema.json", HOOKS_VERSION)
+    assert schema["$id"] == "https://agent-plugins.org/schemas/1.1.0/hooks.schema.json"
 
 
 def test_schema_id_rejects_an_unsupported_kind():

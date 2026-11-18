@@ -241,7 +241,7 @@ per-ecosystem attach paths and loses its content silently.
   (`TestDualManifestBackwardCompat` pins this).
 - **Hooks get one subclass per host instead of conditional strictness.**
   Each host's hooks file is its own `HooksBlock` subclass — Claude, Codex,
-  Muse, Cursor, Grok, Antigravity — chosen from provenance in
+  Muse, Cursor, Grok, Antigravity, Agent Plugins — chosen from provenance in
   `build_lint_tree`, with a `<host>-hooks-valid` rule iterating it.
   `hooks-dangerous` and `hooks-prohibited` read the shared `HooksBlock`
   base, so a new host needs no changes there. Exception:

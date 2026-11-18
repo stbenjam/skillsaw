@@ -43,7 +43,8 @@ Ported 2 packages; Agent Plugins validation passed.
 - **Skills** — nothing to do: `skills/*/SKILL.md` is already the Agent
   Plugins location.
 - **Commands, agents, hooks** — stay behind as client-specific content;
-  Agent Plugins v1 defines only skills and MCP servers.
+  Agent Plugins 1.0.0, the release `port` targets, defines only skills and
+  MCP servers.
 
 Every port ends with the Agent Plugins rules
 (`agent-plugin-json-valid`, `agent-plugin-mcp-valid`) run over the

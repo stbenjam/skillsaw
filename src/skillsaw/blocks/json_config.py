@@ -472,15 +472,16 @@ class HooksBlock(JsonConfigBlock):
     list, handler types, and fields: ``claude-hooks-valid`` iterates
     :class:`ClaudeHooksBlock`, ``codex-hooks-valid`` :class:`CodexHooksBlock`,
     ``muse-hooks-valid`` :class:`MuseHooksBlock`, ``grok-hooks-valid``
-    :class:`GrokHooksBlock`, and ``cursor-hooks-valid``
-    :class:`CursorHooksBlock` — so a file is checked against the vocabulary
+    :class:`GrokHooksBlock`, ``cursor-hooks-valid``
+    :class:`CursorHooksBlock`, and ``agent-plugin-hooks-valid``
+    :class:`AgentPluginHooksBlock` — so a file is checked against the vocabulary
     of the tool that will actually load it. The tree builder picks the
     subclass from where the file lives and who claims the directory.
 
     :attr:`events` parses the nested shape Claude Code defined and Codex,
     Muse Code and Grok Build adopted: ``{hooks: {Event: [{matcher?, hooks: [{type,
     command, ...}]}]}}``. A host with a different shape overrides it
-    (Cursor).
+    (Cursor, Agent Plugins).
     """
 
     category: str = "hooks"
@@ -495,6 +496,12 @@ class HooksBlock(JsonConfigBlock):
     #: article is chosen where the message is built.
     mapping_noun: ClassVar[str] = "object"
     sequence_noun: ClassVar[str] = "array"
+    #: Whether this host reads a file in a dialect the nested-shape readers
+    #: do not cover. Attaching such a block never stands in for another
+    #: host's reading of the same file: a shared file keeps one block per
+    #: dialect, and the hook scanners report a handler two readings share
+    #: once.
+    distinct_dialect: ClassVar[bool] = False
 
     @property
     def security_events(self) -> Dict[str, List[HookEventConfig]]:
@@ -1036,6 +1043,7 @@ class AntigravityHooksBlock(HooksBlock):
     """
 
     category: str = "hooks"
+    distinct_dialect: ClassVar[bool] = True
     #: Measured: a bare ``NaN``/``Infinity`` token, a comment and a
     #: trailing comma each drop the whole file — ``failed to parse
     #: hooks.json … invalid character``, and the run loads zero named
