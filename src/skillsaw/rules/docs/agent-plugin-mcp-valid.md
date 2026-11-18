@@ -24,15 +24,16 @@ remain usable.
 
 ## Server variants
 
-Each 1.1.0 server may also declare an `extensions` object containing
-client-specific namespace objects.
-
 Each server is one closed variant:
 
 - `stdio` requires a non-empty `command`, and may define string-array `args`,
   string-map `env`, and string `cwd`.
 - `streamable-http` and `sse` require a non-empty `url`, and may define a
   string-map `headers`.
+
+In 1.1.0, every variant may also declare an `extensions` object whose values
+are client-specific namespace objects. Skillsaw does not validate their
+contents.
 
 A stdio `command` is one executable token: either a bare executable name or a
 package-relative path beginning with `./`. A bare command containing

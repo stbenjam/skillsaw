@@ -9,6 +9,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.repository_types import PORTABLE_COMPONENT_REPO_TYPES
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.agent_plugins import (
+    NONFATAL_EXTENSIONS_SCHEMA_VERSIONS,
     SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS,
     agent_plugin_schema_id,
     agent_plugin_schema_version,
@@ -26,7 +27,7 @@ from skillsaw.paths import (
 from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import (
-    plugin_schemas,
+    manifest_fields,
     plugin_validators,
     schema_error_summary,
     stable_key,
@@ -132,7 +133,7 @@ class AgentPluginJsonValidRule(Rule):
         declared_schema = data.get("$schema")
         schema_version = supported_agent_plugin_schema_version(declared_schema, "plugin")
         validation_version = schema_version or SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]
-        fields = plugin_schemas()[validation_version]["properties"].keys()
+        fields = manifest_fields(validation_version)
         unknown = sorted(set(data) - fields)
         for field in unknown:
             violations.append(
@@ -168,8 +169,10 @@ class AgentPluginJsonValidRule(Rule):
             # Suppress the schema's duplicate const error. The dedicated
             # diagnostic above remains fatal and is clearer about support.
             checked["$schema"] = agent_plugin_schema_id(validation_version, "plugin")
+        # 1.0.0 reports and ignores a non-object extensions field; later
+        # versions leave it to the schema as a fatal error.
         if (
-            validation_version == "1.0.0"
+            validation_version in NONFATAL_EXTENSIONS_SCHEMA_VERSIONS
             and "extensions" in checked
             and not isinstance(checked["extensions"], dict)
         ):
@@ -188,8 +191,7 @@ class AgentPluginJsonValidRule(Rule):
         if schema_errors:
             violations.append(
                 self.violation(
-                    f"plugin.json does not conform to Agent Plugins "
-                    f"{schema_version or _SUPPORTED_VERSIONS_TEXT}: "
+                    f"plugin.json does not conform to Agent Plugins {validation_version}: "
                     f"{schema_error_summary(schema_errors)}",
                     file_path=manifest,
                     fingerprint_discriminator="manifest:schema",

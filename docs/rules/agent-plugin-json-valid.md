@@ -41,10 +41,11 @@ and the
   Each one is then checked by the existing Agent Skills rules. Deeper
   `SKILL.md` files are not discovered through this format.
 
-Unknown top-level manifest fields receive a warning. The 1.1.0 draft accepts a
-string `displayName` and rejects a non-object `extensions` field. Version 1.0.0
-warns about and ignores a non-object `extensions` field. A missing optional component location
-is valid.
+Top-level fields that the declared schema version does not define receive a
+warning and are ignored, such as `displayName` in a 1.0.0 manifest. The 1.1.0
+draft accepts a string `displayName` and rejects a non-object `extensions`
+field; 1.0.0 warns about and ignores one. Other manifest schema violations are
+errors. A missing optional component location is valid.
 
 ## Detection and explicit linting
 
