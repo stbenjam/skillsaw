@@ -496,6 +496,12 @@ class HooksBlock(JsonConfigBlock):
     #: article is chosen where the message is built.
     mapping_noun: ClassVar[str] = "object"
     sequence_noun: ClassVar[str] = "array"
+    #: Whether this host reads a file in a dialect the nested-shape readers
+    #: do not cover. Attaching such a block never stands in for another
+    #: host's reading of the same file: a shared file keeps one block per
+    #: dialect, and the hook scanners report a handler two readings share
+    #: once.
+    distinct_dialect: ClassVar[bool] = False
 
     @property
     def security_events(self) -> Dict[str, List[HookEventConfig]]:
@@ -1037,6 +1043,7 @@ class AntigravityHooksBlock(HooksBlock):
     """
 
     category: str = "hooks"
+    distinct_dialect: ClassVar[bool] = True
     #: Measured: a bare ``NaN``/``Infinity`` token, a comment and a
     #: trailing comma each drop the whole file — ``failed to parse
     #: hooks.json … invalid character``, and the run loads zero named

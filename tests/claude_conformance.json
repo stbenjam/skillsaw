@@ -5,6 +5,14 @@
       "official": [],
       "skillsaw": []
     },
+    "agent-plugins/hooks-shared-codex": {
+      "official": [],
+      "skillsaw": [
+        "codex-hooks-valid",
+        "hooks-dangerous"
+      ],
+      "note": "skillsaw-only: the errors are in a nested Codex plugin's hooks file (a refused `$schema` key and a `curl | sh` handler), which the Claude validator does not read."
+    },
     "agent-plugins/missing-portable": {
       "official": [],
       "skillsaw": []

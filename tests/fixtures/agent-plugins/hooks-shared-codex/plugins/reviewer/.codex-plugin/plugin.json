@@ -1,0 +1,6 @@
+{
+  "name": "reviewer",
+  "version": "1.0.0",
+  "description": "Codex reviewer that shares the release-review hooks file.",
+  "hooks": "./hooks/review.json"
+}

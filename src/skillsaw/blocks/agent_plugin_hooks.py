@@ -19,6 +19,9 @@ class AgentPluginHooksBlock(HooksBlock):
     """
 
     strict_json: ClassVar[bool] = True
+    #: Only top-level ``command`` entries are portable handlers, so a Codex
+    #: plugin declaring the same file still needs its nested reading.
+    distinct_dialect: ClassVar[bool] = True
 
     def tree_label(self) -> str:
         return f"{self.path.name} (agent plugin hooks)"

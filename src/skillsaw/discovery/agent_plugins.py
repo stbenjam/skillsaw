@@ -24,17 +24,19 @@ _SCHEMA_PROPERTY_RE = re.compile(
 )
 
 
-def declared_schema(path: Path, package_root: Path, kind: str) -> Optional[str]:
+def declared_schema(
+    path: Path, package_root: Path, kind: str, *, resolve: Resolver = safe_resolve
+) -> Optional[str]:
     """Return recognizable schema evidence from one contained JSON file.
 
     Discovery may inspect only files that resolve inside the prospective
     package. A symlink escape is a conformance error once the package is
     explicitly selected, never permission to read an external manifest.
     """
-    root = safe_resolve(package_root)
+    root = resolve(package_root)
     if root is None:
         return None
-    resolved = contained_resolve(path, root)
+    resolved = contained_resolve(path, root, resolve)
     if resolved is None or not safe_is_file(resolved):
         return None
 
