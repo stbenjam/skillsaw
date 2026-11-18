@@ -107,27 +107,28 @@ Native package metadata uses the host’s 16 MiB read limit from
 ### Theme declarations
 
 Verified against released
-[`v2026.11.1`](https://github.com/openclaw/openclaw/releases/tag/v2026.11.1).
+[`v2026.11.5`](https://github.com/openclaw/openclaw/releases/tag/v2026.11.5).
 The existing opt-in `openclaw-manifest-valid` rule validates declarations in
 `src/skillsaw/formats/openclaw_themes.py`; regression coverage lives in
 `tests/test_openclaw_themes.py` and `tests/fixtures/openclaw/themes/`.
 
-- [`manifest-themes.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.1/src/plugins/manifest-themes.ts)
+- [`manifest-themes.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.5/src/plugins/manifest-themes.ts)
   rejects malformed theme arrays and artwork declarations before plugin loading.
   Check the 32-theme limit, theme field allowlist, duplicate IDs, relative JSON/SVG
   paths, and the eight-entry limits for each artwork kind (`icons`, `hats`,
-  `critters`). Duplicate artwork object keys are
+  `critters`). `backgrounds` maps `light` and/or `dark` to a relative PNG, JPEG,
+  or WebP path. Duplicate artwork object keys, including background modes, are
   rejected from the original JSON5 source, even if normal parsing overwrites them.
-- [`theme.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.1/packages/gateway-protocol/src/theme.ts)
+- [`theme.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.5/packages/gateway-protocol/src/theme.ts)
   owns the name/description limits (80/320 UTF-16 units), artwork ID pattern,
   built-in brand icons (`claw`, `mark`), built-in hats (`fedora`, `crown`,
   `santa`, `party`, `pumpkin`), and built-in critters (`penguin`, `fedora`).
   Declared artwork IDs must lie outside the matching catalog. Recheck these copied sets each pass.
-- [`theme-ids.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.1/packages/gateway-protocol/src/theme-ids.ts)
+- [`theme-ids.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.5/packages/gateway-protocol/src/theme-ids.ts)
   defines portable plugin ownership, the reserved personal-theme namespace, and
   the 64-character lowercase local ID pattern. Preserve scoped and multi-entry
   plugin IDs.
 - Deliberately omitted: theme JSON content, SVG content, and asset existence.
   Invalid assets omit a theme with a warning rather than rejecting the plugin;
   they do not belong to this ERROR-level manifest check. See the
-  [theme packaging reference](https://github.com/openclaw/openclaw/blob/v2026.11.1/docs/plugins/manifest/surfaces.md#themes).
+  [theme packaging reference](https://github.com/openclaw/openclaw/blob/v2026.11.5/docs/plugins/manifest/surfaces.md#themes).

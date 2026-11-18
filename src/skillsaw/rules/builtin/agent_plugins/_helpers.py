@@ -58,9 +58,9 @@ def mcp_validators() -> dict:
 
 
 @lru_cache(maxsize=None)
-def manifest_fields() -> frozenset:
-    """The portable fields, currently identical across supported versions."""
-    return frozenset().union(*(schema["properties"] for schema in plugin_schemas().values()))
+def manifest_fields(version: str) -> frozenset:
+    """The top-level manifest fields that *version* defines."""
+    return frozenset(plugin_schemas()[version]["properties"])
 
 
 def format_schema_error(error: ValidationError) -> str:
@@ -95,12 +95,19 @@ def format_schema_error(error: ValidationError) -> str:
         detail = "must be one of " + ", ".join(
             safe_display(json.dumps(option)) for option in options
         )
+    elif error.validator == "anyOf" and all(
+        isinstance(option, dict) and set(option) <= {"const", "pattern"}
+        for option in error.validator_value
+    ):
+        detail = "does not match the required pattern"
     elif error.validator == "oneOf":
         detail = "must match exactly one permitted schema variant"
-    elif error.validator == "not":
+    elif error.validator == "not" and "propertyNames" in error.absolute_schema_path:
         # propertyNames applies the schema to the key itself. Keys are useful
         # locators, unlike values (which may contain credentials).
         detail = f"prohibited name {safe_display(error.instance)!r}"
+    elif error.validator == "not" and set(error.validator_value) == {"pattern"}:
+        detail = "does not match the required pattern"
     elif error.validator in {"required", "additionalProperties"}:
         # These jsonschema messages contain property names, never values.
         detail = safe_display(error.message)
@@ -127,8 +134,9 @@ def schema_error_summary(errors: Iterable[ValidationError], *, limit: int = 4) -
         if len(sample) < limit:
             sample.append(error)
     sample.sort(key=lambda error: (tuple(map(str, error.absolute_path)), error.message))
-    rendered = [format_schema_error(error) for error in sample]
-    remaining = count - len(rendered)
+    # One defect can fail two keywords that render alike (pattern and not).
+    rendered = list(dict.fromkeys(format_schema_error(error) for error in sample))
+    remaining = count - len(sample)
     if remaining:
         rendered.append(f"and {remaining} more schema error{'s' if remaining != 1 else ''}")
     return "; ".join(rendered)

@@ -123,7 +123,9 @@ def test_required_theme_fields(tmp_path, field):
 
 
 def test_unknown_theme_fields_and_unknown_manifest_metadata(tmp_path):
-    assert "supports only" in theme_error(tmp_path, future=True)
+    error = theme_error(tmp_path, future=True)
+    assert "supports only" in error
+    assert "backgrounds" in error
     data = manifest()
     data["future"] = {"anything": [1, 2, 3]}
     assert theme_manifest_error(data, tmp_path / "unused.json") is None
@@ -235,13 +237,21 @@ def test_valid_critter_timing(tmp_path, crossing):
     )
 
 
-@pytest.mark.parametrize("kind", ["icons", "hats", "critters"])
-def test_duplicate_artwork_json_and_json5(tmp_path, kind):
-    value = '{"source":"a.svg"}' if kind == "critters" else '"a.svg"'
+@pytest.mark.parametrize(
+    "kind,key,value",
+    [
+        ("icons", "beret", '"a.svg"'),
+        ("hats", "beret", '"a.svg"'),
+        ("critters", "beret", '{"source":"a.svg"}'),
+        ("backgrounds", "dark", '"a.png"'),
+    ],
+)
+def test_duplicate_artwork_json_and_json5(tmp_path, kind, key, value):
+    escaped = key[0] + "".join(f"\\u{ord(char):04x}" for char in key[1:])
     for index, artwork in enumerate(
         (
-            f'"{kind}":{{"beret":{value},"b\\u0065ret":{value}}}',
-            f"{kind}: {{beret: {value}, beret: {value}}}",
+            f'"{kind}":{{"{key}":{value},"{escaped}":{value}}}',
+            f"{kind}: {{{key}: {value}, {key}: {value}}}",
         )
     ):
         path = tmp_path / f"manifest-{index}.json"
@@ -265,3 +275,22 @@ def test_unrelated_duplicate_keys_keep_last_value_semantics(tmp_path):
     data, error = read_manifest(path)
     assert error is None
     assert theme_manifest_error(data, path) is None
+
+
+@pytest.mark.parametrize(
+    "value", [{}, None, {"auto": "a.png"}, {"dark": "../a.jpg"}, {"light": "a.svg"}]
+)
+def test_invalid_backgrounds(tmp_path, value):
+    assert ".backgrounds" in theme_error(tmp_path, backgrounds=value)
+
+
+@pytest.mark.parametrize(
+    "value", [{"light": "a.jpg"}, {"dark": "./b/c.JPEG"}, {"light": "d.png", "dark": "e.webp"}]
+)
+def test_valid_backgrounds(tmp_path, value):
+    assert theme_error(tmp_path, backgrounds=value) is None
+
+
+def test_svg_artwork_errors_precede_backgrounds(tmp_path):
+    error = theme_error(tmp_path, icons={"claw": "a.svg"}, backgrounds={})
+    assert ".icons'" in error

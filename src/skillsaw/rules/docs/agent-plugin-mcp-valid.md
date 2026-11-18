@@ -2,7 +2,7 @@ Agent Plugins define a portable `mcp.json` format at the plugin root. This
 rule validates that format against the
 [Agent Plugins 1.0.0 specification](https://agent-plugins.org/specification)
 and the
-[1.1.0 working draft](https://github.com/agentplugins/agent-plugins-spec/blob/ff8ab5e392cc87bd88d87c060815a87490e51003/spec/1.1.0.md)
+[1.1.0 working draft](https://github.com/agentplugins/agent-plugins-spec/blob/6395e8906b30e2f333b792bfaa981d790993d56f/spec/1.1.0.md)
 while preserving their component and per-server failure boundaries.
 
 The file is optional. When present, it must be a regular file contained by
@@ -30,6 +30,10 @@ Each server is one closed variant:
   string-map `env`, and string `cwd`.
 - `streamable-http` and `sse` require a non-empty `url`, and may define a
   string-map `headers`.
+
+In 1.1.0, every variant may also declare an `extensions` object whose values
+are client-specific namespace objects. Skillsaw does not validate their
+contents.
 
 A stdio `command` is one executable token: either a bare executable name or a
 package-relative path beginning with `./`. A bare command containing

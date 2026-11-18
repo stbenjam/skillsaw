@@ -11,6 +11,9 @@ PLUGIN_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 MCP_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 HOOKS_VERSION = "1.1.0"
 SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS = ("1.0.0", "1.1.0")
+# Versions whose prose makes a non-object manifest `extensions` non-fatal:
+# clients report and ignore it. Later versions leave it a schema error.
+NONFATAL_EXTENSIONS_SCHEMA_VERSIONS = ("1.0.0",)
 
 _SCHEMA_ID_RE = re.compile(
     r"\Ahttps://agent-plugins\.org/schemas/([^/]+)/" r"(plugin|mcp)\.schema\.json\Z"

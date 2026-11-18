@@ -1,4 +1,4 @@
-"""Native theme declarations from OpenClaw v2026.11.1's manifest-themes.ts.
+"""Native theme declarations from OpenClaw v2026.11.5's manifest-themes.ts.
 
 Only declarations belong to the manifest loading contract. Missing or invalid
 theme JSON/SVG files omit a theme with a warning, rather than rejecting a plugin.
@@ -18,8 +18,10 @@ from skillsaw.utils import cached_file_read
 
 MAX_THEMES = 32
 MAX_ARTWORK = 8
-THEME_FIELDS = frozenset({"id", "name", "description", "source", "icons", "hats", "critters"})
-ARTWORK_KINDS = ("icons", "hats", "critters")
+THEME_FIELDS = frozenset(
+    {"id", "name", "description", "source", "icons", "hats", "critters", "backgrounds"}
+)
+ARTWORK_KINDS = ("icons", "hats", "critters", "backgrounds")
 CRITTER_FIELDS = frozenset({"source", "title", "crossMs"})
 BUILTIN_ICONS = frozenset({"claw", "mark"})
 BUILTIN_HATS = frozenset({"fedora", "crown", "santa", "party", "pumpkin"})
@@ -36,7 +38,7 @@ def _js_length(value: str) -> int:
     return len(value.encode("utf-16-le", errors="surrogatepass")) // 2
 
 
-def _asset_path(value: object, extension: str) -> bool:
+def _asset_path(value: object, extension: str | tuple[str, ...]) -> bool:
     if not isinstance(value, str):
         return False
     path = value[2:] if value.startswith("./") else value
@@ -93,6 +95,18 @@ def _artwork_error(theme: dict, label: str) -> str | None:
                         )
             if not _asset_path(source, ".svg"):
                 return f"'{label}.{kind}' sources must be relative SVG paths inside the plugin root"
+    # The native loader validates backgrounds after the SVG artwork kinds.
+    if "backgrounds" in theme:
+        backgrounds = theme["backgrounds"]
+        if (
+            not isinstance(backgrounds, dict)
+            or not backgrounds
+            or backgrounds.keys() - {"light", "dark"}
+        ):
+            return f"'{label}.backgrounds' must map light and/or dark to an image"
+        for mode, source in backgrounds.items():
+            if not _asset_path(source, (".png", ".jpg", ".jpeg", ".webp")):
+                return f"'{label}.backgrounds.{mode}' must be a relative PNG, JPEG, or WebP path inside the plugin root"
     return None
 
 
@@ -161,9 +175,7 @@ def theme_manifest_error(data: dict, path: Path) -> str | None:
         if not isinstance(theme, dict):
             return f"'{label}' must be an object"
         if theme.keys() - THEME_FIELDS:
-            return (
-                f"'{label}' supports only id, name, description, source, icons, hats, and critters"
-            )
+            return f"'{label}' supports only {', '.join(sorted(THEME_FIELDS))}"
         local_id = theme.get("id")
         if not isinstance(local_id, str) or LOCAL_ID.fullmatch(local_id) is None or local_id in ids:
             return f"'{label}.id' must be a unique lowercase ID of 1–64 letters, digits, underscores, or hyphens, starting with a letter or digit"

@@ -3,6 +3,7 @@
   "mcpServers": {
     "local-auditor": {
       "type": "stdio",
+      "extensions": {"com.example.audit": {"mode": "release"}},
       "command": "./bin/release-auditor",
       "args": ["--cache", "${PLUGIN_DATA}/audit"],
       "env": {

@@ -21,7 +21,7 @@ a manifest exceeding 262,144 bytes,
 or a missing/non-object `configSchema` prevents the native manifest from loading.
 An empty schema object is valid. Optional unknown fields remain forward compatible.
 
-OpenClaw v2026.11.1 also rejects the whole plugin when its optional `themes`
+OpenClaw v2026.11.5 also rejects the whole plugin when its optional `themes`
 declaration is invalid. This rule checks theme and artwork declarations against
 that released manifest contract.
 
@@ -53,6 +53,8 @@ When declaring themes:
   relative `.svg` paths; critters map to objects with a `.svg` `source`,
   optional printable `title` of at most 60 characters, and optional integer
   `crossMs` from 5000 through 90000.
+- Optional `backgrounds` maps `light`, `dark`, or both to relative PNG, JPEG,
+  or WebP image paths.
 - Keep source paths inside the plugin: absolute paths, traversal, backslashes,
   URLs, and empty path segments are invalid. A leading `./` is accepted.
   Duplicate artwork keys are errors even in JSON5 or when a key uses escapes.
@@ -73,11 +75,11 @@ for the native loader contract:
 - [`manifest-capability-normalizers.ts`](https://github.com/openclaw/openclaw/blob/912b21b98581c0be3baad87fe3686b64d69fffeb/src/plugins/manifest-capability-normalizers.ts): static MCP normalization.
 
 Theme declarations follow the released
-[`v2026.11.1` loader](https://github.com/openclaw/openclaw/blob/v2026.11.1/src/plugins/manifest-themes.ts),
+[`v2026.11.5` loader](https://github.com/openclaw/openclaw/blob/v2026.11.5/src/plugins/manifest-themes.ts),
 with limits and catalog IDs from
-[`theme.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.1/packages/gateway-protocol/src/theme.ts)
-and [`theme-ids.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.1/packages/gateway-protocol/src/theme-ids.ts).
-The [upstream manifest reference](https://github.com/openclaw/openclaw/blob/v2026.11.1/docs/plugins/manifest/surfaces.md#themes)
+[`theme.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.5/packages/gateway-protocol/src/theme.ts)
+and [`theme-ids.ts`](https://github.com/openclaw/openclaw/blob/v2026.11.5/packages/gateway-protocol/src/theme-ids.ts).
+The [upstream manifest reference](https://github.com/openclaw/openclaw/blob/v2026.11.5/docs/plugins/manifest/surfaces.md#themes)
 describes theme packaging and the separate asset warning behavior.
 
 The rule validates the stable native loading core and theme declarations. Other runtime capability
