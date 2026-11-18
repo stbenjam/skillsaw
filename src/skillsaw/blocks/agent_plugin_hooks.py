@@ -10,7 +10,18 @@ from skillsaw.blocks.json_config import HookEventConfig, HookHandler, HooksBlock
 
 @dataclass(eq=False)
 class AgentPluginHooksBlock(HooksBlock):
+    """An Agent Plugins 1.1.0 package's root ``hooks.json``.
+
+    The portable shape is flat: ``{$schema, hooks: {Event: [{command, args?,
+    extensions?}]}}``, with no matcher or handler ``type``. :attr:`events`
+    renders it for the shared hook rules; ``agent-plugin-hooks-valid``
+    checks the shape.
+    """
+
     strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (agent plugin hooks)"
 
     @property
     def events(self) -> dict[str, list[HookEventConfig]]:

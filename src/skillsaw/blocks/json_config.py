@@ -472,15 +472,16 @@ class HooksBlock(JsonConfigBlock):
     list, handler types, and fields: ``claude-hooks-valid`` iterates
     :class:`ClaudeHooksBlock`, ``codex-hooks-valid`` :class:`CodexHooksBlock`,
     ``muse-hooks-valid`` :class:`MuseHooksBlock`, ``grok-hooks-valid``
-    :class:`GrokHooksBlock`, and ``cursor-hooks-valid``
-    :class:`CursorHooksBlock` — so a file is checked against the vocabulary
+    :class:`GrokHooksBlock`, ``cursor-hooks-valid``
+    :class:`CursorHooksBlock`, and ``agent-plugin-hooks-valid``
+    :class:`AgentPluginHooksBlock` — so a file is checked against the vocabulary
     of the tool that will actually load it. The tree builder picks the
     subclass from where the file lives and who claims the directory.
 
     :attr:`events` parses the nested shape Claude Code defined and Codex,
     Muse Code and Grok Build adopted: ``{hooks: {Event: [{matcher?, hooks: [{type,
     command, ...}]}]}}``. A host with a different shape overrides it
-    (Cursor).
+    (Cursor, Agent Plugins).
     """
 
     category: str = "hooks"

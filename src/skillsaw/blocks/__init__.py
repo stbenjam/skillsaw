@@ -116,6 +116,7 @@ from .json_config import (
     json_token,
     parse_hooks_events,
 )
+from .agent_plugin_hooks import AgentPluginHooksBlock
 from .coderabbit import (
     CodeRabbitContentBlock,
     _CODERABBIT_FILENAME,
@@ -191,6 +192,7 @@ __all__ = [
     "json_token",
     "HookHandler",
     "HookEventConfig",
+    "AgentPluginHooksBlock",
     "AgentPluginMcpBlock",
     "AntigravityConfigBlock",
     "AntigravityHooksBlock",

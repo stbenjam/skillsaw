@@ -20,6 +20,7 @@ from .blocks import (
     AgentBlock,
     AgentMemoryBlock,
     AgentMemoryIndexBlock,
+    AgentPluginHooksBlock,
     AgentPluginMcpBlock,
     AgentsMdBlock,
     AntigravityAgentBlock,
@@ -118,7 +119,6 @@ from .blocks.kiro import (
 from .lint_target import OpenClawPluginNode, OpenClawPluginConfigNode, OpenClawPackageConfigNode
 from .blocks.json_config import OpenClawInlineMcpBlock
 from .formats.openclaw import MANIFEST, contained_file, inline_mcp_servers
-from .blocks.agent_plugin_hooks import AgentPluginHooksBlock
 from .discovery.agent_plugins import declared_schema
 from .formats.agent_plugins import HOOKS_VERSION, agent_plugin_schema_id
 from .blocks.pi import PiPackageNode, PiPackageBlock

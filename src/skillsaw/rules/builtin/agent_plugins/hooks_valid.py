@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
 
-from skillsaw.blocks.agent_plugin_hooks import AgentPluginHooksBlock
+from skillsaw.blocks import AgentPluginHooksBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.agent_plugin_commands import command_problem
@@ -31,11 +31,17 @@ def _validators():
 class AgentPluginHooksValidRule(Rule):
     """Validate the optional hooks component in an Agent Plugins 1.1.0 package."""
 
-    rule_id = "agent-plugin-hooks-valid"
-    description = "Portable hooks.json must declare supported events and valid command handlers"
     since = "0.23.0"
     default_enabled = False
     repo_types = PORTABLE_COMPONENT_REPO_TYPES
+
+    @property
+    def rule_id(self) -> str:
+        return "agent-plugin-hooks-valid"
+
+    @property
+    def description(self) -> str:
+        return "Portable hooks.json must declare supported events and valid command handlers"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
