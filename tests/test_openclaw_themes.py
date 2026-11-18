@@ -123,7 +123,9 @@ def test_required_theme_fields(tmp_path, field):
 
 
 def test_unknown_theme_fields_and_unknown_manifest_metadata(tmp_path):
-    assert "supports only" in theme_error(tmp_path, future=True)
+    error = theme_error(tmp_path, future=True)
+    assert "supports only" in error
+    assert "backgrounds" in error
     data = manifest()
     data["future"] = {"anything": [1, 2, 3]}
     assert theme_manifest_error(data, tmp_path / "unused.json") is None

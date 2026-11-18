@@ -174,9 +174,7 @@ def theme_manifest_error(data: dict, path: Path) -> str | None:
         if not isinstance(theme, dict):
             return f"'{label}' must be an object"
         if theme.keys() - THEME_FIELDS:
-            return (
-                f"'{label}' supports only id, name, description, source, icons, hats, and critters"
-            )
+            return f"'{label}' supports only {', '.join(sorted(THEME_FIELDS))}"
         local_id = theme.get("id")
         if not isinstance(local_id, str) or LOCAL_ID.fullmatch(local_id) is None or local_id in ids:
             return f"'{label}.id' must be a unique lowercase ID of 1–64 letters, digits, underscores, or hyphens, starting with a letter or digit"
