@@ -3,7 +3,7 @@
 
 # Agent Plugins
 
-Validates portable plugin packages against the [Agent Plugins v1 specification](https://agent-plugins.org/specification). The manifest rule checks the required root `plugin.json`; the MCP rule checks optional root `mcp.json`. Auto-enabled when a root or immediate `plugins/*` manifest declares a canonical Agent Plugins schema; use `--type agent-plugin` to force validation.
+Validates portable plugin packages against the [Agent Plugins v1 specification](https://agent-plugins.org/specification). The manifest rule checks the required root `plugin.json`; the MCP rule checks optional root `mcp.json`. Auto-enabled when a root or immediate `plugins/*` manifest declares a canonical Agent Plugins schema; use `--type agent-plugin` to force validation. `agent-plugin-hooks-valid` (1.1.0 `hooks.json`) and `agent-plugin-required` are opt-in.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
