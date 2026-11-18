@@ -265,3 +265,10 @@ def test_unrelated_duplicate_keys_keep_last_value_semantics(tmp_path):
     data, error = read_manifest(path)
     assert error is None
     assert theme_manifest_error(data, path) is None
+
+
+@pytest.mark.parametrize(
+    "value", [{}, None, {"auto": "a.png"}, {"dark": "../a.jpg"}, {"light": "a.svg"}]
+)
+def test_invalid_backgrounds(tmp_path, value):
+    assert ".backgrounds" in theme_error(tmp_path, backgrounds=value)
