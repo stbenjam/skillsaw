@@ -55,17 +55,6 @@ def _display_text(value: object, limit: int) -> bool:
 
 
 def _artwork_error(theme: dict, label: str) -> str | None:
-    if "backgrounds" in theme:
-        backgrounds = theme["backgrounds"]
-        if (
-            not isinstance(backgrounds, dict)
-            or not backgrounds
-            or backgrounds.keys() - {"light", "dark"}
-        ):
-            return f"'{label}.backgrounds' must map light and/or dark to an image"
-        for mode, source in backgrounds.items():
-            if not _asset_path(source, (".png", ".jpg", ".jpeg", ".webp")):
-                return f"'{label}.backgrounds.{mode}' requires a relative PNG, JPEG, or WebP path"
     for kind, builtin in (
         ("icons", BUILTIN_ICONS),
         ("hats", BUILTIN_HATS),
@@ -106,6 +95,18 @@ def _artwork_error(theme: dict, label: str) -> str | None:
                         )
             if not _asset_path(source, ".svg"):
                 return f"'{label}.{kind}' sources must be relative SVG paths inside the plugin root"
+    # The native loader validates backgrounds after the SVG artwork kinds.
+    if "backgrounds" in theme:
+        backgrounds = theme["backgrounds"]
+        if (
+            not isinstance(backgrounds, dict)
+            or not backgrounds
+            or backgrounds.keys() - {"light", "dark"}
+        ):
+            return f"'{label}.backgrounds' must map light and/or dark to an image"
+        for mode, source in backgrounds.items():
+            if not _asset_path(source, (".png", ".jpg", ".jpeg", ".webp")):
+                return f"'{label}.backgrounds.{mode}' must be a relative PNG, JPEG, or WebP path inside the plugin root"
     return None
 
 
