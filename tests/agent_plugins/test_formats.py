@@ -26,9 +26,18 @@ def test_schema_id_rejects_an_unsupported_version():
         agent_plugin_schema_id("9.9.9", "plugin")
 
 
+def test_hook_schema_is_specific_to_the_draft():
+    schema_id = agent_plugin_schema_id("1.1.0", "hooks")
+    assert load_agent_plugin_schema("hooks.schema.json", "1.1.0")["$id"] == schema_id
+    assert supported_agent_plugin_schema_version(schema_id, "hooks") == "1.1.0"
+    assert (
+        supported_agent_plugin_schema_version(schema_id.replace("1.1.0", "1.0.0"), "hooks") is None
+    )
+
+
 def test_schema_id_rejects_an_unsupported_kind():
     with pytest.raises(ValueError, match="schema kind"):
-        agent_plugin_schema_id("1.1.0", "hooks")
+        agent_plugin_schema_id("1.0.0", "hooks")
 
 
 def test_schema_loader_rejects_an_unsupported_version():

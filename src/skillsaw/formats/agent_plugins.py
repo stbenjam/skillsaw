@@ -9,10 +9,11 @@ from typing import Any, Dict, Optional
 
 PLUGIN_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 MCP_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+HOOKS_VERSION = "1.1.0"
 SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS = ("1.0.0", "1.1.0")
 
 _SCHEMA_ID_RE = re.compile(
-    r"\Ahttps://agent-plugins\.org/schemas/([^/]+)/" r"(plugin|mcp)\.schema\.json\Z"
+    r"\Ahttps://agent-plugins\.org/schemas/([^/]+)/" r"(plugin|mcp|hooks)\.schema\.json\Z"
 )
 _SCHEMA_PACKAGES = {
     "1.0.0": "skillsaw.schemas.agent_plugins.v1_0_0",
@@ -38,6 +39,8 @@ def is_agent_plugin_schema(value: object, kind: str) -> bool:
 def supported_agent_plugin_schema_version(value: object, kind: str) -> Optional[str]:
     """Return the declared version when its canonical schema is bundled."""
     version = agent_plugin_schema_version(value, kind)
+    if kind == "hooks" and version != HOOKS_VERSION:
+        return None
     return version if version in _SCHEMA_PACKAGES else None
 
 
@@ -45,7 +48,7 @@ def agent_plugin_schema_id(version: str, kind: str) -> str:
     """Return the canonical schema identifier for a supported version and kind."""
     if version not in _SCHEMA_PACKAGES:
         raise ValueError(f"Unsupported Agent Plugins schema version: {version}")
-    if kind not in {"plugin", "mcp"}:
+    if kind not in {"plugin", "mcp"} and not (kind == "hooks" and version == HOOKS_VERSION):
         raise ValueError(f"Unsupported Agent Plugins schema kind: {kind}")
     return f"https://agent-plugins.org/schemas/{version}/{kind}.schema.json"
 

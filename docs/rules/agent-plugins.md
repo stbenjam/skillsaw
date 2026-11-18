@@ -7,6 +7,7 @@ Validates portable plugin packages against the [Agent Plugins v1 specification](
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
+| [`agent-plugin-hooks-valid`](agent-plugin-hooks-valid.md) | Portable hooks.json must declare supported events and valid command handlers | error (disabled) | - |
 | [`agent-plugin-json-valid`](agent-plugin-json-valid.md) | Agent Plugins plugin.json and skills location must conform to a supported schema | error (auto) | - |
 | [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md) | Agent Plugins mcp.json must conform to a supported schema and semantics | error (auto) | - |
 | [`agent-plugin-required`](agent-plugin-required.md) | Plugins must also be available as vendor-neutral Agent Plugins v1 packages, with shared manifest metadata in sync | warning (disabled) | auto |

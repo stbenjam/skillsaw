@@ -12,6 +12,11 @@ from urllib.parse import urlsplit
 from skillsaw.context import RepositoryContext
 from skillsaw.repository_types import PORTABLE_COMPONENT_REPO_TYPES
 from skillsaw.diagnostics import safe_display
+from skillsaw.formats.agent_plugin_commands import (
+    command_problem,
+    is_control_character,
+    normalized_parts,
+)
 from skillsaw.formats.agent_plugins import (
     SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS,
     agent_plugin_schema_id,
@@ -23,7 +28,6 @@ from skillsaw.paths import (
     contained_resolve,
     is_absolute_path,
     safe_exists,
-    safe_is_dir,
     safe_is_file,
     safe_is_symlink,
     safe_resolve,
@@ -65,12 +69,6 @@ def _server_validators() -> dict:
 
 
 _SUPPORTED_VERSIONS_TEXT = " and ".join(SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS)
-
-
-def _is_control_character(char: str) -> bool:
-    """Whether *char* is a C0 control, DEL, or a C1 control (0x80-0x9F)."""
-    point = ord(char)
-    return point < 32 or 127 <= point <= 159
 
 
 class AgentPluginMcpValidRule(Rule):
@@ -268,9 +266,9 @@ class AgentPluginMcpValidRule(Rule):
     ) -> Optional[str]:
         server_type = server["type"]
         if server_type == "stdio":
-            command_problem = self._command_problem(server["command"], plugin_dir, plugin_root)
-            if command_problem:
-                return command_problem
+            problem = command_problem(server["command"], plugin_dir, plugin_root)
+            if problem:
+                return problem
             env_problem = self._mapped_secret_problem(server.get("env", {}), header=False)
             if env_problem:
                 return env_problem
@@ -281,49 +279,12 @@ class AgentPluginMcpValidRule(Rule):
         return self._remote_problem(server["url"], server.get("headers", {}))
 
     @staticmethod
-    def _command_problem(command: str, plugin_dir: Path, plugin_root: Path) -> Optional[str]:
-        # A control character in an executable token is either a mis-encoded
-        # value or an attempt to smuggle one token past a naive reader; it is
-        # never part of a real program name, in either accepted form.
-        if any(_is_control_character(char) for char in command):
-            return "'command' must not contain control characters"
-        if command.startswith("./"):
-            suffix = command[2:]
-            resolved = contained_resolve(plugin_dir / command, plugin_root)
-            if (
-                is_absolute_path(suffix)
-                or AgentPluginMcpValidRule._relative_path_escapes(suffix)
-                or resolved is None
-            ):
-                return "'command' resolves outside the plugin root"
-            # './', './.' and './bin/..' all name the plugin root itself, which
-            # is a directory, not the executable the field must identify. The
-            # lexical check catches those without requiring the binary to
-            # exist (it may only appear post-install); the filesystem check
-            # rejects a path that already exists as a directory.
-            if not AgentPluginMcpValidRule._normalized_parts(suffix) or safe_is_dir(resolved):
-                return "'command' must name an executable file, not a directory"
-            return None
-        if is_absolute_path(command) or "/" in command or "\\" in command:
-            return "'command' must be a bare executable name or begin with './'"
-        # A bare name cannot be a path, so whitespace means the value packs
-        # arguments into the executable token ("node --eval …", "sh -c").
-        # Only whitespace is rejected: shell metacharacters are legal in file
-        # names, and rejecting them would fail valid single-token commands.
-        if any(char.isspace() for char in command):
-            return (
-                "'command' must be a single executable token; "
-                "arguments must be supplied via 'args'"
-            )
-        return None
-
-    @staticmethod
     def _cwd_problem(cwd: str, plugin_dir: Path, plugin_root: Path) -> Optional[str]:
         if cwd.startswith("./"):
             suffix = cwd[2:]
             if (
                 is_absolute_path(suffix)
-                or AgentPluginMcpValidRule._relative_path_escapes(suffix)
+                or normalized_parts(suffix) is None
                 or contained_resolve(plugin_dir / cwd, plugin_root) is None
             ):
                 return "'cwd' resolves outside the plugin root"
@@ -334,41 +295,13 @@ class AgentPluginMcpValidRule(Rule):
                 continue
             suffix = cwd[len(placeholder) :]
             remainder = suffix[1:] if suffix.startswith("/") else suffix
-            if is_absolute_path(remainder) or AgentPluginMcpValidRule._relative_path_escapes(
-                remainder
-            ):
+            if is_absolute_path(remainder) or normalized_parts(remainder) is None:
                 return f"'cwd' escapes {placeholder}"
             if placeholder == "${PLUGIN_ROOT}":
                 if contained_resolve(plugin_dir / remainder, plugin_root) is None:
                     return "'cwd' resolves outside the plugin root"
             return None
         return "'cwd' must begin with './', '${PLUGIN_ROOT}', or '${PLUGIN_DATA}'"
-
-    @staticmethod
-    def _normalized_parts(value: str) -> Optional[List[str]]:
-        """The path components *value* names, or ``None`` when it escapes.
-
-        Safe internal normalization such as ``cache/../cache`` is valid under
-        the spec's post-resolution containment rule. Treat both separators as
-        portable input so a value checked on POSIX cannot escape on Windows.
-        An empty list means the value names its own logical root.
-        """
-        parts: List[str] = []
-        for part in value.replace("\\", "/").split("/"):
-            if part in {"", "."}:
-                continue
-            if part == "..":
-                if not parts:
-                    return None
-                parts.pop()
-            else:
-                parts.append(part)
-        return parts
-
-    @staticmethod
-    def _relative_path_escapes(value: str) -> bool:
-        """Whether a relative path crosses above its logical root."""
-        return AgentPluginMcpValidRule._normalized_parts(value) is None
 
     def _placeholder_markers(self) -> Tuple[str, ...]:
         """The placeholder allowlist, extended by this rule's configuration."""
@@ -405,7 +338,7 @@ class AgentPluginMcpValidRule(Rule):
             # value; everything else in C0, DEL, and C1 (NEL, CSI, …) is
             # rejected, since a header carrying one is either mis-encoded or a
             # header-injection attempt.
-            if any(char != "\t" and _is_control_character(char) for char in value):
+            if any(char != "\t" and is_control_character(char) for char in value):
                 return f"HTTP header '{safe_display(name)}' contains a control character"
         secret_problem = self._mapped_secret_problem(headers, header=True)
         if secret_problem:

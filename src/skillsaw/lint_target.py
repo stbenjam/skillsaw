@@ -632,6 +632,8 @@ class OpenClawPackageConfigNode(OpenClawConfigNode):
 class AgentPluginConfigNode(LintTarget):
     """The root ``plugin.json`` manifest for a portable Agent Plugin."""
 
+    hooks_location_error: Optional[str] = None
+
     @property
     def plugin_dir(self) -> Path:
         return self.path.parent

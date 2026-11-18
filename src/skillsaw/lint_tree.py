@@ -118,6 +118,9 @@ from .blocks.kiro import (
 from .lint_target import OpenClawPluginNode, OpenClawPluginConfigNode, OpenClawPackageConfigNode
 from .blocks.json_config import OpenClawInlineMcpBlock
 from .formats.openclaw import MANIFEST, contained_file, inline_mcp_servers
+from .blocks.agent_plugin_hooks import AgentPluginHooksBlock
+from .discovery.agent_plugins import declared_schema
+from .formats.agent_plugins import HOOKS_VERSION, agent_plugin_schema_id
 from .blocks.pi import PiPackageNode, PiPackageBlock
 from .discovery.pi import package_resources
 from .pi_tree import attach_pi_resources, attach_pi_projects, attach_pi_prompts
@@ -2180,6 +2183,22 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 AgentPluginMcpBlock,
                 owner=resolved_plugin,
             )
+            hooks_path = plugin_path / "hooks.json"
+            if (
+                (safe_exists(hooks_path) or safe_is_symlink(hooks_path))
+                and not context.is_path_excluded(hooks_path)
+                and declared_schema(node.path, plugin_path, "plugin")
+                == agent_plugin_schema_id(HOOKS_VERSION, "plugin")
+            ):
+                resolved_hooks = contained_resolve(hooks_path, resolved_plugin, resolve)
+                if resolved_hooks is None or not safe_is_file(resolved_hooks):
+                    node.hooks_location_error = (
+                        "hooks.json must resolve to a regular file inside the plugin root"
+                    )
+                else:
+                    state.add_parser_block(
+                        node, hooks_path, AgentPluginHooksBlock, owner=resolved_plugin
+                    )
             container.children.append(node)
 
         # Antigravity manifest cluster, for any directory Antigravity
