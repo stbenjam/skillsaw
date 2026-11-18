@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterator
+from typing import Dict, Iterator, List, Tuple
 
 from skillsaw.blocks import AgentPluginHooksBlock
 from skillsaw.context import RepositoryContext
@@ -46,7 +46,7 @@ class AgentPluginHooksValidRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.ERROR
 
-    def check(self, context: RepositoryContext) -> list[RuleViolation]:
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
         nodes = context.lint_tree.find(AgentPluginConfigNode)
         findings = [
             self.violation(node.hooks_location_error, file_path=node.plugin_dir / "hooks.json")
@@ -55,7 +55,7 @@ class AgentPluginHooksValidRule(Rule):
         ]
         # A symlink can share one hooks file between nested plugins. It is
         # attached once, so collect every declaring plugin as an owner.
-        owners: dict[Path, list[tuple[Path, Path]]] = {}
+        owners: Dict[Path, List[Tuple[Path, Path]]] = {}
         for node in nodes:
             if node.hooks_file is not None and node.plugin_owner is not None:
                 owners.setdefault(node.hooks_file, []).append((node.plugin_dir, node.plugin_owner))
@@ -75,14 +75,14 @@ class AgentPluginHooksValidRule(Rule):
 
     @staticmethod
     def _problems(
-        block: AgentPluginHooksBlock, owners: list[tuple[Path, Path]]
-    ) -> Iterator[tuple[str, str]]:
+        block: AgentPluginHooksBlock, owners: List[Tuple[Path, Path]]
+    ) -> Iterator[Tuple[str, str]]:
         if block.parse_error:
-            yield "json", f"Invalid JSON: {safe_display(block.parse_error)}"
+            yield "hooks:json", f"Invalid JSON: {safe_display(block.parse_error)}"
             return
         data = block.raw_data
         if data is None:
-            yield "document", "hooks.json must contain a JSON object"
+            yield "hooks:document", "hooks.json must contain a JSON object"
             return
         document, event_names, handler_validator = _validators()
         hooks = data.get("hooks")
@@ -91,13 +91,13 @@ class AgentPluginHooksValidRule(Rule):
         envelope = {**data, "hooks": {}} if isinstance(hooks, dict) else data
         problem = schema_error_summary(document.iter_errors(envelope))
         if problem:
-            yield "document", f"Invalid portable hooks configuration: {problem}"
+            yield "hooks:document", f"Invalid portable hooks configuration: {problem}"
             return
         if not isinstance(hooks, dict):
             return
         for event, entries in hooks.items():
             label = safe_display(event)
-            location = stable_key(event)
+            location = f"hooks:event:{stable_key(event)}"
             if event not in event_names:
                 yield location, f"Unknown portable hook event '{label}'"
                 continue
@@ -115,4 +115,4 @@ class AgentPluginHooksValidRule(Rule):
                     ]
                 )
                 for problem in filter(None, problems):
-                    yield f"{location}:{index}", f"Invalid handler '{label}[{index}]': {problem}"
+                    yield f"hooks:handler:{stable_key(event)}:{index}", f"Invalid handler '{label}[{index}]': {problem}"

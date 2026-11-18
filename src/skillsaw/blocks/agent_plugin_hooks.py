@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, Dict, List
 
 from skillsaw.blocks.json_config import HookEventConfig, HookHandler, HooksBlock
 
@@ -27,7 +27,7 @@ class AgentPluginHooksBlock(HooksBlock):
         return f"{self.path.name} (agent plugin hooks)"
 
     @property
-    def events(self) -> dict[str, list[HookEventConfig]]:
+    def events(self) -> Dict[str, List[HookEventConfig]]:
         """Expose declared executables and arguments to the shared hook rules."""
         hooks = (self.raw_data or {}).get("hooks")
         if not isinstance(hooks, dict):
