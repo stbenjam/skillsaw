@@ -26,11 +26,13 @@ class AgentPluginHooksBlock(HooksBlock):
             for entry in entries:
                 if not isinstance(entry, dict) or not isinstance(entry.get("command"), str):
                     continue
-                args = entry.get("args", [])
-                if isinstance(args, list) and all(isinstance(arg, str) for arg in args):
-                    handlers.append(
-                        HookHandler(type="command", command=entry["command"], args=args)
-                    )
+                # Malformed args must not hide the executable from the
+                # security rules; keep the command and its string arguments.
+                args = entry.get("args")
+                args = (
+                    [arg for arg in args if isinstance(arg, str)] if isinstance(args, list) else []
+                )
+                handlers.append(HookHandler(type="command", command=entry["command"], args=args))
             if handlers:
                 events[event] = [HookEventConfig(handlers=handlers)]
         return events
