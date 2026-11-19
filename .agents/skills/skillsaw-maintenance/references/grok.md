@@ -130,9 +130,10 @@ is why `grok-hooks-valid` exists. Re-run that matrix before changing a rule here
 
 ## Project `config.toml`
 One file read at four layers, of which the project layer is the narrow one. The
-shipped `26-config-reference.md` says so twice — "Project `.grok/config.toml`: only
-`[mcp_servers]`, `[plugins]`, `[permission]`, and `[mcp] max_output_bytes`" — but the
-documented four are not equally real when measured against 1.0.13.
+shipped 1.0.88 `26-config-reference.md` says so twice — "Project
+`.grok/config.toml`: only `[mcp_servers]`, `[plugins]`, `[permission]`, `[env]`,
+and `[mcp] max_output_bytes`" — though `grok inspect --json` does not surface
+every documented table directly.
 
 **Where Grok is silent, and where it is not.** `configWarnings` is a *user-layer*
 diagnostic: a typo'd table or key in a project file is invisible in every observable
@@ -148,8 +149,9 @@ signal.
 
 - **Measured honored**: `[mcp_servers]` and `[permission]`
   (`PROJECT_CONFIG_TABLES_MEASURED`). `[plugins]` additionally has source-confirmed
-  project support; `[mcp] max_output_bytes` remains documented but unmeasured.
-  `PROJECT_CONFIG_TABLES` holds all four.
+  project support; `[env]` (added to project scope in 1.0.88 for trusted folders) and
+  `[mcp] max_output_bytes` remain documented but unmeasured in `inspect`.
+  `PROJECT_CONFIG_TABLES` holds all five.
 - **Measured refused**: `[hooks]` (the honored path for a project's hooks is
   `.grok/hooks/*.json`, which loads), `[skills].paths` and `[sandbox].profile`, each
   with a positive user-scope control (`PROJECT_CONFIG_TABLES_REFUSED`).
@@ -178,7 +180,11 @@ signal.
 - **Fields**: `MCP_SERVER_FIELDS` is the accepted set; an unknown
   field raises an `mcpConfigProblems` *warning* and the server still loads, so it is
   never a reason to call the file broken. `transport` is the plausible misspelling of
-  `type` and is not an alias — reported unrecognized, ignored.
+  `type` and is not an alias — reported unrecognized, ignored. Verified against
+  1.0.88 (`2fe3608f7398`, stable): `bearer_token_file` is a typed HTTP/SSE string
+  field (a non-string drops the HTTP variant, while stdio ignores it), and
+  `headers_helper` / `headersHelper` are recognized server fields whose misuse warns
+  via `mcpConfigProblems` without dropping the server.
 - **Transport derivation** (`formats/grok_mcp.py`): Grok tries the entire stdio
   variant first, then HTTP. Fields outside the selected variant are ignored;
   malformed stdio fields can allow HTTP fallback. Common fields (`enabled`,

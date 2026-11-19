@@ -3,8 +3,8 @@ Rule: grok-config-project-scope
 
 Grok Build reads configuration across multiple layers (system, user, project,
 and local). A project-level ``.grok/config.toml`` is designed to share team-wide
-settings: ``[mcp_servers]``, ``[permission]``, ``[plugins]``, and ``[mcp]
-max_output_bytes``.
+settings: ``[mcp_servers]``, ``[permission]``, ``[plugins]``, ``[env]``, and
+``[mcp] max_output_bytes``.
 
 Personal preferences (such as themes, models, sandboxing, and web search) belong
 in user-level configuration (``~/.grok/config.toml``). This rule checks that

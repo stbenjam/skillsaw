@@ -20,7 +20,7 @@ configuration (`~/.grok/config.toml`) and repository project configuration
 (`.grok/config.toml`).
 
 The project configuration file is designed specifically for shared repository
-settings: `[mcp_servers]`, `[permission]`, `[plugins]`, and `[mcp]
+settings: `[mcp_servers]`, `[permission]`, `[plugins]`, `[env]`, and `[mcp]
 max_output_bytes`. Other settings (such as `[model]`, `[ui]`, `[tools]`,
 `[telemetry]`, and user preferences) are intended for your personal user
 configuration and are ignored when placed in `.grok/config.toml`.
@@ -60,6 +60,8 @@ Findings carry the rule's configured severity (**warning** by default):
 
 - `[plugins] paths`, which the live session loads from trusted project folders,
   and the documented plugin switches `enabled` and `disabled`.
+- `[env]`, which sets shared environment variables for shell commands when the
+  project folder is trusted.
 - The actual user config at `$GROK_HOME/config.toml` (default
   `~/.grok/config.toml`), including a Git repository rooted at HOME. Other
   applicable config checks still run.
