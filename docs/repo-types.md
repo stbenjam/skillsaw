@@ -397,7 +397,7 @@ under `[mcp_servers]` and in the repository-root `.mcp.json`; there is no
 project declared it.
 
 A project `config.toml` contributes only `[mcp_servers]`, `[plugins]`,
-`[permission]` and `[mcp] max_output_bytes`. Every other table in it is
+`[permission]`, `[env]` and `[mcp] max_output_bytes`. Every other table in it is
 dropped, and dropped silently: Grok's unknown-key warnings cover the user's
 own `~/.grok/config.toml` and not a project file, so a typo'd table there
 produces no diagnostic anywhere. `[plugins] paths` is dropped the same way,

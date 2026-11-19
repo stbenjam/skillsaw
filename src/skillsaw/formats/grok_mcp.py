@@ -1,8 +1,9 @@
-"""Grok 1.0.13's TOML MCP decoder, before setup and environment resolution.
+"""Grok Build's TOML MCP decoder, before setup and environment resolution.
 
 The pinned config-types/mcp.rs deserializer tries Stdio before StreamableHttp.
 A failed variant may fall through; fields outside the selected variant are
 ignored. Common fields are decoded independently and cannot fall through.
+Updated for Grok Build 1.0.88 (``bearer_token_file`` on StreamableHttp).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ _HTTP_FIELDS = {
     **dict.fromkeys(URL_FIELDS, "string"),
     "type": "string",
     "bearer_token_env_var": "string",
+    "bearer_token_file": "string",
     "headers": "string-map",
     "oauth_client_id": "string",
     "oauth_client_secret_env_var": "string",

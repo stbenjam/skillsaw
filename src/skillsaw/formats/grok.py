@@ -126,7 +126,7 @@ AGENTS_DIR_NAME = "agents"
 SKILLS_DIR_NAME = "skills"
 
 #: Project configuration, parsed as TOML and attached — see
-#: :data:`PROJECT_CONFIG_TABLES` for the four tables that survive project
+#: :data:`PROJECT_CONFIG_TABLES` for the five tables that survive project
 #: scope. LSP servers are not parsed; file existence alone is what makes
 #: that one evidence.
 #:
@@ -349,9 +349,9 @@ def normalize_event(event: str) -> str:
 # -- Project ``config.toml`` --------------------------------------------------
 #
 # ``config.toml`` is one file read at four layers, and the project layer is
-# the narrow one. The shipped user guide says so twice — "Project
+# the narrow one. The shipped 1.0.88 user guide says so twice — "Project
 # ``.grok/config.toml``: only ``[mcp_servers]``, ``[plugins]``,
-# ``[permission]``, and ``[mcp] max_output_bytes``"
+# ``[permission]``, ``[env]``, and ``[mcp] max_output_bytes``"
 # (``26-config-reference.md``, restated under ``## config.toml``).
 #
 # ``inspect`` exposes project MCP servers and permissions, but does not call
@@ -364,11 +364,11 @@ def normalize_event(event: str) -> str:
 #: The documented top-level tables a project config contributes. Unknown
 #: keys inside these tables stay open; no project plugin-path refusal is
 #: inferred from the more limited ``inspect`` consumer.
-PROJECT_CONFIG_TABLES = frozenset({"mcp_servers", "permission", "plugins", "mcp"})
+PROJECT_CONFIG_TABLES = frozenset({"mcp_servers", "permission", "plugins", "env", "mcp"})
 
 #: The tables directly observable in ``inspect``. Plugin project support
-#: additionally follows the live resolver above; ``mcp.max_output_bytes``
-#: remains documented but unmeasured.
+#: additionally follows the live resolver above; ``[env]`` and
+#: ``mcp.max_output_bytes`` remain documented but unmeasured in ``inspect``.
 PROJECT_CONFIG_TABLES_MEASURED = frozenset({"mcp_servers", "permission"})
 
 #: PluginsConfig's defaulted Vec<String> fields. A mistyped field refuses
@@ -392,12 +392,15 @@ MCP_SERVER_FIELDS = frozenset(
     {
         "args",
         "bearer_token_env_var",
+        "bearer_token_file",
         "command",
         "cwd",
         "enabled",
         "env",
         "expose_image_base64",
         "headers",
+        "headersHelper",
+        "headers_helper",
         "oauth",
         "oauth_client_id",
         "oauth_client_secret_env_var",
