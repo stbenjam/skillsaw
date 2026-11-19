@@ -41,7 +41,7 @@ from skillsaw.paths import (
     safe_is_file,
     safe_resolve,
 )
-from skillsaw.utils import read_json_strict
+from skillsaw.formats.antigravity_plugin import read_plugin_manifest
 from skillsaw.formats.antigravity_registry import read_registry
 
 
@@ -175,7 +175,7 @@ def antigravity_manifest_is_contained(
         return False
     if is_antigravity_plugin_location(plugin_dir):
         return True
-    data, error = read_json_strict(resolved_manifest, allow_duplicate_keys=True)
+    data, error = read_plugin_manifest(resolved_manifest)
     return not error and isinstance(data, dict) and data.get("$schema") == PLUGIN_SCHEMA_ID
 
 

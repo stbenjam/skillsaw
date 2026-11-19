@@ -43,24 +43,15 @@ def fixture(tmp_path, name):
     return repo
 
 
-def test_default_lint_accepts_duplicate_unknown_metadata_and_exact_case(tmp_path):
-    repo = fixture(tmp_path, "accepted")
+@pytest.mark.parametrize("name", ["accepted", "duplicate-known", "duplicate-alias", "bad-unicode"])
+def test_default_lint_accepts_agy_1_5_11_json_loader_inputs(tmp_path, name):
+    repo = fixture(tmp_path, name)
     assert lint(repo) == (0, [])
 
 
-@pytest.mark.parametrize(
-    "name,problem",
-    [
-        ("duplicate-known", "duplicate JSON object key"),
-        ("bad-unicode", "invalid Unicode surrogate"),
-        ("duplicate-alias", 'duplicate JSON object key: "display_name"'),
-    ],
-)
 @pytest.mark.parametrize("severity", ["error", "warning", "info"])
-def test_native_manifest_rejections_use_primary_configured_severity(
-    tmp_path, name, problem, severity
-):
-    repo = fixture(tmp_path, name)
+def test_native_manifest_rejections_use_primary_configured_severity(tmp_path, severity):
+    repo = fixture(tmp_path, "proto-name")
     (repo / ".skillsaw.yaml").write_text(f"rules:\n  {RULE}:\n    severity: {severity}\n")
     code, found = lint(repo)
     assert code == (1 if severity == "error" else 0)
@@ -70,8 +61,7 @@ def test_native_manifest_rejections_use_primary_configured_severity(
         MANIFEST,
         severity,
     )
-    assert problem in found[0]["message"]
-    assert "directory is not a plugin" in found[0]["message"]
+    assert "'display_name' must be a string" in found[0]["message"]
 
 
 def test_capitalized_installer_name_keeps_runtime_fallback_advice(tmp_path):
@@ -97,8 +87,8 @@ def test_capitalized_installer_name_keeps_runtime_fallback_advice(tmp_path):
     ],
 )
 def test_typed_version_and_display_name_fail_the_plugin(tmp_path, name, fields):
-    # agy 1.3.6: "invalid value for string field version: 42" and the same
-    # for displayName, under either spelling; the plugin does not load.
+    # agy 1.3.6+ / 1.5.11: mistyped version, displayName, or display_name
+    # rejects the plugin.
     repo = fixture(tmp_path, name)
     code, found = lint(repo)
     assert code == 1

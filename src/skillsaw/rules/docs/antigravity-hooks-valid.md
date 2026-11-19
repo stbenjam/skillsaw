@@ -26,7 +26,6 @@ inventoried against an allowlist with
 
 - Invalid JSON, a non-finite number (`NaN`, `Infinity`, `-Infinity`), a
   trailing comma or a comment. The parser is strict JSON.
-- A UTF-8 byte-order mark (BOM). Remove it; the loader does not strip it.
 - A non-null root that is not an object of named hooks.
 - A named hook that is not an object. An `enabled` key at the **top level**
   is reported this way too, with its own wording: every top-level key is a
@@ -82,6 +81,8 @@ Command scans and generated documentation read the same decoded fields.
 
 ## What is not reported
 
+- **A leading UTF-8 BOM.** Since `agy` 1.5.11, `hooks.json` strips a leading
+  UTF-8 BOM (JSON comments and trailing commas remain rejected).
 - **The `matcher` pattern.** Antigravity never compiles it at load time — an
   unclosed character class loads clean — so no linter can say whether a
   given pattern will be accepted, and the regex engine is unverified.

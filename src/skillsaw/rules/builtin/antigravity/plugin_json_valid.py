@@ -16,7 +16,6 @@ from skillsaw.lint_target import AntigravityPluginConfigNode
 from skillsaw.paths import safe_exists, safe_is_file, safe_is_symlink
 from skillsaw.repository_types import RepositoryType
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.utils import has_utf8_bom
 
 _FIELD_TYPES = {field: (python_type, label) for field, python_type, label in PLUGIN_MESSAGE_FIELDS}
 
@@ -30,10 +29,11 @@ class AntigravityPluginJsonValidRule(Rule):
     and the whole tree below it — skills, agents, hooks, MCP servers — goes
     unloaded. That is what puts the parse and type failures at ERROR.
 
-    The manifest is a protojson message with six fields (see
-    ``PLUGIN_MESSAGE_FIELDS``). Every other key, ``$schema`` and ``author``
-    included, is discarded as unknown and the plugin still loads, so none
-    of them is reported.
+    Measured against ``agy`` 1.5.11, the manifest is parsed as JSONC (with
+    UTF-8 BOM stripping) into ``map[string]jsontext.Value`` with six typed
+    fields (see ``PLUGIN_MESSAGE_FIELDS`` and ``PLUGIN_FIELD_ALIASES``).
+    Every other key, ``$schema`` and ``author`` included, is discarded as
+    unknown and the plugin still loads, so none of them is reported.
 
     The vendor publishes a schema for it inline under "Full JSON Schema" at
     https://antigravity.google/docs/cli/plugins/ — ``name`` required with
@@ -96,13 +96,7 @@ class AntigravityPluginJsonValidRule(Rule):
                 )
             ]
 
-        # ProtoJSON rejects duplicate known root fields. Unknown metadata
-        # is discarded, but its strings must still be valid Unicode.
-        data, error = (
-            (None, "remove the UTF-8 BOM so Antigravity can parse the file")
-            if has_utf8_bom(manifest)
-            else read_plugin_manifest(manifest)
-        )
+        data, error = read_plugin_manifest(manifest)
         if error:
             return [
                 self.violation(
@@ -124,7 +118,7 @@ class AntigravityPluginJsonValidRule(Rule):
         violations: List[RuleViolation] = []
         for key, value in data.items():
             spec = _FIELD_TYPES.get(plugin_field_name(key))
-            # Measured: protojson takes ``null`` as the field's default, so
+            # Measured: ``null`` decodes as the field's zero value, so
             # ``{"name": null}`` is "missing name" and ``{"disabled": null}``
             # validates clean. A null is the key's absence, never a type
             # error.

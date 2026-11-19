@@ -150,9 +150,6 @@ class _FileCheck:
         )
 
     def run(self) -> List[RuleViolation]:
-        if self.block.has_utf8_bom():
-            self._fatal("hooks.json", "remove the UTF-8 BOM so Antigravity can parse the file")
-            return self.fatal
         if self.block.parse_error:
             return [
                 self.rule.violation(
