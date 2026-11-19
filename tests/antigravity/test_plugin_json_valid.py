@@ -53,6 +53,26 @@ class TestAcceptedManifests:
     def test_no_findings(self, tmp_path: Path, name: str, manifest) -> None:
         assert messages(check(tmp_path, name, manifest)) == []
 
+    @pytest.mark.parametrize(
+        "name,body",
+        [
+            ("bom", '\ufeff{"name": "berth-tools"}'),
+            ("line-comment", '// manifest comment\n{"name": "berth-tools"}\n'),
+            ("block-comment", '/* header */\n{"name": "berth-tools"}\n'),
+            ("trailing-comma", '{"name": "berth-tools", "disabled": false,}'),
+            (
+                "duplicate-last-wins",
+                '{"name": "berth-tools", "disabled": "no", "disabled": false}',
+            ),
+            (
+                "display-name-both-spellings",
+                '{"name": "berth-tools", "displayName": "Berth", "display_name": "Berth"}',
+            ),
+        ],
+    )
+    def test_jsonc_and_bom_accepted(self, tmp_path: Path, name: str, body: str) -> None:
+        assert messages(check(tmp_path, name, body, raw=True)) == []
+
 
 class TestNotAPlugin:
     """A manifest that does not parse means the whole tree goes unloaded."""
@@ -61,13 +81,18 @@ class TestNotAPlugin:
         "name,body,needle",
         [
             ("unparseable", '{"name": "berth-tools"', "does not parse"),
-            ("bom", '\ufeff{"name": "berth-tools"}', "UTF-8 BOM"),
+            ("nan-token", '{"name": "berth-tools", "n": NaN}', "does not parse"),
             ("array-root", '[{"name": "berth-tools"}]', "must be a JSON object"),
             ("string-root", '"berth-tools"', "must be a JSON object"),
             (
-                "duplicate-name",
-                '{"name": "a", "description": "d", "name": "b"}',
-                'duplicate JSON object key: "name"',
+                "duplicate-last-mistyped",
+                '{"name": "berth-tools", "disabled": false, "disabled": "no"}',
+                "'disabled' must be a boolean",
+            ),
+            (
+                "display-name-alias-mistyped",
+                '{"name": "berth-tools", "displayName": "Berth", "display_name": 42}',
+                "'display_name' must be a string",
             ),
         ],
     )
@@ -82,6 +107,9 @@ class TestNotAPlugin:
             ("description", ["d"], "string"),
             ("disabled", "no", "boolean"),
             ("logo", {"path": "a.png"}, "string"),
+            ("version", 1, "string"),
+            ("displayName", 42, "string"),
+            ("display_name", 42, "string"),
         ],
     )
     def test_field_types(self, tmp_path: Path, field: str, value, label: str) -> None:
@@ -166,6 +194,13 @@ class TestInstallability:
         assert "'name' is absent" in violations[0].message
         assert violations[0].severity == Severity.INFO
 
+    def test_null_root_is_treated_as_empty_manifest(self, tmp_path: Path) -> None:
+        """Measured in ``agy`` 1.5.11: a bare ``null`` manifest loads as an empty object."""
+        violations = check(tmp_path, "null-root", "null", raw=True)
+        assert len(violations) == 1
+        assert "'name' is absent" in violations[0].message
+        assert violations[0].severity == Severity.INFO
+
     def test_a_dangling_symlink_manifest_is_not_a_regular_file(self, tmp_path: Path) -> None:
         """``safe_is_symlink`` is exactly the ``safe_exists``-false case.
 
@@ -241,15 +276,18 @@ class TestDiagnosticSafety:
     """A hostile manifest cannot write its own content into the report."""
 
     def test_lone_surrogate_in_a_name(self, tmp_path: Path) -> None:
+        """``agy`` 1.5.11 replaces lone surrogates instead of failing parse;
+        the resulting name still fails the installable charset check and
+        diagnostic output must stay valid UTF-8."""
         repo = write_repo(tmp_path / "surrogate")
         plugin = write_plugin(repo, "berth-tools", None)
         (plugin / "plugin.json").write_text(
             json.dumps({"name": "berth\ud800tools"}), encoding="utf-8"
         )
         findings = run_rule(AntigravityPluginJsonValidRule, repo)
-        assert len(findings) == 1 and findings[0].severity == Severity.ERROR
+        assert len(findings) == 1 and findings[0].severity == Severity.WARNING
         rendered = messages(findings)
-        assert "invalid Unicode surrogate" in rendered[0]
+        assert "is not installable" in rendered[0]
         for message in rendered:
             message.encode("utf-8")
 

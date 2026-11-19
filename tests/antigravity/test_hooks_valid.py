@@ -267,11 +267,32 @@ class TestFileScopedDefects:
         assert len(violations) == 2
         assert len({v.fingerprint_discriminator for v in violations}) == 2
 
+    def test_utf8_bom_is_accepted_on_valid_hooks_json(self, tmp_path: Path) -> None:
+        """Measured against agy 1.5.11: hooks.json strips a leading UTF-8 BOM."""
+        violations = check(
+            tmp_path, "bom-valid", '\ufeff{"audit": {"Stop": [{"command": "make lint"}]}}'
+        )
+        assert violations == []
+
     @pytest.mark.parametrize(
         "name,body,needle",
         [
             ("bad-json", '{"audit": }', "does not parse"),
-            ("bom", '\ufeff{"audit": {"Stop": [{"command": "make lint"}]}}', "UTF-8 BOM"),
+            (
+                "line-comment",
+                '// note\n{"audit": {"Stop": [{"command": "make lint"}]}}',
+                "does not parse",
+            ),
+            (
+                "trailing-comma",
+                '{"audit": {"Stop": [{"command": "make lint",}]}}',
+                "does not parse",
+            ),
+            (
+                "bom-bad-type",
+                '\ufeff{"audit": {"Stop": [{"command": 42}]}}',
+                "'command' must be a string",
+            ),
             ("array-root", "[]", "must be a JSON object of named hooks"),
             ("string-root", '"make lint"', "must be a JSON object of named hooks"),
             (

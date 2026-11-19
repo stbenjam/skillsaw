@@ -182,13 +182,13 @@ def test_escaping_root_manifest_is_not_read_or_claimed(tmp_path, monkeypatch, fo
     outside.write_bytes(manifest.read_bytes())
     manifest.unlink()
     manifest.symlink_to(outside)
-    read = antigravity.read_json_strict
+    read = antigravity.read_plugin_manifest
 
     def contained_read(path, *args, **kwargs):
         assert path.resolve() != outside, "Read an escaping standalone manifest"
         return read(path, *args, **kwargs)
 
-    monkeypatch.setattr(antigravity, "read_json_strict", contained_read)
+    monkeypatch.setattr(antigravity, "read_plugin_manifest", contained_read)
     context = _context(repo, forced=forced)
     assert context.antigravity_plugins == []
     assert not context.provenance(repo).antigravity
@@ -196,6 +196,20 @@ def test_escaping_root_manifest_is_not_read_or_claimed(tmp_path, monkeypatch, fo
     code, report = _lint(repo, forced=forced)
     assert code == 0
     assert not [v for v in report["violations"] if v["rule_id"] == RULE]
+
+
+def test_standalone_jsonc_and_bom_manifest_is_discovered(tmp_path):
+    repo = copy_fixture("antigravity/standalone-plugin", tmp_path)
+    manifest = repo / "plugin.json"
+    manifest.write_text(
+        '\ufeff// standalone manifest\n{\n  "$schema": "https://antigravity.google/schemas/v1/plugin.json",\n  "name": "berth-tools",\n}\n',
+        encoding="utf-8",
+    )
+    context = _context(repo, forced=False)
+    assert context.antigravity_plugin_roots() == [repo]
+    code, report = _lint(repo, forced=False)
+    assert code == 0
+    assert report["violations"] == []
 
 
 def test_standalone_plugin_prose_still_honors_exclusions(tmp_path):
