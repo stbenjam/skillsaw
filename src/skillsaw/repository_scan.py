@@ -8,6 +8,7 @@ from typing import List, Optional, Set, TYPE_CHECKING, Tuple
 from .discovery import claude as claude_discovery
 from .discovery import detect as detect_discovery
 from .discovery.codex_instructions import project_configs, project_directories, select_instructions
+from .discovery.excludes import is_root_or_ancestor_excluded
 from .formats.codex_instructions import candidate_filenames
 from .formats.openclaw import MANIFEST
 from .repository_types import RepositoryType, TOOL_REPO_TYPES
@@ -365,11 +366,16 @@ class RepositoryScanMixin:
         skills = self._filter_pi_skills(self._filter_cursor_skills(skills))
 
         # Merge MCP snapshot skills after dialect filters so server-controlled
-        # paths like ``.pi/skills/...`` retain their portable Agent Skills role.
+        # paths like ``.pi/skills/...`` retain their portable Agent Skills role,
+        # while still honoring configured exclusions on persisted snapshots.
         snapshot_skills = self.mcp_snapshot_skills()
         if snapshot_skills:
             seen_resolved = {r for p in skills if (r := safe_resolve(p)) is not None}
             for skill_dir in snapshot_skills:
+                if is_root_or_ancestor_excluded(
+                    skill_dir, self.root_path, self.is_path_excluded
+                ) or self.is_path_excluded(skill_dir / "SKILL.md"):
+                    continue
                 resolved = safe_resolve(skill_dir)
                 if resolved is not None and resolved not in seen_resolved:
                     seen_resolved.add(resolved)
