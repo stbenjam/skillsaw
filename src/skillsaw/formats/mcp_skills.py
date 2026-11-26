@@ -220,6 +220,21 @@ def read_snapshot_record(root: Path) -> Optional[Dict[str, Any]]:
     return data if isinstance(data, dict) else None
 
 
+def read_valid_snapshot_record(root: Path) -> Optional[Dict[str, Any]]:
+    """Read *root*'s snapshot record only when its header matches skillsaw's schema."""
+    data = read_snapshot_record(root)
+    if data is None:
+        return None
+    if data.get("snapshotVersion") != SNAPSHOT_VERSION:
+        return None
+    generator = data.get("generator")
+    if not isinstance(generator, str) or not generator.startswith("skillsaw "):
+        return None
+    if not isinstance(data.get("servers"), list):
+        return None
+    return data
+
+
 def snapshot_skill_dirs(root: Path) -> List[Path]:
     """Every valid, contained skill directory listed by *root*'s MCP snapshot.
 
@@ -229,17 +244,10 @@ def snapshot_skill_dirs(root: Path) -> List[Path]:
     walk heuristics. Requires a compatible skillsaw snapshot header and file
     inventory so an unrelated or planted file cannot override dialect roles.
     """
-    data = read_snapshot_record(root)
+    data = read_valid_snapshot_record(root)
     if data is None:
         return []
-    if data.get("snapshotVersion") != SNAPSHOT_VERSION:
-        return []
-    generator = data.get("generator")
-    if not isinstance(generator, str) or not generator.startswith("skillsaw "):
-        return []
-    servers = data.get("servers")
-    if not isinstance(servers, list):
-        return []
+    servers = data["servers"]
     resolved_root = safe_resolve(root)
     if resolved_root is None:
         return []

@@ -131,6 +131,10 @@ def _header_value(value: str) -> str:
 
 def _loads(data: Any) -> Any:
     """``json.loads``, bounding container fan-out and nesting as server errors."""
+    if isinstance(data, (bytes, bytearray)):
+        # Decode UTF-8 before scanning so UTF-16/UTF-32 payloads cannot bypass
+        # the container scan and reach json.loads()'s encoding auto-detection.
+        data = bytes(data).decode("utf-8")
     if exceeds_json_containers(data, _MAX_JSON_CONTAINERS):
         raise McpError("the server sent JSON with too many containers to parse")
     try:
@@ -141,10 +145,13 @@ def _loads(data: Any) -> Any:
 
 def _response_for(message: Any, request_id: int) -> Optional[Mapping[str, Any]]:
     """*message* if it is a valid JSON-RPC 2.0 response to *request_id*."""
+    if not isinstance(message, Mapping):
+        return None
+    resp_id = message.get("id")
     if (
-        isinstance(message, Mapping)
-        and message.get("jsonrpc") == "2.0"
-        and message.get("id") == request_id
+        message.get("jsonrpc") == "2.0"
+        and not isinstance(resp_id, bool)
+        and resp_id == request_id
         and (("result" in message) != ("error" in message))
     ):
         return message
@@ -889,7 +896,10 @@ class HttpTransport(Transport):
             and "error" in parsed
             and "result" not in parsed
         ):
-            return {"jsonrpc": "2.0", "id": message.get("id"), "error": parsed["error"]}
+            err_id = parsed.get("id")
+            req_id = message.get("id")
+            if err_id is None or (not isinstance(err_id, bool) and err_id == req_id):
+                return {"jsonrpc": "2.0", "id": req_id, "error": parsed["error"]}
         raise McpError(f"HTTP {exc.code} from server") from exc
 
     def _consume(self, response, message, bounds, limit):
@@ -996,6 +1006,12 @@ class McpSession:
     def _budget_error(self) -> McpBudgetError:
         return McpBudgetError(f"the byte budget of {self.max_bytes} bytes was reached")
 
+    def _check_total_deadline(self) -> None:
+        if self._deadline is not None and time.monotonic() >= self._deadline:
+            raise McpTimeoutError(
+                f"server pull exceeded its {self.max_duration:g}s total duration limit"
+            )
+
     def _send(
         self,
         method: str,
@@ -1053,6 +1069,7 @@ class McpSession:
         finally:
             # Failed exchanges cost bytes too; charge whatever was read.
             self.received += self.transport.bytes_received - before
+        self._check_total_deadline()
         if self.max_bytes is not None and self.received > self.max_bytes:
             raise self._budget_error()
         if notification:
@@ -1075,6 +1092,7 @@ class McpSession:
         except (McpBudgetError, McpAuthError, McpRedirectError):
             raise  # none of these means a legacy server
         except McpError as probe:
+            self._check_total_deadline()
             # A timeout or transport failure may mean a legacy server, so try
             # the handshake — but if that fails too, the probe's failure is
             # usually the one that explains it.
@@ -1083,6 +1101,7 @@ class McpSession:
             except (McpBudgetError, McpAuthError):
                 raise
             except McpError as exc:
+                self._check_total_deadline()
                 if str(exc) == str(probe):
                     raise
                 raise McpError(
@@ -1096,15 +1115,18 @@ class McpSession:
             raise McpError(
                 f"server supports none of this client's versions: {safe_display(versions)}"
             )
+        self._validate_cacheable_envelope("server/discover", result)
+        capabilities = result.get("capabilities")
+        if not isinstance(capabilities, Mapping):
+            raise McpError("server/discover result has missing or invalid 'capabilities'")
         meta = result.get("_meta")
         server_info = (
             meta.get("io.modelcontextprotocol/serverInfo") if isinstance(meta, Mapping) else None
         )
-        capabilities = result.get("capabilities")
         self.info = ServerInfo(
             protocol_version=MODERN_VERSION,
             modern=True,
-            capabilities=dict(capabilities) if isinstance(capabilities, Mapping) else {},
+            capabilities=dict(capabilities),
             server_info=dict(server_info) if isinstance(server_info, Mapping) else None,
         )
         return self.info
@@ -1163,10 +1185,9 @@ class McpSession:
             version=self.info.protocol_version,
         )
 
-    def _check_modern_envelope(self, method: str, result: Mapping[str, Any]) -> None:
+    @staticmethod
+    def _validate_cacheable_envelope(method: str, result: Mapping[str, Any]) -> None:
         """Validate required modern (2026-07-28) CacheableResult envelope fields."""
-        if self.info is None or not self.info.modern:
-            return
         result_type = result.get("resultType")
         if result_type != "complete":
             raise McpError(
@@ -1177,6 +1198,11 @@ class McpSession:
             raise McpError(f"{method} result has missing or invalid 'ttlMs'")
         if result.get("cacheScope") not in ("public", "private"):
             raise McpError(f"{method} result has missing or invalid 'cacheScope'")
+
+    def _check_modern_envelope(self, method: str, result: Mapping[str, Any]) -> None:
+        if self.info is None or not self.info.modern:
+            return
+        self._validate_cacheable_envelope(method, result)
 
     def iter_skills(self, *, max_pages: int = 1000) -> Iterator[Any]:
         """The entries ``skills/list`` returns, requesting each page on demand.

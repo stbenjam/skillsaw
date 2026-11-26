@@ -50,9 +50,11 @@ def _targets(args) -> Tuple[List[ServerTarget], List[Tuple[str, str]]]:
         servers = config_servers(args.mcp_config)
         base = (safe_resolve(args.mcp_config) or args.mcp_config.absolute()).parent
         # Editor-scoped MCP configs (.vscode/mcp.json, .cursor/mcp.json) run
-        # stdio servers from the enclosing workspace folder by default.
-        if base.name in (".vscode", ".cursor") and base.parent != base:
-            base = base.parent
+        # stdio servers from the enclosing workspace folder by default, even
+        # when the config file itself is a symlink into another directory.
+        supplied = args.mcp_config.absolute().parent
+        if supplied.name in (".vscode", ".cursor") and supplied.parent != supplied:
+            base = supplied.parent
         for name, entry in servers.items():
             try:
                 targets.append(config_target(name, entry, base))

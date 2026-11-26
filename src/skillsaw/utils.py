@@ -10,7 +10,7 @@ import stat
 import threading
 from io import StringIO
 from pathlib import Path
-from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, NoReturn, Optional, Set, Tuple
 
 import yaml
 
@@ -22,7 +22,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on the 3.9/3.10 floo
 from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
-from skillsaw.paths import safe_is_symlink, safe_resolve
+from skillsaw.paths import contained_resolve, safe_is_symlink, safe_resolve
 
 # Use the fast C-based LibYAML loader (CSafeLoader) when available, falling
 # back to PyYAML's pure-Python SafeLoader. Both share the same safe loader semantics.
@@ -152,11 +152,11 @@ def write_bytes_exclusive(path: Path, content: bytes, *, root: Path) -> None:
         try:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(content)
-        except BaseException:
+        except BaseException as exc:
             try:
                 os.unlink(target)
             except OSError:
-                pass
+                setattr(exc, "_skillsaw_partial_file_retained", True)
             raise
         return
 
@@ -184,14 +184,113 @@ def write_bytes_exclusive(path: Path, content: bytes, *, root: Path) -> None:
         try:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(content)
-        except BaseException:
+        except BaseException as exc:
             try:
                 os.unlink(relative.name, dir_fd=directory_fd)
             except OSError:
-                pass
+                setattr(exc, "_skillsaw_partial_file_retained", True)
             raise
     finally:
         os.close(directory_fd)
+
+
+def remove_contained_files_and_empty_dirs(
+    root: Path,
+    relative_files: Iterable[Tuple[str, ...]],
+    extra_dirs: Iterable[Tuple[str, ...]] = (),
+) -> None:
+    """Remove tracked regular files and prune emptied directories anchored to *root*.
+
+    On descriptor-capable platforms, opens *root* once and walks every parent
+    with ``O_DIRECTORY | O_NOFOLLOW`` before calling ``os.unlink`` / ``os.rmdir``
+    relative to the pinned parent descriptor so an ancestor symlink swap cannot
+    redirect deletion outside *root*. Any entry whose ownership cannot be
+    established is left untouched.
+    """
+    resolved_root = safe_resolve(root)
+    if resolved_root is None or not resolved_root.is_dir():
+        return
+    file_tuples = [t for t in relative_files if t]
+    dir_set: Set[Tuple[str, ...]] = {t for t in extra_dirs if t}
+    for parts in file_tuples:
+        for depth in range(1, len(parts)):
+            dir_set.add(parts[:depth])
+    ordered_dirs = sorted(dir_set, key=len, reverse=True)
+
+    supports_anchored = (
+        _supports_anchored_atomic_write()
+        and os.open in os.supports_dir_fd
+        and os.lstat in os.supports_dir_fd
+        and os.unlink in os.supports_dir_fd
+        and os.rmdir in os.supports_dir_fd
+    )
+    if not supports_anchored:
+        for parts in file_tuples:
+            target = resolved_root.joinpath(*parts)
+            if contained_resolve(target.parent, resolved_root) is None:
+                continue
+            try:
+                if not target.is_symlink() and target.is_file():
+                    target.unlink()
+            except OSError:
+                pass
+        for parts in ordered_dirs:
+            directory = resolved_root.joinpath(*parts)
+            if contained_resolve(directory, resolved_root) is None:
+                continue
+            try:
+                if not directory.is_symlink():
+                    directory.rmdir()
+            except OSError:
+                pass
+        return
+
+    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        dir_flags |= os.O_CLOEXEC
+    try:
+        root_fd = os.open(resolved_root, dir_flags)
+    except OSError:
+        return
+
+    def _open_parent(parents: Tuple[str, ...]) -> Optional[int]:
+        cur_fd = os.dup(root_fd)
+        try:
+            for comp in parents:
+                child_fd = os.open(comp, dir_flags, dir_fd=cur_fd)
+                os.close(cur_fd)
+                cur_fd = child_fd
+            return cur_fd
+        except OSError:
+            os.close(cur_fd)
+            return None
+
+    try:
+        for parts in file_tuples:
+            parent_fd = _open_parent(parts[:-1])
+            if parent_fd is None:
+                continue
+            try:
+                st = os.lstat(parts[-1], dir_fd=parent_fd)
+                if stat.S_ISREG(st.st_mode):
+                    os.unlink(parts[-1], dir_fd=parent_fd)
+            except OSError:
+                pass
+            finally:
+                os.close(parent_fd)
+
+        for parts in ordered_dirs:
+            parent_fd = _open_parent(parts[:-1])
+            if parent_fd is None:
+                continue
+            try:
+                os.rmdir(parts[-1], dir_fd=parent_fd)
+            except OSError:
+                pass
+            finally:
+                os.close(parent_fd)
+    finally:
+        os.close(root_fd)
 
 
 def rename_path_anchored(source: Path, destination: Path, *, root: Path) -> None:

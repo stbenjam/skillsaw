@@ -51,6 +51,7 @@ from .utils import (
     mkdir_parents_anchored,
     parse_frontmatter,
     read_jsonc,
+    remove_contained_files_and_empty_dirs,
     write_bytes_atomic,
     write_bytes_exclusive,
 )
@@ -317,12 +318,16 @@ def config_servers(config_path: Path) -> Dict[str, Any]:
             continue
         servers = candidate
         break
+    has_invalid_wrapper = any(
+        k in data and not isinstance(data[k], Mapping) for k in ("mcpServers", "servers")
+    )
+    has_sibling_server = any(
+        _looks_like_server(v) for k, v in data.items() if k not in ("mcpServers", "servers")
+    )
     if (
         servers is None
         and data
-        and not any(
-            k in data and not isinstance(data[k], Mapping) for k in ("mcpServers", "servers")
-        )
+        and (not has_invalid_wrapper or has_sibling_server)
         and any(
             _looks_like_server(entry)
             or (isinstance(entry, Mapping) and entry.get("disabled") is True)
@@ -1116,7 +1121,8 @@ class _ServerPull:
             self.record["files"].pop()
             self.error("refused: another resource already maps to this file", file_uri)
         except OSError as exc:
-            self.record["files"].pop()
+            if not getattr(exc, "_skillsaw_partial_file_retained", False):
+                self.record["files"].pop()
             self.error(f"could not store the file: {exc.strerror or exc}", file_uri)
         return data
 
@@ -1341,34 +1347,18 @@ def _persist_or_rollback_snapshot(
         return
     except PullError:
         pass
-    resolved_out = safe_resolve(out_dir) or out_dir
+    tracked_files: List[Tuple[str, ...]] = []
+    server_dirs: List[Tuple[str, ...]] = []
     for server in server_list:
         label = server.get("label") if isinstance(server, Mapping) else None
         if not isinstance(label, str) or mcp_skills.sanitize_label(label) != label:
             continue
-        server_dir = resolved_out / label
-        dirs: set = set()
+        server_dirs.append((label,))
         for rel in server.get("files") or ():
             parts = _safe_inventory_parts(rel)
-            if parts is None:
-                continue
-            target = server_dir.joinpath(*parts)
-            try:
-                if not target.is_symlink():
-                    target.unlink()
-            except OSError:
-                pass
-            cur = target.parent
-            while cur != resolved_out and cur != cur.parent:
-                dirs.add(cur)
-                cur = cur.parent
-        dirs.add(server_dir)
-        for directory in sorted(dirs, key=lambda p: len(p.parts), reverse=True):
-            try:
-                if not directory.is_symlink():
-                    directory.rmdir()
-            except OSError:
-                pass
+            if parts is not None:
+                tracked_files.append((label, *parts))
+    remove_contained_files_and_empty_dirs(out_dir, tracked_files, server_dirs)
 
 
 def _write_snapshot(out_dir: Path, snapshot: Dict[str, Any]) -> None:
@@ -1383,6 +1373,10 @@ def _write_snapshot(out_dir: Path, snapshot: Dict[str, Any]) -> None:
     if len(payload) > mcp_skills.MAX_SNAPSHOT_RECORD_BYTES:
         raise PullError(
             f"snapshot record exceeds the {mcp_skills.MAX_SNAPSHOT_RECORD_BYTES}-byte limit"
+        )
+    if mcp_skills.exceeds_json_containers(payload, mcp_skills.MAX_SNAPSHOT_CONTAINERS):
+        raise PullError(
+            f"snapshot record exceeds the {mcp_skills.MAX_SNAPSHOT_CONTAINERS}-container limit"
         )
     try:
         write_bytes_atomic(final, payload, root=resolved_out)

@@ -35,10 +35,13 @@ reads a client config such as `.mcp.json`, `.vscode/mcp.json` or
 `.cursor/mcp.json`, with `${VAR}` expansion. A stdio server, named on the
 command line or in a config, runs its command, so start only servers you trust.
 
-Treat an MCP config like code: it runs its commands and sends the environment
-variables it names to the servers it lists. Never pass `--mcp-config` a config
-from a pull request or anywhere else you would not run code from. In CI, lint a
-committed `skillsaw pull` directory instead.
+Treat an MCP config like code: it runs its commands, and every stdio server
+inherits the ambient environment of the `skillsaw` process in addition to any
+`env` overrides the config names. Never pass `--mcp-config` a config from a
+pull request or anywhere else you would not run code from; if your shell or CI
+job holds unrelated credentials, unset them or run under a minimal environment
+(for example `env -i PATH="$PATH" skillsaw ...`). In CI, lint a committed
+`skillsaw pull` directory instead.
 
 ## Problems with a server
 

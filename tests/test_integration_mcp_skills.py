@@ -2061,7 +2061,8 @@ class TestHardeningAndCoverage:
             "  req = json.loads(raw)\n"
             "  m = req.get('method')\n"
             "  if m == 'server/discover':\n"
-            "    res = {'supportedVersions': ['2026-07-28'], 'capabilities': {'resources': {}, "
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'supportedVersions': ['2026-07-28'], 'capabilities': {'resources': {}, "
             "'extensions': {'io.modelcontextprotocol/skills': {'directoryRead': True}}}}\n"
             "  elif m == 'skills/list':\n"
             "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
@@ -2115,7 +2116,13 @@ class TestHardeningAndCoverage:
                         {
                             "jsonrpc": "2.0",
                             "id": req["id"],
-                            "result": {"supportedVersions": [mcp_client.MODERN_VERSION]},
+                            "result": {
+                                "resultType": "complete",
+                                "ttlMs": 0,
+                                "cacheScope": "private",
+                                "supportedVersions": [mcp_client.MODERN_VERSION],
+                                "capabilities": {},
+                            },
                         }
                     ).encode("utf-8")
                     raw = (
@@ -2273,7 +2280,13 @@ class TestHardeningAndCoverage:
         # read_directory pagination and max_entries truncation.
         t_dir = StubTransport(
             [
-                {"supportedVersions": [mcp_client.MODERN_VERSION], "capabilities": {}},
+                {
+                    "resultType": "complete",
+                    "ttlMs": 0,
+                    "cacheScope": "private",
+                    "supportedVersions": [mcp_client.MODERN_VERSION],
+                    "capabilities": {},
+                },
                 {
                     "resultType": "complete",
                     "ttlMs": 0,
@@ -2638,6 +2651,9 @@ class TestHardeningAndCoverage:
                 Stub(
                     [
                         {
+                            "resultType": "complete",
+                            "ttlMs": 0,
+                            "cacheScope": "private",
                             "supportedVersions": [mcp_client.MODERN_VERSION],
                             "capabilities": {
                                 "resources": {},
@@ -2737,7 +2753,8 @@ class TestHardeningAndCoverage:
             "  req = json.loads(raw)\n"
             "  m = req.get('method')\n"
             "  if m == 'server/discover':\n"
-            "    res = {'supportedVersions': ['2026-07-28'], "
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'supportedVersions': ['2026-07-28'], "
             "'_meta': {'io.modelcontextprotocol/serverInfo': {'name': f'srv-{tok}', 'version': '1'}}, "
             "'capabilities': {'resources': {}, 'extensions': "
             "{'io.modelcontextprotocol/skills': {'note': tok}}}}\n"
@@ -2787,7 +2804,8 @@ class TestHardeningAndCoverage:
             "  req = json.loads(raw)\n"
             "  m = req.get('method')\n"
             "  if m == 'server/discover':\n"
-            "    res = {'supportedVersions': ['2026-07-28'], 'capabilities': {'resources': {}, "
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'supportedVersions': ['2026-07-28'], 'capabilities': {'resources': {}, "
             "'extensions': {'io.modelcontextprotocol/skills': {'directoryRead': True}}}}\n"
             "  elif m == 'skills/list':\n"
             "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
@@ -3043,23 +3061,50 @@ class TestHardeningAndCoverage:
         assert res.returncode == 0, res.stderr
         assert len(pulled(out)["skills"]) == 5
 
-    def test_jsonrpc_envelope_modern_resource_envelopes_and_duration_cap(self):
-        # _response_for requires jsonrpc=="2.0" and exactly one of result/error.
+    def test_jsonrpc_envelope_modern_resource_envelopes_and_duration_cap(self, monkeypatch):
+        # _response_for requires jsonrpc=="2.0", non-bool matching id, and XOR result/error.
         assert mcp_client._response_for({"id": 1, "result": {}}, 1) is None
+        assert mcp_client._response_for({"jsonrpc": "2.0", "id": True, "result": {}}, 1) is None
         assert (
             mcp_client._response_for({"jsonrpc": "2.0", "id": 1, "result": {}, "error": {}}, 1)
             is None
         )
         assert mcp_client._response_for({"jsonrpc": "2.0", "id": 1, "result": {}}, 1) is not None
 
+        # UTF-16 JSON payloads cannot bypass container limits via json.loads auto-detection.
+        utf16_payload = json.dumps({"a": [{}]}).encode("utf-16")
+        with pytest.raises(ValueError):
+            mcp_client._loads(utf16_payload)
+
+        # HTTP error body with mismatched or boolean id is rejected instead of rewritten.
+        import urllib.error
+
+        class FakeHttpErr(urllib.error.HTTPError):
+            def __init__(self, body: bytes):
+                super().__init__("http://127.0.0.1/mcp", 400, "Bad Request", {}, io.BytesIO(body))
+
+        transport = mcp_client.HttpTransport("http://127.0.0.1/mcp")
+        bounds = {"deadline": time.monotonic() + 5.0, "timeout": 5.0, "method": "server/discover"}
+        for bad_id in (2, True):
+            err = FakeHttpErr(
+                json.dumps(
+                    {"jsonrpc": "2.0", "id": bad_id, "error": {"code": -32601, "message": "x"}}
+                ).encode()
+            )
+            with pytest.raises(mcp_client.McpError, match="HTTP 400"):
+                transport._error_status(err, {"id": 1, "method": "server/discover"}, bounds, 4096)
+
         class Stub(mcp_client.Transport):
-            def __init__(self, responses, delay=0.0):
+            def __init__(self, responses, clock=None, step=0.0):
                 self._responses = list(responses)
-                self._delay = delay
+                self._clock = clock
+                self._step = step
+                self.timeouts = []
 
             def send(self, message, *, headers, timeout, limit=mcp_client.MAX_MESSAGE_BYTES):
-                if self._delay:
-                    time.sleep(self._delay)
+                self.timeouts.append(timeout)
+                if self._clock is not None:
+                    self._clock[0] += self._step
                 return {"jsonrpc": "2.0", "id": message.get("id"), "result": self._responses.pop(0)}
 
         # Modern resources/read and resources/directory/read require CacheableResult envelopes.
@@ -3075,16 +3120,41 @@ class TestHardeningAndCoverage:
         with pytest.raises(mcp_client.McpError, match="resultType"):
             s_dir.read_directory("skill://a")
 
-        # Per-server aggregate max_duration stops slow multi-request pulls.
-        s_slow = mcp_client.McpSession(
-            Stub([{"skills": []}, {"skills": []}], delay=0.15),
-            timeout=5.0,
-            max_duration=0.1,
-        )
+        # Controlled clock: first request receives clamped remaining timeout;
+        # post-exchange expiry raises immediately; subsequent requests never call send().
+        now = [100.0]
+        monkeypatch.setattr(mcp_client.time, "monotonic", lambda: now[0])
+        stub = Stub([{"skills": []}, {"skills": []}], clock=now, step=0.6)
+        s_slow = mcp_client.McpSession(stub, timeout=5.0, max_duration=1.0)
         s_slow.info = mcp_client.ServerInfo("2025-11-25", False, {"resources": {}})
+        now[0] = 100.2  # 0.8s remaining
         s_slow.request("skills/list", {})
+        assert stub.timeouts == [pytest.approx(0.8)]
+        # Next request completes past the 101.0 deadline and is rejected on return.
         with pytest.raises(mcp_client.McpTimeoutError, match="total duration limit"):
             s_slow.request("skills/list", {})
+        assert len(stub.timeouts) == 2
+        assert stub.timeouts[1] == pytest.approx(0.2)
+        # After expiry, no new transport call starts.
+        with pytest.raises(mcp_client.McpTimeoutError, match="total duration limit"):
+            s_slow.request("skills/list", {})
+        assert len(stub.timeouts) == 2
+
+        # Aggregate timeout during connect() is preserved instead of wrapped by fallback.
+        class ExpireDiscover(mcp_client.Transport):
+            def __init__(self):
+                self.calls = 0
+
+            def send(self, message, *, headers, timeout, limit=mcp_client.MAX_MESSAGE_BYTES):
+                self.calls += 1
+                now[0] += 2.0
+                raise mcp_client.McpTimeoutError("per-request timeout")
+
+        exp = ExpireDiscover()
+        s_conn = mcp_client.McpSession(exp, timeout=5.0, max_duration=1.0)
+        with pytest.raises(mcp_client.McpTimeoutError, match="total duration limit"):
+            s_conn.connect()
+        assert exp.calls == 1
 
     def test_persisted_snapshot_honors_global_excludes(self, tmp_path):
         from skillsaw import __version__
@@ -3150,3 +3220,189 @@ class TestHardeningAndCoverage:
         live_payload = json.loads(live.stdout)
         live_files = {v["file_path"] for v in live_payload["violations"]}
         assert any("private" in f for f in live_files), (live.returncode, live.stderr, live_payload)
+
+    def test_discover_envelope_validation_and_untrusted_snapshot_default_excludes(self, tmp_path):
+        from types import SimpleNamespace
+        from skillsaw.cli._config import load_config
+
+        class Stub(mcp_client.Transport):
+            def __init__(self, result):
+                self._result = result
+
+            def send(self, message, *, headers, timeout, limit=mcp_client.MAX_MESSAGE_BYTES):
+                return {"jsonrpc": "2.0", "id": message.get("id"), "result": self._result}
+
+        for bad_discover, expected in [
+            (
+                {
+                    "supportedVersions": [mcp_client.MODERN_VERSION],
+                    "capabilities": {},
+                    "ttlMs": 0,
+                    "cacheScope": "private",
+                },
+                "resultType",
+            ),
+            (
+                {
+                    "resultType": "complete",
+                    "supportedVersions": [mcp_client.MODERN_VERSION],
+                    "capabilities": {},
+                    "cacheScope": "private",
+                },
+                "ttlMs",
+            ),
+            (
+                {
+                    "resultType": "complete",
+                    "supportedVersions": [mcp_client.MODERN_VERSION],
+                    "capabilities": {},
+                    "ttlMs": 0,
+                },
+                "cacheScope",
+            ),
+            (
+                {
+                    "resultType": "complete",
+                    "supportedVersions": [mcp_client.MODERN_VERSION],
+                    "ttlMs": 0,
+                    "cacheScope": "private",
+                },
+                "capabilities",
+            ),
+            (
+                {
+                    "resultType": "complete",
+                    "supportedVersions": [mcp_client.MODERN_VERSION],
+                    "capabilities": [],
+                    "ttlMs": 0,
+                    "cacheScope": "private",
+                },
+                "capabilities",
+            ),
+        ]:
+            with pytest.raises(mcp_client.McpError, match=expected):
+                mcp_client.McpSession(Stub(bad_discover)).connect()
+
+        # Unconfigured repo with an invalid/incompatible mcp-skills-snapshot.json
+        # retains default excludes; a genuine compatible snapshot clears them.
+        args = SimpleNamespace(config=None, scratch_paths=False)
+        for bad_content in [
+            "not json",
+            json.dumps({"snapshotVersion": 99, "generator": "skillsaw 0.23.0", "servers": []}),
+            json.dumps({"snapshotVersion": 1, "generator": "other-tool 1.0", "servers": []}),
+            json.dumps({"snapshotVersion": 1, "generator": "skillsaw 0.23.0", "servers": {}}),
+        ]:
+            repo = tmp_path / f"bad-{abs(hash(bad_content))}"
+            repo.mkdir()
+            (repo / mcp_skills.SNAPSHOT_FILENAME).write_text(bad_content, encoding="utf-8")
+            cfg, cfg_path = load_config(args, repo)
+            assert cfg_path is None
+            assert cfg.exclude_patterns, f"default excludes cleared for {bad_content!r}"
+
+        valid_repo = tmp_path / "valid-snap"
+        valid_repo.mkdir()
+        (valid_repo / mcp_skills.SNAPSHOT_FILENAME).write_text(
+            json.dumps({"snapshotVersion": 1, "generator": "skillsaw 0.23.0", "servers": []}),
+            encoding="utf-8",
+        )
+        cfg, cfg_path = load_config(args, valid_repo)
+        assert cfg_path is None
+        assert cfg.exclude_patterns == []
+
+    def test_symlinked_vscode_config_bare_map_reserved_and_rollback_safety(
+        self, tmp_path, monkeypatch
+    ):
+        from skillsaw.utils import remove_contained_files_and_empty_dirs
+
+        # 1. Symlinked .vscode/mcp.json still defaults stdio cwd to workspace root.
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        real_cfg = shared / "mcp.json"
+        real_cfg.write_text(
+            json.dumps(
+                {
+                    "servers": {
+                        "local": {
+                            "command": sys.executable,
+                            "args": ["server.py", str(SERVED)],
+                        }
+                    }
+                }
+            )
+        )
+        ws = tmp_path / "workspace"
+        vscode = ws / ".vscode"
+        vscode.mkdir(parents=True)
+        shutil.copy(FAKE_SERVER, ws / "server.py")
+        link_cfg = vscode / "mcp.json"
+        link_cfg.symlink_to(real_cfg)
+        out = tmp_path / "out"
+        res = run_cli(["pull", "--mcp-config", link_cfg, "-o", out])
+        assert res.returncode == 0, res.stderr
+        assert len(pulled(out)["skills"]) == 5
+
+        # 2. Bare map with malformed reserved-name entry keeps healthy sibling.
+        bare = tmp_path / "bare.json"
+        bare.write_text(json.dumps({"servers": 42, "docs": {"url": "https://mcp.example/mcp"}}))
+        parsed = pull_module.config_servers(bare)
+        assert set(parsed) == {"servers", "docs"}
+        with pytest.raises(pull_module.PullError, match="not an object"):
+            pull_module.config_target("servers", parsed["servers"], tmp_path)
+        assert pull_module.config_target("docs", parsed["docs"], tmp_path).url == (
+            "https://mcp.example/mcp"
+        )
+
+        # 3. _write_snapshot enforces MAX_SNAPSHOT_CONTAINERS before publishing.
+        snap_dir = tmp_path / "container-cap"
+        snap_dir.mkdir()
+        monkeypatch.setattr(mcp_skills, "MAX_SNAPSHOT_CONTAINERS", 2)
+        with pytest.raises(pull_module.PullError, match="container limit"):
+            pull_module._write_snapshot(
+                snap_dir,
+                {
+                    "snapshotVersion": 1,
+                    "generator": "skillsaw test",
+                    "servers": [{"label": "s", "files": []}],
+                },
+            )
+
+        # 4. Anchored rollback leaves files outside root untouched on ancestor symlink swap.
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        victim = outside / "SKILL.md"
+        victim.write_text("do not delete")
+        snap_root = tmp_path / "snap-root"
+        snap_root.mkdir()
+        (snap_root / "srv").symlink_to(outside)
+        remove_contained_files_and_empty_dirs(snap_root, [("srv", "SKILL.md")], [("srv",)])
+        assert victim.exists()
+        assert (snap_root / "srv").is_symlink()
+
+        # 5. Inventory keeps partial file when write and cleanup unlink both fail,
+        # and drops it when no file was left behind.
+        server_pull = pull_module._ServerPull(
+            pull_module.ServerTarget(kind="http", label="srv", url="http://127.0.0.1/mcp"),
+            tmp_path,
+            max_skills=10,
+            max_bytes=1024,
+        )
+
+        class StubSession:
+            def read_resource(self, uri):
+                return b"hello"
+
+        def fail_with_retained(path, data, root):
+            err = OSError("disk full")
+            setattr(err, "_skillsaw_partial_file_retained", True)
+            raise err
+
+        monkeypatch.setattr(pull_module, "_write_exclusive", fail_with_retained)
+        server_pull._fetch(StubSession(), "skill://a/SKILL.md")
+        assert server_pull.record["files"] == ["a/SKILL.md"]
+
+        def fail_clean(path, data, root):
+            raise OSError("permission denied")
+
+        monkeypatch.setattr(pull_module, "_write_exclusive", fail_clean)
+        server_pull._fetch(StubSession(), "skill://b/SKILL.md")
+        assert server_pull.record["files"] == ["a/SKILL.md"]
