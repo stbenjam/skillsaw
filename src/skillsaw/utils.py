@@ -220,7 +220,8 @@ def remove_contained_files_and_empty_dirs(
     supports_anchored = (
         _supports_anchored_atomic_write()
         and os.open in os.supports_dir_fd
-        and os.lstat in os.supports_dir_fd
+        and os.stat in os.supports_dir_fd
+        and os.stat in os.supports_follow_symlinks
         and os.unlink in os.supports_dir_fd
         and os.rmdir in os.supports_dir_fd
     )
@@ -271,7 +272,7 @@ def remove_contained_files_and_empty_dirs(
             if parent_fd is None:
                 continue
             try:
-                st = os.lstat(parts[-1], dir_fd=parent_fd)
+                st = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
                 if stat.S_ISREG(st.st_mode):
                     os.unlink(parts[-1], dir_fd=parent_fd)
             except OSError:

@@ -257,19 +257,66 @@ def _command_label(command: List[str]) -> str:
     return program.name
 
 
+def _split_windows_command(command_line: str) -> List[str]:
+    """Split a Windows command line following ``CommandLineToArgvW`` quoting rules."""
+    tokens: List[str] = []
+    current: List[str] = []
+    in_token = False
+    in_quotes = False
+    i = 0
+    n = len(command_line)
+    while i < n:
+        ch = command_line[i]
+        if ch.isspace() and not in_quotes:
+            if in_token:
+                tokens.append("".join(current))
+                current = []
+                in_token = False
+            i += 1
+            continue
+        in_token = True
+        if ch == "\\":
+            backslashes = 0
+            while i < n and command_line[i] == "\\":
+                backslashes += 1
+                i += 1
+            if i < n and command_line[i] == '"':
+                current.append("\\" * (backslashes // 2))
+                if backslashes % 2 == 1:
+                    current.append('"')
+                else:
+                    in_quotes = not in_quotes
+                i += 1
+            else:
+                current.append("\\" * backslashes)
+        elif ch == '"':
+            if in_quotes and i + 1 < n and command_line[i + 1] == '"':
+                current.append('"')
+                i += 2
+            else:
+                in_quotes = not in_quotes
+                i += 1
+        else:
+            current.append(ch)
+            i += 1
+    if in_quotes:
+        raise ValueError("No closing quotation")
+    if in_token:
+        tokens.append("".join(current))
+    return tokens
+
+
 def split_command(command_line: str, windows: bool = os.name == "nt") -> List[str]:
     """Split a command line into arguments.
 
     POSIX rules read a backslash as an escape, which would turn
     ``C:\\tools\\server.exe`` into ``C:toolsserver.exe``; on Windows only
-    double quotes group, and they are removed.
+    double quotes group (including attached values such as
+    ``--root="C:\\Program Files\\data"``), and backslashes escape quotes only.
     """
     if not windows:
         return shlex.split(command_line)
-    return [
-        token[1:-1] if len(token) >= 2 and token[0] == token[-1] == '"' else token
-        for token in shlex.split(command_line, posix=False)
-    ]
+    return _split_windows_command(command_line)
 
 
 def command_target(command_line: str, label: Optional[str] = None) -> ServerTarget:
@@ -307,13 +354,15 @@ def config_servers(config_path: Path) -> Dict[str, Any]:
         candidate = data.get(key)
         if not isinstance(candidate, Mapping) or _looks_like_server(candidate):
             continue
-        # In a bare map, an entry named "servers"/"mcpServers" with only
-        # ``{"disabled": true}`` beside real server siblings is itself a
-        # disabled server entry, not a wrapper map.
-        if (
-            candidate.get("disabled") is True
-            and not any(_looks_like_server(v) for v in candidate.values())
-            and any(_looks_like_server(v) for k, v in data.items() if k != key)
+        # In a bare map, a reserved key whose mapping holds no server entries
+        # (e.g. ``{"disabled": true}`` or a malformed ``{"url": 123}``) beside
+        # real server siblings is itself an entry, not a wrapper map.
+        has_server_entries = any(
+            _looks_like_server(v) or (isinstance(v, Mapping) and v.get("disabled") is True)
+            for v in candidate.values()
+        )
+        if not has_server_entries and any(
+            _looks_like_server(v) for k, v in data.items() if k != key
         ):
             continue
         servers = candidate
@@ -321,13 +370,11 @@ def config_servers(config_path: Path) -> Dict[str, Any]:
     has_invalid_wrapper = any(
         k in data and not isinstance(data[k], Mapping) for k in ("mcpServers", "servers")
     )
-    has_sibling_server = any(
-        _looks_like_server(v) for k, v in data.items() if k not in ("mcpServers", "servers")
-    )
+    has_launchable_entry = any(_looks_like_server(v) for v in data.values())
     if (
         servers is None
         and data
-        and (not has_invalid_wrapper or has_sibling_server)
+        and (not has_invalid_wrapper or has_launchable_entry)
         and any(
             _looks_like_server(entry)
             or (isinstance(entry, Mapping) and entry.get("disabled") is True)
@@ -432,7 +479,9 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
         if not isinstance(workdir, str):
             raise PullError("its 'cwd' is not a string")  # never start it elsewhere
         if workdir:
-            cwd = cwd / _expand(workdir)  # relative to the config, as clients resolve it
+            cwd = cwd / _expand(
+                workdir, secrets_out=expanded_secrets
+            )  # relative to the config, as clients resolve it
     return ServerTarget(
         label=label,
         kind="stdio",
@@ -492,8 +541,13 @@ def prepare_output(out_dir: Path) -> None:
                     out_dir, entries
                 )
                 # Anchor cleanup to out_dir with O_DIRECTORY | O_NOFOLLOW and
-                # remove the snapshot record last so an interrupted cleanup stays valid.
+                # remove the snapshot record only after all server entries are
+                # gone so a failed cleanup preserves the inventory for retry.
                 remove_contained_files_and_empty_dirs(out_dir, files_to_unlink, dirs_to_rmdir)
+                if any(p.name != mcp_skills.SNAPSHOT_FILENAME for p in out_dir.iterdir()):
+                    raise PullError(
+                        f"cannot prepare {out_dir}: existing snapshot could not be cleared cleanly"
+                    )
                 if has_record:
                     remove_contained_files_and_empty_dirs(
                         out_dir, [(mcp_skills.SNAPSHOT_FILENAME,)]
@@ -517,8 +571,13 @@ def _safe_inventory_parts(rel: Any) -> Optional[Tuple[str, ...]]:
     return parts
 
 
+def _nfc_parts(parts: Tuple[str, ...]) -> Tuple[str, ...]:
+    """Canonically normalize relative path parts for cross-filesystem matching."""
+    return tuple(unicodedata.normalize("NFC", part) for part in parts)
+
+
 def _snapshot_inventory(out_dir: Path) -> Optional[Dict[str, set]]:
-    """Map each recorded server label to its set of inventoried file-part tuples."""
+    """Map each recorded server label to its set of NFC-normalized inventoried file tuples."""
     data = mcp_skills.read_valid_snapshot_record(out_dir)
     if data is None:
         return None
@@ -540,7 +599,7 @@ def _snapshot_inventory(out_dir: Path) -> Optional[Dict[str, set]]:
             parts = _safe_inventory_parts(rel)
             if parts is None:
                 return None
-            file_set.add(parts)
+            file_set.add(_nfc_parts(parts))
     return inventory
 
 
@@ -575,6 +634,7 @@ def _verify_replaceable_snapshot(
         ):
             raise PullError(not_snapshot)
         expected = inventory[entry.name]
+        matched_norm: set = set()
         server_dirs: List[Tuple[str, ...]] = []
         for dirpath, dirnames, filenames in os.walk(entry, topdown=True, followlinks=False):
             current = Path(dirpath)
@@ -588,8 +648,10 @@ def _verify_replaceable_snapshot(
                 if file_path.is_symlink() or not file_path.is_file():
                     raise PullError(not_snapshot)
                 rel_parts = file_path.relative_to(entry).parts
-                if rel_parts not in expected:
+                norm_parts = _nfc_parts(rel_parts)
+                if norm_parts not in expected or norm_parts in matched_norm:
                     raise PullError(not_snapshot)
+                matched_norm.add(norm_parts)
                 files_to_unlink.append((entry.name, *rel_parts))
         # Bottom-up order so deepest subdirectories are rmdir'd first.
         dirs_to_rmdir.extend(reversed(server_dirs))
@@ -606,7 +668,7 @@ def _write_exclusive(path: Path, data: bytes, root: Path) -> None:
     except FileExistsError:
         raise
     except OSError as exc:
-        if (
+        if not getattr(exc, "_skillsaw_partial_file_retained", False) and (
             exc.errno in (errno.ELOOP, errno.ENOTDIR)
             or "escapes root" in str(exc)
             or "symlink" in str(exc)
@@ -732,19 +794,17 @@ def _redact_secrets(text: str, secrets: Tuple[str, ...]) -> str:
     return text
 
 
-def _redact_value(value: Any, secrets: Tuple[str, ...], *, skip_keys: Tuple[str, ...] = ()) -> Any:
+def _redact_value(value: Any, secrets: Tuple[str, ...]) -> Any:
     """Scrub *secrets* from strings inside a JSON-compatible *value*."""
     if not secrets:
         return value
     if isinstance(value, str):
         return _redact_secrets(value, secrets)
     if isinstance(value, list):
-        return [_redact_value(item, secrets, skip_keys=skip_keys) for item in value]
+        return [_redact_value(item, secrets) for item in value]
     if isinstance(value, Mapping):
         return {
-            (k if k in skip_keys else _redact_secrets(k, secrets) if isinstance(k, str) else k): (
-                v if k in skip_keys else _redact_value(v, secrets, skip_keys=skip_keys)
-            )
+            (_redact_secrets(k, secrets) if isinstance(k, str) else k): _redact_value(v, secrets)
             for k, v in value.items()
         }
     return value
@@ -989,9 +1049,19 @@ class _ServerPull:
                     "holds a non-finite number or text that is not valid Unicode"
                 )
                 continue
-            # Keep raw URI keys so snapshot_skill_dirs() can resolve written skills;
-            # scrub reflected secrets from all other recorded metadata fields.
-            self.record["skills"].append(_redact_value(recorded, self._secrets, skip_keys=("uri",)))
+            # Scrub reflected secrets from all recorded metadata (including any
+            # nested 'uri' fields), preserving only a valid top-level skill URI
+            # so snapshot_skill_dirs() can resolve the written skill.
+            redacted = _redact_value(recorded, self._secrets)
+            top_uri = recorded.get("uri")
+            if (
+                isinstance(redacted, dict)
+                and isinstance(top_uri, str)
+                and mcp_skills.skill_root_uri(top_uri) is not None
+                and mcp_skills.local_parts(top_uri) is not None
+            ):
+                redacted["uri"] = top_uri
+            self.record["skills"].append(redacted)
             entries.append(entry)
         mkdir_parents_anchored(self.server_dir, root=self.out_dir)
         for entry in entries:

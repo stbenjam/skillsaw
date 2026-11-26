@@ -810,8 +810,11 @@ class HttpTransport(Transport):
                 request.add_header("MCP-Protocol-Version", self.protocol_version)
             request.watchdog = watchdog  # type: ignore[attr-defined]
             opener = _DIRECT_OPENER if self._direct else _OPENER
-            with opener.open(request, timeout=watchdog.remaining()):
-                pass
+            with opener.open(request, timeout=watchdog.remaining()) as response:
+                self.bytes_received += _header_bytes(response.headers, response.reason)
+        except urllib.error.HTTPError as exc:
+            self.bytes_received += _header_bytes(exc.headers, exc.reason)
+            exc.close()
         except (OSError, urllib.error.URLError, http.client.HTTPException, ValueError):
             pass
         finally:
@@ -1022,7 +1025,15 @@ class McpSession:
         self._ids = itertools.count(1)
 
     def close(self) -> None:
-        self.transport.close()
+        if self.max_bytes is not None and self.received >= self.max_bytes:
+            # Skip network session DELETE once the receive budget is exhausted.
+            if hasattr(self.transport, "session_id"):
+                self.transport.session_id = None
+        before = self.transport.bytes_received
+        try:
+            self.transport.close()
+        finally:
+            self.received += self.transport.bytes_received - before
 
     def _meta(self, version: str) -> Dict[str, Any]:
         return {
@@ -1194,7 +1205,7 @@ class McpSession:
         except McpBudgetError:
             raise
         except McpError:
-            pass
+            self._check_total_deadline()
         server_info = result.get("serverInfo")
         self.info = ServerInfo(
             protocol_version=negotiated,

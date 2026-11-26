@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import sys
 import time
 from pathlib import Path
 
+from ..config import _DEFAULT_EXCLUDE_PATTERNS
 from ..context import RepositoryContext, RepositoryType
 from ..diagnostics import terminal_safe
+from ..formats.mcp_skills import read_valid_snapshot_record
 from ..formatters import format_report, get_counts, parse_output_spec
 from ..linter import Linter
 from ._config import _get_version, load_config, resolve_fail_level, resolve_fix_level
@@ -159,20 +162,31 @@ def _run_lint(args, *, loaded_config=None, preloaded_rules=None):
     contexts = []
     baseline_suppressed = 0
     for lint_path in paths:
+        path_config = config
+        if not config.exclude_patterns_explicit and not getattr(args, "scratch_paths", False):
+            # Derive inherited default excludes per root so linting a persisted
+            # snapshot alongside an ordinary repository never leaks excludes across roots.
+            inherited = (
+                []
+                if read_valid_snapshot_record(lint_path) is not None
+                else list(_DEFAULT_EXCLUDE_PATTERNS)
+            )
+            if config.exclude_patterns != inherited:
+                path_config = dataclasses.replace(config, exclude_patterns=inherited)
         context = RepositoryContext(
             lint_path,
             repo_types=override_types,
-            exclude_patterns=config.exclude_patterns,
-            content_paths=config.content_paths,
-            lint_external_content=config.lint_external_content,
-            rulesync_generated=config.rulesync_generated,
+            exclude_patterns=path_config.exclude_patterns,
+            content_paths=path_config.content_paths,
+            lint_external_content=path_config.lint_external_content,
+            rulesync_generated=path_config.rulesync_generated,
         )
         contexts.append(context)
 
         try:
             linter = Linter(
                 context,
-                config,
+                path_config,
                 rule_ids=rule_ids,
                 skip_rule_ids=skip_rule_ids,
                 baseline=baseline,

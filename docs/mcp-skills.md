@@ -3,9 +3,10 @@
 An MCP server can publish Agent Skills through the Skills extension
 ([SEP-2640](https://modelcontextprotocol.io/seps/2640-skills-extension),
 `io.modelcontextprotocol/skills`): each file of a skill becomes a `skill://`
-resource, and `skills/list` advertises every skill's frontmatter with a digest
-and size for each of its files. The skills themselves are plain Agent Skills, so
-in the server's own repository `skillsaw lint` checks them like any other.
+resource, and `skills/list` advertises the enumerated skills' frontmatter with a
+digest and size for each of its files. The skills themselves are plain Agent
+Skills, so in the server's own repository `skillsaw lint` checks them like any
+other.
 
 To check what a running server actually serves — skills synced from elsewhere,
 generated at runtime, or behind a server you consume rather than author — fetch
@@ -55,11 +56,17 @@ see them:
 - a `skills/list` entry is malformed, for example its name differs from its
   URI or its file list omits `SKILL.md`;
 - a skill exceeds the 512 files or 16 MiB that every host must accept;
+- a `skills/list` or directory response returns `resultType: "partial"` (skillsaw
+  rejects partial results rather than auditing an incomplete list);
 - a file could not be read or stored, or a limit stopped the fetch early.
 
 These are printed to `stderr` after the lint report (or tree) — they are not
 included in structured `--format` or `--output` reports — and any of them fails
 the run; `skillsaw pull` lists them too and exits 1, but keeps what it fetched.
+
+skillsaw only fetches and lints the skills a server enumerates in `skills/list`;
+unlisted skills reachable only by direct `skills/get` URI are not discovered or
+checked.
 
 A server that serves no skills, as most servers in a client config do, is not a
 problem: there is just nothing to lint. Disabled entries and retired HTTP+SSE

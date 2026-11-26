@@ -16,8 +16,8 @@ see also `references/claude.md`.
 - Versioned Registry schemas: https://static.modelcontextprotocol.io/schemas/,
   sourced from https://github.com/modelcontextprotocol/static/tree/main/schemas.
 - Skills extension (SEP-2640, `io.modelcontextprotocol/skills`):
-  https://github.com/modelcontextprotocol/ext-skills — the spec page is
-  `specification/stable/skills.mdx`.
+  https://github.com/modelcontextprotocol/ext-skills — check the current
+  `skills.mdx` under `specification/` (currently `specification/beta/skills.mdx`).
 
 ## What to check
 - Transport types and their names (skillsaw validates against

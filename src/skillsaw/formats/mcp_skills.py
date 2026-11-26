@@ -35,6 +35,11 @@ DEFAULT_MAX_BYTES = 64 * 1024 * 1024
 MAX_RESOURCES_PER_SKILL = 512
 MAX_BYTES_PER_SKILL = 16 * 1024 * 1024
 
+#: Bounds on resource URI paths mapped into a snapshot (below macOS/POSIX
+#: PATH_MAX and deep enough for any real organizational prefix and skill tree).
+MAX_URI_SEGMENTS = 64
+MAX_URI_PATH_LENGTH = 1024
+
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 #: The record every fetch writes at the root of its output; ``skillsaw pull`` keeps it.
@@ -104,9 +109,13 @@ def split_uri(uri: str) -> Optional[Tuple[str, Tuple[str, ...]]]:
     if not isinstance(uri, str) or "://" not in uri:
         return None
     scheme, _, rest = uri.partition("://")
-    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]*", scheme):
+    if len(scheme) > 64 or not re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]*", scheme):
         return None
     if "?" in rest or "#" in rest:
+        return None
+    if rest.count("/") >= MAX_URI_SEGMENTS:
+        return None
+    if len(rest) > MAX_URI_PATH_LENGTH * 3:
         return None
     segments = []
     for raw in rest.split("/"):
@@ -142,12 +151,19 @@ def local_parts(uri: str) -> Optional[Tuple[str, ...]]:
     scheme, segments = split
     if scheme == SKILL_SCHEME:
         if segments and segments[0].startswith("_"):
-            return (f"_{segments[0]}",) + segments[1:]
-        return segments
-    prefix = _safe_segment(f"_{scheme}")
-    if prefix is None:
+            parts: Tuple[str, ...] = (f"_{segments[0]}",) + segments[1:]
+        else:
+            parts = segments
+    else:
+        prefix = _safe_segment(f"_{scheme}")
+        if prefix is None:
+            return None
+        parts = (prefix,) + segments
+    if len(parts) > MAX_URI_SEGMENTS:
         return None
-    return (prefix,) + segments
+    if sum(len(part.encode("utf-8")) for part in parts) + len(parts) - 1 > MAX_URI_PATH_LENGTH:
+        return None
+    return parts
 
 
 def exceeds_json_containers(data: Any, limit: int) -> bool:
@@ -225,7 +241,8 @@ def read_valid_snapshot_record(root: Path) -> Optional[Dict[str, Any]]:
     data = read_snapshot_record(root)
     if data is None:
         return None
-    if data.get("snapshotVersion") != SNAPSHOT_VERSION:
+    version = data.get("snapshotVersion")
+    if isinstance(version, bool) or type(version) is not int or version != SNAPSHOT_VERSION:
         return None
     generator = data.get("generator")
     if not isinstance(generator, str) or not generator.startswith("skillsaw "):
