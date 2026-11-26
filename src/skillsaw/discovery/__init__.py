@@ -28,7 +28,9 @@ CONVENTIONAL_SKILL_DIRS = (
     ".clinerules/skills",  # Cline — first in its own resolution order
     ".cline/skills",  # Cline
     ".qwen/skills",  # Qwen Code
+    ".kiro/skills",  # Kiro Agent Skills
     ".grok/skills",  # Grok Build — walked recursively, as Grok walks it
+    ".zcode/skills",  # Z.ai ZCode
     ".opencode/skills",  # OpenCode 2.0
     ".opencode/skill",  # OpenCode 1.x — still loaded by 2.0
     ".devin/skills",  # Devin CLI / Desktop, preferred spelling

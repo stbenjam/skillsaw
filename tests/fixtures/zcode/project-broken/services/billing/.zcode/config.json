@@ -1,0 +1,10 @@
+{
+  "mcp": {
+    "servers": {
+      "ledger": { "type": "websocket", "url": "wss://ledger.example.com/mcp" },
+      "invoices": { "type": "stdio", "command": "invoices-mcp", "startupTimeout": 30 },
+      "payments": { "type": "http", "url": "" },
+      "reports": { "command": "reports-mcp", "args": ["--readonly"] }
+    }
+  }
+}

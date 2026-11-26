@@ -1,0 +1,9 @@
+{
+  "hooks": [
+    {
+      "event": "PostToolUse",
+      "type": "command",
+      "command": "./scripts/format-changed.sh"
+    }
+  ]
+}

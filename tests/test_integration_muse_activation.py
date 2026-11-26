@@ -58,7 +58,7 @@ def test_muse_opt_in_still_reports_the_hook_file_defects(tmp_path, activation):
     report = json.loads(result.stdout)
     assert "muse-hooks-valid" in report["stats"]["rules_run"]
     found = [v for v in report["violations"] if v["rule_id"] == "muse-hooks-valid"]
-    assert len(found) == 17
+    assert len(found) == 16
     assert {v["file_path"] for v in found} == {".muse/hooks.json"}
     assert sum(v["severity"] == "error" for v in found) == 12
 

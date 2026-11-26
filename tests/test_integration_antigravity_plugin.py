@@ -53,6 +53,7 @@ def test_default_lint_accepts_duplicate_unknown_metadata_and_exact_case(tmp_path
     [
         ("duplicate-known", "duplicate JSON object key"),
         ("bad-unicode", "invalid Unicode surrogate"),
+        ("duplicate-alias", 'duplicate JSON object key: "display_name"'),
     ],
 )
 @pytest.mark.parametrize("severity", ["error", "warning", "info"])
@@ -86,3 +87,22 @@ def test_capitalized_installer_name_keeps_runtime_fallback_advice(tmp_path):
     assert "discovery falls back to the directory name" in found[0]["message"]
     assert "canonical 'name'" in found[0]["message"]
     assert "refuses" not in found[0]["message"]
+
+
+@pytest.mark.parametrize(
+    "name,fields",
+    [
+        ("typed-fields", ["version", "displayName"]),
+        ("proto-name", ["display_name"]),
+    ],
+)
+def test_typed_version_and_display_name_fail_the_plugin(tmp_path, name, fields):
+    # agy 1.3.6: "invalid value for string field version: 42" and the same
+    # for displayName, under either spelling; the plugin does not load.
+    repo = fixture(tmp_path, name)
+    code, found = lint(repo)
+    assert code == 1
+    assert [(v["rule_id"], v["file_path"], v["severity"]) for v in found] == [
+        (RULE, MANIFEST, "error")
+    ] * len(fields)
+    assert [v["message"] for v in found] == [f"'{field}' must be a string" for field in fields]

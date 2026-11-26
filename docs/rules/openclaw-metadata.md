@@ -10,7 +10,7 @@ Validate metadata.openclaw fields against the OpenClaw spec
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
-| **Repo Types** | agent-plugin, agentskills, antigravity-plugin, codex-marketplace, codex-plugin, cursor-marketplace, cursor-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, openclaw-plugin, pi, pi-package, single-plugin |
+| **Repo Types** | agent-plugin, agentskills, antigravity-plugin, codex-marketplace, codex-plugin, cursor-marketplace, cursor-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, openclaw-plugin, pi, pi-package, single-plugin, zcode-marketplace, zcode-plugin |
 | **Category** | [OpenClaw](openclaw.md) |
 
 ## Why
@@ -31,7 +31,7 @@ the authoritative field list.
 | Field | Values |
 |---|---|
 | `install[].kind` | `brew`, `node`, `go`, `uv`, `download` |
-| `os`, `install[].os` | `darwin`, `linux`, `win32` |
+| `os`, `install[].os` | `darwin`, `linux`, `win32`, or the `macos` alias for `darwin` (case-insensitive) |
 | `install[].archive` | `tar.gz`, `tar.bz2`, `zip` |
 | `requires` keys | `bins`, `anyBins`, `env`, `config` |
 | `install[].sha256` | 64 hex digits, `download` entries only |

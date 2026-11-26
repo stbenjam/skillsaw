@@ -634,7 +634,10 @@ def test_deterministic_compile_failure_is_cached(monkeypatch):
     pi_patterns.reset_pattern_state()
 
 
-_CATASTROPHIC = "*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*b"
+# wcmatch 11.2+ wraps the span between two plain stars in an atomic group,
+# which makes "*a*a...*b" linear; an extglob group in each span opts out of
+# that, so this stays catastrophic on every supported wcmatch.
+_CATASTROPHIC = "*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*@(a)*b"
 _FILLER = "a" * 41
 
 
@@ -893,3 +896,154 @@ def test_spurious_timeout_does_not_change_a_match(monkeypatch, fallback):
     monkeypatch.setattr(pi_patterns, "_compile_glob", lambda p: cached)
     assert pi_patterns._globmatch("notes.txt", "*.md", fallback=fallback) is False
     assert pi_patterns._globmatch("review.md", "*.md", fallback=fallback) is True
+
+
+def _cli_violations(root, *rules):
+    argv = ["lint", str(root), "--format", "json"]
+    for rule in rules:
+        argv += ["--rule", rule]
+    result = run_cli(argv)
+    return result, json.loads(result.stdout)["violations"]
+
+
+def test_settings_schema_accepts_valid_project_settings(tmp_path):
+    root = copy_fixture("settings-schema-valid", tmp_path)
+    result, violations = _cli_violations(root, "pi-settings-schema", "pi-config-valid")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not violations
+
+
+def test_settings_schema_reports_once_and_leaves_resources_to_config_valid(tmp_path):
+    root = copy_fixture("settings-schema-invalid", tmp_path)
+    _, violations = _cli_violations(root, "pi-settings-schema", "pi-config-valid")
+    by_rule = {v["rule_id"]: v for v in violations}
+    assert sorted(v["rule_id"] for v in violations) == ["pi-config-valid", "pi-settings-schema"]
+    schema = by_rule["pi-settings-schema"]
+    assert schema["line"] is None
+    assert schema["severity"] == "warning"
+    message = schema["message"]
+    assert "Pi 1.5.0 schema" in message
+    assert "$.compaction.enabled: must be of type boolean" in message
+    assert "$.compaction.reserveTokens: must be at least 0" in message
+    assert '$.defaultThinkingLevel: must be one of "off", "minimal"' in message
+    # Schema constants keep their JSON types: 0 is not "0".
+    assert "$.outputPad: must be one of 0, 1" in message
+    assert "more schema error" not in message
+    # The malformed resource field belongs to pi-config-valid alone.
+    assert "skills" not in message
+    assert "skills (expected an array of strings)" in by_rule["pi-config-valid"]["message"]
+
+
+def test_settings_schema_counts_errors_beyond_the_sample(tmp_path):
+    """Thousands of invalid items yield a bounded summary and an exact count."""
+    root = copy_fixture("settings-schema-valid", tmp_path)
+    settings = root / ".pi" / "settings.json"
+    data = json.loads(settings.read_text())
+    data["enabledModels"] = list(range(5000))
+    settings.write_text(json.dumps(data))
+    _, violations = _cli_violations(root, "pi-settings-schema")
+    assert len(violations) == 1
+    message = violations[0]["message"]
+    assert message.count("$.enabledModels[") == 4
+    assert message.endswith("and 4996 more schema errors")
+
+
+def test_settings_schema_checks_legacy_skills_options(tmp_path):
+    root = copy_fixture("settings-schema-legacy", tmp_path)
+    _, violations = _cli_violations(root, "pi-settings-schema", "pi-config-valid")
+    assert [v["rule_id"] for v in violations] == ["pi-settings-schema"]
+    message = violations[0]["message"]
+    assert "$.skills.enableSkillCommands: must be of type boolean" in message
+    assert "customDirectories" not in message
+
+
+def test_settings_schema_is_opt_in(tmp_path):
+    root = copy_fixture("settings-schema-invalid", tmp_path)
+    result = run_cli(["lint", str(root), "--format", "json"])
+    rules = {v["rule_id"] for v in json.loads(result.stdout)["violations"]}
+    assert "pi-settings-schema" not in rules
+
+
+def test_settings_schema_skips_parse_errors(tmp_path):
+    root = copy_fixture("settings-schema-invalid", tmp_path)
+    (root / ".pi" / "settings.json").write_text('{"quietStartup": ')
+    _, violations = _cli_violations(root, "pi-settings-schema", "pi-config-valid")
+    assert [v["rule_id"] for v in violations] == ["pi-config-valid"]
+
+
+@pytest.mark.parametrize(
+    "value", ["C:\\outside\\CHANGELOG.md", "C:CHANGELOG.md", "\\\\server\\share\\CHANGELOG.md"]
+)
+def test_windows_absolute_changelog_path_is_outside_on_any_host(value, tmp_path):
+    root = copy_fixture("changelog", tmp_path)
+    if os.name != "nt":
+        # On POSIX the backslashes are filename characters; a namesake file
+        # must not make the Windows path look contained.
+        (root / value).write_text("# Changelog\n")
+    manifest = json.loads((root / "package.json").read_text())
+    manifest["pi"]["changelogPath"] = value
+    (root / "package.json").write_text(json.dumps(manifest))
+    _, violations = _cli_violations(root, "pi-resource-paths")
+    assert len(violations) == 1
+    assert "(outside the package)" in violations[0]["message"]
+
+
+def test_changelog_path_inside_package_is_valid(tmp_path):
+    root = copy_fixture("changelog", tmp_path)
+    result, violations = _cli_violations(root, "pi-config-valid", "pi-resource-paths")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not violations
+
+
+def test_empty_changelog_path_disables_changelog(tmp_path):
+    root = copy_fixture("changelog-missing", tmp_path)
+    manifest = json.loads((root / "package.json").read_text())
+    manifest["pi"]["changelogPath"] = ""
+    (root / "package.json").write_text(json.dumps(manifest))
+    _, violations = _cli_violations(root, "pi-config-valid", "pi-resource-paths")
+    assert not violations
+
+
+@pytest.mark.parametrize(
+    "fixture, rule, expected",
+    [
+        ("changelog-type", "pi-config-valid", "pi.changelogPath (expected a string)"),
+        ("changelog-missing", "pi-resource-paths", "changelogPath: 'docs/HISTORY.md'"),
+        (
+            "changelog-outside",
+            "pi-resource-paths",
+            "changelogPath: '../CHANGELOG.md' (outside the package)",
+        ),
+    ],
+)
+def test_invalid_changelog_path(fixture, rule, expected, tmp_path):
+    root = copy_fixture(fixture, tmp_path)
+    _, violations = _cli_violations(root, "pi-config-valid", "pi-resource-paths")
+    assert [(v["rule_id"], v["line"]) for v in violations] == [(rule, None)]
+    assert expected in violations[0]["message"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX symlinks")
+def test_changelog_path_symlink_escaping_package_is_outside(tmp_path):
+    root = copy_fixture("changelog", tmp_path)
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text("# Changelog\n")
+    target = root / "docs" / "CHANGELOG.md"
+    target.unlink()
+    target.symlink_to(outside)
+    _, violations = _cli_violations(root, "pi-resource-paths")
+    assert len(violations) == 1
+    assert "(outside the package)" in violations[0]["message"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX symlinks")
+def test_changelog_path_collapses_dot_dot_before_symlinks(tmp_path):
+    """Pi resolves `link/..` lexically, as Node's path.resolve does."""
+    root = copy_fixture("changelog", tmp_path)
+    (tmp_path / "vendor" / "notes").mkdir(parents=True)
+    (root / "link").symlink_to(tmp_path / "vendor" / "notes")
+    manifest = json.loads((root / "package.json").read_text())
+    manifest["pi"]["changelogPath"] = "link/../docs/CHANGELOG.md"
+    (root / "package.json").write_text(json.dumps(manifest))
+    _, violations = _cli_violations(root, "pi-resource-paths")
+    assert not violations

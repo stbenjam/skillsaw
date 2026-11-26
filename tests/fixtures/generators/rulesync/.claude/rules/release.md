@@ -1,0 +1,4 @@
+# Release checklist
+
+Run the API integration suite before tagging a release.
+Record schema migrations in the release notes.

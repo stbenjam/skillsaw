@@ -3,9 +3,9 @@
 
 # Rules Reference
 
-skillsaw includes **110** built-in rules organized into the following categories:
+skillsaw includes **123** built-in rules organized into the following categories:
 
-- [Agent Plugins](agent-plugins.md) (3 rules)
+- [Agent Plugins](agent-plugins.md) (4 rules)
 - [agentskills.io](agentskills.md) (8 rules)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
 - [Claude Code](claude.md) (13 rules)
@@ -15,17 +15,20 @@ skillsaw includes **110** built-in rules organized into the following categories
 - [Copilot / VS Code](copilot.md) (1 rule)
 - [Cursor](cursor.md) (4 rules)
 - [Devin](devin.md) (2 rules)
+- [Ruler and Rulesync](generators.md) (2 rules)
 - [Goose](goose.md) (2 rules)
 - [Google Antigravity](antigravity.md) (4 rules)
 - [Grok Build](grok.md) (8 rules)
+- [ZCode](zcode.md) (5 rules)
 - [Hooks](hooks.md) (3 rules)
 - [Instruction Files](instruction-files.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (5 rules)
 - [Muse Code](muse.md) (1 rule)
-- [OpenAI Codex](codex.md) (7 rules)
+- [OpenAI Codex](codex.md) (8 rules)
 - [OpenClaw](openclaw.md) (4 rules)
+- [Kiro](kiro.md) (3 rules)
 - [OpenCode](opencode.md) (1 rule)
-- [Pi](pi.md) (4 rules)
+- [Pi](pi.md) (5 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [Security](security.md) (4 rules)
 - [Vercel](vercel.md) (1 rule)
@@ -34,6 +37,7 @@ skillsaw includes **110** built-in rules organized into the following categories
 
 | Rule ID | Description | Default Severity | Autofix | Category |
 |---------|-------------|------------------|---------|----------|
+| [`agent-plugin-hooks-valid`](agent-plugin-hooks-valid.md) | Portable hooks.json must declare supported events and valid command handlers | error (disabled) | - | Agent Plugins |
 | [`agent-plugin-json-valid`](agent-plugin-json-valid.md) | Agent Plugins plugin.json and skills location must conform to a supported schema | error (auto) | - | Agent Plugins |
 | [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md) | Agent Plugins mcp.json must conform to a supported schema and semantics | error (auto) | - | Agent Plugins |
 | [`agent-plugin-required`](agent-plugin-required.md) | Plugins must also be available as vendor-neutral Agent Plugins v1 packages, with shared manifest metadata in sync | warning (disabled) | auto | Agent Plugins |
@@ -52,7 +56,7 @@ skillsaw includes **110** built-in rules organized into the following categories
 | [`claude-plugin-naming`](claude-plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - | Claude Code |
 | [`claude-plugin-readme`](claude-plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - | Claude Code |
 | [`claude-command-naming`](claude-command-naming.md) | Command files should use kebab-case naming | warning | auto | Claude Code |
-| [`claude-command-frontmatter`](claude-command-frontmatter.md) | Command files must have valid frontmatter with description | error | auto | Claude Code |
+| [`claude-command-frontmatter`](claude-command-frontmatter.md) | Command files must have valid frontmatter with description | warning | auto | Claude Code |
 | [`claude-command-sections`](claude-command-sections.md) | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - | Claude Code |
 | [`claude-command-name-format`](claude-command-name-format.md) | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - | Claude Code |
 | [`claude-agent-frontmatter`](claude-agent-frontmatter.md) | Agent files need valid frontmatter and description; project agents also need name | error | auto | Claude Code |
@@ -94,6 +98,8 @@ skillsaw includes **110** built-in rules organized into the following categories
 | [`cursor-marketplace-json-valid`](cursor-marketplace-json-valid.md) | Cursor marketplaces must contain valid entries with unique names and resolvable local sources | error (auto) | - | Cursor |
 | [`devin-rules-valid`](devin-rules-valid.md) | Devin workspace rules must have valid activation frontmatter and fit its size limit | error (auto) | - | Devin |
 | [`devin-skill-valid`](devin-skill-valid.md) | Devin-native SKILL.md frontmatter must use Devin's documented field shapes | error (auto) | - | Devin |
+| [`ruler-config-valid`](ruler-config-valid.md) | Validate .ruler/ruler.toml against the Ruler 0.3.44 configuration shape | error (disabled) | - | Ruler and Rulesync |
+| [`rulesync-source-valid`](rulesync-source-valid.md) | Validate common Rulesync 32.0.0 rule frontmatter and project configuration fields | error (disabled) | - | Ruler and Rulesync |
 | [`goose-recipe-valid`](goose-recipe-valid.md) | Goose recipe metadata, parameters and extensions must have valid shapes | error (disabled) | - | Goose |
 | [`goose-subrecipe-references`](goose-subrecipe-references.md) | Literal local Goose subrecipe paths should exist inside the lint root | warning (disabled) | - | Goose |
 | [`antigravity-config-json-valid`](antigravity-config-json-valid.md) | Antigravity registry files must decode their paths and filters correctly | error (disabled) | - | Google Antigravity |
@@ -108,6 +114,11 @@ skillsaw includes **110** built-in rules organized into the following categories
 | [`grok-marketplace-json-valid`](grok-marketplace-json-valid.md) | .grok-plugin/marketplace.json must be valid JSON with installable entries | error (auto) | - | Grok Build |
 | [`grok-plugin-json-valid`](grok-plugin-json-valid.md) | .grok-plugin/plugin.json must be valid JSON with a name Grok's loader accepts | error (auto) | - | Grok Build |
 | [`grok-plugin-structure`](grok-plugin-structure.md) | A Grok plugin directory needs a manifest or a component Grok installs | warning (auto) | - | Grok Build |
+| [`zcode-agent-valid`](zcode-agent-valid.md) | ZCode subagents must declare a name and a description in frontmatter | error (auto) | - | ZCode |
+| [`zcode-config-valid`](zcode-config-valid.md) | ZCode .zcode/config.json hooks and MCP servers must match ZCode's schema | error (auto) | - | ZCode |
+| [`zcode-hooks-valid`](zcode-hooks-valid.md) | ZCode plugin hooks must use ZCode's events and command/process handlers | error (auto) | - | ZCode |
+| [`zcode-marketplace-json-valid`](zcode-marketplace-json-valid.md) | A ZCode marketplace.json must parse, be named, and list installable local plugins | error (auto) | - | ZCode |
+| [`zcode-plugin-json-valid`](zcode-plugin-json-valid.md) | A .zcode-plugin/plugin.json must be a manifest ZCode's loader accepts | error (auto) | - | ZCode |
 | [`claude-hooks-valid`](claude-hooks-valid.md) | Claude Code hooks.json must be valid JSON with proper hook configuration structure | error | - | Hooks |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that chain a download into execution (curl\|sh), obfuscate their payload (eval/base64), or perform network requests | error (auto) | - | Hooks |
 | [`hooks-prohibited`](hooks-prohibited.md) | All hooks are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Hooks |
@@ -122,6 +133,7 @@ skillsaw includes **110** built-in rules organized into the following categories
 | [`muse-hooks-valid`](muse-hooks-valid.md) | .muse/hooks.json must use Muse's events, matcher groups and handler fields | error (disabled) | - | Muse Code |
 | [`codex-hooks-valid`](codex-hooks-valid.md) | Codex hooks files must use Codex's hook events, handler types, and fields | error (auto) | - | OpenAI Codex |
 | [`codex-mcp-headers`](codex-mcp-headers.md) | Codex HTTP MCP servers must use http_headers instead of ignored headers | warning (auto) | - | OpenAI Codex |
+| [`codex-project-instructions`](codex-project-instructions.md) | Diagnose Codex instruction selection and the cumulative project byte limit | warning (disabled) | - | OpenAI Codex |
 | [`codex-openai-metadata`](codex-openai-metadata.md) | Validate skill openai.yaml and catalog-compatible plugin metadata | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-json-valid`](codex-plugin-json-valid.md) | The selected Codex manifest or portable OpenAI overlay must be valid | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-structure`](codex-plugin-structure.md) | Only plugin.json belongs in .codex-plugin/ | warning (auto) | - | OpenAI Codex |
@@ -131,11 +143,15 @@ skillsaw includes **110** built-in rules organized into the following categories
 | [`openclaw-manifest-valid`](openclaw-manifest-valid.md) | Native OpenClaw manifests must declare valid identity, configSchema, and themes | error (disabled) | - | OpenClaw |
 | [`openclaw-package-valid`](openclaw-package-valid.md) | OpenClaw package metadata must declare valid extension entries | error (disabled) | - | OpenClaw |
 | [`openclaw-resources`](openclaw-resources.md) | OpenClaw resources should resolve inside their package and exist when loaded | warning (disabled) | - | OpenClaw |
+| [`kiro-agent-valid`](kiro-agent-valid.md) | Kiro JSON and Markdown agents must use valid syntax and documented field types | error (disabled) | - | Kiro |
+| [`kiro-mcp-valid`](kiro-mcp-valid.md) | Kiro workspace and agent MCP entries must use documented field types | error (disabled) | - | Kiro |
+| [`kiro-references`](kiro-references.md) | Literal local Kiro prompt, resource, and steering references should exist | warning (disabled) | - | Kiro |
 | [`opencode-config-valid`](opencode-config-valid.md) | opencode.json and opencode.jsonc must parse and use keys and MCP server shapes OpenCode reads | error (auto) | - | OpenCode |
 | [`pi-config-valid`](pi-config-valid.md) | Pi package and project resource declarations must have valid types | warning (auto) | - | Pi |
 | [`pi-skill-valid`](pi-skill-valid.md) | Pi skills need parseable frontmatter and a nonempty description | warning (auto) | - | Pi |
 | [`pi-resource-paths`](pi-resource-paths.md) | Literal Pi resource paths should exist in the assembled checkout | warning (disabled) | - | Pi |
 | [`pi-mcp-valid`](pi-mcp-valid.md) | Pi MCP servers must use supported field types and transports | warning (disabled) | - | Pi |
+| [`pi-settings-schema`](pi-settings-schema.md) | Pi project settings should match the Pi 1.5.0 settings schema | warning (disabled) | - | Pi |
 | [`promptfoo-valid`](promptfoo-valid.md) | Validate promptfoo eval YAML config structure and file references | error (auto) | - | Promptfoo Evals |
 | [`promptfoo-assertions`](promptfoo-assertions.md) | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
 | [`promptfoo-metadata`](promptfoo-metadata.md) | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |

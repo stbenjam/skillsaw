@@ -135,7 +135,8 @@ my-plugin/
 ├── skills/               # Optional
 │   └── my-skill/         # Immediate child directory
 │       └── SKILL.md      # Agent Skills specification
-└── mcp.json              # Optional: portable MCP server configuration
+├── mcp.json              # Optional: portable MCP server configuration
+└── hooks.json            # Optional (1.1.0 draft): portable lifecycle hooks
 ```
 
 Each skill must be an immediate child of `skills/`; deeper descendants are not
@@ -143,6 +144,9 @@ discovered as additional skills. `plugin.json` and, when present, `mcp.json`
 must use the canonical Agent Plugins v1 schema identifiers. The
 `agent-plugin-json-valid` and `agent-plugin-mcp-valid` rules validate those
 files, while the `agentskill-*` rules validate discovered `SKILL.md` files.
+When the manifest declares 1.1.0, the opt-in `agent-plugin-hooks-valid` rule
+validates `hooks.json`, and `hooks-dangerous` and `hooks-prohibited` inspect
+its commands.
 
 Automatic detection is deliberately strict. A `plugin.json` at the lint root,
 or at an immediate `plugins/*` child, must declare a canonical Agent Plugins
@@ -204,7 +208,7 @@ my-plugin/
 
 ## Marketplace (Multiple Plugins)
 
-skillsaw supports multiple marketplace structures per the [Claude Code specification](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces):
+skillsaw supports multiple marketplace structures per the [Claude Code specification](https://code.claude.com/docs/en/plugin-marketplaces):
 
 ### Traditional Structure (plugins/ directory)
 
@@ -328,9 +332,9 @@ checkouts Muse made for child agents and is skipped.
 Muse uses the nested hooks format Claude Code pioneered, with its own
 lifecycle events, matcher-group keys and handler fields.
 [`muse-hooks-valid`](rules/muse-hooks-valid.md) checks the file against them.
-This matters more than it sounds: Muse prints no diagnostic for anything it
-refuses, so a rejected file, a dropped matcher group and a skipped handler
-all look like a hook that had nothing to do. The commands themselves are
+This matters more than it sounds: Muse reports a refused file or entry only
+as a startup warning, so in a headless run a rejected file, a dropped matcher
+group and a skipped handler all look like a hook that had nothing to do. The commands themselves are
 scanned by [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md), including the
 `commandWindows` variant.
@@ -368,9 +372,10 @@ Three things in that layer are Grok's own structure, on top of the shared
 rules above. [`grok-hooks-valid`](rules/grok-hooks-valid.md) validates every
 `.grok/hooks/*.json` — Grok merges the whole directory, so a repository may
 have several — against Grok's events, alias table and handler fields. This
-matters more than it sounds: Grok refuses a whole file over one wrong-typed
-field and reports nothing when it does, so a rejected file, a dropped matcher
-group and a skipped handler all look like a hook that had nothing to do. The
+matters more than it sounds: Grok drops an event, matcher group or handler
+over one wrong-typed field and reports it only in `grok inspect` and the
+`/hooks` tab, so in a headless run a rejected file, a dropped matcher group
+and a skipped handler all look like a hook that had nothing to do. The
 commands themselves are scanned by
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md).
@@ -552,6 +557,92 @@ Both Grok packaging types are independent of the Claude and Codex types — a
 repository commonly ships more than one catalog or manifest, and skillsaw
 detects each.
 
+## ZCode
+
+Repositories with a `.zcode/` project layer: `skills/`, `commands/`,
+`agents/` or `config.json` under `.zcode/` (`zcode-project`). An empty
+`.zcode/` is not detected. [ZCode](https://github.com/zai-org/ZCode) reads the
+layer in every directory from the session's working directory up to the git
+root, so skillsaw attaches a subpackage's `.zcode/` as well as the root's.
+
+- `.zcode/skills/**/SKILL.md` are Agent Skills and get the full skill rule
+  set. ZCode also reads the portable `.agents/skills/`, which skillsaw
+  already covers. It reads `.agents/commands/` too, which skillsaw does not
+  attach yet.
+- `.zcode/commands/**/*.md` (read recursively) and `.zcode/agents/*.md`
+  (read flat) get the shared content and security rules.
+  [`zcode-agent-valid`](rules/zcode-agent-valid.md) checks that each agent
+  has the `name` and `description` ZCode needs to load it.
+- `.zcode/config.json` carries project hooks under `hooks.events` and MCP
+  servers under `mcp.servers`. [`hooks-dangerous`](rules/hooks-dangerous.md)
+  and [`mcp-valid-json`](rules/mcp-valid-json.md) scan both, and
+  [`zcode-config-valid`](rules/zcode-config-valid.md) checks them against
+  ZCode's schema. One misplaced hooks key makes ZCode discard the whole file.
+
+ZCode's instructions file is `AGENTS.md`, which has its own repository type.
+`zcode.json`, which ZCode also reads as project configuration, is
+deliberately not attached: the filename is generic, and unrelated tools
+commit files called that.
+
+## ZCode Plugin
+
+Directories with a `.zcode-plugin/plugin.json` manifest, plus every local
+source a ZCode catalog lists (`zcode-plugin`):
+
+```text
+my-plugin/
+├── .zcode-plugin/
+│   └── plugin.json       # The marker skillsaw claims
+├── skills/
+├── commands/
+├── agents/
+├── hooks/
+│   └── hooks.json        # Optional
+└── .mcp.json             # Optional: bundled MCP servers
+```
+
+ZCode resolves a manifest from `.zcode-plugin/plugin.json`, then
+`.claude-plugin/plugin.json`, then `.codex-plugin/plugin.json`. Only the
+first claims a directory for ZCode. A directory with only a Claude manifest
+stays Claude's. A directory with both is both a Claude plugin and a ZCode
+plugin, and keeps its Claude results for the files both hosts read
+(`hooks/hooks.json` and `.mcp.json`).
+
+Manifest-declared `skills`, `commands`, `agents`, `hooks` and `mcpServers`
+are added to the conventional locations, never substituted for them. Inline
+`hooks` and `mcpServers` objects are followed too, so their commands reach
+the security rules. A plugin's `commands/` is read recursively, as ZCode
+reads it. [`zcode-agent-valid`](rules/zcode-agent-valid.md) also checks the
+`agents/*.md` a ZCode plugin ships.
+[`zcode-plugin-json-valid`](rules/zcode-plugin-json-valid.md)
+checks the manifest, and [`zcode-hooks-valid`](rules/zcode-hooks-valid.md)
+checks the hooks of a ZCode-only plugin against ZCode's seven events and its
+`command` and `process` handler types.
+
+## ZCode Marketplace
+
+A repository-root `marketplace.json` in a repository that ships at least
+one `.zcode-plugin` plugin and has no `.claude-plugin/marketplace.json`
+(`zcode-marketplace`):
+
+```text
+marketplace/
+├── marketplace.json
+└── plugins/
+    ├── plugin-one/
+    │   └── .zcode-plugin/plugin.json
+    └── plugin-two/
+        └── .zcode-plugin/plugin.json
+```
+
+ZCode reads `.claude-plugin/marketplace.json` first, and that file stays
+Claude's. A bare `marketplace.json` is a generic filename, so it counts as a
+ZCode catalog only alongside a ZCode plugin, or under `--type
+zcode-marketplace`. [`zcode-marketplace-json-valid`](rules/zcode-marketplace-json-valid.md)
+checks the catalog and each local plugin it lists. A string `source`
+resolves against the repository root, or against `metadata.pluginRoot` when
+that is set; an entry with no `source` resolves to `<root>/<name>`.
+
 ## Google Antigravity
 
 Repositories that configure Google Antigravity's CLI, `agy`. Configuration
@@ -654,6 +745,9 @@ project layer Codex reads. This is distinct from a Codex plugin
 checkout rather than packaging anything, so it is never treated as a plugin
 claim and never exempts the repository from another ecosystem's rules.
 
+An `AGENTS.override.md` file also identifies a Codex project and receives
+instruction content checks. The cumulative project byte diagnostic is opt-in.
+
 Codex reads the layer of every directory between the repository root and the
 one a session starts in, so a package's own `.codex/` is live configuration
 and every one in the checkout is linted.
@@ -675,8 +769,11 @@ not.
 [`mcp-valid-json`](rules/mcp-valid-json.md) applies its dialect-neutral
 checks, such as a committed credential in an `env` or `http_headers` table.
 No rule validates a server table's shape: Codex names the server and the
-field and exits 1 over a malformed one itself. Everything else in the file is
-Codex settings skillsaw reads nothing from.
+field and exits 1 over a malformed one itself. The opt-in
+[Codex instruction projection](rules/codex-project-instructions.md) also reads
+`project_doc_max_bytes` and `project_doc_fallback_filenames` from project
+configuration layers on the supplied root-to-cwd chain. Other settings are
+outside these checks.
 
 `.codex/plugins/` is an install location rather than project configuration —
 see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
@@ -684,6 +781,16 @@ see [OpenAI Codex Plugin](#openai-codex-plugin) for what runs there.
 ## Promptfoo
 
 Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files in `evals/` directories). Prompt strings in the config are treated as content blocks, so all `content-*` rules apply to them automatically. Dedicated `promptfoo-*` rules validate config structure, assertion coverage, and metadata.
+
+## Ruler and Rulesync
+
+Ruler's `.ruler/**/*.md` (except its separately propagated top-level `skills/`
+and `agents/` trees) and `.ruler/ruler.toml`, and Rulesync's
+`.rulesync/rules/**/*.md` and `rulesync.jsonc`, are discovered automatically as
+authored generator sources. Both types coexist with the native consumer types
+detected from existing output. See the [generator workflow](generators.md) for
+source roles, optional configuration checks, copy attribution, pinned release
+evidence, and limits. skillsaw never runs either generator during lint.
 
 ## APM (Agent Package Manager)
 
@@ -782,12 +889,12 @@ the value `Repo type:` prints, the JSON report lists under `repo_types`, and
 | **Devin CLI / Desktop** | `devin` | `.devin/rules/**/*.md`, `.devin/global_rules.md`, `.devin/skills/*/SKILL.md`, nested `AGENTS.md`/`agents.md`, `AGENTS.local.md`, `AGENT.md`, `CLAUDE.md`; legacy `.windsurf/rules/`, `.windsurf/global_rules.md`, and `.windsurfrules` |
 | **Windsurf** | `devin` | `.windsurf/skills/*/SKILL.md` (portable Agent Skills dialect, including nested workspace roots) |
 | **Qwen Code** | `qwen` | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
-| **Kiro** | `kiro` | `.kiro/steering/*.md` |
+| **Kiro** | `kiro` | Top-level steering (plus nested files an agent's `resources` loads), native JSON/Markdown agents, skills, and workspace MCP; see [Kiro support](kiro.md) |
 | **Google Antigravity** | `antigravity` | Inside `.agents/`, `.agent/`, `_agents/` or `_agent/`: `hooks.json`, `mcp_config.json`, the registries `{agents,plugins,skills,workflows}.json`, prose in `rules/**/*.md` and `agents/*.md`, and skills under `skills/`. A `plugins.json` or `agents.json` registry's `entries` are followed, so a plugin or agent directory it names elsewhere in the repository is linted too. Detection is narrower — see [Google Antigravity](#google-antigravity) |
 | **[Pi](#pi-packages-and-projects)** | `pi` | `.pi/`: Native skills, prompts, themes and extensions, `SYSTEM.md`, `APPEND_SYSTEM.md`, resource declarations in `settings.json` |
 | **Muse Code** | `muse` | `.muse/hooks.json` — see [Muse Code](#muse-code) |
 | **Grok Build** | `grok-project` | `.grok/rules/*.md`, `.grok/commands/*.md`, `.grok/agents/*.md`, `.grok/skills/*/SKILL.md`, `.grok/hooks/*.json`, `.grok/config.toml` — see [Grok Build](#grok-build) |
-| **OpenAI Codex** | `codex-project` | `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
+| **OpenAI Codex** | `codex-project` | `AGENTS.override.md`, `.codex/hooks.json`, `.codex/config.toml` — see [OpenAI Codex project configuration](#openai-codex-project-configuration) |
 | **Committed project memory** | — | `<repo>/.agents/memory/MEMORY.md` (index) and every `**/*.md` beneath that directory |
 
 `.agents/memory/` is the one row with no type of its own: the convention

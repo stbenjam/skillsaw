@@ -11,6 +11,7 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    ContentBlock,
     iter_frontmatter_strings,
     gather_all_content_blocks,
     patterns_matching_anywhere,
@@ -631,7 +632,14 @@ class ContentEmbeddedSecretsRule(Rule):
             for line_num, desc in self._scan_text(
                 body, threshold, markers, ordered_list_lines, prose=prose
             ):
-                key = (cf.resolved_path, cf.file_line(line_num), desc)
+                identity = cf.fingerprint_identity(line_num)
+                # Decoded prompts can map every line to the same physical
+                # location. Keep their distinct source identities so a
+                # baselined finding cannot hide another prompt line.
+                location = (
+                    ("embedded", identity) if identity is not None else cf.file_line(line_num)
+                )
+                key = (cf.resolved_path, location, desc)
                 if key in seen_locations:
                     continue
                 seen_locations.add(key)
@@ -643,6 +651,8 @@ class ContentEmbeddedSecretsRule(Rule):
                     )
                 )
         for fld in context.lint_tree.find(FrontmatterField):
+            if isinstance(fld, ContentBlock):
+                continue  # Decoded prose fields were scanned above, even without a line.
             # Every embedded string once: str(value) renders a YAML alias DAG as
             # a tree, 9^levels leaves from a 430-byte frontmatter block.
             text = "\n".join(iter_frontmatter_strings(fld.value))

@@ -21,6 +21,7 @@ from .discovery.openclaw import claims_plugin
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
 from .formats.codex_manifest import declares_openai_extension
 from .formats.grok import grok_manifest_is_contained, grok_marker_escapes
+from .formats.zcode import zcode_manifest_is_contained, zcode_marker_escapes
 from .paths import safe_is_dir, safe_exists, safe_is_file, safe_is_symlink, safe_resolve
 
 if TYPE_CHECKING:
@@ -33,7 +34,7 @@ class PluginProvenance:
 
     The single source of truth for every ecosystem-provenance question:
     which ecosystems declared the directory (``claude``, ``codex``,
-    ``agent-plugin``, ``grok``, or ``antigravity``), and whether it is
+    ``agent-plugin``, ``grok``, ``zcode``, or ``antigravity``), and whether it is
     vendor-installed content. Rules and the lint tree consult this record
     so two call sites cannot disagree about
     ownership and a directory cannot fall between per-ecosystem attach paths.
@@ -116,6 +117,21 @@ class PluginProvenance:
         return self.grok and not self.claude
 
     @property
+    def zcode(self) -> bool:
+        return "zcode" in self.ecosystems
+
+    @property
+    def zcode_only(self) -> bool:
+        """ZCode claims the directory and Claude does not.
+
+        Same shape and purpose as :attr:`grok_only`: ZCode scans a plugin's
+        skills without following symbolic links and rejects component paths
+        that leave the plugin, so a ZCode-only package gets the containment
+        boundary, while a dual-manifest one keeps Claude's looser reading.
+        """
+        return self.zcode and not self.claude
+
+    @property
     def pi(self) -> bool:
         return "pi" in self.ecosystems
 
@@ -182,6 +198,17 @@ class RepositoryProvenanceMixin:
 
         def _grok_claim_set(self) -> Set[Path]: ...
 
+        plugins: List[Path]
+        codex_plugins: List[Path]
+
+        def agent_plugin_roots(self) -> List[Path]: ...
+
+        def pi_discovery_roots(self) -> List[Path]: ...
+
+        def _zcode_claim_set(self) -> Set[Path]: ...
+
+        def zcode_root_catalog_exists(self) -> bool: ...
+
         def _antigravity_claim_set(self) -> Set[Path]: ...
 
         def antigravity_plugin_roots(self) -> List[Path]: ...
@@ -193,6 +220,8 @@ class RepositoryProvenanceMixin:
         def grok_plugin_roots(self) -> List[Path]: ...
 
         def grok_plugin_root_set(self) -> Set[Path]: ...
+
+        def zcode_plugin_roots(self) -> List[Path]: ...
 
         def is_codex_installed_plugin(self, plugin_dir: Path) -> bool: ...
 
@@ -233,6 +262,7 @@ class RepositoryProvenanceMixin:
             return (
                 not self.codex_catalog_exists()
                 and not self.grok_root_catalog_exists()
+                and not self.zcode_root_catalog_exists()
                 and not any(p.parent.parent == self.root_path for p in self._cursor_evidence()[0])
                 and not agent_plugin_claims_plugins_dir
             )
@@ -240,6 +270,29 @@ class RepositoryProvenanceMixin:
             not (provenance := self.provenance(item)).ecosystems or provenance.claude
             for item in children
         )
+
+    def _live_plugin_roots(self) -> Set[Path]:
+        """Every resolved plugin root a currently active ecosystem claims.
+
+        Each skill prune keeps the skills beneath this shared owner set, so
+        dropping one ecosystem's claim never removes skills another
+        ecosystem still owns.
+        """
+        return {
+            root
+            for p in (
+                *self.plugins,
+                *self.codex_plugins,
+                *self.agent_plugin_roots(),
+                *self._grok_claim_set(),
+                *self._zcode_claim_set(),
+                *self.antigravity_plugin_roots(),
+                *self.cursor_plugin_roots(),
+                *self.openclaw_plugin_roots(),
+                *self.pi_discovery_roots(),
+            )
+            if (root := safe_resolve(p)) is not None
+        }
 
     def _agent_plugin_claim_set(self) -> Set[Path]:
         """Filesystem-declared portable plugin roots, independent of ``--type``."""
@@ -287,6 +340,22 @@ class RepositoryProvenanceMixin:
             resolved = self._resolve_cache[path] = safe_resolve(path)
             return resolved
 
+    def is_project_claude_dir(self, path: Path) -> bool:
+        """Whether *path* is the project's ``.claude/`` directory, not a plugin.
+
+        Discovery gives the project ``.claude/`` a plugin container so its
+        agents and commands have an owner, but Claude Code reads it as
+        project configuration: it needs no manifest, README or plugin name.
+        A ``.claude-plugin/`` marker inside it makes it a declared plugin.
+        """
+        project = self.root_path if self.root_path.name == ".claude" else self.root_path / ".claude"
+        resolved = self.resolve_path(path)
+        return (
+            resolved is not None
+            and resolved == self.resolve_path(project)
+            and not self.provenance(path).claude_plugin_declared
+        )
+
     def provenance(self, plugin_dir: Path) -> PluginProvenance:
         """The :class:`PluginProvenance` for *plugin_dir*, cached per path.
 
@@ -309,6 +378,8 @@ class RepositoryProvenanceMixin:
           schema identifier in root ``plugin.json``.
         * ``grok`` — a contained ``.grok-plugin/plugin.json``, a local
           source listing in any Grok catalog, or a contained config path.
+        * ``zcode`` — a contained ``.zcode-plugin/plugin.json``, or a local
+          source listing in the repository's ZCode catalog.
         * ``antigravity`` — a contained ``plugin.json`` at
           ``<customization root>/plugins/<name>`` or carrying its official
           schema identifier, or membership of the
@@ -393,6 +464,15 @@ class RepositoryProvenanceMixin:
             and not grok_marker_escapes(plugin_dir, resolve=resolve)
         ):
             ecosystems.add("grok")
+        if zcode_manifest_is_contained(plugin_dir, resolve=resolve) or (
+            resolved is not None
+            and resolved in self._zcode_claim_set()
+            # ZCode also reads ``.claude-plugin`` and ``.codex-plugin``
+            # manifests as fallbacks; neither is evidence here, for the
+            # reason the Grok branch above gives.
+            and not zcode_marker_escapes(plugin_dir, resolve=resolve)
+        ):
+            ecosystems.add("zcode")
         if antigravity_manifest_is_contained(plugin_dir, resolve=resolve) or (
             resolved is not None
             and resolved in self._antigravity_claim_set()
@@ -532,6 +612,7 @@ class RepositoryProvenanceMixin:
                 | set(self.codex_plugin_roots())
                 | set(self._agent_plugin_root_set())
                 | {root for root in self.grok_plugin_roots() if self.provenance(root).grok_only}
+                | {root for root in self.zcode_plugin_roots() if self.provenance(root).zcode_only}
                 | {
                     root
                     for root in self.antigravity_plugin_roots()
@@ -578,6 +659,7 @@ class RepositoryProvenanceMixin:
             or bool(self._agent_plugin_root_set())
             or bool(self.openclaw_plugin_roots())
             or bool(self.grok_plugin_roots())
+            or bool(self.zcode_plugin_roots())
             or bool(self.antigravity_plugin_roots())
         )
 
@@ -600,6 +682,7 @@ class RepositoryProvenanceMixin:
         return (
             record.codex_only
             or record.grok_only
+            or record.zcode_only
             or record.antigravity_only
             or (record.openclaw and not record.claude)
             or record.cursor_only

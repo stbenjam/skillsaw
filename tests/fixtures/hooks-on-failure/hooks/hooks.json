@@ -1,0 +1,39 @@
+{
+  "description": "Policy gates that must not fail open",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-command.js\"",
+            "onFailure": "block"
+          },
+          {
+            "type": "http",
+            "url": "https://policy.example.com/hooks/pre-tool-use",
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/record-edit.js\"",
+            "onFailure": "continue"
+          },
+          {
+            "type": "http",
+            "url": "https://policy.example.com/hooks/post-tool-use",
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ]
+  }
+}

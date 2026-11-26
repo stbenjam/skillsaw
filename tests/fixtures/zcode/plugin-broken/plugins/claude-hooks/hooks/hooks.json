@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "prompt", "prompt": "Is this command safe to run during a deploy?" }]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "process", "command": "pier-guard", "timeoutMs": 1.5 }]
+      }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "notify-send deploy" }] }
+    ],
+    "SessionStart": { "hooks": [{ "type": "command", "command": "pier status" }] }
+  }
+}

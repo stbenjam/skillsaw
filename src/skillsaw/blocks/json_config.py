@@ -28,7 +28,6 @@ from typing import (
 )
 
 from skillsaw.formats import antigravity
-from skillsaw.formats.grok_hooks import read_hooks_json
 from skillsaw.formats.antigravity_registry import read_registry
 from skillsaw.blocks.antigravity_mcp import read_mcp_config
 from skillsaw.blocks.antigravity_hooks import read_hooks_config
@@ -139,6 +138,16 @@ class HookHandler:
     #: this, in YAML frontmatter that does carry line numbers. JSON-backed
     #: blocks have no lines to give and leave it ``None``, as they should.
     type_line: Optional[int] = None
+
+    #: Handler types that run a local program. ``process`` is ZCode's
+    #: exec form — ``command`` plus ``args``, no shell — and runs code just
+    #: as surely as a shell ``command`` does, so the security rules scan it.
+    EXECUTABLE_TYPES: ClassVar[FrozenSet[str]] = frozenset({"command", "process"})
+
+    @property
+    def is_executable(self) -> bool:
+        """Whether this handler runs a local program the security rules scan."""
+        return self.type in self.EXECUTABLE_TYPES
 
     def iter_effective_commands(self) -> Iterator[Tuple[str, Optional[int]]]:
         """Yield each effective command and the line that declared it.
@@ -463,15 +472,16 @@ class HooksBlock(JsonConfigBlock):
     list, handler types, and fields: ``claude-hooks-valid`` iterates
     :class:`ClaudeHooksBlock`, ``codex-hooks-valid`` :class:`CodexHooksBlock`,
     ``muse-hooks-valid`` :class:`MuseHooksBlock`, ``grok-hooks-valid``
-    :class:`GrokHooksBlock`, and ``cursor-hooks-valid``
-    :class:`CursorHooksBlock` — so a file is checked against the vocabulary
+    :class:`GrokHooksBlock`, ``cursor-hooks-valid``
+    :class:`CursorHooksBlock`, and ``agent-plugin-hooks-valid``
+    :class:`AgentPluginHooksBlock` — so a file is checked against the vocabulary
     of the tool that will actually load it. The tree builder picks the
     subclass from where the file lives and who claims the directory.
 
     :attr:`events` parses the nested shape Claude Code defined and Codex,
     Muse Code and Grok Build adopted: ``{hooks: {Event: [{matcher?, hooks: [{type,
     command, ...}]}]}}``. A host with a different shape overrides it
-    (Cursor).
+    (Cursor, Agent Plugins).
     """
 
     category: str = "hooks"
@@ -486,6 +496,12 @@ class HooksBlock(JsonConfigBlock):
     #: article is chosen where the message is built.
     mapping_noun: ClassVar[str] = "object"
     sequence_noun: ClassVar[str] = "array"
+    #: Whether this host reads a file in a dialect the nested-shape readers
+    #: do not cover. Attaching such a block never stands in for another
+    #: host's reading of the same file: a shared file keeps one block per
+    #: dialect, and the hook scanners report a handler two readings share
+    #: once.
+    distinct_dialect: ClassVar[bool] = False
 
     @property
     def security_events(self) -> Dict[str, List[HookEventConfig]]:
@@ -502,7 +518,11 @@ class HooksBlock(JsonConfigBlock):
         data = self.raw_data
         if data is None:
             return {}
-        hooks_obj = data.get("hooks", {})
+        return self._nested_events(data.get("hooks", {}))
+
+    @staticmethod
+    def _nested_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
+        """Render an ``{Event: [{matcher?, hooks: [...]}]}`` map as configs."""
         if not isinstance(hooks_obj, dict):
             return {}
         result: Dict[str, List[HookEventConfig]] = {}
@@ -577,19 +597,15 @@ class GrokHooksBlock(HooksBlock):
     say which of them a finding is about.
 
     Same nested shape as Claude's, with Grok's own events, alias table and
-    handler fields. Its loader refuses a whole file over one wrong-typed
-    field and reports nothing when it does, which is what
-    ``grok-hooks-valid`` exists to say.
+    handler fields. Its loader drops an event, group or handler over one
+    wrong-typed field and says so only in ``grok inspect`` and the
+    ``/hooks`` tab, which is what ``grok-hooks-valid`` exists to say.
 
     Lenient JSON parsing, deliberately, for the reason
     :class:`MuseHooksBlock` documents: Grok reads the file with
     ``serde_json``, which takes the last of two duplicate keys and runs it,
     and both security rules skip a block carrying a ``parse_error``.
     """
-
-    def _ensure_parsed(self) -> None:
-        if self._parsed is None:
-            self._parsed = read_hooks_json(self.path)
 
     def tree_label(self) -> str:
         return f"{self.path.name} (grok hooks)"
@@ -797,6 +813,81 @@ class GrokInlineHooksBlock(_InlineJsonPayload, GrokPluginHooksBlock):
         return f"{self.path.name} (inline hooks)"
 
 
+def _zcode_events(events: Dict[str, List[HookEventConfig]]) -> Dict[str, List[HookEventConfig]]:
+    """*events* as ZCode runs them: a ``command`` handler takes no ``args``.
+
+    Only ``process`` handlers pass argv; ZCode's command schema drops an
+    ``args`` key, so scanning it would report text that never executes
+    (``core/src/hooks/workspace-hook-trust-records.ts:25`` in ``zai-org/ZCode``).
+    """
+    for configs in events.values():
+        for config in configs:
+            for handler in config.handlers:
+                if handler.type == "command":
+                    handler.args = None
+    return events
+
+
+@dataclass(eq=False)
+class ZCodePluginHooksBlock(HooksBlock):
+    """A hooks file a ZCode plugin ships — its ``hooks/hooks.json``, or one
+    the manifest names in ``hooks``.
+
+    Same nested shape as Claude's, with ZCode's seven events and its
+    ``command``/``process`` handler types; ``zcode-hooks-valid`` checks it
+    against that vocabulary. A dual-manifest plugin's conventional file is
+    read by Claude too and keeps :class:`ClaudeHooksBlock`, so only a file
+    ZCode alone loads arrives as this class.
+    """
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        return _zcode_events(super().events)
+
+    #: ZCode reads its files with ``JSON.parse``: a bare ``NaN`` or
+    #: ``Infinity`` is a syntax error, and a repeated key keeps the last value.
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (zcode plugin hooks)"
+
+
+@dataclass(eq=False)
+class ZCodeInlineHooksBlock(_InlineJsonPayload, ZCodePluginHooksBlock):
+    """Hooks written inline in a ZCode ``.zcode-plugin/plugin.json``."""
+
+    inline_data: Optional[Dict[str, Any]] = None
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (inline hooks)"
+
+
+@dataclass(eq=False)
+class ZCodeConfigHooksBlock(HooksBlock):
+    """The ``hooks`` section of a ZCode project ``.zcode/config.json``.
+
+    ZCode nests the event map one level deeper than a ``hooks.json``:
+    ``{"hooks": {"enabled": ..., "events": {Event: [...]}}}``. The same file
+    also carries MCP servers, which :class:`ZCodeConfigMcpBlock` reads as a
+    second parser role over it.
+    """
+
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        data = self.raw_data
+        hooks = data.get("hooks") if isinstance(data, dict) else None
+        return _zcode_events(
+            self._nested_events(hooks.get("events") if isinstance(hooks, dict) else None)
+        )
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (zcode hooks)"
+
+
 @dataclass(eq=False)
 class CursorHooksBlock(HooksBlock):
     """``.cursor/hooks.json`` — Cursor's agent-lifecycle hooks.
@@ -952,6 +1043,7 @@ class AntigravityHooksBlock(HooksBlock):
     """
 
     category: str = "hooks"
+    distinct_dialect: ClassVar[bool] = True
     #: Measured: a bare ``NaN``/``Infinity`` token, a comment and a
     #: trailing comma each drop the whole file — ``failed to parse
     #: hooks.json … invalid character``, and the run loads zero named
@@ -1128,6 +1220,11 @@ class McpShapeDeferral:
         return not self.repo_types or not self.repo_types.isdisjoint(active_types)
 
 
+#: Every MCP connection field a server can name: a ``command`` to spawn or
+#: a remote ``url``.
+ALL_CONNECTION_FIELDS: FrozenSet[str] = frozenset({"command", "url"})
+
+
 class McpConfigRole:
     """Host-neutral interface shared by JSON and embedded-YAML MCP nodes."""
 
@@ -1155,13 +1252,14 @@ class McpConfigRole:
     #: reads; an editor that loads its own MCP config has no such built-ins,
     #: so shadowing is not a thing that can happen there.
     claude_builtins_reserved: ClassVar[bool] = True
-    #: Whether the connection field must be *usable* and not merely present.
+    #: Connection fields that must be *usable* and not merely present.
     #: ``{"command": []}`` names nothing a host can spawn, so the server
-    #: never starts. Left False for the Claude-family files, whose results
-    #: predate the check and are held stable (a Codex-only plugin opts in
-    #: separately, per-path); the editor locations are new surfaces with no
-    #: established results to preserve, so they require it from the start.
-    require_usable_connection: ClassVar[bool] = False
+    #: never starts. Empty for a host that loads such a server without
+    #: complaint. :class:`McpBlock` lists ``command`` for the Claude family:
+    #: its plugin loader drops a server whose command is empty or not a
+    #: string, while an empty ``url`` passes ``claude plugin validate`` and
+    #: is a common placeholder for a connector the user fills in.
+    usable_connection_fields: ClassVar[FrozenSet[str]] = frozenset()
     #: Per-server maps whose values may hold a committed credential, as
     #: ``(key, is_http_header)``. Declared on the block because the key names
     #: are the host's: every Claude-family host spells the environment map
@@ -1269,6 +1367,7 @@ class McpBlock(JsonConfigBlock, McpConfigRole):
     """JSON MCP configuration at a host-owned path or inline manifest field."""
 
     category: str = "mcp"
+    usable_connection_fields: ClassVar[FrozenSet[str]] = frozenset({"command"})
 
 
 @dataclass(eq=False)
@@ -1301,7 +1400,7 @@ class CursorMcpBlock(McpBlock):
 
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
-    require_usable_connection: ClassVar[bool] = True
+    usable_connection_fields: ClassVar[FrozenSet[str]] = ALL_CONNECTION_FIELDS
     strict_json: ClassVar[bool] = True
 
     def tree_label(self) -> str:
@@ -1331,7 +1430,7 @@ class GrokMcpBlock(McpBlock):
     """
 
     claude_builtins_reserved: ClassVar[bool] = False
-    require_usable_connection: ClassVar[bool] = True
+    usable_connection_fields: ClassVar[FrozenSet[str]] = ALL_CONNECTION_FIELDS
     #: Grok's parser refuses a bare ``NaN``/``Infinity`` token and a
     #: duplicated key — measured on a plugin manifest, which fails to load
     #: and takes the whole plugin with it. Only Grok reads this file, and it
@@ -1360,7 +1459,7 @@ class VsCodeMcpBlock(McpBlock):
     allow_bare_server_map: ClassVar[bool] = False
     non_server_keys: ClassVar[frozenset] = frozenset({"inputs", "sandbox"})
     claude_builtins_reserved: ClassVar[bool] = False
-    require_usable_connection: ClassVar[bool] = True
+    usable_connection_fields: ClassVar[FrozenSet[str]] = ALL_CONNECTION_FIELDS
     strict_json: ClassVar[bool] = True
 
     def tree_label(self) -> str:
@@ -1546,6 +1645,81 @@ class GrokInlineMcpBlock(_InlineJsonPayload, GrokMcpBlock):
 
 
 @dataclass(eq=False)
+class ZCodeMcpBlock(McpBlock):
+    """A ``.mcp.json`` only ZCode reads.
+
+    A ZCode-only plugin's conventional file, or one its manifest names in
+    ``mcpServers``. A dual-manifest plugin's conventional file keeps the
+    shared :class:`McpBlock`, since two block classes over one file would
+    report each of its servers twice. Claude's built-in server names are not
+    reserved here, and a connection field must be usable: ZCode disables a
+    server whose ``command`` or ``url`` is not a non-empty string
+    (``adapters/src/plugins/mcp.ts:369-374`` in ``zai-org/ZCode``).
+    """
+
+    claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (zcode MCP)"
+
+
+@dataclass(eq=False)
+class ZCodeInlineMcpBlock(_InlineJsonPayload, ZCodeMcpBlock):
+    """MCP servers written inline in a ZCode ``.zcode-plugin/plugin.json``."""
+
+    inline_data: Optional[Dict[str, Any]] = None
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (inline mcpServers)"
+
+
+@dataclass(eq=False)
+class ZCodeConfigMcpBlock(McpBlock):
+    """The ``mcp.servers`` map of a ZCode project ``.zcode/config.json``.
+
+    The file is ZCode's whole project configuration, not an MCP document, so
+    the shared shape walk defers to ``zcode-config-valid``, which applies
+    ZCode's stricter per-transport schema; the credential and command-policy
+    checks still read every server here.
+    """
+
+    allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
+    strict_json: ClassVar[bool] = True
+    duplicate_keys_fatal: ClassVar[bool] = False
+    shape_deferral: ClassVar[Optional[McpShapeDeferral]] = McpShapeDeferral(
+        syntax_error_rule="zcode-config-valid",
+    )
+    #: ZCode renames ``environment`` to ``env`` and ``http_headers`` to
+    #: ``headers`` before validating a server, so a credential can live
+    #: under either spelling.
+    credential_maps: ClassVar[Tuple[Tuple[str, bool], ...]] = (
+        ("env", False),
+        ("environment", False),
+        ("headers", True),
+        ("http_headers", True),
+        ("oauth", False),
+    )
+    #: ZCode's OAuth fields are camelCase; the shared detector recognises
+    #: the snake_case spelling.
+    credential_key_aliases: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {"clientSecret": "client_secret"}
+    )
+
+    def server_entries(self) -> List[Tuple[str, Any]]:
+        data = self.raw_data
+        mcp = data.get("mcp") if isinstance(data, dict) else None
+        servers = mcp.get("servers") if isinstance(mcp, dict) else None
+        return list(servers.items()) if isinstance(servers, dict) else []
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (zcode MCP)"
+
+
+@dataclass(eq=False)
 class CopilotAgentMcpBlock(McpConfigRole, LintTarget):
     """``mcp-servers`` embedded in Copilot custom-agent frontmatter.
 
@@ -1559,7 +1733,7 @@ class CopilotAgentMcpBlock(McpConfigRole, LintTarget):
     source_line: Optional[int] = None
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
-    require_usable_connection: ClassVar[bool] = True
+    usable_connection_fields: ClassVar[FrozenSet[str]] = ALL_CONNECTION_FIELDS
     surface_rule: ClassVar[Optional[str]] = "copilot-agent-valid"
     type_aliases: ClassVar[Mapping[str, str]] = MappingProxyType({"local": "stdio"})
 
@@ -1631,7 +1805,7 @@ class AntigravityMcpBlock(McpBlock):
     #: Measured: a server with neither ``command`` nor ``serverUrl`` loads
     #: without any ``agy`` complaint, so "unusable connection" is not a
     #: defect this host has.
-    require_usable_connection: ClassVar[bool] = False
+    usable_connection_fields: ClassVar[FrozenSet[str]] = frozenset()
     #: Measured: a comment or a trailing comma is exit 1, not a warning.
     strict_json: ClassVar[bool] = True
     #: Go accepts duplicate keys. Server fields also match without regard

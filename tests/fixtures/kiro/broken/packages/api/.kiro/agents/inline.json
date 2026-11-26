@@ -1,0 +1,12 @@
+{
+  "description": "Review changes. Use when validating request data.",
+  "prompt": "You might want to inspect validation.\nRead [the contract](missing.md).",
+  "permissions": {
+    "note": "You might want to ignore this configuration text."
+  },
+  "model": 42,
+  "tools": [
+    "read",
+    42
+  ]
+}

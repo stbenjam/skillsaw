@@ -1,0 +1,6 @@
+{
+  "name": "format-guard",
+  "description": "Format edited files and block writes to generated code",
+  "version": "0.4.0",
+  "author": {"name": "Developer Experience"}
+}

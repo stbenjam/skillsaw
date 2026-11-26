@@ -21,8 +21,11 @@ Project agent `.md` files need YAML frontmatter with `name` and
 can omit `name`: Claude Code uses the filename stem under the plugin's
 namespace. The same fallback applies to empty or null names.
 
-This rule still checks plugin agents for valid YAML frontmatter and a
-description so their instructions and routing metadata can be reviewed.
+Claude Code skips a project agent whose frontmatter does not parse or has
+no `description`, so those findings are errors. It loads a plugin agent
+under its filename even without frontmatter or a description. This rule
+still reports those as warnings, because Claude has nothing to delegate on
+without a description.
 See [Claude's agent loading rules](https://code.claude.com/docs/en/sub-agents#subagent-files-claude-code-skips)
 for the distinction between project and plugin agents.
 

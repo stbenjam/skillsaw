@@ -1,4 +1,4 @@
-FROM python:3.14.7-slim@sha256:656d12e70054d5fda18a045e2494c96701e9792dd1445f95b3d038df954f57e9
+FROM python:3.15.0-slim@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58
 
 LABEL org.opencontainers.image.source="https://github.com/stbenjam/skillsaw"
 LABEL org.opencontainers.image.url="https://github.com/stbenjam/skillsaw"

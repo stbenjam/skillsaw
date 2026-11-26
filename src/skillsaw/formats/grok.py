@@ -10,9 +10,10 @@ Grok-specific facts live here rather than spread through rule code.
 
 Sources:
 
-* The user guide shipped with 1.0.13 — ``10-hooks.md`` (events, the Cursor
-  alias table, handler fields, the reserved environment variables, the
-  matcher-per-event table), ``12-project-rules.md``, ``08-skills.md``,
+* The user guide shipped with 1.0.77 — ``10-hooks.md`` (events, the Cursor
+  alias table, handler fields and "Unsupported Handler Fields", the reserved
+  environment variables, the matcher-per-event table) — and the 1.0.13
+  guide's ``12-project-rules.md``, ``08-skills.md``,
   ``04-slash-commands.md``, ``16-subagents.md``, ``26-config-reference.md``.
 * Strings read from the shipped executable, whose hook loader is
   ``crates/codegen/xai-grok-hooks/src/config.rs``. Its diagnostics name the
@@ -21,51 +22,51 @@ Sources:
   event names (check for typos).`` and ``hook env: ignoring user-supplied
   value for runner-reserved key (the runner-injected value always wins)``.
 
-Everything below was verified against Grok Build 1.0.13 (``5e9a58528b76``,
-stable) rather than read off the docs. Method: an isolated ``GROK_HOME``
-(the real ``~/.grok`` untouched) with one hook file per case under
-``$GROK_HOME/hooks/`` — user scope, always trusted, so no folder-trust gate
-— each handler carrying a unique ``command`` token, read back from ``grok
-inspect --json``. Every case carries a canary handler in the same group and
-a canary group under a different event in the same file, so file scope,
-group scope and handler scope are told apart rather than assumed. Re-run
-that matrix before changing a rule here.
+The hooks facts below were verified against Grok Build 1.0.77
+(``50ca579fa996``, stable), the rest against 1.0.13 (``5e9a58528b76``),
+rather than read off the docs. Method: an isolated ``HOME`` and
+``GROK_HOME`` (the real ``~/.grok`` untouched) with one hook file per case
+under ``$GROK_HOME/hooks/`` — user scope, always trusted, so no folder-trust
+gate — each handler carrying a unique ``command`` token, read back from
+``grok inspect --json`` (``hooks`` and ``hookLoadErrors``). Every case
+carries a canary handler in the same group and a canary group under a
+different event in the same file, so file scope, group scope and handler
+scope are told apart rather than assumed. Re-run that matrix before changing
+a rule here.
 
 The file is the nested shape Claude Code defined: ``{"hooks": {Event:
 [{matcher?, hooks: [handler, ...]}, ...]}}``. Grok reads
 ``<project>/.grok/hooks/*.json`` as a flat glob — a nested directory and a
 non-``.json`` extension are both ignored — and merges every file it finds.
 Failure scope then differs by level, and the scope is what makes a defect
-worth reporting, because ``grok inspect --json`` reported
-``configWarnings: null`` for every failing case: the runtime tells the
-author nothing.
+worth reporting. Since 1.0.77 every narrower failure is listed under
+``hookLoadErrors`` in ``grok inspect --json``; of the whole-file failures,
+only a parse error and a non-object ``hooks`` are listed there.
 
-* **Whole file** — a UTF-8 byte-order mark at the start of the file, which
-  ``serde_json`` refuses and Python's ``utf-8-sig`` decoding hides (verified:
-  ``grok inspect --json`` loaded zero hooks from an otherwise-correct file
-  with a leading BOM); malformed JSON; a bare ``NaN``, ``Infinity`` or
+* **Whole file** — malformed JSON; a bare ``NaN``, ``Infinity`` or
   ``-Infinity`` token, which Python's ``json`` accepts as a float and
-  ``serde_json`` refuses; no top-level ``hooks`` object; an event whose
-  value is not an array; a matcher group that is not an object; a group
-  with no ``hooks`` key or a non-array one; a ``matcher`` that is not a
-  string, which never reaches the regex compiler; a handler that is not an
-  object; a handler with no ``type``, or a ``null`` one; and any field in
-  :data:`HANDLER_FIELDS` carrying the wrong JSON type, including a
-  ``timeout`` above :data:`TIMEOUT_MAX`. A ``null`` is not one of those
-  wrong types — Grok reads it as the key being absent, so it costs whatever
-  omitting the key costs, and ``type`` is the only field whose ``null``
-  reaches this bullet. One mistyped ``timeout`` costs the author every hook
-  in the file.
-* **That matcher group** — a ``matcher`` string that does not compile.
+  ``serde_json`` refuses; a root that is not an object; no top-level
+  ``hooks`` object, or one that is not an object. A UTF-8 byte-order mark is
+  *not* one of these: 1.0.77 loads a BOM-prefixed file.
 * **That event's entries** — an event name outside :data:`HOOK_EVENTS` and
-  :data:`HOOK_EVENT_ALIASES`. The rest of the file loads.
-* **That handler** — a ``command`` handler with no ``command`` or a ``null``
-  one, an ``http`` handler with no ``url`` or a ``null`` one, or a ``type``
-  outside :data:`HOOK_HANDLER_TYPES`. Sibling handlers still run.
+  :data:`HOOK_EVENT_ALIASES`, or a recognized event whose value is not an
+  array. The rest of the file loads.
+* **That matcher group** — a group that is not an object; a group with no
+  ``hooks`` key, a ``null`` one or a non-array one; a ``matcher`` that is not
+  a string; a ``matcher`` string that does not compile.
+* **That handler** — a handler that is not an object; no ``type``, or a
+  ``null`` one; a ``type`` outside :data:`HOOK_HANDLER_TYPES`; a
+  ``command`` handler with no ``command`` or a ``null`` one, an ``http``
+  handler with no ``url`` or a ``null`` one; any field in
+  :data:`HANDLER_FIELDS` carrying the wrong JSON type, including a
+  ``null`` ``failClosed``; both spellings of :data:`FAIL_CLOSED_FIELDS` at
+  once; and a field in :data:`SKIPPING_HANDLER_FIELDS` set to a value that
+  asks for something. Sibling handlers still run.
 * **Tolerated** — an unknown key on a handler, on a matcher group
   (``description``), or at the top level; an empty ``hooks`` array; an
-  empty ``matcher``; a ``null`` ``timeout``, ``env`` or ``matcher``, and a
-  ``null`` in any other field the handler's type does not require.
+  empty ``matcher``; a ``null`` ``timeout``, ``env``, ``args``,
+  ``onFailure`` or ``matcher``, and a ``null`` in any other field the
+  handler's type does not require.
 
 ``matcher`` is a regex Grok compiles at load time with Rust's ``regex``
 crate — verified by loading ``\p{L}+`` and ``[a-z&&[^aeiou]]``, which
@@ -91,10 +92,10 @@ from skillsaw.formats.grok_mcp import decode_mcp_server
 from skillsaw.paths import (
     Resolver,
     contained_resolve,
-    safe_exists,
+    marker_escapes,
+    marker_manifest_is_contained,
     safe_is_dir,
     safe_is_file,
-    safe_is_symlink,
     safe_resolve,
 )
 from skillsaw.utils import read_json
@@ -258,30 +259,48 @@ HOOK_REQUIRED_FIELDS: Mapping[str, str] = {
     "http": "url",
 }
 
-#: The JSON type Grok accepts for each handler field it knows. A wrong type
-#: here refuses the whole document, so this table is the whole-file check;
-#: which fields a type *needs* is :data:`HOOK_REQUIRED_FIELDS`. ``timeout``
-#: is additionally a non-negative integer no larger than
-#: :data:`TIMEOUT_MAX` — ``1.5``, ``-1``, ``true`` and ``"30"`` each cost
-#: every hook in the file. A merely *large* one is fine and is not a defect
-#: (``Stop`` and ``SubagentStop`` default to 600 seconds, because gates run
-#: test suites). ``env`` is a map of strings; a non-string value refuses the
-#: document too.
+#: The JSON type Grok accepts for each handler field it reads — the eight
+#: ``10-hooks.md`` lists, plus the ``fail_closed`` spelling it also reads. A
+#: wrong type drops that handler alone; which fields a type *needs* is
+#: :data:`HOOK_REQUIRED_FIELDS`. ``timeout`` is any non-negative number
+#: (``1.5`` and ``2**64`` both load; ``0`` keeps the default), never a
+#: bool, a numeric string or a negative. ``env`` is a map of strings, and
+#: ``args`` an array of strings — a present ``args``, even ``[]``, runs
+#: ``command`` as one program with no shell.
 HANDLER_FIELDS: Mapping[str, Any] = {
     "type": str,
     "command": str,
+    "args": list,
     "url": str,
-    "timeout": int,
+    "timeout": float,
+    "failClosed": bool,
+    "fail_closed": bool,
+    "onFailure": str,
     "env": dict,
 }
 
-#: The largest ``timeout`` Grok's deserializer accepts. The field is a Rust
-#: ``u64``, and JSON has no integer width, so the boundary is exact and
-#: sharp: ``18446744073709551615`` loads, ``18446744073709551616`` refuses
-#: the whole file — both verified against Grok Build 1.0.13. A number that
-#: wide is a generated or pasted value rather than a duration anyone meant,
-#: which is the only way it reaches a hooks file at all.
-TIMEOUT_MAX = 2**64 - 1
+#: The two spellings of one field. A ``null`` in either drops the handler
+#: rather than reading as absent, and setting both is a duplicate field
+#: that drops it too — both measured against 1.0.77.
+FAIL_CLOSED_FIELDS = ("failClosed", "fail_closed")
+
+#: Claude Code handler fields Grok refuses to ignore: rather than run a
+#: handler without the condition the author wrote, it skips the handler
+#: ("field 'if' is not supported, so the hook is skipped"). A value that
+#: asks for nothing — see :func:`asks_for_nothing` — is not reported and
+#: the handler runs.
+SKIPPING_HANDLER_FIELDS = frozenset({"if"})
+
+
+def asks_for_nothing(value: Any) -> bool:
+    """Whether Grok reads *value* as an unset Claude Code field.
+
+    ``10-hooks.md``: "``null``, ``false``, an empty string, an empty list,
+    and an empty object". ``0`` and ``" "`` are not among them — measured,
+    an ``if`` of either skips the handler.
+    """
+    return value is None or value is False or value in ("", [], {})
+
 
 #: Environment variables the hook runner injects into every hook process. A
 #: value declared for one of these in a handler's ``env`` is dropped at load
@@ -808,16 +827,9 @@ def grok_manifest_is_contained(plugin_dir: Path, *, resolve: Resolver = safe_res
     Containment is checked the way discovery checks it, so a marker or a
     manifest symlinked out of the plugin is not this plugin's.
     """
-    root = resolve(plugin_dir)
-    if root is None:
-        return False
-    marker = plugin_dir / PLUGIN_DIR_NAME
-    if contained_resolve(marker, root, resolve) is None:
-        return False
-    manifest = marker / PLUGIN_MANIFEST
-    if contained_resolve(manifest, root, resolve) is None:
-        return False
-    return safe_is_file(manifest)
+    return marker_manifest_is_contained(
+        plugin_dir, PLUGIN_DIR_NAME, PLUGIN_MANIFEST, resolve=resolve
+    )
 
 
 def grok_marker_escapes(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> bool:
@@ -829,14 +841,4 @@ def grok_marker_escapes(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -
     marker (or a ``plugin.json`` inside it) that resolves elsewhere is
     another plugin's, and no claim may adopt it.
     """
-    root = resolve(plugin_dir)
-    if root is None:
-        # Containment cannot be proven, so fail closed.
-        return True
-    marker = plugin_dir / PLUGIN_DIR_NAME
-    if not (safe_exists(marker) or safe_is_symlink(marker)):
-        return False
-    if contained_resolve(marker, root, resolve) is None:
-        return True
-    manifest = marker / PLUGIN_MANIFEST
-    return safe_exists(manifest) and contained_resolve(manifest, root, resolve) is None
+    return marker_escapes(plugin_dir, PLUGIN_DIR_NAME, PLUGIN_MANIFEST, resolve=resolve)

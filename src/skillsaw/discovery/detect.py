@@ -17,11 +17,13 @@ from skillsaw.discovery.antigravity import (
     customization_root_declares_a_file,
     customization_root_is_marked,
 )
+from skillsaw.discovery.generators import GENERATOR_DIR_NAMES
+from skillsaw.discovery.codex_instructions import probe_file
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.promptfoo import is_promptfoo_config
-from skillsaw.formats import antigravity, codex, devin, grok, muse
+from skillsaw.formats import antigravity, codex, devin, grok, muse, zcode
 from skillsaw.formats.openclaw import MANIFEST as OPENCLAW_MANIFEST
-from skillsaw.paths import contained_resolve, safe_resolve
+from skillsaw.paths import Resolver, contained_resolve, safe_resolve
 from skillsaw.utils import read_yaml
 
 WALK_SKIP_DIRS = frozenset(
@@ -50,9 +52,11 @@ AGENT_TOOL_DIR_NAMES = frozenset(
         ".vscode",
         ".opencode",
         ".goose",
+        ".kiro",
         *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
         codex.CODEX_DIR_NAME,
         grok.TOOL_DIR_NAME,
+        zcode.TOOL_DIR_NAME,
         muse.TOOL_DIR_NAME,
         *devin.TOOL_DIR_NAMES,
     }
@@ -75,8 +79,12 @@ AGENT_TOOL_DIR_NAMES = frozenset(
 # ``discover_skills``. A name in only one of the two is a skill that is
 # counted but never linted, or found but never counted.
 NESTED_TOOL_SKILL_DIRS = (
+    ".kiro",
     *devin.TOOL_DIR_NAMES,
     grok.TOOL_DIR_NAME,
+    # ZCode reads ``.zcode/skills`` in every directory from the session's
+    # working directory up to the git root, so a package's copy is live.
+    zcode.TOOL_DIR_NAME,
     *antigravity.ANTIGRAVITY_CONFIG_DIR_NAMES,
 )
 
@@ -87,10 +95,10 @@ NESTED_TOOL_SKILL_DIRS = (
 # second traversal. Recorded in the same ``tool_dirs`` mapping and read
 # through ``agent_tool_dirs``; kept a separate name so the editor-tool
 # vocabulary above keeps meaning editor tools.
-PLUGIN_MARKER_DIR_NAMES = frozenset({grok.PLUGIN_DIR_NAME, ".cursor-plugin"})
+PLUGIN_MARKER_DIR_NAMES = frozenset({grok.PLUGIN_DIR_NAME, zcode.PLUGIN_DIR_NAME, ".cursor-plugin"})
 
 #: Every directory name the walk records, from both sets above.
-SCANNED_DIR_NAMES = AGENT_TOOL_DIR_NAMES | PLUGIN_MARKER_DIR_NAMES
+SCANNED_DIR_NAMES = AGENT_TOOL_DIR_NAMES | PLUGIN_MARKER_DIR_NAMES | GENERATOR_DIR_NAMES
 
 
 @dataclass
@@ -110,6 +118,7 @@ class RepositoryScan:
     skills_lock_files: Tuple[Path, ...]
     promptfoo_named_files: Tuple[Path, ...]
     promptfoo_eval_files: Dict[Path, Tuple[Path, ...]]
+    generator_config_files: Tuple[Path, ...] = ()
     openclaw_manifest_files: Tuple[Path, ...] = ()
     walk_errors: Tuple[OSError, ...] = ()
 
@@ -131,6 +140,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     mcp_registry_files: List[Path] = []
     package_json_files: List[Path] = []
     openclaw_manifests: List[Path] = []
+    generator_configs: List[Path] = []
     skills_locks: List[Path] = []
     promptfoo_named: List[Path] = []
     promptfoo_evals: Dict[Path, List[Path]] = {}
@@ -170,6 +180,8 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
                     promptfoo_evals.setdefault(evals_dir, []).append(path)
         found.update(here / name for name in filenames if name.endswith(".instructions.md"))
         if not vendored:
+            if "AGENTS.override.md" in filenames:
+                found.add(here / "AGENTS.override.md")
             found.update(here / name for name in filenames if devin.is_instruction_filename(name))
             if "server.json" in filenames:
                 mcp_registry_files.append(here / "server.json")
@@ -177,6 +189,8 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
                 openclaw_manifests.append(here / OPENCLAW_MANIFEST)
             if "package.json" in filenames:
                 package_json_files.append(here / "package.json")
+            if "rulesync.jsonc" in filenames:
+                generator_configs.append(here / "rulesync.jsonc")
             if "skills-lock.json" in filenames:
                 skills_locks.append(here / "skills-lock.json")
         # The root copy has always been attached; a nested one is a new
@@ -192,6 +206,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
             if name in SCANNED_DIR_NAMES and not vendored:
                 tool_dirs[name].append(here / name)
     return RepositoryScan(
+        generator_config_files=tuple(sorted(generator_configs)),
         openclaw_manifest_files=tuple(sorted(openclaw_manifests)),
         walk_errors=tuple(walk_errors),
         instruction_files=tuple(sorted(found)),
@@ -215,6 +230,10 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
 #: configured here, so a repository whose only Cursor artifact is
 #: ``hooks.json`` still activates the Cursor rules.
 _TOOL_EVIDENCE = {
+    "kiro": (
+        ".kiro",
+        (("steering", True), ("agents", True), ("skills", True), ("settings/mcp.json", False)),
+    ),
     "goose": (".goose", (("recipes", True),)),
     "pi": (
         ".pi",
@@ -320,6 +339,21 @@ _TOOL_EVIDENCE = {
             (grok.SANDBOX_FILENAME, False),
         ),
     ),
+    # ZCode reads skills, commands and agents from ``.zcode/`` and project
+    # hooks and MCP servers from ``.zcode/config.json``; any one of them
+    # makes this a ZCode project. ``workflows/`` is evidence too, though
+    # nothing attaches it. Everything else ZCode writes there — plans,
+    # agent memory, workflow runs — is runtime state, not authored content.
+    "zcode-project": (
+        zcode.TOOL_DIR_NAME,
+        (
+            (zcode.SKILLS_DIR_NAME, True),
+            (zcode.COMMANDS_DIR_NAME, True),
+            (zcode.AGENTS_DIR_NAME, True),
+            (zcode.CONFIG_FILENAME, False),
+            ("workflows", True),
+        ),
+    ),
     # ``hooks.json`` and ``config.toml`` are the committed project-layer
     # files skillsaw reads from ``.codex/``: Codex loads hooks from both and
     # merges them, and a config declares this project's MCP servers, so
@@ -346,6 +380,9 @@ def tool_types(
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
     legacy_editor_files: Optional[Mapping[str, Iterable[Path]]] = None,
     skills_lock_files: Optional[Iterable[Path]] = None,
+    generator_types: Iterable[str] = (),
+    *,
+    resolve: Resolver = safe_resolve,
 ) -> Set[str]:
     """Return ``RepositoryType`` values for the tools configured here.
 
@@ -378,6 +415,13 @@ def tool_types(
                 continue
             for name, is_dir in entries:
                 path = base / name
+                if type_value == "codex-project" and name == codex.CODEX_CONFIG_FILENAME:
+                    # Match project-config attachment, including excluded
+                    # ancestors and symlink targets, before enabling its rules.
+                    candidate = probe_file(path, root, resolve=resolve, is_excluded=is_excluded)
+                    if candidate is not None and candidate.issue is None:
+                        return True
+                    continue
                 if is_excluded(path):
                     continue
                 if path.is_dir() if is_dir else path.exists():
@@ -474,7 +518,8 @@ def tool_types(
                     return True
         return False
 
-    found: Set[str] = set()
+    # Already contained and excluded by the shared source discovery helper.
+    found: Set[str] = set(generator_types)
     checks = (
         ("goose", tool_marker("goose")),
         ("pi", tool_marker("pi")),
@@ -502,7 +547,20 @@ def tool_types(
         # carry their own types, so ``.grok/`` itself is the only marker
         # that is Grok Build's alone.
         ("grok-project", tool_marker("grok-project")),
-        ("codex-project", tool_marker("codex-project")),
+        # ZCode's own instructions are ``AGENTS.md``, which carries its own
+        # type, so ``.zcode/`` is the only marker that is ZCode's alone.
+        ("zcode-project", tool_marker("zcode-project")),
+        (
+            "codex-project",
+            tool_marker("codex-project")
+            or any(
+                path.name == "AGENTS.override.md"
+                and (candidate := probe_file(path, root, resolve=resolve, is_excluded=is_excluded))
+                is not None
+                and candidate.issue is None
+                for path in files
+            ),
+        ),
         ("antigravity", antigravity_marker()),
         ("gemini", marker("GEMINI.md")),
         ("qwen", marker("QWEN.md")),
@@ -510,7 +568,7 @@ def tool_types(
             "agents-md",
             any(path.name == "AGENTS.md" and not is_excluded(path) for path in files),
         ),
-        ("kiro", marker(".kiro", is_dir=True)),
+        ("kiro", tool_marker("kiro") or marker(".kiro", is_dir=True)),
         (
             "claude-md",
             any(path.name == "CLAUDE.md" and not is_excluded(path) for path in files),

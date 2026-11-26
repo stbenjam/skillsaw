@@ -87,6 +87,7 @@ def _run_badge(args):
         exclude_patterns=config.exclude_patterns,
         content_paths=config.content_paths,
         lint_external_content=config.lint_external_content,
+        rulesync_generated=config.rulesync_generated,
     )
 
     try:
@@ -106,6 +107,7 @@ def _run_badge(args):
     finally:
         rule_progress.clear()
 
+    from ..blocks.gather import gather_editorial_content_blocks
     from ..grade import compute_grade
     from ..linter import ADVISORY_RULE_IDS
 
@@ -114,11 +116,11 @@ def _run_badge(args):
     # like the lint command does.
     violations = [v for v in violations if v.rule_id not in ADVISORY_RULE_IDS]
 
-    # Exclude compiled copies (APM output) — they duplicate their source's
-    # tokens and would inflate the card; they stay in the tree for security.
+    # Count distinct authored prose, excluding recognized generator copies,
+    # identical source views and APM output. All remain in the lint tree.
     content_tokens = sum(
         b.estimate_tokens()
-        for b in context.lint_tree.content_blocks()
+        for b in gather_editorial_content_blocks(context)
         if not b.in_suppressed_content
     )
     grade = compute_grade(violations, content_tokens)

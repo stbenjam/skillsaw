@@ -1,9 +1,14 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
-version: "0.22.0"
+version: "0.23.0"
 
 rules:
+
+  # Portable hooks.json must declare supported events and valid command handlers
+  agent-plugin-hooks-valid:
+    enabled: false
+    severity: error
 
   # Agent Plugins plugin.json and skills location must conform to a supported schema
   agent-plugin-json-valid:
@@ -113,7 +118,7 @@ rules:
   # Command files must have valid frontmatter with description
   claude-command-frontmatter:
     enabled: true
-    severity: error
+    severity: warning
 
   # Command Name section should be 'plugin-name:command-name'
   claude-command-name-format:
@@ -245,6 +250,11 @@ rules:
   # Only plugin.json belongs in .codex-plugin/
   codex-plugin-structure:
     enabled: auto
+    severity: warning
+
+  # Diagnose Codex instruction selection and the cumulative project byte limit
+  codex-project-instructions:
+    enabled: false
     severity: warning
 
   # Detect banned or deprecated model names, APIs, and custom patterns
@@ -564,6 +574,21 @@ rules:
     enabled: auto
     severity: warning
 
+  # Kiro JSON and Markdown agents must use valid syntax and documented field types
+  kiro-agent-valid:
+    enabled: false
+    severity: error
+
+  # Kiro workspace and agent MCP entries must use documented field types
+  kiro-mcp-valid:
+    enabled: false
+    severity: error
+
+  # Literal local Kiro prompt, resource, and steering references should exist
+  kiro-references:
+    enabled: false
+    severity: warning
+
   # Repository should not enable non-allowlisted MCP servers
   mcp-prohibited:
     enabled: false
@@ -643,6 +668,11 @@ rules:
     enabled: false
     severity: warning
 
+  # Pi project settings should match the Pi 1.5.0 settings schema
+  pi-settings-schema:
+    enabled: false
+    severity: warning
+
   # Pi skills need parseable frontmatter and a nonempty description
   pi-skill-valid:
     enabled: auto
@@ -664,6 +694,16 @@ rules:
   # Validate promptfoo eval YAML config structure and file references
   promptfoo-valid:
     enabled: auto
+    severity: error
+
+  # Validate .ruler/ruler.toml against the Ruler 0.3.44 configuration shape
+  ruler-config-valid:
+    enabled: false
+    severity: error
+
+  # Validate common Rulesync 32.0.0 rule frontmatter and project configuration fields
+  rulesync-source-valid:
+    enabled: false
     severity: error
 
   # Require an allowlist for dynamic context commands that execute shell code while loading agent context
@@ -700,6 +740,31 @@ rules:
     severity: error
     # extra-source-types: []
 
+  # ZCode subagents must declare a name and a description in frontmatter
+  zcode-agent-valid:
+    enabled: auto
+    severity: error
+
+  # ZCode .zcode/config.json hooks and MCP servers must match ZCode's schema
+  zcode-config-valid:
+    enabled: auto
+    severity: error
+
+  # ZCode plugin hooks must use ZCode's events and command/process handlers
+  zcode-hooks-valid:
+    enabled: auto
+    severity: error
+
+  # A ZCode marketplace.json must parse, be named, and list installable local plugins
+  zcode-marketplace-json-valid:
+    enabled: auto
+    severity: error
+
+  # A .zcode-plugin/plugin.json must be a manifest ZCode's loader accepts
+  zcode-plugin-json-valid:
+    enabled: auto
+    severity: error
+
 # Load custom rules from these files
 custom-rules: []
 
@@ -719,6 +784,9 @@ exclude:
 
 # Additional markdown files to run content rules on (glob format)
 content-paths: []
+
+# Assert Rulesync owns its configured conventional modular rule outputs
+rulesync-generated: false
 
 # Report findings in external content (autofix never rewrites it)
 lint-external-content: true

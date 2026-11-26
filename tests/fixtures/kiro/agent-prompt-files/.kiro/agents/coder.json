@@ -1,0 +1,6 @@
+{
+  "name": "coder",
+  "description": "Implement scoped changes. Use when a task has an approved design and needs code.",
+  "prompt": "file://prompts/coder.md",
+  "tools": ["read", "write"]
+}

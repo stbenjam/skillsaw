@@ -1,0 +1,7 @@
+version: "99.0.0"
+plugins: false
+codex-instructions:
+  cwd: service
+rules:
+  codex-project-instructions:
+    enabled: true

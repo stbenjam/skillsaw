@@ -35,10 +35,11 @@ or when the agent finishes its work. Because hooks are committed to the
 repository, they provide a reliable, shared way to automate setup and
 checks for everyone on the team.
 
-During headless runs, Muse Code executes hooks quietly without printing
-console warnings if a configuration option is unsupported. When a hook
-doesn't trigger, it can be hard to tell whether the event simply hasn't fired
-yet or was skipped due to an unrecognized field. This rule inspects
+Muse Code validates hooks at session startup: a malformed file contributes
+no handlers, and an unsupported event, matcher or handler is skipped, each
+with a startup warning. That warning is easy to miss in a headless run, and
+when a hook doesn't trigger it can be hard to tell whether the event simply
+hasn't fired yet or the entry was skipped. This rule inspects
 `.muse/hooks.json` against Muse's supported events, matcher groups, and handler
 options so that your automations run smoothly and reliably.
 
@@ -83,12 +84,6 @@ intended:
   characters are skipped to keep checks fast.
 - A handler defining `commandWindows` without a fallback `command` for Linux
   or macOS environments.
-
-**Info** — advisory notices:
-
-- Events present in Muse's binary but omitted from official documentation
-  (`StopFailure`, `PostToolBatch`).
-  Be sure to test these in your environment before relying on them.
 
 When an unknown key appears across multiple groups or handlers — common
 when migrating a file from another tool — skillsaw groups them into a
@@ -190,10 +185,6 @@ Unclosed groups/classes and unsupported look-around/backreferences are still
 reported in the checked subset. Extended-mode (`x`) patterns are left
 unresolved because comments change tokenization. No finding is a complete
 Rust regex validation guarantee.
-
-`Notification` and `PostToolUseFailure` are now documented Muse events and
-do not receive the undocumented-event advisory. Handler and group checks
-still apply to both events.
 
 ## Configuration
 

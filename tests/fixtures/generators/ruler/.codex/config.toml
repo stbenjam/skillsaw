@@ -1,0 +1,6 @@
+[mcp_servers.docs]
+url = "https://docs.example.com/mcp"
+type = "remote"
+
+  [mcp_servers.docs.headers]
+  X-Project = "inventory"

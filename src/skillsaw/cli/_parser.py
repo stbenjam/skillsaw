@@ -538,8 +538,18 @@ Examples:
         "--format",
         dest="fmt",
         default="text",
-        choices=["text", "dot"],
-        help="Output format (default: text)",
+        choices=["text", "dot", "json"],
+        help="Output format (default: text; json requires --codex-instructions)",
+    )
+    tree_parser.add_argument(
+        "--codex-instructions",
+        action="store_true",
+        help="Inspect Codex's selected project instruction chain and byte budget",
+    )
+    tree_parser.add_argument(
+        "--cwd",
+        type=str,
+        help="Codex working directory relative to the supplied root (requires --codex-instructions)",
     )
     _add_mcp_server_args(
         tree_parser.add_argument_group(

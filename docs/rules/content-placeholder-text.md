@@ -82,7 +82,7 @@ content isn't ready, it shouldn't be in the agent's context.
   — Tracks TODO/FIXME as code quality signals; the same pattern applies to
   instruction files
 - [Anthropic: Effective Context
-  Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  Engineering](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)
   — "Keep your context informative, yet tight" — placeholder text is
   uninformative noise that consumes context budget
 
@@ -161,9 +161,9 @@ These papers justify multiple rules simultaneously:
 | Levy, Jacoby & Goldberg, [Same Task, More Tokens](https://arxiv.org/abs/2402.14848) | ACL 2024 | tautological, redundant-with-tooling, instruction-budget, section-length |
 | Bsharat et al., [Principled Instructions Are All You Need](https://arxiv.org/abs/2312.16171) | arXiv 2023 | weak-language, negative-only |
 | [Suppressing Pink Elephants](https://arxiv.org/abs/2402.07896) | arXiv 2024 | negative-only |
-| Chroma, [Context Rot](https://research.trychroma.com/context-rot) | 2025 | instruction-budget, section-length |
+| Chroma, [Context Rot](https://www.trychroma.com/research/context-rot) | 2025 | instruction-budget, section-length |
 | [When Prompts Go Wrong](https://arxiv.org/abs/2507.20439) | arXiv 2025 | contradiction |
-| [Anthropic: Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | 2025 | tautological, redundant-with-tooling, instruction-budget, broken-internal-reference, placeholder-text |
+| [Anthropic: Effective Context Engineering](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents) | 2025 | tautological, redundant-with-tooling, instruction-budget, broken-internal-reference, placeholder-text |
 | Wang et al., [LLMs Meet Library Evolution](https://yebof.github.io/assets/pdf/wang2025icse.pdf) | ICSE 2025 | banned-references |
 
 

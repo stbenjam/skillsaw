@@ -1,0 +1,29 @@
+{
+  "description": "Model request auditing for the inference gateway",
+  "hooks": {
+    "PreModelRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/record-request.sh",
+            "timeout": 5,
+            "statusMessage": "Recording model request"
+          }
+        ]
+      }
+    ],
+    "PostModelRequest": [
+      {
+        "matcher": "gpt-5-codex",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/record-usage.sh",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

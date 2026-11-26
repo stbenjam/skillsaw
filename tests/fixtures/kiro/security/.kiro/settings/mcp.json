@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "internal-docs": {
+      "url": "https://mcp.example.com/docs",
+      "oauth": {
+        "clientId": "review-client",
+        "clientSecret": "zQ7mJ9vP2rT4nL6xD8bH5cW3sF1k"
+      }
+    },
+    "placeholder-docs": {
+      "url": "https://mcp.example.com/docs",
+      "oauth": {"clientSecret": "${DOCS_CLIENT_SECRET}"}
+    }
+  }
+}

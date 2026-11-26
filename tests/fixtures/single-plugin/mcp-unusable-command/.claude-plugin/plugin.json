@@ -1,0 +1,6 @@
+{
+  "name": "docs-search",
+  "description": "Search the internal documentation portal from Claude Code",
+  "version": "2.0.1",
+  "author": {"name": "Docs Platform"}
+}

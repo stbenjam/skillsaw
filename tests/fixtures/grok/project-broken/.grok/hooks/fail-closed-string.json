@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/scan-prompt-for-secrets.sh",
+            "failClosed": "true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -114,7 +114,7 @@ class HooksProhibitedRule(Rule):
         for event_type, configs in events.items():
             for cfg in configs:
                 for handler in cfg.handlers:
-                    if handler.type == "command":
+                    if handler.is_executable:
                         for command, source_line in handler.iter_effective_commands():
                             if not command or self._is_allowed(command):
                                 continue

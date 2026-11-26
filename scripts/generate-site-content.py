@@ -56,14 +56,21 @@ RULE_GROUPS = [
     (
         "Agent Plugins",
         "agent-plugins",
-        ["agent-plugin-json-valid", "agent-plugin-mcp-valid", "agent-plugin-required"],
+        [
+            "agent-plugin-hooks-valid",
+            "agent-plugin-json-valid",
+            "agent-plugin-mcp-valid",
+            "agent-plugin-required",
+        ],
         "Validates portable plugin packages against the "
         "[Agent Plugins v1 specification]"
         "(https://agent-plugins.org/specification). The manifest rule checks "
         "the required root `plugin.json`; the MCP rule checks optional root "
         "`mcp.json`. Auto-enabled when a root or immediate `plugins/*` "
         "manifest declares a canonical Agent Plugins schema; use "
-        "`--type agent-plugin` to force validation.",
+        "`--type agent-plugin` to force validation. "
+        "`agent-plugin-hooks-valid` (1.1.0 `hooks.json`) and "
+        "`agent-plugin-required` are opt-in.",
     ),
     (
         "agentskills.io",
@@ -186,7 +193,12 @@ RULE_GROUPS = [
     (
         "Cursor",
         "cursor",
-        ["cursor-rules-valid", "cursor-hooks-valid", "cursor-plugin-json-valid", "cursor-marketplace-json-valid"],
+        [
+            "cursor-rules-valid",
+            "cursor-hooks-valid",
+            "cursor-plugin-json-valid",
+            "cursor-marketplace-json-valid",
+        ],
         "Validates native `.cursor-plugin` manifests, marketplaces and component "
         "paths. It also validates Cursor configuration under every `.cursor/` "
         "directory in the repository, the root one and any in a monorepo "
@@ -210,6 +222,14 @@ RULE_GROUPS = [
         "frontmatter is optional and extends the portable Agent Skills dialect. "
         "Windsurf `.windsurf/skills` use portable Agent Skills validation. Enabled "
         "automatically when Devin repository context is present.",
+    ),
+    (
+        "Ruler and Rulesync",
+        "generators",
+        ["ruler-config-valid", "rulesync-source-valid"],
+        "Opt-in checks for local Ruler configuration and common Rulesync source fields. "
+        "Generate explicitly, then validate emitted files with their consumer rules. "
+        "See the [generator workflow](../generators.md) for copy attribution and limits.",
     ),
     (
         "Goose",
@@ -276,6 +296,39 @@ RULE_GROUPS = [
         "manifests or catalogs are detected.",
     ),
     (
+        "ZCode",
+        "zcode",
+        [
+            "zcode-agent-valid",
+            "zcode-config-valid",
+            "zcode-hooks-valid",
+            "zcode-marketplace-json-valid",
+            "zcode-plugin-json-valid",
+        ],
+        "Validates Z.ai ZCode project configuration and plugin packages "
+        "against ZCode's open-source loader. Project rules check subagent "
+        "frontmatter in `.zcode/agents/*.md` and the `hooks` and `mcp` "
+        "sections of `.zcode/config.json`, where a single misplaced hooks "
+        "key makes ZCode discard the whole file. Plugin rules check "
+        "`.zcode-plugin/plugin.json` manifests, the hooks a ZCode-only "
+        "plugin ships (ZCode runs seven events and `command`/`process` "
+        "handlers), and the root `marketplace.json` catalog of a ZCode "
+        "marketplace.\n\n"
+        "ZCode reads AGENTS.md for instructions, Agent Skills from "
+        "`.zcode/skills/` and `.agents/skills/`, and commands from "
+        "`.zcode/commands/`, all of which receive skillsaw's shared content "
+        "and security checks.\n\n"
+        "A plugin that ships both `.zcode-plugin/` and `.claude-plugin/` "
+        "manifests keeps its Claude Code results: Claude reads the shared "
+        "`hooks/hooks.json` and `.mcp.json` too.\n\n"
+        "The rules enable on three separate conditions. Project rules need a "
+        "`.zcode/` directory holding `skills/`, `commands/`, `agents/`, "
+        "`workflows/` or `config.json`. Plugin rules need a "
+        "`.zcode-plugin/plugin.json`. Marketplace rules also need a "
+        "repository-root `marketplace.json` and no "
+        "`.claude-plugin/marketplace.json`.",
+    ),
+    (
         "Hooks",
         "hooks",
         [
@@ -287,7 +340,8 @@ RULE_GROUPS = [
         "ships — a Claude plugin's `hooks/hooks.json` and `.claude/settings*.json`, "
         "Codex's `.codex/hooks.json`, the `[hooks]` tables of its `.codex/config.toml`, "
         "and plugin hooks, Muse Code's `.muse/hooks.json`, "
-        "Grok Build's `.grok/hooks/*.json` and its plugin hooks, Cursor's "
+        "Grok Build's `.grok/hooks/*.json` and its plugin hooks, ZCode's "
+        "`.zcode/config.json` and plugin hooks, Cursor's "
         "`.cursor/hooks.json`, Google Antigravity's `hooks.json` in a customization "
         "root or plugin, and skill, "
         "Claude-agent, and Copilot-agent frontmatter (`hooks:` key) — for supply-chain "
@@ -341,6 +395,7 @@ RULE_GROUPS = [
         [
             "codex-hooks-valid",
             "codex-mcp-headers",
+            "codex-project-instructions",
             "codex-openai-metadata",
             "codex-plugin-json-valid",
             "codex-plugin-structure",
@@ -355,14 +410,31 @@ RULE_GROUPS = [
         "rule auto-enables for Agent Skills; the plugin and marketplace rules "
         "auto-enable only when their Codex manifests are present. Project "
         "`.codex/config.toml` files also get a warning when an HTTP MCP server "
-        "uses the ignored `headers` field instead of Codex's `http_headers`.",
+        "uses the ignored `headers` field instead of Codex's `http_headers`. "
+        "The opt-in project instruction check explains selection and the cumulative "
+        "byte limit for a supplied root and working directory.",
     ),
     (
         "OpenClaw",
         "openclaw",
-        ["openclaw-metadata", "openclaw-manifest-valid", "openclaw-package-valid", "openclaw-resources"],
+        [
+            "openclaw-metadata",
+            "openclaw-manifest-valid",
+            "openclaw-package-valid",
+            "openclaw-resources",
+        ],
         "Native plugin manifests, package entrypoints, resource paths, and skill metadata. "
         "The metadata rule applies only when `metadata.openclaw` is present in SKILL.md.",
+    ),
+    (
+        "Kiro",
+        "kiro",
+        ["kiro-agent-valid", "kiro-mcp-valid", "kiro-references"],
+        "Opt-in checks for native Kiro JSON/Markdown agents, literal local references, "
+        "and workspace/agent MCP field types. Steering (including nested files an agent's "
+        "`resources` loads) and nested project "
+        "resources also receive shared content and MCP security checks. "
+        "See [Kiro support](../kiro.md) for CLI 2.x/V3 compatibility and runtime limits.",
     ),
     (
         "OpenCode",
@@ -388,10 +460,11 @@ RULE_GROUPS = [
     (
         "Pi",
         "pi",
-        ["pi-config-valid", "pi-skill-valid", "pi-resource-paths", "pi-mcp-valid"],
+        ["pi-config-valid", "pi-skill-valid", "pi-resource-paths", "pi-mcp-valid", "pi-settings-schema"],
         "Discovers Pi packages and `.pi/` project resources, validates resource "
         "arrays and native skill metadata, and exposes prompts and flat skills "
-        "to content checks. Literal resource-path checks are opt-in. "
+        "to content checks. Literal resource-path and settings schema checks "
+        "are opt-in. "
         "Extensions are never executed and remote packages are not installed.",
     ),
     (
@@ -431,7 +504,6 @@ RULE_GROUPS = [
         "and paths that remain portable across machines. Lockfiles are discovered "
         "recursively for monorepos and the rule auto-enables when one is present.",
     ),
-
 ]
 
 CONTENT_RULE_IDS = [
@@ -959,7 +1031,19 @@ GUIDES = [
     ),
     ("Repository Types", "repo-types.md", "how skillsaw detects what it is linting"),
     ("Skills over MCP", "mcp-skills.md", "fetch and lint the skills an MCP server serves"),
+    (
+        "Ruler and Rulesync",
+        "generators.md",
+        "author rules, generate explicitly, then lint sources and consumer outputs",
+    ),
+    ("Kiro Support", "kiro.md", "native Kiro formats, version boundaries, and static checks"),
     ("CI Integration", "ci.md", "GitHub Actions, GitLab CI, and PR review comments"),
+    (
+        "Claude Code Validator",
+        "claude-validate.md",
+        "where skillsaw overlaps `claude plugin validate`, and the conformance check",
+    ),
+    ("Editor Diagnostics", "editor.md", "install and use the VS Code extension"),
     ("Pre-commit", "pre-commit.md", "run skillsaw as a pre-commit hook"),
     ("CLI Reference", "cli.md", "every command and flag"),
     ("Custom Rules", "custom-rules.md", "write project-local rules in Python"),
@@ -1390,6 +1474,12 @@ def main():
     # Inject stats into index
     inject_stats(docs_dir / "index.md", rules_data)
     print("  index.md (stats injected)")
+
+    # Keep the packaged extension README and the site/llms guides in sync.
+    (docs_dir / "editor.md").write_text(
+        GENERATED_HEADER + (ROOT / "editors/vscode/README.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
     # llms.txt endpoints — generated last: llms-full.txt reads the pages the
     # steps above just wrote to disk.

@@ -8,11 +8,13 @@ from skillsaw.linter import Linter
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.antigravity.mcp_valid import AntigravityMcpValidRule
 from skillsaw.rules.builtin.grok.config_valid import GrokConfigValidRule
+from skillsaw.rules.builtin.zcode.agent_valid import ZCodeAgentValidRule
 from tests.test_integration import copy_fixture
 
 CASES = [
     ("antigravity-mcp-valid", AntigravityMcpValidRule),
     ("grok-config-valid", GrokConfigValidRule),
+    ("zcode-agent-valid", ZCodeAgentValidRule),
 ]
 
 

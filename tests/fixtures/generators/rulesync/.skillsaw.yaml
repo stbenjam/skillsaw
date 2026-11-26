@@ -1,0 +1,5 @@
+version: "0.21.1"
+rulesync-generated: true
+rules:
+  rulesync-source-valid:
+    enabled: true

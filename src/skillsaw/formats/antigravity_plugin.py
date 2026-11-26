@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, NoReturn, Optional, Tuple
 
-from skillsaw.formats.antigravity import PLUGIN_MESSAGE_FIELDS
+from skillsaw.formats.antigravity import PLUGIN_MESSAGE_FIELDS, plugin_field_name
 from skillsaw.utils import read_text
 
 _KNOWN_FIELDS = frozenset(field for field, _, _ in PLUGIN_MESSAGE_FIELDS)
@@ -45,7 +45,11 @@ def _reject_constant(token: str) -> NoReturn:
 
 
 def read_plugin_manifest(path: Path) -> Tuple[Optional[Any], Optional[str]]:
-    """Reject repeated known root fields while allowing discarded metadata."""
+    """Reject repeated known root fields while allowing discarded metadata.
+
+    A field's JSON and proto names are one field, so ``displayName`` beside
+    ``display_name`` is a repeat too.
+    """
     content = read_text(path)
     if content is None:
         return None, f"Failed to read {path.name}"
@@ -55,11 +59,12 @@ def read_plugin_manifest(path: Path) -> Tuple[Optional[Any], Optional[str]]:
         if isinstance(data, _Object):
             seen = set()
             for key, _ in data.pairs:
-                if key not in _KNOWN_FIELDS:
+                field = plugin_field_name(key)
+                if field not in _KNOWN_FIELDS:
                     continue
-                if key in seen:
+                if field in seen:
                     raise ValueError(f'duplicate JSON object key: "{key}"')
-                seen.add(key)
+                seen.add(field)
         return data, None
     except ValueError as error:
         return None, str(error)

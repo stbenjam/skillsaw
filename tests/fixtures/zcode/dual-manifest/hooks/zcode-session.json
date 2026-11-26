@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [{ "type": "process", "command": "tide-report", "args": ["--warm-cache"], "timeoutMs": 2000 }]
+      }
+    ]
+  }
+}

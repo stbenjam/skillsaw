@@ -20,6 +20,7 @@ from .blocks import (
     AgentBlock,
     AgentMemoryBlock,
     AgentMemoryIndexBlock,
+    AgentPluginHooksBlock,
     AgentPluginMcpBlock,
     AgentsMdBlock,
     AntigravityAgentBlock,
@@ -61,6 +62,14 @@ from .blocks import (
     GrokPluginHooksBlock,
     GrokRuleBlock,
     HooksBlock,
+    ZCodeAgentBlock,
+    ZCodeCommandBlock,
+    ZCodeConfigHooksBlock,
+    ZCodeConfigMcpBlock,
+    ZCodeInlineHooksBlock,
+    ZCodeInlineMcpBlock,
+    ZCodeMcpBlock,
+    ZCodePluginHooksBlock,
     InstructionBlock,
     McpBlock,
     McpRegistryNpmPackageBlock,
@@ -95,16 +104,28 @@ from .formats.codex import (
 )
 from .formats.codex_manifest import codex_manifest_view
 from .discovery import AGENT_MEMORY_DIR, AGENT_MEMORY_INDEX
+from .discovery.claude import claude_declared_mcp_files
 from .discovery.excludes import is_root_or_ancestor_excluded
+from .discovery.codex_instructions import probe_file
 from .discovery.opencode import contained_instruction_globs
+from .discovery.kiro import local_reference as kiro_local_reference
+from .blocks.kiro import (
+    KiroJsonAgentBlock,
+    KiroMarkdownAgentBlock,
+    KiroMcpBlock,
+    KiroPromptFileBlock,
+    KiroSteeringBlock,
+)
 from .lint_target import OpenClawPluginNode, OpenClawPluginConfigNode, OpenClawPackageConfigNode
 from .blocks.json_config import OpenClawInlineMcpBlock
 from .formats.openclaw import MANIFEST, contained_file, inline_mcp_servers
+from .discovery.agent_plugins import declared_schema
+from .formats.agent_plugins import HOOKS_VERSION, agent_plugin_schema_id
 from .blocks.pi import PiPackageNode, PiPackageBlock
 from .discovery.pi import package_resources
 from .pi_tree import attach_pi_resources, attach_pi_projects, attach_pi_prompts
 from .goose_tree import attach_goose_recipes
-from .formats import antigravity, devin, grok, muse, cursor
+from .formats import antigravity, devin, grok, muse, cursor, zcode
 from .blocks.cursor import (
     CursorAgentBlock,
     CursorPluginNode,
@@ -125,6 +146,7 @@ from .paths import (
     safe_exists,
     safe_is_dir,
     safe_is_file,
+    safe_is_symlink,
     safe_resolve,
 )
 from .formats.promptfoo import (
@@ -148,6 +170,9 @@ from .lint_target import (
     GrokMarketplaceIndexNode,
     GrokPluginConfigNode,
     GrokPluginNode,
+    ZCodeMarketplaceConfigNode,
+    ZCodePluginConfigNode,
+    ZCodePluginNode,
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
@@ -169,6 +194,8 @@ _CLINE_EXCLUDED_DIRS = frozenset({"workflows", "hooks", "skills"})
 # where to stand aside, so "which loop owns this file" has one answer rather
 # than two that can disagree — and disagreeing drops the file from the tree.
 _EDITOR_GLOBS = (
+    (".kiro", "steering", "**/*.md", "KiroSteeringBlock"),
+    (".kiro", "agents", "**/*.md", "KiroMarkdownAgentBlock"),
     (".cursor", "rules", "**/*.mdc", "CursorRuleBlock"),
     (".cursor", "commands", "**/*.md", "CursorCommandBlock"),
     (".cursor", "agents", "**/*.md", "CursorAgentBlock"),
@@ -245,6 +272,12 @@ class _TreeBuildState:
     repo_root: Path
     seen: Set[Path] = field(default_factory=set)
     seen_roles: Set[Tuple[Path, type]] = field(default_factory=set)
+    # Native roles normally exclude extra prose for the physical file.
+    # Independent generator views reserve only their discovered path, so
+    # explicitly selected aliases can retain different raw/reference views.
+    extra_content_files: Set[Path] = field(default_factory=set)
+    extra_content_paths: Set[Path] = field(default_factory=set)
+    content_alias_files: Set[Path] = field(default_factory=set)
     # Two indexes over ``seen_roles``, written beside it: "is this file
     # already in the tree as hooks / as MCP" is asked once per plugin, and
     # scanning every role on each question is O(plugins x blocks) on a
@@ -280,13 +313,18 @@ class _TreeBuildState:
         resolved = self.resolve_repo_path(p)
         if (
             resolved is None
-            or resolved in self.seen
-            or not safe_exists(resolved)
+            or (
+                resolved in self.seen
+                and (resolved not in self.content_alias_files or p in self.extra_content_paths)
+            )
+            # Inventory nodes may represent directories (Pi extensions do),
+            # but special files must never reach a blocking prose read.
+            or not (safe_is_file(resolved) or safe_is_dir(resolved))
             or self.context.is_path_excluded(p)
         ):
             return
         self.seen.add(resolved)
-        self._record_role(resolved, block_cls)
+        self._record_role(resolved, block_cls, p)
         block = block_cls(path=p)
         block.plugin_owner = owner
         block.content_suppressed = content_suppressed
@@ -299,15 +337,35 @@ class _TreeBuildState:
         block_cls: type,
         owner: Path | None = None,
         content_suppressed: bool = False,
+        preserve_content_aliases: bool = False,
+        reserve_extra_content: bool = True,
+        file_inventory: bool = False,
     ) -> Optional[LintTarget]:
-        """Attach a structured document once for each parser role.
+        """Attach a document once for each parser role.
 
         A JSON document may legitimately contain both hooks and MCP servers.
         Path-only deduplication would hide whichever parser runs second, while
         role-aware deduplication still prevents duplicate findings when two
         discovery paths select the same parser.
+
+        ``preserve_content_aliases`` keeps separately configured prose views
+        available without reattaching this native path as generic prose.
+        An inventory-only role sets ``reserve_extra_content=False`` because
+        it does not replace a configured prose view of the file.
+        ``file_inventory`` preserves each lexical entry, including contained
+        dangling file links, so filename/read diagnostics survive aliases.
+        It does not admit other non-file entries.
         """
-        if self._claim_parser_role(p, block_cls) is None:
+        if (
+            self._claim_parser_role(
+                p,
+                block_cls,
+                preserve_content_aliases,
+                reserve_extra_content,
+                file_inventory,
+            )
+            is None
+        ):
             return None
         block = block_cls(path=p)
         block.plugin_owner = owner
@@ -328,35 +386,75 @@ class _TreeBuildState:
         parent.children.append(block)
         return block
 
-    def _claim_parser_role(self, p: Path, block_cls: type) -> Optional[Path]:
+    def add_codex_config(self, parent: LintTarget, path: Path) -> Optional[CodexConfigBlock]:
+        """Attach a project config with all of its structured roles."""
+        return _add_codex_config(self, parent, path)
+
+    def add_codex_hooks(self, parent: LintTarget, path: Path) -> None:
+        """Attach project JSON hooks under the shared ownership and deduplication rules."""
+        _add_project_hooks(self, parent, path, CodexHooksBlock)
+
+    def _claim_parser_role(
+        self,
+        p: Path,
+        block_cls: type,
+        preserve_content_aliases: bool = False,
+        reserve_extra_content: bool = True,
+        file_inventory: bool = False,
+    ) -> Optional[Path]:
         """Claim one parser role over *p*, or ``None`` if it is not ours.
 
-        Containment, existence, exclusion and role deduplication, in that
+        Containment, exclusion, file kind and role deduplication, in that
         order — the contract both attachment paths share.
         """
         resolved = self.resolve_repo_path(p)
         if resolved is None:
             return None
-        role = (resolved, block_cls)
-        if (
-            role in self.seen_roles
-            or not safe_is_file(resolved)
-            or self.context.is_path_excluded(p)
+        role_path = p if file_inventory else resolved
+        role = (role_path, block_cls)
+        if self.context.is_path_excluded(p):
+            return None
+        if not safe_is_file(resolved) and not (
+            file_inventory and safe_is_symlink(p) and not safe_exists(resolved)
         ):
+            return None
+        if preserve_content_aliases:
+            # A source may already have a native instruction/config role.
+            # Keep every attached lexical path reserved, but release its
+            # physical identity so a configured alias can retain its own
+            # relative references and raw prose view.
+            self.content_alias_files.add(resolved)
+            self.extra_content_files.discard(resolved)
+        if reserve_extra_content:
+            self.extra_content_paths.add(p)
+        if role in self.seen_roles:
             return None
         # seen_roles only — never the path-only ``seen`` set: a manifest can
         # declare ``hooks``/``mcpServers`` at any in-plugin markdown file,
         # and poisoning ``seen`` would drop that file from every content
         # rule that attaches later.
-        self._record_role(resolved, block_cls)
+        self._record_role(resolved, block_cls, p, reserve_extra_content, role_path=role_path)
         return resolved
 
-    def _record_role(self, resolved: Path, block_cls: type) -> None:
-        """Record one attached role, and index it by the two roles asked about."""
-        self.seen_roles.add((resolved, block_cls))
-        # Antigravity's named-hook dialect must not suppress another host's
-        # parser. Shared commands are deduplicated by the hook scanners.
-        if issubclass(block_cls, HooksBlock) and block_cls is not AntigravityHooksBlock:
+    def _record_role(
+        self,
+        resolved: Path,
+        block_cls: type,
+        path: Path,
+        reserve_extra_content: bool = True,
+        *,
+        role_path: Optional[Path] = None,
+    ) -> None:
+        """Index an attached role and the extra-prose view it replaces."""
+        self.seen_roles.add((role_path if role_path is not None else resolved, block_cls))
+        if reserve_extra_content:
+            self.extra_content_paths.add(path)
+            if resolved not in self.content_alias_files:
+                self.extra_content_files.add(resolved)
+        # A distinct dialect (Antigravity's named hooks, Agent Plugins'
+        # flat commands) must not suppress another host's parser. Shared
+        # commands are deduplicated by the hook scanners.
+        if issubclass(block_cls, HooksBlock) and not block_cls.distinct_dialect:
             self.hooks_paths.add(resolved)
         elif issubclass(block_cls, McpBlock):
             self.mcp_paths.add(resolved)
@@ -432,8 +530,10 @@ def _attached_as_hooks(state: _TreeBuildState, path: Path) -> bool:
 
     Every hooks class is read by the same security rules, so which one a
     file arrived under does not matter here — a second block for it would
-    report each of its commands twice. The generic root attach and the
-    Claude branch both run before a Codex manifest's declared files, and a
+    report each of its commands twice. A ``distinct_dialect`` class is
+    not indexed: its reading stands in for no other host's, so this never
+    returns True for it. The generic root attach and the Claude branch both
+    run before a Codex manifest's declared files, and a
     manifest may name any of the files they placed: the project layer's
     ``.codex/hooks.json``, the conventional ``hooks/hooks.json``, or
     another tool's ``.muse/hooks.json`` or ``.cursor/hooks.json``.
@@ -462,19 +562,21 @@ def _add_project_hooks(
     path: Path,
     block_cls: type,
 ) -> None:
-    """Keep the first conventional parser and Antigravity's distinct reading.
+    """Keep the first conventional parser, plus any ``distinct_dialect`` reading.
 
     Symlinked files can serve several hosts. Conventional readers retain
-    their first-host ownership; Antigravity also attaches because its named
-    hooks can expose additional handlers. The security rules scan the union
+    their first-host ownership; a distinct dialect (Antigravity's named
+    hooks) also attaches because it can expose additional handlers. The security rules scan the union
     of those readings and report shared handlers once.
     """
-    if block_cls is not AntigravityHooksBlock and _attached_as_hooks(state, path):
+    if not block_cls.distinct_dialect and _attached_as_hooks(state, path):
         return
     state.add_parser_block(root, path, block_cls)
 
 
-def _add_codex_config(state: _TreeBuildState, root: LintTarget, path: Path) -> None:
+def _add_codex_config(
+    state: _TreeBuildState, root: LintTarget, path: Path
+) -> Optional[CodexConfigBlock]:
     """Attach a ``.codex/config.toml``, and its ``[hooks]`` tables under it.
 
     Two committed executable surfaces in one file. Codex reads lifecycle
@@ -496,6 +598,16 @@ def _add_codex_config(state: _TreeBuildState, root: LintTarget, path: Path) -> N
     report the failure on — a config Codex cannot read stops it starting in
     the project at all.
     """
+    candidate = probe_file(
+        path,
+        state.context.root_path,
+        resolve=state.context.resolve_path,
+        is_excluded=state.context.is_path_excluded,
+    )
+    if candidate is None or candidate.issue:
+        return
+    if not state.context.lint_external_content and state.context.is_externally_sourced(path):
+        return
     config = state.add_parser_block(root, path, CodexConfigBlock)
     if config is None:
         return
@@ -505,14 +617,15 @@ def _add_codex_config(state: _TreeBuildState, root: LintTarget, path: Path) -> N
     # twice. ``hooks.json`` and ``config.toml`` are two paths, so a directory
     # carrying both keeps a block for each — Codex merges them.
     if _attached_as_hooks(state, path):
-        return
+        return config
     data, error = config.raw_data, config.parse_error
     document = codex_config_hooks(data) if data is not None else None
     if error is None and document is None:
-        return
+        return config
     state.attach_prebuilt(
         config, CodexConfigHooksBlock(path=path, inline_data=document, toml_error=error)
     )
+    return config
 
 
 def _claim_attached_hooks(
@@ -813,6 +926,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         parent: (
             CodexPluginConfigNode
             | GrokPluginConfigNode
+            | ZCodePluginConfigNode
             | AgentPluginConfigNode
             | AntigravityPluginConfigNode
         ),
@@ -894,12 +1008,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if _contained(readme):
             state.add_block(parent, readme, ReadmeBlock, owner=owner)
 
-    # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
+    # --- Instruction files; defer semantic owners to their attachment passes ---
     # Only Devin Desktop reads ``agents.md`` case-insensitively, so that
     # spelling is an instruction file only where the repository carries other
     # Devin evidence; elsewhere ``docs/agents.md`` is a documentation page.
     devin_desktop = RepositoryType.DEVIN in context.repo_types
+    codex_overrides: list[Path] = []
     for f in context.instruction_files:
+        if f.name == "AGENTS.override.md":
+            candidate = probe_file(f, context.root_path, resolve=resolve, is_excluded=_is_excluded)
+            if candidate is None or candidate.issue:
+                continue
+            codex_overrides.append(f)
+            continue
         if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
             continue
         if not devin_desktop and devin.is_desktop_agents_spelling(f.name):
@@ -1088,8 +1209,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # ``RepositoryType.CODEX_PROJECT`` detection reads: detection agrees with
     # attachment.
     for codex_dir in context.agent_tool_dirs(CODEX_DIR_NAME):
-        _add_project_hooks(state, root, codex_dir / CODEX_HOOKS_FILENAME, CodexHooksBlock)
-        _add_codex_config(state, root, codex_dir / CODEX_CONFIG_FILENAME)
+        state.add_codex_hooks(root, codex_dir / CODEX_HOOKS_FILENAME)
+        state.add_codex_config(root, codex_dir / CODEX_CONFIG_FILENAME)
 
     for muse_dir in context.agent_tool_dirs(muse.TOOL_DIR_NAME):
         _add_project_hooks(state, root, muse_dir / muse.HOOKS_FILENAME, MuseHooksBlock)
@@ -1118,6 +1239,20 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # there is no ``.grok/mcp.json`` — so it is attached under its own
         # parser role rather than as prose, and one block per resolved file.
         state.add_parser_block(root, grok_dir / grok.CONFIG_FILENAME, GrokConfigBlock)
+
+    # ZCode reads ``.zcode/`` in every directory from the session's working
+    # directory up to the git root, so a package's own layer is live and the
+    # walk-backed lookup finds it. Commands are read recursively and agents
+    # flat; ``skills/`` arrives through ``CONVENTIONAL_SKILL_DIRS`` and
+    # ``NESTED_TOOL_SKILL_DIRS``. ``config.json`` is one file carrying two
+    # parser roles, hooks and MCP servers.
+    for zcode_dir in context.agent_tool_dirs(zcode.TOOL_DIR_NAME):
+        _add_glob(root, zcode_dir / zcode.COMMANDS_DIR_NAME, "**/*.md", ZCodeCommandBlock)
+        for pattern in zcode.AGENT_GLOBS:
+            _add_glob(root, zcode_dir / zcode.AGENTS_DIR_NAME, pattern, ZCodeAgentBlock)
+        config_json = zcode_dir / zcode.CONFIG_FILENAME
+        state.add_parser_block(root, config_json, ZCodeConfigHooksBlock)
+        state.add_parser_block(root, config_json, ZCodeConfigMcpBlock)
 
     # Antigravity reads a customization root — ``.agents/``, ``.agent/``,
     # ``_agents/`` or ``_agent/`` — walking *up* from the directory it was
@@ -1212,9 +1347,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         a connection, and the local checkout contains no stable content to
         inspect for them.
 
-        This runs after every ordinary content attachment. A configured glob
-        may select a skill, command, editor rule, or OpenCode agent, and its
-        structural owner must claim it before path-only content deduplication.
+        A configured glob may also select a skill, command, editor rule, or
+        OpenCode agent. Those structural owners attach first and keep their
+        roles through path-only content deduplication.
         """
         searched: Set[Tuple[Path, str]] = set()
         searches: List[Tuple[Path, str]] = []
@@ -1333,10 +1468,34 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             _add_glob(root, devin_dir / "rules", "**/*.md", DevinRuleBlock)
             state.add_block(root, devin_dir / "global_rules.md", DevinGlobalRuleBlock)
 
-    kiro_steering = context.root_path / ".kiro" / "steering"
-    if kiro_steering.is_dir():
-        for md in sorted(kiro_steering.glob("*.md")):
-            state.add_block(root, md, InstructionBlock)
+    def _kiro_prompt_file(agent: KiroJsonAgentBlock) -> Optional[Path]:
+        prompt = (agent.raw_data or {}).get("prompt")
+        if not isinstance(prompt, str) or not prompt.startswith("file://"):
+            return None
+        target = kiro_local_reference(
+            prompt[7:],
+            agent.path.parent,
+            repo_root,
+            resolve=context.resolve_path,
+            is_excluded=context.is_path_excluded,
+        )
+        return target if target is not None and safe_is_file(target) else None
+
+    kiro_agents = []
+    for kiro_dir in context.agent_tool_dirs(".kiro"):
+        _add_glob(root, kiro_dir / "steering", "**/*.md", KiroSteeringBlock)
+        for agent_file in _readable_matches(kiro_dir / "agents", "**/*.json"):
+            agent = state.add_parser_block(root, agent_file, KiroJsonAgentBlock)
+            if agent is not None:
+                kiro_agents.append(agent)
+        # A Markdown file a JSON agent names as its ``file://`` prompt is that
+        # agent's prompt, not an agent of its own; the prompt pass below
+        # attaches it once the specific content owners have claimed theirs.
+        prompt_files = {_kiro_prompt_file(agent) for agent in kiro_agents}
+        for match in _readable_matches(kiro_dir / "agents", "**/*.md"):
+            if context.resolve_path(match) not in prompt_files and safe_is_file(match):
+                state.add_block(root, match, KiroMarkdownAgentBlock)
+        state.add_parser_block(root, kiro_dir / "settings" / "mcp.json", KiroMcpBlock)
 
     state.add_block(root, context.root_path / ".windsurfrules", InstructionBlock)
 
@@ -1428,12 +1587,17 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for catalog in context.cursor_marketplace_paths():
         root.children.append(CursorMarketplaceBlock(path=catalog))
 
+    for catalog in context.zcode_marketplace_paths():
+        if not _is_excluded(catalog):
+            root.children.append(ZCodeMarketplaceConfigNode(path=catalog))
+
     # --- Plugins (build first so skills can nest inside them) ---
     cursor_plugin_nodes = {}
     plugin_nodes: dict[Path, PluginNode] = {}
     codex_plugin_nodes: dict[Path, CodexPluginNode] = {}
     openclaw_plugin_nodes: dict[Path, OpenClawPluginNode] = {}
     grok_plugin_nodes: dict[Path, GrokPluginNode] = {}
+    zcode_plugin_nodes: dict[Path, ZCodePluginNode] = {}
     antigravity_plugin_nodes: dict[Path, AntigravityPluginNode] = {}
     pi_package_nodes: dict[Path, PiPackageNode] = {}
     agent_plugin_nodes: dict[Path, AgentPluginNode] = {}
@@ -1458,6 +1622,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *context.plugins,
         *context.codex_plugins,
         *context.grok_plugins,
+        *context.zcode_plugins,
         *context.openclaw_plugin_roots(),
         *context.cursor_plugin_roots(),
         *context.antigravity_plugins,
@@ -1465,6 +1630,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *context.pi_discovery_roots(),
         *sorted(p for p in context._codex_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._grok_claim_set() if not context.is_path_excluded(p)),
+        *sorted(p for p in context._zcode_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._antigravity_claim_set() if not context.is_path_excluded(p)),
         *sorted(p for p in context._agent_plugin_claim_set() if not context.is_path_excluded(p)),
     ):
@@ -1495,7 +1661,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # ``.agents/plugins/<name>/`` would be discarded as generated output
         # in every APM repository with a Codex target.
         if _is_in_compiled_dir(plugin_path) and not (
-            prov.codex or prov.grok or prov.antigravity or prov.openclaw or is_cursor
+            prov.codex or prov.grok or prov.zcode or prov.antigravity or prov.openclaw or is_cursor
         ):
             continue
         resolved_plugin = resolve(plugin_path)
@@ -1518,6 +1684,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         elif resolved_plugin == root.resolved_path and (
             prov.codex
             or prov.grok
+            or prov.zcode
             or prov.antigravity
             or is_openclaw
             or is_agent_plugin
@@ -1534,6 +1701,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         elif prov.grok:
             container = GrokPluginNode(path=plugin_path)
             grok_plugin_nodes[resolved_plugin] = container
+        elif prov.zcode:
+            container = ZCodePluginNode(path=plugin_path)
+            zcode_plugin_nodes[resolved_plugin] = container
         elif prov.antigravity:
             container = AntigravityPluginNode(path=plugin_path)
             antigravity_plugin_nodes[resolved_plugin] = container
@@ -1707,6 +1877,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             native_mcp = plugin_path / ".mcp.json"
             if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
                 state.add_block(container, native_mcp, McpBlock, owner=resolved_plugin)
+            for declared_mcp in claude_declared_mcp_files(plugin_path):
+                if not _shadowed_by_agent_plugin_mcp(declared_mcp, agent_plugin_mcp):
+                    state.add_parser_block(container, declared_mcp, McpBlock, owner=resolved_plugin)
         # settings.json is Claude-side configuration with no Codex
         # counterpart: attached only for Claude-style directories, keeping
         # the generic attachment path away from content a hostile
@@ -1914,6 +2087,91 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 node.children.append(inline_mcp_block)
             container.children.append(node)
 
+        # ZCode manifest cluster, for any directory ZCode claims (dual
+        # directories hang it off their PluginNode). Not gated on the
+        # manifest existing: a catalog may list a directory without one, and
+        # the node is still where the manifest rule looks.
+        if prov.zcode:
+            manifest = zcode.zcode_manifest_path(plugin_path) or plugin_path.joinpath(
+                zcode.PLUGIN_DIR_NAME, zcode.PLUGIN_MANIFEST
+            )
+            node = ZCodePluginConfigNode(path=manifest)
+            node.plugin_owner = resolved_plugin
+            # Declared ``commands`` and ``agents`` directories load *in
+            # addition to* the conventional pair ``_add_plugin_prose``
+            # attached above. ZCode reads commands recursively, so the
+            # conventional ``commands/`` is walked again for its nested files;
+            # ``add_block`` dedupes the flat ones. Agents are read flat.
+            for field_name, prose_cls, pattern in (
+                ("commands", CommandBlock, "**/*.md"),
+                ("agents", AgentBlock, "*.md"),
+            ):
+                roots = zcode.zcode_declared_paths(plugin_path, field_name, want_dir=True)
+                conventional = plugin_path / field_name
+                if field_name == "commands" and safe_is_dir(conventional):
+                    roots = [conventional, *roots]
+                for declared_dir in roots:
+                    for md in _readable_matches(declared_dir, pattern):
+                        if _inside_plugin(md, resolved_plugin) and safe_is_file(md):
+                            state.add_block(container, md, prose_cls, owner=resolved_plugin)
+            # Object-form ``commands`` names each command's ``source`` file,
+            # which ZCode materializes as a command; it is prose like any
+            # other. Inline ``content`` lives in the manifest JSON and is not
+            # attached.
+            for command_source in zcode.zcode_command_source_files(plugin_path):
+                if _inside_plugin(command_source, resolved_plugin):
+                    state.add_block(container, command_source, CommandBlock, owner=resolved_plugin)
+            # Whichever host already reads the conventional files keeps its
+            # block class: one block per file, so the security rules report
+            # each command once, and a dual-manifest plugin's established
+            # results stand.
+            if prov.claude:
+                hooks_cls, mcp_cls = ClaudeHooksBlock, McpBlock
+            elif prov.codex:
+                hooks_cls, mcp_cls = CodexHooksBlock, McpBlock
+            elif prov.grok:
+                hooks_cls, mcp_cls = GrokPluginHooksBlock, GrokMcpBlock
+            else:
+                hooks_cls, mcp_cls = ZCodePluginHooksBlock, ZCodeMcpBlock
+            conventional_hooks = plugin_path.joinpath(*zcode.CONVENTIONAL_HOOKS)
+            if not _attached_as_hooks(state, conventional_hooks):
+                _add_contained_plugin_block(
+                    node, conventional_hooks, hooks_cls, owner=resolved_plugin
+                )
+            # A declared file or an inline payload is ZCode's whatever else
+            # claims the directory: only the ZCode manifest names it.
+            for declared_hooks in zcode.zcode_declared_hook_files(plugin_path):
+                if not _inside_plugin(declared_hooks, resolved_plugin):
+                    continue
+                if _claim_attached_hooks(state, root, declared_hooks, resolved_plugin):
+                    continue
+                state.add_parser_block(
+                    node, declared_hooks, ZCodePluginHooksBlock, owner=resolved_plugin
+                )
+            for inline_hooks in zcode.zcode_inline_hooks(plugin_path):
+                inline_hooks_block = ZCodeInlineHooksBlock(path=manifest, inline_data=inline_hooks)
+                inline_hooks_block.plugin_owner = resolved_plugin
+                node.children.append(inline_hooks_block)
+            native_mcp = plugin_path / zcode.CONVENTIONAL_MCP
+            if not (
+                _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp)
+                or _attached_as_mcp(state, native_mcp)
+            ):
+                _add_contained_plugin_block(node, native_mcp, mcp_cls, owner=resolved_plugin)
+            for declared_mcp in zcode.zcode_declared_mcp_files(plugin_path):
+                if (
+                    not _inside_plugin(declared_mcp, resolved_plugin)
+                    or _shadowed_by_agent_plugin_mcp(declared_mcp, agent_plugin_mcp)
+                    or _attached_as_mcp(state, declared_mcp)
+                ):
+                    continue
+                state.add_parser_block(node, declared_mcp, ZCodeMcpBlock, owner=resolved_plugin)
+            for inline_mcp in zcode.zcode_inline_mcp(plugin_path):
+                inline_mcp_block = ZCodeInlineMcpBlock(path=manifest, inline_data=inline_mcp)
+                inline_mcp_block.plugin_owner = resolved_plugin
+                node.children.append(inline_mcp_block)
+            container.children.append(node)
+
         # Agent Plugins manifest cluster. A forced ``--type agent-plugin``
         # seeds this even when plugin.json is absent, so the validity rule can
         # report the missing entrypoint. The optional mcp.json is attached
@@ -1928,6 +2186,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 AgentPluginMcpBlock,
                 owner=resolved_plugin,
             )
+            hooks_path = plugin_path / "hooks.json"
+            if (
+                (safe_exists(hooks_path) or safe_is_symlink(hooks_path))
+                and not context.is_path_excluded(hooks_path)
+                and declared_schema(node.path, plugin_path, "plugin", resolve=resolve)
+                == agent_plugin_schema_id(HOOKS_VERSION, "plugin")
+            ):
+                resolved_hooks = contained_resolve(hooks_path, resolved_plugin, resolve)
+                if resolved_hooks is None or not safe_is_file(resolved_hooks):
+                    node.hooks_location_error = (
+                        "hooks.json must resolve to a regular file inside the plugin root"
+                    )
+                else:
+                    # A nested plugin can share this file through a symlink;
+                    # the block attaches once, but each declaring plugin's
+                    # commands are checked against its own root.
+                    node.hooks_file = resolved_hooks
+                    state.add_parser_block(
+                        node, hooks_path, AgentPluginHooksBlock, owner=resolved_plugin
+                    )
             container.children.append(node)
 
         # Antigravity manifest cluster, for any directory Antigravity
@@ -1997,6 +2275,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 or plugin_nodes.get(candidate)
                 or codex_plugin_nodes.get(candidate)
                 or grok_plugin_nodes.get(candidate)
+                or zcode_plugin_nodes.get(candidate)
                 or openclaw_plugin_nodes.get(candidate)
                 or antigravity_plugin_nodes.get(candidate)
                 or pi_package_nodes.get(candidate)
@@ -2119,6 +2398,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # Those semantic owners keep the single body and its parser role.
     attach_pi_prompts(state)
 
+    # Generator parser views must not replace native consumers, whose
+    # relative references and decoded content can differ from the source.
+    from .lint_tree_generators import (
+        attach_generator_configs,
+        attach_generator_sources,
+        attach_rulesync_claude_rules,
+    )
+
+    attach_rulesync_claude_rules(state, _readable_matches)
+    # Keep the root consumer's existing structural checks available even
+    # when APM owns its prose, and without independently walking it in a rule.
+    from .claude_tree import attach_claude_rule_files
+
+    claude_dir = (
+        context.root_path if context.root_path.name == ".claude" else context.root_path / ".claude"
+    )
+    attach_claude_rule_files(state, claude_dir / "rules", _readable_matches)
+    attach_generator_sources(state)
+    attach_generator_configs(state)
+
     # --- Extra content paths from config ---
     # User-configured content paths plus globs contributed by detected
     # plugin repo types; the ``seen`` set dedupes any overlap.
@@ -2137,9 +2436,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             if not extra.is_file():
                 continue
             extra_resolved = resolve(extra)
-            if extra_resolved is not None and any(
-                claimed == extra_resolved for claimed, _ in state.seen_roles
-            ):
+            if extra in state.extra_content_paths or extra_resolved in state.extra_content_files:
                 # Already attached under a structured parser role (hooks,
                 # MCP): re-attaching it as prose would make every
                 # content-quality rule lint structured config as text.
@@ -2150,6 +2447,30 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # original semantic owner wins when a path is also a skill, command,
     # agent, editor rule, README, or plugin-contributed content block.
     _add_opencode_instructions()
+    # Specific content owners claim first, so a shared prompt already
+    # attached as steering/skill/instructions is never counted twice.
+    for agent in kiro_agents:
+        target = _kiro_prompt_file(agent)
+        if target is not None:
+            state.add_block(root, target, KiroPromptFileBlock)
+
+    # Overrides can also be plugin prose or configured OpenCode instructions.
+    # Let those existing roles attach first so they keep their parser and budget.
+    if codex_overrides:
+        from .codex_instructions_tree import attach_instruction_content
+
+        attach_instruction_content(
+            state,
+            codex_overrides,
+            suppressed=frozenset(
+                path for path in codex_overrides if _is_apm_compiled_github(path.parent)
+            ),
+        )
+
+    if context.codex_instructions is not None:
+        from .codex_instructions_tree import attach_codex_instructions
+
+        attach_codex_instructions(state)
 
     external_roots = context.externally_sourced_roots()
 
@@ -2183,6 +2504,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     )
     _tag_and_prune_external(root, root.externally_sourced)
     root.set_parents()
+    from .generator_copies import tag_generator_copies
+
+    tag_generator_copies(context, root)
     nodes = list(root.walk())
     logger.info("Built lint tree: %d nodes", len(nodes))
     return root

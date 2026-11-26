@@ -69,12 +69,16 @@ _PLACEHOLDER_IDENTIFIERS: Mapping[str, str] = MappingProxyType(
         "mcpb": "https://example.com/server.mcpb",
     }
 )
+# GitLab nests projects under groups and subgroups, so it accepts two or more
+# path segments; GitHub accepts exactly owner/repo.
 _REPOSITORY_URLS: Mapping[str, re.Pattern] = MappingProxyType(
     {
-        source: re.compile(
-            rf"\Ahttps?://(?:www\.)?{source}\.com/" r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?\Z"
-        )
-        for source in ("github", "gitlab")
+        "github": re.compile(
+            r"\Ahttps?://(?:www\.)?github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?\Z"
+        ),
+        "gitlab": re.compile(
+            r"\Ahttps?://(?:www\.)?gitlab\.com/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+/?\Z"
+        ),
     }
 )
 
@@ -290,7 +294,10 @@ def _repository_url_is_official_shape(repository: object) -> bool:
     if not isinstance(source, str) or not isinstance(url, str) or not is_uri(url):
         return True
     pattern = _REPOSITORY_URLS.get(source)
-    return pattern is not None and pattern.fullmatch(url) is not None
+    if pattern is None or pattern.fullmatch(url) is None:
+        return False
+    # GitLab reserves "-" as the separator before project routes (/-/tree).
+    return source != "gitlab" or "/-/" not in url + "/"
 
 
 def _schema_error_is_owned(

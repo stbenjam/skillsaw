@@ -83,10 +83,10 @@ your instructions, the more likely you'll receive the output you want."*
   LLaMA-1/2, GPT-3.5/4](https://arxiv.org/abs/2312.16171) (arXiv:2312.16171,
   Dec 2023) — Principles #1 and #6
 - [Anthropic Prompting Best
-  Practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct)
+  Practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
   — "Be clear and direct"
 - [OpenAI Prompt Engineering
-  Guide](https://platform.openai.com/docs/guides/prompt-engineering) —
+  Guide](https://developers.openai.com/api/docs/guides/prompt-engineering) —
   "Write clear instructions"
 
 

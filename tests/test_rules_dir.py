@@ -100,6 +100,9 @@ def test_invalid_yaml_frontmatter(dot_claude_with_rules):
     assert len(violations) == 1
     assert violations[0].severity == Severity.ERROR
     assert "Invalid YAML" in violations[0].message
+    # The EOF mark is on the last YAML line or just after it, depending on
+    # whether PyYAML uses its Python or LibYAML scanner.
+    assert violations[0].line in {2, 3}
 
 
 def test_unterminated_frontmatter(dot_claude_with_rules):
@@ -327,3 +330,47 @@ def test_linting_dot_claude_directly(temp_dir):
     violations = rule.check(context)
     assert len(violations) == 1
     assert "Non-markdown" in violations[0].message
+
+
+@pytest.mark.parametrize("excluded", [".claude", ".claude/rules", ".claude/rules/backend"])
+def test_rule_inventory_honors_excluded_ancestors(dot_claude_with_rules, excluded):
+    _write_rule(dot_claude_with_rules, "bad.md", "---\npaths: false\n---\n", subdir="backend")
+    _write_rule(dot_claude_with_rules, "notes.txt", "Deployment notes.\n", subdir="backend")
+    context = RepositoryContext(dot_claude_with_rules)
+    context.exclude_patterns.append(excluded)
+    context.apply_excludes()
+    assert RulesValidRule().check(context) == []
+
+
+@pytest.mark.parametrize("missing", [True, False])
+def test_rule_inventory_contains_symlink_files(dot_claude_with_rules, tmp_path, missing):
+    outside = tmp_path / "external.md"
+    if not missing:
+        outside.write_text("---\npaths: false\n---\n")
+    (dot_claude_with_rules / ".claude/rules/external.md").symlink_to(outside)
+    assert RulesValidRule().check(RepositoryContext(dot_claude_with_rules)) == []
+
+
+def test_rule_inventory_skips_non_regular_files(dot_claude_with_rules):
+    import os
+
+    from skillsaw.blocks.claude_rules import ClaudeRuleFileNode
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("requires named pipes")
+    path = dot_claude_with_rules / ".claude/rules/pipe.md"
+    os.mkfifo(path)
+    path.with_name("alias.md").symlink_to(path.name)
+    assert not RepositoryContext(dot_claude_with_rules).lint_tree.find(ClaudeRuleFileNode)
+
+
+def test_rule_inventory_keeps_explicit_apm_output_validation(dot_claude_with_rules):
+    root = dot_claude_with_rules
+    (root / "apm.yml").write_text("name: policy\nversion: 1.0.0\ntargets: [claude]\n")
+    (root / ".apm/instructions").mkdir(parents=True)
+    _write_rule(root, "bad.md", "---\npaths: false\n---\n")
+    context = RepositoryContext(root)
+    assert context.in_apm_compiled_dir(root / ".claude/rules")
+    found = RulesValidRule().check(context)
+    assert len(found) == 1
+    assert "must be a list" in found[0].message

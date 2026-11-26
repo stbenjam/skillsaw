@@ -56,10 +56,10 @@ your instructions, the more likely you'll receive the output you want."*
   LLaMA-1/2, GPT-3.5/4](https://arxiv.org/abs/2312.16171) (arXiv:2312.16171,
   Dec 2023) — Principles #1 and #6
 - [Anthropic Prompting Best
-  Practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct)
+  Practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
   — "Be clear and direct"
 - [OpenAI Prompt Engineering
-  Guide](https://platform.openai.com/docs/guides/prompt-engineering) —
+  Guide](https://developers.openai.com/api/docs/guides/prompt-engineering) —
   "Write clear instructions"
 
 ---
@@ -86,10 +86,10 @@ line must earn its place."*
   Tokens](https://arxiv.org/abs/2402.14848) (arXiv:2402.14848, ACL 2024) —
   Reasoning degrades at ~3,000 prompt tokens
 - [Anthropic: Effective Context Engineering for AI
-  Agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  Agents](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)
   (2025) — "Keep your context informative, yet tight"
 - [Claude Code Best
-  Practices](https://docs.anthropic.com/en/docs/claude-code/best-practices) —
+  Practices](https://code.claude.com/docs/en/best-practices) —
   "Every line must earn its place"
 
 ---
@@ -122,7 +122,7 @@ routine instructions at line 47.
   Models](https://arxiv.org/abs/2406.15981) (arXiv:2406.15981, Jun 2024) —
   Confirms primacy and recency biases analogous to human cognition
 - Chroma Research, [Context Rot: How Increasing Input Tokens Impacts LLM
-  Performance](https://research.trychroma.com/context-rot) (Jul 2025) — Tested
+  Performance](https://www.trychroma.com/research/context-rot) (Jul 2025) — Tested
   18 frontier models, confirms lost-in-the-middle across all of them
 
 ---
@@ -148,11 +148,11 @@ instructions wastes context tokens and adds no reliability.
   Tokens](https://arxiv.org/abs/2402.14848) — Every redundant instruction
   consumes context budget
 - [Anthropic: Effective Context
-  Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  Engineering](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)
   — "One of the most common failure modes we see is bloated tool sets" — applies
   equally to bloated instructions
 - [Dotzlaw: Claude Code
-  Hooks](https://www.dotzlaw.com/insights/claude-hooks/) — "CLAUDE.md
+  Hooks](https://dotzlaw.com/insights/claude-hooks/) — "CLAUDE.md
   instructions are advisory… Hooks are enforcement"
 
 ---
@@ -221,7 +221,7 @@ instructions that tell the model what not to do."*
   Need](https://arxiv.org/abs/2312.16171) — Principle #4: "Employ affirmative
   directives"
 - [Anthropic Prompting Best
-  Practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct)
+  Practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
   — "Positive examples are more effective"
 
 ---
@@ -246,7 +246,7 @@ comprehension. The threshold is configurable via the `max-tokens` parameter.
   Middle](https://arxiv.org/abs/2307.03172) — Attention degrades within long
   contiguous blocks
 - Chroma, [Context
-  Rot](https://research.trychroma.com/context-rot) — Attention dilution is
+  Rot](https://www.trychroma.com/research/context-rot) — Attention dilution is
   quadratic in token count
 - [Pinecone: Chunking Strategies for LLM
   Applications](https://www.pinecone.io/learn/chunking-strategies/) — 512 tokens
@@ -305,10 +305,10 @@ belong in hooks.
 **References:**
 
 - [Dotzlaw: Claude Code Hooks: The Deterministic Control
-  Layer](https://www.dotzlaw.com/insights/claude-hooks/) — "Unlike CLAUDE.md
+  Layer](https://dotzlaw.com/insights/claude-hooks/) — "Unlike CLAUDE.md
   instructions which are advisory, hooks are deterministic"
 - [Claude Code
-  Security](https://docs.anthropic.com/en/docs/claude-code/security) — Hooks
+  Security](https://code.claude.com/docs/en/security) — Hooks
   provide deterministic enforcement
 - [aitmpl.com: Block API Keys & Secrets from Your Commits with Claude Code
   Hooks](https://aitmpl.com/blog/security-hooks-secrets/) — "CLAUDE.md rules
@@ -344,7 +344,7 @@ strongest predictors of prompt quality.
   Guide](https://services.google.com/fh/files/misc/gemini_for_workspace_prompt_guide_october_2024_digital_final.pdf)
   — "Always include a verb or command"
 - [OpenAI Prompt Engineering
-  Guide](https://platform.openai.com/docs/guides/prompt-engineering) — "Specify
+  Guide](https://developers.openai.com/api/docs/guides/prompt-engineering) — "Specify
   the steps required to complete a task"
 - [IBM Prompt Engineering
   Techniques](https://www.ibm.com/think/topics/prompt-engineering-techniques) —
@@ -375,10 +375,10 @@ Markdown headings are the idiomatic delimiter for instruction files.
   Processing](https://www.nngroup.com/articles/chunking/) — "Presenting content
   in chunks makes scanning easier and improves comprehension"
 - [OpenAI Prompt Engineering
-  Guide](https://platform.openai.com/docs/guides/prompt-engineering) — "Use
+  Guide](https://developers.openai.com/api/docs/guides/prompt-engineering) — "Use
   delimiters to clearly indicate distinct parts"
 - [Claude Code Best
-  Practices](https://docs.anthropic.com/en/docs/claude-code/best-practices) —
+  Practices](https://code.claude.com/docs/en/best-practices) —
   Recommends progressive disclosure with clear headings
 
 ---
@@ -401,7 +401,7 @@ Credentials), mapping to OWASP Top Ten 2021 A07.
 - [OWASP Secrets Management Cheat
   Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)
 - [Claude Code
-  Security](https://docs.anthropic.com/en/docs/claude-code/security) —
+  Security](https://code.claude.com/docs/en/security) —
   Instruction files are loaded into context every session
 
 ---
@@ -424,7 +424,7 @@ and supports user-defined patterns via the `banned` config key.
   LLM-based Code](https://yebof.github.io/assets/pdf/wang2025icse.pdf) (ICSE
   2025) — 70–90% deprecated API usage rates with outdated context
 - [OpenAI
-  Deprecations](https://platform.openai.com/docs/deprecations) —
+  Deprecations](https://developers.openai.com/api/docs/deprecations) —
   Ongoing model and API churn
 - [Fern: Documentation Maintenance
   Guide](https://buildwithfern.com/post/documentation-maintenance-best-practices)
@@ -452,7 +452,7 @@ two different terms refer to the same concept from broader context.
 - [Curse of Instructions](https://openreview.net/forum?id=R6q67CDBCH) (ICLR
   2025) — Contradictions compound multiplicatively
 - [TextUnited: Why Consistent Terminology Matters in Technical
-  Documentation](https://textunited.com/en/blog/why-consistent-terminology-is-critical-for-technical-documentation)
+  Documentation](https://www.textunited.com/en/blog/why-consistent-terminology-is-critical-for-technical-documentation)
   — "Inconsistent terminology can confuse readers, forcing them to guess whether
   different terms refer to the same concept"
 
@@ -482,14 +482,14 @@ template directories where placeholder links are expected.
 
 **References:**
 
-- [W3C: Link Checking](https://www.w3.org/QA/Tools/) — Broken links are a
+- [W3C: Link Checking](https://www.w3.org/developers/tools/) — Broken links are a
   recognized web quality defect; the same principle applies to interlinked
   instruction files
 - [Google style guide: Make headings into link
   targets](https://developers.google.com/style/headings-targets) — Keep old
   anchors when headings change so existing links keep working
 - [Anthropic: Effective Context
-  Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  Engineering](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)
   — Context that references missing information degrades agent performance
 
 ---
@@ -550,7 +550,7 @@ content isn't ready, it shouldn't be in the agent's context.
   — Tracks TODO/FIXME as code quality signals; the same pattern applies to
   instruction files
 - [Anthropic: Effective Context
-  Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  Engineering](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)
   — "Keep your context informative, yet tight" — placeholder text is
   uninformative noise that consumes context budget
 
@@ -631,7 +631,7 @@ These papers justify multiple rules simultaneously:
 | Levy, Jacoby & Goldberg, [Same Task, More Tokens](https://arxiv.org/abs/2402.14848) | ACL 2024 | tautological, redundant-with-tooling, instruction-budget, section-length |
 | Bsharat et al., [Principled Instructions Are All You Need](https://arxiv.org/abs/2312.16171) | arXiv 2023 | weak-language, negative-only |
 | [Suppressing Pink Elephants](https://arxiv.org/abs/2402.07896) | arXiv 2024 | negative-only |
-| Chroma, [Context Rot](https://research.trychroma.com/context-rot) | 2025 | instruction-budget, section-length |
+| Chroma, [Context Rot](https://www.trychroma.com/research/context-rot) | 2025 | instruction-budget, section-length |
 | [When Prompts Go Wrong](https://arxiv.org/abs/2507.20439) | arXiv 2025 | contradiction |
-| [Anthropic: Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | 2025 | tautological, redundant-with-tooling, instruction-budget, broken-internal-reference, placeholder-text |
+| [Anthropic: Effective Context Engineering](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents) | 2025 | tautological, redundant-with-tooling, instruction-budget, broken-internal-reference, placeholder-text |
 | Wang et al., [LLMs Meet Library Evolution](https://yebof.github.io/assets/pdf/wang2025icse.pdf) | ICSE 2025 | banned-references |

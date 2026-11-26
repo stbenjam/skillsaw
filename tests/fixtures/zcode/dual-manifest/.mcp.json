@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "tides": { "command": "npx", "args": ["-y", "@harbor/tides-mcp"] }
+  }
+}

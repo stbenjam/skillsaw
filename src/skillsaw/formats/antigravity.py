@@ -1,6 +1,6 @@
 """Antigravity filenames and loader vocabulary.
 
-Verified against agy 1.1.25, with follow-up checks on 1.1.26. The measured
+Verified against agy 1.1.25, with follow-up checks on 1.1.26 and 1.3.6. The measured
 inputs, observables and limitations live in the maintenance reference at
 ``.apm/skills/skillsaw-maintenance/references/antigravity.md``.
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from types import MappingProxyType
+from typing import Mapping
 
 #: The four customization roots, measured: a ``hooks.json`` or an
 #: ``agents/<n>.md`` under each is honoured. Discovery walks **up** from
@@ -81,18 +82,35 @@ REGISTRY_ENTRY_FIELDS = frozenset({"path", "include_only", "exclude"})
 AGENTS_REGISTRY = "agents.json"
 PLUGINS_REGISTRY = "plugins.json"
 
-#: The four fields ``plugin.json`` carries meaning in. The manifest is a
+#: The fields ``plugin.json`` carries meaning in. The manifest is a
 #: **protojson** message (errors read ``proto: (line 1:9): invalid value
 #: for string field name: 42``), so every other key — ``$schema``,
-#: ``version``, ``author``, ``mcpServers``, ``hooks`` — is discarded as
-#: unknown and the plugin still loads. Measured by giving each candidate
-#: key a wrong-typed value and reading the type error back.
+#: ``author``, ``keywords``, ``homepage``, ``mcpServers``, ``hooks`` — is
+#: discarded as unknown and the plugin still loads. Measured by giving each
+#: candidate key a wrong-typed value and reading the type error back;
+#: ``version`` and ``displayName`` became typed fields in agy 1.3.6. Any
+#: string loads as ``version``: semver is not enforced.
 PLUGIN_MESSAGE_FIELDS = (
     ("name", str, "string"),
     ("description", str, "string"),
     ("disabled", bool, "boolean"),
     ("logo", str, "string"),
+    ("version", str, "string"),
+    ("displayName", str, "string"),
 )
+
+#: protojson also accepts a field's proto name, so ``display_name`` is the
+#: same field as ``displayName``: a type error there names
+#: ``displayName``, and writing both is ``proto: duplicate field``.
+#: Matching is otherwise exact — ``displayname`` and ``Version`` are
+#: unknown keys.
+PLUGIN_FIELD_ALIASES = MappingProxyType({"display_name": "displayName"})
+
+
+def plugin_field_name(key: str) -> str:
+    """The message field a manifest key names, or the key itself if unknown."""
+    return PLUGIN_FIELD_ALIASES.get(key, key)
+
 
 #: Names ``agy plugin install`` accepts.
 #: Discovery enforces nothing — ``{"name": "has spaces"}`` and ``{"name":
@@ -213,8 +231,24 @@ MCP_AUTH_PROVIDER_TYPES = frozenset({"google_credentials"})
 #: absent: a non-string there is tolerated and the server still loads.
 MCP_STRING_FIELDS = ("command", "url", "serverUrl", "cwd")
 
+#: ``timeoutSeconds`` is a Go ``int64``: negatives and ``0`` load, while a
+#: string, a fraction, any number spelled with a ``.`` or exponent
+#: (``600.0``, ``6e2``) or a value past either end drops the server.
+MCP_TIMEOUT_SECONDS_MIN = -(2**63)
+MCP_TIMEOUT_SECONDS_MAX = 2**63 - 1
+
+#: ``tools`` maps a tool name to its settings. The names are exact map
+#: keys; the setting fields match case-insensitively like server fields.
+#: ``eager`` is a boolean and ``background`` one of these strings, matched
+#: case-sensitively — ``"ALWAYS"`` and ``""`` both drop the server.
+#: Unknown setting keys are ignored.
+MCP_TOOL_FIELDS = ("eager", "background")
+MCP_TOOL_BACKGROUND_MODES = frozenset({"off", "always"})
+
 #: These server fields are decoded into Go struct fields. The wrapper and
 #: env/header member names remain exact; unknown server properties are ignored.
+#: ``enabledTools``, ``timeoutSeconds`` and ``tools`` are documented at
+#: https://antigravity.google/docs/mcp/ and measured with agy 1.3.6.
 MCP_SERVER_FIELDS = MCP_STRING_FIELDS + (
     "args",
     "env",
@@ -222,19 +256,24 @@ MCP_SERVER_FIELDS = MCP_STRING_FIELDS + (
     "oauth",
     "disabled",
     "disabledTools",
+    "enabledTools",
+    "timeoutSeconds",
+    "tools",
     "authProviderType",
 )
 MCP_SERVER_FIELD_NAMES = MappingProxyType({key.lower(): key for key in MCP_SERVER_FIELDS})
 MCP_OAUTH_FIELD_NAMES = MappingProxyType({"clientid": "clientId", "clientsecret": "clientSecret"})
+MCP_TOOL_FIELD_NAMES = MappingProxyType({key.lower(): key for key in MCP_TOOL_FIELDS})
 
 
-def mcp_field_name(key: str, *, oauth: bool = False) -> str:
+def mcp_field_name(key: str, names: Mapping[str, str] = MCP_SERVER_FIELD_NAMES) -> str:
     """Go's case-insensitive struct matching, restricted to known MCP fields.
 
-    Long s and Kelvin sign also fold to ASCII in Go. ``lower`` handles the
+    ``names`` picks the struct: a server (the default),
+    :data:`MCP_OAUTH_FIELD_NAMES` or :data:`MCP_TOOL_FIELD_NAMES`. Long s
+    and Kelvin sign also fold to ASCII in Go. ``lower`` handles the
     latter; full Unicode ``casefold`` would wrongly expand sharp s to ``ss``.
     """
-    names = MCP_OAUTH_FIELD_NAMES if oauth else MCP_SERVER_FIELD_NAMES
     return names.get(key.lower().replace("ſ", "s"), key)
 
 

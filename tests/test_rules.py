@@ -2,7 +2,6 @@
 Tests for builtin rules
 """
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -52,6 +51,240 @@ def test_plugin_json_required_fails(temp_dir):
     violations = rule.check(context)
     assert len(violations) == 1
     assert violations[0].severity == Severity.ERROR
+
+
+def test_inline_mcp_servers_need_declared_user_config(temp_dir):
+    """Inline mcpServers read user_config like .mcp.json does; declared keys pass."""
+    import json
+
+    plugin_dir = temp_dir / "inline-mcp"
+    (plugin_dir / ".claude-plugin").mkdir(parents=True)
+    (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "inline-mcp",
+                "userConfig": {"region": {"type": "string", "title": "Region"}},
+                "mcpServers": {
+                    "api": {
+                        "command": "node",
+                        "env": {"REGION": "${user_config.region}", "KEY": "${user_config.key}"},
+                    }
+                },
+            }
+        )
+    )
+    violations = PluginJsonValidRule().check(RepositoryContext(plugin_dir))
+    found = [v for v in violations if "user_config" in v.message]
+    assert [(v.file_path.name, v.severity) for v in found] == [("plugin.json", Severity.ERROR)]
+    assert "'key'" in found[0].message and "'region'" not in found[0].message
+
+
+def _claude_plugin(temp_dir, manifest, files=None):
+    """A Claude plugin with *manifest* and extra ``{relative path: text}`` files."""
+    import json
+
+    plugin_dir = temp_dir / "plugin"
+    (plugin_dir / ".claude-plugin").mkdir(parents=True)
+    (plugin_dir / ".claude-plugin" / "plugin.json").write_text(json.dumps(manifest))
+    for rel, text in (files or {}).items():
+        (plugin_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (plugin_dir / rel).write_text(text)
+    return plugin_dir
+
+
+def _user_config_findings(plugin_dir):
+    violations = PluginJsonValidRule().check(RepositoryContext(plugin_dir))
+    return [v for v in violations if "user_config" in v.message]
+
+
+def test_declared_mcp_file_needs_declared_user_config(temp_dir):
+    """A file plugin.json names in mcpServers is read like .mcp.json."""
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "mcpServers": "./config/servers.json"},
+        {"config/servers.json": '{"mcpServers": {"s": {"command": "${user_config.token}"}}}'},
+    )
+    found = _user_config_findings(plugin_dir)
+    assert [v.file_path.relative_to(plugin_dir).as_posix() for v in found] == [
+        "config/servers.json"
+    ]
+
+
+def test_declared_user_config_keys_pass(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "userConfig": {"token": {"type": "string", "title": "Token"}}},
+        {".mcp.json": '{"mcpServers": {"s": {"command": "x", "args": ["${user_config.token}"]}}}'},
+    )
+    assert _user_config_findings(plugin_dir) == []
+
+
+def test_codex_only_mcp_file_is_not_claudes(temp_dir):
+    """A file only the Codex manifest declares is not one Claude Code reads."""
+    import json
+
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {"codex/servers.json": '{"mcpServers": {"s": {"command": "${user_config.token}"}}}'},
+    )
+    (plugin_dir / ".codex-plugin").mkdir()
+    (plugin_dir / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "p", "mcpServers": "./codex/servers.json"})
+    )
+    assert _user_config_findings(plugin_dir) == []
+
+
+def test_mcp_json_symlinked_to_portable_mcp_json_is_read(temp_dir):
+    """Claude Code reads .mcp.json even when it links Agent Plugins' mcp.json."""
+    import json
+
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {"mcp.json": '{"mcpServers": {"s": {"command": "x", "args": ["${user_config.token}"]}}}'},
+    )
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "p",
+                "version": "1.0.0",
+            }
+        )
+    )
+    (plugin_dir / ".mcp.json").symlink_to("mcp.json")
+    found = _user_config_findings(plugin_dir)
+    assert len(found) == 1 and "'token'" in found[0].message
+
+
+_TOKEN_SERVER = '{"mcpServers": {"tg": {"command": "x", "env": {"T": "${user_config.token}"}}}}'
+_TOKEN_DECLARATION = {"token": {"type": "string", "title": "Token", "description": "t"}}
+
+
+def test_user_config_declared_in_the_servers_channel_entry_is_accepted(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "channels": [{"server": "tg", "userConfig": _TOKEN_DECLARATION}]},
+        {".mcp.json": _TOKEN_SERVER},
+    )
+    assert _user_config_findings(plugin_dir) == []
+
+
+def test_user_config_declared_for_another_servers_channel_is_reported(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "channels": [{"server": "other", "userConfig": _TOKEN_DECLARATION}]},
+        {".mcp.json": _TOKEN_SERVER},
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_user_config_under_a_per_server_channels_key_declares_nothing(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {
+            ".mcp.json": '{"mcpServers": {"tg": {"command": "x", "env": {"T": '
+            '"${user_config.token}"}, "channels": [{"userConfig": {"token": {}}}]}}}'
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_user_config_outside_substituted_fields_is_not_a_reference(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {
+            ".mcp.json": '{"mcpServers": {"s": {"command": "x", "cwd": "${user_config.dir}", '
+            '"foo": [{"options": {"token": "${user_config.token}"}}]}}}'
+        },
+    )
+    assert _user_config_findings(plugin_dir) == []
+
+
+@pytest.mark.parametrize("where", ["top-level", "channel"])
+def test_a_non_object_user_config_option_declares_nothing(temp_dir, where):
+    manifest = {"name": "p"}
+    if where == "top-level":
+        manifest["userConfig"] = {"token": None}
+    else:
+        manifest["channels"] = [{"server": "tg", "userConfig": {"token": None}}]
+    plugin_dir = _claude_plugin(temp_dir, manifest, {".mcp.json": _TOKEN_SERVER})
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_an_inline_server_named_mcp_servers_is_scanned(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {
+            "name": "p",
+            "mcpServers": {"mcpServers": {"command": "x", "env": {"T": "${user_config.token}"}}},
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_user_config_in_headers_helper_is_reported_even_when_declared(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p", "userConfig": _TOKEN_DECLARATION},
+        {
+            ".mcp.json": '{"mcpServers": {"api": {"type": "http", "url": "https://api.example.com",'
+            ' "headersHelper": "./auth-header.sh ${user_config.token}"}}}'
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'headersHelper'" in finding.message
+
+
+def test_a_server_named_channels_is_still_scanned(temp_dir):
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {
+            ".mcp.json": '{"mcpServers": {"channels": {"command": "x", '
+            '"env": {"channels": "${user_config.token}"}}}}'
+        },
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'token'" in finding.message
+
+
+def test_mcp_json_symlinked_outside_the_repository_is_not_read(temp_dir):
+    outside = temp_dir / "outside.json"
+    outside.write_text('{"mcpServers": {"s": {"command": "${user_config.token}"}}}')
+    plugin_dir = _claude_plugin(temp_dir, {"name": "p"})
+    (plugin_dir / ".mcp.json").symlink_to(outside)
+    assert _user_config_findings(plugin_dir) == []
+
+
+def test_undeclared_user_config_keys_are_bounded_in_the_message(temp_dir):
+    refs = ", ".join(f'"k{i}": "${{user_config.key{i}}}"' for i in range(8))
+    plugin_dir = _claude_plugin(
+        temp_dir,
+        {"name": "p"},
+        {".mcp.json": '{"mcpServers": {"s": {"command": "x", "env": {' + refs + "}}}}"},
+    )
+    (finding,) = _user_config_findings(plugin_dir)
+    assert "'key0', 'key1', 'key2', 'key3', 'key4' and 3 more" in finding.message
+
+
+def test_overlong_component_path_is_reported_not_raised(temp_dir):
+    plugin_dir = _claude_plugin(temp_dir, {"name": "p", "commands": "./" + "x" * 5000 + ".md"})
+    violations = PluginJsonValidRule().check(RepositoryContext(plugin_dir))
+    assert any("does not exist" in v.message for v in violations)
+
+
+def test_plugin_name_must_be_a_string(temp_dir):
+    plugin_dir = _claude_plugin(temp_dir, {"name": 123})
+    violations = PluginJsonValidRule().check(RepositoryContext(plugin_dir))
+    assert [v.message for v in violations if "'name'" in v.message] == ["'name' must be a string"]
 
 
 def test_plugin_json_valid_passes(valid_plugin):
@@ -463,11 +696,73 @@ def test_marketplace_duplicate_plugin_names(temp_dir):
 
 
 def test_marketplace_name_not_kebab_case_warns(temp_dir):
-    repo = _marketplace_with(temp_dir, name="My Marketplace")
+    repo = _marketplace_with(temp_dir, name="My.Marketplace")
     violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
     kebab = [v for v in violations if "kebab-case" in v.message]
     assert len(kebab) == 1
     assert kebab[0].severity == Severity.WARNING
+    assert not [v for v in violations if "cannot be installed" in v.message]
+
+
+@pytest.mark.parametrize(
+    "name", ["My Marketplace", "_internal", "-tools", ".hidden", "a..b", "ünï"]
+)
+def test_marketplace_name_uninstallable_errors_without_kebab_warning(temp_dir, name):
+    """Names `claude plugin validate` fails get one ERROR, not also the kebab WARNING."""
+    repo = _marketplace_with(temp_dir, name=name)
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    name_violations = [v for v in violations if f"'{name}'" in v.message]
+    assert len(name_violations) == 1, violations
+    assert "cannot be installed" in name_violations[0].message
+    assert name_violations[0].severity == Severity.ERROR
+
+
+@pytest.mark.parametrize("name", ["_internal", "-tools", ".hidden", "Report Builder!", "a/b"])
+def test_marketplace_entry_name_uninstallable_errors(temp_dir, name):
+    repo = _marketplace_with(
+        temp_dir, plugins=[{"name": name, "source": {"source": "github", "repo": "o/r"}}]
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    bad = [v for v in violations if "cannot be installed" in v.message]
+    assert len(bad) == 1, violations
+    assert bad[0].message.startswith("plugins[0] plugin name")
+    assert bad[0].severity == Severity.ERROR
+
+
+@pytest.mark.parametrize("name", ["my-plugin", "My.Plugin_2", "release..notes", "ab."])
+def test_marketplace_entry_name_installable_passes(temp_dir, name):
+    """Entry names follow the same grammar but, unlike marketplace names, may contain '..'."""
+    repo = _marketplace_with(
+        temp_dir, plugins=[{"name": name, "source": {"source": "github", "repo": "o/r"}}]
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    assert not [v for v in violations if "cannot be installed" in v.message]
+
+
+@pytest.mark.parametrize(
+    "hooks, form",
+    [("./hooks/hooks.json", "a file path"), (["./hooks/a.json", {"Stop": []}], "an array")],
+)
+def test_marketplace_entry_hooks_path_or_array_errors(temp_dir, hooks, form):
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "p", "source": {"source": "github", "repo": "o/r"}, "hooks": hooks}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    bad = [v for v in violations if "plugins[0].hooks" in v.message]
+    assert len(bad) == 1, violations
+    assert f"is {form}" in bad[0].message
+    assert bad[0].severity == Severity.ERROR
+
+
+def test_marketplace_entry_hooks_inline_object_passes(temp_dir):
+    hooks = {"Stop": [{"hooks": [{"type": "command", "command": "npm run lint"}]}]}
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "p", "source": {"source": "github", "repo": "o/r"}, "hooks": hooks}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    assert not [v for v in violations if ".hooks" in v.message]
 
 
 def test_marketplace_local_bun_is_allowed_while_download_execution_errors(temp_dir):
@@ -512,16 +807,50 @@ def test_marketplace_source_path_traversal_fails(temp_dir):
     assert traversal[0].severity == Severity.ERROR
 
 
-def test_marketplace_source_missing_dot_slash_info(temp_dir):
-    """A relative source without the ./ prefix gets a style nudge, not an error."""
+@pytest.mark.parametrize(
+    "plugin_root,source,installable",
+    [
+        # Measured with ``claude plugin install`` and ``claude plugin
+        # validate`` 2.1.319: the marketplace schema requires "./" except
+        # for "." and, under metadata.pluginRoot, a bare directory name.
+        (None, "./plugins/my-plugin", True),
+        (None, ".", True),
+        (None, "plugins/my-plugin", False),
+        (None, "my-plugin", False),
+        ("./plugins", "./plugins/my-plugin", True),
+        ("./plugins", "my-plugin", True),
+        ("./plugins", "plugins/my-plugin", False),
+        ("./plugins", "nested\\my-plugin", False),
+        ("./plugins", "", False),
+    ],
+)
+def test_marketplace_relative_source_must_be_installable(
+    temp_dir, plugin_root, source, installable
+):
+    """Claude Code refuses to install an entry whose source it cannot read."""
     repo = _marketplace_with(
         temp_dir,
-        plugins=[{"name": "my-plugin", "source": "plugins/my-plugin"}],
+        plugins=[{"name": "my-plugin", "source": source}],
+        **({"metadata": {"pluginRoot": plugin_root}} if plugin_root else {}),
     )
     violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
-    style = [v for v in violations if "start with './'" in v.message]
-    assert len(style) == 1
-    assert style[0].severity == Severity.INFO
+    refused = [v for v in violations if "refuses to install" in v.message]
+    if installable:
+        assert refused == []
+    else:
+        assert len(refused) == 1
+        assert refused[0].severity == Severity.ERROR
+
+
+def test_refused_marketplace_source_redacts_credentials(temp_dir):
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "my-plugin", "source": "https://user:sup3rsecret@example.com/x"}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    refused = [v for v in violations if "refuses to install" in v.message]
+    assert len(refused) == 1
+    assert "sup3rsecret" not in refused[0].message
 
 
 def test_marketplace_plugin_root_bare_source_no_style_nudge(temp_dir):
@@ -932,6 +1261,25 @@ def _marketplace_with_raw_json(temp_dir, marketplace_text):
     (claude_dir / "marketplace.json").write_text(marketplace_text)
     _add_unregistered_plugin(temp_dir, "plugin-one")
     return temp_dir
+
+
+def test_marketplace_registration_fix_keeps_non_ascii_text(temp_dir):
+    """The fix keeps unrelated non-ASCII text as written instead of escaping it."""
+    text = (
+        "{\n"
+        '  "name": "café-tools",\n'
+        '  "owner": {"name": "Zoë Müller", "email": "\\ud800"},\n'
+        '  "plugins": []\n'
+        "}\n"
+    )
+    repo = _marketplace_with_raw_json(temp_dir, text)
+    rule = MarketplaceRegistrationRule()
+    context = RepositoryContext(repo)
+    (fix,) = rule.fix(context, rule.check(context))
+    assert '"name": "Zoë Müller"' in fix.fixed_content
+    # A lone surrogate cannot be written as UTF-8, so it stays escaped.
+    assert '"email": "\\ud800"' in fix.fixed_content
+    fix.fixed_content.encode("utf-8")
 
 
 def test_marketplace_registration_fix_registers_plugin(marketplace_repo):

@@ -14,13 +14,12 @@ from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple
 from skillsaw.paths import (
     Resolver,
     contained_resolve,
-    safe_exists,
+    marker_escapes,
+    marker_manifest_is_contained,
     safe_is_dir,
     safe_is_file,
-    safe_is_symlink,
     safe_resolve,
 )
-from skillsaw.utils import read_json
 
 
 def codex_local_source_path(source: Any) -> Optional[str]:
@@ -139,6 +138,8 @@ CODEX_HOOK_EVENTS = frozenset(
         "SessionStart",
         "SessionEnd",
         "SubagentStart",
+        "PreModelRequest",
+        "PostModelRequest",
         "PreToolUse",
         "PermissionRequest",
         "PostToolUse",
@@ -449,16 +450,9 @@ def codex_manifest_is_contained(plugin_dir: Path, *, resolve: Resolver = safe_re
     manifest, and exempting on it would leave the directory covered by no
     rule at all.
     """
-    root = resolve(plugin_dir)
-    if root is None:
-        return False
-    manifest_dir = plugin_dir / CODEX_PLUGIN_MANIFEST[0]
-    if contained_resolve(manifest_dir, root, resolve) is None:
-        return False
-    manifest = plugin_dir.joinpath(*CODEX_PLUGIN_MANIFEST)
-    if contained_resolve(manifest, root, resolve) is None:
-        return False
-    return safe_is_file(manifest)
+    return marker_manifest_is_contained(
+        plugin_dir, CODEX_PLUGIN_MANIFEST[0], CODEX_PLUGIN_MANIFEST[1], resolve=resolve
+    )
 
 
 def codex_marker_escapes(plugin_dir: Path, *, resolve: Resolver = safe_resolve) -> bool:
@@ -471,14 +465,6 @@ def codex_marker_escapes(plugin_dir: Path, *, resolve: Resolver = safe_resolve) 
     (or a ``plugin.json`` inside it) that resolves elsewhere is another
     plugin's — or another tree's — and no claim may adopt it.
     """
-    root = resolve(plugin_dir)
-    if root is None:
-        # Containment cannot be proven, so fail closed.
-        return True
-    manifest_dir = plugin_dir / CODEX_PLUGIN_MANIFEST[0]
-    if not (safe_exists(manifest_dir) or safe_is_symlink(manifest_dir)):
-        return False
-    if contained_resolve(manifest_dir, root, resolve) is None:
-        return True
-    manifest = plugin_dir.joinpath(*CODEX_PLUGIN_MANIFEST)
-    return safe_exists(manifest) and contained_resolve(manifest, root, resolve) is None
+    return marker_escapes(
+        plugin_dir, CODEX_PLUGIN_MANIFEST[0], CODEX_PLUGIN_MANIFEST[1], resolve=resolve
+    )

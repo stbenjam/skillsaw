@@ -1,0 +1,9 @@
+project_doc_max_bytes = 65536
+
+# Prepare the package's local development environment when a session starts.
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "./scripts/bootstrap.sh"
+timeout = 30

@@ -1,0 +1,9 @@
+{
+  "name": "@acme/pi-review",
+  "version": "1.2.0",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["extensions"],
+    "changelogPath": "docs/HISTORY.md"
+  }
+}

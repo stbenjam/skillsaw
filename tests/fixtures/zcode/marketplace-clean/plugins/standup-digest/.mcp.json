@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tracker": {
+      "type": "http",
+      "url": "https://tracker.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${TRACKER_TOKEN}" }
+    }
+  }
+}

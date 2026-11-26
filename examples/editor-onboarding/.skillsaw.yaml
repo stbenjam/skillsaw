@@ -1,0 +1,6 @@
+version: "0.21.0"
+fail-on: warning
+exclude:
+  - "drafts/**"
+content-paths:
+  - "handbook/*.md"

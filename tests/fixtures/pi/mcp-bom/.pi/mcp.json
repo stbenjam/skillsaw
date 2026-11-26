@@ -1,0 +1,6 @@
+﻿{
+  "mcpServers": {
+    "workspace": {"command": "uvx", "args": ["workspace-mcp"]},
+    "slow": {"command": "uvx", "timeout": 0}
+  }
+}

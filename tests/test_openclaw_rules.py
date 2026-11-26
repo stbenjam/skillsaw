@@ -5,6 +5,8 @@ Tests for openclaw metadata validation rule
 import shutil
 from pathlib import Path
 
+import pytest
+
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
 from skillsaw.linter import Linter
@@ -262,6 +264,7 @@ def test_os_invalid_value_fails(temp_dir):
     context = RepositoryContext(skill)
     violations = OpenclawMetadataRule().check(context)
     assert any("invalid values" in v.message and "windows" in v.message for v in violations)
+    assert any("'macos'" in v.message for v in violations)
 
 
 # --- requires validation ---
@@ -680,12 +683,32 @@ def test_install_os_invalid_value_fails(temp_dir):
     (skill / "SKILL.md").write_text(
         "---\nname: bad-ios\ndescription: Bad install os\nmetadata:\n"
         "  openclaw:\n    install:\n"
-        "      - id: brew\n        kind: brew\n        os:\n          - macos\n---\n"
+        "      - id: brew\n        kind: brew\n        formula: jq\n"
+        "        os:\n          - windows\n---\n"
     )
 
     context = RepositoryContext(skill)
     violations = OpenclawMetadataRule().check(context)
-    assert any("invalid values" in v.message and "macos" in v.message for v in violations)
+    assert any("invalid values" in v.message and "windows" in v.message for v in violations)
+    assert any("'macos'" in v.message for v in violations)
+
+
+# OpenClaw trims, lowercases, and accepts `macos` as an alias for `darwin`
+# (normalizeOsRequirementPlatform in src/shared/requirements.ts).
+@pytest.mark.parametrize("value", ["macos", "Darwin", "' macos '", "LINUX"])
+def test_os_normalized_values_pass(temp_dir, value):
+    skill = temp_dir / "os-alias"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: os-alias\ndescription: Normalized os values\nmetadata:\n"
+        f"  openclaw:\n    os:\n      - {value}\n    install:\n"
+        "      - id: brew\n        kind: brew\n        formula: jq\n"
+        f"        os:\n          - {value}\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert not [v for v in violations if "os'" in v.message]
 
 
 # --- real-world gws-style metadata passes ---

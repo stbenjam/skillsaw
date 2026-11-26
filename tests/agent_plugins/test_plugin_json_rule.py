@@ -151,13 +151,62 @@ class TestManifestSchema:
         assert unknown
         assert all(finding.severity is Severity.WARNING for finding in unknown)
 
-    def test_non_object_extensions_is_a_warning(self, tmp_path):
+    def test_non_object_extensions_is_a_warning_in_1_0_0(self, tmp_path):
         repo = copy_fixture("agent-plugins/broken-manifest", tmp_path)
         findings = lint_rules(repo, PLUGIN_JSON_RULE)
 
         extensions = _finding_for(findings, "extensions")
         assert extensions
         assert {item.severity for item in extensions} == {Severity.WARNING}
+
+    @pytest.mark.parametrize(
+        ("version", "field", "value", "severity"),
+        [
+            ("1.0.0", "displayName", "Release tools", Severity.WARNING),
+            ("1.1.0", "displayName", 42, Severity.ERROR),
+            ("1.1.0", "extensions", [], Severity.ERROR),
+        ],
+    )
+    def test_version_specific_metadata(self, tmp_path, version, field, value, severity):
+        _write_manifest(
+            tmp_path,
+            **{
+                "$schema": f"https://agent-plugins.org/schemas/{version}/plugin.schema.json",
+                field: value,
+            },
+        )
+        (finding,) = lint_rules(tmp_path, PLUGIN_JSON_RULE)
+        assert finding.severity is severity
+        assert field in finding.message
+
+    @pytest.mark.parametrize("version", ["1.0.0", "1.1.0"])
+    @pytest.mark.parametrize("name", ["Bad--Plugin", "abc-", "a..b", "a_b", "Foo"])
+    def test_invalid_name_is_one_value_free_error(self, tmp_path, version, name):
+        _write_manifest(
+            tmp_path,
+            **{
+                "$schema": f"https://agent-plugins.org/schemas/{version}/plugin.schema.json",
+                "name": name,
+            },
+        )
+        (finding,) = lint_rules(tmp_path, PLUGIN_JSON_RULE)
+        assert finding.severity is Severity.ERROR
+        assert finding.message.endswith("$.name: does not match the required pattern")
+
+    def test_unsupported_schema_falls_back_to_1_0_0_fields(self, tmp_path):
+        _write_manifest(
+            tmp_path,
+            **{
+                "$schema": "https://agent-plugins.org/schemas/2.0.0/plugin.schema.json",
+                "displayName": "Release tools",
+                "name": "Bad--Plugin",
+            },
+        )
+        findings = lint_rules(tmp_path, PLUGIN_JSON_RULE)
+        (unknown,) = _finding_for(findings, "displayname")
+        assert unknown.severity is Severity.WARNING
+        (conformance,) = _finding_for(findings, "does not conform")
+        assert "agent plugins 1.0.0:" in conformance.message.lower()
 
     def test_unknown_extension_namespace_object_contents_are_opaque(self, tmp_path):
         manifest = {

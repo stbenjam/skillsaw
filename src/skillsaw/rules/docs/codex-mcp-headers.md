@@ -13,7 +13,7 @@ Codex. JSON MCP files for plugins and other hosts are outside this rule.
 
 Verified with the released Codex CLI 0.159.3 offline `mcp get --json`
 command and its [server configuration parser](https://github.com/openai/codex/blob/rust-v0.159.3/codex-rs/config/src/mcp_types.rs).
-See the [official MCP documentation](https://developers.openai.com/codex/mcp)
+See the [official MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
 for supported header fields.
 
 ## Examples

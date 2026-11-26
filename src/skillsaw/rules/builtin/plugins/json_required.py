@@ -19,13 +19,10 @@ class PluginJsonRequiredRule(Rule):
 
     # Codex-only plugins are exempt: they have no reason to carry a Claude
     # manifest, and codex-plugin-json-valid validates the one they do
-    # carry — one report per ecosystem. Two things take a plugin back out
-    # of the exemption, both of them the author declaring it a Claude
-    # plugin: the Claude marketplace listing it, or the directory carrying
-    # a ``.claude-plugin/`` that is not just a marketplace catalog
-    # (provenance reads the marker, so a
-    # deleted or never-added manifest inside it is precisely the defect
-    # this rule reports, with `strict: false` as the designed opt-out).
+    # carry. A ``.claude-plugin/`` that is not just a marketplace catalog
+    # declares a Claude plugin, so a missing manifest inside it is reported.
+    # A directory a Claude marketplace entry registers needs no manifest:
+    # without plugin.json the entry is the manifest, whatever ``strict`` says.
     provenance_scope = "claude"
 
     aliases = ("plugin-json-required",)
@@ -45,18 +42,15 @@ class PluginJsonRequiredRule(Rule):
         violations = []
 
         for plugin_node in self.scoped_find(context, PluginNode):
+            if context.is_project_claude_dir(plugin_node.path):
+                continue  # project configuration, not a plugin
             plugin_path = plugin_node.path
             plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
-            if not plugin_json.exists():
-                # Check if plugin has strict: false in marketplace metadata
-                resolved_path = safe_resolve(plugin_path) or plugin_path
-
-                if resolved_path in getattr(context, "plugin_metadata", {}):
-                    marketplace_entry = context.plugin_metadata[resolved_path]
-                    if marketplace_entry.get("strict", True) is False:
-                        # When strict: false, plugin.json is optional
-                        continue
-
-                violations.append(self.violation("Missing plugin.json", file_path=plugin_json))
+            if plugin_json.exists():
+                continue
+            resolved_path = safe_resolve(plugin_path) or plugin_path
+            if resolved_path in context.marketplace_entries:
+                continue
+            violations.append(self.violation("Missing plugin.json", file_path=plugin_json))
 
         return violations

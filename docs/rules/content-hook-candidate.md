@@ -75,10 +75,10 @@ belong in hooks.
 **References:**
 
 - [Dotzlaw: Claude Code Hooks: The Deterministic Control
-  Layer](https://www.dotzlaw.com/insights/claude-hooks/) — "Unlike CLAUDE.md
+  Layer](https://dotzlaw.com/insights/claude-hooks/) — "Unlike CLAUDE.md
   instructions which are advisory, hooks are deterministic"
 - [Claude Code
-  Security](https://docs.anthropic.com/en/docs/claude-code/security) — Hooks
+  Security](https://code.claude.com/docs/en/security) — Hooks
   provide deterministic enforcement
 - [aitmpl.com: Block API Keys & Secrets from Your Commits with Claude Code
   Hooks](https://aitmpl.com/blog/security-hooks-secrets/) — "CLAUDE.md rules

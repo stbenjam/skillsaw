@@ -199,10 +199,11 @@ def test_valid_hooks_json(plugin_with_valid_hooks):
     assert len(violations) == 0
 
 
-def test_matcher_type_check_belongs_to_codex(temp_dir):
-    """The matcher type check is Codex's, and must not change established
-    Claude results. A Claude plugin's hooks file is a ClaudeHooksBlock, so
-    Codex's rule never sees it and Claude's rule never makes the check."""
+def test_non_string_matcher_is_reported_once_by_claudes_rule(temp_dir):
+    """Claude Code ignores an entry whose matcher is not a string
+    (``claude plugin validate``: "entry ignored at runtime"). A Claude
+    plugin's hooks file is a ClaudeHooksBlock, so Claude's rule reports it
+    and Codex's rule, which never sees the file, adds no second finding."""
     from skillsaw.blocks import CodexHooksBlock
     from skillsaw.rules.builtin.codex import CodexHooksValidRule
 
@@ -233,9 +234,39 @@ def test_matcher_type_check_belongs_to_codex(temp_dir):
     hooks_blocks = [b for b in context.lint_tree.find(HooksBlock) if b.path.name == "hooks.json"]
     assert hooks_blocks, "hooks/hooks.json was not attached to the lint tree"
     violations = ClaudeHooksValidRule().check(context)
-    assert not any("matcher' must be a string" in v.message for v in violations)
+    assert [v.message for v in violations] == [
+        "Event 'SessionStart[0].matcher' must be a string, got array — "
+        "Claude Code ignores this entry and runs none of its hooks"
+    ]
     assert context.lint_tree.find(CodexHooksBlock) == []
     assert CodexHooksValidRule({}).check(context) == []
+
+
+@pytest.mark.parametrize(
+    "matcher,shown",
+    [(7, "number"), (1.5, "number"), (True, "boolean"), ({"tool": "Bash"}, "object")],
+)
+def test_non_string_matcher_names_its_json_type(temp_dir, matcher, shown):
+    plugin = temp_dir / "typed-matcher"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin" / "plugin.json").write_text('{"name": "typed-matcher"}')
+    (plugin / "hooks").mkdir()
+    (plugin / "hooks" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "Stop": [
+                        {"matcher": matcher, "hooks": [{"type": "command", "command": "true"}]}
+                    ]
+                }
+            }
+        )
+    )
+    violations = ClaudeHooksValidRule().check(RepositoryContext(plugin))
+    assert [v.message for v in violations] == [
+        f"Event 'Stop[0].matcher' must be a string, got {shown} — "
+        "Claude Code ignores this entry and runs none of its hooks"
+    ]
 
 
 def test_invalid_json(plugin_with_invalid_json):

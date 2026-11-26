@@ -2,7 +2,9 @@
 
 Command files need YAML frontmatter with a `description` field so the
 host application can display help text and decide when to offer the
-command. Without it, the command exists but is undiscoverable.
+command. Claude Code still loads a command without one, so this is a
+warning: the command works when typed, but its help text falls back to
+the first line of the body and Claude has nothing to route on.
 
 ## Examples
 

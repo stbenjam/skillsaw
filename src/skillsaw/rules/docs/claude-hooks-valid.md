@@ -1,6 +1,11 @@
 Claude Code model-change hooks `PreModelSwitch` and `PostModelSwitch` are
 recognized alongside the existing events (available since Claude Code 2.1.251).
 
+The `onFailure` field on `command` and `http` handlers must be `"continue"` or
+`"block"` (available since Claude Code 2.1.295). Any other value is an error,
+because Claude Code rejects the file; on any other handler type the field is
+ignored, which is reported as a warning.
+
 ## Why
 
 A Claude Code `hooks.json` configures commands that run automatically on
@@ -10,6 +15,11 @@ error is surfaced to the user. A bare `NaN` or `Infinity` anywhere in the
 file counts as invalid JSON: Claude Code's parser rejects the whole file.
 A legal numeric literal such as `1e400` in ignored extension metadata is
 accepted, as are quoted strings containing the words `NaN` or `Infinity`.
+
+A `matcher` must be a string. Claude Code ignores an entry whose `matcher`
+is an array, object, number or `null`, so none of its hooks run. Write
+alternatives as one regular expression (`"Edit|Write"`), or omit `matcher`
+to match everything.
 
 The event names, the handler types (`command`, `http`, `mcp_tool`,
 `prompt`, `agent`) and the per-handler fields checked here are Claude

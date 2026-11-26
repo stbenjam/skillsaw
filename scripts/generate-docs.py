@@ -19,22 +19,30 @@ TOC_END = "<!-- END GENERATED TOC -->"
 RULE_GROUPS = [
     (
         "Pi",
-        ["pi-config-valid", "pi-skill-valid", "pi-resource-paths"],
+        ["pi-config-valid", "pi-skill-valid", "pi-resource-paths", "pi-settings-schema"],
         "Discovers Pi packages and `.pi/` project resources, validates resource "
         "arrays and native skill metadata, and exposes prompts and flat skills "
-        "to content checks. Literal resource-path checks are opt-in. "
+        "to content checks. Literal resource-path and settings schema checks "
+        "are opt-in. "
         "Extensions are never executed and remote packages are not installed.",
     ),
     (
         "Agent Plugins",
-        ["agent-plugin-json-valid", "agent-plugin-mcp-valid", "agent-plugin-required"],
+        [
+            "agent-plugin-hooks-valid",
+            "agent-plugin-json-valid",
+            "agent-plugin-mcp-valid",
+            "agent-plugin-required",
+        ],
         "Validates portable plugin packages against the "
         "[Agent Plugins v1 specification]"
         "(https://agent-plugins.org/specification). The manifest rule checks "
         "the required root `plugin.json`; the MCP rule checks optional root "
         "`mcp.json`. Auto-enabled when a root or immediate `plugins/*` "
         "manifest declares a canonical Agent Plugins schema; use "
-        "`--type agent-plugin` to force validation.",
+        "`--type agent-plugin` to force validation. "
+        "`agent-plugin-hooks-valid` (1.1.0 `hooks.json`) and "
+        "`agent-plugin-required` are opt-in.",
     ),
     (
         "agentskills.io",
@@ -168,6 +176,13 @@ RULE_GROUPS = [
         "frontmatter is optional and extends the portable Agent Skills dialect. "
         "Windsurf `.windsurf/skills` use portable Agent Skills validation. Enabled "
         "automatically when Devin repository context is present.",
+    ),
+    (
+        "Ruler and Rulesync",
+        ["ruler-config-valid", "rulesync-source-valid"],
+        "Opt-in checks for local Ruler configuration and common Rulesync source fields. "
+        "Generate explicitly, then validate emitted files with their consumer rules. "
+        "See the [generator workflow](docs/generators.md) for copy attribution and limits.",
     ),
     (
         "Goose",

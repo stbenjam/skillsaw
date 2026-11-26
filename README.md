@@ -13,24 +13,17 @@ A linter for the files that steer AI coding agents.
 <tr>
 <td colspan="2">
 
-[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://pypi.org/project/skillsaw/) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://app.codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/license/Apache-2.0)
 
 </td>
 </tr></table>
 
-Agent instructions behave like code, but most teams still review them like
-prose. skillsaw gives them a linter. It validates structure across every major
-AI coding ecosystem, guards against many supply-chain attacks, and applies content
-and context rules backed by research and frontier lab guidance.
-
-It understands Agent Skills,
-[Agent Plugins v1](https://agent-plugins.org/specification), Claude Code
-plugins, OpenAI Codex plugins and marketplaces, CLAUDE.md, AGENTS.md,
-GEMINI.md, QWEN.md, Cursor plugins and marketplaces, Copilot, Cline, Devin, Kiro, OpenCode, Goose recipes, Muse Code, Pi,
-Grok Build, Google Antigravity, native OpenClaw plugins, hooks, agent configuration, MCP Registry
-`server.json` publisher metadata, Agent Skills served over MCP,
-Vercel skills CLI lockfiles, and eval formats. Safe structural fixes can be applied
-automatically; everything else comes with precise, agent-friendly guidance.
+skillsaw covers skills, plugins, instruction files (`CLAUDE.md`,
+`AGENTS.md`), hooks, and MCP configs. It checks their structure across every
+major agent ecosystem, flags supply-chain risks, and reviews their content
+against research and frontier-lab guidance. Safe fixes can be applied
+automatically; everything else comes with guidance an agent can act on. See
+the [supported ecosystems](https://skillsaw.org/repo-types/).
 
 **[Get started](https://skillsaw.org/getting-started/)** |
 **[Browse the rules](https://skillsaw.org/rules/)** |
@@ -74,22 +67,7 @@ uvx skillsaw fix       # Apply safe, deterministic fixes
 uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 ```
 
-For `lint --fail-on info`, use `baseline --include-info` to accept existing
-INFO findings too. A configured `fail-on: info` includes them automatically.
-
-Goose recipes under `.goose/recipes/` receive shared content and MCP security
-checks. Enable the optional recipe checks for standalone recipe directories with:
-
-```bash
-uvx skillsaw lint my-recipes --type goose --rule goose-recipe-valid --rule goose-subrecipe-references
-```
-
-See [Goose recipe support](https://skillsaw.org/repo-types/#goose-recipes) for
-discovery, path resolution and validation limits.
-
-Skills an MCP server publishes through the Skills extension (SEP-2640) are
-Agent Skills, so skillsaw lints them in the server's repository like any other.
-To lint what a running server actually serves, fetch it:
+To fetch and lint Agent Skills served by a running MCP server (SEP-2640):
 
 ```bash
 uvx skillsaw lint --mcp-server https://mcp.example.com/mcp
@@ -100,9 +78,10 @@ uvx skillsaw pull --mcp-server https://mcp.example.com/mcp -o mcp-skills/   # fe
 
 See [Skills over MCP](https://skillsaw.org/mcp-skills/).
 
+
 ## What it catches
 
-- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (project config, plugins & marketplaces), Cursor plugins & marketplaces, Grok Build (project config, plugins & marketplaces), Google Antigravity (configuration in any customization root — `.agents/`, `.agent/`, `_agents/`, `_agent/` — its `rules/` and `agents/` prose, plugins, hooks, MCP servers and registries), Agent Plugins v1 (`plugin.json`, `mcp.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, Pi packages and project resources, native OpenClaw plugins (including optional theme and artwork declarations), APM packages, MCP server maps, and MCP Registry metadata.
+- **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (project config, plugins & marketplaces), Cursor plugins & marketplaces, Grok Build (project config, plugins & marketplaces), Z.ai ZCode (`.zcode/` agents, commands, skills and `config.json` hooks & MCP, plugins & marketplaces), Google Antigravity (configuration in any customization root — `.agents/`, `.agent/`, `_agents/`, `_agent/` — its `rules/` and `agents/` prose, plugins, hooks, MCP servers and registries), Agent Plugins (`plugin.json`, `mcp.json`, and the 1.1.0 portable `hooks.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, Pi packages and project resources, native OpenClaw plugins (including optional theme and artwork declarations), APM packages, MCP server maps, and MCP Registry metadata.
 - **Content quality & token economy:** research-backed rules detecting instruction drift across duplicate files, excessive instruction budgets, cognitive overload, section length violations, weak language, contradictions, and repetitive inline tool-call examples.
 - **Discovery & repository integrity:** unreferenced bundled files, broken internal file references, inconsistent terminology, missing stop conditions, and stale baselines.
 - **Security & supply chain:**
@@ -118,9 +97,11 @@ skillsaw detects repository types automatically and lints multiple formats in th
 Pi packages and `.pi/` project resources are supported, including native skills,
 prompt templates, manifest globs, local package references, and first-party
 `.pi/mcp.json` servers. Shared MCP credential and policy checks cover these
-servers; enable `pi-mcp-valid` for Pi 1.0 field validation, including
-`oauth.authServerMetadataUrl`. See
-[Pi configuration checks](https://skillsaw.org/rules/pi-config-valid/) and
+servers; enable `pi-mcp-valid` for Pi 1.5 field validation, including
+`oauth.authServerMetadataUrl`, and `pi-settings-schema` to check
+`.pi/settings.json` against Pi's published 1.5.0 settings schema. See
+[Pi configuration checks](https://skillsaw.org/rules/pi-config-valid/),
+[Pi settings schema checks](https://skillsaw.org/rules/pi-settings-schema/), and
 [Pi MCP checks](https://skillsaw.org/rules/pi-mcp-valid/).
 
 ## Built for real workflows
@@ -141,11 +122,14 @@ being silently ignored.
 | Review the security model | [Supply Chain Protection](https://skillsaw.org/supply-chain-protection/) |
 | Supported ecosystems and tools | [Repository Types](https://skillsaw.org/repo-types/) |
 | Add checks to pull requests & CI | [CI Integration](https://skillsaw.org/ci/) |
+| Compare with `claude plugin validate` | [Claude Code validator overlap](https://skillsaw.org/claude-validate/) |
+| See diagnostics in VS Code | [VS Code extension](editors/vscode/README.md) and [publisher onboarding](examples/editor-onboarding/README.md) |
 | Understand and apply fixes | [Autofixing](https://skillsaw.org/autofixing/) |
 | Convert plugins to Agent Plugins v1 | [Porting to Agent Plugins](https://skillsaw.org/porting/) |
 | Create project-specific checks | [Custom Rules](https://skillsaw.org/custom-rules/) |
 | Publish reusable rule packages | [Rule Plugins](https://skillsaw.org/plugins/) |
 | Inspect the typed parse tree | [Lint Tree](https://skillsaw.org/lint-tree/) |
+| Explain Codex instruction selection and its cumulative byte cap | [Codex project instructions](https://skillsaw.org/rules/codex-project-instructions/) |
 | Look up commands and flags | [CLI Reference](https://skillsaw.org/cli/) |
 | Feed the docs to an AI agent | [llms.txt](https://skillsaw.org/llms.txt) index, [llms-full.txt](https://skillsaw.org/llms-full.txt) full docs |
 
@@ -156,6 +140,10 @@ Codex portable plugins can place OpenAI metadata and hooks in
 `plugin.json` under `extensions.com.openai`. Skillsaw follows that overlay's
 precedence over `.codex-plugin/plugin.json`, validates its declared resources,
 and checks portable `skills/` and `mcp.json` through the Agent Plugins rules.
+The optional `extensions.com.openai.onboardingSkill` must reference a bundled
+skill's `SKILL.md`, relative to the plugin root (with or without `./`). The
+[manifest rule](https://skillsaw.org/rules/codex-plugin-json-valid/) checks its
+type, effective skill membership, and containment, including symlink escapes.
 Project `.codex/config.toml` files also get a [targeted warning](https://skillsaw.org/rules/codex-mcp-headers/)
 when an HTTP MCP server uses the ignored `headers` field instead of
 `http_headers` or `env_http_headers`.
@@ -222,12 +210,6 @@ you!
     <td width="25%"><a href="https://github.com/stbenjam"><code>@stbenjam</code></a></td>
     <td width="25%"><a href="https://github.com/tchughesiv"><code>@tchughesiv</code></a></td>
     <td width="25%"><a href="https://github.com/tyraziel"><code>@tyraziel</code></a></td>
-  </tr>
-  <tr>
-    <td width="25%"><a href="https://github.com/zerocodefast"><code>@zerocodefast</code></a></td>
-    <td width="25%"></td>
-    <td width="25%"></td>
-    <td width="25%"></td>
   </tr>
 </table>
 <!-- contributors:end -->

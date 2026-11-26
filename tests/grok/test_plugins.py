@@ -934,13 +934,15 @@ def test_declared_hooks_and_mcp_inside_a_nested_plugin_stay_the_nested_plugins(
     assert [block.plugin_owner for block in hooks + mcp] == [safe_resolve(inner)] * 2
 
 
-def test_a_dual_manifest_plugin_keeps_claudes_reading_of_an_empty_command(temp_dir) -> None:
-    """The other half of the usable-connection tightening: the shared block
-    a Claude declaration keeps carries Claude's presence-only check, and the
-    established result stands."""
+def test_a_dual_manifest_plugin_reports_an_empty_command_once(temp_dir) -> None:
+    """The shared block a Claude declaration keeps makes Claude's check, and
+    Claude's plugin loader drops a server with an empty command too — so the
+    file gets one finding, not one per host."""
     repo = _mcp_plugin(temp_dir, "dual-unusable", {"empty": {"command": ""}}, claude=True)
 
-    assert McpValidJsonRule().check(RepositoryContext(repo)) == []
+    found = messages(McpValidJsonRule().check(RepositoryContext(repo)))
+
+    assert found == ["MCP server 'empty' 'command' must be a non-empty string"]
 
 
 def test_a_forced_type_seeds_a_marker_directory_with_no_manifest(temp_dir) -> None:
@@ -1125,8 +1127,8 @@ def test_a_copilot_agent_under_a_grok_only_root_does_not_crash_the_rule(temp_dir
 
 
 def test_a_repo_root_claude_plugin_keeps_its_established_mcp_results(temp_dir) -> None:
-    """The other half: a Claude declaration keeps Claude's presence-only
-    reading and its reserved built-in names."""
+    """The other half: a Claude declaration keeps Claude's reading — the
+    loader drops an empty command — and its reserved built-in names."""
     repo = write_repo(temp_dir / "root-claude-plugin")
     (repo / ".claude-plugin").mkdir()
     (repo / ".claude-plugin" / "plugin.json").write_text(
@@ -1139,7 +1141,7 @@ def test_a_repo_root_claude_plugin_keeps_its_established_mcp_results(temp_dir) -
 
     found = messages(McpValidJsonRule().check(RepositoryContext(repo)))
 
-    assert not any("must be a non-empty string" in message for message in found)
+    assert sum("must be a non-empty string" in message for message in found) == 1
     assert any("workspace" in message for message in found)
 
 

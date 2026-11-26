@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "internal-tools": {"enabled": false},
+    "search": {"exposure": "deferred", "toolExposure": {"delete_*": "hidden"}},
+    "notes": {},
+    "extra-keys": {"enabled": false, "args": ["--readonly"]},
+    "bad-enabled": {"enabled": "no"},
+    "bad-exposure": {"exposure": "public"},
+    "bad-tool-exposure": {"toolExposure": ["read_file"]}
+  }
+}

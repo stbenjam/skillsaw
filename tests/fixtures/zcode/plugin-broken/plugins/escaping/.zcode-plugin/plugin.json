@@ -1,0 +1,13 @@
+{
+  "name": "pier-rollout",
+  "version": "2.0.0",
+  "description": "Staged rollouts for Pier services.",
+  "skills": ["./skills", "../shared-skills"],
+  "hooks": "hooks/rollout.json",
+  "lspServers": { "pier": { "command": "pier-lsp" } },
+  "commands": {
+    "rollout": { "source": "./commands/rollout.md", "content": "Roll out $ARGUMENTS." },
+    "Roll Back!": { "content": "Roll back the last rollout." },
+    "canary": { "source": "./commands/canary.md" }
+  }
+}

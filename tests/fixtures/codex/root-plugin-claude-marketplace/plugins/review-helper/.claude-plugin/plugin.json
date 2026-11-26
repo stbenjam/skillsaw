@@ -1,0 +1,6 @@
+{
+  "name": "review-helper",
+  "version": "1.0.0",
+  "author": {"name": "Example"},
+  "description": "Workspace tools packaged for Claude Code."
+}

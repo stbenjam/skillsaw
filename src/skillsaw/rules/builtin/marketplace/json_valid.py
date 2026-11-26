@@ -10,9 +10,15 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 from skillsaw.rules.builtin.hooks.dangerous import dangerous_command_descriptions
+from skillsaw.diagnostics import safe_display
 from skillsaw.rules.builtin.utils import read_json
 
 _KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+# Each part of a plugin id (`plugin@marketplace`) Claude Code can install:
+# ASCII letters, digits, '.', '_' and '-', starting with a letter or digit.
+# `claude plugin validate` fails a marketplace or entry name outside it.
+_PLUGIN_ID_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_NAME_CHARS_HINT = "use only letters, digits, '.', '_', and '-', and start with a letter or digit"
 
 
 def is_valid_plugin_root(plugin_root: str) -> bool:
@@ -23,6 +29,19 @@ def is_valid_plugin_root(plugin_root: str) -> bool:
         and not is_absolute_path(plugin_root)
         and not has_parent_traversal(plugin_root)
     )
+
+
+def _is_installable_local_source(source: str, plugin_root) -> bool:
+    """Whether Claude Code installs a relative string source as written.
+
+    Measured against ``claude plugin install`` 2.1.319: ``.`` and
+    ``./``-prefixed paths install; a bare directory name installs only
+    when ``metadata.pluginRoot`` is set; any other relative path, such as
+    ``plugins/foo``, is refused.
+    """
+    if source == "." or source.startswith("./"):
+        return True
+    return bool(plugin_root) and bool(source) and "/" not in source and "\\" not in source
 
 
 # Required fields for each object source type per the plugin-marketplaces
@@ -170,15 +189,25 @@ class MarketplaceJsonValidRule(Rule):
         # Validate required fields
         if "name" not in marketplace:
             violations.append(self.violation("Missing 'name' field", file_path=marketplace_file))
-        elif isinstance(marketplace["name"], str) and not _KEBAB_CASE.match(marketplace["name"]):
-            violations.append(
-                self.violation(
-                    f"Marketplace name '{marketplace['name']}' should be kebab-case "
-                    "(lowercase letters, numbers, and hyphens)",
-                    file_path=marketplace_file,
-                    severity=Severity.WARNING,
+        elif isinstance(marketplace["name"], str):
+            name = marketplace["name"]
+            if not _PLUGIN_ID_PART.fullmatch(name) or ".." in name:
+                violations.append(
+                    self.violation(
+                        f"Marketplace name '{safe_display(name)}' cannot be installed by "
+                        f"Claude Code: {_NAME_CHARS_HINT}, and do not use '..'",
+                        file_path=marketplace_file,
+                    )
                 )
-            )
+            elif not _KEBAB_CASE.match(name):
+                violations.append(
+                    self.violation(
+                        f"Marketplace name '{safe_display(name)}' should be kebab-case "
+                        "(lowercase letters, numbers, and hyphens)",
+                        file_path=marketplace_file,
+                        severity=Severity.WARNING,
+                    )
+                )
 
         if "owner" not in marketplace:
             violations.append(self.violation("Missing 'owner' field", file_path=marketplace_file))
@@ -258,13 +287,34 @@ class MarketplaceJsonValidRule(Rule):
                     if name in seen_names:
                         violations.append(
                             self.violation(
-                                f"plugins[{idx}] duplicate plugin name '{name}' "
+                                f"plugins[{idx}] duplicate plugin name '{safe_display(name)}' "
                                 f"(first defined at plugins[{seen_names[name]}])",
                                 file_path=marketplace_file,
                             )
                         )
                     else:
                         seen_names[name] = idx
+                    if not _PLUGIN_ID_PART.fullmatch(name):
+                        violations.append(
+                            self.violation(
+                                f"plugins[{idx}] plugin name '{safe_display(name)}' cannot be installed "
+                                f"by Claude Code: {_NAME_CHARS_HINT}",
+                                file_path=marketplace_file,
+                            )
+                        )
+
+                hooks = entry.get("hooks")
+                if isinstance(hooks, (str, list)):
+                    form = "a file path" if isinstance(hooks, str) else "an array"
+                    violations.append(
+                        self.violation(
+                            f"plugins[{idx}].hooks is {form}, which Claude Code does not "
+                            "support in a marketplace entry: the plugin fails to load. "
+                            "Write 'hooks' as an inline object, or move the hooks into "
+                            "the plugin's own hooks/hooks.json",
+                            file_path=marketplace_file,
+                        )
+                    )
 
                 if "source" not in entry:
                     violations.append(
@@ -302,15 +352,22 @@ class MarketplaceJsonValidRule(Rule):
                         file_path=marketplace_file,
                     )
                 )
-            elif not source.startswith("./") and not plugin_root:
-                # With metadata.pluginRoot set, bare names (e.g. "formatter")
-                # are the documented form, so no style nudge applies.
+            elif not _is_installable_local_source(source, plugin_root):
+                # Claude Code's marketplace schema refuses the entry at
+                # install time ("must start with './'"), so only that entry
+                # fails to install while the rest of the catalog loads.
+                bare_name = bool(source) and "/" not in source and "\\" not in source
+                shown = safe_display(source)
+                problem = (
+                    f"bare name '{shown}' needs metadata.pluginRoot"
+                    if bare_name
+                    else f"relative path '{shown}' must start with './'"
+                )
                 violations.append(
                     self.violation(
-                        f"plugins[{idx}].source: relative path '{source}' should "
-                        "start with './'",
+                        f"plugins[{idx}].source: {problem} — Claude Code refuses to "
+                        "install this plugin",
                         file_path=marketplace_file,
-                        severity=Severity.INFO,
                     )
                 )
             return violations

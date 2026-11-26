@@ -25,10 +25,13 @@ of a hooks file, so the shape and the failure scopes below were verified
 against Muse Code 1.0.2 (``1.0.2-R2040.1``) with a 73-case canary matrix:
 one scratch workspace per case, each ``.muse/hooks.json`` carrying a single
 variation, every handler writing a token to a log file, run under ``muse
-exec --provider echo``. The log says what fired. The loader emits no
-diagnostic in a headless run: a rejected file, a rejected group and a
-dropped handler all look like a hook that had nothing to do. Re-run that
-matrix before changing a rule here.
+exec --provider echo``. The log says what fired. In that headless run a
+rejected file, a rejected group and a dropped handler all looked like a
+hook that had nothing to do. The docs, rechecked against Muse Code 1.4.14,
+now say Muse validates hooks at session startup: a malformed project or
+managed hook file contributes no handlers and produces a startup warning,
+and an unsupported event, matcher or handler skips that entry with a
+source-specific warning. Re-run that matrix before changing a rule here.
 
 The matrix showed a file in the nested shape Claude Code defined:
 ``{"hooks": {Event: [{matcher?, hooks: [handler, ...]}, ...]}}``. Top-level
@@ -86,11 +89,11 @@ SCRATCH_DIR_NAMES = frozenset({"worktrees"})
 #: ``managed_hooks_path`` points — neither is in the repository.
 HOOKS_FILENAME = "hooks.json"
 
-#: Lifecycle events Muse Code documents, all 15 of them. A hook binds to
+#: Lifecycle events Muse Code documents, all 17 of them. A hook binds to
 #: exactly one; an unknown name is an entry that never fires.
-#: Rechecked 2026-09-18: the official lifecycle list now includes
-#: Notification and PostToolUseFailure. This updates documentation status
-#: only; the historical runtime matrix above has not been re-established.
+#: Rechecked against the docs for Muse Code 1.4.14: the list now includes
+#: Notification, PostToolUseFailure, PostToolBatch and StopFailure. This
+#: updates documentation status only; the runtime matrix above predates it.
 HOOK_EVENTS = frozenset(
     {
         "SessionStart",
@@ -99,24 +102,19 @@ HOOK_EVENTS = frozenset(
         "PermissionRequest",
         "PostToolUse",
         "PostToolUseFailure",
-        "Notification",
+        "PostToolBatch",
         "PreLLMCall",
         "PostLLMCall",
         "PreCompact",
         "PostCompact",
         "SubagentStart",
         "SubagentStop",
+        "Notification",
         "Stop",
+        "StopFailure",
         "SessionEnd",
     }
 )
-
-#: Names present in the binary's ``HookEventKind`` enum but absent from
-#: Muse's documented list, and not exercisable headlessly by the canary
-#: matrix. Muse parses an entry under one of these rather than skipping it,
-#: but whether anything dispatches it is unknown — so a rule says "verify",
-#: not "this never fires".
-UNDOCUMENTED_HOOK_EVENTS = frozenset({"StopFailure", "PostToolBatch"})
 
 #: Claude Code events Muse recognises by name and deliberately does not
 #: run. The binary carries the diagnostic "Claude hook event `Setup` is

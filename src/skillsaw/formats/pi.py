@@ -1,14 +1,22 @@
-"""Pi's authored resource contract (upstream v1.0.0, 2026-10-01).
+"""Pi's authored resource contract (upstream v1.0.0, 2026-10-01; MCP, settings
+schema and changelogPath v1.5.0, 2026-11-02).
 
 See https://pi.dev/docs/latest/packages and packages/coding-agent/src/core/{pi-manifest,
 package-manager,skills}.ts in https://github.com/earendil-works/pi.
 """
 
+import json
+from functools import lru_cache
+from importlib import resources
+
 RESOURCE_FIELDS = ("extensions", "skills", "prompts", "themes")
 TOOL_DIR_NAME = ".pi"
 REMOTE_PREFIXES = ("npm:", "git:", "https://", "http://", "ssh://", "git://")
+# Top-level settings keys whose shape pi-config-valid owns.
+SETTINGS_RESOURCE_KEYS = (*RESOURCE_FIELDS, "packages")
+SETTINGS_SCHEMA_VERSION = "1.5.0"
 
-# Pi 1.0.0, packages/coding-agent/src/core/mcp-servers.ts.
+# Pi 1.5.0, packages/coding-agent/src/core/mcp-servers.ts.
 MCP_EXPOSURES = frozenset({"codemode", "deferred", "direct", "hidden", "codemode-deferred"})
 MCP_HTTP_TYPES = frozenset({"http", "streamable-http"})
 MCP_OAUTH_STRING_FIELDS = (
@@ -19,6 +27,11 @@ MCP_OAUTH_STRING_FIELDS = (
     "clientName",
     "authServerMetadataUrl",
 )
+MCP_CLIENT_REGISTRATIONS = frozenset({"auto", "dcr", "cimd"})
+# Pi 1.5.0, packages/coding-agent/src/extensions/mcp/config.ts: a project entry
+# with none of the definition keys overrides the global server of that name.
+MCP_DEFINITION_KEYS = ("command", "url", "type")
+MCP_OVERRIDE_KEYS = ("enabled", "exposure", "toolExposure")
 # ECMAScript String.trim removes BOM but not NEL or ASCII file separators.
 JS_TRIM_CHARS = (
     "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
@@ -47,3 +60,11 @@ def settings_resources(settings: dict) -> dict:
     else:
         effective.pop("skills")
     return effective
+
+
+@lru_cache(maxsize=1)
+def settings_schema() -> dict:
+    """The bundled Pi settings schema; linting never fetches pi.dev."""
+    resource = resources.files("skillsaw.schemas.pi.v1_5_0").joinpath("settings.schema.json")
+    with resource.open("r", encoding="utf-8") as stream:
+        return json.load(stream)

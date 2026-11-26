@@ -10,7 +10,7 @@ Every bundled skill file should be referenced from SKILL.md, directly or transit
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.15.0 |
-| **Repo Types** | agent-plugin, agentskills, antigravity-plugin, codex-marketplace, codex-plugin, cursor-marketplace, cursor-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, openclaw-plugin, pi, pi-package, single-plugin |
+| **Repo Types** | agent-plugin, agentskills, antigravity-plugin, codex-marketplace, codex-plugin, cursor-marketplace, cursor-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, openclaw-plugin, pi, pi-package, single-plugin, zcode-marketplace, zcode-plugin |
 | **Category** | [agentskills.io](agentskills.md) |
 
 ## Why

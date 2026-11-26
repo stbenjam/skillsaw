@@ -1,0 +1,14 @@
+name: Lint agent context
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: stbenjam/skillsaw@97b043cbac97d6df1d583cbc894790492f2c17d9 # 0.21.1 development snapshot
+        with:
+          no-custom-rules: "true"

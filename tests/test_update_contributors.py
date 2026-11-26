@@ -105,11 +105,11 @@ def test_update_readme_is_idempotent(tmp_path: Path):
         f"Thanks\n{CONTRIBUTORS_START}\n{CONTRIBUTORS_END}\n",
         encoding="utf-8",
     )
-    contributors = [{"login": "alice", "type": "User"}]
+    logins = ["alice"]
 
-    assert update_readme(readme, contributors) is True
+    assert update_readme(readme, logins) is True
     first_update = readme.read_text(encoding="utf-8")
-    assert update_readme(readme, contributors) is False
+    assert update_readme(readme, logins) is False
     assert readme.read_text(encoding="utf-8") == first_update
     assert first_update.startswith(f"Thanks\n{CONTRIBUTORS_START}\n")
     assert first_update.endswith(f"{CONTRIBUTORS_END}\n")
@@ -192,3 +192,25 @@ def test_fetch_contributors_rejects_invalid_repository():
     """Repository input should be restricted to a safe owner/name value."""
     with pytest.raises(ValueError, match="owner/name"):
         updater.fetch_contributors("not a repository")
+
+
+def test_profile_exists_drops_only_missing_accounts(monkeypatch):
+    """A deleted or suspended account 404s; other API failures must surface."""
+    status = {"alice": None, "ghost": 404, "flaky": 502}
+    requested = []
+
+    def fake_urlopen(request, timeout):
+        """Answer profile lookups with the status configured per login."""
+        login = request.full_url.rsplit("/", 1)[1]
+        requested.append(request.full_url)
+        if status[login] is not None:
+            raise updater.HTTPError(request.full_url, status[login], "error", {}, None)
+        return io.BytesIO(json.dumps({"login": login}).encode())
+
+    monkeypatch.setattr(updater, "urlopen", fake_urlopen)
+
+    assert updater.profile_exists("alice", "secret-token") is True
+    assert updater.profile_exists("ghost", "secret-token") is False
+    with pytest.raises(updater.HTTPError):
+        updater.profile_exists("flaky", "secret-token")
+    assert requested[0] == "https://api.github.com/users/alice"

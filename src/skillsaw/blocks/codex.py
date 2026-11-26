@@ -53,7 +53,7 @@ class CodexConfigBlock(TomlMcpConfigBlock):
         ("http_headers", True),
     )
 
-    # ``claude_builtins_reserved`` and ``require_usable_connection`` are
+    # ``claude_builtins_reserved`` and ``usable_connection_fields`` are
     # deliberately left at their inherited values: both are read only by the
     # JSON shape walk in ``mcp-valid-json``, which this block never reaches.
     # Setting them here would look like configuration and be dead.

@@ -1,4 +1,4 @@
-"""Pi MCP discovery and CLI regressions from the released 1.0.0 contract."""
+"""Pi MCP discovery and CLI regressions from the released 1.5.0 contract."""
 
 import json
 
@@ -247,3 +247,101 @@ def test_oauth_metadata_url_requires_a_string(value):
 
 def test_stdio_ignores_oauth_metadata_url():
     assert _problem({"command": "node", "oauth": {"authServerMetadataUrl": 42}}) is None
+
+
+def messages(findings):
+    assert {f["rule_id"] for f in findings} <= {"pi-mcp-valid"}
+    return {f["message"] for f in findings}
+
+
+def test_pi_1_5_bom_prefixed_file_is_checked(tmp_path):
+    root = copy_fixture("mcp-bom", tmp_path)
+    assert (root / ".pi/mcp.json").read_bytes().startswith(b"\xef\xbb\xbf")
+    _, findings = lint(root, "--rule", "pi-mcp-valid", "--rule", "mcp-valid-json")
+    assert messages(findings) == {
+        "Pi skips MCP server 'slow': timeout must be a positive number of seconds"
+    }
+
+
+def test_pi_1_5_project_overrides_cli(tmp_path):
+    root = copy_fixture("mcp-overrides", tmp_path)
+    _, findings = lint(root, "--rule", "pi-mcp-valid", "--rule", "mcp-valid-json")
+    assert messages(findings) == {
+        "Pi skips MCP server 'extra-keys': an override can only set enabled, exposure, "
+        "toolExposure; add command or url to define a project server",
+        "Pi skips MCP server 'bad-enabled': enabled must be a boolean",
+        "Pi skips MCP server 'bad-exposure': exposure must be codemode, deferred, direct, "
+        "hidden, or codemode-deferred",
+        "Pi skips MCP server 'bad-tool-exposure': toolExposure must map tool names to "
+        "supported exposure values",
+    }
+
+
+@pytest.mark.parametrize(
+    "config,override",
+    [
+        ({}, True),
+        ({"enabled": False, "exposure": "codemode-deferred"}, True),
+        ({"type": None}, False),
+        ({"url": None, "enabled": False}, False),
+        ({"command": 42}, False),
+    ],
+)
+def test_override_requires_absent_definition_keys(config, override):
+    assert (_problem(config) is None) is override
+
+
+@pytest.mark.parametrize("override_first", [True, False])
+def test_override_reserves_namespace(tmp_path, override_first):
+    # A valid override keeps the global "docs-api" loaded before any project
+    # server, so "docs_api" conflicts with it wherever the override sits.
+    root = copy_fixture("mcp-valid", tmp_path)
+    path = root / ".pi/mcp.json"
+    entries = [("docs-api", {"enabled": False}), ("docs_api", {"command": "node"})]
+    if not override_first:
+        entries.reverse()
+    path.write_text(json.dumps({"mcpServers": dict(entries)}))
+    _, findings = lint(root, "--rule", "pi-mcp-valid")
+    assert messages(findings) == {
+        "Pi skips MCP server 'docs_api': name conflicts with 'docs-api'; "
+        "Pi treats hyphens and underscores as the same namespace"
+    }
+
+
+def test_invalid_override_reserves_no_namespace(tmp_path):
+    root = copy_fixture("mcp-valid", tmp_path)
+    path = root / ".pi/mcp.json"
+    path.write_text(
+        json.dumps({"mcpServers": {"docs-api": {"enabled": "no"}, "docs_api": {"command": "node"}}})
+    )
+    _, findings = lint(root, "--rule", "pi-mcp-valid")
+    assert messages(findings) == {"Pi skips MCP server 'docs-api': enabled must be a boolean"}
+
+
+def test_overrides_in_one_namespace_conflict(tmp_path):
+    # Global names cannot clash, so only one override can match a global server.
+    root = copy_fixture("mcp-valid", tmp_path)
+    path = root / ".pi/mcp.json"
+    path.write_text(
+        json.dumps({"mcpServers": {"docs-api": {"enabled": False}, "docs_api": {"enabled": True}}})
+    )
+    _, findings = lint(root, "--rule", "pi-mcp-valid")
+    assert messages(findings) == {
+        "Pi skips MCP server 'docs_api': name conflicts with 'docs-api'; "
+        "Pi treats hyphens and underscores as the same namespace"
+    }
+
+
+def test_pi_1_5_oauth_client_registration_cli(tmp_path):
+    root = copy_fixture("mcp-client-registration", tmp_path)
+    _, findings = lint(root, "--rule", "pi-mcp-valid", "--rule", "mcp-valid-json")
+    invalid = 'oauth.clientRegistration must be "auto", "dcr", or "cimd"'
+    combined = (
+        'oauth.clientRegistration "cimd" cannot be combined with oauth.clientId or oauth.clientName'
+    )
+    assert messages(findings) == {
+        f"Pi skips MCP server 'unknown': {invalid}",
+        f"Pi skips MCP server 'null': {invalid}",
+        f"Pi skips MCP server 'cimd-client-id': {combined}",
+        f"Pi skips MCP server 'cimd-client-name': {combined}",
+    }

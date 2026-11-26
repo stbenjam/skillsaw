@@ -5,6 +5,8 @@ Tests for the lint tree data structure and tree builder.
 import json
 from pathlib import Path
 
+import pytest
+
 from skillsaw.blocks import (
     AgentBlock,
     BodyContent,
@@ -208,6 +210,14 @@ def test_print_tree_nested():
     assert "repo/" in output
     assert "my-plugin/ [plugin]" in output
     assert "my-skill/ [skill]" in output
+
+
+@pytest.mark.parametrize("format", ["print_tree", "print_dot"])
+def test_root_anchored_child_keeps_its_label(format):
+    root = LintTarget(path=Path("/repo"))
+    root.children = [PluginNode(path=root.path)]
+    output = getattr(root, format)(root_path=root.path)
+    assert "repo/ [plugin]" in output
 
 
 # --- Tree builder integration ---

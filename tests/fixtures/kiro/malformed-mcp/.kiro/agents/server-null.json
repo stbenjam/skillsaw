@@ -1,0 +1,6 @@
+{
+  "name": "reviewer",
+  "description": "Review request handlers. Use when API inputs change.",
+  "prompt": "Inspect request validation before approving changes.",
+  "mcpServers": {"docs": null}
+}

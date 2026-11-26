@@ -324,7 +324,7 @@ def test_the_hooks_file_is_one_block_not_two(tmp_path) -> None:
     tree = RepositoryContext(repo).lint_tree
 
     assert relative(repo, tree.find(HooksBlock)) == relative(repo, tree.find(GrokHooksBlock))
-    assert len(tree.find(GrokHooksBlock)) == 9
+    assert len(tree.find(GrokHooksBlock)) == 14
 
 
 def test_a_grok_hooks_file_is_not_also_reported_as_another_host_s(tmp_path) -> None:

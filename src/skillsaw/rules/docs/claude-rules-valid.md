@@ -6,6 +6,12 @@ optional `paths` field must be a valid list of globs. A non-markdown
 file or invalid frontmatter will be silently ignored or cause a
 parse error.
 
+Validation covers the root `.claude/rules/` directory and conventional Claude
+rule outputs beside discovered Rulesync projects, including nested packages.
+Exclusions and repository containment apply. Recognized generated copies keep
+these structural checks; generation does not make invalid consumer metadata
+valid.
+
 ## Examples
 
 **Bad:**

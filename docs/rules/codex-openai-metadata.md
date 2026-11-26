@@ -10,7 +10,7 @@ Validate skill openai.yaml and catalog-compatible plugin metadata
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.18.0 |
-| **Repo Types** | agent-plugin, agentskills, antigravity-plugin, codex-marketplace, codex-plugin, cursor-marketplace, cursor-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, openclaw-plugin, pi, pi-package, single-plugin |
+| **Repo Types** | agent-plugin, agentskills, antigravity-plugin, codex-marketplace, codex-plugin, cursor-marketplace, cursor-plugin, dot-claude, grok-marketplace, grok-plugin, marketplace, openclaw-plugin, pi, pi-package, single-plugin, zcode-marketplace, zcode-plugin |
 | **Category** | [OpenAI Codex](codex.md) |
 
 ## Why

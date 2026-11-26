@@ -1,0 +1,17 @@
+---
+name: reviewer
+description: Review API inputs. Use when changing request validation.
+includeMcpJson: "true"
+includePowers: 1
+resources:
+  - 42
+mcpServers:
+  docs:
+    env: []
+    headers:
+      Accept: 42
+    oauth: []
+---
+# Review API inputs
+
+Inspect request validation and report failing inputs.

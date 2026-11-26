@@ -52,6 +52,8 @@ class RepositoryGrokMixin:
 
         def is_path_excluded(self, path: Path) -> bool: ...
 
+        def _live_plugin_roots(self) -> Set[Path]: ...
+
         @staticmethod
         def _under_any(path: Path, roots: Set[Path]) -> bool: ...
 
@@ -282,18 +284,7 @@ class RepositoryGrokMixin:
         dropped = before - self._grok_claim_set()
         if not dropped:
             return
-        active = {
-            r
-            for p in (
-                *self.plugins,
-                *self.codex_plugins,
-                *self.agent_plugin_roots(),
-                *self._grok_claim_set(),
-                *self.antigravity_plugin_roots(),
-                *self.pi_discovery_roots(),
-            )
-            if (r := safe_resolve(p)) is not None
-        }
+        active = self._live_plugin_roots()
         self.skills = [
             skill
             for skill in self.skills

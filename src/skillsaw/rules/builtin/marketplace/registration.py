@@ -11,6 +11,7 @@ from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 from skillsaw.rules.builtin.marketplace.json_valid import is_valid_plugin_root
 from skillsaw.paths import safe_resolve
+from skillsaw.utils import dump_json_text
 
 
 def _mutable_marketplace_data(original: str) -> Optional[dict]:
@@ -192,7 +193,7 @@ class MarketplaceRegistrationRule(Rule):
             fixed_violations.append(v)
 
         if fixed_violations:
-            fixed = json.dumps(data, indent=2) + "\n"
+            fixed = dump_json_text(data)
             results.append(
                 AutofixResult(
                     rule_id=self.rule_id,

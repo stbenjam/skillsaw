@@ -3,13 +3,15 @@ Rule: mcp-valid-json
 """
 
 from types import MappingProxyType
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import AbstractSet, Any, Callable, Dict, List, Mapping, Optional, Tuple
 from pathlib import Path
 
 from skillsaw.blocks import (
     JsonConfigBlock,
+    McpBlock,
     McpConfigRole,
 )
+from skillsaw.blocks.json_config import ALL_CONNECTION_FIELDS
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.utils import is_finite_number, read_json_strict
@@ -78,6 +80,8 @@ class McpValidJsonRule(Rule):
         "copilot-agent-valid",
         "grok-config-valid",
         "goose-recipe-valid",
+        "kiro-mcp-valid",
+        "zcode-config-valid",
     )
 
     # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a
@@ -187,6 +191,8 @@ class McpValidJsonRule(Rule):
             # Conditional strictness, not a skip: the tightened checks
             # apply inside Codex-ONLY and Grok-ONLY plugins, so
             # dual-manifest plugins keep their established Claude results.
+            # Claude-family blocks already require a usable ``command``;
+            # these plugins add ``url`` and cover blocks that require none.
             #
             # Asked of provenance as well as of the block, because the block
             # class does not always carry the answer: a repo-root plugin's
@@ -195,11 +201,9 @@ class McpValidJsonRule(Rule):
             # so it arrives as the shared ``McpBlock`` however the directory
             # is claimed.
             grok_only = context.in_grok_only_plugin(block.path)
-            require_usable = (
-                block.require_usable_connection
-                or context.in_codex_only_plugin(block.path)
-                or grok_only
-            )
+            usable_fields = block.usable_connection_fields
+            if grok_only or context.in_codex_only_plugin(block.path):
+                usable_fields = ALL_CONNECTION_FIELDS
             # A tightening only, never a subtraction: ``check_reserved`` stays
             # on the block class. ``<repo>/.mcp.json`` is Claude Code's
             # project-scope configuration, read because of where it sits and
@@ -298,7 +302,7 @@ class McpValidJsonRule(Rule):
                 self._validate_mcp_structure(
                     {"mcpServers": payload},
                     block.path,
-                    require_usable=require_usable,
+                    usable_fields=usable_fields,
                     servers_key=servers_key,
                     check_reserved=check_reserved,
                     type_aliases=block.type_aliases,
@@ -456,7 +460,11 @@ class McpValidJsonRule(Rule):
             return violations
 
         mcp_config = {"mcpServers": mcp_servers_value}
-        violations.extend(self._validate_mcp_structure(mcp_config, plugin_json))
+        violations.extend(
+            self._validate_mcp_structure(
+                mcp_config, plugin_json, usable_fields=McpBlock.usable_connection_fields
+            )
+        )
 
         return violations
 
@@ -465,7 +473,7 @@ class McpValidJsonRule(Rule):
         data: Dict[str, Any],
         file_path: Path,
         *,
-        require_usable: bool = False,
+        usable_fields: AbstractSet[str] = frozenset(),
         servers_key: str = "mcpServers",
         check_reserved: bool = True,
         type_aliases: Mapping[str, str] = MappingProxyType({}),
@@ -594,7 +602,7 @@ class McpValidJsonRule(Rule):
                 # is left to the dedicated check below, so one defect
                 # still yields one violation.
                 elif (
-                    require_usable
+                    required_field in usable_fields
                     and not _is_usable(server_config[required_field])
                     and not (required_field == "url" and not isinstance(server_config["url"], str))
                 ):

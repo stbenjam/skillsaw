@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skillsaw"
-version = "0.22.0"
+version = "0.23.0"
 description = "A configurable linter for agent skills, plugins, and AI coding assistant context"
 readme = "README.md"
 authors = [
@@ -95,6 +95,7 @@ package-dir = {"" = "src"}
 "skillsaw.schemas.mcp_registry.v2025_10_11" = ["*.json", "SCHEMA-SOURCE.md", "LICENSE"]
 "skillsaw.schemas.mcp_registry.v2025_10_17" = ["*.json", "SCHEMA-SOURCE.md", "LICENSE"]
 "skillsaw.schemas.mcp_registry.v2025_12_11" = ["*.json", "SCHEMA-SOURCE.md", "LICENSE"]
+"skillsaw.schemas.pi.v1_5_0" = ["*.json", "SCHEMA-SOURCE.md", "LICENSE"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -108,6 +109,7 @@ python_functions = ["test_*"]
 addopts = "-v"
 markers = [
     "integration: end-to-end CLI integration tests",
+    "claude_conformance: compares fixtures with `claude plugin validate`; skipped without the pinned claude CLI",
 ]
 
 [tool.coverage.run]

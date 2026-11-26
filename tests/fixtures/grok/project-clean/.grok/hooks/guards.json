@@ -7,7 +7,14 @@
           {
             "type": "command",
             "command": "./scripts/audit-command.sh",
-            "timeout": 5
+            "timeout": 1.5
+          },
+          {
+            "type": "command",
+            "command": "./scripts/deny-secrets.sh",
+            "args": ["--strict", "--paths", ".env"],
+            "timeout": 2,
+            "failClosed": true
           }
         ]
       }
@@ -28,7 +35,8 @@
           {
             "type": "command",
             "command": "make lint",
-            "timeout": 600
+            "timeout": 600,
+            "onFailure": "continue"
           },
           {
             "type": "http",

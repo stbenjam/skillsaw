@@ -552,6 +552,19 @@ def write_text_preserving(file_path: Path, content: str, *, root: Optional[Path]
 _TOO_DEEP = "Nesting too deep to parse"
 
 
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def dump_json_text(data: object) -> str:
+    """Serialize *data* for a fix: two-space indent, Unicode kept as written.
+
+    ``json.loads`` accepts an escaped lone surrogate such as ``"\\ud800"``,
+    which cannot be encoded as UTF-8, so it is escaped again.
+    """
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    return _LONE_SURROGATE.sub(lambda m: f"\\u{ord(m.group()):04x}", text)
+
+
 @_file_cache.cached
 def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     """Cached JSON file read. Returns (data, error)."""
@@ -1025,7 +1038,8 @@ def read_frontmatter_commented(
         if hasattr(error, "problem_mark") and error.problem_mark is not None:
             line = error.problem_mark.line + 1 + offset
         return None, str(error), line
-    except ValueError as error:
+    except (ValueError, TypeError) as error:
+        # Nested sequence mapping keys can raise a bare TypeError in ruamel.
         return None, str(error), None
     except RecursionError:
         return None, _TOO_DEEP, None

@@ -39,6 +39,8 @@ class PluginNamingRule(Rule):
         violations = []
 
         for plugin_node in self.scoped_find(context, PluginNode):
+            if context.is_project_claude_dir(plugin_node.path):
+                continue  # project configuration, not a plugin
             plugin_path = plugin_node.path
             plugin_name = context.get_plugin_name(plugin_path)
 

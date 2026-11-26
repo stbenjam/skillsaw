@@ -54,6 +54,11 @@ If yes, follow the method behind the retained prefix:
 - **uvx**: nothing to install. The new prefix is
   `uvx skillsaw=={latest}`; the old one stays usable for comparison.
 - **pip**: `pip install "skillsaw=={latest}"`.
+- **Homebrew** (`command -v skillsaw` is under `$(brew --prefix)/bin`):
+  `brew update && brew upgrade skillsaw`. The tap follows PyPI within about
+  six hours; if `skillsaw --version` still reports anything but `{latest}`,
+  use `uvx skillsaw=={latest}` as the new prefix if `uvx` is installed;
+  otherwise stop and report that the tap has not published `{latest}` yet.
 - **Container**: pull the pinned image,
   `podman pull ghcr.io/stbenjam/skillsaw:v{latest}`
   (or `docker pull ...`). A `:latest` tag floats and needs no pull to

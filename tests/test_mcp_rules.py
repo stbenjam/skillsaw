@@ -4,9 +4,8 @@ Tests for MCP (Model Context Protocol) validation rules
 
 import pytest
 import json
-from pathlib import Path
 
-from skillsaw.blocks import McpBlock, OpenCodeMcpBlock
+from skillsaw.blocks import OpenCodeMcpBlock
 from skillsaw.context import RepositoryContext
 from skillsaw.formatters import format_report
 from skillsaw.rules.builtin.mcp import McpProhibitedRule, McpValidJsonRule
@@ -308,19 +307,19 @@ def test_valid_mcp_json_flat_format_stdio(temp_dir):
     assert len(violations) == 0
 
 
-def test_empty_command_check_is_codex_scoped(temp_dir):
-    """The Codex tightening must not change established Claude results."""
+def test_empty_command_is_reported_in_a_claude_plugin(temp_dir):
+    """Claude Code's plugin loader drops a server with an empty command
+    (``claude plugin validate``: "silently drops this server at load")."""
     plugin_dir = _create_plugin_with_mcp(
         temp_dir,
-        {"mcpServers": {"legacy": {"type": "stdio", "command": ""}}},
+        {"mcpServers": {"legacy": {"type": "stdio", "command": ""}, "argv": {"command": ["x"]}}},
     )
     context = RepositoryContext(plugin_dir)
-    # Guard against the test passing vacuously: the absence assertion below
-    # means nothing unless the .mcp.json was actually parsed into the tree.
-    mcp_blocks = [b for b in context.lint_tree.find(McpBlock) if b.path.name == ".mcp.json"]
-    assert mcp_blocks, ".mcp.json was not attached to the lint tree"
     violations = McpValidJsonRule().check(context)
-    assert not any("non-empty string" in v.message for v in violations)
+    assert sorted(v.message for v in violations) == [
+        "MCP server 'argv' 'command' must be a non-empty string",
+        "MCP server 'legacy' 'command' must be a non-empty string",
+    ]
 
 
 def test_valid_mcp_in_plugin_json(plugin_with_mcp_in_plugin_json):

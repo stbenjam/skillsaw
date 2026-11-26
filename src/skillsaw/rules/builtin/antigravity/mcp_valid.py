@@ -215,7 +215,7 @@ class AntigravityMcpValidRule(Rule):
             if key == "oauth":
                 for member, item in field_occurrences(value):
                     if (
-                        antigravity.mcp_field_name(member, oauth=True)
+                        antigravity.mcp_field_name(member, antigravity.MCP_OAUTH_FIELD_NAMES)
                         in antigravity.MCP_CREDENTIAL_FIELDS
                         and item is not None
                         and not isinstance(item, str)
@@ -225,7 +225,7 @@ class AntigravityMcpValidRule(Rule):
                         )
             elif any(v is not None and not isinstance(v, str) for _, v in field_occurrences(value)):
                 return f"{key}-value-type", f"every '{shown}' value must be a string"
-        elif key in ("args", "disabledTools"):
+        elif key in ("args", "disabledTools", "enabledTools"):
             if key == "args" and not isinstance(value, list):
                 return "args-not-array", f"'{shown}' must be an array"
             if not isinstance(value, list) or any(
@@ -234,9 +234,22 @@ class AntigravityMcpValidRule(Rule):
                 if key == "args":
                     return "args-element-type", f"every '{shown}' element must be a string"
                 return (
-                    "disabled-tools-type",
+                    "disabled-tools-type" if key == "disabledTools" else "enabled-tools-type",
                     f"'{shown}' must be an array of strings",
                 )
+        elif key == "timeoutSeconds":
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or not (
+                    antigravity.MCP_TIMEOUT_SECONDS_MIN
+                    <= value
+                    <= antigravity.MCP_TIMEOUT_SECONDS_MAX
+                )
+            ):
+                return "timeout-seconds-type", f"'{shown}' must be a whole number of seconds"
+        elif key == "tools":
+            return self._tools_problem(shown, value)
         elif key in antigravity.MCP_STRING_FIELDS and not isinstance(value, str):
             return f"{key}-type", f"'{shown}' must be a string"
         elif key == "disabled" and not isinstance(value, bool):
@@ -244,4 +257,32 @@ class AntigravityMcpValidRule(Rule):
         elif key == "authProviderType" and (not isinstance(value, str) or value not in accepted):
             allowed = ", ".join(f"'{safe_display(v)}'" for v in sorted(accepted))
             return "auth-provider", f"'{shown}' must be {allowed}"
+        return None
+
+    @staticmethod
+    def _tools_problem(shown: str, value: Any) -> Optional[Tuple[str, str]]:
+        """``tools`` maps each tool name to an object of ``eager`` / ``background``."""
+        if not isinstance(value, dict):
+            return "tools-not-object", f"'{shown}' must be an object"
+        modes = " or ".join(f"'{m}'" for m in sorted(antigravity.MCP_TOOL_BACKGROUND_MODES))
+        for tool, settings in field_occurrences(value):
+            if settings is None:
+                continue
+            where = f"{shown}.{safe_display(tool)}"
+            if not isinstance(settings, dict):
+                return "tool-not-object", f"'{where}' must be an object"
+            for spelling, item in field_occurrences(settings):
+                field = antigravity.mcp_field_name(spelling, antigravity.MCP_TOOL_FIELD_NAMES)
+                if item is None:
+                    continue
+                if field == "eager" and not isinstance(item, bool):
+                    return "tool-eager-type", (
+                        f"'{where}.{safe_display(spelling)}' must be a boolean or null"
+                    )
+                if field == "background" and (
+                    not isinstance(item, str) or item not in antigravity.MCP_TOOL_BACKGROUND_MODES
+                ):
+                    return "tool-background", (
+                        f"'{where}.{safe_display(spelling)}' must be {modes}"
+                    )
         return None

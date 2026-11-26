@@ -1,0 +1,21 @@
+{
+  "name": "acme tools",
+  "owner": {"name": "ACME Corp", "url": "https://acme.example.com"},
+  "plugins": [
+    {
+      "name": "_internal-metrics",
+      "source": {"source": "github", "repo": "acme/internal-metrics"},
+      "description": "Collect build and deploy metrics for internal dashboards"
+    },
+    {
+      "name": "Report Builder!",
+      "source": {"source": "github", "repo": "acme/report-builder"},
+      "description": "Generate weekly status reports from issue trackers"
+    },
+    {
+      "name": "log-analyzer",
+      "source": {"source": "github", "repo": "acme/log-analyzer"},
+      "description": "Analyze application logs"
+    }
+  ]
+}

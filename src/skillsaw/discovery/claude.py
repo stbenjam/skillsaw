@@ -15,8 +15,9 @@ from skillsaw.discovery import (
 from skillsaw.discovery.excludes import is_root_or_ancestor_excluded
 from skillsaw.formats.codex import codex_declared_skill_dirs
 from skillsaw.formats.grok import grok_declared_skill_dirs
+from skillsaw.formats.zcode import zcode_declared_skill_dirs
 from skillsaw.formats.openclaw import MANIFEST, contained_file, skill_roots
-from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
+from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.utils import read_json
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,30 @@ def resolve_plugin_source(
     return None
 
 
+def claude_declared_mcp_files(plugin_dir: Path) -> List[Path]:
+    """Contained MCP config files a Claude plugin.json names in ``mcpServers``.
+
+    The field takes a path, a list of paths, or an inline map; this resolves
+    the path forms. Paths escaping the plugin are dropped, since
+    ``claude-plugin-json-valid`` reports them and the lint tree must not
+    follow them out.
+    """
+    data, _error = read_json(plugin_dir / ".claude-plugin" / "plugin.json")
+    declared = data.get("mcpServers") if isinstance(data, dict) else None
+    candidates = declared if isinstance(declared, list) else [declared]
+    root = safe_resolve(plugin_dir)
+    if root is None:
+        return []
+    found: List[Path] = []
+    for item in candidates:
+        if not isinstance(item, str) or not item:
+            continue
+        candidate = contained_resolve(plugin_dir / item, root)
+        if candidate is not None and candidate != root and safe_is_file(candidate):
+            found.append(candidate)
+    return found
+
+
 def is_valid_plugin_dir(path: Path, entry: Optional[Dict[str, Any]] = None) -> bool:
     """Return whether a directory has plugin content or relaxed metadata."""
     markers = (
@@ -104,16 +129,28 @@ def is_valid_plugin_dir(path: Path, entry: Optional[Dict[str, Any]] = None) -> b
     )
 
 
-def plugin_name(path: Path, metadata: Dict[Path, Dict[str, Any]]) -> str:
-    """Return the manifest, marketplace, or directory name for a plugin."""
+def plugin_name(
+    path: Path,
+    metadata: Dict[Path, Dict[str, Any]],
+    entries: Dict[Path, Dict[str, Any]],
+) -> str:
+    """Return the manifest, marketplace, or directory name for a plugin.
+
+    Without a plugin.json the marketplace entry is the manifest, whatever its
+    ``strict`` value, so any entry registering the directory names it.
+    """
     manifest = path / ".claude-plugin" / "plugin.json"
     if manifest.exists():
         data, _error = read_json(manifest)
         name = data.get("name") if isinstance(data, dict) else None
         if isinstance(name, str) and name:
             return name
-    name = metadata.get(safe_resolve(path) or path, {}).get("name")
-    return name if isinstance(name, str) else path.name
+    resolved = safe_resolve(path) or path
+    for source in (metadata, entries):
+        name = source.get(resolved, {}).get("name")
+        if isinstance(name, str) and name:
+            return name
+    return path.name
 
 
 def plugin_metadata(
@@ -222,6 +259,7 @@ def discover_skills(
     openclaw_exclusive_plugins: Iterable[Path] = (),
     additional_skill_dirs: Iterable[Path] = (),
     is_excluded: Callable[[Path], bool] = lambda _: False,
+    zcode_plugins: Iterable[Path] = (),
 ) -> List[Path]:
     """Discover contained Agent Skill directories across repository roots."""
     openclaw_packages = list(openclaw_plugins)
@@ -414,6 +452,8 @@ def discover_skills(
         contained_plugin_skills(plugin, codex_declared_skill_dirs(plugin))
     for plugin in grok_plugins:
         contained_plugin_skills(plugin, grok_declared_skill_dirs(plugin))
+    for plugin in zcode_plugins:
+        contained_plugin_skills(plugin, zcode_declared_skill_dirs(plugin))
     for plugin in antigravity_plugins:
         contained_plugin_skills(plugin, ())
     for plugin in agent_plugin_packages:

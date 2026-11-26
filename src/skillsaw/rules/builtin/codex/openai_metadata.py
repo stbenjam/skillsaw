@@ -17,8 +17,9 @@ from skillsaw.rules.builtin.utils import (
     commented_root_line,
 )
 
-# The format OpenAI's bundled plugin validator enforces: six hex digits, no
-# shorthand, no CSS keywords.
+# The format Codex's skill-interface loader accepts (``resolve_color_str`` in
+# codex-rs/skills/src/interface.rs): six hex digits, no shorthand, no CSS
+# keywords.
 _BRAND_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 
 _INTERFACE_STRINGS = (
@@ -113,9 +114,9 @@ class CodexOpenAIMetadataRule(Rule):
                 )
         brand_color = interface.get("brand_color")
         if isinstance(brand_color, str) and not _BRAND_COLOR.fullmatch(brand_color):
-            # OpenAI's bundled plugin validator rejects anything but #RRGGBB,
-            # so accepting a CSS keyword here would call metadata clean that
-            # the platform refuses to load.
+            # Codex's loader ignores anything but #RRGGBB with a warning, so
+            # accepting a CSS keyword here would call metadata clean whose
+            # color the platform drops.
             violations.append(
                 self.violation(
                     f"'interface.brand_color' must be a #RRGGBB hex color, got '{safe_display(brand_color)}'",

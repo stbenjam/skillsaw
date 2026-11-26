@@ -1,0 +1,21 @@
+{
+  "name": "harbor-tools",
+  "description": "Harbor Labs' ZCode plugins for release engineering.",
+  "owner": { "name": "Harbor Labs", "url": "https://example.com/harbor" },
+  "plugins": [
+    {
+      "name": "release-notes",
+      "source": "./plugins/release-notes",
+      "description": "Draft release notes from merged pull requests.",
+      "version": "1.2.0",
+      "category": "developer-tools"
+    },
+    {
+      "name": "standup-digest",
+      "source": "./plugins/standup-digest",
+      "description": "Summarise yesterday's merged work for stand-up.",
+      "version": "0.3.1",
+      "category": "productivity"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "release-tools",
+  "owner": {"name": "Release Engineering"},
+  "description": "Plugins the release team uses to cut and announce releases",
+  "plugins": [
+    {"name": "release-notes", "source": "./plugins/release-notes", "description": "Draft release notes from merged pull requests"},
+    {"name": "changelog-check", "source": "plugins/changelog-check", "description": "Check that every merged PR has a changelog entry"},
+    {"name": "version-bump", "source": "version-bump", "description": "Bump version strings across the repository"}
+  ]
+}

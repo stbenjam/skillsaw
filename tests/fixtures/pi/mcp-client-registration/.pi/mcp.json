@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "auto": {"url": "https://docs.example.com/mcp", "oauth": {"clientRegistration": "auto"}},
+    "dcr": {"url": "https://docs.example.com/mcp", "oauth": {"clientRegistration": "dcr", "clientName": "Acme Docs"}},
+    "cimd": {"url": "https://docs.example.com/mcp", "oauth": {"clientRegistration": "cimd"}},
+    "unknown": {"url": "https://docs.example.com/mcp", "oauth": {"clientRegistration": "pkce"}},
+    "null": {"url": "https://docs.example.com/mcp", "oauth": {"clientRegistration": null}},
+    "cimd-client-id": {"url": "https://docs.example.com/mcp", "oauth": {"clientRegistration": "cimd", "clientId": "acme-docs"}},
+    "cimd-client-name": {"url": "https://docs.example.com/mcp", "oauth": {"clientRegistration": "cimd", "clientName": "Acme Docs"}},
+    "stdio": {"command": "node", "oauth": {"clientRegistration": "pkce"}}
+  }
+}

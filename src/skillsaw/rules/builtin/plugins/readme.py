@@ -33,6 +33,8 @@ class PluginReadmeRule(Rule):
         violations = []
 
         for plugin_node in context.lint_tree.find(PluginNode):
+            if context.is_project_claude_dir(plugin_node.path):
+                continue  # project configuration, not a plugin
             plugin_path = plugin_node.path
             readme = plugin_path / "README.md"
             if not readme.exists():

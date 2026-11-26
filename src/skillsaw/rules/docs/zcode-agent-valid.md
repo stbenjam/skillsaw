@@ -1,0 +1,37 @@
+## Why
+
+ZCode loads project subagents from the Markdown files directly inside
+`.zcode/agents/`, and plugin subagents from a ZCode plugin's `agents/`
+directory. It lists each subagent to the model as `name: description` and
+uses that line to decide when to delegate. A file with no frontmatter, or no
+non-empty `name` and `description`, is skipped. Plugin agents get no
+filename fallback for `name`, unlike Claude Code's, so a plugin that ships
+both a ZCode and a Claude manifest needs `name` for ZCode to load it.
+
+## Severity
+
+**Errors**: ZCode skips the agent.
+
+- Missing frontmatter or a missing, empty or non-string `name` or
+  `description`. ZCode reads frontmatter one `key: value` line at a time,
+  regardless of YAML validity. A value must be on the key's line:
+  an indented continuation is not read as the description.
+- Numeric or boolean values such as `name: 2024` or `name: true` are not
+  strings. Quote them to use them as names. The literal `null` is a string
+  in ZCode, and an unquoted colon in
+  `description: Use when: reviewing a PR` also loads.
+
+**Warnings**: a `memory` value other than `user`, `project` or `local`. ZCode
+ignores the value and loads the agent without memory.
+
+## How to fix
+
+```markdown
+---
+name: migration-reviewer
+description: Reviews database migrations for locking and rollback safety.
+memory: project
+---
+
+Review the migration in the current diff...
+```

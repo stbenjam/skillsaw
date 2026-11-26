@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "ledgerline guard" }] }
+    ],
+    "events": {
+      "Notification": [{ "hooks": [{ "type": "command", "command": "notify-send ledgerline" }] }],
+      "Stop": [{ "matcher": "", "hooks": [{ "type": "agent", "prompt": "Summarise the session" }] }]
+    }
+  }
+}
