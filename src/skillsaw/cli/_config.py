@@ -62,7 +62,7 @@ def load_config(args, start_path: Path) -> tuple[LinterConfig, Path | None]:
                 rule_cfg["exclude"] = []
         if config.codex_instructions is not None and config.codex_instructions.cwd != ".":
             config.codex_instructions = dataclasses.replace(config.codex_instructions, cwd=".")
-    elif config_path is None:
+    elif not config.exclude_patterns_explicit:
         from ..formats.mcp_skills import read_valid_snapshot_record
 
         if read_valid_snapshot_record(start_path) is not None:

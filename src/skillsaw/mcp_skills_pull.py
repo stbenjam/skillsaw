@@ -411,6 +411,10 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
     argv = [_expand(command, secrets_out=expanded_secrets)] + [
         _expand(a, secrets_out=expanded_secrets) for a in args
     ]
+    if "envFile" in entry and entry["envFile"] is not None:
+        raise PullError(
+            "its 'envFile' is not supported; pass those variables in the environment or 'env'"
+        )
     env = dict(os.environ)
     configured_env: Dict[str, str] = {}
     if "env" in entry:
@@ -484,17 +488,20 @@ def prepare_output(out_dir: Path) -> None:
                 raise PullError(f"{out_dir} exists and is not a directory")
             entries = list(out_dir.iterdir())
             if entries:
-                files_to_unlink, dirs_to_rmdir, record_file = _verify_replaceable_snapshot(
+                files_to_unlink, dirs_to_rmdir, has_record = _verify_replaceable_snapshot(
                     out_dir, entries
                 )
-                # Unlink inventoried files, prune now-empty dirs, remove the
-                # snapshot record last so an interrupted cleanup stays valid.
-                for path in files_to_unlink:
-                    path.unlink()
-                for directory in dirs_to_rmdir:
-                    directory.rmdir()
-                if record_file is not None:
-                    record_file.unlink()
+                # Anchor cleanup to out_dir with O_DIRECTORY | O_NOFOLLOW and
+                # remove the snapshot record last so an interrupted cleanup stays valid.
+                remove_contained_files_and_empty_dirs(out_dir, files_to_unlink, dirs_to_rmdir)
+                if has_record:
+                    remove_contained_files_and_empty_dirs(
+                        out_dir, [(mcp_skills.SNAPSHOT_FILENAME,)]
+                    )
+                if any(out_dir.iterdir()):
+                    raise PullError(
+                        f"cannot prepare {out_dir}: existing snapshot could not be cleared cleanly"
+                    )
         out_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise PullError(f"cannot prepare {out_dir}: {exc.strerror or exc}") from exc
@@ -512,17 +519,10 @@ def _safe_inventory_parts(rel: Any) -> Optional[Tuple[str, ...]]:
 
 def _snapshot_inventory(out_dir: Path) -> Optional[Dict[str, set]]:
     """Map each recorded server label to its set of inventoried file-part tuples."""
-    data = mcp_skills.read_snapshot_record(out_dir)
-    if not isinstance(data, dict):
+    data = mcp_skills.read_valid_snapshot_record(out_dir)
+    if data is None:
         return None
-    if data.get("snapshotVersion") != mcp_skills.SNAPSHOT_VERSION:
-        return None
-    generator = data.get("generator")
-    if not isinstance(generator, str) or not generator.startswith("skillsaw "):
-        return None
-    servers = data.get("servers")
-    if not isinstance(servers, list):
-        return None
+    servers = data["servers"]
     inventory: Dict[str, set] = {}
     for server in servers:
         if not isinstance(server, dict):
@@ -546,7 +546,7 @@ def _snapshot_inventory(out_dir: Path) -> Optional[Dict[str, set]]:
 
 def _verify_replaceable_snapshot(
     out_dir: Path, entries: List[Path]
-) -> Tuple[List[Path], List[Path], Optional[Path]]:
+) -> Tuple[List[Tuple[str, ...]], List[Tuple[str, ...]], bool]:
     """Verify every item in *out_dir* belongs to its snapshot inventory."""
     not_snapshot = (
         f"{out_dir} holds files that are not a skillsaw snapshot; choose an "
@@ -556,9 +556,9 @@ def _verify_replaceable_snapshot(
     if inventory is None:
         raise PullError(not_snapshot)
 
-    record_file: Optional[Path] = None
-    files_to_unlink: List[Path] = []
-    dirs_to_rmdir: List[Path] = []
+    has_record = False
+    files_to_unlink: List[Tuple[str, ...]] = []
+    dirs_to_rmdir: List[Tuple[str, ...]] = []
 
     for entry in entries:
         if entry.is_symlink():
@@ -566,7 +566,7 @@ def _verify_replaceable_snapshot(
         if entry.name == mcp_skills.SNAPSHOT_FILENAME:
             if not entry.is_file():
                 raise PullError(not_snapshot)
-            record_file = entry
+            has_record = True
             continue
         if (
             entry.name not in inventory
@@ -575,10 +575,11 @@ def _verify_replaceable_snapshot(
         ):
             raise PullError(not_snapshot)
         expected = inventory[entry.name]
-        server_dirs: List[Path] = []
+        server_dirs: List[Tuple[str, ...]] = []
         for dirpath, dirnames, filenames in os.walk(entry, topdown=True, followlinks=False):
             current = Path(dirpath)
-            server_dirs.append(current)
+            rel_dir = current.relative_to(entry).parts
+            server_dirs.append((entry.name, *rel_dir))
             for name in dirnames:
                 if (current / name).is_symlink():
                     raise PullError(not_snapshot)
@@ -589,13 +590,13 @@ def _verify_replaceable_snapshot(
                 rel_parts = file_path.relative_to(entry).parts
                 if rel_parts not in expected:
                     raise PullError(not_snapshot)
-                files_to_unlink.append(file_path)
+                files_to_unlink.append((entry.name, *rel_parts))
         # Bottom-up order so deepest subdirectories are rmdir'd first.
         dirs_to_rmdir.extend(reversed(server_dirs))
 
-    if record_file is None:
+    if not has_record:
         raise PullError(not_snapshot)
-    return files_to_unlink, dirs_to_rmdir, record_file
+    return files_to_unlink, dirs_to_rmdir, has_record
 
 
 def _write_exclusive(path: Path, data: bytes, root: Path) -> None:

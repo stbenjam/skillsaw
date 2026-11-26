@@ -791,6 +791,23 @@ class HttpTransport(Transport):
         self.session_id: Optional[str] = None
         self.bytes_received = 0
 
+    def close(self) -> None:
+        """Best-effort Streamable HTTP session termination (DELETE with Mcp-Session-Id)."""
+        session_id = self.session_id
+        self.session_id = None
+        if not session_id:
+            return
+        try:
+            request = urllib.request.Request(self.url, method="DELETE")
+            for name, value in self.headers.items():
+                request.add_header(name, value)
+            request.add_header("Mcp-Session-Id", session_id)
+            opener = _DIRECT_OPENER if self._direct else _OPENER
+            with opener.open(request, timeout=2.0):
+                pass
+        except (OSError, urllib.error.URLError, http.client.HTTPException, ValueError):
+            pass
+
     def send(self, message, *, headers, timeout, limit=MAX_MESSAGE_BYTES):
         watchdog = _Watchdog(timeout)
         try:
@@ -1150,6 +1167,9 @@ class McpSession:
             raise McpError(
                 f"server chose protocol version {negotiated[:40]!r}, which is not supported"
             )
+        capabilities = result.get("capabilities")
+        if not isinstance(capabilities, Mapping):
+            raise McpError("initialize result has missing or invalid 'capabilities'")
         # A failed notification is the server's problem, unless what it sent
         # back spent the budget.
         try:
@@ -1164,12 +1184,11 @@ class McpSession:
             raise
         except McpError:
             pass
-        capabilities = result.get("capabilities")
         server_info = result.get("serverInfo")
         self.info = ServerInfo(
             protocol_version=negotiated,
             modern=False,
-            capabilities=dict(capabilities) if isinstance(capabilities, Mapping) else {},
+            capabilities=dict(capabilities),
             server_info=dict(server_info) if isinstance(server_info, Mapping) else None,
         )
         return self.info
@@ -1236,14 +1255,9 @@ class McpSession:
             raise McpError("resources/read returned no contents")
         match = next((c for c in contents if isinstance(c, Mapping) and c.get("uri") == uri), None)
         if match is None:
-            # A lone entry naming no URI can only be the one asked for; any
-            # other answer would be stored as this file without a check.
-            only = contents[0] if len(contents) == 1 else None
-            if not isinstance(only, Mapping):
-                raise McpError("resources/read returned malformed contents")
-            if "uri" in only:
+            if any(isinstance(c, Mapping) and "uri" in c for c in contents):
                 raise McpError("resources/read returned contents for a different URI")
-            match = only
+            raise McpError("resources/read returned contents without a matching URI")
         if isinstance(match.get("text"), str):
             try:
                 return match["text"].encode("utf-8")
