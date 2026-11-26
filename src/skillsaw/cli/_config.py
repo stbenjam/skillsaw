@@ -49,6 +49,18 @@ def load_config(args, start_path: Path) -> tuple[LinterConfig, Path | None]:
         _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
+    # Scratch MCP directories hold server-controlled paths unrelated to the
+    # local checkout, so local exclude globs and content_paths must not hide
+    # fetched skills. Unconfigured pulls likewise drop default template/cache
+    # excludes so a server cannot evade linting under those segment names.
+    if getattr(args, "scratch_paths", False):
+        config.exclude_patterns = []
+        config.content_paths = []
+    elif config_path is None:
+        from ..formats.mcp_skills import SNAPSHOT_FILENAME
+
+        if (start_path / SNAPSHOT_FILENAME).is_file():
+            config.exclude_patterns = []
     return config, config_path
 
 

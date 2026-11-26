@@ -619,6 +619,8 @@ def _extract_args(subparser):
 
         flag_str = ", ".join(f"`{f}`" for f in flags)
         help_text = act.help or ""
+        if getattr(act, "required", False) and "(required)" not in help_text.lower():
+            help_text = f"{help_text} (required)".strip()
         default = act.default
         if default in (None, False, [], _argparse.SUPPRESS):
             default_str = ""

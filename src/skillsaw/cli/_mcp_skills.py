@@ -12,13 +12,14 @@ import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from ..config import find_config
 from ..diagnostics import terminal_safe
 from ..mcp_skills_pull import (
     PullError,
     ServerTarget,
+    SkipServerError,
     command_target,
     config_servers,
     config_target,
@@ -28,9 +29,10 @@ from ..mcp_skills_pull import (
     url_target,
 )
 from ..paths import safe_resolve
+from ._config import load_config
 
 
-def _targets(args) -> List[ServerTarget]:
+def _targets(args) -> Tuple[List[ServerTarget], List[Tuple[str, str]]]:
     headers = dict(parse_header(spec) for spec in args.mcp_headers)
     urls = [s for s in args.mcp_servers if s.lower().startswith(("http://", "https://"))]
     if headers and len(urls) != 1:
@@ -43,19 +45,28 @@ def _targets(args) -> List[ServerTarget]:
         url_target(server, headers) if server in urls else command_target(server)
         for server in args.mcp_servers
     ]
+    config_errors: List[Tuple[str, str]] = []
     if args.mcp_config:
         servers = config_servers(args.mcp_config)
         base = (safe_resolve(args.mcp_config) or args.mcp_config.absolute()).parent
         for name, entry in servers.items():
             try:
                 targets.append(config_target(name, entry, base))
+            except SkipServerError as exc:
+                # Disabled entries and retired transports are benign skips.
+                if not getattr(args, "quiet", False):
+                    print(
+                        f"Skipping {terminal_safe(name)}: {terminal_safe(str(exc))}",
+                        file=sys.stderr,
+                    )
             except PullError as exc:
-                # A client config lists every server the user runs; one that
-                # cannot be fetched is not a reason to skip the rest.
-                print(f"Skipping {terminal_safe(name)}: {terminal_safe(str(exc))}", file=sys.stderr)
-    if not targets:
+                # Malformed or unsafe entries must not fail open in a
+                # multi-server config: record them as problems while still
+                # fetching the remaining servers.
+                config_errors.append((name, str(exc)))
+    if not targets and not config_errors:
         raise PullError(f"{args.mcp_config} lists no server skillsaw can fetch from")
-    return targets
+    return targets, config_errors
 
 
 def _announce(target: ServerTarget, out_dir: Optional[Path]) -> None:
@@ -95,8 +106,9 @@ def _report_problems(snapshot) -> int:
 
 def _fetch(args, out_dir: Path, kept: bool):
     """Pull every server's skills into *out_dir*; exit 1 when the pull cannot start."""
+    quiet = bool(getattr(args, "quiet", False))
     try:
-        targets = _targets(args)
+        targets, config_errors = _targets(args)
         prepare_output(out_dir)
         snapshot = pull(
             targets,
@@ -104,12 +116,16 @@ def _fetch(args, out_dir: Path, kept: bool):
             timeout=args.mcp_timeout,
             max_skills=args.mcp_max_skills,
             max_bytes=args.mcp_max_bytes,
-            progress=lambda target: _announce(target, out_dir if kept else None),
+            progress=(
+                None if quiet else lambda target: _announce(target, out_dir if kept else None)
+            ),
+            config_errors=config_errors,
         )
     except PullError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"Error: {terminal_safe(exc)}", file=sys.stderr)
         sys.exit(1)
-    _summarize(snapshot)
+    if not quiet:
+        _summarize(snapshot)
     return snapshot
 
 
@@ -124,22 +140,25 @@ def _fetched(args):
     """Fetch what the servers serve into a temporary directory, removed afterwards.
 
     The configuration is the one the command would use in the current
-    directory, so rule settings and severity overrides apply.
+    directory, validated before any connection starts so rule settings and
+    severity overrides apply without leaking local path excludes or baselines.
     """
     if args.config is None:
         args.config = find_config(Path.cwd())
     args.scratch_paths = True  # never discover a config or baseline from the scratch path
+    loaded_config = load_config(args, Path.cwd())
     scratch = Path(tempfile.mkdtemp(prefix="skillsaw-"))
     try:
         out_dir = scratch / "mcp-skills"
-        yield out_dir, _fetch(args, out_dir, kept=False)
+        yield out_dir, _fetch(args, out_dir, kept=False), loaded_config
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def _finish(snapshot, run) -> None:
+def _finish(snapshot, run, *, quiet: bool = False) -> None:
     """Run the command, then list the servers' problems; any of them fails the run."""
-    print(file=sys.stderr)
+    if not quiet:
+        print(file=sys.stderr)
     try:
         run()
         status = 0
@@ -151,16 +170,29 @@ def _finish(snapshot, run) -> None:
 
 
 def _run_lint_mcp_skills(args) -> None:
-    from ._lint import _run_lint
+    from ._lint import _run_lint, _validate_lint_args
 
-    with _fetched(args) as (out_dir, snapshot):
+    _validate_lint_args(args)
+    with _fetched(args) as (out_dir, snapshot, loaded_config):
         args.path = [out_dir]
-        _finish(snapshot, lambda: _run_lint(args))
+        _finish(
+            snapshot,
+            lambda: _run_lint(args, loaded_config=loaded_config),
+            quiet=bool(getattr(args, "quiet", False)),
+        )
 
 
 def _run_tree_mcp_skills(args) -> None:
-    from ._tree import _run_tree
+    from ._tree import _run_tree, _validate_tree_args
 
-    with _fetched(args) as (out_dir, snapshot):
+    if args.codex_instructions or args.cwd is not None:
+        print(
+            "Error: --codex-instructions and --cwd cannot be combined with "
+            "--mcp-server or --mcp-config",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    _validate_tree_args(args)
+    with _fetched(args) as (out_dir, snapshot, loaded_config):
         args.path = out_dir
-        _finish(snapshot, lambda: _run_tree(args))
+        _finish(snapshot, lambda: _run_tree(args, loaded_config=loaded_config))

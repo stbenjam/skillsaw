@@ -18,6 +18,7 @@ exclusively, so two URIs that land on one path cannot overwrite each other.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
@@ -28,11 +29,13 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 import yaml
 
+from .diagnostics import encodable, safe_display
 from .formats import mcp_skills
+from .formats.mcp_skills import DEFAULT_MAX_BYTES, DEFAULT_MAX_SKILLS, DEFAULT_TIMEOUT
 from .mcp_client import (
     HttpTransport,
     McpAuthError,
@@ -43,10 +46,15 @@ from .mcp_client import (
     StdioTransport,
     Transport,
 )
-from .utils import _SAFE_LOADER, _extract_frontmatter_text, read_jsonc
+from .paths import contained_resolve, safe_resolve
+from .utils import (
+    _SAFE_LOADER,
+    mkdir_parents_anchored,
+    parse_frontmatter,
+    read_jsonc,
+    write_bytes_atomic,
+)
 
-DEFAULT_MAX_SKILLS = 256
-DEFAULT_MAX_BYTES = 64 * 1024 * 1024
 #: Bounds on discovering a dynamic skill's files through directory reads.
 MAX_DIRECTORY_DEPTH = 8
 MAX_DIRECTORY_REQUESTS = 128
@@ -56,6 +64,10 @@ _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 class PullError(Exception):
     """A target or output directory the pull cannot use."""
+
+
+class SkipServerError(PullError):
+    """A configured server that is intentionally skipped rather than malformed."""
 
 
 @dataclass
@@ -115,6 +127,17 @@ def parse_header(spec: str) -> tuple:
 _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 
 
+def _is_loopback_host(host: str) -> bool:
+    """Whether *host* is a local loopback address or ``localhost``."""
+    lowered = host.rstrip(".").lower()
+    if lowered == "localhost" or lowered.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def url_target(url: str, headers: Mapping[str, str], label: Optional[str] = None) -> ServerTarget:
     """A target for an HTTP server, refusing what HTTP would echo back in an error.
 
@@ -132,6 +155,11 @@ def url_target(url: str, headers: Mapping[str, str], label: Optional[str] = None
         raise PullError("the URL carries credentials; send them in a header instead")
     if any(ord(ch) < 0x21 or ord(ch) == 0x7F for ch in url):
         raise PullError("the URL contains spaces or control characters")
+    if parts.scheme == "http" and headers and not _is_loopback_host(host):
+        raise PullError(
+            "refusing to send HTTP headers over unencrypted http://; use https:// "
+            "(http:// with headers is allowed only for loopback hosts)"
+        )
     for name, value in headers.items():
         if not _HEADER_NAME.fullmatch(name):
             # Not quoted: a misplaced colon can leave the value in the name.
@@ -153,24 +181,30 @@ def url_target(url: str, headers: Mapping[str, str], label: Optional[str] = None
 #: verbs some of them take first (``uv run``, ``docker run``, ``pnpm dlx``).
 _LAUNCHERS = {"npx", "pnpx", "bunx", "uvx", "pipx", "uv", "pnpm", "node", "deno", "bun", "docker"}
 _LAUNCHER_VERBS = {"run", "x", "exec", "dlx", "tool"}
-#: Flags whose next argument is a program's source, as in ``python -c``.
-_INLINE_CODE_FLAGS = {"-c", "-e", "--eval", "-p", "--print"}
+#: Flags whose presence still leaves the next plain token as a safe package/module name.
+#: Any other flag before the target may take a value carrying a credential (e.g.
+#: ``docker run --env KEY=secret`` or ``uvx --index-url https://u:p@host``) or inline code.
+_SAFE_LABEL_FLAGS = {"-y", "--yes", "-q", "--quiet", "--rm", "-i", "--interactive", "-m"}
 
 
 def _command_label(command: List[str]) -> str:
     """Name a stdio server for its snapshot directory, from its command line.
 
     ``npx -y @acme/skills-server`` is "skills-server" and ``python -m
-    acme.server`` is "acme.server"; any other program is named for itself.
+    acme.server`` is "acme.server"; any other program — or a launcher carrying
+    unknown flags whose values may hold credentials — is named for itself.
     """
     program = Path(command[0])
     launcher = program.stem.lower()
-    if any(arg in _INLINE_CODE_FLAGS for arg in command[1:]):
-        return program.name  # the code may hold a credential; it is no name
     if launcher in _LAUNCHERS or launcher.startswith("python"):
         for arg in command[1:]:
-            if not arg.startswith("-") and arg not in _LAUNCHER_VERBS:
-                return Path(arg).name
+            if arg in _LAUNCHER_VERBS or arg in _SAFE_LABEL_FLAGS:
+                continue
+            if arg.startswith("-"):
+                return program.name
+            if "=" in arg or (":" in arg and "@" in arg):
+                return program.name
+            return Path(arg).name
     return program.name
 
 
@@ -219,7 +253,12 @@ def config_servers(config_path: Path) -> Dict[str, Any]:
         raise PullError(f"cannot read {config_path}: {error}")
     if not isinstance(data, Mapping):
         raise PullError(f"{config_path} is not a JSON object")
-    servers = data.get("mcpServers", data.get("servers"))
+    servers = None
+    for key in ("mcpServers", "servers"):
+        candidate = data.get(key)
+        if isinstance(candidate, Mapping) and not _names_a_server(candidate):
+            servers = candidate
+            break
     if servers is None and data and all(_names_a_server(entry) for entry in data.values()):
         servers = data
     if not isinstance(servers, Mapping):
@@ -231,48 +270,75 @@ def _names_a_server(entry: Any) -> bool:
     return isinstance(entry, Mapping) and ("command" in entry or "url" in entry)
 
 
+_HTTP_TYPES = frozenset({"http", "streamable-http", "streamable_http", "streamablehttp"})
+
+
 def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
     """A target for one server entry of an MCP client config."""
     if not isinstance(entry, Mapping):
         raise PullError("it is not an object")
     if entry.get("disabled") is True:
-        raise PullError("it is disabled")  # never start a server the user switched off
+        raise SkipServerError("it is disabled")  # never start a server the user switched off
     label = mcp_skills.sanitize_label(name)
-    kind = str(entry.get("type") or "").lower()
-    url = entry.get("url")
-    if isinstance(url, str) and url:
+    if "type" in entry:
+        raw_kind = entry["type"]
+        if not isinstance(raw_kind, str):
+            raise PullError("its 'type' is not a string")
+        kind = raw_kind.strip().lower()
         if kind == "sse":
-            raise PullError("it uses the retired HTTP+SSE transport")
-        headers = entry.get("headers") or {}
-        if not isinstance(headers, Mapping):
+            raise SkipServerError("it uses the retired HTTP+SSE transport")
+        if kind in _HTTP_TYPES:
+            transport = "http"
+        elif kind == "stdio":
+            transport = "stdio"
+        else:
+            raise PullError("its 'type' is not supported")
+    elif "url" in entry and "command" not in entry:
+        transport = "http"
+    elif "command" in entry:
+        transport = "stdio"
+    else:
+        raise PullError("it has neither a 'url' nor a 'command'")
+
+    if transport == "http":
+        url = entry.get("url")
+        if not isinstance(url, str) or not url:
+            raise PullError("its 'url' is missing or not a string")
+        raw_headers = entry.get("headers") if "headers" in entry else {}
+        if not isinstance(raw_headers, Mapping):
             raise PullError("its 'headers' is not an object")
-        expanded = {str(k): _expand(v) for k, v in headers.items() if isinstance(v, str)}
+        if not all(isinstance(v, str) for v in raw_headers.values()):
+            raise PullError("its 'headers' holds a value that is not a string")
+        expanded = {str(k): _expand(v) for k, v in raw_headers.items()}
         target = url_target(_expand(url), expanded)
         target.label = label
         return target
+
     command = entry.get("command")
-    if isinstance(command, str) and command:
-        args = entry.get("args")
-        if args is None:
-            args = []
-        if not isinstance(args, list):
-            # Dropping them would start a different program invocation.
-            raise PullError("its 'args' is not an array")
-        if not all(isinstance(arg, str) for arg in args):
-            raise PullError("its 'args' holds a value that is not a string")
-        argv = [_expand(command)] + [_expand(str(a)) for a in args]
-        env = dict(os.environ)
-        raw_env = entry.get("env")
-        if raw_env is not None and not isinstance(raw_env, Mapping):
+    if not isinstance(command, str) or not command:
+        raise PullError("its 'command' is missing or not a string")
+    args = entry["args"] if "args" in entry else []
+    if not isinstance(args, list):
+        # Dropping them would start a different program invocation.
+        raise PullError("its 'args' is not an array")
+    if not all(isinstance(arg, str) for arg in args):
+        raise PullError("its 'args' holds a value that is not a string")
+    argv = [_expand(command)] + [_expand(a) for a in args]
+    env = dict(os.environ)
+    if "env" in entry:
+        raw_env = entry["env"]
+        if not isinstance(raw_env, Mapping):
             raise PullError("its 'env' is not an object")  # as with args, never drop it
-        env.update({str(k): _expand(str(v)) for k, v in (raw_env or {}).items()})
-        workdir = entry.get("cwd")
-        if workdir is not None and not isinstance(workdir, str):
+        if not all(isinstance(v, str) for v in raw_env.values()):
+            raise PullError("its 'env' holds a value that is not a string")
+        env.update({str(k): _expand(v) for k, v in raw_env.items()})
+    if "cwd" in entry:
+        workdir = entry["cwd"]
+        if not isinstance(workdir, str):
             raise PullError("its 'cwd' is not a string")  # never start it elsewhere
         if workdir:
             cwd = cwd / _expand(workdir)  # relative to the config, as clients resolve it
-        return ServerTarget(label=label, kind="stdio", command=argv, env=env, cwd=cwd)
-    raise PullError("it has neither a 'url' nor a 'command'")
+    return ServerTarget(label=label, kind="stdio", command=argv, env=env, cwd=cwd)
 
 
 def unique_labels(targets: List[ServerTarget]) -> None:
@@ -333,27 +399,9 @@ def prepare_output(out_dir: Path) -> None:
         raise PullError(f"cannot prepare {out_dir}: {exc.strerror or exc}") from exc
 
 
-#: The most of an earlier snapshot record read to learn what it may replace.
-MAX_SNAPSHOT_RECORD_BYTES = 16 * 1024 * 1024
-
-
 def _snapshot_labels(out_dir: Path) -> set:
-    """The server labels an earlier pull recorded in *out_dir*.
-
-    Only a regular file is read, and only so much of it: a record checked in
-    as a symlink to ``/dev/zero`` or a FIFO must not hang the pull.
-    """
-    record = out_dir / mcp_skills.SNAPSHOT_FILENAME
-    try:
-        if record.is_symlink() or not record.is_file():
-            return set()
-        with record.open("rb") as handle:
-            raw = handle.read(MAX_SNAPSHOT_RECORD_BYTES + 1)
-        if len(raw) > MAX_SNAPSHOT_RECORD_BYTES:
-            return set()
-        data = json.loads(raw.decode("utf-8"))
-    except (OSError, ValueError, RecursionError):
-        return set()
+    """The server labels an earlier pull recorded in *out_dir*."""
+    data = mcp_skills.read_snapshot_record(out_dir)
     servers = data.get("servers") if isinstance(data, dict) else None
     if not isinstance(servers, list):
         return set()
@@ -361,8 +409,7 @@ def _snapshot_labels(out_dir: Path) -> set:
     return {label for label in labels if isinstance(label, str)}
 
 
-#: The snapshot record, and the file it is written to before it is renamed.
-_RECORD_NAMES = {mcp_skills.SNAPSHOT_FILENAME, f".{mcp_skills.SNAPSHOT_FILENAME}.partial"}
+_RECORD_NAMES = {mcp_skills.SNAPSHOT_FILENAME}
 
 
 def _replaceable(entry: Path, labels: set) -> bool:
@@ -379,11 +426,17 @@ def _replaceable(entry: Path, labels: set) -> bool:
 
 def _write_exclusive(path: Path, data: bytes, root: Path) -> None:
     """Create *path* under *root*, refusing anything that would leave it."""
-    if os.path.commonpath([os.path.abspath(path), os.path.abspath(root)]) != os.path.abspath(root):
+    resolved_root = safe_resolve(root)
+    if resolved_root is None or os.path.commonpath(
+        [os.path.abspath(path), os.path.abspath(root)]
+    ) != os.path.abspath(root):
         raise PullError(f"refused to write outside the snapshot: {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_parents_anchored(path.parent, root=resolved_root)
+    resolved_parent = contained_resolve(path.parent, resolved_root)
+    if resolved_parent is None:
+        raise PullError(f"refused to write outside the snapshot: {path}")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags, 0o600)
+    fd = os.open(resolved_parent / path.name, flags, 0o600)
     with os.fdopen(fd, "wb") as handle:
         handle.write(data)
 
@@ -422,16 +475,31 @@ def _jsonable(value: Any) -> Any:
         return None
 
 
-_SURROGATE = re.compile("[\ud800-\udfff]")
+def _secret_values(target: ServerTarget) -> Tuple[str, ...]:
+    """Sensitive strings sent to *target* that must not echo into snapshots or logs."""
+    values = set()
+    for raw in target.headers.values():
+        stripped = raw.strip()
+        if len(stripped) >= 4:
+            values.add(stripped)
+            parts = stripped.split()
+            if len(parts) >= 2 and len(parts[-1]) >= 4:
+                values.add(parts[-1])
+    if target.url:
+        query = urlsplit(target.url).query
+        if len(query) >= 6:
+            values.add(query)
+        for _key, val in parse_qsl(query, keep_blank_values=False):
+            if len(val) >= 6:
+                values.add(val)
+    return tuple(sorted(values, key=len, reverse=True))
 
 
-def _clean_text(text: str) -> str:
-    """*text* with any unpaired surrogate replaced, so it encodes as UTF-8.
-
-    Server names, versions and error messages echo server text; recorded
-    entries need no cleaning, since ``_jsonable`` refuses a surrogate.
-    """
-    return text if text.isascii() else _SURROGATE.sub("\ufffd", text)
+def _redact_secrets(text: str, secrets: Tuple[str, ...]) -> str:
+    for secret in secrets:
+        if secret in text:
+            text = text.replace(secret, "[redacted]")
+    return text
 
 
 def _same_frontmatter(served: Any, advertised: Any) -> bool:
@@ -455,7 +523,7 @@ def _same_frontmatter(served: Any, advertised: Any) -> bool:
         # Read advertised text as the unquoted YAML scalar it would be in the
         # file, so its spelling is compared, not its type. Served text was
         # quoted, and is text to every YAML parser, so it is compared as is.
-        if isinstance(advertised, str):
+        if served is not None and isinstance(advertised, str):
             advertised = _as_yaml_scalar(advertised)
             if _same_day(served, advertised):
                 return True
@@ -488,17 +556,11 @@ def _same_day(left: Any, right: Any) -> bool:
 def _served_frontmatter(data: bytes) -> Optional[Mapping[str, Any]]:
     """The YAML frontmatter of a served ``SKILL.md``, parsed as a host would."""
     try:
-        text = data.decode("utf-8")
+        text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
         return None
-    fm_text, _ = _extract_frontmatter_text(text.lstrip("\ufeff"))
-    if fm_text is None:
-        return None
-    try:
-        parsed = yaml.load(fm_text, Loader=_SAFE_LOADER)
-    except (yaml.YAMLError, ValueError, RecursionError):  # 2024-99-99 raises ValueError
-        return None
-    return parsed if isinstance(parsed, Mapping) else None
+    parsed, _, _ = parse_frontmatter(text)
+    return parsed
 
 
 def _is_size(value: Any) -> bool:
@@ -515,8 +577,8 @@ def _entry_problems(entry: Mapping[str, Any], uri: str, root_uri: str) -> List[s
     else:
         if frontmatter.get("name") != name:
             problems.append(
-                f"frontmatter name {frontmatter.get('name')!r} does not equal the URI's "
-                f"final segment {name!r}"
+                f"frontmatter name {safe_display(frontmatter.get('name'))!r} does not equal "
+                f"the URI's final segment {name!r}"
             )
         if not isinstance(frontmatter.get("description"), str):
             problems.append("frontmatter has no description")
@@ -568,6 +630,7 @@ class _ServerPull:
         self.server_dir = out_dir / target.label
         self.max_skills = max_skills
         self.max_bytes = max_bytes
+        self._secrets = _secret_values(target)
         # A nested skill's files are listed by its own entry and by the one
         # around it; fetch each URI once, keeping what verifying it needs.
         self.fetched: Dict[str, Tuple[int, str]] = {}
@@ -579,7 +642,7 @@ class _ServerPull:
         self.record: Dict[str, Any] = {
             "label": target.label,
             "transport": target.kind,
-            "target": _clean_text(target.describe()),
+            "target": encodable(target.describe()),
             "protocolVersion": None,
             "serverInfo": None,
             "extension": None,
@@ -588,9 +651,9 @@ class _ServerPull:
         }
 
     def error(self, message: str, uri: Optional[str] = None) -> None:
-        entry: Dict[str, Any] = {"message": _clean_text(message)}
+        entry: Dict[str, Any] = {"message": encodable(_redact_secrets(message, self._secrets))}
         if uri is not None:
-            entry["uri"] = _clean_text(uri)
+            entry["uri"] = encodable(_redact_secrets(uri, self._secrets))
         self.record["errors"].append(entry)
 
     def run(self, timeout: float) -> Dict[str, Any]:
@@ -623,17 +686,26 @@ class _ServerPull:
 
     def _pull(self, session: McpSession) -> None:
         info = session.connect()
-        self.record["protocolVersion"] = _clean_text(str(info.protocol_version))
+        self.record["protocolVersion"] = encodable(str(info.protocol_version))
         if info.server_info:
             self.record["serverInfo"] = {
-                key: _clean_text(info.server_info[key])
+                key: encodable(info.server_info[key])
                 for key in ("name", "version")
                 if isinstance(info.server_info.get(key), str)
             }
         extension = info.skills_extension
-        self.record["extension"] = _jsonable(extension)
         if extension is None:
+            self.record["extension"] = None
             return  # serving no skills is not a problem; there is nothing to lint
+        recorded_ext = _jsonable(extension)
+        if recorded_ext is None:
+            self.error(
+                "skills extension settings cannot be recorded: they nest too deeply, or "
+                "hold a non-finite number or text that is not valid Unicode"
+            )
+            self.record["extension"] = {}
+        else:
+            self.record["extension"] = recorded_ext
         # List first, then fetch: a cursor may not outlive a long fetch. The
         # listing stops as soon as the skill budget is exceeded.
         entries: List[Mapping[str, Any]] = []
@@ -667,7 +739,7 @@ class _ServerPull:
         root_uri = mcp_skills.skill_root_uri(uri) if isinstance(uri, str) else None
         if root_uri is None or mcp_skills.local_parts(uri) is None:
             self.error(
-                f"skills/list entry uri {uri!r} does not name a skill's SKILL.md",
+                f"skills/list entry uri {safe_display(uri)!r} does not name a skill's SKILL.md",
                 uri if isinstance(uri, str) else None,
             )
             return
@@ -752,7 +824,7 @@ class _ServerPull:
         )
         if self.stored.setdefault(folded, file_uri) != file_uri:
             self.error(
-                f"refused: on macOS and Windows its path is the same as {self.stored[folded]}",
+                f"refused: on macOS or Windows its path is the same as {self.stored[folded]}",
                 file_uri,
             )
             return None
@@ -817,6 +889,9 @@ class _ServerPull:
                 if parent != directory or not name:
                     continue  # not a direct child of the directory read
                 if child.get("mimeType") == "inode/directory":
+                    if mcp_skills.local_parts(child_uri) is None:
+                        self.error("refused: the URI cannot be stored safely", child_uri)
+                        continue
                     if child_uri in visited:
                         continue
                     if depth + 1 >= MAX_DIRECTORY_DEPTH or len(visited) >= MAX_DIRECTORY_REQUESTS:
@@ -850,10 +925,11 @@ def pull(
     targets: List[ServerTarget],
     out_dir: Path,
     *,
-    timeout: float = 30.0,
+    timeout: float = DEFAULT_TIMEOUT,
     max_skills: int = DEFAULT_MAX_SKILLS,
     max_bytes: int = DEFAULT_MAX_BYTES,
     progress: Optional[Callable[[ServerTarget], None]] = None,
+    config_errors: Optional[List[Tuple[str, str]]] = None,
 ) -> Dict[str, Any]:
     """Fetch every target's skills into *out_dir* and write the snapshot."""
     from . import __version__
@@ -861,6 +937,19 @@ def pull(
     unique_labels(targets)
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     unfinished = {"message": "the pull did not finish"}
+    error_records = [
+        {
+            "label": mcp_skills.sanitize_label(name),
+            "transport": None,
+            "target": None,
+            "protocolVersion": None,
+            "serverInfo": None,
+            "extension": None,
+            "skills": [],
+            "errors": [{"message": encodable(message)}],
+        }
+        for name, message in (config_errors or ())
+    ]
     # Recorded before anything is fetched: a pull cut short still leaves a
     # record of the directories it made, so the next pull can replace them.
     _write_snapshot(
@@ -869,7 +958,8 @@ def pull(
             "snapshotVersion": mcp_skills.SNAPSHOT_VERSION,
             "generator": f"skillsaw {__version__}",
             "pulledAt": started,
-            "servers": [{"label": t.label, "errors": [unfinished]} for t in targets],
+            "servers": [{"label": t.label, "errors": [unfinished]} for t in targets]
+            + error_records,
         },
     )
     servers = []
@@ -879,6 +969,7 @@ def pull(
         servers.append(
             _ServerPull(target, out_dir, max_skills=max_skills, max_bytes=max_bytes).run(timeout)
         )
+    servers.extend(error_records)
     snapshot = {
         "snapshotVersion": mcp_skills.SNAPSHOT_VERSION,
         "generator": f"skillsaw {__version__}",
@@ -890,17 +981,13 @@ def pull(
 
 
 def _write_snapshot(out_dir: Path, snapshot: Dict[str, Any]) -> None:
-    """Write the record beside, then rename: it is either whole or absent."""
-    final = out_dir / mcp_skills.SNAPSHOT_FILENAME
-    partial = out_dir / f".{mcp_skills.SNAPSHOT_FILENAME}.partial"
+    """Atomically write the snapshot record as UTF-8 LF bytes."""
+    resolved_out = safe_resolve(out_dir) or out_dir
+    final = resolved_out / mcp_skills.SNAPSHOT_FILENAME
+    payload = (json.dumps(snapshot, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     try:
-        partial.write_text(
-            json.dumps(snapshot, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-        )
-        os.replace(partial, final)
+        write_bytes_atomic(final, payload, root=resolved_out)
     except OSError as exc:
-        try:
-            partial.unlink()  # a leftover would block the next pull here
-        except OSError:
-            pass
-        raise PullError(f"cannot write {final}: {exc.strerror or exc}") from exc
+        raise PullError(
+            f"cannot write {out_dir / mcp_skills.SNAPSHOT_FILENAME}: {exc.strerror or exc}"
+        ) from exc

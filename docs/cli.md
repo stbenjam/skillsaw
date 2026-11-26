@@ -50,7 +50,7 @@ Fetch the Agent Skills MCP servers serve into a directory
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-o`, `--output` | Directory for the skills, replacing an earlier pull there |  |
+| `-o`, `--output` | Directory for the skills, replacing an earlier pull there (required) |  |
 | `--mcp-server` | An http(s) server URL, or a command line that starts a stdio server (repeatable) |  |
 | `--mcp-header` | HTTP header for a single --mcp-server URL, e.g. an Authorization header (repeatable) |  |
 | `--mcp-config` | Every server in this MCP client config (.mcp.json, .vscode/mcp.json, ...), with its headers and environment |  |

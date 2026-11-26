@@ -13,13 +13,22 @@ URIs to paths in a snapshot directory.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
-from typing import Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote
+
+from ..paths import contained_resolve, safe_resolve
 
 EXTENSION_ID = "io.modelcontextprotocol/skills"
 SKILL_SCHEME = "skill"
 SKILL_FILENAME = "SKILL.md"
+
+#: Default per-server bounds for ``skillsaw lint/tree/pull --mcp-*``.
+DEFAULT_TIMEOUT = 30.0
+DEFAULT_MAX_SKILLS = 256
+DEFAULT_MAX_BYTES = 64 * 1024 * 1024
 
 #: Per-skill limits every conforming host must accept (SEP-2640 "Limits").
 MAX_RESOURCES_PER_SKILL = 512
@@ -30,6 +39,8 @@ DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 #: The record every fetch writes at the root of its output; ``skillsaw pull`` keeps it.
 SNAPSHOT_FILENAME = "mcp-skills-snapshot.json"
 SNAPSHOT_VERSION = 1
+#: The most of a snapshot record read from disk (prevents symlink/FIFO hangs).
+MAX_SNAPSHOT_RECORD_BYTES = 16 * 1024 * 1024
 
 _LABEL_UNSAFE = re.compile(r"[^a-z0-9._-]+")
 MAX_LABEL_LENGTH = 64
@@ -115,7 +126,80 @@ def local_parts(uri: str) -> Optional[Tuple[str, ...]]:
     scheme, segments = split
     if scheme == SKILL_SCHEME:
         return segments
-    return (f"_{scheme}",) + segments
+    prefix = _safe_segment(f"_{scheme}")
+    if prefix is None:
+        return None
+    return (prefix,) + segments
+
+
+def read_snapshot_record(root: Path) -> Optional[Dict[str, Any]]:
+    """Read ``mcp-skills-snapshot.json`` from *root*, or ``None`` if absent/invalid.
+
+    Only a regular non-symlink file within :data:`MAX_SNAPSHOT_RECORD_BYTES` is
+    read, so a symlink to ``/dev/zero`` or a FIFO cannot hang discovery or pull.
+    """
+    record = root / SNAPSHOT_FILENAME
+    try:
+        if record.is_symlink() or not record.is_file():
+            return None
+        with record.open("rb") as handle:
+            raw = handle.read(MAX_SNAPSHOT_RECORD_BYTES + 1)
+        if len(raw) > MAX_SNAPSHOT_RECORD_BYTES:
+            return None
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, RecursionError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def snapshot_skill_dirs(root: Path) -> List[Path]:
+    """Every valid, contained skill directory listed by *root*'s MCP snapshot.
+
+    Reading the snapshot directly ensures nested SEP-2640 skills and skills
+    under dot-prefixed or typically skipped directory names (``node_modules``,
+    ``venv``, ``templates``) are never silently dropped by generic repository
+    walk heuristics.
+    """
+    data = read_snapshot_record(root)
+    if data is None:
+        return []
+    servers = data.get("servers")
+    if not isinstance(servers, list):
+        return []
+    resolved_root = safe_resolve(root)
+    if resolved_root is None:
+        return []
+    dirs: List[Path] = []
+    seen = set()
+    for server in servers:
+        if not isinstance(server, dict):
+            continue
+        label = server.get("label")
+        skills = server.get("skills")
+        if (
+            not isinstance(label, str)
+            or sanitize_label(label) != label
+            or not isinstance(skills, list)
+        ):
+            continue
+        for entry in skills:
+            if not isinstance(entry, dict):
+                continue
+            uri = entry.get("uri")
+            parts = local_parts(uri) if isinstance(uri, str) else None
+            if not parts or len(parts) < 2 or parts[-1] != SKILL_FILENAME:
+                continue
+            skill_dir = root.joinpath(label, *parts[:-1])
+            skill_md = skill_dir / SKILL_FILENAME
+            resolved_md = contained_resolve(skill_md, resolved_root)
+            if resolved_md is None or not resolved_md.is_file():
+                continue
+            resolved_dir = contained_resolve(skill_dir, resolved_root)
+            if resolved_dir is None or resolved_dir in seen:
+                continue
+            seen.add(resolved_dir)
+            dirs.append(skill_dir)
+    return dirs
 
 
 def skill_root_uri(skill_md_uri: str) -> Optional[str]:

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..config import _FAIL_ON_LEVELS
 from ..context import RepositoryType
+from ..formats.mcp_skills import DEFAULT_MAX_BYTES, DEFAULT_MAX_SKILLS, DEFAULT_TIMEOUT
 from ..formatters import EXTENSION_MAP, FORMATS
 from ._config import _get_version
 
@@ -79,21 +80,21 @@ def _add_mcp_server_args(group) -> None:
     group.add_argument(
         "--mcp-timeout",
         type=_seconds,
-        default=30.0,
+        default=DEFAULT_TIMEOUT,
         metavar="SECONDS",
-        help="Seconds to wait for each response (default: 30)",
+        help=f"Seconds to wait for each response (default: {int(DEFAULT_TIMEOUT)})",
     )
     group.add_argument(
         "--mcp-max-skills",
         type=_positive_int,
-        default=256,
+        default=DEFAULT_MAX_SKILLS,
         metavar="N",
-        help="Skills listed and fetched per server (default: 256)",
+        help=f"Skills listed and fetched per server (default: {DEFAULT_MAX_SKILLS})",
     )
     group.add_argument(
         "--mcp-max-bytes",
         type=_positive_int,
-        default=64 * 1024 * 1024,
+        default=DEFAULT_MAX_BYTES,
         metavar="N",
         help="Response bytes read from each server, listing included (default: 64 MiB)",
     )

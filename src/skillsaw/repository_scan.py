@@ -273,6 +273,16 @@ class RepositoryScanMixin:
     #: differently by two callers that both believe they agree.
     _WALK_SKIP_DIRS = detect_discovery.WALK_SKIP_DIRS
 
+    def mcp_snapshot_skills(self) -> List[Path]:
+        """Cached skill directories declared by a root ``mcp-skills-snapshot.json``."""
+        cached = getattr(self, "_mcp_snapshot_skills_cache", None)
+        if cached is None:
+            from .formats.mcp_skills import snapshot_skill_dirs
+
+            cached = snapshot_skill_dirs(self.root_path)
+            self._mcp_snapshot_skills_cache = cached
+        return list(cached)
+
     def _discover_skills(self) -> List[Path]:
         """Discover Agent Skills through the state-free Claude discovery seam."""
         from .formats.codex_manifest import portable_manifest
@@ -342,6 +352,15 @@ class RepositoryScanMixin:
             ),
             is_excluded=self.is_path_excluded,
         )
+
+        snapshot_skills = self.mcp_snapshot_skills()
+        if snapshot_skills:
+            seen_resolved = {r for p in skills if (r := safe_resolve(p)) is not None}
+            for skill_dir in snapshot_skills:
+                resolved = safe_resolve(skill_dir)
+                if resolved is not None and resolved not in seen_resolved:
+                    seen_resolved.add(resolved)
+                    skills.append(skill_dir)
 
         return self._filter_pi_skills(self._filter_cursor_skills(skills))
 

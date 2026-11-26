@@ -22,18 +22,25 @@ def _apply_plugin_extensions(context, config) -> None:
         print(f"Warning: {problem.message}", file=sys.stderr)
 
 
-def _run_tree(args):
+def _validate_tree_args(args) -> None:
     if (args.cwd is not None or args.fmt == "json") and not args.codex_instructions:
         print("Error: --cwd and --format json require --codex-instructions", file=sys.stderr)
         sys.exit(2)
     if args.codex_instructions and args.fmt == "dot":
         print("Error: --codex-instructions supports text or json", file=sys.stderr)
         sys.exit(2)
+
+
+def _run_tree(args, *, loaded_config=None):
+    _validate_tree_args(args)
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
 
-    config, _config_path = load_config(args, args.path)
+    if loaded_config is not None:
+        config, _config_path = loaded_config
+    else:
+        config, _config_path = load_config(args, args.path)
     options = config.codex_instructions
     if args.codex_instructions:
         from ..formats.codex_instructions import CodexInstructionOptions

@@ -15,17 +15,19 @@ security problems before an agent loads them:
 ```bash
 skillsaw lint --mcp-server https://mcp.example.com/mcp
 skillsaw lint --mcp-server "npx -y @acme/skills-server"     # a stdio server
-skillsaw lint --mcp-config .mcp.json --format sarif        # every server in a client config
+skillsaw lint --mcp-config .mcp.json                        # every server in a client config
 skillsaw tree --mcp-server URL                             # see what it serves
 skillsaw pull --mcp-server URL -o mcp-skills/             # fetch only; lint it later
 ```
 
 `lint` and `tree` take these options in place of a path; run local paths
 separately. The configuration is the one the command would use in the current
-directory, so rule settings and severity overrides apply; a baseline does not,
-since it describes your repository. The skills are fetched into a temporary
-directory that is removed when the run ends, so for report locations that last,
-such as SARIF for code scanning, `skillsaw pull` them and lint that directory.
+directory, so rule settings and severity overrides apply; local `exclude`
+patterns, `content-paths`, and baselines do not, since they describe your
+repository rather than the fetched skills. The skills are fetched into a
+temporary directory that is removed when the run ends, so for report locations
+that last, such as SARIF for code scanning, `skillsaw pull` them and lint that
+directory.
 
 The client speaks both the `2026-07-28` protocol (`server/discover`) and the
 earlier `initialize` handshake, over Streamable HTTP or stdio. `--mcp-config`
@@ -52,15 +54,19 @@ see them:
 - a skill exceeds the 512 files or 16 MiB that every host must accept;
 - a file could not be read or stored, or a limit stopped the fetch early.
 
-These are listed after the lint report, and any of them fails the run;
-`skillsaw pull` lists them too and exits 1, but keeps what it fetched.
+These are printed to `stderr` after the lint report (or tree) — they are not
+included in structured `--format` or `--output` reports — and any of them fails
+the run; `skillsaw pull` lists them too and exits 1, but keeps what it fetched.
 
 A server that serves no skills, as most servers in a client config do, is not a
-problem: there is just nothing to lint. A config entry skillsaw cannot fetch
-from, such as one on the retired HTTP+SSE transport, is skipped with a note.
+problem: there is just nothing to lint. Disabled entries and retired HTTP+SSE
+entries in a client config are skipped with a note; malformed or unsafe config
+entries are recorded as server problems and fail the run while the remaining
+servers are still fetched.
 
-A skill served as `"dynamic"` has no digests to check; its files are found through
-directory reads and linted like the rest.
+A skill served as `"dynamic"` has no digests to check; when the server
+advertises `directoryRead`, its files are found through directory reads and
+linted like the rest (otherwise only `SKILL.md` is fetched).
 
 The fetch acts like an inspector, not a host. It reads each listed file once,
 refuses URIs that would land outside the output directory, executes nothing it
@@ -89,8 +95,10 @@ skillsaw sends credentials it is given; it does not run an OAuth login.
 
 Credentials stay out of the snapshot: it records the server's scheme, host and
 port, but no path (some services carry a key there), headers, query string or
-user info. Redirects are refused, so a server cannot forward your header to
-another host.
+user info. Headers are refused over unencrypted `http://` except for loopback
+hosts (`localhost`, `127.0.0.1`, `[::1]`), redirects are refused so a server
+cannot forward your header to another host, and remote error messages are
+scrubbed of sent header and query secrets before recording or printing.
 
 ## Pulling skills
 

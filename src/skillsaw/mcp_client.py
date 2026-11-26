@@ -40,6 +40,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
 
+from .diagnostics import safe_display
 from .formats.mcp_skills import EXTENSION_ID
 
 MODERN_VERSION = "2026-07-28"
@@ -48,8 +49,14 @@ LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MODERN_ERROR_CODES = frozenset({-32020, -32021, -32022})
 UNSUPPORTED_VERSION = -32022
 CLIENT_CAPABILITIES: Dict[str, Any] = {"extensions": {EXTENSION_ID: {}}}
-#: Cap on one HTTP response or stdio line, far above the 16 MiB skill limit.
-MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+#: Cap on one resource-read message (fits a 16 MiB base64 blob plus envelope).
+MAX_MESSAGE_BYTES = 24 * 1024 * 1024
+#: Tighter cap on discovery, listing, and directory-read messages.
+_MAX_CONTROL_MESSAGE_BYTES = 4 * 1024 * 1024
+#: Cap on JSON objects/arrays in one message before ``json.loads`` allocates them.
+_MAX_JSON_CONTAINERS = 200_000
+_JSON_CONTAINER_BYTES = re.compile(rb'"[^"\\]*(?:\\.[^"\\]*)*"|([{\[])')
+_JSON_CONTAINER_TEXT = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"|([{\[])')
 #: Bytes taken from an HTTP body per read, so the deadline is checked often.
 _READ_CHUNK = 64 * 1024
 #: Messages a stdio server can get ahead of the client before its writes block.
@@ -83,6 +90,10 @@ class McpTimeoutError(McpError):
     """A request outlived its deadline: the server stopped answering."""
 
 
+class McpRedirectError(McpError):
+    """The server answered with an HTTP redirect, which is refused."""
+
+
 class McpRpcError(McpError):
     """The server answered a request with a JSON-RPC error."""
 
@@ -111,11 +122,38 @@ def _header_value(value: str) -> str:
     )
     if plain:
         return value
-    return "=?base64?" + base64.b64encode(value.encode("utf-8")).decode("ascii") + "?="
+    try:
+        encoded = value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise McpError("request name is not valid Unicode") from exc
+    return "=?base64?" + base64.b64encode(encoded).decode("ascii") + "?="
+
+
+def _exceeds_json_containers(data: Any) -> bool:
+    """Whether *data* holds more JSON objects/arrays than :data:`_MAX_JSON_CONTAINERS`."""
+    if isinstance(data, (bytes, bytearray)):
+        if data.count(b"{") + data.count(b"[") <= _MAX_JSON_CONTAINERS:
+            return False
+        pattern = _JSON_CONTAINER_BYTES
+    elif isinstance(data, str):
+        if data.count("{") + data.count("[") <= _MAX_JSON_CONTAINERS:
+            return False
+        pattern = _JSON_CONTAINER_TEXT
+    else:
+        return False
+    count = 0
+    for match in pattern.finditer(data):
+        if match.group(1) is not None:
+            count += 1
+            if count > _MAX_JSON_CONTAINERS:
+                return True
+    return False
 
 
 def _loads(data: Any) -> Any:
-    """``json.loads``, treating nesting too deep for the parser as a server error."""
+    """``json.loads``, bounding container fan-out and nesting as server errors."""
+    if _exceeds_json_containers(data):
+        raise McpError("the server sent JSON with too many containers to parse")
     try:
         return json.loads(data)
     except RecursionError:
@@ -260,7 +298,9 @@ class StdioTransport(Transport):
         line = bytearray()
         while True:
             room = self._line_limit + 1 - len(line)
-            piece = stdout.readline(max(1, min(_READ_CHUNK, room)))
+            if room <= 0:
+                return bytes(line)
+            piece = stdout.readline(min(_READ_CHUNK, room))
             line += piece
             if not piece or piece.endswith(b"\n") or len(line) > self._line_limit:
                 return bytes(line)
@@ -777,16 +817,25 @@ class HttpTransport(Transport):
             request.add_header("Mcp-Session-Id", self.session_id)
         request.watchdog = watchdog  # type: ignore[attr-defined]
         bounds = {"deadline": watchdog.deadline, "timeout": timeout, "method": method}
+        before = self.bytes_received
+
+        def charge_headers(resp_headers: Any, reason: Any) -> int:
+            self.bytes_received += _header_bytes(resp_headers, reason)
+            return limit - (self.bytes_received - before)
+
         attempt = 0
         while True:
             try:
                 response = _OPENER.open(request, timeout=watchdog.remaining())
                 break
             except urllib.error.HTTPError as exc:
-                self.bytes_received += _header_bytes(exc.headers, exc.reason)
+                remaining = charge_headers(exc.headers, exc.reason)
+                if remaining < 0:
+                    exc.close()
+                    raise McpSizeError(f"the response to {method} exceeded {limit} bytes") from None
                 delay = _busy_delay(exc, attempt, watchdog.deadline)
                 if delay is None:
-                    return self._error_status(exc, message, bounds, limit)
+                    return self._error_status(exc, message, bounds, remaining)
                 exc.close()
                 time.sleep(delay)
                 attempt += 1
@@ -799,12 +848,15 @@ class HttpTransport(Transport):
             except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
                 reason = getattr(exc, "reason", exc)
                 raise McpError(f"could not reach server: {reason}") from exc
-        self.bytes_received += _header_bytes(response.headers, response.reason)
+        remaining = charge_headers(response.headers, response.reason)
+        if remaining < 0:
+            response.close()
+            raise McpSizeError(f"the response to {method} exceeded {limit} bytes")
         # Reading the body can fail or stall after the headers arrived; that
         # is the server's failure too, not the caller's.
         try:
             with response:
-                return self._consume(response, message, bounds, limit)
+                return self._consume(response, message, bounds, remaining)
         except (OSError, http.client.HTTPException) as exc:
             raise McpError(f"reading the response to {method} failed: {exc}") from exc
 
@@ -827,7 +879,9 @@ class HttpTransport(Transport):
         if isinstance(parsed, Mapping) and "error" in parsed:
             return {"jsonrpc": "2.0", "id": message.get("id"), "error": parsed["error"]}
         if 300 <= exc.code < 400:
-            raise McpError(f"HTTP {exc.code} redirect refused; use the final server URL") from exc
+            raise McpRedirectError(
+                f"HTTP {exc.code} redirect refused; use the final server URL"
+            ) from exc
         raise McpError(f"HTTP {exc.code} from server") from exc
 
     def _consume(self, response, message, bounds, limit):
@@ -917,7 +971,11 @@ class McpSession:
         version: str,
         notification: bool = False,
     ):
-        limit = MAX_MESSAGE_BYTES
+        limit = (
+            MAX_MESSAGE_BYTES
+            if method == "resources/read"
+            else min(MAX_MESSAGE_BYTES, _MAX_CONTROL_MESSAGE_BYTES)
+        )
         budget_bound = False
         if self.max_bytes is not None:
             left = self.max_bytes - self.received
@@ -953,6 +1011,8 @@ class McpSession:
         finally:
             # Failed exchanges cost bytes too; charge whatever was read.
             self.received += self.transport.bytes_received - before
+        if self.max_bytes is not None and self.received > self.max_bytes:
+            raise self._budget_error()
         if notification:
             return {}
         assert response is not None
@@ -970,15 +1030,15 @@ class McpSession:
             if exc.code == UNSUPPORTED_VERSION and legacy:
                 return self._initialize(legacy[0])
             raise McpError(f"server refused protocol {MODERN_VERSION}: {exc.rpc_message}")
-        except (McpBudgetError, McpAuthError):
-            raise  # neither means a legacy server
+        except (McpBudgetError, McpAuthError, McpRedirectError):
+            raise  # none of these means a legacy server
         except McpError as probe:
             # A timeout or transport failure may mean a legacy server, so try
             # the handshake — but if that fails too, the probe's failure is
             # usually the one that explains it.
             try:
                 return self._initialize(LEGACY_VERSIONS[0])
-            except McpBudgetError:
+            except (McpBudgetError, McpAuthError):
                 raise
             except McpError as exc:
                 if str(exc) == str(probe):
@@ -991,7 +1051,9 @@ class McpSession:
             legacy = [v for v in LEGACY_VERSIONS if isinstance(versions, list) and v in versions]
             if legacy:
                 return self._initialize(legacy[0])
-            raise McpError(f"server supports none of this client's versions: {versions!r}")
+            raise McpError(
+                f"server supports none of this client's versions: {safe_display(versions)}"
+            )
         meta = result.get("_meta")
         server_info = (
             meta.get("io.modelcontextprotocol/serverInfo") if isinstance(meta, Mapping) else None

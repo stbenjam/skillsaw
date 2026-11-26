@@ -24,9 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
-
-from skillsaw.utils import _SAFE_LOADER
+from skillsaw.utils import parse_frontmatter
 
 EXTENSION = "io.modelcontextprotocol/skills"
 MODERN = "2026-07-28"
@@ -82,10 +80,7 @@ def _digest(data: bytes) -> str:
 
 
 def _frontmatter(text: str) -> Dict[str, Any]:
-    if not text.startswith("---\n"):
-        return {}
-    end = text.find("\n---", 4)
-    data = yaml.load(text[4:end], Loader=_SAFE_LOADER) if end != -1 else None
+    data, _, _ = parse_frontmatter(text)
     return data if isinstance(data, dict) else {}
 
 

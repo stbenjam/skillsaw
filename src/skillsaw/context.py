@@ -582,6 +582,8 @@ class RepositoryContext(
             types.add(RepositoryType.PI_PACKAGE)
         if self.mcp_registry_server_paths():
             types.add(RepositoryType.MCP_REGISTRY)
+        if self.mcp_snapshot_skills():
+            types.add(RepositoryType.AGENTSKILLS)
 
         if not types:
             types.add(RepositoryType.UNKNOWN)

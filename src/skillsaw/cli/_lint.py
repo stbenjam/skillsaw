@@ -24,23 +24,8 @@ from ._helpers import (
 from skillsaw.paths import safe_resolve
 
 
-def _run_lint(args):
-    """Lint the CLI-selected paths and emit the requested reports."""
-    if args.verbose:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(name)s: %(message)s",
-            stream=sys.stderr,
-        )
-    else:
-        logging.basicConfig(
-            level=logging.WARNING,
-            format="%(name)s: %(message)s",
-            stream=sys.stderr,
-        )
-
-    cli_version = _get_version()
-
+def _validate_lint_args(args):
+    """Validate lint CLI options before any work or remote fetch starts."""
     if args.strict and args.fail_on and args.fail_on != "warning":
         print(
             f"Error: --strict and --fail-on {args.fail_on} contradict each other "
@@ -72,6 +57,47 @@ def _run_lint(args):
             sys.exit(1)
         output_formats[resolved_path] = fmt
 
+    override_types = None
+    if args.repo_types:
+        type_map = {t.value: t for t in RepositoryType if t is not RepositoryType.UNKNOWN}
+        override_types = set()
+        for val in args.repo_types:
+            if val not in type_map:
+                print(
+                    f"Error: Unknown repository type '{val}'. "
+                    f"Valid types: {', '.join(sorted(type_map.keys()))}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            override_types.add(type_map[val])
+
+    rule_ids = set(args.rule_ids) if args.rule_ids else None
+    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
+    if rule_ids and skip_rule_ids:
+        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
+        sys.exit(1)
+
+    return output_formats, override_types, rule_ids, skip_rule_ids
+
+
+def _run_lint(args, *, loaded_config=None):
+    """Lint the CLI-selected paths and emit the requested reports."""
+    if args.verbose:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(name)s: %(message)s",
+            stream=sys.stderr,
+        )
+    else:
+        logging.basicConfig(
+            level=logging.WARNING,
+            format="%(name)s: %(message)s",
+            stream=sys.stderr,
+        )
+
+    cli_version = _get_version()
+    output_formats, override_types, rule_ids, skip_rule_ids = _validate_lint_args(args)
+
     missing_count = 0
     valid_raw_paths = []
     for p in args.path or [Path.cwd()]:
@@ -96,21 +122,10 @@ def _run_lint(args):
         print(f"skillsaw {cli_version}")
         print(f"Linting: {', '.join(str(p) for p in paths)}\n")
 
-    override_types = None
-    if args.repo_types:
-        type_map = {t.value: t for t in RepositoryType if t is not RepositoryType.UNKNOWN}
-        override_types = set()
-        for val in args.repo_types:
-            if val not in type_map:
-                print(
-                    f"Error: Unknown repository type '{val}'. "
-                    f"Valid types: {', '.join(sorted(type_map.keys()))}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            override_types.add(type_map[val])
-
-    config, config_path = load_config(args, paths[0])
+    if loaded_config is not None:
+        config, config_path = loaded_config
+    else:
+        config, config_path = load_config(args, paths[0])
 
     if config_path and args.verbose and chatty:
         print(f"Using config: {config_path}\n")
@@ -136,11 +151,6 @@ def _run_lint(args):
             except (ValueError, OSError) as e:
                 print(f"Warning: Failed to load baseline: {e}", file=sys.stderr)
 
-    rule_ids = set(args.rule_ids) if args.rule_ids else None
-    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
-    if rule_ids and skip_rule_ids:
-        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
-        sys.exit(1)
     removed_skips = set(skip_rule_ids or ())
 
     lint_started = time.perf_counter()
