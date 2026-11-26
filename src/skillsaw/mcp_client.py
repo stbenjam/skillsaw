@@ -777,6 +777,8 @@ class _Counted:
 class HttpTransport(Transport):
     """JSON-RPC over Streamable HTTP, accepting JSON or SSE responses."""
 
+    _CLOSE_TIMEOUT: float = 2.0
+
     def __init__(self, url: str, *, headers: Optional[Mapping[str, str]] = None):
         if not url.lower().startswith(("http://", "https://")):
             raise McpError("server URL must use http or https")
@@ -789,6 +791,7 @@ class HttpTransport(Transport):
             and is_loopback_host(parsed.hostname)
         )
         self.session_id: Optional[str] = None
+        self.protocol_version: Optional[str] = None
         self.bytes_received = 0
 
     def close(self) -> None:
@@ -797,16 +800,22 @@ class HttpTransport(Transport):
         self.session_id = None
         if not session_id:
             return
+        watchdog = _Watchdog(self._CLOSE_TIMEOUT)
         try:
             request = urllib.request.Request(self.url, method="DELETE")
             for name, value in self.headers.items():
                 request.add_header(name, value)
             request.add_header("Mcp-Session-Id", session_id)
+            if self.protocol_version:
+                request.add_header("MCP-Protocol-Version", self.protocol_version)
+            request.watchdog = watchdog  # type: ignore[attr-defined]
             opener = _DIRECT_OPENER if self._direct else _OPENER
-            with opener.open(request, timeout=2.0):
+            with opener.open(request, timeout=watchdog.remaining()):
                 pass
         except (OSError, urllib.error.URLError, http.client.HTTPException, ValueError):
             pass
+        finally:
+            watchdog.cancel()
 
     def send(self, message, *, headers, timeout, limit=MAX_MESSAGE_BYTES):
         watchdog = _Watchdog(timeout)
@@ -834,6 +843,8 @@ class HttpTransport(Transport):
         request.add_header("Accept", "application/json, text/event-stream")
         for name, value in {**self.headers, **headers}.items():
             request.add_header(name, value)
+        if "MCP-Protocol-Version" in headers:
+            self.protocol_version = headers["MCP-Protocol-Version"]
         if self.session_id:
             request.add_header("Mcp-Session-Id", self.session_id)
         request.watchdog = watchdog  # type: ignore[attr-defined]

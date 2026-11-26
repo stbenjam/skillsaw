@@ -3463,7 +3463,8 @@ class TestHardeningAndCoverage:
         with pytest.raises(mcp_client.McpError, match="without a matching URI"):
             s_no_uri.read_resource("skill://a/SKILL.md")
 
-        # 4. HttpTransport.close() sends DELETE with Mcp-Session-Id.
+        # 4. HttpTransport.close() sends DELETE with Mcp-Session-Id and
+        # MCP-Protocol-Version, and bounds drip-feeding servers via _Watchdog.
         deleted = []
 
         class DeleteServer(BaseHTTPRequestHandler):
@@ -3471,7 +3472,12 @@ class TestHardeningAndCoverage:
                 pass
 
             def do_DELETE(self):
-                deleted.append(self.headers.get("Mcp-Session-Id"))
+                deleted.append(
+                    (
+                        self.headers.get("Mcp-Session-Id"),
+                        self.headers.get("MCP-Protocol-Version"),
+                    )
+                )
                 self.send_response(204)
                 self.end_headers()
 
@@ -3481,13 +3487,47 @@ class TestHardeningAndCoverage:
             url = f"http://127.0.0.1:{httpd.server_address[1]}/mcp"
             tr = mcp_client.HttpTransport(url)
             tr.session_id = "sess-42"
+            tr.protocol_version = "2025-11-25"
             tr.close()
-            assert deleted == ["sess-42"]
+            assert deleted == [("sess-42", "2025-11-25")]
             assert tr.session_id is None
         finally:
             httpd.shutdown()
 
-        # 5. Unknown --rule / --skip-rule fails before launching a stdio MCP server.
+        # Drip-feeding DELETE response is terminated by _Watchdog, not hung indefinitely.
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        accepted = []
+
+        def drip_delete():
+            try:
+                conn, _ = listener.accept()
+                accepted.append(conn)
+                conn.recv(4096)
+                for chunk in [b"HTTP/1.1 204 No Content\r\n", b"X-Slow: 1\r\n"]:
+                    conn.sendall(chunk)
+                    time.sleep(0.1)
+                time.sleep(2.0)
+            except OSError:
+                pass
+
+        threading.Thread(target=drip_delete, daemon=True).start()
+        try:
+            tr_slow = mcp_client.HttpTransport(f"http://127.0.0.1:{port}/mcp")
+            tr_slow._CLOSE_TIMEOUT = 0.25
+            tr_slow.session_id = "sess-slow"
+            start = time.monotonic()
+            tr_slow.close()
+            assert time.monotonic() - start < 1.5
+        finally:
+            listener.close()
+            for conn in accepted:
+                conn.close()
+
+        # 5. Unknown --rule / --skip-rule fails before launching a stdio MCP server,
+        # while configured custom rules are never executed twice during prevalidation.
         marker = tmp_path / "launched.flag"
         script = tmp_path / "touch.py"
         script.write_text(
@@ -3506,3 +3546,31 @@ class TestHardeningAndCoverage:
         assert bad_rule.returncode == 1
         assert "Unknown rule" in bad_rule.stderr
         assert not marker.exists()
+
+        # Custom rule import runs exactly once when --rule is given.
+        work = tmp_path / "custom-once"
+        work.mkdir()
+        counter_file = work / "imports.txt"
+        rule_file = work / "my_rule.py"
+        rule_file.write_text(
+            "from skillsaw.rule import Rule, Severity\n"
+            f"with open({str(counter_file)!r}, 'a', encoding='utf-8') as f: f.write('1\\n')\n"
+            "class MyOnceRule(Rule):\n"
+            "    @property\n"
+            "    def rule_id(self): return 'my-once-rule'\n"
+            "    @property\n"
+            "    def description(self): return 'test'\n"
+            "    def default_severity(self): return Severity.WARNING\n"
+            "    def check(self, context): return []\n",
+            encoding="utf-8",
+        )
+        (work / ".skillsaw.yaml").write_text(
+            f'version: "{__version__}"\ncustom-rules:\n  - "{rule_file}"\n',
+            encoding="utf-8",
+        )
+        once = run_cli(
+            ["lint", "--mcp-config", tmp_path / "fake-mcp.json", "--rule", "my-once-rule"],
+            cwd=work,
+        )
+        assert once.returncode == 0, once.stderr
+        assert counter_file.read_text(encoding="utf-8").splitlines() == ["1"]

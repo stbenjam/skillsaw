@@ -184,11 +184,14 @@ def _run_lint_mcp_skills(args) -> None:
 
     _output_formats, override_types, rule_ids, skip_rule_ids = _validate_lint_args(args)
 
+    preloaded_rules = None
+
     def _validate_rules(scratch: Path, config) -> None:
+        nonlocal preloaded_rules
         if not rule_ids and not skip_rule_ids:
             return
         try:
-            Linter(
+            probe = Linter(
                 RepositoryContext(scratch, repo_types=override_types),
                 config,
                 rule_ids=rule_ids,
@@ -199,12 +202,13 @@ def _run_lint_mcp_skills(args) -> None:
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
+        preloaded_rules = (probe._loaded_plugins, probe._loaded_custom_modules)
 
     with _fetched(args, before_fetch=_validate_rules) as (out_dir, snapshot, loaded_config):
         args.path = [out_dir]
         _finish(
             snapshot,
-            lambda: _run_lint(args, loaded_config=loaded_config),
+            lambda: _run_lint(args, loaded_config=loaded_config, preloaded_rules=preloaded_rules),
             quiet=bool(getattr(args, "quiet", False)),
         )
 

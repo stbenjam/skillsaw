@@ -80,7 +80,7 @@ def _validate_lint_args(args):
     return output_formats, override_types, rule_ids, skip_rule_ids
 
 
-def _run_lint(args, *, loaded_config=None):
+def _run_lint(args, *, loaded_config=None, preloaded_rules=None):
     """Lint the CLI-selected paths and emit the requested reports."""
     if args.verbose:
         logging.basicConfig(
@@ -178,6 +178,8 @@ def _run_lint(args, *, loaded_config=None):
                 baseline=baseline,
                 no_custom_rules=args.no_custom_rules,
                 no_plugins=args.no_plugins,
+                _preloaded_plugins=preloaded_rules[0] if preloaded_rules else None,
+                _preloaded_custom_modules=preloaded_rules[1] if preloaded_rules else None,
             )
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
