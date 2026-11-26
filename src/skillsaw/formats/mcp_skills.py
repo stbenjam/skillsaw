@@ -15,7 +15,9 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
+import os
 import re
+import stat
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote
@@ -222,10 +224,23 @@ def read_snapshot_record(root: Path) -> Optional[Dict[str, Any]]:
     """
     record = root / SNAPSHOT_FILENAME
     try:
-        if record.is_symlink() or not record.is_file():
-            return None
-        with record.open("rb") as handle:
-            raw = handle.read(MAX_SNAPSHOT_RECORD_BYTES + 1)
+        if hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_NONBLOCK"):
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+            fd = os.open(record, flags)
+            try:
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    return None
+                with os.fdopen(fd, "rb") as handle:
+                    fd = -1
+                    raw = handle.read(MAX_SNAPSHOT_RECORD_BYTES + 1)
+            finally:
+                if fd >= 0:
+                    os.close(fd)
+        else:
+            if record.is_symlink() or not record.is_file():
+                return None
+            with record.open("rb") as handle:
+                raw = handle.read(MAX_SNAPSHOT_RECORD_BYTES + 1)
         if len(raw) > MAX_SNAPSHOT_RECORD_BYTES:
             return None
         if exceeds_json_containers(raw, MAX_SNAPSHOT_CONTAINERS):

@@ -3900,3 +3900,133 @@ class TestHardeningAndCoverage:
         with pytest.raises(pull_module.PullError, match="not a skillsaw snapshot"):
             pull_module.prepare_output(dup)
         assert (dup / "srv" / nfd_name / "SKILL.md").is_file()
+
+    def test_target_describe_redacts_secrets_expanded_into_host_and_command(
+        self, tmp_path, monkeypatch
+    ):
+        secret = "MyHostSecretToken99"
+        monkeypatch.setenv("MCP_HOST_TOKEN", secret)
+        http_target = pull_module.config_target(
+            "remote",
+            {"url": "https://${MCP_HOST_TOKEN}.example.com/mcp"},
+            tmp_path,
+        )
+        desc_http = http_target.describe()
+        assert secret.lower() not in desc_http.lower()
+        assert "[redacted]" in desc_http
+
+        stdio_target = pull_module.config_target(
+            "local",
+            {"command": "/opt/bin/server-${MCP_HOST_TOKEN}.py"},
+            tmp_path,
+        )
+        desc_stdio = stdio_target.describe()
+        assert secret not in desc_stdio
+        assert "[redacted]" in desc_stdio
+
+    def test_vscode_workspace_folder_variables_are_resolved(self, tmp_path):
+        ws = tmp_path / "my-workspace"
+        ws.mkdir()
+        target = pull_module.config_target(
+            "local",
+            {
+                "command": "${workspaceFolder}/bin/server",
+                "args": ["--project", "${workspaceFolderBasename}"],
+                "cwd": "${workspaceFolder}/sub",
+            },
+            ws,
+        )
+        assert target.command == [f"{ws}/bin/server", "--project", "my-workspace"]
+        assert target.cwd == ws / "sub"
+
+    def test_vscode_sandbox_config_entries_are_rejected(self, tmp_path):
+        for bad_cfg in (
+            {"command": "python", "args": ["s.py"], "sandboxEnabled": True},
+            {"command": "python", "args": ["s.py"], "sandbox": {"network": "none"}},
+        ):
+            with pytest.raises(pull_module.PullError, match="sandbox"):
+                pull_module.config_target("vs", bad_cfg, tmp_path)
+        allowed = pull_module.config_target(
+            "vs", {"command": "python", "args": ["s.py"], "sandboxEnabled": False}, tmp_path
+        )
+        assert allowed.command == ["python", "s.py"]
+
+    def test_legacy_2025_03_26_fallback_clears_modern_probe_version_for_delete(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        delete_headers = []
+
+        class Legacy2025Server(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                msg = json.loads(self.rfile.read(length).decode("utf-8"))
+                method = msg.get("method")
+                if method == "server/discover":
+                    body = json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": msg["id"],
+                            "error": {"code": -32601, "message": "not found"},
+                        }
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif method == "initialize":
+                    body = json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": msg["id"],
+                            "result": {
+                                "protocolVersion": "2025-03-26",
+                                "capabilities": {},
+                            },
+                        }
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Mcp-Session-Id", "legacy-sid-1")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_response(202)
+                    self.end_headers()
+
+            def do_DELETE(self):
+                delete_headers.append(
+                    (
+                        self.headers.get("Mcp-Session-Id"),
+                        self.headers.get("MCP-Protocol-Version"),
+                    )
+                )
+                self.send_response(204)
+                self.end_headers()
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Legacy2025Server)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            tr = mcp_client.HttpTransport(f"http://127.0.0.1:{httpd.server_address[1]}/mcp")
+            sess = mcp_client.McpSession(tr)
+            info = sess.connect()
+            assert info.protocol_version == "2025-03-26"
+            assert tr.protocol_version is None
+            sess.close()
+            assert delete_headers == [("legacy-sid-1", None)]
+        finally:
+            httpd.shutdown()
+
+    def test_read_snapshot_record_refuses_fifo_without_blocking(self, tmp_path):
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("platform lacks mkfifo")
+        fifo_dir = tmp_path / "fifo-snap"
+        fifo_dir.mkdir()
+        os.mkfifo(fifo_dir / mcp_skills.SNAPSHOT_FILENAME)
+        start = time.monotonic()
+        assert mcp_skills.read_snapshot_record(fifo_dir) is None
+        assert time.monotonic() - start < 1.0

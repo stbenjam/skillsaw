@@ -96,28 +96,45 @@ class ServerTarget:
         """Where the skills came from, without credentials.
 
         Only the origin: some services carry an API key in the URL path, and
-        this is printed and recorded in the snapshot.
+        this is printed and recorded in the snapshot. Any configured secrets
+        expanded into the hostname or executable name are redacted as well.
         """
+        secrets = _secret_values(self)
         if self.kind == "http" and self.url:
             parts = urlsplit(self.url)
             host = parts.hostname or ""
+            if secrets and host:
+                lower_secrets = tuple(sorted({s.lower() for s in secrets}, key=len, reverse=True))
+                host = _redact_secrets(host, lower_secrets)
             if ":" in host:
                 host = f"[{host}]"  # an IPv6 literal
             if parts.port:
                 host = f"{host}:{parts.port}"
             return urlunsplit((parts.scheme, host, "", "", ""))
-        return Path(self.command[0]).name if self.command else "stdio"
+        raw = Path(self.command[0]).name if self.command else "stdio"
+        return _redact_secrets(raw, secrets)
 
 
-def _expand(value: str, *, secrets_out: Optional[set] = None) -> str:
-    """Expand ``${VAR}``, ``${VAR:-default}``, and VS Code ``${env:VAR}`` placeholders."""
+def _expand(
+    value: str,
+    *,
+    secrets_out: Optional[set] = None,
+    workspace: Optional[Path] = None,
+) -> str:
+    """Expand ``${VAR}``, ``${VAR:-default}``, VS Code ``${env:VAR}``, and workspace variables."""
     if _UNSUPPORTED_PLACEHOLDER.search(value):
         raise PullError(
             "uses an interactive ${input:...} placeholder that skillsaw cannot prompt for"
         )
 
     def substitute(match: "re.Match[str]") -> str:
+        raw_match = match.group(0)
         name, default = match.group(1), match.group(2)
+        if workspace is not None and not raw_match.startswith("${env:") and default is None:
+            if name == "workspaceFolder":
+                return str(workspace)
+            if name == "workspaceFolderBasename":
+                return workspace.name
         if name in os.environ:
             expanded = os.environ[name]
             if secrets_out is not None:
@@ -125,7 +142,7 @@ def _expand(value: str, *, secrets_out: Optional[set] = None) -> str:
                 min_len = 4 if any(tok in upper for tok in _ENV_SECRET_KEY_TOKENS) else 8
                 _add_token_variants(secrets_out, expanded, min_len=min_len)
             return expanded
-        return default if default is not None else match.group(0)
+        return default if default is not None else raw_match
 
     return _ENV_REF.sub(substitute, value)
 
@@ -424,6 +441,7 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
     else:
         raise PullError("it has neither a 'url' nor a 'command'")
 
+    workspace = Path(os.path.abspath(cwd))
     if transport == "http":
         url = entry.get("url")
         if not isinstance(url, str) or not url:
@@ -435,10 +453,11 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
             raise PullError("its 'headers' holds a value that is not a string")
         expanded_secrets: set = set()
         expanded = {
-            str(k): _expand(v, secrets_out=expanded_secrets) for k, v in raw_headers.items()
+            str(k): _expand(v, secrets_out=expanded_secrets, workspace=workspace)
+            for k, v in raw_headers.items()
         }
         target = url_target(
-            _expand(url, secrets_out=expanded_secrets),
+            _expand(url, secrets_out=expanded_secrets, workspace=workspace),
             expanded,
             configured_secrets=tuple(sorted(expanded_secrets, key=len, reverse=True)),
         )
@@ -455,12 +474,18 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
     if not all(isinstance(arg, str) for arg in args):
         raise PullError("its 'args' holds a value that is not a string")
     expanded_secrets = set()
-    argv = [_expand(command, secrets_out=expanded_secrets)] + [
-        _expand(a, secrets_out=expanded_secrets) for a in args
+    argv = [_expand(command, secrets_out=expanded_secrets, workspace=workspace)] + [
+        _expand(a, secrets_out=expanded_secrets, workspace=workspace) for a in args
     ]
     if "envFile" in entry and entry["envFile"] is not None:
         raise PullError(
             "its 'envFile' is not supported; pass those variables in the environment or 'env'"
+        )
+    if ("sandboxEnabled" in entry and entry["sandboxEnabled"] not in (None, False)) or (
+        "sandbox" in entry and entry["sandbox"] is not None
+    ):
+        raise PullError(
+            "its 'sandbox'/'sandboxEnabled' policy is not supported; skillsaw cannot enforce a VS Code sandbox"
         )
     env = dict(os.environ)
     configured_env: Dict[str, str] = {}
@@ -471,7 +496,8 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
         if not all(isinstance(v, str) for v in raw_env.values()):
             raise PullError("its 'env' holds a value that is not a string")
         configured_env = {
-            str(k): _expand(v, secrets_out=expanded_secrets) for k, v in raw_env.items()
+            str(k): _expand(v, secrets_out=expanded_secrets, workspace=workspace)
+            for k, v in raw_env.items()
         }
         env.update(configured_env)
     if "cwd" in entry:
@@ -480,7 +506,7 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
             raise PullError("its 'cwd' is not a string")  # never start it elsewhere
         if workdir:
             cwd = cwd / _expand(
-                workdir, secrets_out=expanded_secrets
+                workdir, secrets_out=expanded_secrets, workspace=workspace
             )  # relative to the config, as clients resolve it
     return ServerTarget(
         label=label,

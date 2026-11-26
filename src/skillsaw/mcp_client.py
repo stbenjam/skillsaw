@@ -1171,6 +1171,10 @@ class McpSession:
         return self.info
 
     def _initialize(self, version: str) -> ServerInfo:
+        # Clear any protocol_version left over from the modern server/discover
+        # probe so a legacy session DELETE never sends a stale 2026-07-28 header.
+        if hasattr(self.transport, "protocol_version"):
+            self.transport.protocol_version = None  # type: ignore[attr-defined]
         result = self._send(
             "initialize",
             {
@@ -1188,6 +1192,10 @@ class McpSession:
             # The handshake says to disconnect rather than guess at its shapes.
             raise McpError(
                 f"server chose protocol version {negotiated[:40]!r}, which is not supported"
+            )
+        if hasattr(self.transport, "protocol_version"):
+            self.transport.protocol_version = (  # type: ignore[attr-defined]
+                None if negotiated in ("2024-11-05", "2025-03-26") else negotiated
             )
         capabilities = result.get("capabilities")
         if not isinstance(capabilities, Mapping):
