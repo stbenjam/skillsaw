@@ -36,12 +36,13 @@ import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from .diagnostics import safe_display
-from .formats.mcp_skills import EXTENSION_ID
+from .formats.mcp_skills import EXTENSION_ID, is_loopback_host
 
 MODERN_VERSION = "2026-07-28"
 LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
@@ -49,8 +50,9 @@ LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 MODERN_ERROR_CODES = frozenset({-32020, -32021, -32022})
 UNSUPPORTED_VERSION = -32022
 CLIENT_CAPABILITIES: Dict[str, Any] = {"extensions": {EXTENSION_ID: {}}}
-#: Cap on one resource-read message (fits a 16 MiB base64 blob plus envelope).
-MAX_MESSAGE_BYTES = 24 * 1024 * 1024
+#: Cap on one resource-read message (fits a 16 MiB base64 blob or heavily
+#: JSON-escaped 16 MiB text file plus envelope; decoded size is enforced too).
+MAX_MESSAGE_BYTES = 36 * 1024 * 1024
 #: Tighter cap on discovery, listing, and directory-read messages.
 _MAX_CONTROL_MESSAGE_BYTES = 4 * 1024 * 1024
 #: Cap on JSON objects/arrays in one message before ``json.loads`` allocates them.
@@ -528,7 +530,8 @@ def _sse_messages(
             pending += chunk
         else:
             eof = True
-            pending += b"\n\n"  # dispatch an event the stream did not finish
+            # Per the WHATWG SSE standard, pending event data without a
+            # terminating blank line is discarded at EOF.
         if not started:
             if len(pending) < len(_BOM) and not eof and _BOM.startswith(bytes(pending)):
                 continue  # too short to tell whether it opens with a BOM
@@ -752,6 +755,9 @@ if hasattr(urllib.request, "HTTPSHandler"):
     _HANDLERS.append(_WatchedHTTPSHandler)
 
 _OPENER = urllib.request.build_opener(*_HANDLERS)
+#: Proxy-free opener used for loopback ``http://`` so env proxies cannot
+#: receive cleartext Authorization headers intended for localhost.
+_DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), *_HANDLERS)
 
 
 def _header_bytes(headers: Any, reason: Any = "") -> int:
@@ -787,13 +793,22 @@ class HttpTransport(Transport):
             raise McpError("server URL must use http or https")
         self.url = url
         self.headers = dict(headers or {})
+        parsed = urllib.parse.urlsplit(url)
+        self._direct = (
+            parsed.scheme.lower() == "http"
+            and bool(parsed.hostname)
+            and is_loopback_host(parsed.hostname)
+        )
         self.session_id: Optional[str] = None
         self.bytes_received = 0
 
     def send(self, message, *, headers, timeout, limit=MAX_MESSAGE_BYTES):
         watchdog = _Watchdog(timeout)
         try:
-            return self._exchange(message, headers, watchdog, timeout, limit)
+            result = self._exchange(message, headers, watchdog, timeout, limit)
+            if watchdog.fired or time.monotonic() >= watchdog.deadline:
+                raise _timed_out(timeout, message["method"])
+            return result
         except McpSizeError:
             raise
         except (McpError, OSError, http.client.HTTPException) as exc:
@@ -823,10 +838,11 @@ class HttpTransport(Transport):
             self.bytes_received += _header_bytes(resp_headers, reason)
             return limit - (self.bytes_received - before)
 
+        opener = _DIRECT_OPENER if self._direct else _OPENER
         attempt = 0
         while True:
             try:
-                response = _OPENER.open(request, timeout=watchdog.remaining())
+                response = opener.open(request, timeout=watchdog.remaining())
                 break
             except urllib.error.HTTPError as exc:
                 remaining = charge_headers(exc.headers, exc.reason)
@@ -876,12 +892,12 @@ class HttpTransport(Transport):
             parsed = None
         if exc.code == 401:
             raise McpAuthError("the server requires authorization (HTTP 401)") from exc
-        if isinstance(parsed, Mapping) and "error" in parsed:
-            return {"jsonrpc": "2.0", "id": message.get("id"), "error": parsed["error"]}
         if 300 <= exc.code < 400:
             raise McpRedirectError(
                 f"HTTP {exc.code} redirect refused; use the final server URL"
             ) from exc
+        if isinstance(parsed, Mapping) and "error" in parsed:
+            return {"jsonrpc": "2.0", "id": message.get("id"), "error": parsed["error"]}
         raise McpError(f"HTTP {exc.code} from server") from exc
 
     def _consume(self, response, message, bounds, limit):
@@ -928,6 +944,23 @@ class ServerInfo:
             if isinstance(settings, Mapping):
                 return dict(settings)
         return None
+
+    def skills_extension_errors(self) -> List[str]:
+        """Protocol-level errors in how the server declared the Skills extension."""
+        extensions = self.capabilities.get("extensions")
+        if not isinstance(extensions, Mapping) or EXTENSION_ID not in extensions:
+            return []
+        settings = extensions[EXTENSION_ID]
+        if not isinstance(settings, Mapping):
+            return [f"{EXTENSION_ID} capability must be an object"]
+        errors: List[str] = []
+        if "directoryRead" in settings and not isinstance(settings["directoryRead"], bool):
+            errors.append(f"{EXTENSION_ID} capability 'directoryRead' must be a boolean")
+        if not isinstance(self.capabilities.get("resources"), Mapping):
+            errors.append(
+                f"server advertises {EXTENSION_ID} without the required 'resources' capability"
+            )
+        return errors
 
 
 class McpSession:
@@ -1130,6 +1163,18 @@ class McpSession:
         cursor: Optional[str] = None
         for _ in range(max_pages):
             result = self.request("skills/list", {"cursor": cursor} if cursor else {})
+            if self.info is not None and self.info.modern:
+                result_type = result.get("resultType")
+                if result_type != "complete":
+                    raise McpError(
+                        "skills/list returned unsupported resultType "
+                        f"{safe_display(result_type)!r}"
+                    )
+                ttl = result.get("ttlMs")
+                if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl < 0:
+                    raise McpError("skills/list result has missing or invalid 'ttlMs'")
+                if result.get("cacheScope") not in ("public", "private"):
+                    raise McpError("skills/list result has missing or invalid 'cacheScope'")
             skills = result.get("skills")
             if not isinstance(skills, list):
                 raise McpError("skills/list result has no 'skills' array")

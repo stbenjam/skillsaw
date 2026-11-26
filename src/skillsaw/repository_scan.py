@@ -281,7 +281,16 @@ class RepositoryScanMixin:
 
             cached = snapshot_skill_dirs(self.root_path)
             self._mcp_snapshot_skills_cache = cached
+            self._mcp_snapshot_skill_resolved = frozenset(
+                r for p in cached if (r := safe_resolve(p)) is not None
+            )
         return list(cached)
+
+    def is_mcp_snapshot_skill(self, path: Path) -> bool:
+        """Whether *path* is an Agent Skill declared by a root MCP snapshot."""
+        self.mcp_snapshot_skills()
+        resolved = safe_resolve(path)
+        return resolved is not None and resolved in self._mcp_snapshot_skill_resolved
 
     def _discover_skills(self) -> List[Path]:
         """Discover Agent Skills through the state-free Claude discovery seam."""
@@ -353,6 +362,10 @@ class RepositoryScanMixin:
             is_excluded=self.is_path_excluded,
         )
 
+        skills = self._filter_pi_skills(self._filter_cursor_skills(skills))
+
+        # Merge MCP snapshot skills after dialect filters so server-controlled
+        # paths like ``.pi/skills/...`` retain their portable Agent Skills role.
         snapshot_skills = self.mcp_snapshot_skills()
         if snapshot_skills:
             seen_resolved = {r for p in skills if (r := safe_resolve(p)) is not None}
@@ -362,7 +375,7 @@ class RepositoryScanMixin:
                     seen_resolved.add(resolved)
                     skills.append(skill_dir)
 
-        return self._filter_pi_skills(self._filter_cursor_skills(skills))
+        return skills
 
     def _filter_pi_skills(self, skills: List[Path]) -> List[Path]:
         """Assign native roles while retaining portable candidates for exclusions."""
@@ -408,6 +421,8 @@ class RepositoryScanMixin:
             )
 
         def owned_by_pi(path: Path) -> bool:
+            if self.is_mcp_snapshot_skill(path):
+                return False
             declared = path / "SKILL.md" in native_skills
             if not declared:
                 return False

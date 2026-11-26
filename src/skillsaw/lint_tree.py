@@ -2244,9 +2244,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Skills (nest inside parent plugin when applicable; skip .apm/) ---
     for skill_path in context.skills:
-        if _is_in_apm_source(skill_path):
+        is_snapshot_skill = context.is_mcp_snapshot_skill(skill_path)
+        if not is_snapshot_skill and _is_in_apm_source(skill_path):
             continue
-        native_devin = devin.is_devin_native_skill_dir(skill_path)
+        native_devin = not is_snapshot_skill and devin.is_devin_native_skill_dir(skill_path)
         skill_node = DevinSkillNode(path=skill_path) if native_devin else SkillNode(path=skill_path)
         block_cls = DevinSkillBlock if native_devin else SkillBlock
         state.add_block(skill_node, skill_path / "SKILL.md", block_cls)

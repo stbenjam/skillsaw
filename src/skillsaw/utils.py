@@ -128,6 +128,57 @@ def mkdir_parents_anchored(directory: Path, *, root: Path) -> None:
         os.close(directory_fd)
 
 
+def write_bytes_exclusive(path: Path, content: bytes, *, root: Path) -> None:
+    """Create *path* exclusively inside *root*, creating parents without following symlinks.
+
+    Descriptor-capable platforms pin *root* and traverse/create every parent
+    component with ``O_NOFOLLOW`` before creating the destination with
+    ``O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW`` relative to the pinned parent
+    descriptor. Other platforms validate containment and reject symlinks before
+    opening with ``O_EXCL``.
+    """
+    resolved_root, relative = _atomic_destination(path, root)
+    supports_anchored = (
+        _supports_anchored_atomic_write()
+        and os.mkdir in os.supports_dir_fd
+        and os.open in os.supports_dir_fd
+    )
+    if not supports_anchored:
+        mkdir_parents_anchored(path.parent, root=resolved_root)
+        checked_root, checked_rel = _atomic_destination(path, resolved_root)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(checked_root / checked_rel, flags, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+        return
+
+    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        dir_flags |= os.O_CLOEXEC
+    directory_fd = os.open(resolved_root, dir_flags)
+    try:
+        for component in relative.parent.parts:
+            try:
+                child_fd = os.open(component, dir_flags, dir_fd=directory_fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, mode=0o755, dir_fd=directory_fd)
+                except FileExistsError:
+                    pass
+                child_fd = os.open(component, dir_flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = child_fd
+
+        file_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        if hasattr(os, "O_CLOEXEC"):
+            file_flags |= os.O_CLOEXEC
+        fd = os.open(relative.name, file_flags, 0o600, dir_fd=directory_fd)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+    finally:
+        os.close(directory_fd)
+
+
 def rename_path_anchored(source: Path, destination: Path, *, root: Path) -> None:
     """Rename a repository file without following source or destination parents.
 

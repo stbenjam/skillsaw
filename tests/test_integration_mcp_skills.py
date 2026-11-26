@@ -397,12 +397,25 @@ class TestPull:
         assert (out / "notes.txt").read_text() == "keep me\n"
 
         shutil.rmtree(out)
-        assert pull(tmp_path, fake_command())[0].returncode == 0
-        (out / "fake" / "stale.md").write_text("from an older pull\n")
+        # First pull writes an extra skill; a second pull without it removes it.
+        extra_skill = tmp_path / "served_copy"
+        shutil.copytree(SERVED, extra_skill)
+        stale_dir = extra_skill / "old-skill"
+        stale_dir.mkdir()
+        (stale_dir / "SKILL.md").write_text("---\nname: old-skill\ndescription: Old.\n---\n")
+        extra_cmd = f'"{sys.executable}" "{FAKE_SERVER}" "{extra_skill}"'
+        assert pull(tmp_path, extra_cmd)[0].returncode == 0
+        assert (out / "fake" / "old-skill" / "SKILL.md").is_file()
         result, out = pull(tmp_path, fake_command())
         assert result.returncode == 0, result.stderr
-        assert not (out / "fake" / "stale.md").exists()
+        assert not (out / "fake" / "old-skill").exists()
         assert pulled(out)["errors"] == []
+
+        # An untracked file dropped inside a server directory blocks replacement.
+        (out / "fake" / "keep.md").write_text("user note\n")
+        refused, _ = pull(tmp_path, fake_command())
+        assert refused.returncode == 1 and "not a skillsaw snapshot" in refused.stderr
+        assert (out / "fake" / "keep.md").read_text() == "user note\n"
 
     def test_served_skills_lint_with_the_local_config(self, tmp_path, monkeypatch):
         scratch = tmp_path / "scratch"
@@ -1279,14 +1292,22 @@ class TestStdioShutdown:
             "time.sleep(120)\n"
         )
         ping = {"jsonrpc": "2.0", "id": 1, "method": "skills/list"}
-        start = time.monotonic()
-        with pytest.raises(mcp_client.McpError, match="timed out after 0.3s"):
-            transport.send(ping, headers={}, timeout=0.3)
-        assert time.monotonic() - start < 1.5
-        with pytest.raises(mcp_client.McpError, match="stopped reading its input"):
-            transport.send(ping, headers={}, timeout=0.3)
-        start = time.monotonic()
-        transport.close()
+        try:
+            # Wait for the child's oversized request to reach the reader queue
+            # so the timed send always exercises the blocked-write path.
+            ready_by = time.monotonic() + 5.0
+            while transport._messages.empty() and time.monotonic() < ready_by:
+                time.sleep(0.01)
+            assert not transport._messages.empty()
+            start = time.monotonic()
+            with pytest.raises(mcp_client.McpError, match=r"timed out after 0\.3s"):
+                transport.send(ping, headers={}, timeout=0.3)
+            assert time.monotonic() - start < 1.5
+            with pytest.raises(mcp_client.McpError, match="stopped reading its input"):
+                transport.send(ping, headers={}, timeout=0.3)
+        finally:
+            start = time.monotonic()
+            transport.close()
         assert time.monotonic() - start < 3
         assert transport._process.poll() is not None
 
@@ -1397,7 +1418,7 @@ class TestBoundedReads:
     @pytest.mark.parametrize("size", [1, 2, 7, 4096])
     def test_sse_events_split_across_reads(self, eol, size):
         # Any SSE line ending, a leading BOM, comments, a field without a
-        # colon, and a final event the stream does not terminate.
+        # colon, and a final unterminated event (which SSE discards at EOF).
         lines = [
             b'\xef\xbb\xbfdata: {"a":',
             b": comment",
@@ -1420,7 +1441,7 @@ class TestBoundedReads:
         events = mcp_client._sse_messages(
             Stream(), deadline=time.monotonic() + 30, timeout=30, method="x", limit=1 << 20
         )
-        assert [message for message, _ in events] == [{"a": 1}, {"b": 2}]
+        assert [message for message, _ in events] == [{"a": 1}]
 
     def test_stalled_http_body_is_a_server_error(self, tmp_path):
         server, httpd, url = http_server(fake.Options(stall_body_seconds=3))
@@ -2040,10 +2061,11 @@ class TestHardeningAndCoverage:
             "  req = json.loads(raw)\n"
             "  m = req.get('method')\n"
             "  if m == 'server/discover':\n"
-            "    res = {'supportedVersions': ['2026-07-28'], 'capabilities': {'extensions': "
-            "{'io.modelcontextprotocol/skills': {'directoryRead': True}}}}\n"
+            "    res = {'supportedVersions': ['2026-07-28'], 'capabilities': {'resources': {}, "
+            "'extensions': {'io.modelcontextprotocol/skills': {'directoryRead': True}}}}\n"
             "  elif m == 'skills/list':\n"
-            "    res = {'skills': [{'uri': 'skill://dyn/SKILL.md', "
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'skills': [{'uri': 'skill://dyn/SKILL.md', "
             "'frontmatter': {'name': 'dyn', 'description': 'Dyn.'}, 'resources': 'dynamic'}]}\n"
             "  elif m == 'resources/directory/read':\n"
             "    res = {'resources': [{'uri': 'skill://dyn/sub\\ud800', "
@@ -2286,9 +2308,484 @@ class TestHardeningAndCoverage:
         snap = tmp_path / "snap"
         snap.mkdir()
         (snap / mcp_skills.SNAPSHOT_FILENAME).write_text(
-            json.dumps({"servers": [{"label": "fake"}]})
+            json.dumps(
+                {
+                    "snapshotVersion": mcp_skills.SNAPSHOT_VERSION,
+                    "generator": "skillsaw test",
+                    "servers": [{"label": "fake", "files": []}],
+                }
+            )
         )
         (snap / "fake").symlink_to(real_dir, target_is_directory=True)
         with pytest.raises(pull_module.PullError, match="not a skillsaw snapshot"):
             pull_module.prepare_output(snap)
         assert real_dir.is_dir()
+
+    def test_scratch_clears_per_rule_excludes_and_codex_cwd(self, tmp_path):
+        body = (
+            "---\nname: evil\ndescription: Triggers invisible unicode.\n---\n"
+            "# Evil\n\nHidden\u200btext.\n"
+        ).encode("utf-8")
+        uri = "skill://templates/evil/SKILL.md"
+        options = fake.Options(
+            extra_entries=[
+                {
+                    "uri": uri,
+                    "frontmatter": {"name": "evil", "description": "Triggers invisible unicode."},
+                    "resources": [
+                        {
+                            "uri": uri,
+                            "digest": mcp_skills.sha256_digest(body),
+                            "size": len(body),
+                        }
+                    ],
+                }
+            ],
+            extra_files={uri: body},
+        )
+        work = tmp_path / "repo"
+        work.mkdir()
+        (work / ".skillsaw.yaml").write_text(
+            'version: "0.23.0"\n'
+            "codex-instructions:\n"
+            "  cwd: services/payments\n"
+            "rules:\n"
+            "  codex-project-instructions:\n"
+            "    enabled: true\n"
+            "  security-invisible-unicode:\n"
+            '    exclude: ["**/templates/**"]\n',
+            encoding="utf-8",
+        )
+        _, httpd, url = http_server(options)
+        try:
+            res = run_cli(
+                ["lint", "--mcp-server", url, "--format", "json", "--no-progress"],
+                cwd=work,
+            )
+        finally:
+            httpd.shutdown()
+        violations = json.loads(res.stdout)["violations"]
+        assert any(
+            v["rule_id"] == "security-invisible-unicode"
+            and "templates/evil/SKILL.md" in v["file_path"]
+            for v in violations
+        )
+        assert not any(v["rule_id"] == "codex-project-instructions" for v in violations)
+
+    def test_snapshot_preserves_portable_agent_skills_role_across_dialects(self, tmp_path):
+        # Paths under .pi/, .devin/, and .apm/ must remain portable SkillNodes
+        # and receive agentskill-* validation rather than being dropped or reclassified.
+        entries = []
+        files = {}
+        for prefix in (".pi/skills", ".devin/skills", ".apm/skills"):
+            uri = f"skill://{prefix}/bad-skill/SKILL.md"
+            # Missing description triggers agentskill-valid (and mismatched name triggers agentskill-name).
+            body = b"---\nname: wrong-name\n---\n# Body\n"
+            entries.append(
+                {
+                    "uri": uri,
+                    "frontmatter": {"name": "wrong-name"},
+                    "resources": [
+                        {"uri": uri, "digest": mcp_skills.sha256_digest(body), "size": len(body)}
+                    ],
+                }
+            )
+            files[uri] = body
+        empty_root = tmp_path / "empty_served"
+        empty_root.mkdir()
+        httpd = fake.start_http(
+            fake.Server(
+                fake.Catalog(empty_root, fake.Options(extra_entries=entries, extra_files=files))
+            )
+        )
+        try:
+            url = f"http://127.0.0.1:{httpd.server_address[1]}/mcp"
+            out = tmp_path / "out"
+            run_cli(["pull", "--mcp-server", url, "-o", out])
+        finally:
+            httpd.shutdown()
+        lint = run_cli(["lint", str(out), "--format", "json", "--no-progress"])
+        violations = json.loads(lint.stdout)["violations"]
+        flagged_paths = {
+            Path(v["file_path"]).as_posix() for v in violations if v["rule_id"] == "agentskill-name"
+        }
+        for prefix in (".pi/skills", ".devin/skills", ".apm/skills"):
+            assert any(
+                p.endswith(f"{prefix}/bad-skill/SKILL.md") for p in flagged_paths
+            ), flagged_paths
+
+    def test_skill_and_non_skill_uri_namespaces_are_disjoint(self, tmp_path):
+        assert mcp_skills.local_parts("skill://_github/docs/SKILL.md") == (
+            "__github",
+            "docs",
+            "SKILL.md",
+        )
+        assert mcp_skills.local_parts("github://docs/SKILL.md") == (
+            "_github",
+            "docs",
+            "SKILL.md",
+        )
+        assert mcp_skills.local_parts("skill://__github/docs/SKILL.md") == (
+            "___github",
+            "docs",
+            "SKILL.md",
+        )
+        # Both URIs can coexist in one pull and both are discovered from the snapshot.
+        body = b"---\nname: docs\ndescription: Docs.\n---\n# Docs\n"
+        entries = []
+        files = {}
+        for uri in ("skill://_github/docs/SKILL.md", "github://docs/SKILL.md"):
+            entries.append(
+                {
+                    "uri": uri,
+                    "frontmatter": {"name": "docs", "description": "Docs."},
+                    "resources": [
+                        {"uri": uri, "digest": mcp_skills.sha256_digest(body), "size": len(body)}
+                    ],
+                }
+            )
+            files[uri] = body
+        empty_root = tmp_path / "empty_served"
+        empty_root.mkdir()
+        httpd = fake.start_http(
+            fake.Server(
+                fake.Catalog(empty_root, fake.Options(extra_entries=entries, extra_files=files))
+            )
+        )
+        try:
+            url = f"http://127.0.0.1:{httpd.server_address[1]}/mcp"
+            out = tmp_path / "out"
+            res = run_cli(["pull", "--mcp-server", url, "-o", out])
+        finally:
+            httpd.shutdown()
+        assert res.returncode == 0, res.stderr
+        assert len(mcp_skills.snapshot_skill_dirs(out)) == 2
+
+    def test_snapshot_size_cap_compacts_and_preserves_provisional_record(
+        self, tmp_path, monkeypatch
+    ):
+        out = tmp_path / "snap"
+        out.mkdir()
+        provisional = {
+            "snapshotVersion": mcp_skills.SNAPSHOT_VERSION,
+            "generator": "skillsaw test",
+            "servers": [{"label": "a", "files": []}],
+        }
+        pull_module._write_snapshot(out, provisional)
+        big = {
+            **provisional,
+            "servers": [{"label": "a", "files": [], "skills": [{"x": "y" * 200}]}],
+        }
+        pretty_len = len((json.dumps(big, indent=2) + "\n").encode("utf-8"))
+        compact_len = len((json.dumps(big, separators=(",", ":")) + "\n").encode("utf-8"))
+        assert compact_len < pretty_len
+
+        # Between compact and pretty: falls back to compact JSON and succeeds.
+        monkeypatch.setattr(mcp_skills, "MAX_SNAPSHOT_RECORD_BYTES", compact_len + 5)
+        pull_module._write_snapshot(out, big)
+        assert mcp_skills.read_snapshot_record(out) == big
+
+        # Below compact: refuses to overwrite the existing bounded record.
+        pull_module._write_snapshot(out, provisional)
+        monkeypatch.setattr(mcp_skills, "MAX_SNAPSHOT_RECORD_BYTES", compact_len - 1)
+        with pytest.raises(pull_module.PullError, match="exceeds"):
+            pull_module._write_snapshot(out, big)
+        assert mcp_skills.read_snapshot_record(out) == provisional
+
+    def test_loopback_http_bypasses_proxy_and_redirect_beats_rpc_error(self, tmp_path, monkeypatch):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        _, httpd, url = http_server(fake.Options(require_token="loopback-secret"))
+        try:
+            # A broken HTTP_PROXY in the environment must not intercept loopback http://.
+            monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+            monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+            out = tmp_path / "out"
+            res = run_cli(
+                [
+                    "pull",
+                    "--mcp-server",
+                    url,
+                    "--mcp-header",
+                    "Authorization: Bearer loopback-secret",
+                    "-o",
+                    out,
+                ]
+            )
+            assert res.returncode == 0, res.stderr
+        finally:
+            httpd.shutdown()
+
+        # A 302 carrying a JSON-RPC error body still raises McpRedirectError
+        # and must not fall back to initialize.
+        methods = []
+
+        class RedirectRpc(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                methods.append(req.get("method"))
+                body = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": req.get("id"),
+                        "error": {"code": -32601, "message": "x"},
+                    }
+                ).encode()
+                self.send_response(302)
+                self.send_header("Location", "https://other.example/mcp")
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        rhttpd = ThreadingHTTPServer(("127.0.0.1", 0), RedirectRpc)
+        threading.Thread(target=rhttpd.serve_forever, daemon=True).start()
+        try:
+            rurl = f"http://127.0.0.1:{rhttpd.server_address[1]}/mcp"
+            session = mcp_client.McpSession(mcp_client.HttpTransport(rurl))
+            with pytest.raises(mcp_client.McpRedirectError):
+                session.connect()
+            assert methods == ["server/discover"]
+        finally:
+            rhttpd.shutdown()
+
+    def test_http_send_checks_deadline_on_normal_return_path(self, monkeypatch):
+        transport = mcp_client.HttpTransport("http://127.0.0.1:9/mcp")
+
+        def late_exchange(message, headers, watchdog, timeout, limit):
+            watchdog.fired = True
+            return {"jsonrpc": "2.0", "id": 1, "result": {}}
+
+        monkeypatch.setattr(transport, "_exchange", late_exchange)
+        with pytest.raises(mcp_client.McpTimeoutError):
+            transport.send(
+                {"jsonrpc": "2.0", "id": 1, "method": "skills/list"}, headers={}, timeout=1.0
+            )
+
+    def test_malformed_skills_capabilities_and_modern_list_envelopes(self, tmp_path):
+        class Stub(mcp_client.Transport):
+            def __init__(self, responses):
+                self._responses = list(responses)
+
+            def send(self, message, *, headers, timeout, limit=mcp_client.MAX_MESSAGE_BYTES):
+                return {"jsonrpc": "2.0", "id": message.get("id"), "result": self._responses.pop(0)}
+
+        # Non-object capability, non-bool directoryRead, and missing resources capability.
+        bad_non_obj = mcp_client.ServerInfo(
+            "2026-07-28", True, {"extensions": {mcp_skills.EXTENSION_ID: True}}
+        )
+        assert bad_non_obj.skills_extension is None
+        assert bad_non_obj.skills_extension_errors() == [
+            f"{mcp_skills.EXTENSION_ID} capability must be an object"
+        ]
+
+        bad_fields = mcp_client.ServerInfo(
+            "2026-07-28",
+            True,
+            {"extensions": {mcp_skills.EXTENSION_ID: {"directoryRead": "yes"}}},
+        )
+        errs = bad_fields.skills_extension_errors()
+        assert any("directoryRead" in e for e in errs)
+        assert any("'resources'" in e for e in errs)
+
+        # Modern skills/list rejects missing or non-complete envelope fields.
+        for bad_page, expected in [
+            ({"skills": [], "ttlMs": 0, "cacheScope": "private"}, "resultType"),
+            (
+                {"resultType": "partial", "skills": [], "ttlMs": 0, "cacheScope": "private"},
+                "resultType",
+            ),
+            ({"resultType": "complete", "skills": [], "cacheScope": "private"}, "ttlMs"),
+            (
+                {"resultType": "complete", "skills": [], "ttlMs": True, "cacheScope": "private"},
+                "ttlMs",
+            ),
+            (
+                {"resultType": "complete", "skills": [], "ttlMs": 0, "cacheScope": "team"},
+                "cacheScope",
+            ),
+        ]:
+            session = mcp_client.McpSession(
+                Stub(
+                    [
+                        {
+                            "supportedVersions": [mcp_client.MODERN_VERSION],
+                            "capabilities": {
+                                "resources": {},
+                                "extensions": {mcp_skills.EXTENSION_ID: {}},
+                            },
+                        },
+                        bad_page,
+                    ]
+                )
+            )
+            session.connect()
+            with pytest.raises(mcp_client.McpError, match=expected):
+                list(session.iter_skills())
+
+        # Legacy initialize server does not require modern envelope fields.
+        legacy_session = mcp_client.McpSession(Stub([{"skills": []}]))
+        legacy_session.info = mcp_client.ServerInfo("2025-11-25", False, {"resources": {}})
+        assert list(legacy_session.iter_skills()) == []
+
+    def test_config_wrapped_transport_names_and_partial_bare_maps(self, tmp_path):
+        # Wrapped map with a server literally named "url" or "command".
+        wrapped = tmp_path / "wrapped.json"
+        wrapped.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "url": {"url": "https://example.com/mcp"},
+                        "command": {"command": "echo", "args": ["hi"]},
+                    }
+                }
+            )
+        )
+        servers = pull_module.config_servers(wrapped)
+        assert set(servers) == {"url", "command"}
+        assert pull_module.config_target("url", servers["url"], tmp_path).kind == "http"
+        assert pull_module.config_target("command", servers["command"], tmp_path).kind == "stdio"
+
+        # Bare map with a valid server, a malformed {} entry, and a disabled entry:
+        # valid server still fetches, disabled is skipped, malformed is recorded as an error.
+        _, httpd, url = http_server(fake.Options())
+        try:
+            bare = tmp_path / "bare.json"
+            bare.write_text(
+                json.dumps(
+                    {
+                        "good": {"url": url},
+                        "broken": {},
+                        "off": {"disabled": True},
+                    }
+                )
+            )
+            out = tmp_path / "out"
+            res = run_cli(["pull", "--mcp-config", bare, "-o", out])
+        finally:
+            httpd.shutdown()
+        assert res.returncode == 1
+        snap = json.loads((out / mcp_skills.SNAPSHOT_FILENAME).read_text())
+        by_label = {s["label"]: s for s in snap["servers"]}
+        assert len(by_label["good"]["skills"]) == 5
+        assert by_label["good"]["errors"] == []
+        assert by_label["broken"]["errors"]
+        assert "off" not in by_label
+
+    def test_planted_ordinary_directory_snapshot_cannot_delete_files(self, tmp_path):
+        out = tmp_path / "project"
+        docs = out / "docs"
+        docs.mkdir(parents=True)
+        (docs / "guide.md").write_text("important\n")
+        # Even a snapshot carrying a valid header cannot delete uninventoried files in docs/.
+        (out / mcp_skills.SNAPSHOT_FILENAME).write_text(
+            json.dumps(
+                {
+                    "snapshotVersion": mcp_skills.SNAPSHOT_VERSION,
+                    "generator": "skillsaw 0.23.0",
+                    "servers": [{"label": "docs", "files": []}],
+                }
+            )
+        )
+        with pytest.raises(pull_module.PullError, match="not a skillsaw snapshot"):
+            pull_module.prepare_output(out)
+        assert (docs / "guide.md").read_text() == "important\n"
+
+    def test_redacts_stdio_env_encoded_query_and_recorded_metadata(self, tmp_path):
+        # Raw percent-encoded query secret is included alongside decoded secret.
+        t = pull_module.url_target("https://example.com/mcp?token=se%63ret123", {})
+        secrets = pull_module._secret_values(t)
+        assert "se%63ret123" in secrets
+        assert "secret123" in secrets
+
+        # Stdio server reflecting its configured env secret in serverInfo, extension,
+        # skill metadata, and JSON-RPC error has all of them scrubbed.
+        script = tmp_path / "echo_env.py"
+        script.write_text(
+            "import json, os, sys\n"
+            "tok = os.environ.get('API_TOKEN', '')\n"
+            "for raw in sys.stdin:\n"
+            "  req = json.loads(raw)\n"
+            "  m = req.get('method')\n"
+            "  if m == 'server/discover':\n"
+            "    res = {'supportedVersions': ['2026-07-28'], "
+            "'_meta': {'io.modelcontextprotocol/serverInfo': {'name': f'srv-{tok}', 'version': '1'}}, "
+            "'capabilities': {'resources': {}, 'extensions': "
+            "{'io.modelcontextprotocol/skills': {'note': tok}}}}\n"
+            "  elif m == 'skills/list':\n"
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'skills': [{'uri': 'skill://s1/SKILL.md', 'frontmatter': {'name': 's1', 'description': tok}, "
+            "'resources': 'dynamic'}]}\n"
+            "  else:\n"
+            "    sys.stdout.write(json.dumps({'jsonrpc': '2.0', 'id': req['id'], "
+            "'error': {'code': -32000, 'message': f'denied {tok}'}}) + '\\n')\n"
+            "    sys.stdout.flush()\n"
+            "    continue\n"
+            "  sys.stdout.write(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': res}) + '\\n')\n"
+            "  sys.stdout.flush()\n",
+            encoding="utf-8",
+        )
+        cfg = tmp_path / ".mcp.json"
+        cfg.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "echo": {
+                            "command": sys.executable,
+                            "args": [str(script)],
+                            "env": {"API_TOKEN": "STDIO_SECRET_699"},
+                        }
+                    }
+                }
+            )
+        )
+        out = tmp_path / "out"
+        res = run_cli(["pull", "--mcp-config", cfg, "-o", out])
+        assert res.returncode == 1
+        snap_text = (out / mcp_skills.SNAPSHOT_FILENAME).read_text(encoding="utf-8")
+        assert "STDIO_SECRET_699" not in res.stderr
+        assert "STDIO_SECRET_699" not in snap_text
+        assert "[redacted]" in snap_text
+
+    def test_over_limit_skill_file_not_persisted_and_outside_dir_entries_reported(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(mcp_skills, "MAX_BYTES_PER_SKILL", 100)
+        script = tmp_path / "dyn_checks.py"
+        script.write_text(
+            "import json, sys\n"
+            "for raw in sys.stdin:\n"
+            "  req = json.loads(raw)\n"
+            "  m = req.get('method')\n"
+            "  if m == 'server/discover':\n"
+            "    res = {'supportedVersions': ['2026-07-28'], 'capabilities': {'resources': {}, "
+            "'extensions': {'io.modelcontextprotocol/skills': {'directoryRead': True}}}}\n"
+            "  elif m == 'skills/list':\n"
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'skills': [{'uri': 'skill://dyn/SKILL.md', "
+            "'frontmatter': {'name': 'dyn', 'description': 'Dyn.'}, 'resources': 'dynamic'}]}\n"
+            "  elif m == 'resources/directory/read':\n"
+            "    res = {'resources': ["
+            "{'uri': 'skill://dyn/sub/nested.md'}, "
+            "{'uri': 'skill://dyn/huge.txt'}]}\n"
+            "  elif req['params']['uri'].endswith('SKILL.md'):\n"
+            "    res = {'contents': [{'uri': req['params']['uri'], "
+            "'text': '---\\nname: dyn\\ndescription: Dyn.\\n---\\n'}]}\n"
+            "  else:\n"
+            "    res = {'contents': [{'uri': req['params']['uri'], 'text': 'A' * 200}]}\n"
+            "  sys.stdout.write(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': res}) + '\\n')\n"
+            "  sys.stdout.flush()\n",
+            encoding="utf-8",
+        )
+        out = tmp_path / "out"
+        res = run_cli(["pull", "--mcp-server", f'"{sys.executable}" "{script}"', "-o", out])
+        assert res.returncode == 1
+        errors = [e["message"] for e in pulled(out)["errors"]]
+        assert any("not direct children" in e for e in errors)
+        assert any("exceed 16 MiB" in e for e in errors)
+        # Over-limit file must not be written to disk or recorded in files inventory.
+        assert not (out / "dyn_checks.py" / "dyn" / "huge.txt").exists()
+        assert "dyn/huge.txt" not in pulled(out)["files"]

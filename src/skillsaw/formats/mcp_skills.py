@@ -13,6 +13,7 @@ URIs to paths in a snapshot directory.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import re
 from pathlib import Path
@@ -40,7 +41,7 @@ DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 SNAPSHOT_FILENAME = "mcp-skills-snapshot.json"
 SNAPSHOT_VERSION = 1
 #: The most of a snapshot record read from disk (prevents symlink/FIFO hangs).
-MAX_SNAPSHOT_RECORD_BYTES = 16 * 1024 * 1024
+MAX_SNAPSHOT_RECORD_BYTES = 64 * 1024 * 1024
 
 _LABEL_UNSAFE = re.compile(r"[^a-z0-9._-]+")
 MAX_LABEL_LENGTH = 64
@@ -114,17 +115,32 @@ def split_uri(uri: str) -> Optional[Tuple[str, Tuple[str, ...]]]:
     return scheme.lower(), tuple(segments)
 
 
+def is_loopback_host(host: str) -> bool:
+    """Whether *host* is a local loopback address or ``localhost``."""
+    lowered = host.rstrip(".").lower()
+    if lowered == "localhost" or lowered.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def local_parts(uri: str) -> Optional[Tuple[str, ...]]:
     """Relative path parts at which a snapshot stores the resource *uri*.
 
-    ``skill://`` URIs map to their segments; any other scheme is kept apart
-    under ``_<scheme>/`` so it cannot collide with a ``skill://`` path.
+    ``skill://`` URIs map to their segments, escaping a first segment that
+    starts with ``_`` by prepending another ``_`` (``_org`` -> ``__org``);
+    any other scheme maps under ``_<scheme>/`` (always one leading ``_``
+    followed by a letter), keeping the two namespaces disjoint.
     """
     split = split_uri(uri)
     if split is None:
         return None
     scheme, segments = split
     if scheme == SKILL_SCHEME:
+        if segments and segments[0].startswith("_"):
+            return (f"_{segments[0]}",) + segments[1:]
         return segments
     prefix = _safe_segment(f"_{scheme}")
     if prefix is None:
