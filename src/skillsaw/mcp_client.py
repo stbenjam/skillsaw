@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from .diagnostics import safe_display
-from .formats.mcp_skills import EXTENSION_ID, is_loopback_host
+from .formats.mcp_skills import EXTENSION_ID, exceeds_json_containers, is_loopback_host
 
 MODERN_VERSION = "2026-07-28"
 LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
@@ -57,8 +57,6 @@ MAX_MESSAGE_BYTES = 36 * 1024 * 1024
 _MAX_CONTROL_MESSAGE_BYTES = 4 * 1024 * 1024
 #: Cap on JSON objects/arrays in one message before ``json.loads`` allocates them.
 _MAX_JSON_CONTAINERS = 200_000
-_JSON_CONTAINER_BYTES = re.compile(rb'"[^"\\]*(?:\\.[^"\\]*)*"|([{\[])')
-_JSON_CONTAINER_TEXT = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"|([{\[])')
 #: Bytes taken from an HTTP body per read, so the deadline is checked often.
 _READ_CHUNK = 64 * 1024
 #: Messages a stdio server can get ahead of the client before its writes block.
@@ -131,30 +129,9 @@ def _header_value(value: str) -> str:
     return "=?base64?" + base64.b64encode(encoded).decode("ascii") + "?="
 
 
-def _exceeds_json_containers(data: Any) -> bool:
-    """Whether *data* holds more JSON objects/arrays than :data:`_MAX_JSON_CONTAINERS`."""
-    if isinstance(data, (bytes, bytearray)):
-        if data.count(b"{") + data.count(b"[") <= _MAX_JSON_CONTAINERS:
-            return False
-        pattern = _JSON_CONTAINER_BYTES
-    elif isinstance(data, str):
-        if data.count("{") + data.count("[") <= _MAX_JSON_CONTAINERS:
-            return False
-        pattern = _JSON_CONTAINER_TEXT
-    else:
-        return False
-    count = 0
-    for match in pattern.finditer(data):
-        if match.group(1) is not None:
-            count += 1
-            if count > _MAX_JSON_CONTAINERS:
-                return True
-    return False
-
-
 def _loads(data: Any) -> Any:
     """``json.loads``, bounding container fan-out and nesting as server errors."""
-    if _exceeds_json_containers(data):
+    if exceeds_json_containers(data, _MAX_JSON_CONTAINERS):
         raise McpError("the server sent JSON with too many containers to parse")
     try:
         return json.loads(data)
@@ -163,10 +140,14 @@ def _loads(data: Any) -> Any:
 
 
 def _response_for(message: Any, request_id: int) -> Optional[Mapping[str, Any]]:
-    """*message* if it is the response to *request_id*."""
-    if isinstance(message, Mapping) and message.get("id") == request_id:
-        if "result" in message or "error" in message:
-            return message
+    """*message* if it is a valid JSON-RPC 2.0 response to *request_id*."""
+    if (
+        isinstance(message, Mapping)
+        and message.get("jsonrpc") == "2.0"
+        and message.get("id") == request_id
+        and (("result" in message) != ("error" in message))
+    ):
+        return message
     return None
 
 
@@ -247,7 +228,8 @@ class StdioTransport(Transport):
     reading its input or stops writing its output cannot block a request
     past its deadline. On POSIX the server starts in its own session, so
     shutdown also reaches a launcher's children (``npx`` and ``uvx`` run the
-    real server as one).
+    real server as one); on Windows shutdown terminates the direct process
+    without native Job Object bindings.
     """
 
     def __init__(self, command: List[str], *, env: Optional[Dict[str, str]] = None, cwd=None):
@@ -878,6 +860,17 @@ class HttpTransport(Transport):
 
     def _error_status(self, exc, message, bounds, limit):
         """A JSON-RPC error carried by a 4xx/5xx status, or an :class:`McpError`."""
+        # Authorization and redirect failures do not depend on the response
+        # body, so classify them before reading (avoiding an oversized body
+        # masking 401/3xx or triggering an initialize fallback).
+        if exc.code == 401:
+            exc.close()
+            raise McpAuthError("the server requires authorization (HTTP 401)") from exc
+        if 300 <= exc.code < 400:
+            exc.close()
+            raise McpRedirectError(
+                f"HTTP {exc.code} redirect refused; use the final server URL"
+            ) from exc
         # The era probe needs a modern refusal's error body to tell it from
         # a legacy server. An oversized or stalled body is still an error
         # (and still counted), not a reason to ignore the status.
@@ -890,13 +883,12 @@ class HttpTransport(Transport):
             parsed = _loads(payload)
         except (ValueError, McpError):
             parsed = None
-        if exc.code == 401:
-            raise McpAuthError("the server requires authorization (HTTP 401)") from exc
-        if 300 <= exc.code < 400:
-            raise McpRedirectError(
-                f"HTTP {exc.code} redirect refused; use the final server URL"
-            ) from exc
-        if isinstance(parsed, Mapping) and "error" in parsed:
+        if (
+            isinstance(parsed, Mapping)
+            and parsed.get("jsonrpc") == "2.0"
+            and "error" in parsed
+            and "result" not in parsed
+        ):
             return {"jsonrpc": "2.0", "id": message.get("id"), "error": parsed["error"]}
         raise McpError(f"HTTP {exc.code} from server") from exc
 
@@ -972,11 +964,20 @@ class McpSession:
     """
 
     def __init__(
-        self, transport: Transport, *, timeout: float = 30.0, max_bytes: Optional[int] = None
+        self,
+        transport: Transport,
+        *,
+        timeout: float = 30.0,
+        max_bytes: Optional[int] = None,
+        max_duration: Optional[float] = None,
     ):
         self.transport = transport
         self.timeout = timeout
         self.max_bytes = max_bytes
+        self.max_duration = max_duration
+        self._deadline: Optional[float] = (
+            time.monotonic() + max_duration if max_duration is not None else None
+        )
         self.received = 0
         self.requests = 0
         self.info: Optional[ServerInfo] = None
@@ -1030,11 +1031,19 @@ class McpSession:
         elif version not in ("2024-11-05", "2025-03-26") and method != "initialize":
             headers["MCP-Protocol-Version"] = version
         message["params"] = params
+        request_timeout = self.timeout
+        if self._deadline is not None:
+            remaining = self._deadline - time.monotonic()
+            if remaining <= 0:
+                raise McpTimeoutError(
+                    f"server pull exceeded its {self.max_duration:g}s total duration limit"
+                )
+            request_timeout = min(request_timeout, remaining)
         self.requests += 1
         before = self.transport.bytes_received
         try:
             response = self.transport.send(
-                message, headers=headers, timeout=self.timeout, limit=limit
+                message, headers=headers, timeout=request_timeout, limit=limit
             )
         except McpSizeError:
             if budget_bound:
@@ -1154,6 +1163,21 @@ class McpSession:
             version=self.info.protocol_version,
         )
 
+    def _check_modern_envelope(self, method: str, result: Mapping[str, Any]) -> None:
+        """Validate required modern (2026-07-28) CacheableResult envelope fields."""
+        if self.info is None or not self.info.modern:
+            return
+        result_type = result.get("resultType")
+        if result_type != "complete":
+            raise McpError(
+                f"{method} returned unsupported resultType {safe_display(result_type)!r}"
+            )
+        ttl = result.get("ttlMs")
+        if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl < 0:
+            raise McpError(f"{method} result has missing or invalid 'ttlMs'")
+        if result.get("cacheScope") not in ("public", "private"):
+            raise McpError(f"{method} result has missing or invalid 'cacheScope'")
+
     def iter_skills(self, *, max_pages: int = 1000) -> Iterator[Any]:
         """The entries ``skills/list`` returns, requesting each page on demand.
 
@@ -1163,18 +1187,7 @@ class McpSession:
         cursor: Optional[str] = None
         for _ in range(max_pages):
             result = self.request("skills/list", {"cursor": cursor} if cursor else {})
-            if self.info is not None and self.info.modern:
-                result_type = result.get("resultType")
-                if result_type != "complete":
-                    raise McpError(
-                        "skills/list returned unsupported resultType "
-                        f"{safe_display(result_type)!r}"
-                    )
-                ttl = result.get("ttlMs")
-                if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl < 0:
-                    raise McpError("skills/list result has missing or invalid 'ttlMs'")
-                if result.get("cacheScope") not in ("public", "private"):
-                    raise McpError("skills/list result has missing or invalid 'cacheScope'")
+            self._check_modern_envelope("skills/list", result)
             skills = result.get("skills")
             if not isinstance(skills, list):
                 raise McpError("skills/list result has no 'skills' array")
@@ -1191,6 +1204,7 @@ class McpSession:
     def read_resource(self, uri: str) -> bytes:
         """The raw bytes ``resources/read`` returns for *uri*."""
         result = self.request("resources/read", {"uri": uri})
+        self._check_modern_envelope("resources/read", result)
         contents = result.get("contents")
         if not isinstance(contents, list) or not contents:
             raise McpError("resources/read returned no contents")
@@ -1232,6 +1246,7 @@ class McpSession:
             if cursor:
                 params["cursor"] = cursor
             result = self.request("resources/directory/read", params)
+            self._check_modern_envelope("resources/directory/read", result)
             resources = result.get("resources")
             if not isinstance(resources, list):
                 raise McpError("resources/directory/read result has no 'resources' array")

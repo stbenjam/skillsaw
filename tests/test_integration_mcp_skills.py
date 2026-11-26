@@ -2068,10 +2068,12 @@ class TestHardeningAndCoverage:
             "'skills': [{'uri': 'skill://dyn/SKILL.md', "
             "'frontmatter': {'name': 'dyn', 'description': 'Dyn.'}, 'resources': 'dynamic'}]}\n"
             "  elif m == 'resources/directory/read':\n"
-            "    res = {'resources': [{'uri': 'skill://dyn/sub\\ud800', "
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'resources': [{'uri': 'skill://dyn/sub\\ud800', "
             "'mimeType': 'inode/directory'}]}\n"
             "  else:\n"
-            "    res = {'contents': [{'uri': req['params']['uri'], "
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'contents': [{'uri': req['params']['uri'], "
             "'text': '---\\nname: dyn\\ndescription: Dyn.\\n---\\n'}]}\n"
             "  sys.stdout.write(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': res})"
             " + '\\n')\n"
@@ -2272,8 +2274,19 @@ class TestHardeningAndCoverage:
         t_dir = StubTransport(
             [
                 {"supportedVersions": [mcp_client.MODERN_VERSION], "capabilities": {}},
-                {"resources": [{"uri": "skill://a/1.md"}], "nextCursor": "p2"},
-                {"resources": [{"uri": "skill://a/2.md"}]},
+                {
+                    "resultType": "complete",
+                    "ttlMs": 0,
+                    "cacheScope": "private",
+                    "resources": [{"uri": "skill://a/1.md"}],
+                    "nextCursor": "p2",
+                },
+                {
+                    "resultType": "complete",
+                    "ttlMs": 0,
+                    "cacheScope": "private",
+                    "resources": [{"uri": "skill://a/2.md"}],
+                },
             ]
         )
         session = mcp_client.McpSession(t_dir)
@@ -2493,13 +2506,25 @@ class TestHardeningAndCoverage:
         assert mcp_skills.read_snapshot_record(out) == provisional
 
     def test_loopback_http_bypasses_proxy_and_redirect_beats_rpc_error(self, tmp_path, monkeypatch):
+        import urllib.error
+        import urllib.request
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
         _, httpd, url = http_server(fake.Options(require_token="loopback-secret"))
         try:
-            # A broken HTTP_PROXY in the environment must not intercept loopback http://.
-            monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
-            monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+            # Install a proxy-enabled _OPENER pointing at an unreachable proxy with
+            # no_proxy cleared; verify _OPENER itself fails so this test would fail
+            # if loopback requests regressed to using _OPENER instead of _DIRECT_OPENER.
+            monkeypatch.delenv("NO_PROXY", raising=False)
+            monkeypatch.delenv("no_proxy", raising=False)
+            broken_proxy_opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({"http": "http://127.0.0.1:1"}),
+                *mcp_client._HANDLERS,
+            )
+            monkeypatch.setattr(mcp_client, "_OPENER", broken_proxy_opener)
+            with pytest.raises((urllib.error.URLError, OSError)):
+                broken_proxy_opener.open(url, timeout=1)
+
             out = tmp_path / "out"
             res = run_cli(
                 [
@@ -2768,14 +2793,17 @@ class TestHardeningAndCoverage:
             "'skills': [{'uri': 'skill://dyn/SKILL.md', "
             "'frontmatter': {'name': 'dyn', 'description': 'Dyn.'}, 'resources': 'dynamic'}]}\n"
             "  elif m == 'resources/directory/read':\n"
-            "    res = {'resources': ["
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'resources': ["
             "{'uri': 'skill://dyn/sub/nested.md'}, "
             "{'uri': 'skill://dyn/huge.txt'}]}\n"
             "  elif req['params']['uri'].endswith('SKILL.md'):\n"
-            "    res = {'contents': [{'uri': req['params']['uri'], "
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'contents': [{'uri': req['params']['uri'], "
             "'text': '---\\nname: dyn\\ndescription: Dyn.\\n---\\n'}]}\n"
             "  else:\n"
-            "    res = {'contents': [{'uri': req['params']['uri'], 'text': 'A' * 200}]}\n"
+            "    res = {'resultType': 'complete', 'ttlMs': 0, 'cacheScope': 'private', "
+            "'contents': [{'uri': req['params']['uri'], 'text': 'A' * 200}]}\n"
             "  sys.stdout.write(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': res}) + '\\n')\n"
             "  sys.stdout.flush()\n",
             encoding="utf-8",
@@ -2789,3 +2817,270 @@ class TestHardeningAndCoverage:
         # Over-limit file must not be written to disk or recorded in files inventory.
         assert not (out / "dyn_checks.py" / "dyn" / "huge.txt").exists()
         assert "dyn/huge.txt" not in pulled(out)["files"]
+
+    def test_oversized_401_and_3xx_classified_before_body_read(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        for status, exc_type in (
+            (401, mcp_client.McpAuthError),
+            (302, mcp_client.McpRedirectError),
+        ):
+            methods = []
+
+            class BigStatus(BaseHTTPRequestHandler):
+                def log_message(self, *args):
+                    pass
+
+                def do_POST(self):
+                    req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    methods.append(req.get("method"))
+                    body = b"x" * 2048
+                    self.send_response(status)
+                    if status == 302:
+                        self.send_header("Location", "https://other.example/mcp")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), BigStatus)
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            try:
+                url = f"http://127.0.0.1:{httpd.server_address[1]}/mcp"
+                session = mcp_client.McpSession(mcp_client.HttpTransport(url), max_bytes=512)
+                with pytest.raises(exc_type):
+                    session.connect()
+                assert methods == ["server/discover"]
+            finally:
+                httpd.shutdown()
+
+    def test_bare_config_disabled_servers_entry_and_failed_final_snapshot_recovery(
+        self, tmp_path, monkeypatch
+    ):
+        # Bare map with a disabled entry named "servers" beside a valid sibling.
+        bare = tmp_path / "bare-disabled.json"
+        bare.write_text(
+            json.dumps(
+                {
+                    "servers": {"disabled": True},
+                    "docs": {"url": "https://example.com/mcp"},
+                }
+            )
+        )
+        assert set(pull_module.config_servers(bare)) == {"servers", "docs"}
+
+        # Wrapper map with a server named "disabled" or disabled sibling stays a wrapper.
+        wrapped = tmp_path / "wrapped-disabled.json"
+        wrapped.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "disabled": True,
+                        "docs": {"url": "https://example.com/mcp"},
+                    }
+                }
+            )
+        )
+        assert set(pull_module.config_servers(wrapped)) == {"disabled", "docs"}
+
+        # If final _write_snapshot fails (e.g. size cap), out_dir stays replaceable
+        # via the minimal recovery inventory (or rollback when even that fails).
+        _, httpd, url = http_server(fake.Options())
+        try:
+            target = pull_module.url_target(url, {}, label="docs")
+            out = tmp_path / "out"
+            pull_module.prepare_output(out)
+            real_write = pull_module._write_snapshot
+            calls = []
+
+            def fail_final_only(dest, snap):
+                calls.append(snap)
+                if len(calls) == 2:
+                    raise pull_module.PullError("simulated final snapshot overflow")
+                return real_write(dest, snap)
+
+            monkeypatch.setattr(pull_module, "_write_snapshot", fail_final_only)
+            with pytest.raises(pull_module.PullError, match="simulated final snapshot overflow"):
+                pull_module.pull([target], out)
+            # Recovery minimal inventory makes out_dir cleanly replaceable.
+            pull_module.prepare_output(out)
+            assert list(out.iterdir()) == []
+
+            # When even minimal recovery cannot write, written files are rolled back
+            # so the provisional snapshot still lets prepare_output replace out_dir.
+            calls.clear()
+
+            def fail_after_provisional(dest, snap):
+                calls.append(snap)
+                if len(calls) >= 2:
+                    raise pull_module.PullError("simulated disk full")
+                return real_write(dest, snap)
+
+            monkeypatch.setattr(pull_module, "_write_snapshot", fail_after_provisional)
+            with pytest.raises(pull_module.PullError, match="simulated disk full"):
+                pull_module.pull([target], out)
+            pull_module.prepare_output(out)
+            assert list(out.iterdir()) == []
+        finally:
+            httpd.shutdown()
+
+    def test_write_bytes_exclusive_removes_file_on_write_error(self, tmp_path, monkeypatch):
+        from skillsaw import utils
+
+        dest = tmp_path / "sub" / "partial.txt"
+
+        class FailingHandle:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def write(self, _data):
+                raise OSError("disk full")
+
+        real_fdopen = os.fdopen
+
+        def failing_fdopen(fd, mode="r", *args, **kwargs):
+            os.close(fd)
+            return FailingHandle()
+
+        monkeypatch.setattr(os, "fdopen", failing_fdopen)
+        try:
+            with pytest.raises(OSError, match="disk full"):
+                utils.write_bytes_exclusive(dest, b"payload", root=tmp_path)
+        finally:
+            monkeypatch.setattr(os, "fdopen", real_fdopen)
+        assert not dest.exists()
+
+    def test_linear_json_container_scan_and_snapshot_bomb_guard(self, tmp_path):
+        # Adversarial unterminated string with repeated escaped quotes must run in linear time.
+        payload = b'"' + b'\\"' * 25_000 + b"{" * (mcp_client._MAX_JSON_CONTAINERS + 5)
+        start = time.monotonic()
+        assert mcp_skills.exceeds_json_containers(payload, mcp_client._MAX_JSON_CONTAINERS) is False
+        assert time.monotonic() - start < 1.0
+
+        # Snapshot reader rejects container bombs before json.loads().
+        snap = tmp_path / "bomb"
+        snap.mkdir()
+        (snap / mcp_skills.SNAPSHOT_FILENAME).write_bytes(
+            b"[" + b"{}," * (mcp_skills.MAX_SNAPSHOT_CONTAINERS + 5) + b"{}]"
+        )
+        assert mcp_skills.read_snapshot_record(snap) is None
+
+    def test_planted_snapshot_cannot_override_dialect_provenance(self, tmp_path):
+        devin_skill = tmp_path / "fake" / ".devin" / "skills" / "my-skill"
+        devin_skill.mkdir(parents=True)
+        (devin_skill / "SKILL.md").write_text("---\nname: my-skill\ndescription: D.\n---\n")
+        # Missing snapshotVersion / generator / files must not grant MCP snapshot provenance.
+        (tmp_path / mcp_skills.SNAPSHOT_FILENAME).write_text(
+            json.dumps(
+                {
+                    "servers": [
+                        {
+                            "label": "fake",
+                            "skills": [{"uri": "skill://.devin/skills/my-skill/SKILL.md"}],
+                        }
+                    ]
+                }
+            )
+        )
+        assert mcp_skills.snapshot_skill_dirs(tmp_path) == []
+
+    def test_cleartext_http_url_credentials_and_path_argv_redaction(self, tmp_path, monkeypatch):
+        # Remote http:// carrying query string or credential-like path segment is refused.
+        with pytest.raises(pull_module.PullError, match="unencrypted http://"):
+            pull_module.url_target("http://mcp.example.com/mcp?api_key=SECRET12345", {})
+        with pytest.raises(pull_module.PullError, match="unencrypted http://"):
+            pull_module.url_target("http://mcp.example.com/v1/sk-live-secret123456/mcp", {})
+        # Loopback http:// with query/path secrets stays allowed.
+        loop = pull_module.url_target("http://127.0.0.1:8080/v1/sk-live-secret123456/mcp", {})
+        assert "sk-live-secret123456" in pull_module._secret_values(loop)
+
+        # CLI argv flags and expanded ${env:VAR} secrets are redacted too.
+        cli_target = pull_module.command_target(
+            "python server.py --token ARG_SECRET_999 --api-key=INLINE_SECRET_888"
+        )
+        cli_secrets = pull_module._secret_values(cli_target)
+        assert "ARG_SECRET_999" in cli_secrets
+        assert "INLINE_SECRET_888" in cli_secrets
+
+        monkeypatch.setenv("VSCODE_TOK", "VSCODE_SECRET_777")
+        cfg_target = pull_module.config_target(
+            "srv",
+            {"command": "python", "args": ["server.py", "${env:VSCODE_TOK}"]},
+            tmp_path,
+        )
+        assert cfg_target.command[-1] == "VSCODE_SECRET_777"
+        assert "VSCODE_SECRET_777" in pull_module._secret_values(cfg_target)
+
+    def test_vscode_placeholders_and_workspace_default_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MCP_TOKEN", "vs-token-123")
+        assert pull_module._expand("Bearer ${env:MCP_TOKEN}") == "Bearer vs-token-123"
+        with pytest.raises(pull_module.PullError, match=r"interactive \$\{input"):
+            pull_module._expand("Bearer ${input:apiKey}")
+
+        # .vscode/mcp.json defaults stdio cwd to the enclosing workspace root, not .vscode/.
+        ws = tmp_path / "workspace"
+        vscode = ws / ".vscode"
+        vscode.mkdir(parents=True)
+        shutil.copy(FAKE_SERVER, ws / "server.py")
+        cfg = vscode / "mcp.json"
+        cfg.write_text(
+            json.dumps(
+                {
+                    "servers": {
+                        "local": {
+                            "command": sys.executable,
+                            "args": ["server.py", str(SERVED)],
+                        }
+                    }
+                }
+            )
+        )
+        out = tmp_path / "out"
+        res = run_cli(["pull", "--mcp-config", cfg, "-o", out])
+        assert res.returncode == 0, res.stderr
+        assert len(pulled(out)["skills"]) == 5
+
+    def test_jsonrpc_envelope_modern_resource_envelopes_and_duration_cap(self):
+        # _response_for requires jsonrpc=="2.0" and exactly one of result/error.
+        assert mcp_client._response_for({"id": 1, "result": {}}, 1) is None
+        assert (
+            mcp_client._response_for({"jsonrpc": "2.0", "id": 1, "result": {}, "error": {}}, 1)
+            is None
+        )
+        assert mcp_client._response_for({"jsonrpc": "2.0", "id": 1, "result": {}}, 1) is not None
+
+        class Stub(mcp_client.Transport):
+            def __init__(self, responses, delay=0.0):
+                self._responses = list(responses)
+                self._delay = delay
+
+            def send(self, message, *, headers, timeout, limit=mcp_client.MAX_MESSAGE_BYTES):
+                if self._delay:
+                    time.sleep(self._delay)
+                return {"jsonrpc": "2.0", "id": message.get("id"), "result": self._responses.pop(0)}
+
+        # Modern resources/read and resources/directory/read require CacheableResult envelopes.
+        s_read = mcp_client.McpSession(
+            Stub([{"contents": [{"uri": "skill://a/SKILL.md", "text": "x"}]}])
+        )
+        s_read.info = mcp_client.ServerInfo(mcp_client.MODERN_VERSION, True, {"resources": {}})
+        with pytest.raises(mcp_client.McpError, match="resultType"):
+            s_read.read_resource("skill://a/SKILL.md")
+
+        s_dir = mcp_client.McpSession(Stub([{"resources": []}]))
+        s_dir.info = mcp_client.ServerInfo(mcp_client.MODERN_VERSION, True, {"resources": {}})
+        with pytest.raises(mcp_client.McpError, match="resultType"):
+            s_dir.read_directory("skill://a")
+
+        # Per-server aggregate max_duration stops slow multi-request pulls.
+        s_slow = mcp_client.McpSession(
+            Stub([{"skills": []}, {"skills": []}], delay=0.15),
+            timeout=5.0,
+            max_duration=0.1,
+        )
+        s_slow.info = mcp_client.ServerInfo("2025-11-25", False, {"resources": {}})
+        s_slow.request("skills/list", {})
+        with pytest.raises(mcp_client.McpTimeoutError, match="total duration limit"):
+            s_slow.request("skills/list", {})

@@ -42,6 +42,8 @@ SNAPSHOT_FILENAME = "mcp-skills-snapshot.json"
 SNAPSHOT_VERSION = 1
 #: The most of a snapshot record read from disk (prevents symlink/FIFO hangs).
 MAX_SNAPSHOT_RECORD_BYTES = 64 * 1024 * 1024
+#: Cap on JSON objects/arrays in a snapshot record before ``json.loads`` allocates them.
+MAX_SNAPSHOT_CONTAINERS = 400_000
 
 _LABEL_UNSAFE = re.compile(r"[^a-z0-9._-]+")
 MAX_LABEL_LENGTH = 64
@@ -148,11 +150,59 @@ def local_parts(uri: str) -> Optional[Tuple[str, ...]]:
     return (prefix,) + segments
 
 
+def exceeds_json_containers(data: Any, limit: int) -> bool:
+    """Linear, non-backtracking count of JSON ``{``/``[`` containers outside strings.
+
+    Uses C-level ``find``/``count`` jumps so even an adversarial unterminated
+    string full of escaped quotes finishes in linear time.
+    """
+    if isinstance(data, (bytes, bytearray)):
+        buf = bytes(data)
+        if buf.count(b"{") + buf.count(b"[") <= limit:
+            return False
+        q_tok, open_obj, open_arr, bs = b'"', b"{", b"[", ord("\\")
+    elif isinstance(data, str):
+        buf = data
+        if buf.count("{") + buf.count("[") <= limit:
+            return False
+        q_tok, open_obj, open_arr, bs = '"', "{", "[", "\\"
+    else:
+        return False
+    n = len(buf)
+    i = 0
+    count = 0
+    in_str = False
+    find_q = buf.find
+    count_tok = buf.count
+    while i < n:
+        j = find_q(q_tok, i)
+        if in_str:
+            if j == -1:
+                return False
+            k = j - 1
+            while k >= i and buf[k] == bs:
+                k -= 1
+            i = j + 1
+            if (j - 1 - k) % 2 == 0:
+                in_str = False
+        else:
+            end = n if j == -1 else j
+            count += count_tok(open_obj, i, end) + count_tok(open_arr, i, end)
+            if count > limit:
+                return True
+            if j == -1:
+                return False
+            in_str = True
+            i = j + 1
+    return False
+
+
 def read_snapshot_record(root: Path) -> Optional[Dict[str, Any]]:
     """Read ``mcp-skills-snapshot.json`` from *root*, or ``None`` if absent/invalid.
 
-    Only a regular non-symlink file within :data:`MAX_SNAPSHOT_RECORD_BYTES` is
-    read, so a symlink to ``/dev/zero`` or a FIFO cannot hang discovery or pull.
+    Only a regular non-symlink file within :data:`MAX_SNAPSHOT_RECORD_BYTES` and
+    :data:`MAX_SNAPSHOT_CONTAINERS` is parsed, so a symlink to ``/dev/zero``, a
+    FIFO, or a container-bomb JSON file cannot hang or OOM discovery or pull.
     """
     record = root / SNAPSHOT_FILENAME
     try:
@@ -161,6 +211,8 @@ def read_snapshot_record(root: Path) -> Optional[Dict[str, Any]]:
         with record.open("rb") as handle:
             raw = handle.read(MAX_SNAPSHOT_RECORD_BYTES + 1)
         if len(raw) > MAX_SNAPSHOT_RECORD_BYTES:
+            return None
+        if exceeds_json_containers(raw, MAX_SNAPSHOT_CONTAINERS):
             return None
         data = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError, RecursionError):
@@ -174,10 +226,16 @@ def snapshot_skill_dirs(root: Path) -> List[Path]:
     Reading the snapshot directly ensures nested SEP-2640 skills and skills
     under dot-prefixed or typically skipped directory names (``node_modules``,
     ``venv``, ``templates``) are never silently dropped by generic repository
-    walk heuristics.
+    walk heuristics. Requires a compatible skillsaw snapshot header and file
+    inventory so an unrelated or planted file cannot override dialect roles.
     """
     data = read_snapshot_record(root)
     if data is None:
+        return []
+    if data.get("snapshotVersion") != SNAPSHOT_VERSION:
+        return []
+    generator = data.get("generator")
+    if not isinstance(generator, str) or not generator.startswith("skillsaw "):
         return []
     servers = data.get("servers")
     if not isinstance(servers, list):
@@ -192,18 +250,23 @@ def snapshot_skill_dirs(root: Path) -> List[Path]:
             continue
         label = server.get("label")
         skills = server.get("skills")
+        raw_files = server.get("files")
         if (
             not isinstance(label, str)
             or sanitize_label(label) != label
             or not isinstance(skills, list)
+            or not isinstance(raw_files, list)
         ):
             continue
+        inventoried = {f for f in raw_files if isinstance(f, str)}
         for entry in skills:
             if not isinstance(entry, dict):
                 continue
             uri = entry.get("uri")
             parts = local_parts(uri) if isinstance(uri, str) else None
             if not parts or len(parts) < 2 or parts[-1] != SKILL_FILENAME:
+                continue
+            if "/".join(parts) not in inventoried:
                 continue
             skill_dir = root.joinpath(label, *parts[:-1])
             skill_md = skill_dir / SKILL_FILENAME

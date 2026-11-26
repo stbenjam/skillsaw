@@ -49,6 +49,10 @@ def _targets(args) -> Tuple[List[ServerTarget], List[Tuple[str, str]]]:
     if args.mcp_config:
         servers = config_servers(args.mcp_config)
         base = (safe_resolve(args.mcp_config) or args.mcp_config.absolute()).parent
+        # Editor-scoped MCP configs (.vscode/mcp.json, .cursor/mcp.json) run
+        # stdio servers from the enclosing workspace folder by default.
+        if base.name in (".vscode", ".cursor") and base.parent != base:
+            base = base.parent
         for name, entry in servers.items():
             try:
                 targets.append(config_target(name, entry, base))

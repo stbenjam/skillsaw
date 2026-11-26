@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 import yaml
 
@@ -59,7 +59,8 @@ from .utils import (
 MAX_DIRECTORY_DEPTH = 8
 MAX_DIRECTORY_REQUESTS = 128
 
-_ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+_ENV_REF = re.compile(r"\$\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+_UNSUPPORTED_PLACEHOLDER = re.compile(r"\$\{input:[^}]*\}")
 
 
 class PullError(Exception):
@@ -81,6 +82,7 @@ class ServerTarget:
     command: List[str] = field(default_factory=list)
     env: Optional[Dict[str, str]] = None
     configured_env: Dict[str, str] = field(default_factory=dict)
+    configured_secrets: Tuple[str, ...] = ()
     cwd: Optional[Path] = None
 
     def open(self) -> Transport:
@@ -106,12 +108,23 @@ class ServerTarget:
         return Path(self.command[0]).name if self.command else "stdio"
 
 
-def _expand(value: str) -> str:
-    """Expand ``${VAR}`` and ``${VAR:-default}`` the way MCP configs do."""
+def _expand(value: str, *, secrets_out: Optional[set] = None) -> str:
+    """Expand ``${VAR}``, ``${VAR:-default}``, and VS Code ``${env:VAR}`` placeholders."""
+    if _UNSUPPORTED_PLACEHOLDER.search(value):
+        raise PullError(
+            "uses an interactive ${input:...} placeholder that skillsaw cannot prompt for"
+        )
 
     def substitute(match: "re.Match[str]") -> str:
         name, default = match.group(1), match.group(2)
-        return os.environ.get(name, default if default is not None else match.group(0))
+        if name in os.environ:
+            expanded = os.environ[name]
+            if secrets_out is not None:
+                upper = name.upper()
+                min_len = 4 if any(tok in upper for tok in _ENV_SECRET_KEY_TOKENS) else 8
+                _add_token_variants(secrets_out, expanded, min_len=min_len)
+            return expanded
+        return default if default is not None else match.group(0)
 
     return _ENV_REF.sub(substitute, value)
 
@@ -128,7 +141,50 @@ def parse_header(spec: str) -> tuple:
 _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 
 
-def url_target(url: str, headers: Mapping[str, str], label: Optional[str] = None) -> ServerTarget:
+_PATH_SECRET_PREFIXES = (
+    "sk-",
+    "sk_",
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "glpat-",
+    "pat_",
+    "tok_",
+    "key_",
+    "api_",
+    "xox",
+)
+
+
+def _path_secret_segments(path: str) -> List[str]:
+    """URL path segments that look like embedded API keys or tokens."""
+    found: List[str] = []
+    for raw in path.split("/"):
+        if not raw:
+            continue
+        decoded = unquote(raw)
+        lowered = decoded.lower()
+        is_secret = (len(decoded) >= 8 and lowered.startswith(_PATH_SECRET_PREFIXES)) or (
+            len(decoded) >= 12
+            and any(ch.isdigit() for ch in decoded)
+            and any(ch.isalpha() for ch in decoded)
+        )
+        if is_secret:
+            found.append(raw)
+            if decoded != raw:
+                found.append(decoded)
+    return found
+
+
+def url_target(
+    url: str,
+    headers: Mapping[str, str],
+    label: Optional[str] = None,
+    *,
+    configured_secrets: Tuple[str, ...] = (),
+) -> ServerTarget:
     """A target for an HTTP server, refusing what HTTP would echo back in an error.
 
     Messages here never quote the URL or a header value: either may carry a
@@ -145,11 +201,12 @@ def url_target(url: str, headers: Mapping[str, str], label: Optional[str] = None
         raise PullError("the URL carries credentials; send them in a header instead")
     if any(ord(ch) < 0x21 or ord(ch) == 0x7F for ch in url):
         raise PullError("the URL contains spaces or control characters")
-    if parts.scheme == "http" and headers and not mcp_skills.is_loopback_host(host):
-        raise PullError(
-            "refusing to send HTTP headers over unencrypted http://; use https:// "
-            "(http:// with headers is allowed only for loopback hosts)"
-        )
+    if parts.scheme == "http" and not mcp_skills.is_loopback_host(host):
+        if headers or parts.query or _path_secret_segments(parts.path) or configured_secrets:
+            raise PullError(
+                "refusing to send HTTP headers or URL credentials over unencrypted http://; "
+                "use https:// (cleartext http:// with credentials is allowed only for loopback hosts)"
+            )
     for name, value in headers.items():
         if not _HEADER_NAME.fullmatch(name):
             # Not quoted: a misplaced colon can leave the value in the name.
@@ -164,6 +221,7 @@ def url_target(url: str, headers: Mapping[str, str], label: Optional[str] = None
         kind="http",
         url=url,
         headers=dict(headers),
+        configured_secrets=configured_secrets,
     )
 
 
@@ -246,9 +304,19 @@ def config_servers(config_path: Path) -> Dict[str, Any]:
     servers = None
     for key in ("mcpServers", "servers"):
         candidate = data.get(key)
-        if isinstance(candidate, Mapping) and not _looks_like_server(candidate):
-            servers = candidate
-            break
+        if not isinstance(candidate, Mapping) or _looks_like_server(candidate):
+            continue
+        # In a bare map, an entry named "servers"/"mcpServers" with only
+        # ``{"disabled": true}`` beside real server siblings is itself a
+        # disabled server entry, not a wrapper map.
+        if (
+            candidate.get("disabled") is True
+            and not any(_looks_like_server(v) for v in candidate.values())
+            and any(_looks_like_server(v) for k, v in data.items() if k != key)
+        ):
+            continue
+        servers = candidate
+        break
     if (
         servers is None
         and data
@@ -313,8 +381,15 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
             raise PullError("its 'headers' is not an object")
         if not all(isinstance(v, str) for v in raw_headers.values()):
             raise PullError("its 'headers' holds a value that is not a string")
-        expanded = {str(k): _expand(v) for k, v in raw_headers.items()}
-        target = url_target(_expand(url), expanded)
+        expanded_secrets: set = set()
+        expanded = {
+            str(k): _expand(v, secrets_out=expanded_secrets) for k, v in raw_headers.items()
+        }
+        target = url_target(
+            _expand(url, secrets_out=expanded_secrets),
+            expanded,
+            configured_secrets=tuple(sorted(expanded_secrets, key=len, reverse=True)),
+        )
         target.label = label
         return target
 
@@ -327,7 +402,10 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
         raise PullError("its 'args' is not an array")
     if not all(isinstance(arg, str) for arg in args):
         raise PullError("its 'args' holds a value that is not a string")
-    argv = [_expand(command)] + [_expand(a) for a in args]
+    expanded_secrets = set()
+    argv = [_expand(command, secrets_out=expanded_secrets)] + [
+        _expand(a, secrets_out=expanded_secrets) for a in args
+    ]
     env = dict(os.environ)
     configured_env: Dict[str, str] = {}
     if "env" in entry:
@@ -336,7 +414,9 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
             raise PullError("its 'env' is not an object")  # as with args, never drop it
         if not all(isinstance(v, str) for v in raw_env.values()):
             raise PullError("its 'env' holds a value that is not a string")
-        configured_env = {str(k): _expand(v) for k, v in raw_env.items()}
+        configured_env = {
+            str(k): _expand(v, secrets_out=expanded_secrets) for k, v in raw_env.items()
+        }
         env.update(configured_env)
     if "cwd" in entry:
         workdir = entry["cwd"]
@@ -350,6 +430,7 @@ def config_target(name: str, entry: Any, cwd: Path) -> ServerTarget:
         command=argv,
         env=env,
         configured_env=configured_env,
+        configured_secrets=tuple(sorted(expanded_secrets, key=len, reverse=True)),
         cwd=cwd,
     )
 
@@ -587,9 +668,21 @@ def _add_token_variants(values: set, raw: str, *, min_len: int) -> None:
             values.add(parts[-1])
 
 
+_SECRET_SHORT_FLAGS = frozenset({"-H", "-k", "-p", "-t", "-e"})
+
+
+def _is_secret_flag(flag: str) -> bool:
+    if flag in _SECRET_SHORT_FLAGS:
+        return True
+    if flag.startswith("-"):
+        upper = flag.lstrip("-").upper()
+        return any(tok in upper for tok in _ENV_SECRET_KEY_TOKENS) or upper == "HEADER"
+    return False
+
+
 def _secret_values(target: ServerTarget) -> Tuple[str, ...]:
     """Sensitive strings sent to *target* that must not echo into snapshots or logs."""
-    values: set = set()
+    values: set = set(target.configured_secrets)
     for raw in target.headers.values():
         _add_token_variants(values, raw, min_len=4)
     for key, raw in target.configured_env.items():
@@ -597,7 +690,10 @@ def _secret_values(target: ServerTarget) -> Tuple[str, ...]:
         min_len = 4 if any(tok in upper for tok in _ENV_SECRET_KEY_TOKENS) else 8
         _add_token_variants(values, raw, min_len=min_len)
     if target.url:
-        query = urlsplit(target.url).query
+        parts = urlsplit(target.url)
+        for seg in _path_secret_segments(parts.path):
+            values.add(seg)
+        query = parts.query
         if len(query) >= 6:
             values.add(query)
         for segment in query.split("&"):
@@ -607,6 +703,19 @@ def _secret_values(target: ServerTarget) -> Tuple[str, ...]:
         for _key, val in parse_qsl(query, keep_blank_values=False):
             if len(val) >= 6:
                 values.add(val)
+    prev_secret_flag = False
+    for arg in target.command[1:]:
+        if "=" in arg:
+            lhs, _, rhs = arg.partition("=")
+            upper = lhs.lstrip("-").upper()
+            min_len = 4 if any(tok in upper for tok in _ENV_SECRET_KEY_TOKENS) else 8
+            _add_token_variants(values, rhs, min_len=min_len)
+            prev_secret_flag = False
+        elif prev_secret_flag:
+            _add_token_variants(values, arg, min_len=4)
+            prev_secret_flag = False
+        else:
+            prev_secret_flag = _is_secret_flag(arg)
     return tuple(sorted(values, key=len, reverse=True))
 
 
@@ -801,8 +910,14 @@ class _ServerPull:
             self.error(f"could not connect: {exc}")
             return self.record
         # Every response — listing pages, directory reads, files — counts
-        # against one budget, so no server can make the pull read without end.
-        session = McpSession(transport, timeout=timeout, max_bytes=self.max_bytes)
+        # against one byte budget and one aggregate duration ceiling, so no
+        # server can make a pull read or trickle without end.
+        session = McpSession(
+            transport,
+            timeout=timeout,
+            max_bytes=self.max_bytes,
+            max_duration=timeout * 20 if timeout > 0 else None,
+        )
         try:
             self._pull(session)
         except (McpBudgetError, McpTimeoutError) as exc:
@@ -990,14 +1105,18 @@ class _ServerPull:
         self.fetched[file_uri] = (len(data), mcp_skills.sha256_digest(data))
         if parts[-1] == mcp_skills.SKILL_FILENAME:
             self.frontmatter[file_uri] = _served_frontmatter(data)
+        rel_path = "/".join(parts)
+        self.record["files"].append(rel_path)
         try:
             _write_exclusive(self.server_dir.joinpath(*parts), data, self.out_dir)
-            self.record["files"].append("/".join(parts))
         except PullError as exc:
+            self.record["files"].pop()
             self.error(f"refused: {exc}", file_uri)
         except FileExistsError:
+            self.record["files"].pop()
             self.error("refused: another resource already maps to this file", file_uri)
         except OSError as exc:
+            self.record["files"].pop()
             self.error(f"could not store the file: {exc.strerror or exc}", file_uri)
         return data
 
@@ -1146,18 +1265,18 @@ def pull(
                 }
             )
         partial_servers.extend(error_records)
-        try:
-            _write_snapshot(
-                out_dir,
-                {
-                    "snapshotVersion": mcp_skills.SNAPSHOT_VERSION,
-                    "generator": f"skillsaw {__version__}",
-                    "pulledAt": started,
-                    "servers": partial_servers,
-                },
-            )
-        except PullError:
-            pass
+        _persist_or_rollback_snapshot(
+            out_dir,
+            {
+                "snapshotVersion": mcp_skills.SNAPSHOT_VERSION,
+                "generator": f"skillsaw {__version__}",
+                "pulledAt": started,
+                "servers": partial_servers,
+            },
+            started=started,
+            generator=f"skillsaw {__version__}",
+            unfinished=unfinished,
+        )
         raise
     servers.extend(error_records)
     snapshot = {
@@ -1166,8 +1285,90 @@ def pull(
         "pulledAt": started,
         "servers": servers,
     }
-    _write_snapshot(out_dir, snapshot)
+    try:
+        _write_snapshot(out_dir, snapshot)
+    except PullError:
+        _persist_or_rollback_snapshot(
+            out_dir,
+            None,
+            started=started,
+            generator=f"skillsaw {__version__}",
+            unfinished=unfinished,
+            servers=servers,
+        )
+        raise
     return snapshot
+
+
+def _persist_or_rollback_snapshot(
+    out_dir: Path,
+    full_snapshot: Optional[Dict[str, Any]],
+    *,
+    started: str,
+    generator: str,
+    unfinished: Dict[str, str],
+    servers: Optional[List[Dict[str, Any]]] = None,
+) -> None:
+    """Keep *out_dir* replaceable after a failed write or interrupt.
+
+    Tries *full_snapshot* when given, falls back to a minimal inventory-only
+    snapshot, and if even that cannot be written removes the files this pull
+    created so the provisional snapshot remains consistent with disk.
+    """
+    server_list = servers if servers is not None else (full_snapshot or {}).get("servers", [])
+    if full_snapshot is not None:
+        try:
+            _write_snapshot(out_dir, full_snapshot)
+            return
+        except PullError:
+            pass
+    minimal = {
+        "snapshotVersion": mcp_skills.SNAPSHOT_VERSION,
+        "generator": generator,
+        "pulledAt": started,
+        "servers": [
+            {
+                "label": s["label"],
+                "files": list(s.get("files") or []),
+                "errors": [unfinished],
+            }
+            for s in server_list
+            if isinstance(s, Mapping) and isinstance(s.get("label"), str)
+        ],
+    }
+    try:
+        _write_snapshot(out_dir, minimal)
+        return
+    except PullError:
+        pass
+    resolved_out = safe_resolve(out_dir) or out_dir
+    for server in server_list:
+        label = server.get("label") if isinstance(server, Mapping) else None
+        if not isinstance(label, str) or mcp_skills.sanitize_label(label) != label:
+            continue
+        server_dir = resolved_out / label
+        dirs: set = set()
+        for rel in server.get("files") or ():
+            parts = _safe_inventory_parts(rel)
+            if parts is None:
+                continue
+            target = server_dir.joinpath(*parts)
+            try:
+                if not target.is_symlink():
+                    target.unlink()
+            except OSError:
+                pass
+            cur = target.parent
+            while cur != resolved_out and cur != cur.parent:
+                dirs.add(cur)
+                cur = cur.parent
+        dirs.add(server_dir)
+        for directory in sorted(dirs, key=lambda p: len(p.parts), reverse=True):
+            try:
+                if not directory.is_symlink():
+                    directory.rmdir()
+            except OSError:
+                pass
 
 
 def _write_snapshot(out_dir: Path, snapshot: Dict[str, Any]) -> None:

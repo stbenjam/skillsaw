@@ -146,10 +146,18 @@ def write_bytes_exclusive(path: Path, content: bytes, *, root: Path) -> None:
     if not supports_anchored:
         mkdir_parents_anchored(path.parent, root=resolved_root)
         checked_root, checked_rel = _atomic_destination(path, resolved_root)
+        target = checked_root / checked_rel
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(checked_root / checked_rel, flags, 0o600)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(content)
+        fd = os.open(target, flags, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(content)
+        except BaseException:
+            try:
+                os.unlink(target)
+            except OSError:
+                pass
+            raise
         return
 
     dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
@@ -173,8 +181,15 @@ def write_bytes_exclusive(path: Path, content: bytes, *, root: Path) -> None:
         if hasattr(os, "O_CLOEXEC"):
             file_flags |= os.O_CLOEXEC
         fd = os.open(relative.name, file_flags, 0o600, dir_fd=directory_fd)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(content)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(content)
+        except BaseException:
+            try:
+                os.unlink(relative.name, dir_fd=directory_fd)
+            except OSError:
+                pass
+            raise
     finally:
         os.close(directory_fd)
 
