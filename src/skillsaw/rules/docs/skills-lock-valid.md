@@ -12,9 +12,10 @@ This rule follows the project-lock structure implemented by the CLI's
 
 - the root is an object with numeric `version` and an object-valued `skills`;
 - each skill has non-empty `source` and `sourceType` strings;
-- `computedHash`, when present, is a lowercase, 64-character SHA-256 hex
-  digest. The CLI reads it only to detect drift, so an entry without one is
-  a warning rather than an error;
+- `computedHash` is a lowercase, 64-character SHA-256 hex digest. Vercel
+  v2 migration may leave it empty. A missing or empty digest warns that
+  drift cannot be checked. An empty v2 digest preserves the installed
+  skill's ownership for autofix;
 - optional `sourceUrl`, `ref`, `skillPath`, and `wellKnownDigest` fields have
   the string shape their consumers expect;
 - optional `subagents` is an array of strings. An empty string is valid here:

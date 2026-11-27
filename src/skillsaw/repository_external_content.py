@@ -180,6 +180,7 @@ class RepositoryExternalContentMixin:
         data, error = read_json_strict(lockfile)
         if error or not isinstance(data, dict):
             return None
+        lock_version = data.get("version")
         entries = data.get("skills")
         if not isinstance(entries, dict):
             return None
@@ -188,7 +189,7 @@ class RepositoryExternalContentMixin:
             for name, entry in entries.items()
             if isinstance(name, str)
             and isinstance(entry, Mapping)
-            and skills_lock_format.entry_has_valid_provenance(entry)
+            and skills_lock_format.entry_has_valid_provenance(entry, lock_version=lock_version)
             and not skills_lock_format.entry_names_repository(entry, own_repository)
             and skills_lock_format.entry_is_external(
                 entry,
