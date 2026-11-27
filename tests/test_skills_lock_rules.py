@@ -533,6 +533,48 @@ def test_targeted_fix_never_rewrites_an_external_lock_managed_skill(
     assert external.read_text() == original
 
 
+@pytest.mark.parametrize("targeted", [False, True])
+def test_migrated_v2_lock_preserves_external_skill_during_autofix(
+    tmp_path: Path, targeted: bool
+) -> None:
+    repo = _copy_fixture("skills-lock/external", tmp_path)
+    lock = repo / "skills-lock.json"
+    data = json.loads(lock.read_text())
+    data["version"] = 2
+    data["skills"]["external-dep"]["computedHash"] = ""
+    _write_lock(lock, data)
+
+    external = repo / ".agents" / "skills" / "external-dep" / "SKILL.md"
+    authored = repo / "skills" / "authored-skill" / "SKILL.md"
+    original = external.read_bytes()
+    target = external.parent if targeted else repo
+
+    result = run_cli(["fix", target, "--rule", "agentskill-name", "--no-progress"])
+
+    assert result.returncode == 0
+    assert external.read_bytes() == original
+    if not targeted:
+        assert "name: authored-skill" in authored.read_text()
+
+    violations = SkillsLockValidRule().check(RepositoryContext(repo))
+    assert [(v.severity, "computedHash" in v.message) for v in violations] == [
+        (Severity.WARNING, True)
+    ]
+
+
+@pytest.mark.parametrize("version", [1, 3])
+def test_empty_hash_without_v2_keeps_existing_ownership(tmp_path: Path, version: int) -> None:
+    repo = _copy_fixture("skills-lock/external", tmp_path)
+    lock = repo / "skills-lock.json"
+    data = json.loads(lock.read_text())
+    data["version"] = version
+    data["skills"]["external-dep"]["computedHash"] = ""
+    _write_lock(lock, data)
+
+    external = repo / ".agents" / "skills" / "external-dep" / "SKILL.md"
+    assert not RepositoryContext(repo).is_externally_sourced(external)
+
+
 def test_missing_computed_hash_is_a_warning(tmp_path: Path) -> None:
     """`npx skills list`/`add`/`update` process an entry without `computedHash`;
     only the drift check needs it. A hand-maintained lockfile is not broken."""
