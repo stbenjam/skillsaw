@@ -103,17 +103,18 @@ skillsaw sends credentials it is given; it does not run an OAuth login.
 - **CI:** an interactive login cannot run there. Run `skillsaw pull` where you
   can log in, commit its directory, and lint that in CI like any other.
 
-skillsaw strips credentials from connection metadata and scrubs recognized
-reflections before writing the snapshot: it records the server's scheme, host
-and port, but no path (some services carry a key there), headers, query string
-or user info. Headers are refused over unencrypted `http://` except for loopback
-hosts (`localhost`, `127.0.0.1`, `[::1]`), loopback `http://` requests bypass
-configured HTTP proxies, redirects are refused so a server cannot forward your
-header to another host, and remote error messages plus recorded server metadata
-are scrubbed of sent header, configured stdio `env`, and query secrets before
-recording or printing. Because fetched skill files and skill URIs are saved
-verbatim for linting and discovery, inspect a pulled snapshot before committing
-or sharing it if you connect to an untrusted server with credentials.
+skillsaw strips credentials from connection metadata and scrubs sent secrets
+from error messages before writing the snapshot: it records the server's scheme,
+host and port, but no path (some services carry a key there), headers, query
+string or user info. Headers and query strings are refused over unencrypted
+`http://` except for loopback hosts (`localhost`, `127.0.0.1`, `[::1]`),
+loopback `http://` requests bypass configured HTTP proxies, redirects are
+refused so a server cannot forward your header to another host, and remote error
+messages are scrubbed of sent header, query, and configured stdio `env` secrets
+before recording or printing. Because fetched skill files and server-supplied
+metadata are saved verbatim for linting and discovery, inspect a pulled snapshot
+before committing or sharing it if you connect to an untrusted server with
+credentials.
 
 ## Pulling skills
 

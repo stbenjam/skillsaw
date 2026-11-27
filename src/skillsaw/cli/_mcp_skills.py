@@ -142,7 +142,7 @@ def _run_pull(args) -> None:
 
 
 @contextmanager
-def _fetched(args, *, before_fetch=None):
+def _fetched(args):
     """Fetch what the servers serve into a temporary directory, removed afterwards.
 
     The configuration is the one the command would use in the current
@@ -155,8 +155,6 @@ def _fetched(args, *, before_fetch=None):
     loaded_config = load_config(args, Path.cwd())
     scratch = Path(tempfile.mkdtemp(prefix="skillsaw-"))
     try:
-        if before_fetch is not None:
-            before_fetch(scratch, loaded_config[0])
         out_dir = scratch / "mcp-skills"
         yield out_dir, _fetch(args, out_dir, kept=False), loaded_config
     finally:
@@ -178,37 +176,14 @@ def _finish(snapshot, run, *, quiet: bool = False) -> None:
 
 
 def _run_lint_mcp_skills(args) -> None:
-    from ..context import RepositoryContext
-    from ..linter import Linter
     from ._lint import _run_lint, _validate_lint_args
 
-    _output_formats, override_types, rule_ids, skip_rule_ids = _validate_lint_args(args)
-
-    preloaded_rules = None
-
-    def _validate_rules(scratch: Path, config) -> None:
-        nonlocal preloaded_rules
-        if not rule_ids and not skip_rule_ids:
-            return
-        try:
-            probe = Linter(
-                RepositoryContext(scratch, repo_types=override_types),
-                config,
-                rule_ids=rule_ids,
-                skip_rule_ids=skip_rule_ids,
-                no_custom_rules=args.no_custom_rules,
-                no_plugins=args.no_plugins,
-            )
-        except ValueError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
-        preloaded_rules = (probe._loaded_plugins, probe._loaded_custom_modules)
-
-    with _fetched(args, before_fetch=_validate_rules) as (out_dir, snapshot, loaded_config):
+    _validate_lint_args(args)
+    with _fetched(args) as (out_dir, snapshot, loaded_config):
         args.path = [out_dir]
         _finish(
             snapshot,
-            lambda: _run_lint(args, loaded_config=loaded_config, preloaded_rules=preloaded_rules),
+            lambda: _run_lint(args, loaded_config=loaded_config),
             quiet=bool(getattr(args, "quiet", False)),
         )
 

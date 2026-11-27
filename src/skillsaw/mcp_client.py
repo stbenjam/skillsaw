@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from .diagnostics import safe_display
-from .formats.mcp_skills import EXTENSION_ID, exceeds_json_containers, is_loopback_host
+from .formats.mcp_skills import EXTENSION_ID, is_loopback_host
 
 MODERN_VERSION = "2026-07-28"
 LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
@@ -55,8 +55,6 @@ CLIENT_CAPABILITIES: Dict[str, Any] = {"extensions": {EXTENSION_ID: {}}}
 MAX_MESSAGE_BYTES = 36 * 1024 * 1024
 #: Tighter cap on discovery, listing, and directory-read messages.
 _MAX_CONTROL_MESSAGE_BYTES = 4 * 1024 * 1024
-#: Cap on JSON objects/arrays in one message before ``json.loads`` allocates them.
-_MAX_JSON_CONTAINERS = 200_000
 #: Bytes taken from an HTTP body per read, so the deadline is checked often.
 _READ_CHUNK = 64 * 1024
 #: Messages a stdio server can get ahead of the client before its writes block.
@@ -130,13 +128,7 @@ def _header_value(value: str) -> str:
 
 
 def _loads(data: Any) -> Any:
-    """``json.loads``, bounding container fan-out and nesting as server errors."""
-    if isinstance(data, (bytes, bytearray)):
-        # Decode UTF-8 before scanning so UTF-16/UTF-32 payloads cannot bypass
-        # the container scan and reach json.loads()'s encoding auto-detection.
-        data = bytes(data).decode("utf-8")
-    if exceeds_json_containers(data, _MAX_JSON_CONTAINERS):
-        raise McpError("the server sent JSON with too many containers to parse")
+    """``json.loads``, translating deeply nested payloads into server errors."""
     try:
         return json.loads(data)
     except RecursionError:
@@ -777,8 +769,6 @@ class _Counted:
 class HttpTransport(Transport):
     """JSON-RPC over Streamable HTTP, accepting JSON or SSE responses."""
 
-    _CLOSE_TIMEOUT: float = 2.0
-
     def __init__(self, url: str, *, headers: Optional[Mapping[str, str]] = None):
         if not url.lower().startswith(("http://", "https://")):
             raise McpError("server URL must use http or https")
@@ -791,34 +781,7 @@ class HttpTransport(Transport):
             and is_loopback_host(parsed.hostname)
         )
         self.session_id: Optional[str] = None
-        self.protocol_version: Optional[str] = None
         self.bytes_received = 0
-
-    def close(self) -> None:
-        """Best-effort Streamable HTTP session termination (DELETE with Mcp-Session-Id)."""
-        session_id = self.session_id
-        self.session_id = None
-        if not session_id:
-            return
-        watchdog = _Watchdog(self._CLOSE_TIMEOUT)
-        try:
-            request = urllib.request.Request(self.url, method="DELETE")
-            for name, value in self.headers.items():
-                request.add_header(name, value)
-            request.add_header("Mcp-Session-Id", session_id)
-            if self.protocol_version:
-                request.add_header("MCP-Protocol-Version", self.protocol_version)
-            request.watchdog = watchdog  # type: ignore[attr-defined]
-            opener = _DIRECT_OPENER if self._direct else _OPENER
-            with opener.open(request, timeout=watchdog.remaining()) as response:
-                self.bytes_received += _header_bytes(response.headers, response.reason)
-        except urllib.error.HTTPError as exc:
-            self.bytes_received += _header_bytes(exc.headers, exc.reason)
-            exc.close()
-        except (OSError, urllib.error.URLError, http.client.HTTPException, ValueError):
-            pass
-        finally:
-            watchdog.cancel()
 
     def send(self, message, *, headers, timeout, limit=MAX_MESSAGE_BYTES):
         watchdog = _Watchdog(timeout)
@@ -846,8 +809,6 @@ class HttpTransport(Transport):
         request.add_header("Accept", "application/json, text/event-stream")
         for name, value in {**self.headers, **headers}.items():
             request.add_header(name, value)
-        if "MCP-Protocol-Version" in headers:
-            self.protocol_version = headers["MCP-Protocol-Version"]
         if self.session_id:
             request.add_header("Mcp-Session-Id", self.session_id)
         request.watchdog = watchdog  # type: ignore[attr-defined]
@@ -1025,15 +986,7 @@ class McpSession:
         self._ids = itertools.count(1)
 
     def close(self) -> None:
-        if self.max_bytes is not None and self.received >= self.max_bytes:
-            # Skip network session DELETE once the receive budget is exhausted.
-            if hasattr(self.transport, "session_id"):
-                self.transport.session_id = None
-        before = self.transport.bytes_received
-        try:
-            self.transport.close()
-        finally:
-            self.received += self.transport.bytes_received - before
+        self.transport.close()
 
     def _meta(self, version: str) -> Dict[str, Any]:
         return {
@@ -1171,10 +1124,6 @@ class McpSession:
         return self.info
 
     def _initialize(self, version: str) -> ServerInfo:
-        # Clear any protocol_version left over from the modern server/discover
-        # probe so a legacy session DELETE never sends a stale 2026-07-28 header.
-        if hasattr(self.transport, "protocol_version"):
-            self.transport.protocol_version = None  # type: ignore[attr-defined]
         result = self._send(
             "initialize",
             {
@@ -1192,10 +1141,6 @@ class McpSession:
             # The handshake says to disconnect rather than guess at its shapes.
             raise McpError(
                 f"server chose protocol version {negotiated[:40]!r}, which is not supported"
-            )
-        if hasattr(self.transport, "protocol_version"):
-            self.transport.protocol_version = (  # type: ignore[attr-defined]
-                None if negotiated in ("2024-11-05", "2025-03-26") else negotiated
             )
         capabilities = result.get("capabilities")
         if not isinstance(capabilities, Mapping):

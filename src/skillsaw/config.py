@@ -96,9 +96,6 @@ class LinterConfig:
     # default() materializes registry values for callers and config output;
     # those values are not user severity overrides until changed.
     _generated_rule_defaults: bool = field(default=False, init=False, repr=False, compare=False)
-    # Distinguishes an explicit ``exclude:`` key in YAML from inherited built-in
-    # defaults so persisted MCP snapshots clear defaults without overriding user rules.
-    exclude_patterns_explicit: bool = field(default=False, repr=False, compare=False)
 
     # Recognised top-level config keys; anything else triggers a load warning.
     _KNOWN_KEYS = frozenset(
@@ -359,7 +356,6 @@ class LinterConfig:
             rules=rules,
             custom_rules=custom_rules,
             exclude_patterns=exclude_patterns,
-            exclude_patterns_explicit=raw_exclude is not None,
             content_paths=content_paths,
             rulesync_generated=rulesync_generated,
             codex_instructions=(

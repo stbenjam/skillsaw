@@ -230,9 +230,6 @@ class Linter:
         baseline: Optional["BaselineFile"] = None,
         no_custom_rules: bool = False,
         no_plugins: bool = False,
-        *,
-        _preloaded_plugins: Optional[List[Any]] = None,
-        _preloaded_custom_modules: Optional[Dict[Path, Any]] = None,
     ):
         from .rules.builtin import canonical_rule_id
 
@@ -247,8 +244,6 @@ class Linter:
         self._baseline = baseline
         self._no_custom_rules = no_custom_rules
         self._no_plugins = no_plugins
-        self._loaded_plugins: Optional[List[Any]] = _preloaded_plugins
-        self._loaded_custom_modules: Dict[Path, Any] = dict(_preloaded_custom_modules or {})
         self._plugin_load_violations: List[RuleViolation] = []
         self._vendor_managed_cache: Dict[Path, bool] = {}
         self._generated_fix_paths: Set[Path] = set()
@@ -484,9 +479,7 @@ class Linter:
         """
         from .plugins import load_plugins
 
-        if self._loaded_plugins is None:
-            self._loaded_plugins = load_plugins(disabled=set(self.config.disabled_plugins))
-        plugins = self._loaded_plugins
+        plugins = load_plugins(disabled=set(self.config.disabled_plugins))
 
         # Extensions (repo types, tree contributors) must register before any
         # rule's enablement is evaluated: a plugin rule scoped to its own
@@ -709,35 +702,31 @@ class Linter:
         except (OSError, ValueError) as e:
             raise ValueError(f"Custom rule path cannot be accessed: {path}: {e}") from e
 
-        if path in self._loaded_custom_modules:
-            module = self._loaded_custom_modules[path]
-        else:
-            warnings.warn(CustomRuleWarning(path), stacklevel=2)
-            logger.info("Loading custom rules from %s", path)
+        warnings.warn(CustomRuleWarning(path), stacklevel=2)
+        logger.info("Loading custom rules from %s", path)
 
-            # Unique module name per file so two custom rule files cannot clobber
-            # each other in ``sys.modules`` (they previously all loaded as
-            # ``custom_rule``).
-            safe_stem = re.sub(r"\W", "_", path.stem)
-            path_digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
-            module_name = f"skillsaw_custom_{safe_stem}_{path_digest}"
+        # Unique module name per file so two custom rule files cannot clobber
+        # each other in ``sys.modules`` (they previously all loaded as
+        # ``custom_rule``).
+        safe_stem = re.sub(r"\W", "_", path.stem)
+        path_digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+        module_name = f"skillsaw_custom_{safe_stem}_{path_digest}"
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, path)
+            module = importlib.util.module_from_spec(spec)
+            # Register before exec (the documented module_from_spec pattern) so
+            # the module is importable by name and rule classes carry a distinct
+            # __module__ — this is what keeps two rule files from colliding.
+            sys.modules[module_name] = module
             try:
-                spec = importlib.util.spec_from_file_location(module_name, path)
-                module = importlib.util.module_from_spec(spec)
-                # Register before exec (the documented module_from_spec pattern) so
-                # the module is importable by name and rule classes carry a distinct
-                # __module__ — this is what keeps two rule files from colliding.
-                sys.modules[module_name] = module
-                try:
-                    spec.loader.exec_module(module)
-                except Exception:
-                    sys.modules.pop(module_name, None)
-                    raise
-            except Exception as e:
-                # Surface a friendly error (the CLI catches ValueError) instead of
-                # leaking a SyntaxError/ImportError traceback from the rule file.
-                raise ValueError(f"Failed to load custom rule from {path}: {e}") from e
-            self._loaded_custom_modules[path] = module
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(module_name, None)
+                raise
+        except Exception as e:
+            # Surface a friendly error (the CLI catches ValueError) instead of
+            # leaking a SyntaxError/ImportError traceback from the rule file.
+            raise ValueError(f"Failed to load custom rule from {path}: {e}") from e
 
         try:
             for name in dir(module):
