@@ -82,14 +82,14 @@ REGISTRY_ENTRY_FIELDS = frozenset({"path", "include_only", "exclude"})
 AGENTS_REGISTRY = "agents.json"
 PLUGINS_REGISTRY = "plugins.json"
 
-#: The fields ``plugin.json`` carries meaning in. The manifest is a
-#: **protojson** message (errors read ``proto: (line 1:9): invalid value
-#: for string field name: 42``), so every other key — ``$schema``,
-#: ``author``, ``keywords``, ``homepage``, ``mcpServers``, ``hooks`` — is
-#: discarded as unknown and the plugin still loads. Measured by giving each
-#: candidate key a wrong-typed value and reading the type error back;
-#: ``version`` and ``displayName`` became typed fields in agy 1.3.6. Any
-#: string loads as ``version``: semver is not enforced.
+#: The fields ``plugin.json`` carries meaning in. Measured against
+#: ``agy`` 1.5.11: the manifest is parsed as JSONC into
+#: ``map[string]jsontext.Value`` (exact-case keys, last value wins for a
+#: repeated key), so every other key — ``$schema``, ``author``,
+#: ``keywords``, ``homepage``, ``mcpServers``, ``hooks`` — is discarded as
+#: unknown and the plugin still loads. ``version`` and ``displayName``
+#: became typed fields in agy 1.3.6. Any string loads as ``version``:
+#: semver is not enforced.
 PLUGIN_MESSAGE_FIELDS = (
     ("name", str, "string"),
     ("description", str, "string"),
@@ -99,11 +99,10 @@ PLUGIN_MESSAGE_FIELDS = (
     ("displayName", str, "string"),
 )
 
-#: protojson also accepts a field's proto name, so ``display_name`` is the
-#: same field as ``displayName``: a type error there names
-#: ``displayName``, and writing both is ``proto: duplicate field``.
-#: Matching is otherwise exact — ``displayname`` and ``Version`` are
-#: unknown keys.
+#: ``display_name`` is accepted beside ``displayName`` as an exact-case
+#: typed string key. Since agy 1.5.11 both spellings may appear together
+#: when both are strings, and either mistyped rejects the plugin.
+#: Matching is exact — ``displayname`` and ``Version`` are unknown keys.
 PLUGIN_FIELD_ALIASES = MappingProxyType({"display_name": "displayName"})
 
 

@@ -188,6 +188,19 @@ control server.
 | `tools` `5` or `[]`; `tools.a` `5` | `agy mcp list` | Server absent. `tools: null`, `tools.a: null` and unknown tool-entry keys load. |
 | `tools.a.eager: "yes"`; `background` `"sometimes"`, `"ALWAYS"`, `""`, `1` | `agy mcp list` | Server absent. `EAGER`/`BACKGROUND` key spellings bind case-insensitively. |
 
+### Rechecked with agy 1.5.11 (2026-11-18)
+
+Same isolated `HOME` method (`agy --add-dir ... --log-file ... agents`).
+
+| Input | Observable | Result |
+| --- | --- | --- |
+| UTF-8 BOM before `plugin.json` or `hooks.json` | `agy agents` and debug logs | Both load clean (`hooks.json` loads 1 named hook; BOM + bad type parses past the BOM and reports the type error). `plugins.json` and `mcp_config.json` still reject UTF-8 BOM. |
+| `plugin.json` with `//` line comment, `/* */` block comment, or trailing comma | `agy agents` | Plugin loads clean: `plugin.json` now parses as JSONC (`hooks.json` remains strict JSON and rejects comments/trailing commas). |
+| `plugin.json` root `null`; `[]`; `"hi"` | `agy agents` and debug logs | `null` loads clean; `[]` and `"hi"` fail with `json: cannot unmarshal array/string into Go value of type map[string]jsontext.Value`. |
+| `plugin.json` duplicate known keys (`{"name": 42, "name": "ok"}`, `{"disabled": "no", "disabled": false}`) | `agy agents` | Last value wins per exact key: bad-then-good loads clean, good-then-bad fails. |
+| `plugin.json` with both `displayName` and `display_name` | `agy agents` | Both strings load clean; either key mistyped (`42`) fails independently. |
+| `plugin.json` with lone Unicode surrogate (`\ud800`) or `1e400` in unknown field; `NaN` | `agy agents` | Surrogates and `1e400` load clean; `NaN` fails. Exact-case matching for all 6 fields is unchanged (`Name`, `Version`, `displayname` remain unknown). |
+
 These are loader observations. They do not demonstrate hook dispatch or MCP
 connections. Shared-file scanner tests separately verify that commands and
 prompts remain visible once when several hosts read the same file.

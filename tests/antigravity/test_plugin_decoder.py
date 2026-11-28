@@ -1,4 +1,4 @@
-"""Native-derived ProtoJSON grammar checks, kept distinct from Go configs."""
+"""Native-derived agy 1.5.11 JSONC plugin.json reader checks."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from skillsaw.formats.antigravity_plugin import read_plugin_manifest
 
 def read(tmp_path, body):
     path = tmp_path / "plugin.json"
-    path.write_text(body)
+    path.write_text(body, encoding="utf-8")
     return read_plugin_manifest(path)
 
 
@@ -22,55 +22,38 @@ def read(tmp_path, body):
         '{"name":"berth-tools","Name":42,"Description":42,"Disabled":42,"Logo":42}',
         '{"name":"berth-tools","Version":42,"displayname":42,"DisplayName":42}',
         '{"name":"berth-tools","metadata":1e400}',
+        '\ufeff{"name":"berth-tools"}',
+        '// line comment\n{"name":"berth-tools",}',
+        '/* block comment */ {"name":"berth-tools"}',
+        '{"name":42,"name":"berth-tools"}',
+        '{"name":"berth-tools","displayName":"A","display_name":"B"}',
+        r'{"name":"berth-tools","metadata":"\ud800"}',
     ],
 )
-def test_unknown_duplicates_and_cased_fields_are_accepted(tmp_path, body):
+def test_jsonc_bom_duplicates_and_exact_case_are_accepted(tmp_path, body):
     data, error = read(tmp_path, body)
     assert error is None
     assert data["name"] == "berth-tools"
 
 
-@pytest.mark.parametrize(
-    "field", ["name", "description", "disabled", "logo", "version", "displayName", "display_name"]
-)
-@pytest.mark.parametrize("values", ["null,null", 'null,"text"', '"text",null'])
-def test_duplicate_known_fields_reject_both_null_orders(tmp_path, field, values):
-    first, second = values.split(",")
-    data, error = read(tmp_path, '{"' + field + '":' + first + ',"' + field + '":' + second + "}")
-    assert data is None
-    assert error == f'duplicate JSON object key: "{field}"'
+def test_null_root_reads_as_empty_manifest(tmp_path):
+    data, error = read(tmp_path, "null")
+    assert error is None
+    assert data == {}
 
 
-@pytest.mark.parametrize(
-    "first,second", [("displayName", "display_name"), ("display_name", "displayName")]
-)
-def test_json_and_proto_names_are_one_field(tmp_path, first, second):
-    data, error = read(tmp_path, '{"' + first + '":"A","' + second + '":"B"}')
-    assert data is None
-    assert error == f'duplicate JSON object key: "{second}"'
+def test_duplicate_key_keeps_last_value(tmp_path):
+    data, error = read(
+        tmp_path, '{"name":"first","name":"second","disabled":"no","disabled":false}'
+    )
+    assert error is None
+    assert data == {"name": "second", "disabled": False}
 
 
-def test_escaped_known_key_is_the_same_field(tmp_path):
-    data, error = read(tmp_path, r'{"name":"first","na\u006de":"second"}')
-    assert data is None
-    assert error == 'duplicate JSON object key: "name"'
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
-        r'{"name":"berth-tools","description":"\ud800"}',
-        r'{"name":"berth-tools","metadata":"\udc00"}',
-        r'{"name":"berth-tools","metadata":{"\ud800":"value"}}',
-        r'{"name":"berth-tools","metadata":[["\ud800"]]}',
-        r'{"name":"berth-tools","metadata":"\ud800","metadata":"fine"}',
-    ],
-)
-def test_invalid_unicode_in_discarded_values_and_keys_is_fatal(tmp_path, body):
-    data, error = read(tmp_path, body)
-    assert data is None
-    assert error == "invalid Unicode surrogate in JSON string"
-    error.encode("utf-8")
+def test_both_display_name_spellings_are_kept_independently(tmp_path):
+    data, error = read(tmp_path, '{"name":"berth-tools","displayName":42,"display_name":"B"}')
+    assert error is None
+    assert data == {"name": "berth-tools", "displayName": 42, "display_name": "B"}
 
 
 @pytest.mark.parametrize("value,expected", [(r"\ud83d\ude00", "😀"), ("航路", "航路")])
@@ -81,9 +64,16 @@ def test_valid_unicode_is_preserved(tmp_path, value, expected):
 
 
 @pytest.mark.parametrize(
-    "body", ['{"metadata":NaN}', '{"metadata":Infinity}', "// note\n{}", '{"name":"berth-tools",}']
+    "body",
+    [
+        '{"metadata":NaN}',
+        '{"metadata":Infinity}',
+        '{"metadata":-Infinity}',
+        '{"name":"berth-tools"',
+        "",
+    ],
 )
-def test_jsonc_and_non_json_constants_remain_rejected(tmp_path, body):
+def test_malformed_json_and_non_json_constants_remain_rejected(tmp_path, body):
     data, error = read(tmp_path, body)
     assert data is None
     assert error
