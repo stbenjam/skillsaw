@@ -351,13 +351,21 @@ def test_default_mode_inside_the_permission_table(tmp_path) -> None:
 
 
 def test_the_honored_tables_are_never_reported(tmp_path) -> None:
-    """All four, including the two carried on the reference's word: reporting
+    """All five, including the tables carried on the reference's word: reporting
     a table the documentation endorses would be a false positive."""
     repo = scope(
         tmp_path,
         HONORED + '\n[plugins]\nenabled = ["tide-charts"]\ndisabled = ["old"]\n'
+        '\n[env]\nHARBOUR_MODE = "strict"\n'
         "\n[mcp]\nmax_output_bytes = 65536\n",
     )
+
+    assert check(repo) == []
+
+
+def test_project_env_table_is_honored(tmp_path) -> None:
+    """Grok Build 1.0.88 documents [env] in project config.toml for trusted folders."""
+    repo = scope(tmp_path, '[env]\nFOO = "bar"\nRETRIES = 3\nSTRICT = true\n')
 
     assert check(repo) == []
 
