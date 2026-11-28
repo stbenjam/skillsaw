@@ -8,7 +8,7 @@ from typing import Mapping, Optional
 
 from skillsaw.paths import is_absolute_path, safe_resolve
 
-CURRENT_VERSION = 1
+CURRENT_VERSION = 2
 
 # Values produced by the current project-lock writer, plus ``download`` from
 # the source parser so validation remains forward-compatible if that source
@@ -48,17 +48,17 @@ def sanitize_install_name(value: str) -> str:
     return sanitized[:255] or "unnamed-skill"
 
 
-def entry_has_valid_provenance(entry: Mapping[str, object]) -> bool:
+def entry_has_valid_provenance(entry: Mapping[str, object], *, lock_version: object = None) -> bool:
     """Whether an entry has enough valid evidence to assign ownership."""
     source = entry.get("source")
     source_type = entry.get("sourceType")
     computed_hash = entry.get("computedHash")
-    # The CLI reads `computedHash` only to detect drift, so an entry without
-    # one is still an installed dependency — and its content is still not
-    # the repository's to autofix. Only a malformed digest marks the entry
-    # as one the CLI cannot have written.
-    hash_ok = computed_hash is None or (
-        isinstance(computed_hash, str) and bool(COMPUTED_HASH_RE.fullmatch(computed_hash))
+    # The v2 migration writes an empty string when it cannot trust the
+    # installed digest. The source still describes who owns the skill.
+    hash_ok = (
+        computed_hash is None
+        or (lock_version == 2 and computed_hash == "")
+        or (isinstance(computed_hash, str) and bool(COMPUTED_HASH_RE.fullmatch(computed_hash)))
     )
     return (
         isinstance(source, str)
