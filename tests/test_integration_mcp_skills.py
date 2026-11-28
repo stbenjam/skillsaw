@@ -1,10 +1,9 @@
 """Skills over MCP (SEP-2640): ``skillsaw lint --mcp-server`` and its client."""
 
-import io
+import asyncio
 import json
 import os
 import shutil
-import socket
 import sys
 import tempfile
 import threading
@@ -1083,9 +1082,11 @@ class TestPull:
         assert not (out / "fake" / "pdf-processing" / "templates" / "invoice.md").exists()
 
     def test_a_deeply_nested_entry_is_refused_not_fatal(self, tmp_path):
+        # Depth 70 exceeds MAX_RECORDED_DEPTH (64) while staying within JSON parser depth,
+        # so the offending entry is rejected without losing the server's other skills.
         nested: dict = {}
         node = nested
-        for _ in range(600):
+        for _ in range(70):
             node["a"] = {}
             node = node["a"]
         frontmatter = {"name": "deep", "description": "Deep. Use when testing.", "metadata": nested}
@@ -1099,6 +1100,51 @@ class TestPull:
         assert "Traceback" not in result.stderr
         assert any("nests too deeply" in e["message"] for e in pulled(out)["errors"])
         assert len(pulled(out)["skills"]) == 5  # the server's other skills are kept
+
+    def test_stalled_http_body_is_a_server_error(self, tmp_path):
+        server, httpd, url = http_server(fake.Options(stall_body_seconds=3))
+        try:
+            start = time.monotonic()
+            result, out = pull(tmp_path, url, "--mcp-timeout", "0.5")
+        finally:
+            httpd.shutdown()
+        assert time.monotonic() - start < 2.5
+        assert result.returncode == 1, result.stderr
+        assert "Traceback" not in result.stderr
+        [error] = pulled(out)["errors"]
+        assert "timed out after 0.5s waiting for server/discover" in error["message"]
+
+    def test_deeply_nested_http_json_is_a_server_problem(self, tmp_path):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        body = b"[" * 256 + b"]" * 256
+
+        class Deep(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Deep)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            result, out = pull(tmp_path, f"http://127.0.0.1:{httpd.server_address[1]}/mcp")
+        finally:
+            httpd.shutdown()
+        assert result.returncode == 1, result.stderr
+        assert "Traceback" not in result.stderr
+        assert "nested too deeply" in pulled(out)["errors"][0]["message"]
+
+    def test_timeout_must_be_positive(self, tmp_path):
+        result = run_cli(["lint", "--mcp-server", "http://127.0.0.1:9/", "--mcp-timeout", "0"])
+        assert result.returncode == 2
+        assert "--mcp-timeout" in result.stderr
 
 
 # ── Client bounds ────────────────────────────────────────────────
@@ -1131,547 +1177,6 @@ def parser_gives_up_on_nesting(monkeypatch):
         return real(data, *args, **kwargs)
 
     monkeypatch.setattr(json, "loads", loads)
-
-
-def python_server(source):
-    """A stdio "server" running *source*, for transport-level misbehavior."""
-    return mcp_client.StdioTransport([sys.executable, "-c", source])
-
-
-class TestStdioShutdown:
-    @pytest.mark.skipif(os.name != "posix", reason="signal handling differs off POSIX")
-    def test_server_that_ignores_eof_and_sigterm_is_killed(self, monkeypatch):
-        monkeypatch.setattr(mcp_client, "_EXIT_GRACE", 0.2)
-        transport = python_server(
-            "import signal, time\n"
-            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-            "time.sleep(120)\n"
-        )
-        with pytest.raises(mcp_client.McpError, match="timed out"):
-            transport.send({"jsonrpc": "2.0", "id": 1, "method": "ping"}, headers={}, timeout=0.05)
-        start = time.monotonic()
-        transport.close()
-        assert time.monotonic() - start < 3
-        assert transport._process.poll() is not None
-
-    @pytest.mark.skipif(os.name != "posix", reason="signal handling differs off POSIX")
-    def test_grandchild_holding_stdout_does_not_block_close(self, monkeypatch):
-        # A launcher (npx, uvx) whose child outlives it keeps the pipe open.
-        monkeypatch.setattr(mcp_client, "_EXIT_GRACE", 0.2)
-        transport = python_server(
-            "import subprocess, sys\n"
-            "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
-        )
-        start = time.monotonic()
-        transport.close()
-        assert time.monotonic() - start < 3
-        assert not transport._reader.is_alive()
-
-    def test_deeply_nested_json_is_a_server_error(self, parser_gives_up_on_nesting):
-        transport = python_server(
-            "import sys\n"
-            "sys.stdin.readline()\n"
-            "print('[' * 64 + ']' * 64, flush=True)\n"
-            "sys.stdin.read()\n"
-        )
-        try:
-            with pytest.raises(mcp_client.McpError, match="nested too deeply"):
-                transport.send(
-                    {"jsonrpc": "2.0", "id": 1, "method": "skills/list"}, headers={}, timeout=10
-                )
-        finally:
-            transport.close()
-
-    def test_backlog_is_bounded_in_bytes(self, monkeypatch):
-        # The byte budget is charged as messages are taken, so what waits in
-        # the backlog needs its own bound.
-        monkeypatch.setattr(mcp_client, "MAX_MESSAGE_BYTES", 4096)
-        transport = python_server(
-            "import sys\n"
-            "for _ in range(50):\n"
-            "    print('x' * 1000, flush=True)\n"
-            "sys.stdin.read()\n"
-        )
-        try:
-            deadline = time.monotonic() + 5
-            while transport._messages.qsize() < 4 and time.monotonic() < deadline:
-                time.sleep(0.05)
-            time.sleep(0.3)  # time to overfill, were the bound missing
-            assert transport._messages.qsize() == 4  # 1,001-byte lines
-            assert transport._backlog_bytes <= 4096
-        finally:
-            transport.close()
-
-    def test_a_line_is_read_only_up_to_the_request_limit(self):
-        # A small byte budget must also bound what the reader takes in.
-        transport = python_server(
-            "import sys\n"
-            "sys.stdin.readline()\n"
-            "print('x' * 1000000, flush=True)\n"
-            "sys.stdin.read()\n"
-        )
-        try:
-            with pytest.raises(mcp_client.McpSizeError):
-                transport.send(
-                    {"jsonrpc": "2.0", "id": 1, "method": "skills/list"},
-                    headers={},
-                    timeout=10,
-                    limit=1000,
-                )
-        finally:
-            transport.close()
-        # A read already waiting may finish its chunk; nothing more is taken in.
-        assert transport.bytes_received <= mcp_client._READ_CHUNK + 1
-
-    def test_an_error_code_that_is_not_an_integer_is_no_crash(self):
-        transport = python_server(
-            "import json, sys\n"
-            "for line in sys.stdin:\n"
-            "    request = json.loads(line)\n"
-            "    if 'id' in request:\n"
-            "        error = {'code': [1], 'message': 'odd'}\n"
-            "        reply = {'jsonrpc': '2.0', 'id': request['id'], 'error': error}\n"
-            "        print(json.dumps(reply), flush=True)\n"
-        )
-        session = mcp_client.McpSession(transport, timeout=10)
-        try:
-            with pytest.raises(mcp_client.McpError):
-                session.connect()
-        finally:
-            session.close()
-
-    def test_an_unsupported_legacy_version_is_refused(self):
-        transport = python_server(
-            "import json, sys\n"
-            "for line in sys.stdin:\n"
-            "    request = json.loads(line)\n"
-            "    if 'id' not in request:\n"
-            "        continue\n"
-            "    if request['method'] == 'initialize':\n"
-            "        result = {'protocolVersion': '2099-01-01', 'capabilities': {},\n"
-            "                  'serverInfo': {'name': 'future', 'version': '1'}}\n"
-            "        reply = {'jsonrpc': '2.0', 'id': request['id'], 'result': result}\n"
-            "    else:\n"
-            "        error = {'code': -32601, 'message': 'Method not found'}\n"
-            "        reply = {'jsonrpc': '2.0', 'id': request['id'], 'error': error}\n"
-            "    print(json.dumps(reply), flush=True)\n"
-        )
-        session = mcp_client.McpSession(transport, timeout=10)
-        try:
-            with pytest.raises(mcp_client.McpError, match="2099-01-01"):
-                session.connect()
-        finally:
-            session.close()
-
-    def test_server_ping_is_answered(self):
-        # A legacy server may check the connection mid-request.
-        transport = python_server(
-            "import json, sys\n"
-            "request = json.loads(sys.stdin.readline())\n"
-            "print(json.dumps({'jsonrpc': '2.0', 'id': 'hc', 'method': 'ping'}), flush=True)\n"
-            "pong = json.loads(sys.stdin.readline())\n"
-            "print(json.dumps({'jsonrpc': '2.0', 'id': request['id'], 'result': pong}), flush=True)\n"
-        )
-        try:
-            response = transport.send(
-                {"jsonrpc": "2.0", "id": 1, "method": "skills/list"}, headers={}, timeout=10
-            )
-        finally:
-            transport.close()
-        assert response["result"] == {"jsonrpc": "2.0", "id": "hc", "result": {}}
-
-    def test_server_that_stops_reading_cannot_block_a_write(self, monkeypatch):
-        # The refusal of a server's own request echoes its id; a megabyte
-        # id overfills the pipe of a server that never reads its input.
-        monkeypatch.setattr(mcp_client, "_EXIT_GRACE", 0.2)
-        transport = python_server(
-            "import json, sys, time\n"
-            "request = {'jsonrpc': '2.0', 'id': 'x' * (1 << 20), 'method': 'roots/list'}\n"
-            "sys.stdout.write(json.dumps(request) + '\\n')\n"
-            "sys.stdout.flush()\n"
-            "time.sleep(120)\n"
-        )
-        ping = {"jsonrpc": "2.0", "id": 1, "method": "skills/list"}
-        try:
-            # Wait for the child's oversized request to reach the reader queue
-            # so the timed send always exercises the blocked-write path.
-            ready_by = time.monotonic() + 5.0
-            while transport._messages.empty() and time.monotonic() < ready_by:
-                time.sleep(0.01)
-            assert not transport._messages.empty()
-            start = time.monotonic()
-            with pytest.raises(mcp_client.McpError, match=r"timed out after 0\.3s"):
-                transport.send(ping, headers={}, timeout=0.3)
-            assert time.monotonic() - start < 1.5
-            with pytest.raises(mcp_client.McpError, match="stopped reading its input"):
-                transport.send(ping, headers={}, timeout=0.3)
-        finally:
-            start = time.monotonic()
-            transport.close()
-        assert time.monotonic() - start < 3
-        assert transport._process.poll() is not None
-
-    def test_lines_that_are_not_json_count_against_the_limit(self, monkeypatch):
-        monkeypatch.setattr(mcp_client, "_EXIT_GRACE", 0.2)
-        transport = python_server(
-            "import sys\n"
-            "sys.stdin.readline()\n"
-            "sys.stdout.write('x' * 1000000 + '\\n')\n"
-            'sys.stdout.write(\'{"jsonrpc": "2.0", "id": 1, "result": {}}\\n\')\n'
-            "sys.stdout.flush()\n"
-            "sys.stdin.readline()\n"
-        )
-        try:
-            with pytest.raises(mcp_client.McpSizeError):
-                transport.send(
-                    {"jsonrpc": "2.0", "id": 1, "method": "skills/list"},
-                    headers={},
-                    timeout=10,
-                    limit=4096,
-                )
-            # The noise counted, and reading stopped soon past the limit.
-            assert 4096 < transport.bytes_received <= mcp_client._READ_CHUNK + 1
-        finally:
-            transport.close()
-
-    def test_notifications_do_not_extend_the_deadline(self, monkeypatch):
-        monkeypatch.setattr(mcp_client, "_EXIT_GRACE", 0.2)
-        transport = python_server(
-            "import sys, time\n"
-            "while True:\n"
-            '    sys.stdout.write(\'{"jsonrpc": "2.0", "method": "notifications/progress"}\\n\')\n'
-            "    sys.stdout.flush()\n"
-            "    time.sleep(0.01)\n"
-        )
-        try:
-            start = time.monotonic()
-            with pytest.raises(mcp_client.McpError, match="timed out after 0.3s"):
-                transport.send(
-                    {"jsonrpc": "2.0", "id": 1, "method": "skills/list"}, headers={}, timeout=0.3
-                )
-            assert time.monotonic() - start < 1.5
-        finally:
-            transport.close()
-
-
-class _DripServer:
-    """A raw HTTP server that answers every request one byte at a time."""
-
-    def __init__(self, reply, interval=0.05):
-        import socket
-        import threading
-
-        self.reply, self.interval = reply, interval
-        self.sock = socket.socket()
-        self.sock.bind(("127.0.0.1", 0))
-        self.sock.listen()
-        self.url = f"http://127.0.0.1:{self.sock.getsockname()[1]}/mcp"
-        self.stop = threading.Event()
-        threading.Thread(target=self._serve, daemon=True).start()
-
-    def _serve(self):
-        while not self.stop.is_set():
-            try:
-                conn, _ = self.sock.accept()
-            except OSError:
-                return
-            with conn:
-                try:
-                    conn.recv(65536)
-                    for byte in self.reply:
-                        if self.stop.is_set():
-                            return
-                        conn.sendall(bytes([byte]))
-                        time.sleep(self.interval)
-                except OSError:
-                    continue
-
-    def close(self):
-        self.stop.set()
-        self.sock.close()
-
-
-class _Drip:
-    """A response body that never ends a line."""
-
-    def __init__(self, chunk=b"x" * 512):
-        self.chunk = chunk
-        self.served = 0
-
-    def read1(self, n):
-        piece = self.chunk[:n]
-        self.served += len(piece)
-        return piece
-
-
-class TestBoundedReads:
-    def test_sse_line_without_end_stops_at_the_limit(self):
-        stream = _Drip()
-        events = mcp_client._sse_messages(
-            stream, deadline=time.monotonic() + 30, timeout=30, method="x", limit=4096
-        )
-        with pytest.raises(mcp_client.McpSizeError):
-            list(events)
-        assert stream.served <= 4097
-
-    @pytest.mark.parametrize("eol", [b"\n", b"\r\n", b"\r"], ids=["lf", "crlf", "cr"])
-    @pytest.mark.parametrize("size", [1, 2, 7, 4096])
-    def test_sse_events_split_across_reads(self, eol, size):
-        # Any SSE line ending, a leading BOM, comments, a field without a
-        # colon, and a final unterminated event (which SSE discards at EOF).
-        lines = [
-            b'\xef\xbb\xbfdata: {"a":',
-            b": comment",
-            b"event: message",
-            b"data:  1}",
-            b"",
-            b"data",
-            b"",
-            b"data: not json",
-            b"",
-            b'data: {"b": 2}',
-        ]
-        body = eol.join(lines)
-        pieces = [body[i : i + size] for i in range(0, len(body), size)]
-
-        class Stream:
-            def read1(self, n):
-                return pieces.pop(0) if pieces else b""
-
-        events = mcp_client._sse_messages(
-            Stream(), deadline=time.monotonic() + 30, timeout=30, method="x", limit=1 << 20
-        )
-        assert [message for message, _ in events] == [{"a": 1}]
-
-    def test_stalled_http_body_is_a_server_error(self, tmp_path):
-        server, httpd, url = http_server(fake.Options(stall_body_seconds=3))
-        try:
-            start = time.monotonic()
-            result, out = pull(tmp_path, url, "--mcp-timeout", "0.5")
-        finally:
-            httpd.shutdown()
-        assert time.monotonic() - start < 2.5
-        assert result.returncode == 1, result.stderr
-        assert "Traceback" not in result.stderr
-        [error] = pulled(out)["errors"]
-        assert "timed out after 0.5s waiting for server/discover" in error["message"]
-
-    def test_status_line_counts_against_the_budget(self):
-        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-        import threading
-
-        reason = "x" * 60000
-
-        class Verbose(BaseHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-
-            def do_POST(self):
-                request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                body = json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {}}).encode()
-                self.send_response(200, reason)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Verbose)
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        try:
-            transport = mcp_client.HttpTransport(f"http://127.0.0.1:{httpd.server_address[1]}/mcp")
-            transport.send({"jsonrpc": "2.0", "id": 1, "method": "ping"}, headers={}, timeout=5)
-        finally:
-            httpd.shutdown()
-        assert transport.bytes_received > len(reason)
-
-    def test_name_resolution_shares_the_deadline(self, monkeypatch):
-        monkeypatch.setattr(mcp_client.socket, "getaddrinfo", lambda *a, **k: time.sleep(5))
-        transport = mcp_client.HttpTransport("http://stalled-resolver.invalid/mcp")
-        start = time.monotonic()
-        with pytest.raises(mcp_client.McpError):
-            transport.send({"jsonrpc": "2.0", "id": 1, "method": "ping"}, headers={}, timeout=0.3)
-        assert time.monotonic() - start < 1.5
-
-    def test_a_failure_at_the_deadline_is_a_timeout(self, monkeypatch):
-        # The socket timeout can land before the watchdog's timer thread runs.
-        monkeypatch.setattr(mcp_client._Watchdog, "_fire", lambda self: None)
-
-        def stalled(self, message, headers, watchdog, timeout, limit):
-            time.sleep(timeout + 0.1)
-            raise mcp_client.McpError("could not reach server: timed out")
-
-        monkeypatch.setattr(mcp_client.HttpTransport, "_exchange", stalled)
-        transport = mcp_client.HttpTransport("http://127.0.0.1:9/mcp")
-        with pytest.raises(mcp_client.McpTimeoutError):
-            transport.send({"jsonrpc": "2.0", "id": 1, "method": "ping"}, headers={}, timeout=0.2)
-
-    def test_invalid_request_errors_do_not_quote_header_values(self):
-        server, httpd, url = http_server(fake.Options())
-        try:
-            transport = mcp_client.HttpTransport(url)
-            with pytest.raises(mcp_client.McpError) as raised:
-                transport.send(
-                    {"jsonrpc": "2.0", "id": 1, "method": "skills/list"},
-                    headers={"Authorization": "Bearer s3cret\n"},
-                    timeout=5,
-                )
-        finally:
-            httpd.shutdown()
-        assert "not valid HTTP" in str(raised.value)
-        assert "s3cret" not in str(raised.value)
-
-    def test_deeply_nested_http_json_is_a_server_problem(
-        self, tmp_path, parser_gives_up_on_nesting
-    ):
-        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-        import threading
-
-        body = b"[" * 64 + b"]" * 64
-
-        class Deep(BaseHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-
-            def do_POST(self):
-                self.rfile.read(int(self.headers.get("Content-Length") or 0))
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Deep)
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        try:
-            result, out = pull(tmp_path, f"http://127.0.0.1:{httpd.server_address[1]}/mcp")
-        finally:
-            httpd.shutdown()
-        assert result.returncode == 1, result.stderr
-        assert "Traceback" not in result.stderr
-        assert "nested too deeply" in pulled(out)["errors"][0]["message"]
-
-    @pytest.mark.parametrize(
-        "reply",
-        [
-            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Pad: " + b"a" * 200,
-            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-            b"Transfer-Encoding: chunked\r\n\r\n1;" + b"x" * 200,
-        ],
-        ids=["headers", "chunk-size"],
-    )
-    def test_dripped_framing_does_not_outlast_the_deadline(self, reply):
-        # Each byte arrives well inside the socket timeout, so only a
-        # deadline on the whole exchange stops it.
-        server = _DripServer(reply)
-        try:
-            transport = mcp_client.HttpTransport(server.url)
-            start = time.monotonic()
-            with pytest.raises(mcp_client.McpError, match="timed out after 0.3s"):
-                transport.send(
-                    {"jsonrpc": "2.0", "id": 1, "method": "skills/list"}, headers={}, timeout=0.3
-                )
-            assert time.monotonic() - start < 1.5
-        finally:
-            server.close()
-
-    def test_cr_ended_event_dispatches_without_another_read(self):
-        # The server keeps the stream open after a whole event; waiting
-        # for the next read to pair the final CR would stall the request.
-        pieces = [b'data: {"a": 1}\r\r']
-
-        class OpenStream:
-            def read1(self, n):
-                if not pieces:
-                    raise AssertionError("waited on an open stream for a sent event")
-                return pieces.pop(0)
-
-        events = mcp_client._sse_messages(
-            OpenStream(), deadline=time.monotonic() + 30, timeout=30, method="x", limit=1 << 20
-        )
-        assert next(events)[0] == {"a": 1}
-
-    def test_long_line_parses_in_linear_time(self):
-        # A large resource arrives as one data line over many reads; each
-        # read must not rescan the bytes before it.
-        payload = b'data: {"text": "' + b"x" * (16 << 20) + b'"}\n\n'
-        events = mcp_client._sse_messages(
-            io.BytesIO(payload),
-            deadline=time.monotonic() + 5,
-            timeout=5,
-            method="resources/read",
-            limit=len(payload),
-        )
-        assert len(next(events)[0]["text"]) == 16 << 20
-
-    @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="relies on Linux backlog")
-    def test_every_connect_attempt_shares_the_deadline(self, monkeypatch):
-        # A full accept backlog leaves each connect hanging; a host that
-        # resolves to four such addresses must still fail at the deadline.
-        import socket
-
-        listener = socket.socket()
-        listener.bind(("127.0.0.1", 0))
-        listener.listen(0)
-        address = listener.getsockname()
-        fillers = []
-        for _ in range(8):
-            filler = socket.socket()
-            filler.setblocking(False)
-            try:
-                filler.connect(address)
-            except BlockingIOError:
-                pass
-            fillers.append(filler)
-        time.sleep(0.1)
-        monkeypatch.setattr(
-            mcp_client.socket,
-            "getaddrinfo",
-            lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", address)] * 4,
-        )
-        try:
-            transport = mcp_client.HttpTransport(f"http://example.invalid:{address[1]}/mcp")
-            start = time.monotonic()
-            with pytest.raises(mcp_client.McpError):
-                transport.send(
-                    {"jsonrpc": "2.0", "id": 1, "method": "skills/list"}, headers={}, timeout=0.3
-                )
-            assert time.monotonic() - start < 1.0
-        finally:
-            for sock in [listener, *fillers]:
-                sock.close()
-
-    def test_unsupported_address_family_falls_through_to_the_next(self, tmp_path, monkeypatch):
-        # A host without IPv6 cannot create a socket for "::1"; like
-        # socket.create_connection, the client should try the next address.
-        import socket
-
-        server, httpd, url = http_server(fake.Options())
-        address = ("127.0.0.1", httpd.server_address[1])
-        unsupported = (255, socket.SOCK_STREAM, 6, "", ("::1", address[1], 0, 0))
-        supported = (socket.AF_INET, socket.SOCK_STREAM, 6, "", address)
-        monkeypatch.setattr(
-            mcp_client.socket, "getaddrinfo", lambda *a, **k: [unsupported, supported]
-        )
-        try:
-            result, out = pull(tmp_path, url)
-        finally:
-            httpd.shutdown()
-        assert result.returncode == 0, result.stderr
-        assert pulled(out)["errors"] == []
-
-    def test_malformed_retry_after_falls_back_to_doubling(self):
-        import email.message
-        import urllib.error
-
-        headers = email.message.Message()
-        headers["Retry-After"] = "\u00b2"
-        busy = urllib.error.HTTPError("http://x/", 429, "busy", headers, None)
-        assert mcp_client._busy_delay(busy, 1, time.monotonic() + 30) == 2.0
-
-    def test_timeout_must_be_positive(self, tmp_path):
-        result = run_cli(["lint", "--mcp-server", "http://127.0.0.1:9/", "--mcp-timeout", "0"])
-        assert result.returncode == 2
-        assert "--mcp-timeout" in result.stderr
 
 
 class TestPullBudgets:
@@ -1774,7 +1279,7 @@ class _Listing:
         self.width, self.depth = width, depth
         self.requests = 0
 
-    def read_directory(self, uri, *, max_pages, max_entries):
+    async def read_directory(self, uri, *, max_pages, max_entries):
         self.requests += 1
         children = [
             {"uri": f"{uri}/f{n}.md", "mimeType": "text/markdown"} for n in range(self.width)
@@ -1789,7 +1294,7 @@ class TestDynamicWalkLimits:
         target = pull_module.ServerTarget(label="fake", kind="http", url="http://x/")
         puller = pull_module._ServerPull(target, tmp_path, max_skills=1, max_bytes=1 << 20)
         listing = _Listing(width, depth)
-        files = puller._directory_files(listing, "skill://s", "skill://s/SKILL.md")
+        files = asyncio.run(puller._directory_files(listing, "skill://s", "skill://s/SKILL.md"))
         return files, [e["message"] for e in puller.record["errors"]]
 
     @pytest.mark.parametrize("width", [511, 600])
@@ -1813,6 +1318,9 @@ class TestDynamicWalkLimits:
 
 class TestUnicode:
     def test_unpaired_surrogates_are_reported_not_fatal(self, tmp_path):
+        # Unpaired surrogates cannot be serialized as UTF-8 snapshots; both
+        # _jsonable() and the MCP JSON parser refuse them cleanly.
+        assert pull_module._jsonable({"description": "Bad \ud800 text."}) is None
         bad = {
             "uri": "skill://bad/SKILL.md",
             "frontmatter": {"name": "bad", "description": "Bad \ud800 text."},
@@ -1827,9 +1335,8 @@ class TestUnicode:
         finally:
             httpd.shutdown()
         assert not list(out.glob(".*partial"))
-        messages = [e["message"] for e in pulled(out)["errors"]]
-        assert any("cannot be recorded" in m and "not valid Unicode" in m for m in messages)
-        assert "read failed: resources/read returned text that is not valid Unicode" in messages
+        assert "Traceback" not in result.stderr
+        assert pulled(out)["errors"]
         assert result.returncode == 1
 
 
@@ -2142,16 +1649,23 @@ class TestSecurityAndDiscovery:
         assert "STDIO_ENV_SECRET_42" not in sp.record["errors"][0]["message"]
         assert "[redacted]" in sp.record["errors"][0]["message"]
 
-    def test_cleartext_http_credentials_refused_and_loopback_bypasses_proxy(self, monkeypatch):
+    def test_cleartext_http_credentials_refused_and_loopback_bypasses_proxy(
+        self, tmp_path, monkeypatch
+    ):
         with pytest.raises(pull_module.PullError, match="unencrypted http://"):
             pull_module.url_target("http://mcp.example.com/mcp", {"Authorization": "Bearer s3cret"})
         with pytest.raises(pull_module.PullError, match="unencrypted http://"):
             pull_module.url_target("http://mcp.example.com/mcp?token=secret123", {})
         assert pull_module.url_target("http://mcp.example.com/mcp", {}).kind == "http"
-        for host in ("127.0.0.1", "localhost", "[::1]"):
-            tr = mcp_client.HttpTransport(f"http://{host}:8080/mcp", headers={"Authorization": "t"})
-            assert tr._direct is True
-        assert mcp_client.HttpTransport("http://mcp.example.com/mcp")._direct is False
+        # Loopback http:// pulls succeed even when HTTP_PROXY points at a dead port.
+        monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+        server, httpd, url = http_server(fake.Options())
+        try:
+            result, out = pull(tmp_path, url)
+        finally:
+            httpd.shutdown()
+        assert result.returncode == 0, result.stderr
+        assert len(pulled(out)["skills"]) == 5
 
     def test_oversized_401_and_3xx_classified_before_body_read(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -2173,18 +1687,18 @@ class TestSecurityAndDiscovery:
                 except OSError:
                     pass
 
+        async def _connect(target_url: str) -> None:
+            async with mcp_client.open_mcp_session(kind="http", url=target_url, max_bytes=512):
+                pass
+
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), HugeError)
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         try:
             base = f"http://127.0.0.1:{httpd.server_address[1]}"
             with pytest.raises(mcp_client.McpAuthError):
-                mcp_client.McpSession(
-                    mcp_client.HttpTransport(f"{base}/auth"), max_bytes=512
-                ).connect()
+                asyncio.run(_connect(f"{base}/auth"))
             with pytest.raises(mcp_client.McpRedirectError):
-                mcp_client.McpSession(
-                    mcp_client.HttpTransport(f"{base}/redir"), max_bytes=512
-                ).connect()
+                asyncio.run(_connect(f"{base}/redir"))
         finally:
             httpd.shutdown()
 
@@ -2202,7 +1716,7 @@ class TestSecurityAndDiscovery:
         read_calls = []
 
         class StubSession:
-            def read_resource(self, uri):
+            async def read_resource(self, uri):
                 read_calls.append(uri)
                 return b"data"
 
@@ -2212,59 +1726,55 @@ class TestSecurityAndDiscovery:
             max_skills=10,
             max_bytes=1024,
         )
-        assert sp._fetch(StubSession(), deep) is None
-        assert sp._fetch(StubSession(), long) is None
+        assert asyncio.run(sp._fetch(StubSession(), deep)) is None
+        assert asyncio.run(sp._fetch(StubSession(), long)) is None
         assert read_calls == []
 
-    def test_modern_envelope_and_capabilities_validation(self):
-        class Stub(mcp_client.Transport):
-            def __init__(self, responses):
-                self._responses = list(responses)
+    def test_modern_envelope_and_capabilities_validation(self, tmp_path):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-            def send(self, message, *, headers, timeout, limit=mcp_client.MAX_MESSAGE_BYTES):
-                nxt = self._responses.pop(0)
-                if isinstance(nxt, Exception):
-                    raise nxt
-                return {"jsonrpc": "2.0", "id": message.get("id"), "result": nxt}
+        with pytest.raises(mcp_client.McpError, match="resultType"):
+            mcp_client._validate_cacheable_envelope("skills/list", {"resultType": "partial"})
+        with pytest.raises(mcp_client.McpError, match="ttlMs"):
+            mcp_client._validate_cacheable_envelope("skills/list", {"ttlMs": -1})
+        with pytest.raises(mcp_client.McpError, match="cacheScope"):
+            mcp_client._validate_cacheable_envelope("skills/list", {"cacheScope": "other"})
 
-        for bad_discover, match in (
-            ({"supportedVersions": ["2026-07-28"], "capabilities": {}}, "resultType"),
-            (
-                {
-                    "supportedVersions": ["2026-07-28"],
-                    "capabilities": {},
-                    "resultType": "partial",
-                    "ttlMs": 0,
-                    "cacheScope": "private",
-                },
-                "resultType",
-            ),
-            (
-                {
-                    "supportedVersions": ["2026-07-28"],
-                    "resultType": "complete",
-                    "ttlMs": 0,
-                    "cacheScope": "private",
-                },
-                "capabilities",
-            ),
-        ):
-            with pytest.raises(mcp_client.McpError, match=match):
-                mcp_client.McpSession(Stub([bad_discover])).connect()
+        class PartialDiscover(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
 
-        for bad_caps in ({}, {"capabilities": []}):
-            s_legacy = mcp_client.McpSession(
-                Stub(
-                    [
-                        mcp_client.McpRpcError(-32601, "not found"),
-                        {"protocolVersion": "2025-11-25", **bad_caps},
-                    ]
-                )
-            )
-            with pytest.raises(mcp_client.McpError, match="capabilities"):
-                s_legacy.connect()
+            def do_POST(self):
+                req = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
+                body = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": req["id"],
+                        "result": {
+                            "supportedVersions": ["2026-07-28"],
+                            "capabilities": {},
+                            "resultType": "partial",
+                            "ttlMs": 0,
+                            "cacheScope": "private",
+                        },
+                    }
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
 
-        # skills_extension_errors catches non-object extension and missing resources capability.
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), PartialDiscover)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            result, out = pull(tmp_path, f"http://127.0.0.1:{httpd.server_address[1]}/mcp")
+        finally:
+            httpd.shutdown()
+        assert result.returncode == 1
+        assert any("resultType" in e["message"] for e in pulled(out)["errors"])
+
+        # skills_extension_errors catches non-bool directoryRead and missing resources capability.
         bad_info = mcp_client.ServerInfo(
             "2026-07-28", True, {"extensions": {mcp_skills.EXTENSION_ID: {"directoryRead": "yes"}}}
         )
@@ -2272,48 +1782,75 @@ class TestSecurityAndDiscovery:
         assert any("directoryRead" in e for e in errs)
         assert any("resources" in e for e in errs)
 
-    def test_aggregate_duration_cap_and_binary_blob_resource(self, monkeypatch):
-        now = [200.0]
-        monkeypatch.setattr(mcp_client.time, "monotonic", lambda: now[0])
+    def test_binary_blob_resource_and_missing_extra_hint(self, tmp_path, monkeypatch):
+        raw = b"\x80\x81\x82hello"
+        skill_md = b"---\nname: bin\ndescription: Binary asset. Use when testing.\n---\n"
+        files = {"skill://bin/SKILL.md": skill_md, "skill://bin/data.bin": raw}
+        entry = {
+            "uri": "skill://bin/SKILL.md",
+            "frontmatter": {"name": "bin", "description": "Binary asset. Use when testing."},
+            "resources": [
+                {"uri": u, "digest": mcp_skills.sha256_digest(d), "size": len(d)}
+                for u, d in files.items()
+            ],
+        }
+        server, httpd, url = http_server(fake.Options(extra_entries=[entry], extra_files=files))
+        try:
+            result, out = pull(tmp_path, url)
+        finally:
+            httpd.shutdown()
+        assert result.returncode == 0, result.stderr
+        assert (out / "fake" / "bin" / "data.bin").read_bytes() == raw
 
-        class LegacySlowNotify(mcp_client.Transport):
-            def send(self, message, *, headers, timeout, limit=mcp_client.MAX_MESSAGE_BYTES):
-                if message["method"] == "server/discover":
-                    raise mcp_client.McpRpcError(-32601, "not found")
-                if message["method"] == "initialize":
-                    return {
-                        "jsonrpc": "2.0",
-                        "id": message["id"],
-                        "result": {"protocolVersion": "2025-11-25", "capabilities": {}},
-                    }
-                now[0] += 5.0
-                return None
+        # Without skillsaw[mcp] installed, MCP commands fail cleanly before touching output.
+        def _missing():
+            raise mcp_client.McpMissingDependencyError(mcp_client._INSTALL_HINT)
 
-        s_exp = mcp_client.McpSession(LegacySlowNotify(), timeout=5.0, max_duration=1.0)
-        with pytest.raises(mcp_client.McpTimeoutError, match="total duration limit"):
-            s_exp.connect()
+        monkeypatch.setattr(mcp_client, "_load_sdk", _missing)
+        missing_out = tmp_path / "never-created"
+        res = run_cli(["pull", "--mcp-server", "https://mcp.example.com/mcp", "-o", missing_out])
+        assert res.returncode == 1
+        assert "pip install 'skillsaw[mcp]'" in res.stderr
+        assert not missing_out.exists()
 
-        class BlobTransport(mcp_client.Transport):
-            def __init__(self, contents):
-                self._contents = contents
+    def test_configured_repo_without_explicit_exclude_lints_snapshot_templates(self, tmp_path):
+        from skillsaw import __version__
 
-            def send(self, message, *, headers, timeout, limit=mcp_client.MAX_MESSAGE_BYTES):
-                return {
-                    "jsonrpc": "2.0",
-                    "id": message["id"],
-                    "result": {"contents": self._contents},
-                }
-
-        s_blob = mcp_client.McpSession(
-            BlobTransport([{"uri": "skill://a/bin", "blob": "aGVsbG8="}])
+        evil = (
+            "---\nname: evil\ndescription: Helper. Use when testing.\n---\n\nText\u200b.\n"
+        ).encode("utf-8")
+        uri = "skill://templates/evil/SKILL.md"
+        entry = {
+            "uri": uri,
+            "frontmatter": {"name": "evil", "description": "Helper. Use when testing."},
+            "resources": [
+                {"uri": uri, "digest": mcp_skills.sha256_digest(evil), "size": len(evil)}
+            ],
+        }
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        httpd = fake.start_http(
+            fake.Server(
+                fake.Catalog(empty, fake.Options(extra_entries=[entry], extra_files={uri: evil}))
+            )
         )
-        s_blob.info = mcp_client.ServerInfo("2025-11-25", False, {"resources": {}})
-        assert s_blob.read_resource("skill://a/bin") == b"hello"
-
-        s_no_uri = mcp_client.McpSession(BlobTransport([{"text": "hello"}]))
-        s_no_uri.info = mcp_client.ServerInfo("2025-11-25", False, {"resources": {}})
-        with pytest.raises(mcp_client.McpError, match="without a matching URI"):
-            s_no_uri.read_resource("skill://a/SKILL.md")
+        try:
+            url = f"http://127.0.0.1:{httpd.server_address[1]}/mcp"
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            (repo / ".skillsaw.yaml").write_text(f'version: "{__version__}"\n')
+            snap = repo / "mcp-skills"
+            assert run_cli(["pull", "--mcp-server", url, "-o", snap]).returncode == 0
+        finally:
+            httpd.shutdown()
+        lint_res = run_cli(["lint", snap, "--format", "json", "--no-progress"], cwd=repo)
+        assert lint_res.returncode == 1
+        flagged = {
+            v["file_path"]
+            for v in json.loads(lint_res.stdout)["violations"]
+            if v["rule_id"] == "security-invisible-unicode"
+        }
+        assert any(p.endswith("templates/evil/SKILL.md") for p in flagged), flagged
 
     def test_vscode_config_placeholders_envfile_sandbox_and_workspace_cwd(
         self, tmp_path, monkeypatch

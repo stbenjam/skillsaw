@@ -397,7 +397,10 @@ def start_http(server: Server) -> ThreadingHTTPServer:
             if server.options.sse and status == 200:
                 payload = (
                     'event: message\ndata: {"jsonrpc":"2.0","method":"notifications/progress",'
-                    '"params":{}}\n\n' + "event: message\ndata: " + json.dumps(response) + "\n\n"
+                    '"params":{"progressToken":"p1","progress":1}}\n\n'
+                    + "event: message\ndata: "
+                    + json.dumps(response)
+                    + "\n\n"
                 ).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -410,6 +413,11 @@ def start_http(server: Server) -> ThreadingHTTPServer:
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
+
+        def do_DELETE(self):
+            sessions.discard(self.headers.get("Mcp-Session-Id"))
+            self.send_response(204)
+            self.end_headers()
 
         def _json(self, status, obj):
             payload = json.dumps(obj).encode("utf-8")

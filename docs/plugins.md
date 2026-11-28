@@ -162,7 +162,7 @@ skillsaw discovers plugins through the `skillsaw.plugins` entry point group:
 [project]
 name = "skillsaw-acme-rules"
 version = "0.1.0"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = ["skillsaw>=0.23.0"]
 
 [project.entry-points."skillsaw.plugins"]

@@ -216,12 +216,8 @@ _TAUTOLOGICAL_COMPILED = [
 ]
 
 
-try:  # Python 3.11+
-    from re import _constants as _sre_constants
-    from re import _parser as _sre_parser
-except ImportError:  # Python 3.9/3.10
-    import sre_constants as _sre_constants
-    import sre_parse as _sre_parser
+from re import _constants as _sre_constants
+from re import _parser as _sre_parser
 
 
 @lru_cache(maxsize=512)

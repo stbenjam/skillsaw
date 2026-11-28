@@ -16,8 +16,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -26,7 +24,7 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 keywords = ["agentskills", "claude", "claude-code", "linter", "plugin", "skills", "validation", "skillsaw"]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     "wcmatch>=10,<12",
     "pathspec>=1,<2",
@@ -36,23 +34,25 @@ dependencies = [
     "jsonschema>=4.18,<5",
     # Native OpenClaw manifests use JSON5; parse without executing plugin code.
     "json5>=0.12,<1",
-    # TOML reader for Grok Build's .grok/config.toml. tomllib is stdlib from
-    # 3.11; this backfills the 3.9/3.10 floor with the same parser.
-    "tomli>=2.0,<3; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=2.0,<3",
+]
 docs = [
     "mkdocs-material>=9.0",
     "mkdocs-redirects>=1.2,<1.2.4",
 ]
 test = [
+    "mcp>=2.0,<3",
     "pytest>=7.0",
     "pytest-cov>=7.0",
     "pytest-xdist>=3",
     "coverage[toml]>=7.10",  # needed for [tool.coverage.run] patch = ["subprocess"]
 ]
 dev = [
+    "mcp>=2.0,<3",
     "pytest>=7.0",
     "pytest-cov>=7.0",
     "pytest-xdist>=3",
@@ -123,12 +123,12 @@ patch = ["subprocess"]
 # The sys.monitoring backend (CPython 3.12+) reduces tracing overhead in both
 # the pytest workers and remaining CLI subprocesses. Line coverage is identical.
 # On an interpreter that can't use it, coverage warns and falls back to the
-# default core, so a contributor on 3.9-3.11 is unaffected.
+# default core, so a contributor on 3.11 is unaffected.
 core = "sysmon"
 
 [tool.black]
 line-length = 100
-target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
+target-version = ['py311', 'py312', 'py313']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -145,7 +145,7 @@ extend-exclude = '''
 '''
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

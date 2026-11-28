@@ -67,13 +67,14 @@ uvx skillsaw fix       # Apply safe, deterministic fixes
 uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 ```
 
-To fetch and lint Agent Skills served by a running MCP server (SEP-2640):
+To fetch and lint Agent Skills served by a running MCP server (SEP-2640), install
+the optional `mcp` extra (`pip install 'skillsaw[mcp]'`) or run with `uvx`:
 
 ```bash
-uvx skillsaw lint --mcp-server https://mcp.example.com/mcp
-uvx skillsaw lint --mcp-config .mcp.json   # every server in an MCP client config
-uvx skillsaw tree --mcp-server https://mcp.example.com/mcp   # see what it serves
-uvx skillsaw pull --mcp-server https://mcp.example.com/mcp -o mcp-skills/   # fetch only
+uvx --from 'skillsaw[mcp]' skillsaw lint --mcp-server https://mcp.example.com/mcp
+uvx --from 'skillsaw[mcp]' skillsaw lint --mcp-config .mcp.json   # every server in an MCP client config
+uvx --from 'skillsaw[mcp]' skillsaw tree --mcp-server https://mcp.example.com/mcp   # see what it serves
+uvx --from 'skillsaw[mcp]' skillsaw pull --mcp-server https://mcp.example.com/mcp -o mcp-skills/   # fetch only
 ```
 
 See [Skills over MCP](https://skillsaw.org/mcp-skills/).

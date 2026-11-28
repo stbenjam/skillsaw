@@ -18,6 +18,7 @@ exclusively, so two URIs that land on one path cannot overwrite each other.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -36,14 +37,13 @@ from .diagnostics import encodable, safe_display
 from .formats import mcp_skills
 from .formats.mcp_skills import DEFAULT_MAX_BYTES, DEFAULT_MAX_SKILLS, DEFAULT_TIMEOUT
 from .mcp_client import (
-    HttpTransport,
     McpAuthError,
     McpBudgetError,
     McpError,
     McpSession,
     McpTimeoutError,
-    StdioTransport,
-    Transport,
+    open_mcp_session,
+    require_mcp,
 )
 from .paths import contained_resolve, safe_resolve
 from .utils import (
@@ -82,12 +82,6 @@ class ServerTarget:
     env: Optional[Dict[str, str]] = None
     configured_env: Dict[str, str] = field(default_factory=dict)
     cwd: Optional[Path] = None
-
-    def open(self) -> Transport:
-        if self.kind == "http":
-            assert self.url is not None
-            return HttpTransport(self.url, headers=self.headers)
-        return StdioTransport(self.command, env=self.env, cwd=self.cwd)
 
     def describe(self) -> str:
         """Where the skills came from, without credentials.
@@ -177,7 +171,7 @@ def url_target(
                 "newline in an environment variable is a common cause"
             )
     return ServerTarget(
-        label=mcp_skills.sanitize_label(label or parts.hostname),
+        label=mcp_skills.sanitize_label(label or host),
         kind="http",
         url=url,
         headers=dict(headers),
@@ -604,7 +598,7 @@ def _same_frontmatter(served: Any, advertised: Any) -> bool:
                 return True
     if isinstance(served, bool) or isinstance(advertised, bool):
         return type(served) is type(advertised) and served == advertised  # true is not 1
-    return served == advertised
+    return bool(served == advertised)
 
 
 def _as_yaml_scalar(text: str) -> Any:
@@ -738,21 +732,7 @@ class _ServerPull:
 
     def run(self, timeout: float) -> Dict[str, Any]:
         try:
-            transport = self.target.open()
-        except McpError as exc:
-            self.error(f"could not connect: {exc}")
-            return self.record
-        # Every response — listing pages, directory reads, files — counts
-        # against one byte budget and one aggregate duration ceiling, so no
-        # server can make a pull read or trickle without end.
-        session = McpSession(
-            transport,
-            timeout=timeout,
-            max_bytes=self.max_bytes,
-            max_duration=timeout * 20 if timeout > 0 else None,
-        )
-        try:
-            self._pull(session)
+            asyncio.run(self._run_async(timeout))
         except (McpBudgetError, McpTimeoutError) as exc:
             self.error(f"stopped: {exc}; later skills and files were not fetched")
         except McpAuthError as exc:
@@ -766,12 +746,36 @@ class _ServerPull:
             self.error("the server sent data nested too deeply to check")
         except OSError as exc:
             self.error(f"could not store the server's files: {exc.strerror or exc}")
-        finally:
-            session.close()
         return self.record
 
-    def _pull(self, session: McpSession) -> None:
-        info = session.connect()
+    async def _run_async(self, timeout: float) -> None:
+        max_duration = timeout * 20 if timeout > 0 else None
+
+        async def _drive() -> None:
+            async with open_mcp_session(
+                kind=self.target.kind,
+                url=self.target.url,
+                headers=self.target.headers,
+                command=self.target.command,
+                env=self.target.env,
+                cwd=self.target.cwd,
+                timeout=timeout,
+                max_bytes=self.max_bytes,
+            ) as session:
+                await self._pull(session)
+
+        if max_duration is None:
+            await _drive()
+            return
+        try:
+            await asyncio.wait_for(_drive(), timeout=max_duration)
+        except TimeoutError:
+            raise McpTimeoutError(
+                f"server pull exceeded its {max_duration:g}s total duration limit"
+            ) from None
+
+    async def _pull(self, session: McpSession) -> None:
+        info = session.info
         self.record["protocolVersion"] = encodable(str(info.protocol_version))
         if info.server_info:
             self.record["serverInfo"] = {
@@ -797,7 +801,8 @@ class _ServerPull:
         # List first, then fetch: a cursor may not outlive a long fetch. The
         # listing stops as soon as the skill budget is exceeded.
         entries: List[Mapping[str, Any]] = []
-        for index, entry in enumerate(session.iter_skills()):
+        index = 0
+        async for entry in session.iter_skills():
             if index >= self.max_skills:
                 self.error(
                     f"stopped listing: the server lists more than {self.max_skills} skills; "
@@ -806,6 +811,7 @@ class _ServerPull:
                 break
             if not isinstance(entry, Mapping):
                 self.error(f"skills/list entry {index} is not an object")
+                index += 1
                 continue
             recorded = _jsonable(dict(entry))
             if recorded is None:
@@ -813,19 +819,21 @@ class _ServerPull:
                     f"skills/list entry {index} cannot be recorded: it nests too deeply, or "
                     "holds a non-finite number or text that is not valid Unicode"
                 )
+                index += 1
                 continue
             self.record["skills"].append(recorded)
             entries.append(entry)
+            index += 1
         mkdir_parents_anchored(self.server_dir, root=self.out_dir)
         for entry in entries:
-            self._pull_skill(session, entry, extension)
+            await self._pull_skill(session, entry, extension)
 
-    def _pull_skill(
+    async def _pull_skill(
         self, session: McpSession, entry: Mapping[str, Any], extension: Mapping[str, Any]
     ) -> None:
         uri = entry.get("uri")
         root_uri = mcp_skills.skill_root_uri(uri) if isinstance(uri, str) else None
-        if root_uri is None or mcp_skills.local_parts(uri) is None:
+        if not isinstance(uri, str) or root_uri is None or mcp_skills.local_parts(uri) is None:
             self.error(
                 f"skills/list entry uri {safe_display(uri)!r} does not name a skill's SKILL.md",
                 uri if isinstance(uri, str) else None,
@@ -861,7 +869,7 @@ class _ServerPull:
         elif resources == "dynamic":
             files = [uri]
             if extension.get("directoryRead") is True:
-                files = self._directory_files(session, root_uri, uri)
+                files = await self._directory_files(session, root_uri, uri)
         else:
             return  # nothing to fetch; the malformed entry is recorded
         skill_bytes = 0
@@ -874,7 +882,7 @@ class _ServerPull:
                     return
                 skill_bytes += self.fetched[file_uri][0]
             else:
-                result = self._fetch(session, file_uri, max_bytes=remaining)
+                result = await self._fetch(session, file_uri, max_bytes=remaining)
                 if result is _OVER_SKILL_LIMIT:
                     return
                 if result is None:
@@ -904,7 +912,9 @@ class _ServerPull:
                     uri,
                 )
 
-    def _fetch(self, session: McpSession, file_uri: str, *, max_bytes: Optional[int] = None) -> Any:
+    async def _fetch(
+        self, session: McpSession, file_uri: str, *, max_bytes: Optional[int] = None
+    ) -> Any:
         """Read one resource and store it, or record why not."""
         parts = mcp_skills.local_parts(file_uri)
         if not parts:
@@ -921,10 +931,12 @@ class _ServerPull:
             )
             return None
         try:
-            data = session.read_resource(file_uri)
+            data = await session.read_resource(file_uri)
         except (McpBudgetError, McpTimeoutError):
+            self.stored.pop(folded, None)
             raise  # a server that stopped answering would cost a timeout per file
         except McpError as exc:
+            self.stored.pop(folded, None)
             self.error(f"read failed: {exc}", file_uri)
             return None
         if max_bytes is not None and len(data) > max_bytes:
@@ -949,7 +961,9 @@ class _ServerPull:
             self.error(f"could not store the file: {exc.strerror or exc}", file_uri)
         return data
 
-    def _directory_files(self, session: McpSession, root_uri: str, skill_md: str) -> List[str]:
+    async def _directory_files(
+        self, session: McpSession, root_uri: str, skill_md: str
+    ) -> List[str]:
         """Files of a dynamic skill, found by walking directory reads.
 
         Only direct children of the directory read are followed, each
@@ -971,7 +985,7 @@ class _ServerPull:
                 break
             directory, depth = pending.pop()
             try:
-                children, listed = session.read_directory(
+                children, listed = await session.read_directory(
                     directory, max_pages=budget, max_entries=limit + 1
                 )
             except (McpBudgetError, McpTimeoutError):
@@ -1043,6 +1057,7 @@ def pull(
     """Fetch every target's skills into *out_dir* and write the snapshot."""
     from . import __version__
 
+    require_mcp()
     unique_labels(targets)
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     unfinished = {"message": "the pull did not finish"}

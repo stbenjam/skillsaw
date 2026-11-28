@@ -14,5 +14,4 @@ Reviews Python-specific quality:
   `importlib.resources`, `json`, `re`, `argparse`.
 - **Packaging**: Are `pyproject.toml` changes valid and complete? Are package-data patterns right?
   Are imports structured so that `skillsaw` and the `claudelint` shim both work?
-- **Compatibility**: Does the code work on Python 3.9+? Avoid `match` statement
-  syntax, which requires Python 3.10+.
+- **Compatibility**: Does the code work on Python 3.11+?

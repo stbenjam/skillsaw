@@ -16,6 +16,7 @@ from typing import List, Optional, Tuple
 
 from ..config import find_config
 from ..diagnostics import terminal_safe
+from ..mcp_client import McpMissingDependencyError, require_mcp
 from ..mcp_skills_pull import (
     PullError,
     ServerTarget,
@@ -114,6 +115,7 @@ def _fetch(args, out_dir: Path, kept: bool):
     """Pull every server's skills into *out_dir*; exit 1 when the pull cannot start."""
     quiet = bool(getattr(args, "quiet", False))
     try:
+        require_mcp()
         targets, config_errors = _targets(args)
         prepare_output(out_dir)
         snapshot = pull(
@@ -127,7 +129,7 @@ def _fetch(args, out_dir: Path, kept: bool):
             ),
             config_errors=config_errors,
         )
-    except PullError as exc:
+    except (PullError, McpMissingDependencyError) as exc:
         print(f"Error: {terminal_safe(exc)}", file=sys.stderr)
         sys.exit(1)
     if not quiet:

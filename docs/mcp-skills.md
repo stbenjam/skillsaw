@@ -11,7 +11,10 @@ other.
 To check what a running server actually serves — skills synced from elsewhere,
 generated at runtime, or behind a server you consume rather than author — fetch
 them and lint the result, for example to catch hidden instructions or other
-security problems before an agent loads them:
+security problems before an agent loads them. Fetching from live servers uses
+the optional `mcp` extra (`pip install 'skillsaw[mcp]'`, or
+`uvx --from 'skillsaw[mcp]' skillsaw ...`); linting a pulled snapshot directory
+needs only base `skillsaw`:
 
 ```bash
 skillsaw lint --mcp-server https://mcp.example.com/mcp

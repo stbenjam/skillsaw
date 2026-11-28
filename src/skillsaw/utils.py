@@ -14,10 +14,7 @@ from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple
 
 import yaml
 
-try:  # Python 3.11+
-    import tomllib as _tomllib
-except ModuleNotFoundError:  # pragma: no cover - exercised on the 3.9/3.10 floor
-    import tomli as _tomllib  # type: ignore[no-redef]
+import tomllib as _tomllib
 
 from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
@@ -942,17 +939,11 @@ def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
 
 @_file_cache.cached
 def read_toml(file_path: Path) -> Tuple[Optional[dict], Optional[str]]:
-    """Cached TOML file read. Returns ``(data, error)``.
-
-    ``tomllib`` on Python 3.11+ and its ``tomli`` predecessor below that —
-    the same parser either way, since CPython vendored ``tomli`` as
-    ``tomllib``.
+    """Cached TOML file read using stdlib ``tomllib``. Returns ``(data, error)``.
 
     Two elements, not three: no position is available on every supported
     interpreter. Stdlib ``tomllib`` gained ``TOMLDecodeError.lineno`` only
-    in 3.14, so 3.11 through 3.13 carry none, while the 3.9/3.10 floor's
-    ``tomli`` 2.2.1 does expose it — and one contract across both parsers
-    is worth more than a line number on some legs. A caller reports at file
+    in 3.14, so 3.11 through 3.13 carry none. A caller reports at file
     level the way the JSON readers do; the parser's own message usually
     carries the position
     ("Cannot overwrite a value (at line 2, column 6)"), which is what an
