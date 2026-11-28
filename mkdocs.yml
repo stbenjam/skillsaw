@@ -124,6 +124,7 @@ nav:
     - Baseline: baseline.md
     - Configuration: configuration.md
     - Repository Types: repo-types.md
+    - Skills over MCP: mcp-skills.md
     - Ruler and Rulesync: generators.md
     - Kiro Support: kiro.md
     - CI Integration: ci.md

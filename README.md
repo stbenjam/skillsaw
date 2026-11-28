@@ -67,6 +67,19 @@ uvx skillsaw fix       # Apply safe, deterministic fixes
 uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 ```
 
+To fetch and lint Agent Skills served by a running MCP server (SEP-2640), install
+the optional `mcp` extra (`pip install 'skillsaw[mcp]'`) or run with `uvx`:
+
+```bash
+uvx --from 'skillsaw[mcp]' skillsaw lint --mcp-server https://mcp.example.com/mcp
+uvx --from 'skillsaw[mcp]' skillsaw lint --mcp-config .mcp.json   # every server in an MCP client config
+uvx --from 'skillsaw[mcp]' skillsaw tree --mcp-server https://mcp.example.com/mcp   # see what it serves
+uvx --from 'skillsaw[mcp]' skillsaw pull --mcp-server https://mcp.example.com/mcp -o mcp-skills/   # fetch only
+```
+
+See [Skills over MCP](https://skillsaw.org/mcp-skills/).
+
+
 ## What it catches
 
 - **Multi-ecosystem structure & compatibility:** schema, frontmatter, and manifest validation for Agent Skills (`SKILL.md`), Claude Code, OpenAI Codex (project config, plugins & marketplaces), Cursor plugins & marketplaces, Grok Build (project config, plugins & marketplaces), Z.ai ZCode (`.zcode/` agents, commands, skills and `config.json` hooks & MCP, plugins & marketplaces), Google Antigravity (configuration in any customization root — `.agents/`, `.agent/`, `_agents/`, `_agent/` — its `rules/` and `agents/` prose, plugins, hooks, MCP servers and registries), Agent Plugins (`plugin.json`, `mcp.json`, and the 1.1.0 portable `hooks.json`), GitHub Copilot & VS Code custom agents (`.github/agents/`), OpenCode configuration, Pi packages and project resources, native OpenClaw plugins (including optional theme and artwork declarations), APM packages, MCP server maps, and MCP Registry metadata.

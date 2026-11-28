@@ -1,0 +1,130 @@
+# Skills over MCP
+
+An MCP server can publish Agent Skills through the Skills extension
+([SEP-2640](https://modelcontextprotocol.io/seps/2640-skills-extension),
+`io.modelcontextprotocol/skills`): each file of a skill becomes a `skill://`
+resource, and `skills/list` advertises the enumerated skills' frontmatter with a
+digest and size for each of its files. The skills themselves are plain Agent
+Skills, so in the server's own repository `skillsaw lint` checks them like any
+other.
+
+To check what a running server actually serves — skills synced from elsewhere,
+generated at runtime, or behind a server you consume rather than author — fetch
+them and lint the result, for example to catch hidden instructions or other
+security problems before an agent loads them. Fetching from live servers uses
+the optional `mcp` extra (`pip install 'skillsaw[mcp]'`, or
+`uvx --from 'skillsaw[mcp]' skillsaw ...`); linting a pulled snapshot directory
+needs only base `skillsaw`:
+
+```bash
+skillsaw lint --mcp-server https://mcp.example.com/mcp
+skillsaw lint --mcp-server "npx -y @acme/skills-server"     # a stdio server
+skillsaw lint --mcp-config .mcp.json                        # every server in a client config
+skillsaw tree --mcp-server URL                             # see what it serves
+skillsaw pull --mcp-server URL -o mcp-skills/             # fetch only; lint it later
+```
+
+`lint` and `tree` take these options in place of a path; run local paths
+separately. The configuration is the one the command would use in the current
+directory, so rule settings and severity overrides apply; local `exclude`
+patterns, `content-paths`, and baselines do not, since they describe your
+repository rather than the fetched skills. The skills are fetched into a
+temporary directory that is removed when the run ends, so for report locations
+that last, such as SARIF for code scanning, `skillsaw pull` them and lint that
+directory.
+
+The client speaks both the `2026-07-28` protocol (`server/discover`) and the
+earlier `initialize` handshake, over Streamable HTTP or stdio. `--mcp-config`
+reads a client config such as `.mcp.json`, `.vscode/mcp.json` or
+`.cursor/mcp.json`, with `${VAR}` expansion. A stdio server, named on the
+command line or in a config, runs its command, so start only servers you trust.
+
+Treat an MCP config like code: it runs its commands, and every stdio server
+inherits the ambient environment of the `skillsaw` process in addition to any
+`env` overrides the config names. Never pass `--mcp-config` a config from a
+pull request or anywhere else you would not run code from; if your shell or CI
+job holds unrelated credentials, unset them or run under a minimal environment
+(for example `env -i PATH="$PATH" skillsaw ...`). In CI, lint a committed
+`skillsaw pull` directory instead.
+
+## Problems with a server
+
+Some things are wrong with the server, not with any skill, and only fetching can
+see them:
+
+- the server cannot be reached or needs authorization;
+- a file does not match the digest or size the server advertised, or a
+  `SKILL.md` does not match the frontmatter advertised for it — hosts refuse
+  such a skill;
+- a `skills/list` entry is malformed, for example its name differs from its
+  URI or its file list omits `SKILL.md`;
+- a skill exceeds the 512 files or 16 MiB that every host must accept;
+- a `skills/list` or directory response returns `resultType: "partial"` (skillsaw
+  rejects partial results rather than auditing an incomplete list);
+- a file could not be read or stored, or a limit stopped the fetch early.
+
+These are printed to `stderr` after the lint report (or tree) — they are not
+included in structured `--format` or `--output` reports — and any of them fails
+the run; `skillsaw pull` lists them too and exits 1, but keeps what it fetched.
+
+skillsaw only fetches and lints the skills a server enumerates in `skills/list`;
+unlisted skills reachable only by direct `skills/get` URI are not discovered or
+checked.
+
+A server that serves no skills, as most servers in a client config do, is not a
+problem: there is just nothing to lint. Disabled entries and retired HTTP+SSE
+entries in a client config are skipped with a note; malformed or unsafe config
+entries are recorded as server problems and fail the run while the remaining
+servers are still fetched.
+
+A skill served as `"dynamic"` has no digests to check; when the server
+advertises `directoryRead`, its files are found through directory reads and
+linted like the rest (otherwise only `SKILL.md` is fetched).
+
+The fetch acts like an inspector, not a host. It reads each listed file once,
+refuses URIs that would land outside the output directory, executes nothing it
+fetched, and keeps bytes that fail verification so they are still linted. It is
+bounded per server: `--mcp-max-skills` caps the skills listed, `--mcp-max-bytes`
+caps every response read (listing pages, directory reads and files), and
+`--mcp-timeout` caps each request. When the server answers HTTP 429 or 503, the
+fetch retries within that timeout.
+
+## Servers behind auth
+
+skillsaw sends credentials it is given; it does not run an OAuth login.
+
+- **A token or API key:** pass it as a header for a single server,
+  `--mcp-header "Authorization: Bearer $TOKEN"`, or give each server its
+  `headers` in an MCP config, as `"Authorization": "Bearer ${TOKEN}"`. A token
+  another tool obtained, by browser or device-code login, works if the server
+  accepts it. Other users of a shared machine can read command-line arguments
+  in the process list, so there prefer a config's headers.
+- **OAuth login:** let a bridge handle the login and serve the server over
+  stdio, for example
+  `--mcp-server "npx -y mcp-remote https://mcp.example.com/mcp"`, which opens a
+  browser the first time.
+- **CI:** an interactive login cannot run there. Run `skillsaw pull` where you
+  can log in, commit its directory, and lint that in CI like any other.
+
+skillsaw strips credentials from connection metadata and scrubs sent secrets
+from error messages before writing the snapshot: it records the server's scheme,
+host and port, but no path (some services carry a key there), headers, query
+string or user info. Headers and query strings are refused over unencrypted
+`http://` except for loopback hosts (`localhost`, `127.0.0.1`, `[::1]`),
+loopback `http://` requests bypass configured HTTP proxies, redirects are
+refused so a server cannot forward your header to another host, and remote error
+messages are scrubbed of sent header, query, and configured stdio `env` secrets
+before recording or printing. Because fetched skill files and server-supplied
+metadata are saved verbatim for linting and discovery, inspect a pulled snapshot
+before committing or sharing it if you connect to an untrusted server with
+credentials.
+
+## Pulling skills
+
+`skillsaw pull -o DIR` fetches without linting and writes a plain skills tree,
+`<server>/<skill-path>/SKILL.md` and its files, plus `mcp-skills-snapshot.json`,
+which records each server's `skills/list` entries and the problems the fetch
+met. A stdio server's directory is named for what its command starts
+(`npx -y @acme/skills-server` becomes `skills-server`), an HTTP server's for its
+host, and a configured server's for its name in the config. Pulling again
+replaces an earlier snapshot, but never a directory holding anything else.

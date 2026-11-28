@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -34,8 +35,11 @@ def load_config(args, start_path: Path) -> tuple[LinterConfig, Path | None]:
         if not config_path.exists():
             print(f"Error: Config file not found: {config_path}", file=sys.stderr)
             sys.exit(1)
-    else:
+    elif not getattr(args, "scratch_paths", False):
         config_path = find_config(start_path)
+    # else: the paths are a directory skillsaw made, such as skills fetched
+    # from MCP servers, whose ancestors (/tmp) anyone may write to. Its caller
+    # already looked for a config where the user ran skillsaw.
 
     if config_path:
         try:
@@ -46,6 +50,23 @@ def load_config(args, start_path: Path) -> tuple[LinterConfig, Path | None]:
         _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
+    # Scratch MCP directories hold server-controlled paths unrelated to the
+    # local checkout, so local exclude globs and content_paths must not hide
+    # fetched skills. Unconfigured pulls likewise drop default template/cache
+    # excludes so a server cannot evade linting under those segment names.
+    if getattr(args, "scratch_paths", False):
+        config.exclude_patterns = []
+        config.content_paths = []
+        for rule_cfg in config.rules.values():
+            if isinstance(rule_cfg, dict) and "exclude" in rule_cfg:
+                rule_cfg["exclude"] = []
+        if config.codex_instructions is not None and config.codex_instructions.cwd != ".":
+            config.codex_instructions = dataclasses.replace(config.codex_instructions, cwd=".")
+    elif not config.exclude_patterns_explicit:
+        from ..formats.mcp_skills import read_valid_snapshot_record
+
+        if read_valid_snapshot_record(start_path) is not None:
+            config.exclude_patterns = []
     return config, config_path
 
 

@@ -24,8 +24,8 @@ Before releasing, verify:
    date with `origin/main` (`git pull origin main`).
 2. Verify the current `main` commit has a successful **push** run of the
    `Tests` workflow. Do not accept the reduced PR test run: pull requests run
-   Python 3.9 plus the 3.14 coverage job, while a `main` push must have passed
-   Python 3.9, 3.10, 3.11, 3.12, 3.13, and 3.14. The workflow run must test the
+   Python 3.11 plus the 3.14 coverage job, while a `main` push must have passed
+   Python 3.11, 3.12, 3.13, and 3.14. The workflow run must test the
    exact `HEAD` being released:
 
    ```bash
@@ -37,10 +37,10 @@ Before releasing, verify:
      exit 1
    }
    gh run view "$run_id" --json jobs | jq -e '
-     [.jobs[] | select(.name | test("^test \\(3\\.(9|10|11|12|13|14)\\)$"))]
-     | length == 6 and all(.[]; .conclusion == "success")
+     [.jobs[] | select(.name | test("^test \\(3\\.(11|12|13|14)\\)$"))]
+     | length == 4 and all(.[]; .conclusion == "success")
    ' >/dev/null || {
-     echo "The full Python 3.9–3.14 main test matrix did not pass" >&2
+     echo "The full Python 3.11–3.14 main test matrix did not pass" >&2
      exit 1
    }
    ```

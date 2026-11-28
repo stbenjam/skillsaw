@@ -13,6 +13,9 @@ skillsaw tree /path/to/repo
 
 # Output as Graphviz DOT format
 skillsaw tree --format dot
+
+# Inspect skills served over MCP (see docs/mcp-skills.md)
+skillsaw tree --mcp-server https://mcp.example.com/mcp
 ```
 
 ## Example Output

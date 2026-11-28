@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.9+
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - GNU Make
 
@@ -22,7 +22,7 @@ make test-coverage  # what CI's coverage job runs
 ```
 
 Both targets run in parallel via pytest-xdist (`-n auto`). Tests run
-against Python 3.9–3.14 in CI. Locally, your active Python version is used.
+against Python 3.11–3.14 in CI. Locally, your active Python version is used.
 
 Most integration tests use `tests/cli_runner.py` to invoke the CLI in-process,
 with arguments, streams, environment and working directory isolated for each call.

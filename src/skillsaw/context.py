@@ -449,6 +449,7 @@ class RepositoryContext(
                 p
                 for p in self.skills
                 if not is_root_or_ancestor_excluded(p, self.root_path, self.is_path_excluded)
+                and not self.is_path_excluded(p / "SKILL.md")
             ]
             self.instruction_files = [
                 p for p in self.instruction_files if not self.is_path_excluded(p)
@@ -582,6 +583,12 @@ class RepositoryContext(
             types.add(RepositoryType.PI_PACKAGE)
         if self.mcp_registry_server_paths():
             types.add(RepositoryType.MCP_REGISTRY)
+        if any(
+            not is_root_or_ancestor_excluded(p, self.root_path, self.is_path_excluded)
+            and not self.is_path_excluded(p / "SKILL.md")
+            for p in self.mcp_snapshot_skills()
+        ):
+            types.add(RepositoryType.AGENTSKILLS)
 
         if not types:
             types.add(RepositoryType.UNKNOWN)

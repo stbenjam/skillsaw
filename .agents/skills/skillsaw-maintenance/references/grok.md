@@ -216,12 +216,10 @@ signal.
   **whole-file**, including tables above the error. Grok exits 0 with an empty stderr;
   the sole signal is a `configSources[].note` of `"parse error"` in `grok inspect`. An
   empty file reads as `note: "empty"`.
-- **Parsing**: `read_toml()` in `src/skillsaw/utils.py`, `tomllib` on 3.11+ and `tomli`
-  below it. Errors are file-level: stdlib `tomllib` gained `TOMLDecodeError.lineno`
-  only in 3.14, so 3.11 through 3.13 carry no position, while the floor's `tomli`
-  2.2.1 does expose one — and one contract across both parsers beats a line number
-  on some legs. A leading UTF-8 BOM is stripped by `read_text` before the parser
-  sees it.
+- **Parsing**: `read_toml()` in `src/skillsaw/utils.py`, using stdlib `tomllib`.
+  Errors are file-level: stdlib `tomllib` gained `TOMLDecodeError.lineno` only
+  in 3.14, so 3.11 through 3.13 carry no position. A leading UTF-8 BOM is
+  stripped by `read_text` before the parser sees it.
 - **Do not claim** that `mcpServers[].source.path` attributes a server to its config
   file: it always prints the user `$GROK_HOME/config.toml` path, even for project-only
   servers and even when that file does not exist.
